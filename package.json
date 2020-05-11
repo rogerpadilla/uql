@@ -70,7 +70,6 @@
     "prettier": "^2.0.5",
     "semantic-release": "^17.0.7",
     "source-map-loader": "^0.2.4",
-    "sqlite3": "^4.2.0",
     "ts-jest": "^25.5.1",
     "ts-loader": "^7.0.4",
     "ts-node": "^8.10.1",
@@ -86,8 +85,7 @@
     "mongoose": "^5.9.13",
     "mysql": "^2.18.1",
     "mysql2": "^2.1.0",
-    "pg": "^8.1.0",
-    "sqlite3": "^4.2.0"
+    "pg": "^8.1.0"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -106,9 +104,6 @@
       "optional": true
     },
     "pg": {
-      "optional": true
-    },
-    "sqlite3": {
       "optional": true
     }
   },
@@ -135,7 +130,7 @@
     "singleQuote": true,
     "printWidth": 120
   },
-  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, SQLite, MongoDB databases.",
+  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "author": {
     "name": "Roger Padilla",
@@ -154,7 +149,6 @@
     "mysql",
     "postgresql",
     "mariadb",
-    "sqlite",
     "mongodb",
     "mongoose"
   ],
