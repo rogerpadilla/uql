@@ -1,6 +1,7 @@
-import { Mongoose, ClientSession, DocumentQuery, QueryPopulateOptions, FilterQuery } from 'mongoose';
+import { Mongoose, ClientSession } from 'mongoose';
 import { QueryFilter, Query, QueryOne, QueryPopulate } from '../../type';
 import { Querier } from '../type';
+import { fillDocumentQuery, parseFilter } from './mongoose.util';
 
 export class MongooseQuerier extends Querier {
   protected session: ClientSession;
@@ -24,39 +25,36 @@ export class MongooseQuerier extends Querier {
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const res = await this.conn.model(type.name).updateMany(filter as any, body);
+    const res = await this.conn.model(type.name).updateMany(parseFilter(filter), body);
     return res.modifiedCount;
   }
 
   findOneById<T>(type: { new (): T }, id: any, qm: QueryPopulate<T>) {
     const docQuery = this.conn.model(type.name).findById(id);
-    return processDocumentQuery(docQuery, qm);
+    return fillDocumentQuery(docQuery, qm).exec();
   }
 
   findOne<T>(type: { new (): T }, qm: QueryOne<T>) {
-    const docQuery = this.conn.model(type.name).findOne(qm.filter as any);
-    return processDocumentQuery(docQuery, qm);
+    const docQuery = this.conn.model(type.name).findOne(parseFilter(qm.filter));
+    return fillDocumentQuery(docQuery, qm).exec();
   }
 
   find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {
-    const docQuery = this.conn.model(type.name).find(qm.filter as any, undefined);
-    return processDocumentQuery(docQuery, qm);
+    const docQuery = this.conn.model(type.name).find(parseFilter(qm.filter));
+    return fillDocumentQuery(docQuery, qm).exec();
   }
 
   count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    return this.conn
-      .model(type.name)
-      .countDocuments(filter as any, undefined)
-      .exec();
+    return this.conn.model(type.name).countDocuments(parseFilter(filter)).exec();
   }
 
   async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const res = await this.conn.model(type.name).deleteOne(filter as any);
+    const res = await this.conn.model(type.name).deleteOne(parseFilter(filter)).exec();
     return res.deletedCount;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const res = await this.conn.model(type.name).deleteMany(filter as any);
+    const res = await this.conn.model(type.name).deleteMany(parseFilter(filter)).exec();
     return res.deletedCount;
   }
 
@@ -88,42 +86,4 @@ export class MongooseQuerier extends Querier {
     }
     return this.conn.disconnect();
   }
-}
-
-function processDocumentQuery<T>(docQuery: DocumentQuery<any, any>, qm: Query<T>) {
-  if (qm.project) {
-    docQuery = docQuery.select(qm.project);
-  }
-  if (qm.populate) {
-    docQuery.populate(parsePopulate(qm.populate));
-  }
-  if (qm.sort) {
-    docQuery = docQuery.sort(qm.sort);
-  }
-  if (qm.skip) {
-    docQuery = docQuery.skip(qm.skip);
-  }
-  if (qm.limit) {
-    docQuery = docQuery.limit(qm.limit);
-  }
-  return docQuery.exec();
-}
-
-// function parseFilter<T>(filter: QueryFilter<T>): FilterQuery<T> {
-
-// }
-
-function parsePopulate<T>(populate: QueryPopulate<T>): QueryPopulateOptions {
-  const mongoosePopulate = Object.keys(populate).reduce((acc, key) => {
-    acc.path = key;
-    const val: QueryPopulate<T> = populate[key];
-    if (val?.project) {
-      acc.select = val.project;
-    }
-    if (val?.populate) {
-      acc.populate = parsePopulate(val.populate);
-    }
-    return acc;
-  }, {} as QueryPopulateOptions);
-  return mongoosePopulate;
 }
