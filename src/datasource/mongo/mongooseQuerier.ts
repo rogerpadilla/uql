@@ -1,4 +1,4 @@
-import { Mongoose, ClientSession, DocumentQuery, QueryPopulateOptions } from 'mongoose';
+import { Mongoose, ClientSession, DocumentQuery, QueryPopulateOptions, FilterQuery } from 'mongoose';
 import { QueryFilter, Query, QueryOne, QueryPopulate } from '../../type';
 import { Querier } from '../type';
 
@@ -108,6 +108,10 @@ function processDocumentQuery<T>(docQuery: DocumentQuery<any, any>, qm: Query<T>
   }
   return docQuery.exec();
 }
+
+// function parseFilter<T>(filter: QueryFilter<T>): FilterQuery<T> {
+
+// }
 
 function parsePopulate<T>(populate: QueryPopulate<T>): QueryPopulateOptions {
   const mongoosePopulate = Object.keys(populate).reduce((acc, key) => {

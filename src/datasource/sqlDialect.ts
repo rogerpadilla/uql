@@ -131,15 +131,20 @@ export abstract class SqlDialect {
     const opts = {
       logicalOperator: 'AND',
       ...options,
-    };
+    } as const;
+
+    const logicalOperatorMap = {
+      $and: 'AND',
+      $or: 'OR',
+    } as const;
 
     const filterKeys = Object.keys(filter);
 
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
-        if (key === '$or') {
-          const filterItCondition = this.where(val, { logicalOperator: 'OR' });
+        if (logicalOperatorMap[key]) {
+          const filterItCondition = this.where(val, { logicalOperator: logicalOperatorMap[key] });
           return filterKeys.length > 1 ? `(${filterItCondition})` : filterItCondition;
         }
         return this.comparison(key, val);

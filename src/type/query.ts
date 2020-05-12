@@ -14,7 +14,8 @@ export type QueryComparisonValue<T> =
   | null;
 
 export type QueryLogicalOperator<T> = {
-  readonly $or: QueryFieldFilter<T>;
+  readonly $and?: QueryFieldFilter<T>;
+  readonly $or?: QueryFieldFilter<T>;
 };
 
 export type QueryLogicalOperators = 'AND' | 'OR';

@@ -68,14 +68,44 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
 
   it('find', () => {
     const query = sql.find(User, {
-      filter: { name: 'some', user: 123 },
-      sort: { user: 1, name: -1 },
+      filter: { id: 123, name: 'abc' },
+    });
+    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+  });
+
+  it('find $and', () => {
+    const query = sql.find(User, {
+      filter: { $and: { id: 123, name: 'abc' } },
+    });
+    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+  });
+
+  it('find $or', () => {
+    const query = sql.find(User, {
+      filter: { $or: { id: 123, name: 'abc' } },
+    });
+    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 OR `name` = 'abc'");
+  });
+
+  it('find $and, $or', () => {
+    const query = sql.find(User, {
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' } },
+      sort: { name: 1, createdAt: -1 },
       limit: 10,
-      skip: 300,
     });
     expect(query).toBe(
-      "SELECT * FROM `User` WHERE `name` = 'some' AND `user` = 123 ORDER BY `user`, `name` DESC LIMIT 10 OFFSET 300"
+      'SELECT * FROM `User` WHERE `user` = 1 AND ' +
+        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') " +
+        'ORDER BY `name`, `createdAt` DESC LIMIT 10'
     );
+  });
+
+  it('find single filter', () => {
+    const query = sql.find(User, {
+      filter: { name: 'some' },
+      limit: 3,
+    });
+    expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' LIMIT 3");
   });
 
   it('find invalid comparison operator', () => {
@@ -143,35 +173,6 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       limit: 10,
     });
     expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' AND `status` NOT IN (1, 2, 3) LIMIT 10");
-  });
-
-  it('find $or', () => {
-    const query = sql.find(User, {
-      filter: { $or: { id: 123, name: 'abc' } },
-      limit: 10,
-    });
-    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 OR `name` = 'abc' LIMIT 10");
-  });
-
-  it('find $and, $or', () => {
-    const query = sql.find(User, {
-      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' } },
-      sort: { name: 1, createdAt: -1 },
-      limit: 10,
-    });
-    expect(query).toBe(
-      'SELECT * FROM `User` WHERE `user` = 1 AND ' +
-        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') " +
-        'ORDER BY `name`, `createdAt` DESC LIMIT 10'
-    );
-  });
-
-  it('find single filter', () => {
-    const query = sql.find(User, {
-      filter: { name: 'some' },
-      limit: 3,
-    });
-    expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' LIMIT 3");
   });
 
   it('find populate with projected fields', () => {
