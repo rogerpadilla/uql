@@ -118,9 +118,13 @@ export class MongodbQuerier extends Querier {
       }
 
       const relDocs = await relCursor.toArray();
+      const relDocsMap = relDocs.reduce((acc, relDoc) => {
+        acc[relDoc[relIdName]] = relDoc;
+        return acc;
+      }, {});
 
       for (const doc of docs) {
-        doc[popKey] = relDocs.find((relDoc) => relDoc[relIdName] === doc[popKey]);
+        doc[popKey] = relDocsMap[doc[popKey]];
       }
 
       if (popVal.populate) {
