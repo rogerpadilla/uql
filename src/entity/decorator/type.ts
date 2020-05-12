@@ -8,5 +8,5 @@ export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;
 
 export type RelationProperties = {
   type?: () => { new (): any };
-  readonly cardinality: 'manyToOne';
+  readonly cardinality: 'oneToOne' | 'manyToOne';
 };

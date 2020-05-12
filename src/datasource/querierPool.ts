@@ -30,9 +30,8 @@ function getQuerierPoolPath(driver: QuerierDriver) {
       return `./mysql/${driver}QuerierPool`;
     case 'pg':
       return `./postgres/${driver}QuerierPool`;
-    // TODO mongoose support needs more work and testing
-    // case 'mongoose':
-    //   return `./mongo/${driver}QuerierPool`;
+    case 'mongodb':
+      return `./mongo/${driver}QuerierPool`;
     default:
       throw new Error(`Unsupported driver '${driver}'`);
   }

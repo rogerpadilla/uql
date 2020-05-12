@@ -12,6 +12,10 @@ function Relation(args: RelationProperties) {
   };
 }
 
+export function OneToOne(args?: Omit<RelationProperties, 'cardinality'>) {
+  return Relation({ cardinality: 'oneToOne', ...args });
+}
+
 export function ManyToOne(args?: Omit<RelationProperties, 'cardinality'>) {
   return Relation({ cardinality: 'manyToOne', ...args });
 }

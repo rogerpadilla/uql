@@ -17,7 +17,7 @@ export interface QuerierPoolOptions {
   port?: number;
 }
 
-export type QuerierDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg';
+export type QuerierDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'mongodb';
 
 export type QuerierOptions = { driver: QuerierDriver } & QuerierPoolOptions;
 

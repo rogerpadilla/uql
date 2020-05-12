@@ -24,7 +24,7 @@
   },
   "lint-staged": {
     "*.ts": [
-      "npm run lint.fix",
+      "eslint --ext .ts",
       "git add"
     ]
   },
@@ -38,7 +38,7 @@
     "@types/copy-webpack-plugin": "^5.0.0",
     "@types/express": "^4.17.6",
     "@types/jest": "^25.2.1",
-    "@types/mongoose": "^5.7.17",
+    "@types/mongodb": "^3.5.16",
     "@types/mysql2": "types/mysql2",
     "@types/node": "^13.13.5",
     "@types/pg": "^7.14.3",
@@ -63,7 +63,7 @@
     "jest": "26.0.1",
     "lint-staged": "^10.2.2",
     "mariadb": "^2.3.1",
-    "mongoose": "^5.9.13",
+    "mongodb": "^3.5.7",
     "mysql": "^2.18.1",
     "mysql2": "^2.1.0",
     "pg": "^8.1.0",
@@ -82,7 +82,7 @@
   "peerDependencies": {
     "express": "^4.17.1",
     "mariadb": "^2.3.1",
-    "mongoose": "^5.9.13",
+    "mongodb": "^3.5.7",
     "mysql": "^2.18.1",
     "mysql2": "^2.1.0",
     "pg": "^8.1.0"
@@ -146,11 +146,10 @@
   "tags": [
     "entity",
     "typescript",
-    "mysql",
-    "postgresql",
     "mariadb",
     "mongodb",
-    "mongoose"
+    "mysql",
+    "postgresql"
   ],
   "engines": {
     "node": ">= 10.0.0"

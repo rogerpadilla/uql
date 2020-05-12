@@ -88,33 +88,31 @@ export abstract class SqlDialect {
     let joinsTables = '';
     if (qm.populate) {
       const entityMeta = getEntityMeta(type);
-      for (const populateKey in qm.populate) {
-        const relationProps = entityMeta.relations[populateKey];
-        if (!relationProps) {
-          throw new Error(`'${type.name}.${populateKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
+      for (const popKey in qm.populate) {
+        const relProps = entityMeta.relations[popKey];
+        if (!relProps) {
+          throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
         }
-        const path = prefix ? prefix + '.' + populateKey : populateKey;
-        const pathSafe = escapeId(path, true);
-        const relationType = relationProps.type();
-        const populateVal = qm.populate[populateKey];
-        const columns = this.columns(relationType, {
-          columns: populateVal?.project,
-          prefix: path,
+        const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
+        const joinPathSafe = escapeId(joinPrefix, true);
+        const relType = relProps.type();
+        const popVal = qm.populate[popKey];
+        const relColumns = this.columns(relType, {
+          columns: popVal?.project,
+          prefix: joinPrefix,
           alias: true,
         });
-        joinsSelect += `, ${columns}`;
-        const relationTypeNameSafe = escapeId(relationType.name);
-        const relationSafe = prefix
-          ? escapeId(prefix, true) + '.' + escapeId(populateKey)
-          : `${escapeId(type.name)}.${pathSafe}`;
-        const relationId = escapeId(getEntityId(relationType));
-        joinsTables += ` LEFT JOIN ${relationTypeNameSafe} ${pathSafe} ON ${pathSafe}.${relationId} = ${relationSafe}`;
-        if (populateVal?.populate) {
-          const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(
-            relationType,
-            populateVal,
-            path
-          );
+        joinsSelect += `, ${relColumns}`;
+        const relTypeNameSafe = escapeId(relType.name);
+        const relSafe = prefix
+          ? escapeId(prefix, true) + '.' + escapeId(popKey)
+          : `${escapeId(type.name)}.${joinPathSafe}`;
+        const relIdName = getEntityId(relType);
+        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(
+          relIdName
+        )} = ${relSafe}`;
+        if (popVal?.populate) {
+          const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
           joinsSelect += subJoinSelect;
           joinsTables += subJoinTables;
         }
