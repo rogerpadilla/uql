@@ -103,6 +103,7 @@ export class MongodbQuerier extends Querier {
       if (!relProps) {
         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
       }
+      const popVal: QueryPopulate<T> = populate[popKey];
       const relType = relProps.type();
       const relIdName = getEntityId(relType);
       const relIds = docs.map((doc) => doc[popKey]);
@@ -111,8 +112,6 @@ export class MongodbQuerier extends Querier {
         .db()
         .collection(relType.name)
         .find({ [relIdName]: { $in: relIds } });
-
-      const popVal: QueryPopulate<T> = populate[popKey];
 
       if (popVal.project) {
         relCursor = relCursor.project(popVal.project);
