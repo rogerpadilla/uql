@@ -24,8 +24,7 @@
   },
   "lint-staged": {
     "*.ts": [
-      "eslint --ext .ts",
-      "git add"
+      "eslint --ext .ts"
     ]
   },
   "dependencies": {
