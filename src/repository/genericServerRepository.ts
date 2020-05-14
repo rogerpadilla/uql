@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryOne, QueryPopulate } from '../type';
+import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
 import { getEntityId } from '../entity';
 import { Querier, Transactional, InjectQuerier } from '../datasource';
 import { GenericRepository } from './decorator';
@@ -34,13 +34,13 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional()
-  findOneById(id: ID, qm: QueryPopulate<T> = {}, @InjectQuerier() querier?: Querier): Promise<T> {
-    (qm as QueryOne<T>).filter = { [this.idName]: id };
+  findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier): Promise<T> {
+    (qm as QueryOneFilter<T>).filter = { [this.idName]: id };
     return querier.findOne(this.type, qm);
   }
 
   @Transactional()
-  findOne(qm: QueryOne<T>, @InjectQuerier() querier?: Querier): Promise<T> {
+  findOne(qm: QueryOneFilter<T>, @InjectQuerier() querier?: Querier): Promise<T> {
     return querier.findOne(this.type, qm);
   }
 

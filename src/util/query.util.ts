@@ -25,21 +25,18 @@ export function buildQuery<T>(qmsSrc: QueryStringified) {
   return qm;
 }
 
-function stringifyQueryParameter(key: string, value: any) {
-  if (typeof value === 'object' && value !== null) {
-    return `${key}=${JSON.stringify(value)}`;
+export function stringifyQueryParameter(key: keyof Query<any>, value: any, prefix?: boolean) {
+  if (value === undefined) {
+    return '';
   }
-  return `${key}=${value}`;
+  const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
+  return (prefix ? '?' : '') + `${key}=${valStr}`;
 }
 
 export function stringifyQuery(qm: Query<any>): string {
   if (!qm) {
     return '';
   }
-  const qsArr = Object.keys(qm).map((key) => stringifyQueryParameter(key, qm[key]));
-  return qsArr.length ? `?${qsArr.join('&')}` : '';
-}
-
-export function stringifyQueryFilter(value: any) {
-  return stringifyQueryParameter('?filter', value);
+  const qsArr = Object.keys(qm).map((key) => stringifyQueryParameter(key as any, qm[key]));
+  return qsArr.length ? '?' + qsArr.join('&') : '';
 }

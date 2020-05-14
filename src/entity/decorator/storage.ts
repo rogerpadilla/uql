@@ -5,10 +5,10 @@ const entitiesMeta = new Map<
   {
     id?: string;
     columns: {
-      [p: string]: ColumnProperties;
+      [prop: string]: ColumnProperties;
     };
     relations: {
-      [p: string]: RelationProperties;
+      [prop: string]: RelationProperties<any>;
     };
     merged?: boolean;
   }
@@ -22,17 +22,21 @@ function ensureEntityMeta<T>(type: { new (): T }) {
 }
 
 export function defineColumn<T>(type: { new (): T }, prop: string, args: ColumnProperties) {
-  ensureEntityMeta(type).columns[prop] = args;
+  const meta = getEntityMeta(type);
+  meta.columns[prop] = args;
+  return meta;
 }
 
 export function definePrimaryColumn<T>(type: { new (): T }, prop: string, args: PrimaryColumnProperties) {
-  defineColumn(type, prop, { mode: 'read', ...args });
-  const meta = entitiesMeta.get(type);
+  const meta = defineColumn(type, prop, { mode: 'read', ...args });
   meta.id = prop;
+  return meta;
 }
 
-export function defineRelation<T>(type: { new (): T }, prop: string, args: RelationProperties) {
-  ensureEntityMeta(type).relations[prop] = args;
+export function defineRelation<T>(type: { new (): T }, prop: string, args: RelationProperties<T>) {
+  const meta = getEntityMeta(type);
+  meta.relations[prop] = args;
+  return meta;
 }
 
 export function getEntityMeta<T>(type: { new (): T }) {

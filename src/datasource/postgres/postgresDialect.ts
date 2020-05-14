@@ -1,14 +1,14 @@
 import { escape, escapeId } from 'sqlstring';
 import { SqlDialect } from '../sqlDialect';
-import { QueryComparisonOperator, QueryTextSearchProperties, QueryComparisonValue } from '../../type';
+import { QueryComparisonOperator, QueryTextSearch, QueryComparisonValue } from '../../type';
 
 export class PostgresDialect extends SqlDialect {
   comparison<T>(key: string, val: QueryComparisonValue<T>) {
     switch (key) {
       case '$text':
-        const props = val as QueryTextSearchProperties<T>;
-        const fields = props.fields.map((field) => escapeId(field)).join(` || ' ' || `);
-        return `to_tsvector(${fields}) @@ to_tsquery(${escape(props.value)})`;
+        const search = val as QueryTextSearch<T>;
+        const fields = search.fields.map((field) => escapeId(field)).join(` || ' ' || `);
+        return `to_tsvector(${fields}) @@ to_tsquery(${escape(search.value)})`;
       default:
         return super.comparison(key, val);
     }

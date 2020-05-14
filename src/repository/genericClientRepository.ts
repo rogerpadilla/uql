@@ -1,6 +1,6 @@
 import { get, post, put, remove, RequestOptions } from '../http';
-import { Query, QueryFilter, QueryPopulate, QueryOne } from '../type';
-import { stringifyQuery, stringifyQueryFilter } from '../util/query.util';
+import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
+import { stringifyQuery, stringifyQueryParameter } from '../util/query.util';
 import { formatKebabCase } from '../util/string.util';
 import { getEntityId } from '../entity';
 import { ClientRepository } from './type';
@@ -35,12 +35,12 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
     return this.insertOne(body, opts);
   }
 
-  findOneById(id: ID, qm: QueryPopulate<T>, opts?: RequestOptions) {
+  findOneById(id: ID, qm: QueryOne<T>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/${id}${qs}`, opts);
   }
 
-  findOne(qm: QueryOne<T>, opts?: RequestOptions) {
+  findOne(qm: QueryOneFilter<T>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/one${qs}`, opts);
   }
@@ -55,12 +55,12 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   }
 
   remove(filter: QueryFilter<T>, opts?: RequestOptions) {
-    const qs = stringifyQueryFilter(filter);
-    return remove<number>(`${this.basePath}?${qs}`, opts);
+    const qs = stringifyQueryParameter('filter', filter, true);
+    return remove<number>(`${this.basePath}${qs}`, opts);
   }
 
   count(filter: QueryFilter<T>, opts?: RequestOptions) {
-    const qs = stringifyQueryFilter(filter);
+    const qs = stringifyQueryParameter('filter', filter, true);
     return get<number>(`${this.basePath}/count${qs}`, opts);
   }
 }

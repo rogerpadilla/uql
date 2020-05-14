@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { QueryFilter, Query, QueryOne, QueryPopulate } from '../../type';
+import { QueryFilter, Query, QueryOneFilter, QueryOne } from '../../type';
 import { Querier } from '../type';
 import { getEntityMeta, getEntityId } from '../../entity';
 import { fillCursor, parseFilter } from './mongodb.util';
@@ -30,12 +30,12 @@ export class MongodbQuerier extends Querier {
     return res.modifiedCount;
   }
 
-  async findOneById<T>(type: { new (): T }, id: any, populate?: QueryPopulate<T>) {
-    const doc = await this.conn.db().collection(type.name).findOne(id, populate?.project);
-    return this.processPopulate(type, doc, populate);
+  async findOneById<T>(type: { new (): T }, id: any, qm?: QueryOne<T>) {
+    const doc = await this.conn.db().collection(type.name).findOne(id, qm?.project);
+    return this.processPopulate(type, doc, qm?.populate);
   }
 
-  async findOne<T>(type: { new (): T }, qm: QueryOne<T>) {
+  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
     const doc = await this.conn.db().collection(type.name).findOne(parseFilter(qm.filter), qm.project);
     return this.processPopulate(type, doc, qm.populate);
   }
@@ -90,7 +90,7 @@ export class MongodbQuerier extends Querier {
     return this.conn.close();
   }
 
-  async processPopulate<T>(type: { new (): T }, data: T | T[], populate: QueryPopulate<T>) {
+  async processPopulate<T>(type: { new (): T }, data: T | T[], populate: QueryOne<T>) {
     if (!populate) {
       return data;
     }
@@ -103,22 +103,19 @@ export class MongodbQuerier extends Querier {
       if (!relProps) {
         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
       }
-      const popVal: QueryPopulate<T> = populate[popKey];
+      const popVal: QueryOne<T> = populate[popKey];
       const relType = relProps.type();
       const relIdName = getEntityId(relType);
       const relIds = docs.map((doc) => doc[popKey]);
 
-      let relCursor = this.conn
+      const relData = await this.conn
         .db()
         .collection(relType.name)
-        .find({ [relIdName]: { $in: relIds } });
+        .find({ [relIdName]: { $in: relIds } })
+        .project(popVal.project)
+        .toArray();
 
-      if (popVal.project) {
-        relCursor = relCursor.project(popVal.project);
-      }
-
-      const relDocs = await relCursor.toArray();
-      const relDocsMap = relDocs.reduce((acc, relDoc) => {
+      const relDocsMap = relData.reduce((acc, relDoc) => {
         acc[relDoc[relIdName]] = relDoc;
         return acc;
       }, {});
@@ -127,9 +124,7 @@ export class MongodbQuerier extends Querier {
         doc[popKey] = relDocsMap[doc[popKey]];
       }
 
-      if (popVal.populate) {
-        await this.processPopulate(relType, relDocs, popVal.populate);
-      }
+      await this.processPopulate(relType, relData, popVal.populate);
     });
 
     await Promise.all(proms);

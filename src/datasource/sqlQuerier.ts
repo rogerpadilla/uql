@@ -1,5 +1,6 @@
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOne } from '../type';
+import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter, QueryOne, QueryPopulate } from '../type';
 import { mapRows } from '../util/rowsMapper.util';
+import { getEntityMeta, RelationProperties } from '../entity';
 import { QuerierPoolConnection, Querier } from './type';
 import { SqlDialect } from './sqlDialect';
 
@@ -28,7 +29,7 @@ export abstract class SqlQuerier extends Querier {
     return res.affectedRows;
   }
 
-  findOne<T>(type: { new (): T }, qm: QueryOne<T>, opts?: QueryOptions) {
+  findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions) {
     (qm as Query<T>).limit = 1;
     return this.find(type, qm, opts).then((rows) => (rows ? rows[0] : undefined));
   }
@@ -36,7 +37,8 @@ export abstract class SqlQuerier extends Querier {
   async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.query<T[]>(query);
-    return mapRows(res);
+    const data = mapRows(res);
+    return this.processPopulate(type, data, qm.populate);
   }
 
   async count<T>(type: { new (): T }, filter: QueryFilter<T>) {
@@ -92,5 +94,58 @@ export abstract class SqlQuerier extends Querier {
       throw new Error('Querier should not be released while there is an open transaction.');
     }
     return this.conn.release();
+  }
+
+  async processPopulate<T>(type: { new (): T }, data: T[], populate: QueryPopulate<T>) {
+    if (!populate) {
+      return data;
+    }
+
+    const meta = getEntityMeta(type);
+    const relations = meta.relations;
+    const toManyRelations = Object.keys(relations).reduce((acc, prop) => {
+      if (populate[prop] && relations[prop].cardinality.endsWith('ToMany')) {
+        acc[prop] = relations[prop];
+      }
+      return acc;
+    }, {} as { [p: string]: RelationProperties<T> });
+
+    if (Object.keys(toManyRelations).length === 0) {
+      return data;
+    }
+
+    const dataMap = data.reduce((acc, it) => {
+      acc.set(it[meta.id], it);
+      return acc;
+    }, new Map<any, T>());
+
+    const popPromises = Object.keys(toManyRelations).map(async (key) => {
+      const qo = populate[key] as QueryOne<T>;
+      const rel = toManyRelations[key];
+      const relType = rel.type();
+      const relCol = rel.mappedBy;
+      const relData = await this.find(relType, {
+        filter: { [relCol]: { $in: dataMap.keys() } },
+        project: qo.project,
+      });
+
+      const relDataMap = relData.reduce((acc, it) => {
+        if (!acc.has(it[relCol])) {
+          acc.set(it[relCol], [] as T[]);
+        }
+        acc.get(it[relCol]).push(it);
+        return acc;
+      }, new Map<any, T[]>());
+
+      for (const row of data) {
+        row[key] = relDataMap.get(row[meta.id]);
+      }
+
+      await this.processPopulate(relType, relData, qo.populate);
+    });
+
+    await Promise.all(popPromises);
+
+    return data;
   }
 }

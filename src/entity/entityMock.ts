@@ -1,4 +1,4 @@
-import { Column, ManyToOne, PrimaryColumn } from './decorator';
+import { Column, ManyToOne, PrimaryColumn, OneToMany } from './decorator';
 
 export abstract class BaseEntity {
   @PrimaryColumn()
@@ -125,6 +125,16 @@ export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   @Column()
   storehouse?: Storehouse;
+  @ManyToOne({ type: () => InventoryAdjustment })
   @Column({ mode: 'insert' })
   inventoryAdjustment?: number;
+}
+
+export class InventoryAdjustment extends BaseEntity {
+  @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
+  itemsAdjustments?: ItemAdjustment[];
+  @Column()
+  date?: number;
+  @Column()
+  description?: string;
 }

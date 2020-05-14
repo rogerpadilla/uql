@@ -1,4 +1,4 @@
-import { Query, QueryOptions, QueryOne, QueryFilter, QueryPopulate } from '../type/query';
+import { Query, QueryOptions, QueryFilter, QueryOneFilter } from '../type/query';
 
 export interface QuerierPoolConnection {
   query<T>(sql: string): Promise<T>;
@@ -28,7 +28,7 @@ export abstract class Querier {
   abstract insertOne<T>(type: { new (): T }, body: T): Promise<any>;
   abstract updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
   abstract update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
-  abstract findOne<T>(type: { new (): T }, qm: QueryOne<T>, opts?: QueryOptions): Promise<T>;
+  abstract findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions): Promise<T>;
   abstract find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T[]>;
   abstract count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
   abstract removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
