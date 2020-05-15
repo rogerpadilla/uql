@@ -30,6 +30,7 @@ it('find $text', () => {
   expect(query1).toBe(
     "SELECT * FROM `Item` WHERE to_tsvector(`name` || ' ' || `description`) @@ to_tsquery('some text') AND `status` = 1 LIMIT 30"
   );
+
   const query2 = sql.find(User, {
     filter: { $text: { fields: ['name'], value: 'something' }, name: { $ne: 'other unwanted' }, status: 1 },
     limit: 10,

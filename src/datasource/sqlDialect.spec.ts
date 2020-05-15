@@ -47,9 +47,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       updatedAt: 321,
     };
     const query = sql.insert(User, body);
-    expect(query).toBe(
-      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)"
-    );
+    expect(query).toBe("INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)");
   });
 
   it('update', () => {
@@ -61,9 +59,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       updatedAt: 321,
     };
     const query = sql.update(User, { name: 'some', user: 123 }, body);
-    expect(query).toBe(
-      "UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `user` = 123"
-    );
+    expect(query).toBe("UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `user` = 123");
   });
 
   it('find', () => {
@@ -108,12 +104,12 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
     expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' LIMIT 3");
   });
 
-  it('find invalid comparison operator', () => {
+  it('find unsupported comparison operator', () => {
     expect(() =>
       sql.find(User, {
         filter: { name: { $someInvalidOperator: 'some' } as any },
       })
-    ).toThrowError('Invalid comparison operator: $someInvalidOperator');
+    ).toThrowError('Unsupported comparison operator: $someInvalidOperator');
   });
 
   it('find multiple comparison-operators', () => {
@@ -121,9 +117,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       filter: { $or: { name: { $eq: 'other', $ne: 'other unwanted' }, status: 1 } },
       limit: 10,
     });
-    expect(query2).toBe(
-      "SELECT * FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1 LIMIT 10"
-    );
+    expect(query2).toBe("SELECT * FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1 LIMIT 10");
 
     const query3 = sql.find(User, {
       filter: { createdAt: { $gte: 123, $lte: 999 } },
@@ -294,7 +288,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
         project: { id: 1, name: 1 },
         populate: { status: null },
       })
-    ).toThrow("'Item.status' is not annotated with a relation decorator (e.g. @ManyToOne)");
+    ).toThrow("'Item.status' is not annotated with a relation decorator");
   });
 
   it('find limit', () => {
@@ -332,8 +326,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       { trustedProject: true }
     );
     expect(query).toBe(
-      'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' +
-        " FROM `User` WHERE `name` = 'something'"
+      'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' + " FROM `User` WHERE `name` = 'something'"
     );
   });
 

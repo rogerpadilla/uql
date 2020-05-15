@@ -1,6 +1,5 @@
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter, QueryOne, QueryPopulate } from '../type';
+import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter } from '../type';
 import { mapRows } from '../util/rowsMapper.util';
-import { getEntityMeta, RelationProperties } from '../entity';
 import { QuerierPoolConnection, Querier } from './type';
 import { SqlDialect } from './sqlDialect';
 
@@ -38,15 +37,11 @@ export abstract class SqlQuerier extends Querier {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.query<T[]>(query);
     const data = mapRows(res);
-    return this.processPopulate(type, data, qm.populate);
+    return data;
   }
 
   async count<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const query = this.dialect.find(
-      type,
-      { project: { 'COUNT(*) count': 1 } as any, filter },
-      { trustedProject: true }
-    );
+    const query = this.dialect.find(type, { project: { 'COUNT(*) count': 1 } as any, filter }, { trustedProject: true });
     const res = await this.query<{ count: number }[]>(query);
     return res[0].count;
   }
@@ -96,56 +91,48 @@ export abstract class SqlQuerier extends Querier {
     return this.conn.release();
   }
 
-  async processPopulate<T>(type: { new (): T }, data: T[], populate: QueryPopulate<T>) {
-    if (!populate) {
-      return data;
-    }
+  // async processPopulateToMany<T>(type: { new (): T }, data: T[], populate: QueryPopulate<T>) {
+  //   if (!populate) {
+  //     return data;
+  //   }
 
-    const meta = getEntityMeta(type);
-    const relations = meta.relations;
-    const toManyRelations = Object.keys(relations).reduce((acc, prop) => {
-      if (populate[prop] && relations[prop].cardinality.endsWith('ToMany')) {
-        acc[prop] = relations[prop];
-      }
-      return acc;
-    }, {} as { [p: string]: RelationProperties<T> });
+  //   const meta = getEntityMeta(type);
+  //   const ids = data.map((it) => it[meta.id]);
 
-    if (Object.keys(toManyRelations).length === 0) {
-      return data;
-    }
+  //   const popPromises = Object.keys(populate)
+  //     .filter((popKey) => meta.relations[popKey].cardinality === 'oneToMany')
+  //     .map(async (popKey) => {
+  //       const rel = meta.relations[popKey];
+  //       if (!rel) {
+  //         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+  //       }
 
-    const dataMap = data.reduce((acc, it) => {
-      acc.set(it[meta.id], it);
-      return acc;
-    }, new Map<any, T>());
+  //       const popEntry: QueryOne<T> = populate[popKey];
+  //       const relType = rel.type();
+  //       const relCol = rel.mappedBy;
 
-    const popPromises = Object.keys(toManyRelations).map(async (key) => {
-      const qo = populate[key] as QueryOne<T>;
-      const rel = toManyRelations[key];
-      const relType = rel.type();
-      const relCol = rel.mappedBy;
-      const relData = await this.find(relType, {
-        filter: { [relCol]: { $in: dataMap.keys() } },
-        project: qo.project,
-      });
+  //       const relData = await this.find(relType, {
+  //         filter: { [relCol]: { $in: ids } },
+  //         project: popEntry.project,
+  //       });
 
-      const relDataMap = relData.reduce((acc, it) => {
-        if (!acc.has(it[relCol])) {
-          acc.set(it[relCol], [] as T[]);
-        }
-        acc.get(it[relCol]).push(it);
-        return acc;
-      }, new Map<any, T[]>());
+  //       const relDataMap: { [prop: string]: T[] } = relData.reduce((acc, it) => {
+  //         if (!acc[it[relCol]]) {
+  //           acc[it[relCol]] = [];
+  //         }
+  //         acc[it[relCol]].push(it);
+  //         return acc;
+  //       }, {});
 
-      for (const row of data) {
-        row[key] = relDataMap.get(row[meta.id]);
-      }
+  //       for (const row of data) {
+  //         row[popKey] = relDataMap[row[meta.id]];
+  //       }
 
-      await this.processPopulate(relType, relData, qo.populate);
-    });
+  //       await this.processPopulateToMany(relType, relData, popEntry.populate);
+  //     });
 
-    await Promise.all(popPromises);
+  //   await Promise.all(popPromises);
 
-    return data;
-  }
+  //   return data;
+  // }
 }

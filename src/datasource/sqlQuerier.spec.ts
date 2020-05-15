@@ -138,9 +138,7 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
     expect(querier.hasOpenTransaction()).toBe(true);
     await querier.update(User, { id: 5 }, { name: 'Hola' });
     expect(querier.hasOpenTransaction()).toBe(true);
-    await expect(querier.release()).rejects.toThrow(
-      'Querier should not be released while there is an open transaction.'
-    );
+    await expect(querier.release()).rejects.toThrow('Querier should not be released while there is an open transaction.');
     expect(querier.hasOpenTransaction()).toBe(true);
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.beginTransaction).toBeCalledTimes(1);

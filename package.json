@@ -127,7 +127,7 @@
     "tabWidth": 2,
     "semi": true,
     "singleQuote": true,
-    "printWidth": 120
+    "printWidth": 130
   },
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",

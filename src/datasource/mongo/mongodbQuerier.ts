@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { QueryFilter, Query, QueryOneFilter, QueryOne } from '../../type';
+import { QueryFilter, Query, QueryOneFilter, QueryOne, QueryPopulate } from '../../type';
 import { Querier } from '../type';
 import { getEntityMeta, getEntityId } from '../../entity';
 import { fillCursor, parseFilter } from './mongodb.util';
@@ -90,45 +90,44 @@ export class MongodbQuerier extends Querier {
     return this.conn.close();
   }
 
-  async processPopulate<T>(type: { new (): T }, data: T | T[], populate: QueryOne<T>) {
+  async processPopulate<T>(type: { new (): T }, data: T | T[], populate: QueryPopulate<T>) {
     if (!populate) {
       return data;
     }
 
-    const entityMeta = getEntityMeta(type);
-    const docs = Array.isArray(data) ? data : [data];
+    const dataArr = Array.isArray(data) ? data : [data];
+    const meta = getEntityMeta(type);
 
-    const proms = Object.keys(populate).map(async (popKey) => {
-      const relProps = entityMeta.relations[popKey];
-      if (!relProps) {
-        throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
+    const popPromises = Object.keys(populate).map(async (popKey) => {
+      const rel = meta.relations[popKey];
+      if (!rel) {
+        throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
       }
-      const popVal: QueryOne<T> = populate[popKey];
-      const relType = relProps.type();
-      const relIdName = getEntityId(relType);
-      const relIds = docs.map((doc) => doc[popKey]);
+
+      const popEntry = populate[popKey as keyof T];
+      const popIds = dataArr.map((it) => it[popKey]);
+      const relType = rel.type();
+      const relMeta = getEntityMeta(relType);
 
       const relData = await this.conn
         .db()
         .collection(relType.name)
-        .find({ [relIdName]: { $in: relIds } })
-        .project(popVal.project)
+        .find<T>({ [relMeta.id]: { $in: popIds } })
+        .project(popEntry.project)
         .toArray();
 
-      const relDocsMap = relData.reduce((acc, relDoc) => {
-        acc[relDoc[relIdName]] = relDoc;
+      const relDataMap = relData.reduce((acc, it) => {
+        acc[it[relMeta.id]] = it;
         return acc;
-      }, {});
+      }, {} as { [prop: string]: T });
 
-      for (const doc of docs) {
-        doc[popKey] = relDocsMap[doc[popKey]];
+      for (const row of dataArr) {
+        row[popKey] = relDataMap[row[popKey]];
       }
-
-      await this.processPopulate(relType, relData, popVal.populate);
     });
 
-    await Promise.all(proms);
+    await Promise.all(popPromises);
 
-    return data;
+    return dataArr;
   }
 }

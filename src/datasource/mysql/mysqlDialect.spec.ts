@@ -19,9 +19,7 @@ it('find $startsWith', () => {
     skip: 0,
     limit: 50,
   });
-  expect(query).toBe(
-    "SELECT * FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0"
-  );
+  expect(query).toBe("SELECT * FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
 });
 
 it('find $text', () => {
@@ -29,9 +27,8 @@ it('find $text', () => {
     filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },
     limit: 30,
   });
-  expect(query1).toBe(
-    "SELECT * FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `status` = 1 LIMIT 30"
-  );
+  expect(query1).toBe("SELECT * FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `status` = 1 LIMIT 30");
+
   const query2 = sql.find(User, {
     filter: { $text: { fields: ['name'], value: 'something' }, name: { $ne: 'other unwanted' }, status: 1 },
     limit: 10,

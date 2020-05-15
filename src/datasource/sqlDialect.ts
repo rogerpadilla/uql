@@ -91,7 +91,7 @@ export abstract class SqlDialect {
       for (const popKey in qm.populate) {
         const relProps = entityMeta.relations[popKey];
         if (!relProps) {
-          throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator (e.g. @ManyToOne)`);
+          throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
         }
         const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
         const joinPathSafe = escapeId(joinPrefix, true);
@@ -104,13 +104,9 @@ export abstract class SqlDialect {
         });
         joinsSelect += `, ${relColumns}`;
         const relTypeNameSafe = escapeId(relType.name);
-        const relSafe = prefix
-          ? escapeId(prefix, true) + '.' + escapeId(popKey)
-          : `${escapeId(type.name)}.${joinPathSafe}`;
+        const relSafe = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(type.name)}.${joinPathSafe}`;
         const relIdName = getEntityId(relType);
-        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(
-          relIdName
-        )} = ${relSafe}`;
+        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relIdName)} = ${relSafe}`;
         if (popVal?.populate) {
           const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
           joinsSelect += subJoinSelect;
@@ -131,11 +127,6 @@ export abstract class SqlDialect {
       ...options,
     } as const;
 
-    const logicalOperatorMap = {
-      $and: 'AND',
-      $or: 'OR',
-    } as const;
-
     const filterKeys = Object.keys(filter);
 
     const sql = filterKeys
@@ -153,41 +144,39 @@ export abstract class SqlDialect {
   }
 
   comparison<T>(key: string, value: QueryComparisonValue<T>) {
-    const valueObject = typeof value === 'object' && value !== null ? value : { $eq: value as QueryPrimitive };
-    const comparisonOperators = Object.keys(valueObject) as (keyof QueryComparisonOperator<T>)[];
-    const comparison = comparisonOperators
-      .map((comparisonOperator) => this.comparisonOperation(key, comparisonOperator, valueObject[comparisonOperator]))
-      .join(' AND ');
-    return comparisonOperators.length > 1 ? `(${comparison})` : comparison;
+    const val = typeof value === 'object' && value !== null ? value : { $eq: value as QueryPrimitive };
+    const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
+    const comparison = operators.map((operator) => this.comparisonOperation(key, operator, val[operator])).join(' AND ');
+    return operators.length > 1 ? `(${comparison})` : comparison;
   }
 
   comparisonOperation<T, K extends keyof QueryComparisonOperator<T>>(
-    attr: string,
-    comparisonOperator: K,
-    comparisonVal: QueryComparisonOperator<T>[K]
+    attr: keyof T,
+    operator: K,
+    val: QueryComparisonOperator<T>[K]
   ) {
     const attrSafe = escapeId(attr);
-    switch (comparisonOperator) {
+    switch (operator) {
       case '$eq':
-        return comparisonVal === null ? `${attrSafe} IS NULL` : `${attrSafe} = ${escape(comparisonVal)}`;
+        return val === null ? `${attrSafe} IS NULL` : `${attrSafe} = ${escape(val)}`;
       case '$ne':
-        return comparisonVal === null ? `${attrSafe} IS NOT NULL` : `${attrSafe} <> ${escape(comparisonVal)}`;
+        return val === null ? `${attrSafe} IS NOT NULL` : `${attrSafe} <> ${escape(val)}`;
       case '$gt':
-        return `${attrSafe} > ${escape(comparisonVal)}`;
+        return `${attrSafe} > ${escape(val)}`;
       case '$gte':
-        return `${attrSafe} >= ${escape(comparisonVal)}`;
+        return `${attrSafe} >= ${escape(val)}`;
       case '$lt':
-        return `${attrSafe} < ${escape(comparisonVal)}`;
+        return `${attrSafe} < ${escape(val)}`;
       case '$lte':
-        return `${attrSafe} <= ${escape(comparisonVal)}`;
+        return `${attrSafe} <= ${escape(val)}`;
       case '$startsWith':
-        return `LOWER(${attrSafe}) LIKE ${escape((comparisonVal as string).toLowerCase() + '%')}`;
+        return `LOWER(${attrSafe}) LIKE ${escape((val as string).toLowerCase() + '%')}`;
       case '$in':
-        return `${attrSafe} IN (${escape(comparisonVal)})`;
+        return `${attrSafe} IN (${escape(val)})`;
       case '$nin':
-        return `${attrSafe} NOT IN (${escape(comparisonVal)})`;
+        return `${attrSafe} NOT IN (${escape(val)})`;
       default:
-        throw new Error(`Invalid comparison operator: ${comparisonOperator}`);
+        throw new Error(`Unsupported comparison operator: ${operator}`);
     }
   }
 
@@ -227,3 +216,8 @@ function filterPersistableBody<T>(type: { new (): T }, body: T, mode: ColumnPers
     return persistableBody;
   }, {} as T);
 }
+
+const logicalOperatorMap = {
+  $and: 'AND',
+  $or: 'OR',
+} as const;

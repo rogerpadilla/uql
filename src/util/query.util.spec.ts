@@ -1,6 +1,6 @@
 import { Query, QueryStringified, QueryFilter } from '../type';
 import { Item, User } from '../entity/entityMock';
-import { buildQuery, stringifyQuery, stringifyQueryFilter } from './query.util';
+import { buildQuery, stringifyQuery } from './query.util';
 
 it('stringifyQuery -- empty', () => {
   const source: Query<User> = {};
@@ -28,13 +28,6 @@ it('stringifyQuery', () => {
   const result = stringifyQuery(source);
   const expected =
     '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":38}&sort={"company":1,"name":-1}&skip=3&limit=5';
-  expect(result).toBe(expected);
-});
-
-it('stringifyQueryFilter', () => {
-  const source: QueryFilter<Item> = { name: 'Batman', company: 38 };
-  const result = stringifyQueryFilter(source);
-  const expected = '?filter={"name":"Batman","company":38}';
   expect(result).toBe(expected);
 });
 

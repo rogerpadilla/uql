@@ -1,28 +1,20 @@
 export type QueryPrimitive = string | number | boolean;
 
-export type QueryFilter<T> = QueryRootOperator<T> | QueryFieldFilter<T>;
-
 export type QueryFieldFilter<T> = {
   readonly [P in keyof T]: T[P] | string | QueryComparisonOperator<T>;
 };
 
-export type QueryComparisonValue<T> =
-  | QueryPrimitive
-  | QueryPrimitive[]
-  | QueryComparisonOperator<T>
-  | QueryTextSearch<T>;
-
-export type QueryRootOperator<T> = {
-  readonly $and?: QueryFieldFilter<T>;
-  readonly $or?: QueryFieldFilter<T>;
-  readonly $text?: QueryTextSearch<T>;
-};
+export type QueryComparisonValue<T> = QueryPrimitive | QueryPrimitive[] | QueryComparisonOperator<T> | QueryTextSearchOptions<T>;
 
 export type QueryLogicalOperators = 'AND' | 'OR';
 
-export type QueryTextSearch<T> = {
+export type QueryTextSearchOptions<T> = {
   fields: (keyof T)[];
   value: string;
+};
+
+export type QueryTextSearch<T> = {
+  readonly $text?: QueryTextSearchOptions<T>;
 };
 
 export type QueryComparisonOperator<T> = {
@@ -42,16 +34,12 @@ export type QueryProject<T> = {
 };
 
 export type QueryPopulate<T> = {
-  [P in keyof T]?: QueryOne<T[P]>;
+  readonly [P in keyof T]?: QueryOne<T[P]>;
 };
 
-export type QueryOne<T> = {
-  project?: QueryProject<T>;
-  populate?: QueryPopulate<T>;
-};
-
-export type QueryOneFilter<T> = QueryOne<T> & {
-  filter?: QueryFilter<T>;
+export type QueryLogicalOperator<T> = {
+  readonly $and?: QueryFieldFilter<T> | QueryTextSearch<T>;
+  readonly $or?: QueryFieldFilter<T> | QueryTextSearch<T>;
 };
 
 export type QuerySort<T> = {
@@ -61,6 +49,17 @@ export type QuerySort<T> = {
 export type QueryLimit = {
   skip?: number;
   limit?: number;
+};
+
+export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
+
+export type QueryOne<T> = {
+  project?: QueryProject<T>;
+  populate?: QueryPopulate<T>;
+};
+
+export type QueryOneFilter<T> = QueryOne<T> & {
+  filter?: QueryFilter<T>;
 };
 
 export type Query<T> = QueryOneFilter<T> & QueryLimit & { sort?: QuerySort<T> };
