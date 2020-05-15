@@ -15,7 +15,7 @@
     "incremental": true,
     "declaration": true,
     "declarationDir": "dist",
-    "outDir": ".tmp"
+    "outDir": "dist"
   },
   "exclude": ["node_modules", "dist", "coverage", ".vscode"]
 }

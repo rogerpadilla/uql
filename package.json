@@ -9,6 +9,7 @@
     "watch.test": "jest --clearCache && jest --watchAll",
     "watch": "webpack --profile --bail --watch --info-verbosity verbose",
     "build": "rm -rf dist && webpack --progress --profile --bail --mode=production",
+    "release": "concurrently 'npm:build' 'tsc'",
     "start": "npm run watch"
   },
   "commitlint": {
