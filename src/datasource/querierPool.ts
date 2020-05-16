@@ -1,20 +1,20 @@
-import { QuerierPoolOptions, QuerierPool, QuerierDriver, QuerierOptions } from './type';
-import { getDatasourceConfig } from './config';
+import { getCorozoOptions } from '../config';
+import { QuerierPoolOptions, QuerierPool, DatasourceDriver, DatasourceOptions } from './type';
 
 let pool: QuerierPool;
 
 export function getQuerier() {
   if (!pool) {
-    const opts = getDatasourceConfig();
-    if (!opts) {
-      throw new Error('Corozo configuration has not been set');
+    const conf = getCorozoOptions();
+    if (!conf?.datasource) {
+      throw new Error('Datasource configuration has not been set');
     }
-    pool = buildQuerierPool(opts);
+    pool = buildQuerierPool(conf.datasource);
   }
   return pool.getQuerier();
 }
 
-function buildQuerierPool(opts: QuerierOptions) {
+function buildQuerierPool(opts: DatasourceOptions) {
   const { driver, ...poolOpts } = { ...opts };
   const querierPoolPath = getQuerierPoolPath(driver);
   // eslint-disable-next-line global-require, import/no-dynamic-require
@@ -22,7 +22,7 @@ function buildQuerierPool(opts: QuerierOptions) {
   return new QuerierPoolConstructor(poolOpts);
 }
 
-function getQuerierPoolPath(driver: QuerierDriver) {
+function getQuerierPoolPath(driver: DatasourceDriver) {
   switch (driver) {
     case 'mariadb':
     case 'mysql':

@@ -1,8 +1,14 @@
-import { CorozoOptions } from './type';
-import { initDatasourceConfig } from './datasource';
-import { setDefaultRepository } from './repository';
+import { GenericRepositoryConstructor } from './repository/type';
+import { DatasourceOptions } from './datasource/type';
 
-export function initCorozoConfig(conf: CorozoOptions) {
-  setDefaultRepository(conf?.defaultRepositoryClass);
-  initDatasourceConfig(conf?.datasource);
+let opts: CorozoOptions;
+
+export function initCorozo(conf: CorozoOptions) {
+  opts = { ...conf };
 }
+
+export function getCorozoOptions() {
+  return { ...opts };
+}
+
+type CorozoOptions = { datasource?: DatasourceOptions; defaultRepositoryClass?: GenericRepositoryConstructor<any> };

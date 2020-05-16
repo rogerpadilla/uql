@@ -1,10 +1,8 @@
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
 import { getEntityMeta } from '../entity';
 import { Querier, Transactional, InjectQuerier } from '../datasource';
-import { GenericRepository } from './decorator';
 import { ServerRepository } from './type';
 
-@GenericRepository()
 export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   protected readonly idName: string;
 

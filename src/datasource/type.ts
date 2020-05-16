@@ -17,10 +17,6 @@ export interface QuerierPoolOptions {
   port?: number;
 }
 
-export type QuerierDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'mongodb';
-
-export type QuerierOptions = { driver: QuerierDriver } & QuerierPoolOptions;
-
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
@@ -39,3 +35,7 @@ export abstract class Querier {
   abstract rollback(): Promise<void>;
   abstract release(): Promise<void>;
 }
+
+export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'mongodb';
+
+export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;

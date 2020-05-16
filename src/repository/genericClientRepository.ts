@@ -4,15 +4,13 @@ import { stringifyQuery, stringifyQueryParameter } from '../util/query.util';
 import { formatKebabCase } from '../util/string.util';
 import { getEntityMeta } from '../entity';
 import { ClientRepository } from './type';
-import { GenericRepository } from './decorator';
 
-@GenericRepository()
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   protected readonly idName: string;
 
   /**
    * The base-path for the endpoints. Children could override it if necessary.
-   * For instance, when endpoints are not under path '/api/', or when using
+   * For instance, when endpoints are not under path '/api/', or when it is
    * something like '/api/v1/'. It can also be dynamically calculated if necessary
    * (by using a getter called 'basePath')
    */

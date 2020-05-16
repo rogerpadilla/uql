@@ -1,10 +1,11 @@
 import { QueryUpdateResult } from '../type';
-import { initDatasourceConfig, Querier, Transactional, InjectQuerier } from '../datasource';
-import { MySqlQuerier } from '../datasource/mysql/mysqlQuerier';
+import { Querier, Transactional, InjectQuerier } from '../datasource';
 import MySql2QuerierPool from '../datasource/mysql/mysql2QuerierPool';
+import { MySqlQuerier } from '../datasource/mysql/mysqlQuerier';
 import { SqlQuerier } from '../datasource/sqlQuerier';
 import { User, Item } from '../entity/entityMock';
-import { CustomRepository } from './decorator';
+import { initCorozo } from '../config';
+import { Repository } from './decorator';
 import { GenericServerRepository } from './genericServerRepository';
 import { getServerRepository } from './container';
 
@@ -14,9 +15,7 @@ let repository: GenericServerRepository<User, number>;
 const originalGetQuerier = MySql2QuerierPool.prototype.getQuerier;
 
 beforeEach(() => {
-  initDatasourceConfig({
-    driver: 'mysql2',
-  });
+  initCorozo({ datasource: { driver: 'mysql2' } });
 
   MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
@@ -257,7 +256,7 @@ it('rollback - commit', async () => {
 });
 
 it('mandatory transaction', async () => {
-  @CustomRepository()
+  @Repository()
   class ItemRepository extends GenericServerRepository<Item, number> {
     constructor() {
       super(Item);
@@ -279,7 +278,7 @@ it('missing @InjectQuerier()', () => {
   mockRes = mock;
 
   expect(() => {
-    @CustomRepository()
+    @Repository()
     class ItemRepository extends GenericServerRepository<Item, number> {
       constructor() {
         super(Item);

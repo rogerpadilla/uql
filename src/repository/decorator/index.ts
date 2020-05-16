@@ -1,2 +1,1 @@
-export * from './customRepository';
-export * from './genericRepository';
+export * from './repository';
