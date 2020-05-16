@@ -1,5 +1,37 @@
-import { User, Item } from '../entityMock';
-import { getEntityMeta } from './storage';
+import {
+  User,
+  Item,
+  BaseEntity,
+  LedgerAccount,
+  TaxCategory,
+  MeasureUnitCategory,
+  MeasureUnit,
+  Storehouse,
+  ItemAdjustment,
+  InventoryAdjustment,
+  Tax,
+  Company,
+} from '../entityMock';
+import { getEntityMeta, getEntities } from './storage';
+
+it('entities', () => {
+  const output = getEntities();
+  const expected = new Map<Function, undefined>([
+    [BaseEntity, undefined],
+    [Company, undefined],
+    [User, undefined],
+    [LedgerAccount, undefined],
+    [TaxCategory, undefined],
+    [Tax, undefined],
+    [MeasureUnitCategory, undefined],
+    [MeasureUnit, undefined],
+    [Storehouse, undefined],
+    [Item, undefined],
+    [ItemAdjustment, undefined],
+    [InventoryAdjustment, undefined],
+  ]).keys();
+  expect(output).toEqual(expected);
+});
 
 it('user', () => {
   const meta = getEntityMeta(User);
@@ -8,6 +40,10 @@ it('user', () => {
     columns: {
       company: {
         mode: 'insert',
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
       },
       createdAt: {
         mode: 'insert',
@@ -24,19 +60,13 @@ it('user', () => {
       },
       user: {
         mode: 'insert',
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
       },
     },
     merged: true,
-    relations: {
-      company: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      user: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-    },
   });
 });
 
@@ -46,13 +76,19 @@ it('item', () => {
     id: 'id',
     columns: {
       barcode: {},
-      buyLedgerAccount: {},
+      buyLedgerAccount: {
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
+      },
       buyPriceAverage: {
         mode: 'read',
       },
       code: {},
       company: {
         mode: 'insert',
+        relation: { cardinality: 'manyToOne', type: expect.any(Function) },
       },
       createdAt: {
         mode: 'insert',
@@ -63,45 +99,38 @@ it('item', () => {
       },
       image: {},
       inventoryable: {},
-      measureUnit: {},
+      measureUnit: {
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
+      },
       name: {},
-      saleLedgerAccount: {},
+      saleLedgerAccount: {
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
+      },
       salePrice: {},
       status: {},
-      tax: {},
+      tax: {
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
+      },
       updatedAt: {
         mode: 'update',
       },
       user: {
         mode: 'insert',
+        relation: {
+          cardinality: 'manyToOne',
+          type: expect.any(Function),
+        },
       },
     },
     merged: true,
-    relations: {
-      company: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      user: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      buyLedgerAccount: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      measureUnit: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      saleLedgerAccount: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      tax: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-    },
   });
 });

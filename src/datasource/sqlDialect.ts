@@ -5,20 +5,25 @@ import {
   QueryPrimitive,
   QueryComparisonOperator,
   QuerySort,
-  QueryLimit,
+  QueryPager,
   QueryOptions,
   QueryProject,
   QueryComparisonValue,
   QueryLogicalOperators,
 } from '../type';
-import { getEntityMeta, ColumnPersistableMode, getEntityId } from '../entity';
+import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
 export abstract class SqlDialect {
+  static readonly logicalOperatorMap = {
+    $and: 'AND',
+    $or: 'OR',
+  } as const;
+
   readonly beginTransactionCommand: string = 'BEGIN';
 
   insert<T>(type: { new (): T }, body: T | T[]) {
     const bodies = Array.isArray(body) ? body : [body];
-    const samplePersistableBody = filterPersistableBody(type, bodies[0], 'insert');
+    const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
     const columns = Object.keys(samplePersistableBody);
     const valuesSafe = bodies.map((it) => columns.map((column) => escape(it[column])).join(', ')).join('), (');
     const typeNameSafe = escapeId(type.name);
@@ -27,17 +32,17 @@ export abstract class SqlDialect {
   }
 
   update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number) {
-    const persistableBody = filterPersistableBody(type, body, 'update');
+    const persistableBody = filterPersistable(type, body, 'update');
     const keyValuesSafe = objectToValues(persistableBody);
     const where = this.where(filter);
-    const limitStr = this.limit({ limit });
+    const pager = this.pager({ limit });
     const typeNameSafe = escapeId(type.name);
-    return `UPDATE ${typeNameSafe} SET ${keyValuesSafe} WHERE ${where}${limitStr}`;
+    return `UPDATE ${typeNameSafe} SET ${keyValuesSafe} WHERE ${where}${pager}`;
   }
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number) {
     const whereStr = this.where(filter);
-    const limitStr = this.limit({ limit });
+    const limitStr = this.pager({ limit });
     const typeNameSafe = escapeId(type.name);
     return `DELETE FROM ${typeNameSafe} WHERE ${whereStr}${limitStr}`;
   }
@@ -46,7 +51,7 @@ export abstract class SqlDialect {
     const select = this.select<T>(type, qm, opts);
     const where = this.where<T>(qm.filter, { prefix: true });
     const sort = this.sort<T>(qm.sort);
-    const pager = this.limit(qm);
+    const pager = this.pager(qm);
     return select + where + sort + pager;
   }
 
@@ -89,7 +94,7 @@ export abstract class SqlDialect {
     if (qm.populate) {
       const entityMeta = getEntityMeta(type);
       for (const popKey in qm.populate) {
-        const relProps = entityMeta.relations[popKey];
+        const relProps = entityMeta.columns[popKey].relation;
         if (!relProps) {
           throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
         }
@@ -105,8 +110,8 @@ export abstract class SqlDialect {
         joinsSelect += `, ${relColumns}`;
         const relTypeNameSafe = escapeId(relType.name);
         const relSafe = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(type.name)}.${joinPathSafe}`;
-        const relIdName = getEntityId(relType);
-        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relIdName)} = ${relSafe}`;
+        const relMeta = getEntityMeta(relType);
+        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relMeta.id)} = ${relSafe}`;
         if (popVal?.populate) {
           const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
           joinsSelect += subJoinSelect;
@@ -132,8 +137,8 @@ export abstract class SqlDialect {
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
-        if (logicalOperatorMap[key]) {
-          const filterItCondition = this.where(val, { logicalOperator: logicalOperatorMap[key] });
+        if (SqlDialect.logicalOperatorMap[key]) {
+          const filterItCondition = this.where(val, { logicalOperator: SqlDialect.logicalOperatorMap[key] });
           return filterKeys.length > 1 ? `(${filterItCondition})` : filterItCondition;
         }
         return this.comparison(key, val);
@@ -193,31 +198,26 @@ export abstract class SqlDialect {
     return ` ORDER BY ${order}`;
   }
 
-  limit(pager: QueryLimit) {
+  pager(opts: QueryPager) {
     let sql = '';
-    if (pager.limit) {
-      sql += ` LIMIT ${Number(pager.limit)}`;
-      if (pager.skip !== undefined) {
-        sql += ` OFFSET ${Number(pager.skip)}`;
+    if (opts.limit) {
+      sql += ` LIMIT ${Number(opts.limit)}`;
+      if (opts.skip !== undefined) {
+        sql += ` OFFSET ${Number(opts.skip)}`;
       }
     }
     return sql;
   }
 }
 
-function filterPersistableBody<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode) {
-  const entityMeta = getEntityMeta(type);
+function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode) {
+  const meta = getEntityMeta(type);
   return Object.keys(body).reduce((persistableBody, colName) => {
-    const colMeta = entityMeta.columns[colName];
+    const colProps = meta.columns[colName];
     const colVal = body[colName];
-    if (colMeta && (colMeta.mode === undefined || colMeta.mode === mode) && colVal !== undefined) {
+    if (colProps && (colProps.mode === undefined || colProps.mode === mode) && colVal !== undefined) {
       persistableBody[colName] = colVal;
     }
     return persistableBody;
   }, {} as T);
 }
-
-const logicalOperatorMap = {
-  $and: 'AND',
-  $or: 'OR',
-} as const;

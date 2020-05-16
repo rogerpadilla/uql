@@ -2,35 +2,40 @@ import { get, post, put, remove, RequestOptions } from '../http';
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
 import { stringifyQuery, stringifyQueryParameter } from '../util/query.util';
 import { formatKebabCase } from '../util/string.util';
-import { getEntityId } from '../entity';
+import { getEntityMeta } from '../entity';
 import { ClientRepository } from './type';
 import { GenericRepository } from './decorator';
 
 @GenericRepository()
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
-  protected readonly idName = getEntityId(this.type);
+  protected readonly idName: string;
 
   /**
-   * The base-path for the endpoints. Children could override it if necessary (by using a getter
-   * with the same name). For instance, when endpoints are not under path '/api/', or when using
-   * something like '/api/v1/'. It can also be dynamically calculated if necessary.
+   * The base-path for the endpoints. Children could override it if necessary.
+   * For instance, when endpoints are not under path '/api/', or when using
+   * something like '/api/v1/'. It can also be dynamically calculated if necessary
+   * (by using a getter called 'basePath')
    */
-  protected readonly basePath = '/api/' + formatKebabCase(this.type.name);
+  protected readonly basePath: string;
 
-  constructor(readonly type: { new (): T }) {}
+  constructor(readonly type: { new (): T }) {
+    const meta = getEntityMeta(this.type);
+    this.idName = meta.id;
+    this.basePath = '/api/' + formatKebabCase(this.type.name);
+  }
 
   insertOne(body: T, opts?: RequestOptions) {
     return post<ID>(this.basePath, body, opts);
   }
 
   updateOneById(id: ID, body: T, opts?: RequestOptions) {
-    return put<number>(`${this.basePath}/${id}`, body, opts);
+    return put<ID>(`${this.basePath}/${id}`, body, opts);
   }
 
   saveOne(body: T, opts?: RequestOptions) {
     const id: ID = body[this.idName];
     if (id) {
-      return put<ID>(`${this.basePath}/${id}`, body, opts);
+      return this.updateOneById(id, body, opts);
     }
     return this.insertOne(body, opts);
   }
@@ -51,16 +56,16 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   }
 
   removeOneById(id: ID, opts?: RequestOptions) {
-    return remove<number>(`${this.basePath}/${id}`, opts);
+    return remove<ID>(`${this.basePath}/${id}`, opts);
   }
 
   remove(filter: QueryFilter<T>, opts?: RequestOptions) {
-    const qs = stringifyQueryParameter('filter', filter, true);
+    const qs = stringifyQueryParameter('filter', filter);
     return remove<number>(`${this.basePath}${qs}`, opts);
   }
 
   count(filter: QueryFilter<T>, opts?: RequestOptions) {
-    const qs = stringifyQueryParameter('filter', filter, true);
+    const qs = stringifyQueryParameter('filter', filter);
     return get<number>(`${this.basePath}/count${qs}`, opts);
   }
 }

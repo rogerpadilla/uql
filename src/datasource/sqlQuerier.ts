@@ -90,49 +90,4 @@ export abstract class SqlQuerier extends Querier {
     }
     return this.conn.release();
   }
-
-  // async processPopulateToMany<T>(type: { new (): T }, data: T[], populate: QueryPopulate<T>) {
-  //   if (!populate) {
-  //     return data;
-  //   }
-
-  //   const meta = getEntityMeta(type);
-  //   const ids = data.map((it) => it[meta.id]);
-
-  //   const popPromises = Object.keys(populate)
-  //     .filter((popKey) => meta.relations[popKey].cardinality === 'oneToMany')
-  //     .map(async (popKey) => {
-  //       const rel = meta.relations[popKey];
-  //       if (!rel) {
-  //         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
-  //       }
-
-  //       const popEntry: QueryOne<T> = populate[popKey];
-  //       const relType = rel.type();
-  //       const relCol = rel.mappedBy;
-
-  //       const relData = await this.find(relType, {
-  //         filter: { [relCol]: { $in: ids } },
-  //         project: popEntry.project,
-  //       });
-
-  //       const relDataMap: { [prop: string]: T[] } = relData.reduce((acc, it) => {
-  //         if (!acc[it[relCol]]) {
-  //           acc[it[relCol]] = [];
-  //         }
-  //         acc[it[relCol]].push(it);
-  //         return acc;
-  //       }, {});
-
-  //       for (const row of data) {
-  //         row[popKey] = relDataMap[row[meta.id]];
-  //       }
-
-  //       await this.processPopulateToMany(relType, relData, popEntry.populate);
-  //     });
-
-  //   await Promise.all(popPromises);
-
-  //   return data;
-  // }
 }

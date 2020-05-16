@@ -2,6 +2,7 @@ export type ColumnPersistableMode = 'insert' | 'update' | 'read';
 
 export type ColumnProperties = {
   readonly mode?: ColumnPersistableMode;
+  readonly relation?: RelationProperties<any>;
 };
 
 export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;

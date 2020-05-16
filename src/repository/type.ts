@@ -17,24 +17,24 @@ export interface Repository<T, ID = any> {
 
 export interface ClientRepository<T, ID = any> extends Repository<T, ID> {
   insertOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
-  updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
   saveOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
   findOneById(id: ID, qm?: QueryOne<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
   findOne(qm: QueryOneFilter<T>, opts?: any): Promise<RequestSuccessResponse<T>>;
   find(qm: Query<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T[]>>;
-  removeOneById(id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  removeOneById(id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
   remove(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
   count(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }
 
 export interface ServerRepository<T, ID = any> extends Repository<T, ID> {
   insertOne(body: T, querier?: Querier): Promise<ID>;
-  updateOneById(id: ID, body: T, querier?: Querier): Promise<number>;
+  updateOneById(id: ID, body: T, querier?: Querier): Promise<ID>;
   saveOne(body: T, querier?: Querier): Promise<ID>;
   findOneById(id: ID, qm?: QueryOne<T>, querier?: Querier): Promise<T>;
   findOne(qm: QueryOneFilter<T>, opts?: any): Promise<T>;
   find(qm: Query<T>, querier?: Querier): Promise<T[]>;
-  removeOneById(id: ID, querier?: Querier): Promise<number>;
+  removeOneById(id: ID, querier?: Querier): Promise<ID>;
   remove(filter: QueryFilter<T>, querier?: Querier): Promise<number>;
   count(filter: QueryFilter<T>, querier?: Querier): Promise<number>;
 }

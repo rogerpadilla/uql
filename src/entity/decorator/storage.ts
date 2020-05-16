@@ -7,22 +7,19 @@ const entitiesMeta = new Map<
     columns: {
       [prop: string]: ColumnProperties;
     };
-    relations: {
-      [prop: string]: RelationProperties<any>;
-    };
     merged?: boolean;
   }
 >();
 
 function ensureEntityMeta<T>(type: { new (): T }) {
   if (!entitiesMeta.has(type)) {
-    entitiesMeta.set(type, { columns: {}, relations: {} });
+    entitiesMeta.set(type, { columns: {} });
   }
   return entitiesMeta.get(type);
 }
 
 export function defineColumn<T>(type: { new (): T }, prop: string, args: ColumnProperties) {
-  const meta = getEntityMeta(type);
+  const meta = ensureEntityMeta(type);
   meta.columns[prop] = args;
   return meta;
 }
@@ -34,13 +31,16 @@ export function definePrimaryColumn<T>(type: { new (): T }, prop: string, args: 
 }
 
 export function defineRelation<T>(type: { new (): T }, prop: string, args: RelationProperties<T>) {
-  const meta = getEntityMeta(type);
-  meta.relations[prop] = args;
+  const meta = ensureEntityMeta(type);
+  if (!meta.columns[prop]) {
+    meta.columns[prop] = {};
+  }
+  meta.columns[prop] = { relation: args, ...meta.columns[prop] };
   return meta;
 }
 
 export function getEntityMeta<T>(type: { new (): T }) {
-  const meta = ensureEntityMeta(type);
+  const meta = entitiesMeta.get(type);
   if (meta.merged) {
     return meta;
   }
@@ -49,16 +49,10 @@ export function getEntityMeta<T>(type: { new (): T }) {
     const parentMeta = entitiesMeta.get(parentProto.constructor);
     meta.id = meta.id || parentMeta.id;
     meta.columns = { ...parentMeta.columns, ...meta.columns };
-    meta.relations = { ...parentMeta.relations, ...meta.relations };
     parentProto = Object.getPrototypeOf(parentProto);
   }
   meta.merged = true;
   return meta;
-}
-
-export function getEntityId<T>(type: { new (): T }) {
-  const meta = getEntityMeta(type);
-  return meta.id;
 }
 
 export function getEntities() {

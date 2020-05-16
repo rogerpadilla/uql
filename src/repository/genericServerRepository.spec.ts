@@ -60,7 +60,7 @@ it('updateOne', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
   const resp = await repository.updateOneById(5, { company: 123 });
-  expect(resp).toEqual(mock.affectedRows);
+  expect(resp).toEqual(5);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.find).not.toBeCalled();
@@ -165,7 +165,7 @@ it('removeOneById', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
   const resp = await repository.removeOneById(123);
-  expect(resp).toEqual(mock.affectedRows);
+  expect(resp).toEqual(123);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.insertOne).not.toBeCalled();
@@ -175,6 +175,21 @@ it('removeOneById', async () => {
   expect(querier.commit).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
   expect(querier.rollback).not.toBeCalled();
+});
+
+it('removeOneById unaffected record', async () => {
+  const mock: QueryUpdateResult = { affectedRows: 0 };
+  mockRes = mock;
+  await expect(repository.removeOneById(5)).rejects.toThrow('Unaffected record');
+  expect(querier.query).toBeCalledTimes(3);
+  expect(querier.remove).toBeCalledTimes(1);
+  expect(querier.insertOne).not.toBeCalled();
+  expect(querier.update).not.toBeCalled();
+  expect(querier.find).not.toBeCalled();
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).not.toBeCalled();
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).toBeCalledTimes(1);
 });
 
 it('remove', async () => {

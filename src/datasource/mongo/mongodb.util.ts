@@ -1,8 +1,9 @@
-import { RootQuerySelector, Cursor } from 'mongodb';
+import { FilterQuery } from 'mongodb';
 import { QueryFilter, Query } from '../../type';
+import { getEntityMeta } from '../../entity';
 
-export function parseFilter<T>(filter: QueryFilter<T>): RootQuerySelector<T> {
-  const filterQuery = Object.keys(filter).reduce((acc, key) => {
+export function buildFilter<T>(filter: QueryFilter<T>): FilterQuery<T> {
+  return Object.keys(filter).reduce((acc, key) => {
     const val = filter[key];
     if (key === '$and' || key === '$or') {
       acc[key] = Object.keys(val).map((prop) => {
@@ -13,21 +14,31 @@ export function parseFilter<T>(filter: QueryFilter<T>): RootQuerySelector<T> {
     }
     return acc;
   }, {});
-  return filterQuery;
 }
 
-export function fillCursor<T>(cursor: Cursor, qm: Query<T>) {
-  if (qm.project) {
-    cursor = cursor.project(qm.project);
+export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>) {
+  const meta = getEntityMeta(type);
+
+  const pipeline: object[] = [];
+
+  if (qm.filter) {
+    pipeline.push({ $match: buildFilter(qm.filter) });
   }
-  if (qm.sort) {
-    cursor = cursor.sort(qm.sort);
+
+  for (const popKey of Object.keys(qm.populate)) {
+    const relProps = meta.columns[popKey].relation;
+    const relType = relProps.type();
+    const relMeta = getEntityMeta(relType);
+    pipeline.push({
+      $lookup: {
+        from: relType.name,
+        localField: popKey,
+        foreignField: relMeta.id,
+        as: popKey,
+      },
+    });
+    pipeline.push({ $unwind: { path: `$${popKey}`, preserveNullAndEmptyArrays: true } });
   }
-  if (qm.skip) {
-    cursor = cursor.skip(qm.skip);
-  }
-  if (qm.limit) {
-    cursor = cursor.limit(qm.limit);
-  }
-  return cursor;
+
+  return pipeline;
 }

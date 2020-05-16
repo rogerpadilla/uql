@@ -1,8 +1,8 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { QueryFilter, Query, QueryOneFilter, QueryOne, QueryPopulate } from '../../type';
+import { QueryFilter, Query, QueryOneFilter, QueryOne } from '../../type';
 import { Querier } from '../type';
-import { getEntityMeta, getEntityId } from '../../entity';
-import { fillCursor, parseFilter } from './mongodb.util';
+import { getEntityMeta } from '../../entity';
+import { buildFilter, buildAggregationPipeline } from './mongodb.util';
 
 export class MongodbQuerier extends Querier {
   protected session: ClientSession;
@@ -26,38 +26,68 @@ export class MongodbQuerier extends Querier {
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const res = await this.conn.db().collection(type.name).updateMany(parseFilter(filter), body);
+    const res = await this.conn.db().collection(type.name).updateMany(buildFilter(filter), body);
     return res.modifiedCount;
   }
 
-  async findOneById<T>(type: { new (): T }, id: any, qm?: QueryOne<T>) {
-    const doc = await this.conn.db().collection(type.name).findOne(id, qm?.project);
-    return this.processPopulate(type, doc, qm?.populate);
+  async findOneById<T>(type: { new (): T }, id: any, qm: QueryOne<T> = {}) {
+    const meta = getEntityMeta(type);
+    (qm as QueryOneFilter<T>).filter = { [meta.id]: id };
+    return this.findOne(type, qm);
   }
 
   async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
-    const doc = await this.conn.db().collection(type.name).findOne(parseFilter(qm.filter), qm.project);
-    return this.processPopulate(type, doc, qm.populate);
+    if (qm.populate) {
+      const pipeline = buildAggregationPipeline(type, qm);
+      return this.conn
+        .db()
+        .collection(type.name)
+        .aggregate(pipeline)
+        .toArray()
+        .then((resp) => resp[0]);
+    }
+    return this.conn.db().collection(type.name).findOne(buildFilter(qm.filter), { projection: qm.project });
   }
 
-  async find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {
-    const cursor = this.conn.db().collection(type.name).find(parseFilter(qm.filter));
-    const filledCursor = fillCursor(cursor, qm);
-    const docs = await filledCursor.toArray();
-    return this.processPopulate(type, docs, qm.populate);
+  async find<T>(type: { new (): T }, qm: Query<T>) {
+    if (qm.populate) {
+      const pipeline = buildAggregationPipeline(type, qm);
+      return this.conn.db().collection(type.name).aggregate(pipeline).toArray();
+    }
+
+    const cursor = this.conn.db().collection(type.name).find();
+
+    if (qm.filter) {
+      const filter = buildFilter(qm.filter);
+      cursor.filter(filter);
+    }
+    if (qm.project) {
+      cursor.project(qm.project);
+    }
+    if (qm.sort) {
+      cursor.sort(qm.sort);
+    }
+    if (qm.skip) {
+      cursor.skip(qm.skip);
+    }
+    if (qm.limit) {
+      cursor.limit(qm.limit);
+    }
+
+    return cursor.toArray();
   }
 
-  count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    return this.conn.db().collection(type.name).countDocuments(parseFilter(filter));
+  count<T>(type: { new (): T }, filter: QueryFilter<T>) {
+    return this.conn.db().collection(type.name).countDocuments(buildFilter(filter));
   }
 
   async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const res = await this.conn.db().collection(type.name).deleteOne(parseFilter(filter));
+    const res = await this.conn.db().collection(type.name).deleteOne(buildFilter(filter));
     return res.deletedCount;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const res = await this.conn.db().collection(type.name).deleteMany(parseFilter(filter));
+    const res = await this.conn.db().collection(type.name).deleteMany(buildFilter(filter));
     return res.deletedCount;
   }
 
@@ -88,46 +118,5 @@ export class MongodbQuerier extends Querier {
       throw new Error('Querier should not be released while there is an open transaction.');
     }
     return this.conn.close();
-  }
-
-  async processPopulate<T>(type: { new (): T }, data: T | T[], populate: QueryPopulate<T>) {
-    if (!populate) {
-      return data;
-    }
-
-    const dataArr = Array.isArray(data) ? data : [data];
-    const meta = getEntityMeta(type);
-
-    const popPromises = Object.keys(populate).map(async (popKey) => {
-      const rel = meta.relations[popKey];
-      if (!rel) {
-        throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
-      }
-
-      const popEntry = populate[popKey as keyof T];
-      const popIds = dataArr.map((it) => it[popKey]);
-      const relType = rel.type();
-      const relMeta = getEntityMeta(relType);
-
-      const relData = await this.conn
-        .db()
-        .collection(relType.name)
-        .find<T>({ [relMeta.id]: { $in: popIds } })
-        .project(popEntry.project)
-        .toArray();
-
-      const relDataMap = relData.reduce((acc, it) => {
-        acc[it[relMeta.id]] = it;
-        return acc;
-      }, {} as { [prop: string]: T });
-
-      for (const row of dataArr) {
-        row[popKey] = relDataMap[row[popKey]];
-      }
-    });
-
-    await Promise.all(popPromises);
-
-    return dataArr;
   }
 }

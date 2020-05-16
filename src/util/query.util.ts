@@ -25,18 +25,23 @@ export function buildQuery<T>(qmsSrc: QueryStringified) {
   return qm;
 }
 
-export function stringifyQueryParameter(key: keyof Query<any>, value: any, prefix?: boolean) {
+export function stringifyQueryParameter<T, K extends keyof Query<T>>(key: K, value: Query<T>[K], noPrefix?: boolean) {
   if (value === undefined) {
     return '';
   }
   const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
-  return (prefix ? '?' : '') + `${key}=${valStr}`;
+  return (noPrefix ? '' : '?') + `${key}=${valStr}`;
 }
 
-export function stringifyQuery(qm: Query<any>): string {
+export function stringifyQuery<T>(qm: Query<T>): string {
   if (!qm) {
     return '';
   }
-  const qsArr = Object.keys(qm).map((key) => stringifyQueryParameter(key as any, qm[key]));
+  const qsArr = Object.keys(qm).reduce((acc, key) => {
+    if (qm[key] !== undefined) {
+      acc.push(stringifyQueryParameter(key as keyof Query<T>, qm[key], true));
+    }
+    return acc;
+  }, []);
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }

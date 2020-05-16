@@ -46,7 +46,7 @@ export type QuerySort<T> = {
   readonly [P in keyof T]: 1 | -1;
 };
 
-export type QueryLimit = {
+export type QueryPager = {
   skip?: number;
   limit?: number;
 };
@@ -62,7 +62,7 @@ export type QueryOneFilter<T> = QueryOne<T> & {
   filter?: QueryFilter<T>;
 };
 
-export type Query<T> = QueryOneFilter<T> & QueryLimit & { sort?: QuerySort<T> };
+export type Query<T> = QueryOneFilter<T> & QueryPager & { sort?: QuerySort<T> };
 
 export type QueryStringified = {
   readonly [P in keyof Query<any>]?: any;

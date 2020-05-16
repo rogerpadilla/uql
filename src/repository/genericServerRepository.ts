@@ -1,14 +1,17 @@
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
-import { getEntityId } from '../entity';
+import { getEntityMeta } from '../entity';
 import { Querier, Transactional, InjectQuerier } from '../datasource';
 import { GenericRepository } from './decorator';
 import { ServerRepository } from './type';
 
 @GenericRepository()
 export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
-  protected readonly idName = getEntityId(this.type);
+  protected readonly idName: string;
 
-  constructor(readonly type: { new (): T }) {}
+  constructor(readonly type: { new (): T }) {
+    const meta = getEntityMeta(this.type);
+    this.idName = meta.id;
+  }
 
   @Transactional({ propagation: 'required' })
   insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
@@ -16,19 +19,19 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<number> {
-    return querier.updateOne(this.type, { [this.idName]: id }, body);
+  async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
+    const affectedRows = await querier.updateOne(this.type, { [this.idName]: id }, body);
+    if (!affectedRows) {
+      throw new Error('Unaffected record');
+    }
+    return id;
   }
 
   @Transactional({ propagation: 'required' })
-  async saveOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
+  saveOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
     const id: ID = body[this.idName];
     if (id) {
-      const affectedRows = await this.updateOneById(id, body, querier);
-      if (!affectedRows) {
-        throw new Error('Unaffected record');
-      }
-      return id;
+      return this.updateOneById(id, body, querier);
     }
     return this.insertOne(body, querier);
   }
@@ -50,8 +53,12 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<number> {
-    return querier.removeOne(this.type, { [this.idName]: id });
+  async removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<ID> {
+    const affectedRows = await querier.removeOne(this.type, { [this.idName]: id });
+    if (!affectedRows) {
+      throw new Error('Unaffected record');
+    }
+    return id;
   }
 
   @Transactional({ propagation: 'required' })

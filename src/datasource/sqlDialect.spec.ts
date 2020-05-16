@@ -87,12 +87,13 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
     const query = sql.find(User, {
       filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' } },
       sort: { name: 1, createdAt: -1 },
+      skip: 50,
       limit: 10,
     });
     expect(query).toBe(
       'SELECT * FROM `User` WHERE `user` = 1 AND ' +
         "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') " +
-        'ORDER BY `name`, `createdAt` DESC LIMIT 10'
+        'ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
     );
   });
 
