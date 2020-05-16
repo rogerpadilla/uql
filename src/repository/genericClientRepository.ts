@@ -6,7 +6,7 @@ import { getEntityMeta } from '../entity';
 import { ClientRepository } from './type';
 
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
-  protected readonly idName: string;
+  protected readonly typeMeta = getEntityMeta(this.type);
 
   /**
    * The base-path for the endpoints. Children could override it if necessary.
@@ -14,26 +14,24 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
    * something like '/api/v1/'. It can also be dynamically calculated if necessary
    * (by using a getter called 'basePath')
    */
-  protected readonly basePath: string;
+  protected readonly basePath = '/api/' + formatKebabCase(this.type.name);
 
-  constructor(readonly type: { new (): T }) {
-    const meta = getEntityMeta(this.type);
-    this.idName = meta.id;
-    this.basePath = '/api/' + formatKebabCase(this.type.name);
-  }
+  constructor(readonly type: { new (): T }) {}
 
   insertOne(body: T, opts?: RequestOptions) {
     return post<ID>(this.basePath, body, opts);
   }
 
   updateOneById(id: ID, body: T, opts?: RequestOptions) {
-    return put<ID>(`${this.basePath}/${id}`, body, opts);
+    return put<void>(`${this.basePath}/${id}`, body, opts);
   }
 
   saveOne(body: T, opts?: RequestOptions) {
-    const id: ID = body[this.idName];
+    const id: ID = body[this.typeMeta.id];
     if (id) {
-      return this.updateOneById(id, body, opts);
+      return this.updateOneById(id, body, opts).then((res) => {
+        return { data: id };
+      });
     }
     return this.insertOne(body, opts);
   }
@@ -54,7 +52,7 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   }
 
   removeOneById(id: ID, opts?: RequestOptions) {
-    return remove<ID>(`${this.basePath}/${id}`, opts);
+    return remove<void>(`${this.basePath}/${id}`, opts);
   }
 
   remove(filter: QueryFilter<T>, opts?: RequestOptions) {
