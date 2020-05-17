@@ -31,5 +31,5 @@ export type EntityMeta<T> = {
   columns: {
     [prop: string]: ColumnProperties;
   };
-  isValid?: boolean;
+  isEntity?: boolean;
 };

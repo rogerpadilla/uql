@@ -56,22 +56,35 @@ export function defineEntity<T>(type: { new (): T }, args?: EntityProperties) {
   if (!meta.id) {
     throw new Error(`'${type.name}' must have at least one field decorated with @PrimaryColumn`);
   }
-  meta.isValid = true;
+  meta.isEntity = true;
   return meta;
 }
 
 export function getEntityMeta<T>(type: { new (): T }) {
   const meta: EntityMeta<T> = entitiesMeta.get(type);
-  if (!meta?.isValid) {
-    throw new Error(`'${type.name}' must be decorated with @Entity`);
+  if (!meta?.isEntity) {
+    throw new Error(`'${type.name}' is not an entity`);
   }
   return meta;
 }
 
 export function getEntities() {
-  return entitiesMeta.keys();
+  return Array.from(entitiesMeta.values()).reduce((acc, it) => {
+    if (it.isEntity) {
+      acc.push(it.type);
+    }
+    return acc;
+  }, [] as { new (): any }[]);
 }
 
 function isPrimitiveType(type: any) {
-  return type === undefined || type === Number || type === String || type === Boolean || type === Object;
+  return (
+    type === undefined ||
+    type === Number ||
+    type === String ||
+    type === Boolean ||
+    type === BigInt ||
+    type === Symbol ||
+    type === Object
+  );
 }

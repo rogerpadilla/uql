@@ -18,21 +18,20 @@ import { PrimaryColumn } from './primaryColumn';
 
 it('entities', () => {
   const output = getEntities();
-  const expected = new Map<Function, undefined>([
-    [BaseEntity, undefined],
-    [Company, undefined],
-    [Profile, undefined],
-    [User, undefined],
-    [LedgerAccount, undefined],
-    [TaxCategory, undefined],
-    [Tax, undefined],
-    [MeasureUnitCategory, undefined],
-    [MeasureUnit, undefined],
-    [Storehouse, undefined],
-    [Item, undefined],
-    [ItemAdjustment, undefined],
-    [InventoryAdjustment, undefined],
-  ]).keys();
+  const expected = [
+    Company,
+    Profile,
+    User,
+    LedgerAccount,
+    TaxCategory,
+    Tax,
+    MeasureUnitCategory,
+    MeasureUnit,
+    Storehouse,
+    Item,
+    ItemAdjustment,
+    InventoryAdjustment,
+  ];
   expect(output).toEqual(expected);
 });
 
@@ -92,7 +91,7 @@ it('user', () => {
         },
       },
     },
-    isValid: true,
+    isEntity: true,
   });
 });
 
@@ -185,23 +184,21 @@ it('item', () => {
         },
       },
     },
-    isValid: true,
+    isEntity: true,
   });
 });
 
-it('no @Entity', () => {
-  class SomeEntity {
-    @PrimaryColumn()
-    id: string;
-  }
-
-  expect(() => {
-    getEntityMeta(SomeEntity);
-  }).toThrow(`'SomeEntity' must be decorated with @Entity`);
-
+it('not an @Entity', () => {
   class SomeClass {}
 
   expect(() => {
     getEntityMeta(SomeClass);
-  }).toThrow(`'SomeClass' must be decorated with @Entity`);
+  }).toThrow(`'SomeClass' is not an entity`);
+
+  class AnotherClass {
+    @PrimaryColumn()
+    id: string;
+  }
+
+  expect(() => getEntityMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
 });

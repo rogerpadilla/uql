@@ -1,6 +1,5 @@
 import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity, OneToOne } from './decorator';
 
-@Entity()
 export abstract class BaseEntity {
   @PrimaryColumn()
   id?: number;
