@@ -4,7 +4,7 @@ import * as webpack from 'webpack';
 import * as CopyWebpackPlugin from 'copy-webpack-plugin';
 import * as ForkTsCheckerWebpackPlugin from 'fork-ts-checker-webpack-plugin';
 
-const config = (env: any, argv: { mode: 'development' | 'production' | 'none' }): webpack.Configuration => {
+const config = (env: string, argv: { mode: 'development' | 'production' | 'none' }): webpack.Configuration => {
   const mode = argv.mode || 'development';
   console.debug('*** Webpack mode', mode);
   const isDevMode = mode === 'development';

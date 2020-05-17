@@ -10,6 +10,7 @@ import {
   QueryProject,
   QueryComparisonValue,
   QueryLogicalOperators,
+  QueryOne,
 } from '../type';
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
@@ -94,7 +95,7 @@ export abstract class SqlDialect {
     if (qm.populate) {
       const entityMeta = getEntityMeta(type);
       for (const popKey in qm.populate) {
-        const relProps = entityMeta.columns[popKey].relation;
+        const relProps = entityMeta.relations[popKey];
         if (!relProps) {
           throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
         }
@@ -214,13 +215,14 @@ function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersista
   const meta = getEntityMeta(type);
   return Object.keys(body).reduce((persistableBody, colName) => {
     const colProps = meta.columns[colName];
+    const relProps = meta.relations[colName];
     const colVal = body[colName];
     if (
       colVal !== undefined &&
       colProps &&
       (colProps.mode === undefined || colProps.mode === mode) &&
-      // 'manyToOne' is the only relation which doesn't require additional stuff
-      (colProps.relation === undefined || colProps.relation.cardinality === 'manyToOne')
+      // 'manyToOne' is the only relation which doesn't require additional stuff when persisting
+      (relProps === undefined || relProps.cardinality === 'manyToOne')
     ) {
       persistableBody[colName] = colVal;
     }

@@ -45,10 +45,6 @@ it('user', () => {
       company: {
         name: 'company',
         mode: 'insert',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
       },
       createdAt: {
         name: 'createdAt',
@@ -76,19 +72,25 @@ it('user', () => {
       },
       profile: {
         name: 'profile',
-        relation: {
-          type: expect.any(Function),
-          cardinality: 'oneToOne',
-          mappedBy: 'user',
-        },
       },
       user: {
         name: 'user',
         mode: 'insert',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
+      },
+    },
+    relations: {
+      profile: {
+        cardinality: 'oneToOne',
+        mappedBy: 'user',
+        type: expect.any(Function),
+      },
+      company: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      user: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
       },
     },
     isEntity: true,
@@ -107,10 +109,6 @@ it('item', () => {
       },
       buyLedgerAccount: {
         name: 'buyLedgerAccount',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
       },
       buyPriceAverage: {
         name: 'buyPriceAverage',
@@ -122,7 +120,6 @@ it('item', () => {
       company: {
         name: 'company',
         mode: 'insert',
-        relation: { cardinality: 'manyToOne', type: expect.any(Function) },
       },
       createdAt: {
         name: 'createdAt',
@@ -143,20 +140,12 @@ it('item', () => {
       },
       measureUnit: {
         name: 'measureUnit',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
       },
       name: {
         name: 'name',
       },
       saleLedgerAccount: {
         name: 'saleLedgerAccount',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
       },
       salePrice: {
         name: 'salePrice',
@@ -166,10 +155,6 @@ it('item', () => {
       },
       tax: {
         name: 'tax',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
       },
       updatedAt: {
         name: 'updatedAt',
@@ -178,10 +163,32 @@ it('item', () => {
       user: {
         name: 'user',
         mode: 'insert',
-        relation: {
-          cardinality: 'manyToOne',
-          type: expect.any(Function),
-        },
+      },
+    },
+    relations: {
+      buyLedgerAccount: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      measureUnit: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      saleLedgerAccount: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      tax: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      company: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
+      },
+      user: {
+        cardinality: 'manyToOne',
+        type: expect.any(Function),
       },
     },
     isEntity: true,

@@ -26,7 +26,7 @@ export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>) {
   }
 
   for (const popKey of Object.keys(qm.populate)) {
-    const relProps = meta.columns[popKey].relation;
+    const relProps = meta.relations[popKey];
     const relType = relProps.type();
     const relMeta = getEntityMeta(relType);
     pipeline.push({

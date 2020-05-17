@@ -7,13 +7,12 @@ export type ColumnPersistableMode = 'insert' | 'update' | 'read';
 export type ColumnProperties = {
   readonly name?: string;
   readonly mode?: ColumnPersistableMode;
-  readonly relation?: RelationProperties<any>;
 };
 
 export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;
 
 export type RelationProperties<T> = {
-  type?: () => { new (): T };
+  type?: () => { new (): object };
   readonly cardinality: RelationCardinality;
   mappedBy?: keyof T;
 };
@@ -30,6 +29,9 @@ export type EntityMeta<T> = {
   id?: string;
   columns: {
     [prop: string]: ColumnProperties;
+  };
+  relations: {
+    [prop: string]: RelationProperties<T>;
   };
   isEntity?: boolean;
 };

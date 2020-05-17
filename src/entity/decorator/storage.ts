@@ -5,7 +5,7 @@ const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
 
 function ensureEntityMeta<T>(type: { new (): T }) {
   if (!entitiesMeta.has(type)) {
-    entitiesMeta.set(type, { type, name: type.name, columns: {} });
+    entitiesMeta.set(type, { type, name: type.name, columns: {}, relations: {} });
   }
   const meta: EntityMeta<T> = entitiesMeta.get(type);
   return meta;
@@ -36,7 +36,7 @@ export function defineRelation<T>(type: { new (): T }, prop: string, args: Relat
     args.type = () => inferredType;
   }
   const meta = ensureEntityMeta(type);
-  meta.columns[prop] = { name: prop, ...meta.columns[prop], relation: args };
+  meta.relations[prop] = args;
   return meta;
 }
 
@@ -51,6 +51,7 @@ export function defineEntity<T>(type: { new (): T }, args?: EntityProperties) {
     const parentMeta = entitiesMeta.get(parentProto.constructor);
     meta.id = meta.id || parentMeta.id;
     meta.columns = { ...parentMeta.columns, ...meta.columns };
+    meta.relations = { ...parentMeta.relations, ...meta.relations };
     parentProto = Object.getPrototypeOf(parentProto);
   }
   if (!meta.id) {

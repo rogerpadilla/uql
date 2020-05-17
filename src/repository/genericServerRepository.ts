@@ -74,7 +74,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const id = body[this.meta.id];
 
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
-      const rel = this.meta.columns[prop].relation;
+      const rel = this.meta.relations[prop];
       const relType = rel.type();
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
@@ -96,7 +96,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const id = body[this.meta.id];
 
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
-      const rel = this.meta.columns[prop].relation;
+      const rel = this.meta.relations[prop];
       const relType = rel.type();
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
@@ -122,8 +122,8 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   protected filterIndependentRelations(body: T) {
     return Object.keys(body).filter((prop) => {
-      const colProps = this.meta.columns[prop];
-      return colProps.relation && colProps.relation.cardinality !== 'manyToOne';
+      const relProps = this.meta.relations[prop];
+      return relProps && relProps.cardinality !== 'manyToOne';
     });
   }
 }
