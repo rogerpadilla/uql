@@ -11,6 +11,7 @@ import {
   InventoryAdjustment,
   Tax,
   Company,
+  Profile,
 } from '../entityMock';
 import { getEntityMeta, getEntities } from './storage';
 
@@ -19,6 +20,7 @@ it('entities', () => {
   const expected = new Map<Function, undefined>([
     [BaseEntity, undefined],
     [Company, undefined],
+    [Profile, undefined],
     [User, undefined],
     [LedgerAccount, undefined],
     [TaxCategory, undefined],
@@ -70,6 +72,14 @@ it('user', () => {
       updatedAt: {
         name: 'updatedAt',
         mode: 'update',
+      },
+      profile: {
+        name: 'profile',
+        relation: {
+          type: expect.any(Function),
+          cardinality: 'oneToOne',
+          inverseSide: 'user',
+        },
       },
       user: {
         name: 'user',

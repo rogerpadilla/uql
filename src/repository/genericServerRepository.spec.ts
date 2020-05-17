@@ -1,29 +1,35 @@
 import { QueryUpdateResult } from '../type';
-import { Querier, Transactional, InjectQuerier } from '../datasource';
+import { Querier, Transactional } from '../datasource';
 import MySql2QuerierPool from '../datasource/mysql/mysql2QuerierPool';
 import { MySqlQuerier } from '../datasource/mysql/mysqlQuerier';
 import { SqlQuerier } from '../datasource/sqlQuerier';
-import { User, Item } from '../entity/entityMock';
+import { User, Item, InventoryAdjustment } from '../entity/entityMock';
 import { initCorozo } from '../config';
 import { Repository } from './decorator';
 import { GenericServerRepository } from './genericServerRepository';
-import { getServerRepository } from './container';
+import { ServerRepository } from './type';
 
 let querier: SqlQuerier;
 let mockRes: User[] | QueryUpdateResult | { count: number }[];
-let repository: GenericServerRepository<User, number>;
+let repository: ServerRepository<User, number>;
 const originalGetQuerier = MySql2QuerierPool.prototype.getQuerier;
 
 beforeEach(() => {
-  initCorozo({ datasource: { driver: 'mysql2' } });
+  initCorozo({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
 
   MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
   querier = new MySqlQuerier(undefined);
-  jest.spyOn(querier, 'query').mockImplementation(() => Promise.resolve(mockRes));
+  jest.spyOn(querier, 'query').mockImplementation((query) => {
+    // console.log('spied query', query);
+    return Promise.resolve(mockRes);
+  });
   jest.spyOn(querier, 'insertOne');
+  jest.spyOn(querier, 'insert');
   jest.spyOn(querier, 'update');
+  jest.spyOn(querier, 'updateOne');
   jest.spyOn(querier, 'remove');
+  jest.spyOn(querier, 'removeOne');
   jest.spyOn(querier, 'find');
   jest.spyOn(querier, 'beginTransaction');
   jest.spyOn(querier, 'commit');
@@ -55,6 +61,57 @@ it('insertOne', async () => {
   expect(querier.rollback).not.toBeCalled();
 });
 
+it('insertOne cascade oneToOne', async () => {
+  const mock: QueryUpdateResult = { insertId: 1 };
+  mockRes = mock;
+  const resp = await repository.insertOne({
+    name: 'some name',
+    profile: { picture: 'abc' },
+  });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(2, "INSERT INTO `User` (`name`) VALUES ('some name')");
+  expect(querier.query).nthCalledWith(3, "INSERT INTO `Profile` (`picture`) VALUES ('abc')");
+  expect(querier.query).nthCalledWith(4, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(4);
+  expect(querier.insertOne).toBeCalledTimes(2);
+  expect(querier.insert).not.toBeCalled();
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).not.toBeCalled();
+  expect(querier.updateOne).not.toBeCalled();
+  expect(querier.remove).not.toBeCalled();
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
+it('insertOne cascade oneToMany', async () => {
+  const mock: QueryUpdateResult = { insertId: 1 };
+  mockRes = mock;
+  const repo = new GenericServerRepository(InventoryAdjustment);
+  const resp = await repo.insertOne({ description: 'some description', itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }] });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(2, "INSERT INTO `InventoryAdjustment` (`description`) VALUES ('some description')");
+  expect(querier.query).nthCalledWith(
+    3,
+    'INSERT INTO `ItemAdjustment` (`buyPrice`, `inventoryAdjustment`) VALUES (50, 1), (300, 1)'
+  );
+  expect(querier.query).nthCalledWith(4, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(4);
+  expect(querier.insertOne).toBeCalledTimes(1);
+  expect(querier.insert).toBeCalledTimes(1);
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).not.toBeCalled();
+  expect(querier.updateOne).not.toBeCalled();
+  expect(querier.remove).not.toBeCalled();
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
 it('updateOneById', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
@@ -62,9 +119,123 @@ it('updateOneById', async () => {
   expect(resp).toEqual(undefined);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.update).toBeCalledTimes(1);
+  expect(querier.updateOne).toBeCalledTimes(1);
   expect(querier.find).not.toBeCalled();
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
+it('updateOneById cascade oneToOne', async () => {
+  const mock: QueryUpdateResult = { affectedRows: 1 };
+  mockRes = mock;
+  const resp = await repository.updateOneById(1, {
+    name: 'something',
+    profile: { picture: 'xyz' },
+  });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(2, "UPDATE `User` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(3, "UPDATE `Profile` SET `picture` = 'xyz' WHERE `user` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(4, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(4);
+  expect(querier.insertOne).not.toBeCalled();
+  expect(querier.insert).not.toBeCalled();
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).toBeCalledTimes(2);
+  expect(querier.updateOne).toBeCalledTimes(2);
+  expect(querier.remove).not.toBeCalled();
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
+it('updateOneById cascade oneToOne null', async () => {
+  const mock: QueryUpdateResult = { affectedRows: 1 };
+  mockRes = mock;
+  const resp = await repository.updateOneById(1, {
+    name: 'something',
+    profile: null,
+  });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(2, "UPDATE `User` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(3, 'DELETE FROM `Profile` WHERE `user` = 1 LIMIT 1');
+  expect(querier.query).nthCalledWith(4, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(4);
+  expect(querier.insertOne).not.toBeCalled();
+  expect(querier.insert).not.toBeCalled();
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).toBeCalledTimes(1);
+  expect(querier.updateOne).toBeCalledTimes(1);
+  expect(querier.remove).toBeCalledTimes(1);
+  expect(querier.removeOne).toBeCalledTimes(1);
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
+it('updateOneById cascade oneToMany', async () => {
+  const mock: QueryUpdateResult = { affectedRows: 1 };
+  mockRes = mock;
+  const repo = new GenericServerRepository(InventoryAdjustment);
+  const resp = await repo.updateOneById(1, {
+    description: 'some description',
+    itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+  });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(
+    2,
+    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1 LIMIT 1"
+  );
+  expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
+  expect(querier.query).nthCalledWith(
+    4,
+    'INSERT INTO `ItemAdjustment` (`buyPrice`, `inventoryAdjustment`) VALUES (50, 1), (300, 1)'
+  );
+  expect(querier.query).nthCalledWith(5, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(5);
+  expect(querier.insertOne).not.toBeCalled();
+  expect(querier.insert).toBeCalledTimes(1);
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).toBeCalledTimes(1);
+  expect(querier.updateOne).toBeCalledTimes(1);
+  expect(querier.remove).toBeCalledTimes(1);
+  expect(querier.beginTransaction).toBeCalledTimes(1);
+  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.release).toBeCalledTimes(1);
+  expect(querier.rollback).not.toBeCalled();
+});
+
+it('updateOneById cascade oneToMany null', async () => {
+  const mock: QueryUpdateResult = { affectedRows: 1 };
+  mockRes = mock;
+  const repo = new GenericServerRepository(InventoryAdjustment);
+  const resp = await repo.updateOneById(1, {
+    description: 'some description',
+    itemsAdjustments: null,
+  });
+  expect(resp).toEqual(mock.insertId);
+  expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
+  expect(querier.query).nthCalledWith(
+    2,
+    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1 LIMIT 1"
+  );
+  expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
+  expect(querier.query).nthCalledWith(4, 'COMMIT');
+  expect(querier.query).toBeCalledTimes(4);
+  expect(querier.insertOne).not.toBeCalled();
+  expect(querier.insert).not.toBeCalled();
+  expect(querier.find).not.toBeCalled();
+  expect(querier.update).toBeCalledTimes(1);
+  expect(querier.updateOne).toBeCalledTimes(1);
+  expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
@@ -253,24 +424,6 @@ it('rollback - commit', async () => {
   expect(querier.commit).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
   expect(querier.rollback).toBeCalledTimes(1);
-});
-
-it('mandatory transaction', async () => {
-  @Repository()
-  class ItemRepository extends GenericServerRepository<Item, number> {
-    constructor() {
-      super(Item);
-    }
-
-    @Transactional({ propagation: 'mandatory' })
-    insertOne(body: Item, @InjectQuerier() quer?: Querier) {
-      return super.insertOne(body);
-    }
-  }
-
-  await expect(getServerRepository(Item).insertOne({})).rejects.toThrow(
-    `An existing opened transaction must already exist when calling 'ItemRepository.insertOne'`
-  );
 });
 
 it('missing @InjectQuerier()', () => {

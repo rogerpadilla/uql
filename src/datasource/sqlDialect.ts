@@ -14,7 +14,7 @@ import {
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
 export abstract class SqlDialect {
-  static readonly logicalOperatorMap = {
+  readonly logicalOperatorMap = {
     $and: 'AND',
     $or: 'OR',
   } as const;
@@ -137,8 +137,8 @@ export abstract class SqlDialect {
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
-        if (SqlDialect.logicalOperatorMap[key]) {
-          const filterItCondition = this.where(val, { logicalOperator: SqlDialect.logicalOperatorMap[key] });
+        if (this.logicalOperatorMap[key]) {
+          const filterItCondition = this.where(val, { logicalOperator: this.logicalOperatorMap[key] });
           return filterKeys.length > 1 ? `(${filterItCondition})` : filterItCondition;
         }
         return this.comparison(key, val);
@@ -215,7 +215,13 @@ function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersista
   return Object.keys(body).reduce((persistableBody, colName) => {
     const colProps = meta.columns[colName];
     const colVal = body[colName];
-    if (colProps && (colProps.mode === undefined || colProps.mode === mode) && colVal !== undefined) {
+    if (
+      colVal !== undefined &&
+      colProps &&
+      (colProps.mode === undefined || colProps.mode === mode) &&
+      // 'manyToOne' is the only relation which doesn't require additional stuff
+      (colProps.relation === undefined || colProps.relation.cardinality === 'manyToOne')
+    ) {
       persistableBody[colName] = colVal;
     }
     return persistableBody;

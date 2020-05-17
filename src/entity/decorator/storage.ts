@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { RelationProperties, ColumnProperties, PrimaryColumnProperties, EntityProperties } from './type';
 
 const entitiesMeta = new Map<
@@ -32,6 +33,9 @@ export function definePrimaryColumn<T>(type: { new (): T }, prop: string, args: 
 }
 
 export function defineRelation<T>(type: { new (): T }, prop: string, args: RelationProperties<T>) {
+  if (args.type === undefined) {
+    args.type = () => Reflect.getMetadata('design:type', type.prototype, prop);
+  }
   const meta = ensureEntityMeta(type);
   if (!meta.columns[prop]) {
     meta.columns[prop] = {};

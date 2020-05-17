@@ -1,12 +1,8 @@
-import 'reflect-metadata';
 import { defineRelation } from './storage';
 import { RelationProperties, RelationToOneProperties, RelationToManyProperties } from './type';
 
 function Relation<T>(args: RelationProperties<T>) {
   return (target: object, prop: string) => {
-    if (args.type === undefined) {
-      args.type = () => Reflect.getMetadata('design:type', target, prop);
-    }
     const type = target.constructor as { new (): T };
     defineRelation(type, prop, args);
   };

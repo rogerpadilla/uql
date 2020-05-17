@@ -10,7 +10,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional({ propagation: 'required' })
   async insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
-    const id = querier.insertOne(this.type, body);
+    const id = await querier.insertOne(this.type, body);
     await this.insertRelations({ ...body, [this.typeMeta.id]: id }, querier);
     return id;
   }
@@ -68,34 +68,58 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     return querier.count(this.type, filter);
   }
 
-  // TODO 'manyToMany' support
-  @Transactional({ propagation: 'mandatory' })
-  protected async insertRelations(body: T, @InjectQuerier() querier?: Querier): Promise<void> {
-    const insertProms = this.filterRelationsWithOwnData(body).map((prop) => {
+  protected async insertRelations(body: T, querier: Querier): Promise<void> {
+    const id = body[this.typeMeta.id];
+
+    const insertProms = this.filterIndependentRelations(body).map((prop) => {
       const rel = this.typeMeta.columns[prop].relation;
       const relType = rel.type();
-      const relBody = Array.isArray(body[prop]) ? body[prop] : [body[prop]];
-      relBody.forEach((it: T) => {
-        it[rel.mappedBy] = body[this.typeMeta.id];
-      });
-      return querier.insert(relType, relBody);
+      const relBody = body[prop];
+      if (rel.cardinality === 'oneToOne') {
+        return querier.insertOne(relType, relBody);
+      }
+      if (rel.cardinality === 'oneToMany') {
+        relBody.forEach((it: T) => {
+          it[rel.inverseSide] = id;
+        });
+        return querier.insert(relType, relBody);
+      }
+      throw new Error('TODO unsupported cardinality ' + rel.cardinality);
     });
+
     await Promise.all(insertProms);
   }
 
-  // TODO 'manyToMany' support
-  @Transactional({ propagation: 'mandatory' })
-  protected async updateRelations(body: T, @InjectQuerier() querier?: Querier): Promise<void> {
-    const removeProms = this.filterRelationsWithOwnData(body).map((prop) => {
+  protected async updateRelations(body: T, querier: Querier): Promise<void> {
+    const id = body[this.typeMeta.id];
+
+    const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
       const rel = this.typeMeta.columns[prop].relation;
       const relType = rel.type();
-      return querier.remove(relType, { [rel.mappedBy]: body[this.typeMeta.id] });
+      const relBody = body[prop];
+      if (rel.cardinality === 'oneToOne') {
+        if (relBody === null) {
+          await querier.removeOne(relType, { [rel.inverseSide]: id });
+        } else {
+          await querier.updateOne(relType, { [rel.inverseSide]: id }, relBody);
+        }
+      } else if (rel.cardinality === 'oneToMany') {
+        await querier.remove(relType, { [rel.inverseSide]: id });
+        if (relBody !== null) {
+          relBody.forEach((it: T) => {
+            it[rel.inverseSide] = id;
+          });
+          return querier.insert(relType, relBody);
+        }
+      } else {
+        throw new Error('TODO unsupported cardinality ' + rel.cardinality);
+      }
     });
+
     await Promise.all(removeProms);
-    await this.insertRelations(body, querier);
   }
 
-  protected filterRelationsWithOwnData(body: T) {
+  protected filterIndependentRelations(body: T) {
     return Object.keys(body).filter((prop) => {
       const colProps = this.typeMeta.columns[prop];
       return colProps.relation && colProps.relation.cardinality !== 'manyToOne';

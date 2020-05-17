@@ -38,7 +38,7 @@
     "max-statements": ["error", 30],
     "one-var": ["error", "never"],
     "max-nested-callbacks": ["error", 3],
-    "max-lines": ["error", 400],
+    "max-lines": ["error", 500],
     "no-negated-condition": "error",
     "prettier/prettier": "error",
     "eslint-comments/disable-enable-pair": ["error", { "allowWholeFile": true }],

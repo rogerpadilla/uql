@@ -1,4 +1,4 @@
-import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity } from './decorator';
+import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity, OneToOne } from './decorator';
 
 @Entity()
 export abstract class BaseEntity {
@@ -26,6 +26,12 @@ export class Company extends BaseEntity {
   description?: string;
 }
 
+@Entity({ name: 'UserProfile' })
+export class Profile extends BaseEntity {
+  @Column()
+  picture?: string;
+}
+
 @Entity()
 export class User extends BaseEntity {
   @Column()
@@ -34,6 +40,9 @@ export class User extends BaseEntity {
   email?: string;
   @Column()
   password?: string;
+  @OneToOne({ type: () => Profile, inverseSide: 'user' })
+  @Column()
+  profile?: Profile;
 }
 
 @Entity()
@@ -143,7 +152,7 @@ export class ItemAdjustment extends BaseEntity {
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
+  @OneToMany({ type: () => ItemAdjustment, inverseSide: 'inventoryAdjustment' })
   itemsAdjustments?: ItemAdjustment[];
   @Column()
   date?: number;

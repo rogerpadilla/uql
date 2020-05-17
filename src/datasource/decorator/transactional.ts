@@ -2,9 +2,8 @@ import { Querier } from '../type';
 import { getQuerier } from '../querierPool';
 import { getInjectQuerier } from './injectQuerier';
 
-export function Transactional(opts: { readonly propagation?: 'supports' | 'required' | 'mandatory' } = {}) {
+export function Transactional(opts: { readonly propagation: 'supports' | 'required' } = { propagation: 'supports' }) {
   return (target: object, propertyKey: string, propertyDescriptor: PropertyDescriptor) => {
-    const constructor = target.constructor;
     const originalMethod: Function = propertyDescriptor.value;
     const injectQuerierIndex = getInjectQuerier(target, propertyKey);
 
@@ -28,11 +27,6 @@ export function Transactional(opts: { readonly propagation?: 'supports' | 'requi
 
       try {
         if (!querier.hasOpenTransaction()) {
-          if (opts.propagation === 'mandatory') {
-            throw new Error(
-              `An existing opened transaction must already exist when calling '${constructor.name}.${originalMethod.name}'`
-            );
-          }
           if (opts.propagation === 'required') {
             await querier.beginTransaction();
           }
