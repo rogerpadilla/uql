@@ -4,8 +4,8 @@ import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity, OneToOne } from '.
 export abstract class BaseEntity {
   @PrimaryColumn()
   id?: number;
-  @ManyToOne({ type: () => Company })
   @Column({ mode: 'insert' })
+  @ManyToOne({ type: () => Company })
   company?: number;
   @ManyToOne({ type: () => User })
   @Column({ mode: 'insert' })

@@ -23,3 +23,13 @@ export type RelationOneToOneProperties<T> = { type?: () => { new (): T }; mapped
 export type RelationOneToManyProperties<T> = { type: () => { new (): T }; mappedBy: keyof T };
 export type RelationManyToOneProperties<T> = { type?: () => { new (): T } };
 export type RelationManyToManyProperties<T> = { type: () => { new (): T } };
+
+export type EntityMeta<T> = {
+  readonly type: { new (): T };
+  name: string;
+  id?: string;
+  columns: {
+    [prop: string]: ColumnProperties;
+  };
+  isValid?: boolean;
+};

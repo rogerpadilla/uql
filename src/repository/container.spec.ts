@@ -26,7 +26,7 @@ it('no repository', () => {
   );
 });
 
-it('@GenericRepository(), @Repository()', () => {
+it('@Repository()', () => {
   class SomeGenericRepository extends GenericServerRepository<any, number> {}
 
   @Repository()

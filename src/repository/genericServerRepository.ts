@@ -1,32 +1,34 @@
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
-import { getEntityMeta } from '../entity';
+import { getEntityMeta, EntityMeta } from '../entity';
 import { Querier, Transactional, InjectQuerier } from '../datasource';
 import { ServerRepository } from './type';
 
 export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
-  protected readonly typeMeta = getEntityMeta(this.type);
+  readonly meta: EntityMeta<T>;
 
-  constructor(readonly type: { new (): T }) {}
+  constructor(type: { new (): T }) {
+    this.meta = getEntityMeta(type);
+  }
 
   @Transactional({ propagation: 'required' })
   async insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
-    const id = await querier.insertOne(this.type, body);
-    await this.insertRelations({ ...body, [this.typeMeta.id]: id }, querier);
+    const id = await querier.insertOne(this.meta.type, body);
+    await this.insertRelations({ ...body, [this.meta.id]: id }, querier);
     return id;
   }
 
   @Transactional({ propagation: 'required' })
   async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.updateOne(this.type, { [this.typeMeta.id]: id }, body);
+    const affectedRows = await querier.updateOne(this.meta.type, { [this.meta.id]: id }, body);
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
-    await this.updateRelations({ ...body, [this.typeMeta.id]: id }, querier);
+    await this.updateRelations({ ...body, [this.meta.id]: id }, querier);
   }
 
   @Transactional({ propagation: 'required' })
   async saveOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
-    const id: ID = body[this.typeMeta.id];
+    const id: ID = body[this.meta.id];
     if (id) {
       await this.updateOneById(id, body, querier);
       return id;
@@ -36,23 +38,23 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional()
   findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier): Promise<T> {
-    (qm as QueryOneFilter<T>).filter = { [this.typeMeta.id]: id };
-    return querier.findOne(this.type, qm);
+    (qm as QueryOneFilter<T>).filter = { [this.meta.id]: id };
+    return querier.findOne(this.meta.type, qm);
   }
 
   @Transactional()
   findOne(qm: QueryOneFilter<T>, @InjectQuerier() querier?: Querier): Promise<T> {
-    return querier.findOne(this.type, qm);
+    return querier.findOne(this.meta.type, qm);
   }
 
   @Transactional()
   find(qm: Query<T>, @InjectQuerier() querier?: Querier): Promise<T[]> {
-    return querier.find(this.type, qm);
+    return querier.find(this.meta.type, qm);
   }
 
   @Transactional({ propagation: 'required' })
   async removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.removeOne(this.type, { [this.typeMeta.id]: id });
+    const affectedRows = await querier.removeOne(this.meta.type, { [this.meta.id]: id });
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
@@ -60,19 +62,19 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional({ propagation: 'required' })
   remove(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier): Promise<number> {
-    return querier.remove(this.type, filter);
+    return querier.remove(this.meta.type, filter);
   }
 
   @Transactional()
   count(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier): Promise<number> {
-    return querier.count(this.type, filter);
+    return querier.count(this.meta.type, filter);
   }
 
   protected async insertRelations(body: T, querier: Querier): Promise<void> {
-    const id = body[this.typeMeta.id];
+    const id = body[this.meta.id];
 
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
-      const rel = this.typeMeta.columns[prop].relation;
+      const rel = this.meta.columns[prop].relation;
       const relType = rel.type();
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
@@ -91,10 +93,10 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   protected async updateRelations(body: T, querier: Querier): Promise<void> {
-    const id = body[this.typeMeta.id];
+    const id = body[this.meta.id];
 
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
-      const rel = this.typeMeta.columns[prop].relation;
+      const rel = this.meta.columns[prop].relation;
       const relType = rel.type();
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
@@ -120,7 +122,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   protected filterIndependentRelations(body: T) {
     return Object.keys(body).filter((prop) => {
-      const colProps = this.typeMeta.columns[prop];
+      const colProps = this.meta.columns[prop];
       return colProps.relation && colProps.relation.cardinality !== 'manyToOne';
     });
   }

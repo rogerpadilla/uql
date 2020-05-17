@@ -1,9 +1,10 @@
 import { QueryFilter, Query, QueryOne, QueryOneFilter } from '../type/query';
 import { RequestSuccessResponse, RequestOptions } from '../http/type';
 import { Querier } from '../datasource/type';
+import { EntityMeta } from '../entity';
 
 export interface Repository<T, ID = any> {
-  readonly type: { new (): T };
+  readonly meta: EntityMeta<T>;
   insertOne(body: T, opts?: any): Promise<any>;
   updateOneById(id: ID, body: T, opts?: any): Promise<any>;
   saveOne(body: T, opts?: any): Promise<any>;

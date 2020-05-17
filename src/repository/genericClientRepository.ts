@@ -2,11 +2,11 @@ import { get, post, put, remove, RequestOptions } from '../http';
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
 import { stringifyQuery, stringifyQueryParameter } from '../util/query.util';
 import { formatKebabCase } from '../util/string.util';
-import { getEntityMeta } from '../entity';
+import { getEntityMeta, EntityMeta } from '../entity';
 import { ClientRepository } from './type';
 
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
-  protected readonly typeMeta = getEntityMeta(this.type);
+  readonly meta: EntityMeta<T>;
 
   /**
    * The base-path for the endpoints. Children could override it if necessary.
@@ -14,9 +14,12 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
    * something like '/api/v1/'. It can also be dynamically calculated if necessary
    * (by using a getter called 'basePath')
    */
-  protected readonly basePath = '/api/' + formatKebabCase(this.type.name);
+  protected readonly basePath: string;
 
-  constructor(readonly type: { new (): T }) {}
+  constructor(type: { new (): T }) {
+    this.meta = getEntityMeta(type);
+    this.basePath = '/api/' + formatKebabCase(this.meta.name);
+  }
 
   insertOne(body: T, opts?: RequestOptions) {
     return post<ID>(this.basePath, body, opts);
@@ -27,7 +30,7 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   }
 
   saveOne(body: T, opts?: RequestOptions) {
-    const id: ID = body[this.typeMeta.id];
+    const id: ID = body[this.meta.id];
     if (id) {
       return this.updateOneById(id, body, opts).then((res) => {
         return { data: id };

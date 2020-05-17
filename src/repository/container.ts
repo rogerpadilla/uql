@@ -26,7 +26,7 @@ export function getServerRepository<T>(type: { new (): T }): ServerRepository<T>
 
 export function setRepository(constructor: CustomRepositoryConstructor<any>) {
   const repository = new constructor();
-  cache.set(repository.type, repository);
+  cache.set(repository.meta.type, repository);
 }
 
 /**

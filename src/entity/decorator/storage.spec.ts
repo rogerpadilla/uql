@@ -39,8 +39,9 @@ it('entities', () => {
 it('user', () => {
   const meta = getEntityMeta(User);
   expect(meta).toEqual({
-    id: 'id',
+    type: User,
     name: 'User',
+    id: 'id',
     columns: {
       company: {
         name: 'company',
@@ -98,8 +99,9 @@ it('user', () => {
 it('item', () => {
   const meta = getEntityMeta(Item);
   expect(meta).toEqual({
-    id: 'id',
+    type: Item,
     name: 'Item',
+    id: 'id',
     columns: {
       barcode: {
         name: 'barcode',

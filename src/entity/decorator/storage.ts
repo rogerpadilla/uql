@@ -1,28 +1,19 @@
 import 'reflect-metadata';
-import { RelationProperties, ColumnProperties, PrimaryColumnProperties, EntityProperties } from './type';
+import { RelationProperties, ColumnProperties, PrimaryColumnProperties, EntityProperties, EntityMeta } from './type';
 
-const entitiesMeta = new Map<
-  { new (): any },
-  {
-    id?: string;
-    name?: string;
-    columns: {
-      [prop: string]: ColumnProperties;
-    };
-    isValid?: boolean;
-  }
->();
+const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
 
 function ensureEntityMeta<T>(type: { new (): T }) {
   if (!entitiesMeta.has(type)) {
-    entitiesMeta.set(type, { columns: {} });
+    entitiesMeta.set(type, { type, name: type.name, columns: {} });
   }
-  return entitiesMeta.get(type);
+  const meta: EntityMeta<T> = entitiesMeta.get(type);
+  return meta;
 }
 
 export function defineColumn<T>(type: { new (): T }, prop: string, args: ColumnProperties) {
   const meta = ensureEntityMeta(type);
-  meta.columns[prop] = { name: prop, ...args };
+  meta.columns[prop] = { ...meta.columns[prop], name: prop, ...args };
   return meta;
 }
 
@@ -45,15 +36,12 @@ export function defineRelation<T>(type: { new (): T }, prop: string, args: Relat
     }
   }
   const meta = ensureEntityMeta(type);
-  if (!meta.columns[prop]) {
-    meta.columns[prop] = {};
-  }
   meta.columns[prop] = { ...meta.columns[prop], relation: args };
   return meta;
 }
 
 export function defineEntity<T>(type: { new (): T }, args?: EntityProperties) {
-  const meta = entitiesMeta.get(type);
+  const meta: EntityMeta<T> = entitiesMeta.get(type);
   if (!meta) {
     throw new Error(`'${type.name}' must have columns`);
   }
@@ -73,7 +61,7 @@ export function defineEntity<T>(type: { new (): T }, args?: EntityProperties) {
 }
 
 export function getEntityMeta<T>(type: { new (): T }) {
-  const meta = entitiesMeta.get(type);
+  const meta: EntityMeta<T> = entitiesMeta.get(type);
   if (!meta?.isValid) {
     throw new Error(`'${type.name}' must be decorated with @Entity`);
   }
