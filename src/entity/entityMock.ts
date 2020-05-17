@@ -3,11 +3,11 @@ import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity, OneToOne } from '.
 export abstract class BaseEntity {
   @PrimaryColumn()
   id?: number;
-  @Column({ mode: 'insert' })
   @ManyToOne({ type: () => Company })
-  company?: number;
-  @ManyToOne({ type: () => User })
   @Column({ mode: 'insert' })
+  company?: number;
+  @Column({ mode: 'insert' })
+  @ManyToOne({ type: () => User })
   user?: number | User;
   @Column({ mode: 'insert' })
   createdAt?: number;
