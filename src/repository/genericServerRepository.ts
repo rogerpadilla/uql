@@ -80,7 +80,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
       }
       if (rel.cardinality === 'oneToMany') {
         relBody.forEach((it: T) => {
-          it[rel.inverseSide] = id;
+          it[rel.mappedBy] = id;
         });
         return querier.insert(relType, relBody);
       }
@@ -99,14 +99,14 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
         if (relBody === null) {
-          return querier.removeOne(relType, { [rel.inverseSide]: id });
+          return querier.removeOne(relType, { [rel.mappedBy]: id });
         }
-        return querier.updateOne(relType, { [rel.inverseSide]: id }, relBody);
+        return querier.updateOne(relType, { [rel.mappedBy]: id }, relBody);
       } else if (rel.cardinality === 'oneToMany') {
-        await querier.remove(relType, { [rel.inverseSide]: id });
+        await querier.remove(relType, { [rel.mappedBy]: id });
         if (relBody !== null) {
           relBody.forEach((it: T) => {
-            it[rel.inverseSide] = id;
+            it[rel.mappedBy] = id;
           });
           return querier.insert(relType, relBody);
         }

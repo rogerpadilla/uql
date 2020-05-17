@@ -78,7 +78,7 @@ it('user', () => {
         relation: {
           type: expect.any(Function),
           cardinality: 'oneToOne',
-          inverseSide: 'user',
+          mappedBy: 'user',
         },
       },
       user: {

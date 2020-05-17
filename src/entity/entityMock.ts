@@ -40,7 +40,7 @@ export class User extends BaseEntity {
   email?: string;
   @Column()
   password?: string;
-  @OneToOne({ type: () => Profile, inverseSide: 'user' })
+  @OneToOne({ type: () => Profile, mappedBy: 'user' })
   @Column()
   profile?: Profile;
 }
@@ -152,7 +152,7 @@ export class ItemAdjustment extends BaseEntity {
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({ type: () => ItemAdjustment, inverseSide: 'inventoryAdjustment' })
+  @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
   itemsAdjustments?: ItemAdjustment[];
   @Column()
   date?: number;

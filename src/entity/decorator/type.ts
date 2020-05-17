@@ -15,9 +15,11 @@ export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;
 export type RelationProperties<T> = {
   type?: () => { new (): T };
   readonly cardinality: RelationCardinality;
-  readonly inverseSide?: keyof T;
+  readonly mappedBy?: keyof T;
 };
 
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationToOneProperties<T> = Omit<RelationProperties<T>, 'cardinality'>;
-export type RelationToManyProperties<T> = RelationToOneProperties<T>;
+export type RelationOneToManyProperties<T> = Required<Omit<RelationProperties<T>, 'cardinality'>>;
+export type RelationOneToOneProperties<T> = Required<Omit<RelationProperties<T>, 'cardinality'>>;
+export type RelationManyToOneProperties<T> = Omit<RelationProperties<T>, 'cardinality' | 'mappedBy'>;
+export type RelationManyToManyProperties<T> = Omit<RelationProperties<T>, 'cardinality'>;
