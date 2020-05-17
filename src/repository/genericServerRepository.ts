@@ -9,8 +9,10 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   constructor(readonly type: { new (): T }) {}
 
   @Transactional({ propagation: 'required' })
-  insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
-    return querier.insertOne(this.type, body);
+  async insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
+    const id = querier.insertOne(this.type, body);
+    await this.insertRelations({ ...body, [this.typeMeta.id]: id }, querier);
+    return id;
   }
 
   @Transactional({ propagation: 'required' })
@@ -19,6 +21,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
+    await this.updateRelations({ ...body, [this.typeMeta.id]: id }, querier);
   }
 
   @Transactional({ propagation: 'required' })
@@ -63,5 +66,39 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   @Transactional()
   count(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier): Promise<number> {
     return querier.count(this.type, filter);
+  }
+
+  // TODO 'manyToMany' support
+  @Transactional({ propagation: 'mandatory' })
+  protected async insertRelations(body: T, @InjectQuerier() querier?: Querier): Promise<void> {
+    const insertProms = this.filterRelationsWithOwnData(body).map((prop) => {
+      const rel = this.typeMeta.columns[prop].relation;
+      const relType = rel.type();
+      const relBody = Array.isArray(body[prop]) ? body[prop] : [body[prop]];
+      relBody.forEach((it: T) => {
+        it[rel.mappedBy] = body[this.typeMeta.id];
+      });
+      return querier.insert(relType, relBody);
+    });
+    await Promise.all(insertProms);
+  }
+
+  // TODO 'manyToMany' support
+  @Transactional({ propagation: 'mandatory' })
+  protected async updateRelations(body: T, @InjectQuerier() querier?: Querier): Promise<void> {
+    const removeProms = this.filterRelationsWithOwnData(body).map((prop) => {
+      const rel = this.typeMeta.columns[prop].relation;
+      const relType = rel.type();
+      return querier.remove(relType, { [rel.mappedBy]: body[this.typeMeta.id] });
+    });
+    await Promise.all(removeProms);
+    await this.insertRelations(body, querier);
+  }
+
+  protected filterRelationsWithOwnData(body: T) {
+    return Object.keys(body).filter((prop) => {
+      const colProps = this.typeMeta.columns[prop];
+      return colProps.relation && colProps.relation.cardinality !== 'manyToOne';
+    });
   }
 }

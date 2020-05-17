@@ -1,6 +1,11 @@
+export type EntityProperties = {
+  readonly name?: string;
+};
+
 export type ColumnPersistableMode = 'insert' | 'update' | 'read';
 
 export type ColumnProperties = {
+  readonly name?: string;
   readonly mode?: ColumnPersistableMode;
   readonly relation?: RelationProperties<any>;
 };

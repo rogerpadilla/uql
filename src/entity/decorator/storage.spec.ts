@@ -37,8 +37,10 @@ it('user', () => {
   const meta = getEntityMeta(User);
   expect(meta).toEqual({
     id: 'id',
+    name: 'User',
     columns: {
       company: {
+        name: 'company',
         mode: 'insert',
         relation: {
           cardinality: 'manyToOne',
@@ -46,19 +48,31 @@ it('user', () => {
         },
       },
       createdAt: {
+        name: 'createdAt',
         mode: 'insert',
       },
-      email: {},
+      email: {
+        name: 'email',
+      },
       id: {
+        name: 'id',
         mode: 'read',
       },
-      name: {},
-      password: {},
-      status: {},
+      name: {
+        name: 'name',
+      },
+      password: {
+        name: 'password',
+      },
+      status: {
+        name: 'status',
+      },
       updatedAt: {
+        name: 'updatedAt',
         mode: 'update',
       },
       user: {
+        name: 'user',
         mode: 'insert',
         relation: {
           cardinality: 'manyToOne',
@@ -74,56 +88,83 @@ it('item', () => {
   const meta = getEntityMeta(Item);
   expect(meta).toEqual({
     id: 'id',
+    name: 'Item',
     columns: {
-      barcode: {},
+      barcode: {
+        name: 'barcode',
+      },
       buyLedgerAccount: {
+        name: 'buyLedgerAccount',
         relation: {
           cardinality: 'manyToOne',
           type: expect.any(Function),
         },
       },
       buyPriceAverage: {
+        name: 'buyPriceAverage',
         mode: 'read',
       },
-      code: {},
+      code: {
+        name: 'code',
+      },
       company: {
+        name: 'company',
         mode: 'insert',
         relation: { cardinality: 'manyToOne', type: expect.any(Function) },
       },
       createdAt: {
+        name: 'createdAt',
         mode: 'insert',
       },
-      description: {},
+      description: {
+        name: 'description',
+      },
       id: {
+        name: 'id',
         mode: 'read',
       },
-      image: {},
-      inventoryable: {},
+      image: {
+        name: 'image',
+      },
+      inventoryable: {
+        name: 'inventoryable',
+      },
       measureUnit: {
+        name: 'measureUnit',
         relation: {
           cardinality: 'manyToOne',
           type: expect.any(Function),
         },
       },
-      name: {},
+      name: {
+        name: 'name',
+      },
       saleLedgerAccount: {
+        name: 'saleLedgerAccount',
         relation: {
           cardinality: 'manyToOne',
           type: expect.any(Function),
         },
       },
-      salePrice: {},
-      status: {},
+      salePrice: {
+        name: 'salePrice',
+      },
+      status: {
+        name: 'status',
+      },
       tax: {
+        name: 'tax',
         relation: {
           cardinality: 'manyToOne',
           type: expect.any(Function),
         },
       },
       updatedAt: {
+        name: 'updatedAt',
         mode: 'update',
       },
       user: {
+        name: 'user',
         mode: 'insert',
         relation: {
           cardinality: 'manyToOne',

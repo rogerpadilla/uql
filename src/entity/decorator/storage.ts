@@ -1,9 +1,10 @@
-import { RelationProperties, ColumnProperties, PrimaryColumnProperties } from './type';
+import { RelationProperties, ColumnProperties, PrimaryColumnProperties, EntityProperties } from './type';
 
 const entitiesMeta = new Map<
   { new (): any },
   {
     id?: string;
+    name?: string;
     columns: {
       [prop: string]: ColumnProperties;
     };
@@ -20,7 +21,7 @@ function ensureEntityMeta<T>(type: { new (): T }) {
 
 export function defineColumn<T>(type: { new (): T }, prop: string, args: ColumnProperties) {
   const meta = ensureEntityMeta(type);
-  meta.columns[prop] = args;
+  meta.columns[prop] = { name: prop, ...args };
   return meta;
 }
 
@@ -35,7 +36,13 @@ export function defineRelation<T>(type: { new (): T }, prop: string, args: Relat
   if (!meta.columns[prop]) {
     meta.columns[prop] = {};
   }
-  meta.columns[prop] = { relation: args, ...meta.columns[prop] };
+  meta.columns[prop] = { ...meta.columns[prop], relation: args };
+  return meta;
+}
+
+export function defineEntity<T>(type: { new (): T }, args?: EntityProperties) {
+  const meta = ensureEntityMeta(type);
+  meta.name = args?.name || type.name;
   return meta;
 }
 

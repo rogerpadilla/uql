@@ -15,7 +15,7 @@ export function getQuerier() {
 }
 
 function buildQuerierPool(opts: DatasourceOptions) {
-  const { driver, ...poolOpts } = { ...opts };
+  const { driver, ...poolOpts } = opts;
   const querierPoolPath = getQuerierPoolPath(driver);
   // eslint-disable-next-line global-require, import/no-dynamic-require
   const QuerierPoolConstructor: { new (opts: QuerierPoolOptions): QuerierPool } = require(querierPoolPath).default;

@@ -12,6 +12,15 @@ export abstract class SqlQuerier extends Querier {
 
   abstract query<T>(sql: string): Promise<T>;
 
+  async insert<T>(type: { new (): T }, bodies: T[]) {
+    const query = this.dialect.insert(type, bodies);
+    const res = await this.query<QueryUpdateResult>(query);
+    const ids = Array(bodies.length)
+      .fill(res.insertId)
+      .map((firstId, index) => firstId + index);
+    return ids;
+  }
+
   async insertOne<T>(type: { new (): T }, body: T) {
     const query = this.dialect.insert(type, body);
     const res = await this.query<QueryUpdateResult>(query);

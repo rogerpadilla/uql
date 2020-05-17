@@ -1,5 +1,6 @@
-import { Column, ManyToOne, PrimaryColumn, OneToMany } from './decorator';
+import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity } from './decorator';
 
+@Entity()
 export abstract class BaseEntity {
   @PrimaryColumn()
   id?: number;
@@ -17,6 +18,7 @@ export abstract class BaseEntity {
   status?: number;
 }
 
+@Entity()
 export class Company extends BaseEntity {
   @Column()
   name?: string;
@@ -24,6 +26,7 @@ export class Company extends BaseEntity {
   description?: string;
 }
 
+@Entity()
 export class User extends BaseEntity {
   @Column()
   name?: string;
@@ -33,6 +36,7 @@ export class User extends BaseEntity {
   password?: string;
 }
 
+@Entity()
 export class LedgerAccount extends BaseEntity {
   @Column()
   name?: string;
@@ -42,6 +46,7 @@ export class LedgerAccount extends BaseEntity {
   parent?: number;
 }
 
+@Entity()
 export class TaxCategory extends BaseEntity {
   @Column()
   name?: string;
@@ -49,6 +54,7 @@ export class TaxCategory extends BaseEntity {
   description?: string;
 }
 
+@Entity()
 export class Tax extends BaseEntity {
   @Column()
   name?: string;
@@ -61,11 +67,13 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
+@Entity()
 export class MeasureUnitCategory extends BaseEntity {
   @Column()
   name?: string;
 }
 
+@Entity()
 export class MeasureUnit extends BaseEntity {
   @Column()
   name?: string;
@@ -74,6 +82,7 @@ export class MeasureUnit extends BaseEntity {
   category?: MeasureUnitCategory;
 }
 
+@Entity()
 export class Storehouse extends BaseEntity {
   @Column()
   name?: string;
@@ -83,6 +92,7 @@ export class Storehouse extends BaseEntity {
   description?: string;
 }
 
+@Entity()
 export class Item extends BaseEntity {
   @Column()
   name?: string;
@@ -114,6 +124,7 @@ export class Item extends BaseEntity {
   inventoryable?: boolean;
 }
 
+@Entity()
 export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   @Column()
@@ -130,6 +141,7 @@ export class ItemAdjustment extends BaseEntity {
   inventoryAdjustment?: number;
 }
 
+@Entity()
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
   itemsAdjustments?: ItemAdjustment[];
