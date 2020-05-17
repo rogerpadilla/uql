@@ -14,7 +14,7 @@ function Relation<T>(args: RelationProperties<T>) {
   };
 }
 
-export function OneToOne<T>(args?: RelationOneToOneProperties<T>) {
+export function OneToOne<T>(args: RelationOneToOneProperties<T>) {
   return Relation({ cardinality: 'oneToOne', ...args });
 }
 

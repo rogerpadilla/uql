@@ -14,6 +14,7 @@ import {
   Profile,
 } from '../entityMock';
 import { getEntityMeta, getEntities } from './storage';
+import { PrimaryColumn } from './primaryColumn';
 
 it('entities', () => {
   const output = getEntities();
@@ -90,7 +91,7 @@ it('user', () => {
         },
       },
     },
-    merged: true,
+    isValid: true,
   });
 });
 
@@ -182,6 +183,23 @@ it('item', () => {
         },
       },
     },
-    merged: true,
+    isValid: true,
   });
+});
+
+it('no @Entity', () => {
+  class SomeEntity {
+    @PrimaryColumn()
+    id: string;
+  }
+
+  expect(() => {
+    getEntityMeta(SomeEntity);
+  }).toThrow(`'SomeEntity' must be decorated with @Entity`);
+
+  class SomeClass {}
+
+  expect(() => {
+    getEntityMeta(SomeClass);
+  }).toThrow(`'SomeClass' must be decorated with @Entity`);
 });

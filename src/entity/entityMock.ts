@@ -40,7 +40,7 @@ export class User extends BaseEntity {
   email?: string;
   @Column()
   password?: string;
-  @OneToOne({ type: () => Profile, mappedBy: 'user' })
+  @OneToOne({ mappedBy: 'user' })
   @Column()
   profile?: Profile;
 }
@@ -147,7 +147,7 @@ export class ItemAdjustment extends BaseEntity {
   storehouse?: Storehouse;
   @ManyToOne({ type: () => InventoryAdjustment })
   @Column({ mode: 'insert' })
-  inventoryAdjustment?: number;
+  inventoryAdjustment?: boolean;
 }
 
 @Entity()
