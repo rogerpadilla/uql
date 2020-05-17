@@ -28,12 +28,12 @@ export function definePrimaryColumn<T>(type: { new (): T }, prop: string, args: 
 
 export function defineRelation<T>(type: { new (): T }, prop: string, args: RelationProperties<T>) {
   if (args.type === undefined) {
-    args.type = () => Reflect.getMetadata('design:type', type.prototype, prop);
-    const fieldType = args.type();
-    const isPrimitive = isPrimitiveType(fieldType);
+    const inferredType = Reflect.getMetadata('design:type', type.prototype, prop);
+    const isPrimitive = isPrimitiveType(inferredType);
     if (isPrimitive) {
-      throw new Error(`'${type.name}.${prop}' type was auto-inferred with invalid type '${fieldType?.name}'`);
+      throw new Error(`'${type.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
     }
+    args.type = () => inferredType;
   }
   const meta = ensureEntityMeta(type);
   meta.columns[prop] = { ...meta.columns[prop], relation: args };
