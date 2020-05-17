@@ -40,7 +40,6 @@ export class User extends BaseEntity {
   @Column()
   password?: string;
   @OneToOne({ mappedBy: 'user' })
-  @Column()
   profile?: Profile;
 }
 

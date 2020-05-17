@@ -36,7 +36,7 @@ export function defineRelation<T>(type: { new (): T }, prop: string, args: Relat
     args.type = () => inferredType;
   }
   const meta = ensureEntityMeta(type);
-  meta.columns[prop] = { ...meta.columns[prop], relation: args };
+  meta.columns[prop] = { name: prop, ...meta.columns[prop], relation: args };
   return meta;
 }
 
