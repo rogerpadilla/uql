@@ -99,10 +99,9 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
       const relBody = body[prop];
       if (rel.cardinality === 'oneToOne') {
         if (relBody === null) {
-          await querier.removeOne(relType, { [rel.inverseSide]: id });
-        } else {
-          await querier.updateOne(relType, { [rel.inverseSide]: id }, relBody);
+          return querier.removeOne(relType, { [rel.inverseSide]: id });
         }
+        return querier.updateOne(relType, { [rel.inverseSide]: id }, relBody);
       } else if (rel.cardinality === 'oneToMany') {
         await querier.remove(relType, { [rel.inverseSide]: id });
         if (relBody !== null) {
