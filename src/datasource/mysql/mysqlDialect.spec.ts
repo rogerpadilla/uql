@@ -22,6 +22,13 @@ it('find $startsWith', () => {
   expect(query).toBe("SELECT * FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
 });
 
+it('find $re', () => {
+  const query = sql.find(User, {
+    filter: { name: { $re: '^some' } },
+  });
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` REGEXP '^some'");
+});
+
 it('find $text', () => {
   const query1 = sql.find(Item, {
     filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },

@@ -9,16 +9,13 @@ import {
   QueryOptions,
   QueryProject,
   QueryComparisonValue,
-  QueryLogicalOperators,
+  QueryLogicalOperatorMap,
+  QueryLogicalOperatorKey,
+  QueryFilterLinkValue,
 } from '../type';
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
 export abstract class SqlDialect {
-  readonly logicalOperatorMap = {
-    $and: 'AND',
-    $or: 'OR',
-  } as const;
-
   readonly beginTransactionCommand: string = 'BEGIN';
 
   insert<T>(type: { new (): T }, body: T | T[]) {
@@ -49,7 +46,7 @@ export abstract class SqlDialect {
 
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const select = this.select<T>(type, qm, opts);
-    const where = this.where<T>(qm.filter, { prefix: true });
+    const where = this.where<T>(qm.filter, { usePrefix: true });
     const sort = this.sort<T>(qm.sort);
     const pager = this.pager(qm);
     return select + where + sort + pager;
@@ -122,30 +119,38 @@ export abstract class SqlDialect {
     return { joinsSelect, joinsTables };
   }
 
-  where<T>(filter: QueryFilter<T>, options?: { logicalOperator?: QueryLogicalOperators; prefix?: boolean }): string {
+  where<T>(filter: QueryFilter<T>, opts: { filterLink?: QueryFilterLinkValue; usePrefix?: boolean } = {}): string {
     if (!filter || Object.keys(filter).length === 0) {
       return '';
     }
 
-    const opts = {
-      logicalOperator: 'AND',
-      ...options,
-    } as const;
-
+    const filterLink: QueryFilterLinkValue = opts.filterLink || 'AND';
     const filterKeys = Object.keys(filter);
 
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
-        if (this.logicalOperatorMap[key]) {
-          const filterItCondition = this.where(val, { logicalOperator: this.logicalOperatorMap[key] });
-          return filterKeys.length > 1 ? `(${filterItCondition})` : filterItCondition;
+        if (logicalOperatorMap[key]) {
+          const logicalOperator = key as QueryLogicalOperatorKey;
+          let negation: '' | 'NOT ' = '';
+          let whereOpts: typeof opts;
+          let hasPrecedence = Object.keys(val).length > 1;
+          if (logicalOperator === '$not') {
+            negation = 'NOT ';
+          } else if (logicalOperator === '$or') {
+            whereOpts = { filterLink: 'OR' };
+            hasPrecedence = hasPrecedence && filterKeys.length > 1;
+          } else {
+            hasPrecedence = hasPrecedence && filterKeys.length > 1;
+          }
+          const filterItCondition = this.where(val, whereOpts);
+          return hasPrecedence ? `${negation}(${filterItCondition})` : negation + filterItCondition;
         }
         return this.comparison(key, val);
       })
-      .join(` ${opts.logicalOperator} `);
+      .join(` ${filterLink} `);
 
-    return opts.prefix ? ` WHERE ${sql}` : sql;
+    return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
   comparison<T>(key: string, value: QueryComparisonValue<T>) {
@@ -180,6 +185,8 @@ export abstract class SqlDialect {
         return `${attrSafe} IN (${escape(val)})`;
       case '$nin':
         return `${attrSafe} NOT IN (${escape(val)})`;
+      case '$re':
+        return `${attrSafe} REGEXP ${escape(val)}`;
       default:
         throw new Error(`Unsupported comparison operator: ${operator}`);
     }
@@ -228,3 +235,9 @@ function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersista
     return persistableBody;
   }, {} as T);
 }
+
+const logicalOperatorMap: QueryLogicalOperatorMap = {
+  $and: 'AND',
+  $or: 'OR',
+  $not: 'NOT',
+} as const;

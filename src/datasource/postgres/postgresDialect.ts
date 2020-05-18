@@ -26,9 +26,12 @@ export class PostgresDialect extends SqlDialect {
     operator: K,
     val: QueryComparisonOperator<T>[K]
   ) {
+    const attrSafe = escapeId(attr);
     switch (operator) {
       case '$startsWith':
-        return `${escapeId(attr)} ILIKE ${escape(val + '%')}`;
+        return `${attrSafe} ILIKE ${escape(val + '%')}`;
+      case '$re':
+        return `${attrSafe} ~ ${escape(val)}`;
       default:
         return super.comparisonOperation(attr, operator, val);
     }

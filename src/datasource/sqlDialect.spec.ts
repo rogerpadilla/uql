@@ -72,29 +72,74 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
   });
 
   it('find $and', () => {
-    const query = sql.find(User, {
+    const quer1 = sql.find(User, {
       filter: { $and: { id: 123, name: 'abc' } },
     });
-    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    expect(quer1).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    const query2 = sql.find(User, {
+      filter: { $and: { id: 123, name: 'abc' } },
+    });
+    expect(query2).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    const query3 = sql.find(User, {
+      filter: { $and: { id: 123 }, name: 'abc' },
+    });
+    expect(query3).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   });
 
   it('find $or', () => {
-    const query = sql.find(User, {
+    const query1 = sql.find(User, {
+      filter: { $or: { id: 123 } },
+    });
+    expect(query1).toBe('SELECT * FROM `User` WHERE `id` = 123');
+    const query2 = sql.find(User, {
       filter: { $or: { id: 123, name: 'abc' } },
     });
-    expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 OR `name` = 'abc'");
+    expect(query2).toBe("SELECT * FROM `User` WHERE `id` = 123 OR `name` = 'abc'");
+    const query3 = sql.find(User, {
+      filter: { $or: { id: 123 }, name: 'abc' },
+    });
+    expect(query3).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   });
 
-  it('find $and, $or', () => {
-    const query = sql.find(User, {
-      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' } },
+  it('find $not', () => {
+    const query1 = sql.find(User, {
+      filter: { $not: { id: 123 } },
+    });
+    expect(query1).toBe('SELECT * FROM `User` WHERE NOT `id` = 123');
+    const query2 = sql.find(User, {
+      filter: { $not: { id: 123, name: 'abc' } },
+    });
+    expect(query2).toBe("SELECT * FROM `User` WHERE NOT (`id` = 123 AND `name` = 'abc')");
+    const query3 = sql.find(User, {
+      filter: { $not: { id: 123 }, name: 'abc' },
+    });
+    expect(query3).toBe("SELECT * FROM `User` WHERE NOT `id` = 123 AND `name` = 'abc'");
+  });
+
+  it('find logical operators', () => {
+    const query1 = sql.find(User, {
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1 } },
+    });
+    expect(query1).toBe(
+      'SELECT * FROM `User` WHERE `user` = 1 AND ' + "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND NOT `id` = 1"
+    );
+    const query2 = sql.find(User, {
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1, email: 'e' } },
+    });
+    expect(query2).toBe(
+      'SELECT * FROM `User` WHERE `user` = 1 AND ' +
+        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND NOT (`id` = 1 AND `email` = 'e')"
+    );
+    const query4 = sql.find(User, {
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1, email: 'e' } },
       sort: { name: 1, createdAt: -1 },
       skip: 50,
       limit: 10,
     });
-    expect(query).toBe(
+    expect(query4).toBe(
       'SELECT * FROM `User` WHERE `user` = 1 AND ' +
-        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') " +
+        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND " +
+        "NOT (`id` = 1 AND `email` = 'e') " +
         'ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
     );
   });

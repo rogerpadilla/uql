@@ -6,13 +6,10 @@ export type QueryFieldFilter<T> = {
 
 export type QueryComparisonValue<T> = QueryPrimitive | QueryPrimitive[] | QueryComparisonOperator<T> | QueryTextSearchOptions<T>;
 
-export type QueryLogicalOperators = 'AND' | 'OR';
-
 export type QueryTextSearchOptions<T> = {
   fields: (keyof T)[];
   value: string;
 };
-
 export type QueryTextSearch<T> = {
   readonly $text?: QueryTextSearchOptions<T>;
 };
@@ -27,6 +24,7 @@ export type QueryComparisonOperator<T> = {
   readonly $startsWith?: string;
   readonly $in?: QueryPrimitive[];
   readonly $nin?: QueryPrimitive[];
+  readonly $re?: string;
 };
 
 export type QueryProject<T> = {
@@ -37,9 +35,19 @@ export type QueryPopulate<T> = {
   readonly [P in keyof T]?: QueryOne<T[P]>;
 };
 
+export type QueryFilterLinkMap = {
+  readonly $and?: 'AND';
+  readonly $or?: 'OR';
+};
+export type QueryLogicalOperatorMap = QueryFilterLinkMap & {
+  readonly $not?: 'NOT';
+};
+export type QueryFilterLinkKey = keyof QueryFilterLinkMap;
+export type QueryFilterLinkValue = QueryFilterLinkMap[QueryFilterLinkKey];
+export type QueryLogicalOperatorKey = keyof QueryLogicalOperatorMap;
+export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOperatorKey];
 export type QueryLogicalOperator<T> = {
-  readonly $and?: QueryFieldFilter<T> | QueryTextSearch<T>;
-  readonly $or?: QueryFieldFilter<T> | QueryTextSearch<T>;
+  [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<T> | QueryTextSearch<T>;
 };
 
 export type QuerySort<T> = {
