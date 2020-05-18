@@ -20,10 +20,7 @@ beforeEach(() => {
   MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
   querier = new MySqlQuerier(undefined);
-  jest.spyOn(querier, 'query').mockImplementation((query) => {
-    // console.log('spied query', query);
-    return Promise.resolve(mockRes);
-  });
+  jest.spyOn(querier, 'query').mockImplementation(() => Promise.resolve(mockRes));
   jest.spyOn(querier, 'insertOne');
   jest.spyOn(querier, 'insert');
   jest.spyOn(querier, 'update');
@@ -43,6 +40,7 @@ beforeEach(() => {
 
 afterEach(() => {
   MySql2QuerierPool.prototype.getQuerier = originalGetQuerier;
+  mockRes = undefined;
 });
 
 it('insertOne', async () => {
@@ -417,6 +415,8 @@ it('rollback - update', async () => {
 });
 
 it('rollback - commit', async () => {
+  const mock: QueryUpdateResult = { insertId: 5 };
+  mockRes = mock;
   jest.spyOn(querier, 'commit').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
   await expect(repository.saveOne({ company: 123 })).rejects.toThrow('Some Error');
   expect(querier.query).toBeCalledTimes(3);

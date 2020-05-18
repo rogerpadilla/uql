@@ -2,14 +2,11 @@ import { initCorozo } from '../config';
 import { User, Item } from '../entity/entityMock';
 import { GenericClientRepository } from './genericClientRepository';
 import { GenericServerRepository } from './genericServerRepository';
-import { getServerRepository, resetContainer } from './container';
+import { getServerRepository } from './container';
 import { Repository } from './decorator';
 
 afterEach(() => {
-  resetContainer();
-  initCorozo({
-    defaultRepositoryClass: undefined,
-  });
+  initCorozo(undefined);
 });
 
 it('generic', () => {
@@ -29,14 +26,14 @@ it('no repository', () => {
 it('@Repository()', () => {
   class SomeGenericRepository extends GenericServerRepository<any, number> {}
 
+  initCorozo({ defaultRepositoryClass: SomeGenericRepository });
+
   @Repository()
   class UserRepository extends GenericClientRepository<User, number> {
     constructor() {
       super(User);
     }
   }
-
-  initCorozo({ defaultRepositoryClass: SomeGenericRepository });
 
   expect(getServerRepository(Item)).toBeInstanceOf(SomeGenericRepository);
   expect(getServerRepository(Item)).not.toBeInstanceOf(UserRepository);

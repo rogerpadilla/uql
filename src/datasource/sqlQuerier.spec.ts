@@ -5,8 +5,8 @@ import { MySqlQuerier } from './mysql/mysqlQuerier';
 import { PostgresQuerier } from './postgres/postgresQuerier';
 
 describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
-  let mockRes: User[] | QueryUpdateResult;
   let querier: SqlQuerier;
+  let mockRes: User[] | QueryUpdateResult;
 
   beforeEach(() => {
     querier = new Querier({
@@ -26,6 +26,10 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
     jest.spyOn(querier, 'commit');
     jest.spyOn(querier, 'rollback');
     jest.spyOn(querier, 'release');
+  });
+
+  afterEach(() => {
+    mockRes = undefined;
   });
 
   it('find', async () => {
@@ -81,6 +85,8 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   });
 
   it('transaction', async () => {
+    const mock: QueryUpdateResult = { affectedRows: 5 };
+    mockRes = mock;
     expect(querier.hasOpenTransaction()).toBeFalsy();
     await querier.beginTransaction();
     expect(querier.hasOpenTransaction()).toBe(true);
@@ -133,6 +139,8 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   });
 
   it('transaction release pending', async () => {
+    const mock: QueryUpdateResult = { affectedRows: 5 };
+    mockRes = mock;
     expect(querier.hasOpenTransaction()).toBeFalsy();
     await querier.beginTransaction();
     expect(querier.hasOpenTransaction()).toBe(true);
