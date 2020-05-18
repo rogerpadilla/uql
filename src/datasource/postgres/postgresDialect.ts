@@ -1,11 +1,13 @@
 import { escape, escapeId } from 'sqlstring';
 import { SqlDialect } from '../sqlDialect';
 import { QueryComparisonOperator, QueryTextSearchOptions, QueryComparisonValue } from '../../type';
+import { getEntityMeta } from '../../entity';
 
 export class PostgresDialect extends SqlDialect {
   insert<T>(type: { new (): T }, body: T | T[]) {
     const sql = super.insert(type, body);
-    return sql + ' RETURNING *';
+    const meta = getEntityMeta(type);
+    return sql + ` RETURNING ${meta.id} AS insertId`;
   }
 
   comparison<T>(key: string, val: QueryComparisonValue<T>) {
