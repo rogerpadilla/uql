@@ -130,13 +130,13 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       'SELECT * FROM `User` WHERE `user` = 1 AND ' +
         "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND NOT (`id` = 1 AND `email` = 'e')"
     );
-    const query4 = sql.find(User, {
+    const query3 = sql.find(User, {
       filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1, email: 'e' } },
       sort: { name: 1, createdAt: -1 },
       skip: 50,
       limit: 10,
     });
-    expect(query4).toBe(
+    expect(query3).toBe(
       'SELECT * FROM `User` WHERE `user` = 1 AND ' +
         "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND " +
         "NOT (`id` = 1 AND `email` = 'e') " +
