@@ -41,59 +41,25 @@ it('user', () => {
     type: User,
     name: 'User',
     id: 'id',
-    columns: {
-      company: {
-        name: 'company',
-        mode: 'insert',
-      },
-      createdAt: {
-        name: 'createdAt',
-        mode: 'insert',
-      },
-      email: {
-        name: 'email',
-      },
-      id: {
-        name: 'id',
-        mode: 'read',
-      },
-      name: {
-        name: 'name',
-      },
-      password: {
-        name: 'password',
-      },
-      status: {
-        name: 'status',
-      },
-      updatedAt: {
-        name: 'updatedAt',
-        mode: 'update',
-      },
-      profile: {
-        name: 'profile',
-      },
-      user: {
-        name: 'user',
-        mode: 'insert',
-      },
-    },
-    relations: {
-      profile: {
-        cardinality: 'oneToOne',
-        mappedBy: 'user',
-        type: expect.any(Function),
-      },
-      company: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      user: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-    },
     isEntity: true,
+    properties: {
+      id: { column: { name: 'id', mode: 'read' } },
+      company: {
+        column: { name: 'company', mode: 'insert' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      user: { relation: { type: expect.any(Function), cardinality: 'manyToOne' }, column: { name: 'user', mode: 'insert' } },
+      createdAt: { column: { name: 'createdAt', mode: 'insert' } },
+      updatedAt: { column: { name: 'updatedAt', mode: 'update' } },
+      status: { column: { name: 'status' } },
+      name: { column: { name: 'name' } },
+      email: { column: { name: 'email' } },
+      password: { column: { name: 'password' } },
+      profile: {
+        column: { name: 'profile' },
+        relation: { type: expect.any(Function), cardinality: 'oneToOne', mappedBy: 'user' },
+      },
+    },
   });
 });
 
@@ -103,95 +69,36 @@ it('item', () => {
     type: Item,
     name: 'Item',
     id: 'id',
-    columns: {
-      barcode: {
-        name: 'barcode',
-      },
-      buyLedgerAccount: {
-        name: 'buyLedgerAccount',
-      },
-      buyPriceAverage: {
-        name: 'buyPriceAverage',
-        mode: 'read',
-      },
-      code: {
-        name: 'code',
-      },
-      company: {
-        name: 'company',
-        mode: 'insert',
-      },
-      createdAt: {
-        name: 'createdAt',
-        mode: 'insert',
-      },
-      description: {
-        name: 'description',
-      },
-      id: {
-        name: 'id',
-        mode: 'read',
-      },
-      image: {
-        name: 'image',
-      },
-      inventoryable: {
-        name: 'inventoryable',
-      },
-      measureUnit: {
-        name: 'measureUnit',
-      },
-      name: {
-        name: 'name',
-      },
-      saleLedgerAccount: {
-        name: 'saleLedgerAccount',
-      },
-      salePrice: {
-        name: 'salePrice',
-      },
-      status: {
-        name: 'status',
-      },
-      tax: {
-        name: 'tax',
-      },
-      updatedAt: {
-        name: 'updatedAt',
-        mode: 'update',
-      },
-      user: {
-        name: 'user',
-        mode: 'insert',
-      },
-    },
-    relations: {
-      buyLedgerAccount: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      measureUnit: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      saleLedgerAccount: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      tax: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      company: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-      user: {
-        cardinality: 'manyToOne',
-        type: expect.any(Function),
-      },
-    },
     isEntity: true,
+    properties: {
+      id: { column: { name: 'id', mode: 'read' } },
+      company: {
+        column: { name: 'company', mode: 'insert' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      user: { relation: { type: expect.any(Function), cardinality: 'manyToOne' }, column: { name: 'user', mode: 'insert' } },
+      createdAt: { column: { name: 'createdAt', mode: 'insert' } },
+      updatedAt: { column: { name: 'updatedAt', mode: 'update' } },
+      status: { column: { name: 'status' } },
+      name: { column: { name: 'name' } },
+      description: { column: { name: 'description' } },
+      code: { column: { name: 'code' } },
+      barcode: { column: { name: 'barcode' } },
+      image: { column: { name: 'image' } },
+      buyLedgerAccount: {
+        column: { name: 'buyLedgerAccount' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      saleLedgerAccount: {
+        column: { name: 'saleLedgerAccount' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      tax: { column: { name: 'tax' }, relation: { type: expect.any(Function), cardinality: 'manyToOne' } },
+      measureUnit: { column: { name: 'measureUnit' }, relation: { type: expect.any(Function), cardinality: 'manyToOne' } },
+      buyPriceAverage: { column: { name: 'buyPriceAverage', mode: 'read' } },
+      salePrice: { column: { name: 'salePrice' } },
+      inventoryable: { column: { name: 'inventoryable' } },
+    },
   });
 });
 

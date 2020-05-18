@@ -74,19 +74,19 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const id = body[this.meta.id];
 
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
-      const rel = this.meta.relations[prop];
-      const relType = rel.type();
+      const relOpts = this.meta.relations[prop];
+      const relType = relOpts.type();
       const relBody = body[prop];
-      if (rel.cardinality === 'oneToOne') {
+      if (relOpts.cardinality === 'oneToOne') {
         return querier.insertOne(relType, relBody);
       }
-      if (rel.cardinality === 'oneToMany') {
+      if (relOpts.cardinality === 'oneToMany') {
         relBody.forEach((it: T) => {
-          it[rel.mappedBy] = id;
+          it[relOpts.mappedBy] = id;
         });
         return querier.insert(relType, relBody);
       }
-      throw new Error('TODO unsupported cardinality ' + rel.cardinality);
+      throw new Error('TODO unsupported cardinality ' + relOpts.cardinality);
     });
 
     await Promise.all(insertProms);
@@ -96,24 +96,24 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const id = body[this.meta.id];
 
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
-      const rel = this.meta.relations[prop];
-      const relType = rel.type();
+      const relOpts = this.meta.relations[prop];
+      const relType = relOpts.type();
       const relBody = body[prop];
-      if (rel.cardinality === 'oneToOne') {
+      if (relOpts.cardinality === 'oneToOne') {
         if (relBody === null) {
-          return querier.removeOne(relType, { [rel.mappedBy]: id });
+          return querier.removeOne(relType, { [relOpts.mappedBy]: id });
         }
-        return querier.updateOne(relType, { [rel.mappedBy]: id }, relBody);
-      } else if (rel.cardinality === 'oneToMany') {
-        await querier.remove(relType, { [rel.mappedBy]: id });
+        return querier.updateOne(relType, { [relOpts.mappedBy]: id }, relBody);
+      } else if (relOpts.cardinality === 'oneToMany') {
+        await querier.remove(relType, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
           relBody.forEach((it: T) => {
-            it[rel.mappedBy] = id;
+            it[relOpts.mappedBy] = id;
           });
           return querier.insert(relType, relBody);
         }
       } else {
-        throw new Error('TODO unsupported cardinality ' + rel.cardinality);
+        throw new Error('TODO unsupported cardinality ' + relOpts.cardinality);
       }
     });
 
@@ -122,8 +122,8 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   protected filterIndependentRelations(body: T) {
     return Object.keys(body).filter((prop) => {
-      const relProps = this.meta.relations[prop];
-      return relProps && relProps.cardinality !== 'manyToOne';
+      const relOpts = this.meta.relations[prop];
+      return relOpts && relOpts.cardinality !== 'manyToOne';
     });
   }
 }

@@ -11,7 +11,7 @@ import {
   QueryComparisonValue,
   QueryLogicalOperatorMap,
   QueryLogicalOperatorKey,
-  QueryFilterLinkValue,
+  QueryLogicalOperatorValue,
 } from '../type';
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
@@ -52,34 +52,36 @@ export abstract class SqlDialect {
     return select + where + sort + pager;
   }
 
-  columns<T>(type: { new (): T }, opts: { columns?: QueryProject<T>; prefix?: string; alias?: boolean }) {
+  columns<T>(type: { new (): T }, project: QueryProject<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions) {
+    if (opts.trustedProject) {
+      return Object.keys(project).join(', ');
+    }
+
     const prefix = opts.prefix ? `${escapeId(opts.prefix, true)}.` : '';
 
-    if (!opts.columns) {
+    if (!project) {
       if (!opts.alias) {
         return `${prefix}*`;
       }
       const meta = getEntityMeta(type);
-      opts.columns = Object.keys(meta.columns).reduce((acc, it) => {
+      project = Object.keys(meta.columns).reduce((acc, it) => {
         acc[it] = 1;
         return acc;
       }, {} as QueryProject<T>);
     }
 
-    const nameGenerator = opts.alias
-      ? (col: string) => `${prefix}${escapeId(col)} ${escapeId(opts.prefix + '.' + col, true)}`
-      : (col: string) => `${prefix}${escapeId(col)}`;
+    const nameMapper = opts.alias
+      ? (name: string) => `${prefix}${escapeId(name)} ${escapeId(opts.prefix + '.' + name, true)}`
+      : (name: string) => `${prefix}${escapeId(name)}`;
 
-    return Object.keys(opts.columns).map(nameGenerator).join(', ');
+    return Object.keys(project).map(nameMapper).join(', ');
   }
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
-    const baseSelect = opts?.trustedProject
-      ? Object.keys(qm.project).join(', ')
-      : this.columns(type, {
-          columns: qm.project,
-          prefix: qm.populate && type.name,
-        });
+    const baseSelect = this.columns(type, qm.project, {
+      prefix: qm.populate && type.name,
+      ...opts,
+    });
     const { joinsSelect, joinsTables } = this.joins(type, qm);
     const typeNameSafe = escapeId(type.name);
     return `SELECT ${baseSelect}${joinsSelect} FROM ${typeNameSafe}${joinsTables}`;
@@ -91,16 +93,15 @@ export abstract class SqlDialect {
     if (qm.populate) {
       const entityMeta = getEntityMeta(type);
       for (const popKey in qm.populate) {
-        const relProps = entityMeta.relations[popKey];
-        if (!relProps) {
+        const relOpts = entityMeta.relations[popKey];
+        if (!relOpts) {
           throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
         }
         const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
         const joinPathSafe = escapeId(joinPrefix, true);
-        const relType = relProps.type();
+        const relType = relOpts.type();
         const popVal = qm.populate[popKey];
-        const relColumns = this.columns(relType, {
-          columns: popVal?.project,
+        const relColumns = this.columns(relType, popVal?.project, {
           prefix: joinPrefix,
           alias: true,
         });
@@ -119,32 +120,26 @@ export abstract class SqlDialect {
     return { joinsSelect, joinsTables };
   }
 
-  where<T>(filter: QueryFilter<T>, opts: { filterLink?: QueryFilterLinkValue; usePrefix?: boolean } = {}): string {
-    if (!filter || Object.keys(filter).length === 0) {
+  where<T>(filter: QueryFilter<T>, opts: { filterLink?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}): string {
+    const filterKeys = filter && Object.keys(filter);
+    if (!filterKeys) {
       return '';
     }
 
-    const filterLink: QueryFilterLinkValue = opts.filterLink || 'AND';
-    const filterKeys = Object.keys(filter);
+    const filterLink: QueryLogicalOperatorValue = opts.filterLink || 'AND';
 
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
         if (logicalOperatorMap[key]) {
           const logicalOperator = key as QueryLogicalOperatorKey;
-          let negation: '' | 'NOT ' = '';
           let whereOpts: typeof opts;
-          let hasPrecedence = Object.keys(val).length > 1;
-          if (logicalOperator === '$not') {
-            negation = 'NOT ';
-          } else if (logicalOperator === '$or') {
+          if (logicalOperator === '$or') {
             whereOpts = { filterLink: 'OR' };
-            hasPrecedence = hasPrecedence && filterKeys.length > 1;
-          } else {
-            hasPrecedence = hasPrecedence && filterKeys.length > 1;
           }
+          const hasPrecedence = Object.keys(val).length > 1 && filterKeys.length > 1;
           const filterItCondition = this.where(val, whereOpts);
-          return hasPrecedence ? `${negation}(${filterItCondition})` : negation + filterItCondition;
+          return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
         return this.comparison(key, val);
       })
@@ -219,18 +214,18 @@ export abstract class SqlDialect {
 
 function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode) {
   const meta = getEntityMeta(type);
-  return Object.keys(body).reduce((persistableBody, colName) => {
-    const colProps = meta.columns[colName];
-    const relProps = meta.relations[colName];
-    const colVal = body[colName];
+  return Object.keys(body).reduce((persistableBody, prop) => {
+    const propVal = body[prop];
+    const colOpts = meta.columns[prop];
+    const relOpts = meta.relations[prop];
     if (
-      colVal !== undefined &&
-      colProps &&
-      (colProps.mode === undefined || colProps.mode === mode) &&
+      propVal !== undefined &&
+      colOpts &&
+      (!colOpts.mode || colOpts.mode === mode) &&
       // 'manyToOne' is the only relation which doesn't require additional stuff when persisting
-      (relProps === undefined || relProps.cardinality === 'manyToOne')
+      (!relOpts || relOpts.cardinality === 'manyToOne')
     ) {
-      persistableBody[colName] = colVal;
+      persistableBody[prop] = propVal;
     }
     return persistableBody;
   }, {} as T);
@@ -239,5 +234,4 @@ function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersista
 const logicalOperatorMap: QueryLogicalOperatorMap = {
   $and: 'AND',
   $or: 'OR',
-  $not: 'NOT',
 } as const;

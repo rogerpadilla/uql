@@ -1,9 +1,9 @@
-import { PrimaryColumnProperties } from './type';
+import { PrimaryColumnOptions } from './type';
 import { definePrimaryColumn } from './storage';
 
-export function PrimaryColumn(args?: PrimaryColumnProperties) {
+export function PrimaryColumn<T>(opts?: PrimaryColumnOptions<T>) {
   return (target: object, prop: string) => {
-    const type = target.constructor as { new (): object };
-    definePrimaryColumn(type, prop, args);
+    const type = target.constructor as { new (): T };
+    definePrimaryColumn(type, prop, opts);
   };
 }

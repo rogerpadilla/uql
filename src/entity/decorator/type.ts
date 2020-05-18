@@ -1,37 +1,47 @@
-export type EntityProperties = {
+export type EntityOptions = {
   readonly name?: string;
 };
 
 export type ColumnPersistableMode = 'insert' | 'update' | 'read';
 
-export type ColumnProperties = {
-  readonly name?: string;
-  readonly mode?: ColumnPersistableMode;
+export type PropetyOptions<T> = {
+  readonly column: ColumnOptions<T>;
+  readonly relation: RelationOptions<T>;
 };
 
-export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;
+export type ColumnOptions<T> = {
+  readonly name?: string;
+  readonly isColumn?: boolean;
+  readonly mode?: ColumnPersistableMode;
+};
+export type PrimaryColumnOptions<T> = ColumnOptions<T>;
 
-export type RelationProperties<T> = {
+export type RelationOptions<T> = {
   type?: () => { new (): any };
   readonly cardinality: RelationCardinality;
-  mappedBy?: keyof T;
+  readonly mappedBy?: keyof T;
 };
 
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationOneToOneProperties<T> = { type?: () => { new (): T }; mappedBy: keyof T };
-export type RelationOneToManyProperties<T> = { type: () => { new (): T }; mappedBy: keyof T };
-export type RelationManyToOneProperties<T> = { type?: () => { new (): T } };
-export type RelationManyToManyProperties<T> = { type: () => { new (): T } };
+export type RelationOneToOneOptions<T> = { type?: () => { new (): T }; mappedBy: keyof T };
+export type RelationOneToManyOptions<T> = { type: () => { new (): T }; mappedBy: keyof T };
+export type RelationManyToOneOptions<T> = { type?: () => { new (): T } };
+export type RelationManyToManyOptions<T> = { type: () => { new (): T } };
 
 export type EntityMeta<T> = {
   readonly type: { new (): T };
   name: string;
   id?: string;
-  columns: {
-    [prop: string]: ColumnProperties;
-  };
-  relations: {
-    [prop: string]: RelationProperties<T>;
-  };
   isEntity?: boolean;
+  properties: {
+    [prop: string]: PropetyOptions<T>;
+  };
+  // readonly shorthand for accesing columns
+  readonly columns?: {
+    [prop: string]: ColumnOptions<T>;
+  };
+  // readonly shorthand for accesing relations
+  readonly relations?: {
+    [prop: string]: RelationOptions<T>;
+  };
 };

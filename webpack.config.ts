@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import * as path from 'path';
 import * as webpack from 'webpack';
-import * as CopyWebpackPlugin from 'copy-webpack-plugin';
-import * as ForkTsCheckerWebpackPlugin from 'fork-ts-checker-webpack-plugin';
+import * as CopyPlugin from 'copy-webpack-plugin';
+import * as ForkTsCheckerPlugin from 'fork-ts-checker-webpack-plugin';
 
 const config = (env: string, argv: { mode: 'development' | 'production' | 'none' }): webpack.Configuration => {
   const mode = argv.mode || 'development';
@@ -49,8 +49,8 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     plugins: [
-      new CopyWebpackPlugin(['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']),
-      new ForkTsCheckerWebpackPlugin({
+      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] } as any),
+      new ForkTsCheckerPlugin({
         eslint: true,
       }),
     ],

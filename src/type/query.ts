@@ -35,15 +35,10 @@ export type QueryPopulate<T> = {
   readonly [P in keyof T]?: QueryOne<T[P]>;
 };
 
-export type QueryFilterLinkMap = {
+export type QueryLogicalOperatorMap = {
   readonly $and?: 'AND';
   readonly $or?: 'OR';
 };
-export type QueryLogicalOperatorMap = QueryFilterLinkMap & {
-  readonly $not?: 'NOT';
-};
-export type QueryFilterLinkKey = keyof QueryFilterLinkMap;
-export type QueryFilterLinkValue = QueryFilterLinkMap[QueryFilterLinkKey];
 export type QueryLogicalOperatorKey = keyof QueryLogicalOperatorMap;
 export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOperatorKey];
 export type QueryLogicalOperator<T> = {

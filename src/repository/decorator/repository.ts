@@ -1,8 +1,9 @@
 import { CustomRepositoryConstructor } from '../type';
-import { setRepository } from '../container';
+import { setCustomRepository } from '../container';
 
 export function Repository() {
-  return (repository: CustomRepositoryConstructor<any>) => {
-    setRepository(repository);
+  return (repositoryClass: CustomRepositoryConstructor<any>) => {
+    const repository = new repositoryClass();
+    setCustomRepository(repository.meta.type, repository);
   };
 }

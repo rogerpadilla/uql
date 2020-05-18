@@ -26,8 +26,11 @@ export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>) {
   }
 
   for (const popKey of Object.keys(qm.populate)) {
-    const relProps = meta.relations[popKey];
-    const relType = relProps.type();
+    const relOpts = meta.relations[popKey];
+    if (!relOpts) {
+      throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+    }
+    const relType = relOpts.type();
     const relMeta = getEntityMeta(relType);
     pipeline.push({
       $lookup: {

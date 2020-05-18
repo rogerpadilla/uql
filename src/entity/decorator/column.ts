@@ -1,9 +1,9 @@
 import { defineColumn } from './storage';
-import { ColumnProperties } from './type';
+import { ColumnOptions } from './type';
 
-export function Column(args?: ColumnProperties) {
+export function Column<T>(opts?: ColumnOptions<T>) {
   return (target: object, prop: string) => {
-    const type = target.constructor as { new (): object };
-    defineColumn(type, prop, args);
+    const type = target.constructor as { new (): T };
+    defineColumn(type, prop, opts);
   };
 }

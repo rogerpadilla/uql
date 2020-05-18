@@ -3,17 +3,15 @@ import { getQuerier } from '../querierPool';
 import { getInjectQuerier } from './injectQuerier';
 
 export function Transactional(opts: { readonly propagation: 'supports' | 'required' } = { propagation: 'supports' }) {
-  return (target: object, propertyKey: string, propertyDescriptor: PropertyDescriptor) => {
-    const originalMethod: Function = propertyDescriptor.value;
-    const injectQuerierIndex = getInjectQuerier(target, propertyKey);
+  return (target: object, prop: string, propDescriptor: PropertyDescriptor) => {
+    const originalMethod: Function = propDescriptor.value;
+    const injectQuerierIndex = getInjectQuerier(target, prop);
 
     if (injectQuerierIndex === undefined) {
-      throw new Error(
-        `Missing decorator @InjectQuerier() in one of the parameters of '${target.constructor.name}.${propertyKey}'`
-      );
+      throw new Error(`Missing decorator @InjectQuerier() in one of the parameters of '${target.constructor.name}.${prop}'`);
     }
 
-    propertyDescriptor.value = async function func(this: object, ...args: any[]) {
+    propDescriptor.value = async function func(this: object, ...args: any[]) {
       let isOwnAuto: boolean;
       let querier: Querier;
 

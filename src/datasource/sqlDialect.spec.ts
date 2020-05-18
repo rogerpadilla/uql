@@ -31,10 +31,10 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
     ];
     const query = sql.insert(User, bodies);
     expect(query).toStartsWith(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ' +
-        "('Some Name 1', 'someemail1@example.com', 123), " +
-        "('Some Name 2', 'someemail2@example.com', 456), " +
-        "('Some Name 3', 'someemail3@example.com', 789)"
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES' +
+        " ('Some Name 1', 'someemail1@example.com', 123)" +
+        ", ('Some Name 2', 'someemail2@example.com', 456)" +
+        ", ('Some Name 3', 'someemail3@example.com', 789)"
     );
   });
 
@@ -101,46 +101,31 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
     expect(query3).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   });
 
-  it('find $not', () => {
-    const query1 = sql.find(User, {
-      filter: { $not: { id: 123 } },
-    });
-    expect(query1).toBe('SELECT * FROM `User` WHERE NOT `id` = 123');
-    const query2 = sql.find(User, {
-      filter: { $not: { id: 123, name: 'abc' } },
-    });
-    expect(query2).toBe("SELECT * FROM `User` WHERE NOT (`id` = 123 AND `name` = 'abc')");
-    const query3 = sql.find(User, {
-      filter: { $not: { id: 123 }, name: 'abc' },
-    });
-    expect(query3).toBe("SELECT * FROM `User` WHERE NOT `id` = 123 AND `name` = 'abc'");
-  });
-
   it('find logical operators', () => {
     const query1 = sql.find(User, {
-      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1 } },
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1 },
     });
     expect(query1).toBe(
-      'SELECT * FROM `User` WHERE `user` = 1 AND ' + "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND NOT `id` = 1"
+      "SELECT * FROM `User` WHERE `user` = 1 AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1"
     );
     const query2 = sql.find(User, {
-      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1, email: 'e' } },
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1, email: 'e' },
     });
     expect(query2).toBe(
-      'SELECT * FROM `User` WHERE `user` = 1 AND ' +
-        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND NOT (`id` = 1 AND `email` = 'e')"
+      'SELECT * FROM `User` WHERE `user` = 1' +
+        " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1 AND `email` = 'e'"
     );
     const query3 = sql.find(User, {
-      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, $not: { id: 1, email: 'e' } },
+      filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1, email: 'e' },
       sort: { name: 1, createdAt: -1 },
       skip: 50,
       limit: 10,
     });
     expect(query3).toBe(
-      'SELECT * FROM `User` WHERE `user` = 1 AND ' +
-        "(`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND " +
-        "NOT (`id` = 1 AND `email` = 'e') " +
-        'ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
+      'SELECT * FROM `User` WHERE `user` = 1' +
+        " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com')" +
+        " AND `id` = 1 AND `email` = 'e'" +
+        ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
     );
   });
 
@@ -224,13 +209,13 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       limit: 100,
     });
     expect(query).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, ' +
-        '`tax`.`id` `tax.id`, `tax`.`name` `tax.name`, ' +
-        '`measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category` ' +
-        'FROM `Item` ' +
-        'LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax` ' +
-        'LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit` ' +
-        'LIMIT 100'
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
+        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`' +
+        ' FROM `Item`' +
+        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' LIMIT 100'
     );
   });
 
@@ -244,16 +229,16 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
     };
     const query = sql.find(Item, qm);
     expect(query).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, ' +
-        '`tax`.`id` `tax.id`, `tax`.`company` `tax.company`, `tax`.`user` `tax.user`, `tax`.`createdAt` `tax.createdAt`, ' +
-        '`tax`.`updatedAt` `tax.updatedAt`, `tax`.`status` `tax.status`, `tax`.`name` `tax.name`, `tax`.`percentage` `tax.percentage`, ' +
-        '`tax`.`category` `tax.category`, `tax`.`description` `tax.description`, ' +
-        '`measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name` ' +
-        'FROM `Item` ' +
-        'LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax` ' +
-        'LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit` ' +
-        "WHERE `measureUnit`.`name` <> 'unidad' AND `tax`.`id` = 2 " +
-        'ORDER BY `category`.`name`, `MeasureUnit`.`name` LIMIT 100'
+      'SELECT `Item`.`id`, `Item`.`name`' +
+        ', `tax`.`id` `tax.id`, `tax`.`company` `tax.company`, `tax`.`user` `tax.user`, `tax`.`createdAt` `tax.createdAt`' +
+        ', `tax`.`updatedAt` `tax.updatedAt`, `tax`.`status` `tax.status`, `tax`.`name` `tax.name`, `tax`.`percentage` `tax.percentage`' +
+        ', `tax`.`category` `tax.category`, `tax`.`description` `tax.description`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
+        ' FROM `Item`' +
+        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        " WHERE `measureUnit`.`name` <> 'unidad' AND `tax`.`id` = 2" +
+        ' ORDER BY `category`.`name`, `MeasureUnit`.`name` LIMIT 100'
     );
   });
 
@@ -266,13 +251,13 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       limit: 100,
     });
     expect(query1).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, ' +
-        '`measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`, ' +
-        '`measureUnit.category`.`name` `measureUnit.category.name` ' +
-        'FROM `Item` ' +
-        'LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit` ' +
-        'LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category` ' +
-        'LIMIT 100'
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`' +
+        ', `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ' FROM `Item`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category`' +
+        ' LIMIT 100'
     );
     const query2 = sql.find(Item, {
       project: { id: 1, name: 1, code: 1 },
@@ -282,13 +267,13 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       limit: 100,
     });
     expect(query2).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, ' +
-        '`measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, ' +
-        '`measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name` ' +
-        'FROM `Item` ' +
-        'LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit` ' +
-        'LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category` ' +
-        'LIMIT 100'
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ' FROM `Item`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category`' +
+        ' LIMIT 100'
     );
     const query3 = sql.find(ItemAdjustment, {
       project: { id: 1, buyPrice: 1, number: 1 },
@@ -303,15 +288,15 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       limit: 100,
     });
     expect(query3).toBe(
-      'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`buyPrice`, `ItemAdjustment`.`number`, ' +
-        '`item`.`id` `item.id`, `item`.`name` `item.name`, ' +
-        '`item.measureUnit`.`id` `item.measureUnit.id`, `item.measureUnit`.`name` `item.measureUnit.name`, ' +
-        '`item.measureUnit.category`.`id` `item.measureUnit.category.id`, `item.measureUnit.category`.`name` `item.measureUnit.category.name` ' +
-        'FROM `ItemAdjustment` ' +
-        'LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`item` ' +
-        'LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnit` ' +
-        'LEFT JOIN `MeasureUnitCategory` `item.measureUnit.category` ON `item.measureUnit.category`.`id` = `item.measureUnit`.`category` ' +
-        'LIMIT 100'
+      'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`buyPrice`, `ItemAdjustment`.`number`' +
+        ', `item`.`id` `item.id`, `item`.`name` `item.name`' +
+        ', `item.measureUnit`.`id` `item.measureUnit.id`, `item.measureUnit`.`name` `item.measureUnit.name`' +
+        ', `item.measureUnit.category`.`id` `item.measureUnit.category.id`, `item.measureUnit.category`.`name` `item.measureUnit.category.name`' +
+        ' FROM `ItemAdjustment`' +
+        ' LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`item`' +
+        ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnit`' +
+        ' LEFT JOIN `MeasureUnitCategory` `item.measureUnit.category` ON `item.measureUnit.category`.`id` = `item.measureUnit`.`category`' +
+        ' LIMIT 100'
     );
   });
 
@@ -321,12 +306,12 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       populate: { user: { project: { id: 1, name: 1 } as any }, company: { project: { id: 1, name: 1 } as any } },
     });
     expect(query).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, ' +
-        '`user`.`id` `user.id`, `user`.`name` `user.name`, ' +
-        '`company`.`id` `company.id`, `company`.`name` `company.name` ' +
-        'FROM `Item` ' +
-        'LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`user` ' +
-        'LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`company`'
+      'SELECT `Item`.`id`, `Item`.`name`' +
+        ', `user`.`id` `user.id`, `user`.`name` `user.name`' +
+        ', `company`.`id` `company.id`, `company`.`name` `company.name`' +
+        ' FROM `Item`' +
+        ' LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`user`' +
+        ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`company`'
     );
   });
 

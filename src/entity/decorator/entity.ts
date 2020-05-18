@@ -1,9 +1,9 @@
 import { defineEntity } from './storage';
-import { EntityProperties } from './type';
+import { EntityOptions } from './type';
 
-export function Entity(args?: EntityProperties) {
+export function Entity(opts?: EntityOptions) {
   return (constructor: Function) => {
     const type = constructor as { new (): object };
-    defineEntity(type, args);
+    defineEntity(type, opts);
   };
 }
