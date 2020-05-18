@@ -144,7 +144,6 @@ export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   @Column()
   storehouse?: Storehouse;
-  @ManyToOne({ type: () => InventoryAdjustment })
   @Column({ mode: 'insert' })
   inventoryAdjustment?: boolean;
 }

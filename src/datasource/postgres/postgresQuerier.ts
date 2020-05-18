@@ -7,9 +7,7 @@ export class PostgresQuerier extends SqlQuerier {
     super(new PostgresDialect(), conn);
   }
 
-  async query<T>(sql: string): Promise<T> {
-    console.debug(`\nquery: ${sql}\n`);
-    const { rows } = await this.conn.query(sql);
-    return rows;
+  parseQueryResult<T>(res: { rows: T }) {
+    return res.rows;
   }
 }
