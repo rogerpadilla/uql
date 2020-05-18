@@ -3,6 +3,11 @@ import { SqlDialect } from '../sqlDialect';
 import { QueryComparisonOperator, QueryTextSearchOptions, QueryComparisonValue } from '../../type';
 
 export class PostgresDialect extends SqlDialect {
+  insert<T>(type: { new (): T }, body: T | T[]) {
+    const sql = super.insert(type, body);
+    return sql + ' RETURNING *';
+  }
+
   comparison<T>(key: string, val: QueryComparisonValue<T>) {
     switch (key) {
       case '$text':

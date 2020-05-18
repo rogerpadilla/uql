@@ -59,7 +59,7 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
     mockRes = mock;
     const resp = await querier.insertOne(User, { company: 123 });
     expect(resp).toEqual(mock.insertId);
-    expect(querier.query).toBeCalledWith('INSERT INTO `User` (`company`) VALUES (123)');
+    expect(querier.query).toBeCalledWith(expect.toStartsWith('INSERT INTO `User` (`company`) VALUES (123)'));
     expect(querier.query).toBeCalledTimes(1);
     expect(querier.beginTransaction).not.toBeCalled();
     expect(querier.commit).not.toBeCalled();

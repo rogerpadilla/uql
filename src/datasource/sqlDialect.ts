@@ -10,7 +10,6 @@ import {
   QueryProject,
   QueryComparisonValue,
   QueryLogicalOperators,
-  QueryOne,
 } from '../type';
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 

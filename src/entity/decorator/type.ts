@@ -12,7 +12,7 @@ export type ColumnProperties = {
 export type PrimaryColumnProperties = Omit<ColumnProperties, 'mode'>;
 
 export type RelationProperties<T> = {
-  type?: () => { new (): object };
+  type?: () => { new (): any };
   readonly cardinality: RelationCardinality;
   mappedBy?: keyof T;
 };

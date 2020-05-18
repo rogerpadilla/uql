@@ -20,7 +20,12 @@ declare namespace Express {
 }
 
 declare namespace jest {
+  type toStartsWith<R = any> = (received: string) => R;
+
   export interface Expect {
-    match(match: RegExp): any;
+    toStartsWith: toStartsWith;
+  }
+  export interface Matchers<R> {
+    toStartsWith: toStartsWith<R>;
   }
 }

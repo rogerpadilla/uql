@@ -122,7 +122,10 @@
       "html",
       "text-summary"
     ],
-    "coverageDirectory": "coverage"
+    "coverageDirectory": "coverage",
+    "setupFilesAfterEnv": [
+      "<rootDir>/config/test-setup-after-env.js"
+    ]
   },
   "prettier": {
     "tabWidth": 2,

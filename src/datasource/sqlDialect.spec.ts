@@ -30,7 +30,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       },
     ];
     const query = sql.insert(User, bodies);
-    expect(query).toBe(
+    expect(query).toStartsWith(
       'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ' +
         "('Some Name 1', 'someemail1@example.com', 123), " +
         "('Some Name 2', 'someemail2@example.com', 456), " +
@@ -47,7 +47,9 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
       updatedAt: 321,
     };
     const query = sql.insert(User, body);
-    expect(query).toBe("INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)");
+    expect(query).toStartsWith(
+      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)"
+    );
   });
 
   it('update', () => {
