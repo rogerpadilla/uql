@@ -42,7 +42,7 @@ export class MongodbQuerier extends Querier {
   }
 
   async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
-    if (qm.populate) {
+    if (qm.populate && Object.keys(qm.populate).length) {
       return this.collection(type)
         .aggregate(buildAggregationPipeline(type, qm))
         .toArray()
@@ -52,7 +52,7 @@ export class MongodbQuerier extends Querier {
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>) {
-    if (qm.populate) {
+    if (qm.populate && Object.keys(qm.populate).length) {
       return this.collection(type).aggregate(buildAggregationPipeline(type, qm)).toArray();
     }
 
