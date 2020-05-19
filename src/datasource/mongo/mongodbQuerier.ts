@@ -43,9 +43,8 @@ export class MongodbQuerier extends Querier {
 
   async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
     if (qm.populate) {
-      const pipeline = buildAggregationPipeline(type, qm);
       return this.collection(type)
-        .aggregate(pipeline)
+        .aggregate(buildAggregationPipeline(type, qm))
         .toArray()
         .then((resp) => resp[0]);
     }
@@ -54,8 +53,7 @@ export class MongodbQuerier extends Querier {
 
   async find<T>(type: { new (): T }, qm: Query<T>) {
     if (qm.populate) {
-      const pipeline = buildAggregationPipeline(type, qm);
-      return this.collection(type).aggregate(pipeline).toArray();
+      return this.collection(type).aggregate(buildAggregationPipeline(type, qm)).toArray();
     }
 
     const cursor = this.collection(type).find();

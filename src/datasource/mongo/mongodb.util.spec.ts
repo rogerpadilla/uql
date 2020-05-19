@@ -1,4 +1,3 @@
-import { QueryFilter, Query } from '../../type';
 import { Item } from '../../entity/entityMock';
 import { buildFilter, buildAggregationPipeline } from './mongodb.util';
 
