@@ -67,7 +67,7 @@ it('insertOne cascade oneToOne', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "INSERT INTO `User` (`name`) VALUES ('some name')");
+  expect(querier.query).nthCalledWith(2, "INSERT INTO `user` (`name`) VALUES ('some name')");
   expect(querier.query).nthCalledWith(3, "INSERT INTO `user_profile` (`image`) VALUES ('abc')");
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
@@ -135,7 +135,7 @@ it('updateOneById cascade oneToOne', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `User` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
   expect(querier.query).nthCalledWith(3, "UPDATE `user_profile` SET `image` = 'xyz' WHERE `user` = 1 LIMIT 1");
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
@@ -160,7 +160,7 @@ it('updateOneById cascade oneToOne null', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `User` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1 LIMIT 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);

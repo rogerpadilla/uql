@@ -39,7 +39,7 @@ it('user', () => {
   const meta = getEntityMeta(User);
   expect(meta).toEqual({
     type: User,
-    name: 'User',
+    name: 'user',
     id: 'id',
     isEntity: true,
     properties: {
