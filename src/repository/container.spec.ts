@@ -5,7 +5,7 @@ import { GenericServerRepository } from './genericServerRepository';
 import { getServerRepository } from './container';
 import { Repository } from './decorator';
 
-afterEach(() => {
+beforeEach(() => {
   initCorozo({});
 });
 

@@ -5,10 +5,11 @@ import { MySqlQuerier } from './mysql/mysqlQuerier';
 import { PostgresQuerier } from './postgres/postgresQuerier';
 
 describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
-  let querier: SqlQuerier;
   let mockRes: User[] | QueryUpdateResult;
+  let querier: SqlQuerier;
 
   beforeEach(() => {
+    mockRes = undefined;
     querier = new Querier({
       query: () => {
         let res: any;
@@ -26,10 +27,6 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
     jest.spyOn(querier, 'commit');
     jest.spyOn(querier, 'rollback');
     jest.spyOn(querier, 'release');
-  });
-
-  afterEach(() => {
-    mockRes = undefined;
   });
 
   it('find', async () => {
