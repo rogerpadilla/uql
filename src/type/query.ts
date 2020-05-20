@@ -12,8 +12,6 @@ export type QueryFieldFilter<T> = {
   readonly [P in keyof T]: T[P] | string | QueryComparisonOperator<T>;
 };
 
-export type QueryFilterEntryValue<T> = QueryPrimitive | QueryPrimitive[] | QueryComparisonOperator<T> | QueryTextSearchOptions<T>;
-
 export type QueryTextSearchOptions<T> = {
   fields: (keyof T)[];
   value: string;

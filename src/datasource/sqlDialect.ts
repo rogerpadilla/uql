@@ -8,8 +8,6 @@ import {
   QueryPager,
   QueryOptions,
   QueryProject,
-  QueryFilterEntryValue,
-  QueryLogicalOperatorMap,
   QueryLogicalOperatorKey,
   QueryLogicalOperatorValue,
 } from '../type';
@@ -133,8 +131,8 @@ export abstract class SqlDialect {
     const sql = filterKeys
       .map((key) => {
         const val = filter[key];
-        if (logicalOperatorMap[key]) {
-          const logicalOperator = key as QueryLogicalOperatorKey;
+        if (key === '$and' || key === '$or') {
+          const logicalOperator = key;
           let whereOpts: typeof opts;
           if (logicalOperator === '$or') {
             whereOpts = { filterLink: 'OR' };
@@ -143,21 +141,25 @@ export abstract class SqlDialect {
           const filterItCondition = this.where(val, whereOpts);
           return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
-        return this.filterEntry(key, val);
+        return this.comparison(key, val);
       })
       .join(` ${filterLink} `);
 
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
-  filterEntry<T>(key: string, value: QueryFilterEntryValue<T>) {
-    const val = typeof value === 'object' && value !== null ? value : { $eq: value as QueryPrimitive };
+  comparison<T>(key: string, value: object | QueryPrimitive) {
+    const val = typeof value === 'object' && value !== null ? value : { $eq: value };
     const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
-    const operations = operators.map((operator) => this.compare(key, operator, val[operator])).join(' AND ');
+    const operations = operators.map((operator) => this.comparisonOperation(key, operator, val[operator])).join(' AND ');
     return operators.length > 1 ? `(${operations})` : operations;
   }
 
-  compare<T, K extends keyof QueryComparisonOperator<T>>(attr: keyof T, operator: K, val: QueryComparisonOperator<T>[K]) {
+  comparisonOperation<T, K extends keyof QueryComparisonOperator<T>>(
+    attr: keyof T,
+    operator: K,
+    val: QueryComparisonOperator<T>[K]
+  ) {
     switch (operator) {
       case '$eq':
         return val === null ? `${escapeId(attr)} IS NULL` : `${escapeId(attr)} = ${escape(val)}`;
@@ -227,8 +229,3 @@ function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersista
     return persistableBody;
   }, {} as T);
 }
-
-const logicalOperatorMap: QueryLogicalOperatorMap = {
-  $and: 'AND',
-  $or: 'OR',
-} as const;
