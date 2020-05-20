@@ -25,9 +25,9 @@ export class Company extends BaseEntity {
   description?: string;
 }
 
-@Entity({ name: 'UserProfile' })
+@Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
-  @Column()
+  @Column({ name: 'image' })
   picture?: string;
 }
 

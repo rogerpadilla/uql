@@ -356,7 +356,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
         project: { '*': 1, 'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1 } as any,
         filter: { name: 'something' },
       },
-      { trustedProject: true }
+      { isTrustedProject: true }
     );
     expect(query).toBe(
       'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' + " FROM `User` WHERE `name` = 'something'"

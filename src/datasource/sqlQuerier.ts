@@ -56,7 +56,7 @@ export abstract class SqlQuerier extends Querier {
   }
 
   async count<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const query = this.dialect.find(type, { project: { 'COUNT(*) count': 1 } as any, filter }, { trustedProject: true });
+    const query = this.dialect.find(type, { project: { 'COUNT(*) count': 1 } as any, filter }, { isTrustedProject: true });
     const res = await this.query<{ count: number }[]>(query);
     return res[0].count;
   }

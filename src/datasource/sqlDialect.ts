@@ -8,7 +8,7 @@ import {
   QueryPager,
   QueryOptions,
   QueryProject,
-  QueryComparisonValue,
+  QueryFilterEntryValue,
   QueryLogicalOperatorMap,
   QueryLogicalOperatorKey,
   QueryLogicalOperatorValue,
@@ -19,29 +19,33 @@ export abstract class SqlDialect {
   readonly beginTransactionCommand: string = 'BEGIN';
 
   insert<T>(type: { new (): T }, body: T | T[]) {
+    const meta = getEntityMeta(type);
     const bodies = Array.isArray(body) ? body : [body];
     const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
-    const columns = Object.keys(samplePersistableBody);
-    const valuesSafe = bodies.map((it) => columns.map((column) => escape(it[column])).join(', ')).join('), (');
-    const typeNameSafe = escapeId(type.name);
-    const fieldsSafe = escapeId(columns);
-    return `INSERT INTO ${typeNameSafe} (${fieldsSafe}) VALUES (${valuesSafe})`;
+    const properties = Object.keys(samplePersistableBody);
+    const columns = properties.map((col) => meta.columns[col].name);
+    const values = bodies.map((body) => properties.map((property) => escape(body[property])).join(', ')).join('), (');
+    return `INSERT INTO ${escapeId(meta.name)} (${escapeId(columns)}) VALUES (${values})`;
   }
 
   update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number) {
-    const persistableBody = filterPersistable(type, body, 'update');
-    const keyValuesSafe = objectToValues(persistableBody);
+    const meta = getEntityMeta(type);
+    const persistable = filterPersistable(type, body, 'update');
+    const persistableData = Object.keys(persistable).reduce((acc, key) => {
+      acc[meta.columns[key].name] = body[key];
+      return acc;
+    }, {} as T);
+    const values = objectToValues(persistableData);
     const where = this.where(filter);
     const pager = this.pager({ limit });
-    const typeNameSafe = escapeId(type.name);
-    return `UPDATE ${typeNameSafe} SET ${keyValuesSafe} WHERE ${where}${pager}`;
+    return `UPDATE ${escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
   }
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number) {
-    const whereStr = this.where(filter);
-    const limitStr = this.pager({ limit });
-    const typeNameSafe = escapeId(type.name);
-    return `DELETE FROM ${typeNameSafe} WHERE ${whereStr}${limitStr}`;
+    const meta = getEntityMeta(type);
+    const where = this.where(filter);
+    const pager = this.pager({ limit });
+    return `DELETE FROM ${escapeId(meta.name)} WHERE ${where}${pager}`;
   }
 
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
@@ -53,7 +57,7 @@ export abstract class SqlDialect {
   }
 
   columns<T>(type: { new (): T }, project: QueryProject<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions) {
-    if (opts.trustedProject) {
+    if (opts.isTrustedProject) {
       return Object.keys(project).join(', ');
     }
 
@@ -78,26 +82,26 @@ export abstract class SqlDialect {
   }
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
+    const meta = getEntityMeta(type);
     const baseSelect = this.columns(type, qm.project, {
       prefix: qm.populate && type.name,
       ...opts,
     });
     const { joinsSelect, joinsTables } = this.joins(type, qm);
-    const typeNameSafe = escapeId(type.name);
-    return `SELECT ${baseSelect}${joinsSelect} FROM ${typeNameSafe}${joinsTables}`;
+    return `SELECT ${baseSelect}${joinsSelect} FROM ${escapeId(meta.name)}${joinsTables}`;
   }
 
   joins<T>(type: { new (): T }, qm: Query<T>, prefix = '') {
     let joinsSelect = '';
     let joinsTables = '';
-    const entityMeta = getEntityMeta(type);
+    const meta = getEntityMeta(type);
     for (const popKey in qm.populate) {
-      const relOpts = entityMeta.relations[popKey];
+      const relOpts = meta.relations[popKey];
       if (!relOpts) {
         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
       }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
-      const joinPathSafe = escapeId(joinPrefix, true);
+      const joinPath = escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = qm.populate[popKey];
       const relColumns = this.columns(relType, popVal?.project, {
@@ -105,10 +109,10 @@ export abstract class SqlDialect {
         alias: true,
       });
       joinsSelect += `, ${relColumns}`;
-      const relTypeNameSafe = escapeId(relType.name);
-      const relSafe = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(type.name)}.${joinPathSafe}`;
       const relMeta = getEntityMeta(relType);
-      joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relMeta.id)} = ${relSafe}`;
+      const relTypeName = escapeId(relMeta.name);
+      const rel = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(meta.name)}.${joinPath}`;
+      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${escapeId(relMeta.id)} = ${rel}`;
       if (popVal?.populate) {
         const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
         joinsSelect += subJoinSelect;
@@ -139,47 +143,42 @@ export abstract class SqlDialect {
           const filterItCondition = this.where(val, whereOpts);
           return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
-        return this.comparison(key, val);
+        return this.filterEntry(key, val);
       })
       .join(` ${filterLink} `);
 
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
-  comparison<T>(key: string, value: QueryComparisonValue<T>) {
+  filterEntry<T>(key: string, value: QueryFilterEntryValue<T>) {
     const val = typeof value === 'object' && value !== null ? value : { $eq: value as QueryPrimitive };
     const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
-    const comparison = operators.map((operator) => this.comparisonOperation(key, operator, val[operator])).join(' AND ');
-    return operators.length > 1 ? `(${comparison})` : comparison;
+    const operations = operators.map((operator) => this.compare(key, operator, val[operator])).join(' AND ');
+    return operators.length > 1 ? `(${operations})` : operations;
   }
 
-  comparisonOperation<T, K extends keyof QueryComparisonOperator<T>>(
-    attr: keyof T,
-    operator: K,
-    val: QueryComparisonOperator<T>[K]
-  ) {
-    const attrSafe = escapeId(attr);
+  compare<T, K extends keyof QueryComparisonOperator<T>>(attr: keyof T, operator: K, val: QueryComparisonOperator<T>[K]) {
     switch (operator) {
       case '$eq':
-        return val === null ? `${attrSafe} IS NULL` : `${attrSafe} = ${escape(val)}`;
+        return val === null ? `${escapeId(attr)} IS NULL` : `${escapeId(attr)} = ${escape(val)}`;
       case '$ne':
-        return val === null ? `${attrSafe} IS NOT NULL` : `${attrSafe} <> ${escape(val)}`;
+        return val === null ? `${escapeId(attr)} IS NOT NULL` : `${escapeId(attr)} <> ${escape(val)}`;
       case '$gt':
-        return `${attrSafe} > ${escape(val)}`;
+        return `${escapeId(attr)} > ${escape(val)}`;
       case '$gte':
-        return `${attrSafe} >= ${escape(val)}`;
+        return `${escapeId(attr)} >= ${escape(val)}`;
       case '$lt':
-        return `${attrSafe} < ${escape(val)}`;
+        return `${escapeId(attr)} < ${escape(val)}`;
       case '$lte':
-        return `${attrSafe} <= ${escape(val)}`;
+        return `${escapeId(attr)} <= ${escape(val)}`;
       case '$startsWith':
-        return `LOWER(${attrSafe}) LIKE ${escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${escapeId(attr)}) LIKE ${escape((val as string).toLowerCase() + '%')}`;
       case '$in':
-        return `${attrSafe} IN (${escape(val)})`;
+        return `${escapeId(attr)} IN (${escape(val)})`;
       case '$nin':
-        return `${attrSafe} NOT IN (${escape(val)})`;
+        return `${escapeId(attr)} NOT IN (${escape(val)})`;
       case '$re':
-        return `${attrSafe} REGEXP ${escape(val)}`;
+        return `${escapeId(attr)} REGEXP ${escape(val)}`;
       default:
         throw new Error(`Unsupported comparison operator: ${operator}`);
     }

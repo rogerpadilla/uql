@@ -1,10 +1,18 @@
 export type QueryPrimitive = string | number | boolean;
 
+export type QueryProject<T> = {
+  readonly [P in keyof T]: 1 | 0 | boolean;
+};
+
+export type QueryPopulate<T> = {
+  readonly [P in keyof T]?: QueryOne<T[P]>;
+};
+
 export type QueryFieldFilter<T> = {
   readonly [P in keyof T]: T[P] | string | QueryComparisonOperator<T>;
 };
 
-export type QueryComparisonValue<T> = QueryPrimitive | QueryPrimitive[] | QueryComparisonOperator<T> | QueryTextSearchOptions<T>;
+export type QueryFilterEntryValue<T> = QueryPrimitive | QueryPrimitive[] | QueryComparisonOperator<T> | QueryTextSearchOptions<T>;
 
 export type QueryTextSearchOptions<T> = {
   fields: (keyof T)[];
@@ -27,14 +35,6 @@ export type QueryComparisonOperator<T> = {
   readonly $re?: string;
 };
 
-export type QueryProject<T> = {
-  readonly [P in keyof T]: 1 | 0 | boolean;
-};
-
-export type QueryPopulate<T> = {
-  readonly [P in keyof T]?: QueryOne<T[P]>;
-};
-
 export type QueryLogicalOperatorMap = {
   readonly $and?: 'AND';
   readonly $or?: 'OR';
@@ -44,6 +44,7 @@ export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOper
 export type QueryLogicalOperator<T> = {
   [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<T> | QueryTextSearch<T>;
 };
+export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
 
 export type QuerySort<T> = {
   readonly [P in keyof T]: 1 | -1;
@@ -54,19 +55,14 @@ export type QueryPager = {
   limit?: number;
 };
 
-export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
-
 export type QueryOne<T> = {
   project?: QueryProject<T>;
   populate?: QueryPopulate<T>;
 };
-
 export type QueryOneFilter<T> = QueryOne<T> & {
   filter?: QueryFilter<T>;
 };
-
 export type Query<T> = QueryOneFilter<T> & QueryPager & { sort?: QuerySort<T> };
-
 export type QueryStringified = {
   readonly [P in keyof Query<any>]?: any;
 };
@@ -76,4 +72,4 @@ export type QueryUpdateResult = {
   readonly insertId?: number;
 };
 
-export type QueryOptions = { trustedProject?: boolean };
+export type QueryOptions = { isTrustedProject?: boolean };

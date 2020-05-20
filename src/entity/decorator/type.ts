@@ -8,10 +8,8 @@ export type PropetyOptions<T> = {
   readonly column: ColumnOptions<T>;
   readonly relation: RelationOptions<T>;
 };
-
 export type ColumnOptions<T> = {
   readonly name?: string;
-  readonly isColumn?: boolean;
   readonly mode?: ColumnPersistableMode;
 };
 export type PrimaryColumnOptions<T> = ColumnOptions<T>;
