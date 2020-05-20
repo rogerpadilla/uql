@@ -21,11 +21,11 @@ export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>) {
 
   const pipeline: object[] = [];
 
-  if (qm.filter) {
+  if (qm.filter && Object.keys(qm.filter).length) {
     pipeline.push({ $match: buildFilter(qm.filter) });
   }
 
-  for (const popKey of Object.keys(qm.populate)) {
+  for (const popKey in qm.populate) {
     const relOpts = meta.relations[popKey];
     if (!relOpts) {
       throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);

@@ -16,7 +16,8 @@ it('buildFilter', () => {
 });
 
 it('buildAggregationPipeline empty', () => {
-  expect(() => buildAggregationPipeline(Item, {})).toThrow('Cannot convert undefined or null to object');
+  expect(buildAggregationPipeline(Item, {})).toEqual([]);
+  expect(buildAggregationPipeline(Item, { filter: {} })).toEqual([]);
   expect(buildAggregationPipeline(Item, { populate: {} })).toEqual([]);
   expect(buildAggregationPipeline(Item, { filter: { code: '123' }, populate: { measureUnit: null, tax: null } })).toEqual([
     {

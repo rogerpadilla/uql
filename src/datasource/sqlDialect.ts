@@ -90,31 +90,29 @@ export abstract class SqlDialect {
   joins<T>(type: { new (): T }, qm: Query<T>, prefix = '') {
     let joinsSelect = '';
     let joinsTables = '';
-    if (qm.populate) {
-      const entityMeta = getEntityMeta(type);
-      for (const popKey in qm.populate) {
-        const relOpts = entityMeta.relations[popKey];
-        if (!relOpts) {
-          throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
-        }
-        const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
-        const joinPathSafe = escapeId(joinPrefix, true);
-        const relType = relOpts.type();
-        const popVal = qm.populate[popKey];
-        const relColumns = this.columns(relType, popVal?.project, {
-          prefix: joinPrefix,
-          alias: true,
-        });
-        joinsSelect += `, ${relColumns}`;
-        const relTypeNameSafe = escapeId(relType.name);
-        const relSafe = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(type.name)}.${joinPathSafe}`;
-        const relMeta = getEntityMeta(relType);
-        joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relMeta.id)} = ${relSafe}`;
-        if (popVal?.populate) {
-          const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
-          joinsSelect += subJoinSelect;
-          joinsTables += subJoinTables;
-        }
+    const entityMeta = getEntityMeta(type);
+    for (const popKey in qm.populate) {
+      const relOpts = entityMeta.relations[popKey];
+      if (!relOpts) {
+        throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+      }
+      const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
+      const joinPathSafe = escapeId(joinPrefix, true);
+      const relType = relOpts.type();
+      const popVal = qm.populate[popKey];
+      const relColumns = this.columns(relType, popVal?.project, {
+        prefix: joinPrefix,
+        alias: true,
+      });
+      joinsSelect += `, ${relColumns}`;
+      const relTypeNameSafe = escapeId(relType.name);
+      const relSafe = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(type.name)}.${joinPathSafe}`;
+      const relMeta = getEntityMeta(relType);
+      joinsTables += ` LEFT JOIN ${relTypeNameSafe} ${joinPathSafe} ON ${joinPathSafe}.${escapeId(relMeta.id)} = ${relSafe}`;
+      if (popVal?.populate) {
+        const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
+        joinsSelect += subJoinSelect;
+        joinsTables += subJoinTables;
       }
     }
     return { joinsSelect, joinsTables };
@@ -137,7 +135,7 @@ export abstract class SqlDialect {
           if (logicalOperator === '$or') {
             whereOpts = { filterLink: 'OR' };
           }
-          const hasPrecedence = Object.keys(val).length > 1 && filterKeys.length > 1;
+          const hasPrecedence = filterKeys.length > 1 && Object.keys(val).length > 1;
           const filterItCondition = this.where(val, whereOpts);
           return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
