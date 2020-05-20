@@ -63,6 +63,28 @@ it('user', () => {
   });
 });
 
+it('profile', () => {
+  const meta = getEntityMeta(Profile);
+  expect(meta).toEqual({
+    type: Profile,
+    name: 'user_profile',
+    id: 'id',
+    isEntity: true,
+    properties: {
+      id: { column: { name: 'pk', mode: 'read' } },
+      company: {
+        column: { name: 'company', mode: 'insert' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      user: { relation: { type: expect.any(Function), cardinality: 'manyToOne' }, column: { name: 'user', mode: 'insert' } },
+      createdAt: { column: { name: 'createdAt', mode: 'insert' } },
+      updatedAt: { column: { name: 'updatedAt', mode: 'update' } },
+      status: { column: { name: 'status' } },
+      picture: { column: { name: 'image' } },
+    },
+  });
+});
+
 it('item', () => {
   const meta = getEntityMeta(Item);
   expect(meta).toEqual({
