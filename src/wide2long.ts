@@ -10,7 +10,7 @@ export function parseWideToLong(input: readonly any[][], identifiers: readonly C
       output[longI].push(input[0][wideJ + identifiers.length]);
       // values
       for (let indexRel = wideI + identifiers.length; indexRel <= wideI + identifiers.length; ++indexRel) {
-        output[longI].push(input[indexRel][wideJ + 1]);
+        output[longI].push(input[wideI + 1][wideJ + identifiers.length]);
       }
       longI++;
     }
