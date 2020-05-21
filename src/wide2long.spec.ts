@@ -1,6 +1,6 @@
 import { parseWideToLong, Cell, Relation } from './wide2long';
 
-fit('should parse wide to long', () => {
+it('should parse wide to long', () => {
   const identifiers: Cell[] = [{ column: 0, row: 0 }];
   const relations: Relation[] = [
     { key: { column: 1, row: 0 } },
@@ -41,7 +41,7 @@ fit('should parse wide to long', () => {
   expect(output).toEqual(expected);
 });
 
-fit('should parse wide (one header row one primary column) to long', () => {
+it('should parse wide (one header row one primary column) to long', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
@@ -70,7 +70,7 @@ fit('should parse wide (one header row one primary column) to long', () => {
   expect(output).toEqual(expected);
 });
 
-fit('should parse wide (one header row two primary columns) to long', () => {
+it('should parse wide (one header row two primary columns) to long', () => {
   const inputTable: string[][] = [
     ['Min/Max', 'Option', 'A', 'B', 'C'],
     ['Max', '0 mo-AL/AL', '0.95', '0.96', '0.97'],
@@ -102,7 +102,7 @@ fit('should parse wide (one header row two primary columns) to long', () => {
   expect(output).toEqual(expected);
 });
 
-fit('should parse wide (two header rows with relationships) to long', () => {
+it('should parse wide (two header rows with relationships) to long', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % < 50%', 'Part % < 50%'],
     ['Option Description', 'Virgin', 'Takeover', 'Virgin', 'Takeover'],
@@ -133,7 +133,7 @@ fit('should parse wide (two header rows with relationships) to long', () => {
   expect(output).toEqual(expected);
 });
 
-it('should parse wide (two header rows with relationships to merged cells) to long', () => {
+it.skip('should parse wide (two header rows with relationships to merged cells) to long', () => {
   // This test is same as previous one, but tes data comes from excel with 'merged cells'
   // 'Part % >= 50%', '' -> 1 excel merged cell
   const inputTable = [
@@ -166,7 +166,7 @@ it('should parse wide (two header rows with relationships to merged cells) to lo
   expect(output).toEqual(expected);
 });
 
-it('should parse wide (one header row two primary columns with merged cells) to long', () => {
+it.skip('should parse wide (one header row two primary columns with merged cells) to long', () => {
   // This test may be unnecesary, in case merged cells issue is solved in UI/above layer
   // The issue is that merged cells in excel in TSV are -> 'Max' '' -> 1 excel merged cell
   const inputTable = [
@@ -198,7 +198,7 @@ it('should parse wide (one header row two primary columns with merged cells) to 
 
 // Some alternative positive user flows, based in UI
 
-fit('should parse wide (user did not select all available keys) to long', () => {
+it('should parse wide (user did not select all available keys) to long', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
@@ -217,7 +217,7 @@ fit('should parse wide (user did not select all available keys) to long', () => 
   expect(output).toEqual(expected);
 });
 
-it('should parse wide (not consecutive keys selected) to long', () => {
+it.skip('should parse wide (not consecutive keys selected) to long', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
@@ -236,7 +236,7 @@ it('should parse wide (not consecutive keys selected) to long', () => {
   expect(output).toEqual(expected);
 });
 
-it('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
+it.skip('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%'],
     ['Option Description', '1/4', '2/4', '3/4', '4/4'],
@@ -269,7 +269,7 @@ it('should parse wide (user does not pick relations in table with 2 row headers)
 
 // Negative tests
 
-it('should not parse wide to long when some relations has value and others not', () => {
+it.skip('should not parse wide to long when some relations has value and others not', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % < 50%', 'Part % < 50%'],
     ['Option Description', 'Virgin', 'Takeover', 'Virgin', 'Takeover'],
@@ -289,7 +289,7 @@ it('should not parse wide to long when some relations has value and others not',
   );
 });
 
-it('should not parse wide to long when all cells in main row are set as keys (not primary columns)', () => {
+it.skip('should not parse wide to long when all cells in main row are set as keys (not primary columns)', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
