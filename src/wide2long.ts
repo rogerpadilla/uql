@@ -3,14 +3,14 @@ export function parseWideToLong(input: readonly any[][], identifiers: readonly C
 
   for (let wideI = 0; wideI < input.length - 1; ++wideI) {
     for (let wideJ = 0; wideJ < relations.length; ++wideJ) {
-      const idCells = identifiers.map((id) => input[wideI + 1][id.column]);
-      const headerCell = input[0][wideJ + identifiers.length];
-      const valueCell = input[wideI + 1][wideJ + identifiers.length];
+      const currentRowIdx = wideI + 1;
+      const currentColIdx = wideJ + identifiers.length;
+      const idCells = identifiers.map((id) => input[currentRowIdx][id.column]);
+      const headerCell = input[0][currentColIdx];
+      const valueCell = input[currentRowIdx][currentColIdx];
       output.push([...idCells, headerCell, valueCell]);
     }
   }
-
-  console.table(output);
 
   return output;
 }
