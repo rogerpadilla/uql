@@ -4,14 +4,10 @@ export function parseWideToLong(input: readonly any[][], identifiers: readonly C
 
   for (let wideI = 0; wideI < input.length - 1; ++wideI) {
     for (let wideJ = 0; wideJ < relations.length; ++wideJ) {
-      // identifiers
-      output[longI] = identifiers.map((id) => input[wideI + 1][id.column]);
-      // header
-      output[longI].push(input[0][wideJ + identifiers.length]);
-      // values
-      for (let indexRel = wideI + identifiers.length; indexRel <= wideI + identifiers.length; ++indexRel) {
-        output[longI].push(input[wideI + 1][wideJ + identifiers.length]);
-      }
+      const idCells = identifiers.map((id) => input[wideI + 1][id.column]);
+      const headerCell = input[0][wideJ + identifiers.length];
+      const valueCell = input[wideI + 1][wideJ + identifiers.length];
+      output[longI] = [...idCells, headerCell, valueCell];
       longI++;
     }
   }
