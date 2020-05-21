@@ -6,7 +6,7 @@
     "lint": "eslint --ext .ts .",
     "lint.fix": "npm run lint -- --fix",
     "test": "rm -rf coverage && concurrently 'npm:lint' 'jest'",
-    "watch.test": "jest --clearCache && jest --watchAll",
+    "watch.test": "jest --clearCache && jest --watchAll src/wide2long.spec.ts",
     "watch": "webpack --profile --bail --watch --info-verbosity verbose",
     "build": "rm -rf dist && webpack --progress --profile --bail --mode=production",
     "release": "concurrently 'npm:build' 'tsc'",
