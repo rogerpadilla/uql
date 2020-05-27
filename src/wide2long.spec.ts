@@ -1,13 +1,13 @@
 import { parseWideToLong, Cell, Relation } from './wide2long';
 
 it('should parse wide to long', () => {
-  const identifiers: Cell[] = [{ column: 0, row: 0 }];
+  const identifiers: Cell[] = [{ row: 0, column: 0 }];
   const relations: Relation[] = [
-    { key: { column: 1, row: 0 } },
-    { key: { column: 2, row: 0 } },
-    { key: { column: 3, row: 0 } },
-    { key: { column: 4, row: 0 } },
-    { key: { column: 5, row: 0 } },
+    { key: { row: 0, column: 1 } },
+    { key: { row: 0, column: 2 } },
+    { key: { row: 0, column: 3 } },
+    { key: { row: 0, column: 4 } },
+    { key: { row: 0, column: 5 } },
   ];
 
   // data sample from http://jonathansoma.com/tutorials/d3/wide-vs-long-data/
@@ -49,12 +49,12 @@ it('should parse wide (one header row one primary column) to long', () => {
   ];
 
   const relations: Relation[] = [
-    { key: { column: 1, row: 0 }, value: undefined },
-    { key: { column: 2, row: 0 }, value: undefined },
-    { key: { column: 3, row: 0 }, value: undefined },
+    { key: { row: 0, column: 1 }, value: undefined },
+    { key: { row: 0, column: 2 }, value: undefined },
+    { key: { row: 0, column: 3 }, value: undefined },
   ];
 
-  const identifiers: Cell[] = [{ column: 0, row: 0 }];
+  const identifiers: Cell[] = [{ row: 0, column: 0 }];
 
   const expected = [
     ['0 mo-AL/AL', 'A', '0.95'],
@@ -78,14 +78,14 @@ it('should parse wide (one header row two primary columns) to long', () => {
   ];
 
   const relations: Relation[] = [
-    { key: { column: 2, row: 0 }, value: undefined },
-    { key: { column: 3, row: 0 }, value: undefined },
-    { key: { column: 4, row: 0 }, value: undefined },
+    { key: { row: 0, column: 2 }, value: undefined },
+    { key: { row: 0, column: 3 }, value: undefined },
+    { key: { row: 0, column: 4 }, value: undefined },
   ];
 
   const identifiers: Cell[] = [
-    { column: 0, row: 0 },
-    { column: 1, row: 0 },
+    { row: 0, column: 0 },
+    { row: 0, column: 1 },
   ];
 
   const expected = [
@@ -110,12 +110,12 @@ it('should parse wide (two header rows with relationships) to long', () => {
     ['6/24', '0.94', '0.98', '0.88', '0.93'],
   ];
   const relations: Relation[] = [
-    { key: { column: 1, row: 1 }, value: { column: 1, row: 0 } },
-    { key: { column: 2, row: 1 }, value: { column: 2, row: 0 } },
-    { key: { column: 3, row: 1 }, value: { column: 3, row: 0 } },
-    { key: { column: 4, row: 1 }, value: { column: 4, row: 0 } },
+    { key: { row: 1, column: 1 }, value: { row: 0, column: 1 } },
+    { key: { row: 1, column: 2 }, value: { row: 0, column: 2 } },
+    { key: { row: 1, column: 3 }, value: { row: 0, column: 3 } },
+    { key: { row: 1, column: 4 }, value: { row: 0, column: 4 } },
   ];
-  const identifiers: Cell[] = [{ column: 0, row: 1 }];
+  const identifiers: Cell[] = [{ row: 1, column: 0 }];
 
   const expected = [
     ['12/24', 'Part % >= 50%', 'Virgin', '0.95'],
@@ -143,12 +143,12 @@ it('should parse wide (two header rows with relationships to merged cells) to lo
   // Here is main difference with above test
   // some relationship point same parent
   const relations: Relation[] = [
-    { key: { column: 1, row: 1 }, value: { column: 1, row: 0 } },
-    { key: { column: 2, row: 1 }, value: { column: 1, row: 0 } },
-    { key: { column: 3, row: 1 }, value: { column: 3, row: 0 } },
-    { key: { column: 4, row: 1 }, value: { column: 3, row: 0 } },
+    { key: { row: 1, column: 1 }, value: { row: 0, column: 1 } },
+    { key: { row: 1, column: 2 }, value: { row: 0, column: 1 } },
+    { key: { row: 1, column: 3 }, value: { row: 0, column: 3 } },
+    { key: { row: 1, column: 4 }, value: { row: 0, column: 3 } },
   ];
-  const identifiers: Cell[] = [{ column: 0, row: 1 }];
+  const identifiers: Cell[] = [{ row: 1, column: 0 }];
 
   const expected = [
     ['12/24', 'Part % >= 50%', 'Virgin', '0.95'],
@@ -161,8 +161,6 @@ it('should parse wide (two header rows with relationships to merged cells) to lo
     ['6/24', 'Part % < 50%', 'Takeover', '0.93'],
   ];
   const output = parseWideToLong(inputTable, identifiers, relations);
-  console.table(expected);
-  console.table(output);
   expect(output).toEqual(expected);
 });
 
@@ -175,10 +173,10 @@ it.skip('should parse wide (one header row two primary columns with merged cells
     ['', '0 mo-EE/AL', '0.912', '0.913', '0.914'],
     ['Min', '0 mo-AL/AL', '0.11', '0.12', '0.13'],
   ];
-  const relations: Relation[] = [{ key: { column: 2, row: 0 } }, { key: { column: 3, row: 0 } }, { key: { column: 4, row: 0 } }];
+  const relations: Relation[] = [{ key: { row: 0, column: 2 } }, { key: { row: 0, column: 3 } }, { key: { row: 0, column: 4 } }];
   const identifiers: Cell[] = [
-    { column: 0, row: 0 },
-    { column: 1, row: 0 },
+    { row: 0, column: 0 },
+    { row: 0, column: 1 },
   ];
 
   const expected = [
@@ -204,8 +202,8 @@ it('should parse wide (user did not select all available keys) to long', () => {
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
     ['0 mo-EE/AL', '0.912', '0.913', '0.914'],
   ];
-  const relations: Relation[] = [{ key: { column: 1, row: 0 } }, { key: { column: 2, row: 0 } }];
-  const identifiers: Cell[] = [{ column: 0, row: 0 }];
+  const relations: Relation[] = [{ key: { row: 0, column: 1 } }, { key: { row: 0, column: 2 } }];
+  const identifiers: Cell[] = [{ row: 0, column: 0 }];
 
   const expected = [
     ['0 mo-AL/AL', 'A', '0.95'],
@@ -223,8 +221,8 @@ it.skip('should parse wide (not consecutive keys selected) to long', () => {
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
     ['0 mo-EE/AL', '0.912', '0.913', '0.914'],
   ];
-  const relations: Relation[] = [{ key: { column: 1, row: 0 } }, { key: { column: 3, row: 0 } }];
-  const identifiers: Cell[] = [{ column: 0, row: 0 }];
+  const relations: Relation[] = [{ key: { row: 0, column: 1 } }, { key: { row: 0, column: 3 } }];
+  const identifiers: Cell[] = [{ row: 0, column: 0 }];
 
   const expected = [
     ['0 mo-AL/AL', 'A', '0.95'],
@@ -244,12 +242,12 @@ it.skip('should parse wide (user does not pick relations in table with 2 row hea
     ['6/24', '0.94', '0.98', '0.88', '0.93'],
   ];
   const relations: Relation[] = [
-    { key: { column: 1, row: 1 } },
-    { key: { column: 2, row: 1 } },
-    { key: { column: 3, row: 1 } },
-    { key: { column: 4, row: 1 } },
+    { key: { row: 1, column: 1 } },
+    { key: { row: 1, column: 2 } },
+    { key: { row: 1, column: 3 } },
+    { key: { row: 1, column: 4 } },
   ];
-  const identifiers: Cell[] = [{ column: 0, row: 1 }];
+  const identifiers: Cell[] = [{ row: 1, column: 0 }];
 
   const expected = [
     ['12/24', '1/4', '0.95'],
@@ -269,7 +267,7 @@ it.skip('should parse wide (user does not pick relations in table with 2 row hea
 
 // Negative tests
 
-it.skip('should not parse wide to long when some relations has value and others not', () => {
+it('should not parse wide to long when some relations has value and others not', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % < 50%', 'Part % < 50%'],
     ['Option Description', 'Virgin', 'Takeover', 'Virgin', 'Takeover'],
@@ -277,31 +275,33 @@ it.skip('should not parse wide to long when some relations has value and others 
     ['6/24', '0.94', '0.98', '0.88', '0.93'],
   ];
   const relations: Relation[] = [
-    { key: { column: 1, row: 1 } },
-    { key: { column: 2, row: 1 }, value: { column: 2, row: 0 } },
-    { key: { column: 3, row: 1 }, value: { column: 3, row: 0 } },
-    { key: { column: 4, row: 1 }, value: { column: 4, row: 0 } },
+    { key: { row: 1, column: 1 } },
+    { key: { row: 1, column: 2 }, value: { row: 0, column: 2 } },
+    { key: { row: 1, column: 3 }, value: { row: 0, column: 3 } },
+    { key: { row: 1, column: 4 }, value: { row: 0, column: 4 } },
   ];
-  const identifiers: Cell[] = [{ column: 0, row: 1 }];
+  const identifiers: Cell[] = [{ row: 1, column: 0 }];
 
-  expect(parseWideToLong(inputTable, identifiers, relations)).toThrowError(
+  expect(() => parseWideToLong(inputTable, identifiers, relations)).toThrowError(
     'Unsupported relations array, all or none relations should have value'
   );
 });
 
-it.skip('should not parse wide to long when all cells in main row are set as keys (not primary columns)', () => {
+it('should not parse wide to long when all cells in main row are set as keys (not primary columns)', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
     ['0 mo-EE/AL', '0.912', '0.913', '0.914'],
   ];
   const relations: Relation[] = [
-    { key: { column: 0, row: 0 } },
-    { key: { column: 1, row: 0 } },
-    { key: { column: 2, row: 0 } },
-    { key: { column: 3, row: 0 } },
+    { key: { row: 0, column: 0 } },
+    { key: { row: 0, column: 1 } },
+    { key: { row: 0, column: 2 } },
+    { key: { row: 0, column: 3 } },
   ];
   const identifiers: Cell[] = [];
 
-  expect(parseWideToLong(inputTable, identifiers, relations)).toThrowError('The table must have at least one primary column');
+  expect(() => parseWideToLong(inputTable, identifiers, relations)).toThrowError(
+    'The table must have at least one primary column'
+  );
 });

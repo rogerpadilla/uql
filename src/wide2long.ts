@@ -1,16 +1,31 @@
-export function parseWideToLong(input: readonly any[][], identifiers: readonly Cell[], relations: readonly Relation[]): any[][] {
-  const output: any[][] = [];
+export function parseWideToLong(
+  input: readonly CellContent[][],
+  identifiers: readonly Cell[],
+  relations: readonly Relation[]
+): CellContent[][] {
+  const valueCounts = relations.filter((rel) => Boolean(rel.value));
+  if (!identifiers.length) {
+    throw new Error('The table must have at least one primary column');
+  }
+  if (valueCounts.length && valueCounts.length !== relations.length) {
+    throw new Error('Unsupported relations array, all or none relations should have value');
+  }
 
-  const lastIdentifierI = identifiers[identifiers.length - 1].row;
+  const output: CellContent[][] = [];
+  const lastIdentifierIdx = identifiers[identifiers.length - 1].row;
 
-  for (let wideI = lastIdentifierI; wideI < input.length - 1; ++wideI) {
-    for (let wideJ = 0; wideJ < relations.length; ++wideJ) {
-      const currentRowIdx = wideI + 1;
-      const currentColIdx = wideJ + identifiers.length;
-      const idCells = identifiers.map((id) => input[currentRowIdx][id.column]);
-      const headerCells = Array.from({ length: lastIdentifierI + 1 }, (arr, index) => input[index][currentColIdx]);
-      const valueCell = input[currentRowIdx][currentColIdx];
-      output.push([...idCells, ...headerCells, valueCell]);
+  for (let wideRow = lastIdentifierIdx; wideRow < input.length - 1; ++wideRow) {
+    for (let wideColumn = 0; wideColumn < relations.length; ++wideColumn) {
+      const currentRow = wideRow + 1;
+      const currentColumn = wideColumn + identifiers.length;
+      const idCells = identifiers.map((id) => input[currentRow][id.column]);
+      const relationCells = Array.from({ length: lastIdentifierIdx + 1 }, (arr, idx) => {
+        const relationValue = relations[wideColumn]?.value;
+        const columnIdx = relationValue && relationValue.row === idx ? relationValue.column : currentColumn;
+        return input[idx][columnIdx];
+      });
+      const valueCell = input[currentRow][currentColumn];
+      output.push([...idCells, ...relationCells, valueCell]);
     }
   }
 
@@ -22,6 +37,8 @@ export interface Cell {
   row: number;
   column: number;
 }
+
+export type CellContent = string | number;
 
 // A mapping between two cells
 export interface Relation {
