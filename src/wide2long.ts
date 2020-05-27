@@ -32,7 +32,6 @@ export function parseWideToLong(
   return output;
 }
 
-// A cell in the table
 export interface Cell {
   row: number;
   column: number;
@@ -40,7 +39,6 @@ export interface Cell {
 
 export type CellContent = string | number;
 
-// A mapping between two cells
 export interface Relation {
   key: Cell;
   value?: Cell;
