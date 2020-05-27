@@ -128,12 +128,10 @@ it('should parse wide (two header rows with relationships) to long', () => {
     ['6/24', 'Part % < 50%', 'Takeover', '0.93'],
   ];
   const output = parseWideToLong(inputTable, identifiers, relations);
-  console.table(expected);
-  console.table(output);
   expect(output).toEqual(expected);
 });
 
-it.skip('should parse wide (two header rows with relationships to merged cells) to long', () => {
+it('should parse wide (two header rows with relationships to merged cells) to long', () => {
   // This test is same as previous one, but tes data comes from excel with 'merged cells'
   // 'Part % >= 50%', '' -> 1 excel merged cell
   const inputTable = [
@@ -163,6 +161,8 @@ it.skip('should parse wide (two header rows with relationships to merged cells) 
     ['6/24', 'Part % < 50%', 'Takeover', '0.93'],
   ];
   const output = parseWideToLong(inputTable, identifiers, relations);
+  console.table(expected);
+  console.table(output);
   expect(output).toEqual(expected);
 });
 

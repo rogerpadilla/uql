@@ -1,16 +1,16 @@
 export function parseWideToLong(input: readonly any[][], identifiers: readonly Cell[], relations: readonly Relation[]): any[][] {
   const output: any[][] = [];
 
-  const wideStartI = identifiers[identifiers.length - 1].row;
+  const lastIdentifierI = identifiers[identifiers.length - 1].row;
 
-  for (let wideI = wideStartI; wideI < input.length - 1; ++wideI) {
+  for (let wideI = lastIdentifierI; wideI < input.length - 1; ++wideI) {
     for (let wideJ = 0; wideJ < relations.length; ++wideJ) {
       const currentRowIdx = wideI + 1;
       const currentColIdx = wideJ + identifiers.length;
       const idCells = identifiers.map((id) => input[currentRowIdx][id.column]);
-      const headerCell = input[0][currentColIdx];
+      const headerCells = Array.from({ length: lastIdentifierI + 1 }, (arr, index) => input[index][currentColIdx]);
       const valueCell = input[currentRowIdx][currentColIdx];
-      output.push([...idCells, headerCell, valueCell]);
+      output.push([...idCells, ...headerCells, valueCell]);
     }
   }
 
