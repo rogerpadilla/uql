@@ -43,7 +43,7 @@
     "prettier/prettier": "error",
     "eslint-comments/disable-enable-pair": ["error", { "allowWholeFile": true }],
     "import/order": "warn",
-    
+
     "no-continue": 0,
     "require-await": 0,
     "no-case-declarations": 0,
@@ -63,7 +63,7 @@
     "@typescript-eslint/no-explicit-any": 0,
     "@typescript-eslint/no-use-before-define": 0,
     "@typescript-eslint/no-unused-vars": 0,
-    "import/prefer-default-export": 0,    
+    "import/prefer-default-export": 0,
     "promise/always-return": 0
   },
   "overrides": [
@@ -81,7 +81,9 @@
       },
       "rules": {
         "@typescript-eslint/unbound-method": 0,
-        "@typescript-eslint/no-empty-function": 0
+        "@typescript-eslint/no-empty-function": 0,
+        "jest/no-test-prefixes": 0,
+        "jest/no-disabled-tests": 0
       }
     }
   ]

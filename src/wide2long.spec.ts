@@ -164,7 +164,7 @@ it('should parse wide (two header rows with relationships to merged cells) to lo
   expect(output).toEqual(expected);
 });
 
-it.skip('should parse wide (one header row two primary columns with merged cells) to long', () => {
+xit('should parse wide (one header row two primary columns with merged cells) to long', () => {
   // This test may be unnecesary, in case merged cells issue is solved in UI/above layer
   // The issue is that merged cells in excel in TSV are -> 'Max' '' -> 1 excel merged cell
   const inputTable = [
@@ -215,7 +215,7 @@ it('should parse wide (user did not select all available keys) to long', () => {
   expect(output).toEqual(expected);
 });
 
-it.skip('should parse wide (not consecutive keys selected) to long', () => {
+xit('should parse wide (not consecutive keys selected) to long', () => {
   const inputTable: string[][] = [
     ['Option', 'A', 'B', 'C'],
     ['0 mo-AL/AL', '0.95', '0.96', '0.97'],
@@ -234,7 +234,7 @@ it.skip('should parse wide (not consecutive keys selected) to long', () => {
   expect(output).toEqual(expected);
 });
 
-it.skip('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
+xit('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%'],
     ['Option Description', '1/4', '2/4', '3/4', '4/4'],
