@@ -1,47 +1,43 @@
-import { MongoClient, ClientSession } from 'mongodb';
+import { MongoClient, ClientSession, ObjectID, Collection, OptionalId } from 'mongodb';
 import { QueryFilter, Query, QueryOneFilter, QueryOne } from '../../type';
 import { Querier } from '../type';
 import { getEntityMeta } from '../../entity';
 import { buildFilter, buildAggregationPipeline } from './mongodb.util';
 
-export class MongodbQuerier extends Querier {
+export class MongodbQuerier extends Querier<ObjectID> {
   protected session: ClientSession;
 
   constructor(protected readonly conn: MongoClient) {
     super();
   }
 
-  hasOpenTransaction() {
-    return this.session?.inTransaction();
-  }
-
-  async insert<T>(type: { new (): T }, bodies: T[]) {
-    const res = await this.collection(type).insertMany(bodies);
+  async insert<T>(type: { new (): T }, bodies: T[]): Promise<ObjectID[]> {
+    const res = await this.collection(type).insertMany(bodies as OptionalId<T>[]);
     return Object.values(res.insertedIds);
   }
 
-  async insertOne<T>(type: { new (): T }, body: T) {
-    const res = await this.collection(type).insertOne(body);
+  async insertOne<T>(type: { new (): T }, body: T): Promise<ObjectID> {
+    const res = await this.collection(type).insertOne(body as OptionalId<T>);
     return res.insertedId;
   }
 
-  async updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const res = await this.collection(type).updateOne(type, filter, body);
+  async updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
+    const res = await this.collection(type).updateOne(buildFilter(filter), body);
     return res.modifiedCount;
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
+  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
     const res = await this.collection(type).updateMany(buildFilter(filter), body);
     return res.modifiedCount;
   }
 
-  async findOneById<T>(type: { new (): T }, id: any, qm: QueryOne<T> = {}) {
+  async findOneById<T>(type: { new (): T }, id: ObjectID, qm: QueryOne<T> = {}): Promise<T> {
     const meta = getEntityMeta(type);
     (qm as QueryOneFilter<T>).filter = { [meta.id]: id };
     return this.findOne(type, qm);
   }
 
-  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
+  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>): Promise<T> {
     if (qm.populate && Object.keys(qm.populate).length) {
       return this.collection(type)
         .aggregate(buildAggregationPipeline(type, qm))
@@ -51,7 +47,7 @@ export class MongodbQuerier extends Querier {
     return this.collection(type).findOne(buildFilter(qm.filter), { projection: qm.project });
   }
 
-  async find<T>(type: { new (): T }, qm: Query<T>) {
+  async find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {
     if (qm.populate && Object.keys(qm.populate).length) {
       return this.collection(type).aggregate(buildAggregationPipeline(type, qm)).toArray();
     }
@@ -78,33 +74,38 @@ export class MongodbQuerier extends Querier {
     return cursor.toArray();
   }
 
-  count<T>(type: { new (): T }, filter: QueryFilter<T>) {
+  count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
     return this.collection(type).countDocuments(buildFilter(filter));
   }
 
-  async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>) {
+  async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
     const res = await this.collection(type).deleteOne(buildFilter(filter));
     return res.deletedCount;
   }
 
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
+  async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
     const res = await this.collection(type).deleteMany(buildFilter(filter));
     return res.deletedCount;
   }
 
-  collection<T>(type: { new (): T }) {
+  collection<T>(type: { new (): T }): Collection<T> {
     const meta = getEntityMeta(type);
     return this.conn.db().collection(meta.name);
   }
 
-  async beginTransaction() {
+  hasOpenTransaction(): boolean {
+    return this.session?.inTransaction();
+  }
+
+  beginTransaction(): Promise<void> {
     if (this.session?.inTransaction()) {
       throw new Error('There is a pending transaction.');
     }
     this.session = this.conn.startSession();
+    return Promise.resolve();
   }
 
-  async commit() {
+  async commit(): Promise<void> {
     if (!this.session?.inTransaction()) {
       throw new Error('There is not a pending transaction.');
     }
@@ -112,14 +113,14 @@ export class MongodbQuerier extends Querier {
     this.session.endSession();
   }
 
-  async rollback() {
+  async rollback(): Promise<void> {
     if (!this.session?.inTransaction()) {
       throw new Error('There is not a pending transaction.');
     }
     await this.session.abortTransaction();
   }
 
-  release() {
+  release(): Promise<void> {
     if (this.session?.inTransaction()) {
       throw new Error('Querier should not be released while there is an open transaction.');
     }

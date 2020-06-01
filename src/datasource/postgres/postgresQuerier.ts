@@ -7,7 +7,7 @@ export class PostgresQuerier extends SqlQuerier {
     super(new PostgresDialect(), conn);
   }
 
-  parseQueryResult<T>(res: { rows: T }) {
+  parseQueryResult<T>(res: { rows: T }): T {
     return res.rows;
   }
 }

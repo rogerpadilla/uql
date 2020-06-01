@@ -3,7 +3,7 @@ import { RelationOptions, PrimaryColumnOptions, EntityOptions, EntityMeta, Colum
 
 const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
 
-function ensureEntityMeta<T>(type: { new (): T }) {
+function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
   if (!entitiesMeta.has(type)) {
     entitiesMeta.set(type, { type, name: type.name, properties: {} });
   }
@@ -11,13 +11,13 @@ function ensureEntityMeta<T>(type: { new (): T }) {
   return meta;
 }
 
-export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>) {
+export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   meta.properties[prop] = { ...meta.properties[prop], column: { name: prop, ...opts } };
   return meta;
 }
 
-export function definePrimaryColumn<T>(type: { new (): T }, prop: string, opts: PrimaryColumnOptions<T>) {
+export function definePrimaryColumn<T>(type: { new (): T }, prop: string, opts: PrimaryColumnOptions<T>): EntityMeta<T> {
   const meta = defineColumn(type, prop, { mode: 'read', ...opts });
   if (meta.id) {
     throw new Error(`'${type.name}' must have a single field decorated with @PrimaryColumn`);
@@ -26,9 +26,9 @@ export function definePrimaryColumn<T>(type: { new (): T }, prop: string, opts: 
   return meta;
 }
 
-export function defineRelation<T>(type: { new (): T }, prop: string, opts: RelationOptions<T>) {
+export function defineRelation<T>(type: { new (): T }, prop: string, opts: RelationOptions<T>): EntityMeta<T> {
   if (!opts.type) {
-    const inferredType = Reflect.getMetadata('design:type', type.prototype, prop);
+    const inferredType = Reflect.getMetadata('design:type', type.prototype, prop) as { new (): T };
     const isPrimitive = isPrimitiveType(inferredType);
     if (isPrimitive) {
       throw new Error(`'${type.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
@@ -40,7 +40,7 @@ export function defineRelation<T>(type: { new (): T }, prop: string, opts: Relat
   return meta;
 }
 
-export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions) {
+export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions): EntityMeta<T> {
   const meta: EntityMeta<T> = entitiesMeta.get(type);
   if (!meta) {
     throw new Error(`'${type.name}' must have columns`);
@@ -86,7 +86,7 @@ export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions) {
   return meta;
 }
 
-export function getEntityMeta<T>(type: { new (): T }) {
+export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
   const meta: EntityMeta<T> = entitiesMeta.get(type);
   if (!meta?.isEntity) {
     throw new Error(`'${type.name}' is not an entity`);
@@ -94,7 +94,7 @@ export function getEntityMeta<T>(type: { new (): T }) {
   return meta;
 }
 
-export function getEntities() {
+export function getEntities(): { new (): object }[] {
   return Array.from(entitiesMeta.values()).reduce((acc, it) => {
     if (it.isEntity) {
       acc.push(it.type);
@@ -103,7 +103,7 @@ export function getEntities() {
   }, [] as { new (): object }[]);
 }
 
-function isPrimitiveType(type: any) {
+function isPrimitiveType(type: any): boolean {
   return (
     type === undefined ||
     type === Number ||

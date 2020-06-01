@@ -22,7 +22,7 @@ it('invalid auto-inferred type', () => {
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: {};
+      idTwo: object;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'Object'`);
   expect(() => {

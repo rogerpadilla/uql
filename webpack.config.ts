@@ -49,7 +49,7 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     plugins: [
-      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] } as any),
+      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] }) as any,
       new ForkTsCheckerPlugin({
         eslint: true,
       }),

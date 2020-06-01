@@ -1,9 +1,9 @@
 import { getCorozoOptions } from '../config';
-import { QuerierPoolOptions, QuerierPool, DatasourceDriver, DatasourceOptions } from './type';
+import { QuerierPoolOptions, QuerierPool, DatasourceDriver, DatasourceOptions, Querier } from './type';
 
 let pool: QuerierPool;
 
-export function getQuerier() {
+export function getQuerier(): Promise<Querier> {
   if (!pool) {
     const conf = getCorozoOptions();
     if (!conf?.datasource) {
@@ -17,7 +17,7 @@ export function getQuerier() {
 function buildQuerierPool(opts: DatasourceOptions) {
   const { driver, ...poolOpts } = opts;
   const querierPoolPath = getQuerierPoolPath(driver);
-  // eslint-disable-next-line global-require, import/no-dynamic-require
+  // eslint-disable-next-line global-require, import/no-dynamic-require, @typescript-eslint/no-unsafe-member-access
   const QuerierPoolConstructor: { new (opts: QuerierPoolOptions): QuerierPool } = require(querierPoolPath).default;
   return new QuerierPoolConstructor(poolOpts);
 }

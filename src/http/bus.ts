@@ -2,14 +2,14 @@ import { RequestErrorResponse, RequestOptions } from './type';
 
 const subscriptors: BusCallback[] = [];
 
-export function notify(msg: BusMessage) {
+export function notify(msg: BusMessage): void {
   subscriptors.forEach((subscriptor) => subscriptor(msg));
 }
 
-export function on(cb: BusCallback) {
+export function on(cb: BusCallback): () => void {
   subscriptors.push(cb);
   const index = subscriptors.length - 1;
-  return () => {
+  return (): void => {
     subscriptors.splice(index, 1);
   };
 }

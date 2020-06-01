@@ -5,7 +5,7 @@ export abstract class BaseEntity {
   id?: number;
   @ManyToOne({ type: () => Company })
   @Column({ mode: 'insert' })
-  company?: number;
+  company?: number | Company;
   @Column({ mode: 'insert' })
   @ManyToOne({ type: () => User })
   user?: number | User;
@@ -28,7 +28,7 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   @PrimaryColumn({ name: 'pk' })
-  id: number;
+  id?: number;
   @Column({ name: 'image' })
   picture?: string;
 }

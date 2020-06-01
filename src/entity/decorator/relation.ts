@@ -14,18 +14,18 @@ function Relation<T>(opts: RelationOptions<T>) {
   };
 }
 
-export function OneToOne<T>(opts: RelationOneToOneOptions<T>) {
+export function OneToOne<T>(opts: RelationOneToOneOptions<T>): ReturnType<typeof Relation> {
   return Relation({ cardinality: 'oneToOne', ...opts });
 }
 
-export function ManyToOne<T>(opts?: RelationManyToOneOptions<T>) {
+export function ManyToOne<T>(opts?: RelationManyToOneOptions<T>): ReturnType<typeof Relation> {
   return Relation({ cardinality: 'manyToOne', ...opts });
 }
 
-export function OneToMany<T>(opts: RelationOneToManyOptions<T>) {
+export function OneToMany<T>(opts: RelationOneToManyOptions<T>): ReturnType<typeof Relation> {
   return Relation({ cardinality: 'oneToMany', ...opts });
 }
 
-export function ManyToMany<T>(opts: RelationManyToManyOptions<T>) {
+export function ManyToMany<T>(opts: RelationManyToManyOptions<T>): ReturnType<typeof Relation> {
   return Relation({ cardinality: 'manyToMany', ...opts });
 }

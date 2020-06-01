@@ -1,25 +1,25 @@
 import { RequestSuccessResponse, RequestErrorResponse, RequestOptions } from './type';
 import { notify } from './bus';
 
-export function get<T>(url: string, opts?: RequestOptions) {
+export function get<T>(url: string, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   return request<T>(url, { method: 'get' }, opts);
 }
 
-export function post<T>(url: string, body: any, opts?: RequestOptions) {
+export function post<T>(url: string, body: any, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   const stringifiedData = JSON.stringify(body);
   return request<T>(url, { method: 'post', body: stringifiedData }, opts);
 }
 
-export function put<T>(url: string, body: any, opts?: RequestOptions) {
+export function put<T>(url: string, body: any, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   const stringifiedData = JSON.stringify(body);
   return request<T>(url, { method: 'put', body: stringifiedData }, opts);
 }
 
-export function remove<T>(url: string, opts?: RequestOptions) {
+export function remove<T>(url: string, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   return request<T>(url, { method: 'delete' }, opts);
 }
 
-function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
+function request<T>(url: string, init: RequestInit, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   notify({ type: 'task', phase: 'start', opts });
 
   init.headers = {

@@ -16,7 +16,7 @@ export function buildFilter<T>(filter: QueryFilter<T>): FilterQuery<T> {
   }, {});
 }
 
-export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>) {
+export function buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>): object[] {
   const meta = getEntityMeta(type);
 
   const pipeline: object[] = [];

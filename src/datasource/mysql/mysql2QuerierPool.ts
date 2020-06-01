@@ -9,7 +9,7 @@ export default class MySql2QuerierPool implements QuerierPool {
     this.pool = createPool(opts);
   }
 
-  async getQuerier() {
+  async getQuerier(): Promise<MySqlQuerier> {
     const conn = await this.pool.getConnection();
     return new MySqlQuerier(conn);
   }

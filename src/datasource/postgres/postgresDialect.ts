@@ -4,13 +4,13 @@ import { QueryComparisonOperator, QueryTextSearchOptions, QueryPrimitive } from 
 import { getEntityMeta } from '../../entity';
 
 export class PostgresDialect extends SqlDialect {
-  insert<T>(type: { new (): T }, body: T | T[]) {
+  insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
     const meta = getEntityMeta(type);
     return sql + ` RETURNING ${meta.id} AS insertId`;
   }
 
-  comparison<T>(key: string, value: object | QueryPrimitive) {
+  comparison<T>(key: string, value: object | QueryPrimitive): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;
@@ -25,7 +25,7 @@ export class PostgresDialect extends SqlDialect {
     attr: keyof T,
     operator: K,
     val: QueryComparisonOperator<T>[K]
-  ) {
+  ): string {
     switch (operator) {
       case '$startsWith':
         return `${escapeId(attr)} ILIKE ${escape(val + '%')}`;

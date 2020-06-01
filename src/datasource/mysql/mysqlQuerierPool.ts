@@ -9,7 +9,7 @@ export default class MySqlQuerierPool implements QuerierPool {
     this.pool = createPool(opts);
   }
 
-  getQuerier() {
+  getQuerier(): Promise<MySqlQuerier> {
     return new Promise<MySqlQuerier>((resolve, reject) => {
       this.pool.getConnection((err, connection) => {
         if (err) {

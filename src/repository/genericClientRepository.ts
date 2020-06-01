@@ -1,4 +1,4 @@
-import { get, post, put, remove, RequestOptions } from '../http';
+import { get, post, put, remove, RequestOptions, RequestSuccessResponse } from '../http';
 import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
 import { stringifyQuery, stringifyQueryParameter } from '../util/query.util';
 import { formatKebabCase } from '../util/string.util';
@@ -21,16 +21,16 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
     this.basePath = '/api/' + formatKebabCase(this.meta.name);
   }
 
-  insertOne(body: T, opts?: RequestOptions) {
+  insertOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>> {
     return post<ID>(this.basePath, body, opts);
   }
 
-  updateOneById(id: ID, body: T, opts?: RequestOptions) {
+  updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<void>> {
     return put<void>(`${this.basePath}/${id}`, body, opts);
   }
 
-  saveOne(body: T, opts?: RequestOptions) {
-    const id: ID = body[this.meta.id];
+  saveOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>> {
+    const id = body[this.meta.id] as ID;
     if (id) {
       return this.updateOneById(id, body, opts).then((res) => {
         return { data: id };
@@ -39,31 +39,31 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
     return this.insertOne(body, opts);
   }
 
-  findOneById(id: ID, qm: QueryOne<T>, opts?: RequestOptions) {
+  findOneById(id: ID, qm: QueryOne<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/${id}${qs}`, opts);
   }
 
-  findOne(qm: QueryOneFilter<T>, opts?: RequestOptions) {
+  findOne(qm: QueryOneFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/one${qs}`, opts);
   }
 
-  find(qm: Query<T>, opts?: RequestOptions) {
+  find(qm: Query<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T[]>> {
     const qs = stringifyQuery(qm);
     return get<T[]>(`${this.basePath}${qs}`, opts);
   }
 
-  removeOneById(id: ID, opts?: RequestOptions) {
+  removeOneById(id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<void>> {
     return remove<void>(`${this.basePath}/${id}`, opts);
   }
 
-  remove(filter: QueryFilter<T>, opts?: RequestOptions) {
+  remove(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>> {
     const qs = stringifyQueryParameter('filter', filter);
     return remove<number>(`${this.basePath}${qs}`, opts);
   }
 
-  count(filter: QueryFilter<T>, opts?: RequestOptions) {
+  count(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>> {
     const qs = stringifyQueryParameter('filter', filter);
     return get<number>(`${this.basePath}/count${qs}`, opts);
   }

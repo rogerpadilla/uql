@@ -22,7 +22,7 @@ export function mapRows<T>(rows: T[]): T[] {
           if (typeof obj[key] !== 'object') {
             obj[key] = {};
           }
-          return obj[key];
+          return obj[key] as T;
         }, dto);
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
@@ -34,7 +34,7 @@ export function mapRows<T>(rows: T[]): T[] {
   });
 }
 
-function obtainAttrsPaths<T extends Record<string, any>>(row: T) {
+function obtainAttrsPaths<T>(row: T) {
   return Object.keys(row).reduce((acc, col) => {
     if (col.includes('.')) {
       acc[col] = col.split('.');

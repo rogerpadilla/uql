@@ -1,6 +1,6 @@
 import { Query, QueryStringified } from '../type';
 
-export function buildQuery<T>(qmsSrc: QueryStringified) {
+export function buildQuery<T>(qmsSrc: QueryStringified): Query<T> {
   const qm: Query<T> = {};
   if (qmsSrc) {
     if (qmsSrc.skip) {
@@ -25,7 +25,7 @@ export function buildQuery<T>(qmsSrc: QueryStringified) {
   return qm;
 }
 
-export function stringifyQueryParameter<T, K extends keyof Query<T>>(key: K, value: Query<T>[K], noPrefix?: boolean) {
+export function stringifyQueryParameter<T, K extends keyof Query<T>>(key: K, value: Query<T>[K], noPrefix?: boolean): string {
   if (value === undefined) {
     return '';
   }
@@ -42,6 +42,6 @@ export function stringifyQuery<T>(qm: Query<T>): string {
       acc.push(stringifyQueryParameter(key as keyof Query<T>, qm[key], true));
     }
     return acc;
-  }, []);
+  }, [] as string[]);
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }

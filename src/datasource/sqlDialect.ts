@@ -8,7 +8,6 @@ import {
   QueryPager,
   QueryOptions,
   QueryProject,
-  QueryLogicalOperatorKey,
   QueryLogicalOperatorValue,
 } from '../type';
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
@@ -16,7 +15,7 @@ import { getEntityMeta, ColumnPersistableMode } from '../entity';
 export abstract class SqlDialect {
   readonly beginTransactionCommand: string = 'BEGIN';
 
-  insert<T>(type: { new (): T }, body: T | T[]) {
+  insert<T>(type: { new (): T }, body: T | T[]): string {
     const meta = getEntityMeta(type);
     const bodies = Array.isArray(body) ? body : [body];
     const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
@@ -26,7 +25,7 @@ export abstract class SqlDialect {
     return `INSERT INTO ${escapeId(meta.name)} (${escapeId(columns)}) VALUES (${values})`;
   }
 
-  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number) {
+  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number): string {
     const meta = getEntityMeta(type);
     const persistable = filterPersistable(type, body, 'update');
     const persistableData = Object.keys(persistable).reduce((acc, key) => {
@@ -39,14 +38,14 @@ export abstract class SqlDialect {
     return `UPDATE ${escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
   }
 
-  remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number) {
+  remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number): string {
     const meta = getEntityMeta(type);
     const where = this.where(filter);
     const pager = this.pager({ limit });
     return `DELETE FROM ${escapeId(meta.name)} WHERE ${where}${pager}`;
   }
 
-  find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
+  find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const select = this.select<T>(type, qm, opts);
     const where = this.where<T>(qm.filter, { usePrefix: true });
     const sort = this.sort<T>(qm.sort);
@@ -54,7 +53,7 @@ export abstract class SqlDialect {
     return select + where + sort + pager;
   }
 
-  columns<T>(type: { new (): T }, project: QueryProject<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions) {
+  columns<T>(type: { new (): T }, project: QueryProject<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions): string {
     if (opts.isTrustedProject) {
       return Object.keys(project).join(', ');
     }
@@ -79,7 +78,7 @@ export abstract class SqlDialect {
     return Object.keys(project).map(nameMapper).join(', ');
   }
 
-  select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
+  select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const meta = getEntityMeta(type);
     const baseSelect = this.columns(type, qm.project, {
       prefix: qm.populate && type.name,
@@ -89,7 +88,7 @@ export abstract class SqlDialect {
     return `SELECT ${baseSelect}${joinsSelect} FROM ${escapeId(meta.name)}${joinsTables}`;
   }
 
-  joins<T>(type: { new (): T }, qm: Query<T>, prefix = '') {
+  joins<T>(type: { new (): T }, qm: Query<T>, prefix = ''): { joinsSelect: string; joinsTables: string } {
     let joinsSelect = '';
     let joinsTables = '';
     const meta = getEntityMeta(type);
@@ -148,7 +147,7 @@ export abstract class SqlDialect {
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
-  comparison<T>(key: string, value: object | QueryPrimitive) {
+  comparison<T>(key: string, value: object | QueryPrimitive): string {
     const val = typeof value === 'object' && value !== null ? value : { $eq: value };
     const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
     const operations = operators.map((operator) => this.comparisonOperation(key, operator, val[operator])).join(' AND ');
@@ -159,7 +158,7 @@ export abstract class SqlDialect {
     attr: keyof T,
     operator: K,
     val: QueryComparisonOperator<T>[K]
-  ) {
+  ): string {
     switch (operator) {
       case '$eq':
         return val === null ? `${escapeId(attr)} IS NULL` : `${escapeId(attr)} = ${escape(val)}`;
@@ -186,7 +185,7 @@ export abstract class SqlDialect {
     }
   }
 
-  sort<T>(sort: QuerySort<T>) {
+  sort<T>(sort: QuerySort<T>): string {
     if (!sort || Object.keys(sort).length === 0) {
       return '';
     }
@@ -199,7 +198,7 @@ export abstract class SqlDialect {
     return ` ORDER BY ${order}`;
   }
 
-  pager(opts: QueryPager) {
+  pager(opts: QueryPager): string {
     let sql = '';
     if (opts.limit) {
       sql += ` LIMIT ${Number(opts.limit)}`;
@@ -211,7 +210,7 @@ export abstract class SqlDialect {
   }
 }
 
-function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode) {
+function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode): T {
   const meta = getEntityMeta(type);
   return Object.keys(body).reduce((persistableBody, prop) => {
     const propVal = body[prop];

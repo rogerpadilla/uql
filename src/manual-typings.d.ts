@@ -14,10 +14,10 @@ declare namespace Express {
 }
 
 declare namespace jest {
-  type toStartsWith<R = any> = (received: string) => R;
+  type toStartsWith<R> = (received: string) => R;
 
   export interface Expect {
-    toStartsWith: toStartsWith;
+    toStartsWith: toStartsWith<boolean>;
   }
   export interface Matchers<R> {
     toStartsWith: toStartsWith<R>;

@@ -11,7 +11,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  async insertOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
+  async insertOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
     const id = await querier.insertOne(this.meta.type, body);
     await this.insertRelations({ ...body, [this.meta.id]: id }, querier);
     return id;
@@ -27,8 +27,8 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  async saveOne(body: T, @InjectQuerier() querier?: Querier): Promise<ID> {
-    const id: ID = body[this.meta.id];
+  async saveOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
+    const id = body[this.meta.id] as ID;
     if (id) {
       await this.updateOneById(id, body, querier);
       return id;
@@ -76,11 +76,12 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
       const relOpts = this.meta.relations[prop];
       const relType = relOpts.type();
-      const relBody = body[prop];
       if (relOpts.cardinality === 'oneToOne') {
+        const relBody: T = body[prop];
         return querier.insertOne(relType, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
+        const relBody: T[] = body[prop];
         relBody.forEach((it: T) => {
           it[relOpts.mappedBy] = id;
         });
@@ -98,13 +99,14 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
       const relOpts = this.meta.relations[prop];
       const relType = relOpts.type();
-      const relBody = body[prop];
       if (relOpts.cardinality === 'oneToOne') {
+        const relBody: T = body[prop];
         if (relBody === null) {
           return querier.removeOne(relType, { [relOpts.mappedBy]: id });
         }
         return querier.updateOne(relType, { [relOpts.mappedBy]: id }, relBody);
       } else if (relOpts.cardinality === 'oneToMany') {
+        const relBody: T[] = body[prop];
         await querier.remove(relType, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
           relBody.forEach((it: T) => {
@@ -120,7 +122,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     await Promise.all(removeProms);
   }
 
-  protected filterIndependentRelations(body: T) {
+  protected filterIndependentRelations(body: T): string[] {
     return Object.keys(body).filter((prop) => {
       const relOpts = this.meta.relations[prop];
       return relOpts && relOpts.cardinality !== 'manyToOne';

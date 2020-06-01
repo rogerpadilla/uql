@@ -9,7 +9,7 @@ export default class PgQuerierPool implements QuerierPool {
     this.pool = new Pool(opts);
   }
 
-  async getQuerier() {
+  async getQuerier(): Promise<PostgresQuerier> {
     const conn = await this.pool.connect();
     return new PostgresQuerier(conn);
   }

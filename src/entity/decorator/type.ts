@@ -15,7 +15,7 @@ export type ColumnOptions<T> = {
 export type PrimaryColumnOptions<T> = ColumnOptions<T>;
 
 export type RelationOptions<T> = {
-  type?: () => { new (): any };
+  type?: () => { new (): unknown };
   readonly cardinality: RelationCardinality;
   readonly mappedBy?: keyof T;
 };

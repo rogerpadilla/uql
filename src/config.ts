@@ -4,13 +4,13 @@ import { DatasourceOptions } from './datasource/type';
 
 let opts: CorozoOptions;
 
-export function initCorozo(conf: CorozoOptions) {
+export function initCorozo(conf: CorozoOptions): void {
   opts = { ...conf };
   resetContainer();
 }
 
-export function getCorozoOptions() {
+export function getCorozoOptions(): CorozoOptions {
   return { ...opts };
 }
 
-type CorozoOptions = { datasource?: DatasourceOptions; defaultRepositoryClass?: GenericRepositoryConstructor<any> };
+type CorozoOptions = { datasource?: DatasourceOptions; defaultRepositoryClass?: GenericRepositoryConstructor<unknown> };

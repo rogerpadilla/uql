@@ -91,7 +91,7 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
     expect(querier.hasOpenTransaction()).toBe(true);
     await querier.commit();
     expect(querier.hasOpenTransaction()).toBeFalsy();
-    querier.release();
+    await querier.release();
     expect(querier.hasOpenTransaction()).toBeFalsy();
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.beginTransaction).toBeCalledTimes(1);

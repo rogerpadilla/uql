@@ -140,7 +140,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
   it('find unsupported comparison operator', () => {
     expect(() =>
       sql.find(User, {
-        filter: { name: { $someInvalidOperator: 'some' } as any },
+        filter: { name: { $someInvalidOperator: 'some' } as unknown },
       })
     ).toThrowError('Unsupported comparison operator: $someInvalidOperator');
   });
@@ -303,7 +303,7 @@ describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
   it('find populate columns with not fixed type', () => {
     const query = sql.find(Item, {
       project: { id: 1, name: 1 },
-      populate: { user: { project: { id: 1, name: 1 } as any }, company: { project: { id: 1, name: 1 } as any } },
+      populate: { user: { project: { id: 1, name: 1 } }, company: { project: { id: 1, name: 1 } } },
     });
     expect(query).toBe(
       'SELECT `Item`.`id`, `Item`.`name`' +

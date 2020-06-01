@@ -7,7 +7,7 @@ export class MySqlQuerier extends SqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  parseQueryResult<T>(res: [T]) {
+  parseQueryResult<T>(res: [T]): T {
     return res[0];
   }
 }
