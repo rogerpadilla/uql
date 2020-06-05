@@ -12,17 +12,17 @@ export function parseWideToLong(
   }
 
   const output: CellContent[][] = [];
-  const lastIdentifier = identifiers[identifiers.length - 1].row;
+  const lastIdentifierRow = identifiers[identifiers.length - 1].row;
 
-  for (let wideRow = lastIdentifier; wideRow < input.length - 1; ++wideRow) {
-    for (let wideColumn = 0; wideColumn < relations.length; ++wideColumn) {
-      const currentRow = wideRow + 1;
-      const currentColumn = wideColumn + identifiers.length;
+  for (let row = lastIdentifierRow; row < input.length - 1; ++row) {
+    for (const relation of relations) {
+      const currentRow = row + 1;
+      const currentColumn = relation.key.column;
       const idCells = identifiers.map((id) => input[currentRow][id.column]);
-      const relationCells = Array.from({ length: lastIdentifier + 1 }, (arr, row) => {
-        const relationValue = relations[wideColumn]?.value;
-        const column = relationValue?.row === row ? relationValue.column : currentColumn;
-        return input[row][column];
+      const relationCells = Array.from({ length: lastIdentifierRow + 1 }, (arr, index) => {
+        // console.log(index, relation);
+        const column = relation.value?.row === index ? relation.value.column : currentColumn;
+        return input[index][column];
       });
       const valueCell = input[currentRow][currentColumn];
       output.push([...idCells, ...relationCells, valueCell]);
