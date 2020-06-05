@@ -13,18 +13,17 @@ export function parseWideToLong(
 
   const output: CellContent[][] = [];
   const lastIdentifierRow = identifiers[identifiers.length - 1].row;
+  const increment = !lastIdentifierRow || relations.some((rel) => rel.value) ? 1 : 0;
 
-  for (let row = lastIdentifierRow; row < input.length - 1; ++row) {
+  for (let row = lastIdentifierRow + 1; row < input.length; ++row) {
     for (const relation of relations) {
-      const currentRow = row + 1;
       const currentColumn = relation.key.column;
-      const idCells = identifiers.map((id) => input[currentRow][id.column]);
-      const relationCells = Array.from({ length: lastIdentifierRow + 1 }, (arr, index) => {
-        // console.log(index, relation);
+      const idCells = identifiers.map((id) => input[row][id.column]);
+      const relationCells = Array.from({ length: lastIdentifierRow + increment }, (arr, index) => {
         const column = relation.value?.row === index ? relation.value.column : currentColumn;
-        return input[index][column];
+        return input[index + 1 - increment][column];
       });
-      const valueCell = input[currentRow][currentColumn];
+      const valueCell = input[row][currentColumn];
       output.push([...idCells, ...relationCells, valueCell]);
     }
   }

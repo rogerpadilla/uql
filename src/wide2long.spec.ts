@@ -234,7 +234,8 @@ it('should parse wide (not consecutive keys selected) to long', () => {
   expect(output).toEqual(expected);
 });
 
-xit('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
+// eslint-disable-next-line jest/no-focused-tests
+it('should parse wide (user does not pick relations in table with 2 row headers) to long', () => {
   const inputTable: string[][] = [
     ['', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%', 'Part % >= 50%'],
     ['Option Description', '1/4', '2/4', '3/4', '4/4'],
