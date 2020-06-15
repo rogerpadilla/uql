@@ -23,18 +23,17 @@ function buildQuerierPool(opts: DatasourceOptions) {
 }
 
 function getQuerierPoolPath(driver: DatasourceDriver) {
-  switch (driver) {
-    case 'mariadb':
-    case 'mysql':
-    case 'mysql2':
-      return `./mysql/${driver}QuerierPool`;
-    case 'pg':
-      return `./postgres/${driver}QuerierPool`;
-    case 'sqlite3':
-      return `./sqlite/${driver}QuerierPool`;
-    case 'mongodb':
-      return `./mongo/${driver}QuerierPool`;
-    default:
-      throw new Error(`Unsupported driver '${driver}'`);
+  const driverDirectoryMap = {
+    mysql: 'mysql',
+    mysql2: 'mysql',
+    mariadb: 'mysql',
+    pg: 'postgres',
+    sqlite3: 'sqlite',
+    mongodb: 'mongo',
+  } as const;
+  const directory = driverDirectoryMap[driver];
+  if (!directory) {
+    throw new Error(`Unsupported driver '${driver}'`);
   }
+  return `./${directory}/${driver}QuerierPool`;
 }
