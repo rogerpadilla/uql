@@ -3,7 +3,7 @@ import { SqlQuerier } from '../sqlQuerier';
 import { MySqlDialect } from './mysqlDialect';
 
 export class MySqlQuerier extends SqlQuerier {
-  constructor(protected readonly conn: QuerierPoolConnection) {
+  constructor(conn: QuerierPoolConnection) {
     super(new MySqlDialect(), conn);
   }
 

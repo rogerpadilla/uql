@@ -5,7 +5,7 @@ import { MySqlQuerier } from './mysqlQuerier';
 export default class MySqlQuerierPool implements QuerierPool {
   private readonly pool: Pool;
 
-  constructor(protected readonly opts: QuerierPoolOptions) {
+  constructor(opts: QuerierPoolOptions) {
     this.pool = createPool(opts);
   }
 

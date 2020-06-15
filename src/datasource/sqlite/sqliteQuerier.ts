@@ -3,7 +3,7 @@ import { SqlQuerier } from '../sqlQuerier';
 import { SqliteDialect } from './sqliteDialect';
 
 export class SqliteQuerier extends SqlQuerier {
-  constructor(protected readonly conn: QuerierPoolConnection) {
+  constructor(conn: QuerierPoolConnection) {
     super(new SqliteDialect(), conn);
   }
 }

@@ -3,7 +3,7 @@ import { SqlQuerier } from '../sqlQuerier';
 import { PostgresDialect } from './postgresDialect';
 
 export class PostgresQuerier extends SqlQuerier {
-  constructor(protected readonly conn: QuerierPoolConnection) {
+  constructor(conn: QuerierPoolConnection) {
     super(new PostgresDialect(), conn);
   }
 }

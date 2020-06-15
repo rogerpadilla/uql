@@ -5,7 +5,7 @@ import { PostgresQuerier } from './postgresQuerier';
 export default class PgQuerierPool implements QuerierPool {
   private readonly pool: Pool;
 
-  constructor(readonly opts: PoolConfig) {
+  constructor(opts: PoolConfig) {
     this.pool = new Pool(opts);
   }
 

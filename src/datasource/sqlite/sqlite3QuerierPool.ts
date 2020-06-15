@@ -5,7 +5,7 @@ import { SqliteQuerier } from './sqliteQuerier';
 export default class Sqlite3QuerierPool implements QuerierPool {
   private readonly db: Database;
 
-  constructor(readonly filename: string) {
+  constructor(filename: string) {
     this.db = new Database(filename);
   }
 

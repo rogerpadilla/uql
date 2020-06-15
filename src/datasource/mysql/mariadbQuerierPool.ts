@@ -5,7 +5,7 @@ import { MySqlQuerier } from './mysqlQuerier';
 export default class MariadbQuerierPool implements QuerierPool {
   private readonly pool: Pool;
 
-  constructor(protected readonly opts: PoolConfig) {
+  constructor(opts: PoolConfig) {
     this.pool = createPool(opts);
   }
 
