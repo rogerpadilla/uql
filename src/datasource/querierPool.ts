@@ -16,13 +16,11 @@ export function getQuerier(): Promise<Querier> {
 
 function buildQuerierPool(opts: DatasourceOptions) {
   const { driver, ...poolOpts } = opts;
-  const querierPoolPath = getQuerierPoolPath(driver);
-  // eslint-disable-next-line global-require, import/no-dynamic-require, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
-  const QuerierPoolConstructor: { new (opts: QuerierPoolOptions): QuerierPool } = require(querierPoolPath).default;
+  const QuerierPoolConstructor = getQuerierPoolClass(driver);
   return new QuerierPoolConstructor(poolOpts);
 }
 
-function getQuerierPoolPath(driver: DatasourceDriver) {
+function getQuerierPoolClass(driver: DatasourceDriver): QuerierPoolClass {
   const driverDirectoryMap = {
     mysql: 'mysql',
     mysql2: 'mysql',
@@ -35,5 +33,8 @@ function getQuerierPoolPath(driver: DatasourceDriver) {
   if (!directory) {
     throw new Error(`Unsupported driver '${driver}'`);
   }
-  return `./${directory}/${driver}QuerierPool`;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require(`./${directory}/${driver}QuerierPool`).default;
 }
+
+type QuerierPoolClass = { new (opts: QuerierPoolOptions): QuerierPool };
