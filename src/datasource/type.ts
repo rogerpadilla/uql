@@ -37,6 +37,6 @@ export abstract class Querier<ID = any> {
   abstract release(): Promise<void>;
 }
 
-export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'mongodb';
+export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
 
 export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;

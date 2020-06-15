@@ -32,6 +32,8 @@ function getQuerierPoolPath(driver: DatasourceDriver) {
       return `./postgres/${driver}QuerierPool`;
     case 'mongodb':
       return `./mongo/${driver}QuerierPool`;
+    case 'sqlite3':
+      return `./sqlite/${driver}QuerierPool`;
     default:
       throw new Error(`Unsupported driver '${driver}'`);
   }
