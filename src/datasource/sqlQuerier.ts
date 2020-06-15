@@ -71,7 +71,7 @@ export abstract class SqlQuerier extends Querier {
     return res.affectedRows;
   }
 
-  hasOpenTransaction(): boolean {
+  get hasOpenTransaction(): boolean {
     return this.hasPendingTransaction;
   }
 

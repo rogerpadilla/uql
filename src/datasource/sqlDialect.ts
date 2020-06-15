@@ -13,7 +13,7 @@ import {
 import { getEntityMeta, ColumnPersistableMode } from '../entity';
 
 export abstract class SqlDialect {
-  readonly beginTransactionCommand: string = 'BEGIN';
+  abstract readonly beginTransactionCommand: string;
 
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const meta = getEntityMeta(type);
@@ -33,21 +33,21 @@ export abstract class SqlDialect {
       return acc;
     }, {} as T);
     const values = objectToValues(persistableData);
-    const where = this.where(filter);
+    const where = this.where(type, filter);
     const pager = this.pager({ limit });
     return `UPDATE ${escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
   }
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number): string {
     const meta = getEntityMeta(type);
-    const where = this.where(filter);
+    const where = this.where(type, filter);
     const pager = this.pager({ limit });
     return `DELETE FROM ${escapeId(meta.name)} WHERE ${where}${pager}`;
   }
 
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const select = this.select<T>(type, qm, opts);
-    const where = this.where<T>(qm.filter, { usePrefix: true });
+    const where = this.where<T>(type, qm.filter, { usePrefix: true });
     const sort = this.sort<T>(qm.sort);
     const pager = this.pager(qm);
     return select + where + sort + pager;
@@ -119,7 +119,11 @@ export abstract class SqlDialect {
     return { joinsSelect, joinsTables };
   }
 
-  where<T>(filter: QueryFilter<T>, opts: { filterLink?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}): string {
+  where<T>(
+    type: { new (): T },
+    filter: QueryFilter<T>,
+    opts: { filterLink?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}
+  ): string {
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys) {
       return '';
@@ -137,17 +141,17 @@ export abstract class SqlDialect {
             whereOpts = { filterLink: 'OR' };
           }
           const hasPrecedence = filterKeys.length > 1 && Object.keys(val).length > 1;
-          const filterItCondition = this.where(val, whereOpts);
+          const filterItCondition = this.where(type, val, whereOpts);
           return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
-        return this.comparison(key, val);
+        return this.comparison(type, key, val);
       })
       .join(` ${filterLink} `);
 
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
-  comparison<T>(key: string, value: object | QueryPrimitive): string {
+  comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
     const val = typeof value === 'object' && value !== null ? value : { $eq: value };
     const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
     const operations = operators.map((operator) => this.comparisonOperation(key, operator, val[operator])).join(' AND ');

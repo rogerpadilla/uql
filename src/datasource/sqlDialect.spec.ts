@@ -3,10 +3,11 @@ import { User, Item, ItemAdjustment } from '../entity/entityMock';
 import { SqlDialect } from './sqlDialect';
 import { MySqlDialect } from './mysql/mysqlDialect';
 import { PostgresDialect } from './postgres/postgresDialect';
+import { SqliteDialect } from './sqlite/sqliteDialect';
 
 let sql: SqlDialect;
 
-describe.each([MySqlDialect, PostgresDialect])('sqlDialect %p', (Dialect) => {
+describe.each([MySqlDialect, PostgresDialect, SqliteDialect])('sqlDialect %p', (Dialect) => {
   beforeEach(() => {
     sql = new Dialect();
   });

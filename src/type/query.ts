@@ -13,7 +13,7 @@ export type QueryFieldFilter<T> = {
 };
 
 export type QueryTextSearchOptions<T> = {
-  fields: (keyof T)[];
+  fields?: (keyof T)[];
   value: string;
 };
 export type QueryTextSearch<T> = {

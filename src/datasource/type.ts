@@ -30,7 +30,7 @@ export abstract class Querier<ID = any> {
   abstract count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
   abstract removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
   abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
-  abstract hasOpenTransaction(): boolean;
+  abstract readonly hasOpenTransaction: boolean;
   abstract beginTransaction(): Promise<void>;
   abstract commit(): Promise<void>;
   abstract rollback(): Promise<void>;

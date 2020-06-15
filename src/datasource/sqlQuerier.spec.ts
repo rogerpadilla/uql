@@ -84,15 +84,15 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   it('transaction', async () => {
     const mock: QueryUpdateResult = { affectedRows: 5 };
     mockRes = mock;
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.beginTransaction();
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     await querier.update(User, { id: 5 }, { name: 'Hola' });
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     await querier.commit();
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.release();
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.beginTransaction).toBeCalledTimes(1);
     expect(querier.commit).toBeCalledTimes(1);
@@ -101,11 +101,11 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   });
 
   it('transaction beging pending', async () => {
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.beginTransaction();
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     await expect(querier.beginTransaction()).rejects.toThrow('There is a pending transaction.');
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     expect(querier.query).toBeCalledTimes(1);
     expect(querier.beginTransaction).toBeCalledTimes(2);
     expect(querier.commit).not.toBeCalled();
@@ -114,9 +114,9 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   });
 
   it('transaction commit no pending', async () => {
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await expect(querier.commit()).rejects.toThrow('There is not a pending transaction.');
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     expect(querier.query).toBeCalledTimes(0);
     expect(querier.beginTransaction).toBeCalledTimes(0);
     expect(querier.commit).toBeCalledTimes(1);
@@ -125,9 +125,9 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   });
 
   it('transaction rollback no pending', async () => {
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await expect(querier.rollback()).rejects.toThrow('There is not a pending transaction.');
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     expect(querier.query).toBeCalledTimes(0);
     expect(querier.beginTransaction).toBeCalledTimes(0);
     expect(querier.commit).not.toBeCalled();
@@ -138,13 +138,13 @@ describe.each([MySqlQuerier, PostgresQuerier])('sqlQuerier %p', (Querier) => {
   it('transaction release pending', async () => {
     const mock: QueryUpdateResult = { affectedRows: 5 };
     mockRes = mock;
-    expect(querier.hasOpenTransaction()).toBeFalsy();
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.beginTransaction();
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     await querier.update(User, { id: 5 }, { name: 'Hola' });
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     await expect(querier.release()).rejects.toThrow('Querier should not be released while there is an open transaction.');
-    expect(querier.hasOpenTransaction()).toBe(true);
+    expect(querier.hasOpenTransaction).toBe(true);
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.beginTransaction).toBeCalledTimes(1);
     expect(querier.commit).not.toBeCalled();

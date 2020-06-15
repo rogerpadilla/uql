@@ -4,20 +4,22 @@ import { QueryComparisonOperator, QueryTextSearchOptions, QueryPrimitive } from 
 import { getEntityMeta } from '../../entity';
 
 export class PostgresDialect extends SqlDialect {
+  readonly beginTransactionCommand: string = 'BEGIN';
+
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
     const meta = getEntityMeta(type);
     return sql + ` RETURNING ${meta.id} AS insertId`;
   }
 
-  comparison<T>(key: string, value: object | QueryPrimitive): string {
+  comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;
         const fields = search.fields.map((field) => escapeId(field)).join(` || ' ' || `);
         return `to_tsvector(${fields}) @@ to_tsquery(${escape(search.value)})`;
       default:
-        return super.comparison(key, value);
+        return super.comparison(type, key, value);
     }
   }
 

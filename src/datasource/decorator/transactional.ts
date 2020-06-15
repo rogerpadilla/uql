@@ -24,18 +24,18 @@ export function Transactional(opts: { readonly propagation: 'supports' | 'requir
       }
 
       try {
-        if (!querier.hasOpenTransaction()) {
+        if (!querier.hasOpenTransaction) {
           if (opts.propagation === 'required') {
             await querier.beginTransaction();
           }
         }
         const resp = await originalMethod.apply(this, args);
-        if (isOwnAuto && querier.hasOpenTransaction()) {
+        if (isOwnAuto && querier.hasOpenTransaction) {
           await querier.commit();
         }
         return resp;
       } catch (err) {
-        if (isOwnAuto && querier.hasOpenTransaction()) {
+        if (isOwnAuto && querier.hasOpenTransaction) {
           await querier.rollback();
         }
         throw err;

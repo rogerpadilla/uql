@@ -93,7 +93,7 @@ export class MongodbQuerier extends Querier<ObjectID> {
     return this.conn.db().collection(meta.name);
   }
 
-  hasOpenTransaction(): boolean {
+  get hasOpenTransaction(): boolean {
     return this.session?.inTransaction();
   }
 
