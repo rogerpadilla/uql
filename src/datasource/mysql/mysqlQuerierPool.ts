@@ -17,7 +17,8 @@ export default class MySqlQuerierPool implements QuerierPool {
           return;
         }
         const conn = new MySqlConnectionPromisified(connection);
-        resolve(new MySqlQuerier(conn));
+        const querier = new MySqlQuerier(conn);
+        resolve(querier);
       });
     });
   }

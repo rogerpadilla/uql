@@ -7,7 +7,9 @@ export class MySqlQuerier extends SqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  parseQueryResult<T>(res: [T]): T {
+  async query<T>(sql: string): Promise<T> {
+    console.debug(`\nquery: ${sql}\n`);
+    const res: [T] = await this.conn.query(sql);
     return res[0];
   }
 }

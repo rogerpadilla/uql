@@ -7,7 +7,9 @@ export class SqliteQuerier extends SqlQuerier {
     super(new SqliteDialect(), conn);
   }
 
-  parseQueryResult<T>(res: { rows: T }): T {
+  async query<T>(sql: string): Promise<T> {
+    console.debug(`\nquery: ${sql}\n`);
+    const res: { rows: T } = await this.conn.query(sql);
     return res.rows;
   }
 }
