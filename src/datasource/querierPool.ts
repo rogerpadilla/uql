@@ -33,8 +33,9 @@ function getQuerierPoolClass(driver: DatasourceDriver): QuerierPoolClass {
   if (!directory) {
     throw new Error(`Unsupported driver '${driver}'`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  return require(`./${directory}/${driver}QuerierPool`).default;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access
+  const poolClass: QuerierPoolClass = require(`./${directory}/${driver}QuerierPool`).default;
+  return poolClass;
 }
 
 type QuerierPoolClass = { new (opts: QuerierPoolOptions): QuerierPool };

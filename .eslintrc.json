@@ -1,5 +1,5 @@
 {
-  "ignorePatterns": ["node_modules", "coverage", "dist"],
+  "ignorePatterns": ["coverage", "dist", "node_modules"],
   "env": {
     "node": true,
     "es2020": true
@@ -40,36 +40,28 @@
     "max-nested-callbacks": ["error", 3],
     "max-lines": ["error", 500],
     "no-negated-condition": "error",
-    "prettier/prettier": "error",
     "eslint-comments/disable-enable-pair": ["error", { "allowWholeFile": true }],
     "import/order": "warn",
+    "prettier/prettier": "warn",
 
-    "no-continue": 0,
-    "require-await": 0,
     "no-case-declarations": 0,
     "class-methods-use-this": 0,
     "no-param-reassign": 0,
     "no-use-before-define": 0,
     "no-plusplus": 0,
     "no-console": 0,
-    "prefer-template": 0,
     "prefer-destructuring": 0,
     "consistent-return": 0,
     "guard-for-in": 0,
     "max-classes-per-file": 0,
-    "lines-between-class-members": 0,
-    "@typescript-eslint/explicit-module-boundary-types": 0,
-    "@typescript-eslint/no-unsafe-return": 0,
     "@typescript-eslint/ban-types": 0,
     "@typescript-eslint/no-unsafe-member-access": 0,
-    "@typescript-eslint/restrict-plus-operands": 0,
     "@typescript-eslint/restrict-template-expressions": 0,
     "@typescript-eslint/no-unsafe-assignment": 0,
     "@typescript-eslint/no-explicit-any": 0,
     "@typescript-eslint/no-use-before-define": 0,
     "@typescript-eslint/no-unused-vars": 0,
-    "import/prefer-default-export": 0,
-    "promise/always-return": 0
+    "import/prefer-default-export": 0
   },
   "overrides": [
     {

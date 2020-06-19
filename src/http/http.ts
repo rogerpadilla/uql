@@ -5,12 +5,12 @@ export function get<T>(url: string, opts?: RequestOptions): Promise<RequestSucce
   return request<T>(url, { method: 'get' }, opts);
 }
 
-export function post<T>(url: string, body: any, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function post<T>(url: string, body: object, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   const stringifiedData = JSON.stringify(body);
   return request<T>(url, { method: 'post', body: stringifiedData }, opts);
 }
 
-export function put<T>(url: string, body: any, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function put<T>(url: string, body: object, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   const stringifiedData = JSON.stringify(body);
   return request<T>(url, { method: 'put', body: stringifiedData }, opts);
 }

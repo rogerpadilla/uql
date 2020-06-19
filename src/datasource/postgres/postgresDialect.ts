@@ -30,7 +30,7 @@ export class PostgresDialect extends SqlDialect {
   ): string {
     switch (operator) {
       case '$startsWith':
-        return `${escapeId(attr)} ILIKE ${escape(val + '%')}`;
+        return `${escapeId(attr)} ILIKE ${escape(`${val}%`)}`;
       case '$re':
         return `${escapeId(attr)} ~ ${escape(val)}`;
       default:

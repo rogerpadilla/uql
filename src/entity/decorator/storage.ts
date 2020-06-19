@@ -47,7 +47,7 @@ export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions): Enti
   }
 
   meta.name = opts?.name || type.name;
-  let parentProto = Object.getPrototypeOf(type.prototype);
+  let parentProto: object = Object.getPrototypeOf(type.prototype);
 
   while (parentProto.constructor !== Object) {
     const parentMeta = entitiesMeta.get(parentProto.constructor);
