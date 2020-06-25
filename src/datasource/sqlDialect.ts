@@ -48,9 +48,10 @@ export abstract class SqlDialect {
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const select = this.select<T>(type, qm, opts);
     const where = this.where<T>(type, qm.filter, { usePrefix: true });
+    const group = this.group<T>(qm.group);
     const sort = this.sort<T>(qm.sort);
     const pager = this.pager(qm);
-    return select + where + sort + pager;
+    return select + where + group + sort + pager;
   }
 
   columns<T>(type: { new (): T }, project: QueryProject<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions): string {
@@ -119,13 +120,21 @@ export abstract class SqlDialect {
     return { joinsSelect, joinsTables };
   }
 
+  group<T>(fields: (keyof T)[]): string {
+    if (!fields?.length) {
+      return '';
+    }
+    const fieldsStr = fields.map((field) => escapeId(field)).join(', ');
+    return ` GROUP BY ${fieldsStr}`;
+  }
+
   where<T>(
     type: { new (): T },
     filter: QueryFilter<T>,
     opts: { filterLink?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}
   ): string {
     const filterKeys = filter && Object.keys(filter);
-    if (!filterKeys) {
+    if (!filterKeys?.length) {
       return '';
     }
 

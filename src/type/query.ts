@@ -56,13 +56,14 @@ export type QueryPager = {
 export type QueryOne<T> = {
   project?: QueryProject<T>;
   populate?: QueryPopulate<T>;
+  group?: (keyof T)[];
 };
 export type QueryOneFilter<T> = QueryOne<T> & {
   filter?: QueryFilter<T>;
 };
 export type Query<T> = QueryOneFilter<T> & QueryPager & { sort?: QuerySort<T> };
 export type QueryStringified = {
-  readonly [P in keyof Query<any>]?: any;
+  readonly [P in keyof Query<unknown>]?: any;
 };
 
 export type QueryUpdateResult = {

@@ -325,6 +325,24 @@ describe.each([MySqlDialect, PostgresDialect, SqliteDialect])('sqlDialect %p', (
     ).toThrow("'Item.status' is not annotated with a relation decorator");
   });
 
+  it('find group', () => {
+    const query1 = sql.find(User, {
+      group: ['company'],
+    });
+    expect(query1).toBe('SELECT * FROM `user` GROUP BY `company`');
+    const query2 = sql.find(User, {
+      project: { id: 1, name: 1 },
+      filter: { status: 1 },
+      group: ['company', 'profile'],
+      skip: 50,
+      limit: 100,
+      sort: { name: 1 },
+    });
+    expect(query2).toBe(
+      'SELECT `id`, `name` FROM `user` WHERE `status` = 1 GROUP BY `company`, `profile` ORDER BY `name` LIMIT 100 OFFSET 50'
+    );
+  });
+
   it('find limit', () => {
     const query1 = sql.find(User, {
       filter: { id: 9 },
