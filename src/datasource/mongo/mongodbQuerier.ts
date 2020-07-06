@@ -2,10 +2,11 @@ import { MongoClient, ClientSession, ObjectID, Collection, OptionalId } from 'mo
 import { QueryFilter, Query, QueryOneFilter, QueryOne } from '../../type';
 import { Querier } from '../type';
 import { getEntityMeta } from '../../entity';
-import { buildFilter, buildAggregationPipeline } from './mongodb.util';
+import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends Querier<ObjectID> {
   protected session: ClientSession;
+  protected dialect = new MongoDialect();
 
   constructor(protected readonly conn: MongoClient) {
     super();
@@ -22,12 +23,12 @@ export class MongodbQuerier extends Querier<ObjectID> {
   }
 
   async updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    const res = await this.collection(type).updateOne(buildFilter(filter), body);
+    const res = await this.collection(type).updateOne(this.dialect.buildFilter(filter), body);
     return res.modifiedCount;
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    const res = await this.collection(type).updateMany(buildFilter(filter), body);
+    const res = await this.collection(type).updateMany(this.dialect.buildFilter(filter), body);
     return res.modifiedCount;
   }
 
@@ -40,22 +41,22 @@ export class MongodbQuerier extends Querier<ObjectID> {
   async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>): Promise<T> {
     if (qm.populate && Object.keys(qm.populate).length) {
       return this.collection(type)
-        .aggregate(buildAggregationPipeline(type, qm))
+        .aggregate(this.dialect.buildAggregationPipeline(type, qm))
         .toArray()
         .then((resp) => resp[0]);
     }
-    return this.collection(type).findOne(buildFilter(qm.filter), { projection: qm.project });
+    return this.collection(type).findOne(this.dialect.buildFilter(qm.filter), { projection: qm.project });
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {
     if (qm.populate && Object.keys(qm.populate).length) {
-      return this.collection(type).aggregate(buildAggregationPipeline(type, qm)).toArray();
+      return this.collection(type).aggregate(this.dialect.buildAggregationPipeline(type, qm)).toArray();
     }
 
     const cursor = this.collection(type).find();
 
     if (qm.filter) {
-      const filter = buildFilter(qm.filter);
+      const filter = this.dialect.buildFilter(qm.filter);
       cursor.filter(filter);
     }
     if (qm.project) {
@@ -75,16 +76,16 @@ export class MongodbQuerier extends Querier<ObjectID> {
   }
 
   count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    return this.collection(type).countDocuments(buildFilter(filter));
+    return this.collection(type).countDocuments(this.dialect.buildFilter(filter));
   }
 
   async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    const res = await this.collection(type).deleteOne(buildFilter(filter));
+    const res = await this.collection(type).deleteOne(this.dialect.buildFilter(filter));
     return res.deletedCount;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    const res = await this.collection(type).deleteMany(buildFilter(filter));
+    const res = await this.collection(type).deleteMany(this.dialect.buildFilter(filter));
     return res.deletedCount;
   }
 

@@ -1,4 +1,4 @@
-import { Database } from 'sqlite3';
+import { Database, sqlite3 } from 'sqlite3';
 import { QuerierPool, QuerierPoolConnection } from '../type';
 import { SqliteQuerier } from './sqliteQuerier';
 
@@ -13,6 +13,11 @@ export default class Sqlite3QuerierPool implements QuerierPool {
     const conn = new SqliteConnectionPromisified(this.db);
     const querier = new SqliteQuerier(conn);
     return Promise.resolve(querier);
+  }
+
+  end(): Promise<void> {
+    this.db.close();
+    return Promise.resolve();
   }
 }
 

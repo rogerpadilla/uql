@@ -13,4 +13,8 @@ export default class MariadbQuerierPool implements QuerierPool {
     const conn = await this.pool.getConnection();
     return new MySqlQuerier(conn);
   }
+
+  end(): Promise<void> {
+    return this.pool.end();
+  }
 }

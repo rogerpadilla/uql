@@ -1,4 +1,3 @@
-import { escapeId, escape } from 'sqlstring';
 import { SqlDialect } from '../sqlDialect';
 import { QueryTextSearchOptions, QueryPrimitive } from '../../type';
 import { getEntityMeta } from '../../entity';
@@ -11,7 +10,7 @@ export class SqliteDialect extends SqlDialect {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;
         const meta = getEntityMeta(type);
-        return `${escapeId(meta.name)} MATCH ${escape(search.value)}`;
+        return `${this.escapeId(meta.name)} MATCH ${this.escape(search.value)}`;
       default:
         return super.comparison(type, key, value);
     }

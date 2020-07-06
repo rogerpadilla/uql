@@ -22,6 +22,17 @@ export default class MySqlQuerierPool implements QuerierPool {
       });
     });
   }
+
+  end(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.pool.end((err) => {
+        if (err) {
+          return reject(err);
+        }
+        resolve();
+      });
+    });
+  }
 }
 
 class MySqlConnectionPromisified implements QuerierPoolConnection {

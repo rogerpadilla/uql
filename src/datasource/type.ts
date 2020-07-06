@@ -7,6 +7,7 @@ export interface QuerierPoolConnection {
 
 export interface QuerierPool {
   getQuerier(): Promise<Querier>;
+  end(): Promise<void>;
 }
 
 export interface QuerierPoolOptions {

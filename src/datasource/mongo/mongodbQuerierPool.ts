@@ -10,4 +10,9 @@ export default class MongodbQuerierPool implements QuerierPool {
     const conn = await mongoose.connect(uri, { useNewUrlParser: true });
     return new MongodbQuerier(conn);
   }
+
+  end(): Promise<void> {
+    // noop
+    return Promise.resolve();
+  }
 }

@@ -13,4 +13,8 @@ export default class MySql2QuerierPool implements QuerierPool {
     const conn = await this.pool.getConnection();
     return new MySqlQuerier(conn);
   }
+
+  end(): Promise<void> {
+    return this.pool.end();
+  }
 }

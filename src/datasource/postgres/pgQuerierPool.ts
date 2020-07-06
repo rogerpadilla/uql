@@ -13,4 +13,8 @@ export default class PgQuerierPool implements QuerierPool {
     const conn = await this.pool.connect();
     return new PostgresQuerier(conn);
   }
+
+  end(): Promise<void> {
+    return this.pool.end();
+  }
 }

@@ -1,0 +1,12 @@
+version: '3.4'
+
+services:
+  postgres-12:
+    image: postgres:12.3
+    environment:
+      POSTGRES_USER: corozo_test
+      POSTGRES_PASSWORD: corozo_test
+      POSTGRES_DB: corozo_test
+    ports:
+      - '8992:5432'
+    container_name: postgres-12

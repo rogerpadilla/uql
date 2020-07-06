@@ -1,4 +1,4 @@
-import { escape, escapeId, objectToValues } from 'sqlstring';
+import { escapeId, escape } from 'sqlstring';
 import {
   QueryFilter,
   Query,
@@ -15,14 +15,28 @@ import { getEntityMeta, ColumnPersistableMode } from '../entity';
 export abstract class SqlDialect {
   abstract readonly beginTransactionCommand: string;
 
+  escapeId<T>(val: string | string[] | keyof T | (keyof T)[], forbidQualified?: boolean): string {
+    return escapeId(val, forbidQualified);
+  }
+
+  escape(val: any): string {
+    return escape(val);
+  }
+
+  objectToValues<T>(object: T): string {
+    return Object.keys(object)
+      .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
+      .join(', ');
+  }
+
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const meta = getEntityMeta(type);
     const bodies = Array.isArray(body) ? body : [body];
     const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
     const properties = Object.keys(samplePersistableBody);
     const columns = properties.map((col) => meta.columns[col].name);
-    const values = bodies.map((body) => properties.map((property) => escape(body[property])).join(', ')).join('), (');
-    return `INSERT INTO ${escapeId(meta.name)} (${escapeId(columns)}) VALUES (${values})`;
+    const values = bodies.map((body) => properties.map((property) => this.escape(body[property])).join(', ')).join('), (');
+    return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
   update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number): string {
@@ -32,17 +46,17 @@ export abstract class SqlDialect {
       acc[meta.columns[key].name] = body[key];
       return acc;
     }, {} as T);
-    const values = objectToValues(persistableData);
+    const values = this.objectToValues(persistableData);
     const where = this.where(type, filter);
     const pager = this.pager({ limit });
-    return `UPDATE ${escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
+    return `UPDATE ${this.escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
   }
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number): string {
     const meta = getEntityMeta(type);
     const where = this.where(type, filter);
     const pager = this.pager({ limit });
-    return `DELETE FROM ${escapeId(meta.name)} WHERE ${where}${pager}`;
+    return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}${pager}`;
   }
 
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
@@ -59,7 +73,7 @@ export abstract class SqlDialect {
       return Object.keys(project).join(', ');
     }
 
-    const prefix = opts.prefix ? `${escapeId(opts.prefix, true)}.` : '';
+    const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
     if (!project) {
       if (!opts.alias) {
@@ -73,8 +87,8 @@ export abstract class SqlDialect {
     }
 
     const nameMapper = opts.alias
-      ? (name: string) => `${prefix}${escapeId(name)} ${escapeId(opts.prefix + '.' + name, true)}`
-      : (name: string) => `${prefix}${escapeId(name)}`;
+      ? (name: string) => `${prefix}${this.escapeId(name)} ${this.escapeId(opts.prefix + '.' + name, true)}`
+      : (name: string) => `${prefix}${this.escapeId(name)}`;
 
     return Object.keys(project).map(nameMapper).join(', ');
   }
@@ -86,7 +100,7 @@ export abstract class SqlDialect {
       ...opts,
     });
     const { joinsSelect, joinsTables } = this.joins(type, qm);
-    return `SELECT ${baseSelect}${joinsSelect} FROM ${escapeId(meta.name)}${joinsTables}`;
+    return `SELECT ${baseSelect}${joinsSelect} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
   joins<T>(type: { new (): T }, qm: Query<T>, prefix = ''): { joinsSelect: string; joinsTables: string } {
@@ -99,7 +113,7 @@ export abstract class SqlDialect {
         throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
       }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
-      const joinPath = escapeId(joinPrefix, true);
+      const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = qm.populate[popKey];
       const relColumns = this.columns(relType, popVal?.project, {
@@ -108,9 +122,9 @@ export abstract class SqlDialect {
       });
       joinsSelect += `, ${relColumns}`;
       const relMeta = getEntityMeta(relType);
-      const relTypeName = escapeId(relMeta.name);
-      const rel = prefix ? escapeId(prefix, true) + '.' + escapeId(popKey) : `${escapeId(meta.name)}.${joinPath}`;
-      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${escapeId(relMeta.id)} = ${rel}`;
+      const relTypeName = this.escapeId(relMeta.name);
+      const rel = prefix ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey) : `${this.escapeId(meta.name)}.${joinPath}`;
+      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id)} = ${rel}`;
       if (popVal?.populate) {
         const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
         joinsSelect += subJoinSelect;
@@ -124,8 +138,7 @@ export abstract class SqlDialect {
     if (!fields?.length) {
       return '';
     }
-    const fieldsStr = fields.map((field) => escapeId(field)).join(', ');
-    return ` GROUP BY ${fieldsStr}`;
+    return ` GROUP BY ${this.escapeId(fields)}`;
   }
 
   where<T>(
@@ -174,25 +187,25 @@ export abstract class SqlDialect {
   ): string {
     switch (operator) {
       case '$eq':
-        return val === null ? `${escapeId(attr)} IS NULL` : `${escapeId(attr)} = ${escape(val)}`;
+        return val === null ? `${this.escapeId(attr)} IS NULL` : `${this.escapeId(attr)} = ${this.escape(val)}`;
       case '$ne':
-        return val === null ? `${escapeId(attr)} IS NOT NULL` : `${escapeId(attr)} <> ${escape(val)}`;
+        return val === null ? `${this.escapeId(attr)} IS NOT NULL` : `${this.escapeId(attr)} <> ${this.escape(val)}`;
       case '$gt':
-        return `${escapeId(attr)} > ${escape(val)}`;
+        return `${this.escapeId(attr)} > ${this.escape(val)}`;
       case '$gte':
-        return `${escapeId(attr)} >= ${escape(val)}`;
+        return `${this.escapeId(attr)} >= ${this.escape(val)}`;
       case '$lt':
-        return `${escapeId(attr)} < ${escape(val)}`;
+        return `${this.escapeId(attr)} < ${this.escape(val)}`;
       case '$lte':
-        return `${escapeId(attr)} <= ${escape(val)}`;
+        return `${this.escapeId(attr)} <= ${this.escape(val)}`;
       case '$startsWith':
-        return `LOWER(${escapeId(attr)}) LIKE ${escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${this.escapeId(attr)}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$in':
-        return `${escapeId(attr)} IN (${escape(val)})`;
+        return `${this.escapeId(attr)} IN (${this.escape(val)})`;
       case '$nin':
-        return `${escapeId(attr)} NOT IN (${escape(val)})`;
+        return `${this.escapeId(attr)} NOT IN (${this.escape(val)})`;
       case '$re':
-        return `${escapeId(attr)} REGEXP ${escape(val)}`;
+        return `${this.escapeId(attr)} REGEXP ${this.escape(val)}`;
       default:
         throw new Error(`Unsupported comparison operator: ${operator}`);
     }
@@ -205,7 +218,7 @@ export abstract class SqlDialect {
     const order = Object.keys(sort)
       .map((prop) => {
         const direction = sort[prop] === -1 ? ' DESC' : '';
-        return escapeId(prop) + direction;
+        return this.escapeId(prop) + direction;
       })
       .join(', ');
     return ` ORDER BY ${order}`;
