@@ -1,6 +1,6 @@
 import { QuerierPoolConnection } from '../type';
 import { SqlQuerier } from '../sqlQuerier';
-import { QueryUpdateResult, QueryFilter } from '../../type';
+import { QueryFilter } from '../../type';
 import { PostgresDialect } from './postgresDialect';
 
 export class PostgresQuerier extends SqlQuerier {
@@ -29,14 +29,15 @@ export class PostgresQuerier extends SqlQuerier {
     return res[0].insertid;
   }
 
-  updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    return this.update(type, filter, body);
+  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
+    const query = this.dialect.update(type, filter, body);
+    const res: { rowCount: number } = await this.conn.query(query);
+    return res.rowCount;
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number): Promise<number> {
-    const query = this.dialect.update(type, filter, body, limit);
-    const res: { rowCount: number } = await this.conn.query(query);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
+    const query = this.dialect.remove(type, filter);
+    const res = await this.conn.query<{ rowCount: number }>(query);
     return res.rowCount;
   }
 }

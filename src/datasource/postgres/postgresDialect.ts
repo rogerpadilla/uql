@@ -8,7 +8,7 @@ export class PostgresDialect extends SqlDialect {
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
     const meta = getEntityMeta(type);
-    return sql + ` RETURNING ${meta.id} AS insertId`;
+    return `${sql} RETURNING ${meta.id} insertId`;
   }
 
   comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {

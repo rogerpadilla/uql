@@ -22,11 +22,6 @@ export class MongodbQuerier extends Querier<ObjectID> {
     return res.insertedId;
   }
 
-  async updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    const res = await this.collection(type).updateOne(this.dialect.buildFilter(filter), body);
-    return res.modifiedCount;
-  }
-
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
     const res = await this.collection(type).updateMany(this.dialect.buildFilter(filter), body);
     return res.modifiedCount;
@@ -77,11 +72,6 @@ export class MongodbQuerier extends Querier<ObjectID> {
 
   count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
     return this.collection(type).countDocuments(this.dialect.buildFilter(filter));
-  }
-
-  async removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    const res = await this.collection(type).deleteOne(this.dialect.buildFilter(filter));
-    return res.deletedCount;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {

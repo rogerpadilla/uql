@@ -384,8 +384,8 @@ it('find select as functions', () => {
 });
 
 it('remove', () => {
-  const query1 = sql.remove(User, { id: 123 }, 1);
-  expect(query1).toBe('DELETE FROM "user" WHERE "id" = 123 LIMIT 1');
+  const query1 = sql.remove(User, { id: 123 });
+  expect(query1).toBe('DELETE FROM "user" WHERE "id" = 123');
   const query2 = sql.remove(User, { company: 123 });
   expect(query2).toBe('DELETE FROM "user" WHERE "company" = 123');
 });

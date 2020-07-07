@@ -19,7 +19,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional({ propagation: 'required' })
   async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.updateOne(this.meta.type, { [this.meta.id]: id }, body);
+    const affectedRows = await querier.update(this.meta.type, { [this.meta.id]: id }, body);
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
@@ -54,7 +54,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional({ propagation: 'required' })
   async removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.removeOne(this.meta.type, { [this.meta.id]: id });
+    const affectedRows = await querier.remove(this.meta.type, { [this.meta.id]: id });
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
@@ -102,9 +102,9 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
       if (relOpts.cardinality === 'oneToOne') {
         const relBody: T = body[prop];
         if (relBody === null) {
-          return querier.removeOne(relType, { [relOpts.mappedBy]: id });
+          return querier.remove(relType, { [relOpts.mappedBy]: id });
         }
-        return querier.updateOne(relType, { [relOpts.mappedBy]: id }, relBody);
+        return querier.update(relType, { [relOpts.mappedBy]: id }, relBody);
       } else if (relOpts.cardinality === 'oneToMany') {
         const relBody: T[] = body[prop];
         await querier.remove(relType, { [relOpts.mappedBy]: id });

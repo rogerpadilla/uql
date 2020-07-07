@@ -1,6 +1,5 @@
 import { User } from '../../entity/entityMock';
 import { SqlQuerier } from '../sqlQuerier';
-import { MySqlQuerier } from './mysqlQuerier';
 import MySql2QuerierPool from './mysql2QuerierPool';
 
 // eslint-disable-next-line jest/no-focused-tests
@@ -19,10 +18,7 @@ describe(MySql2QuerierPool.name, () => {
     });
     const querier = await pool.getQuerier();
     try {
-      const rows: { datname: string }[] = await querier.query(`SHOW TABLES`);
-      if (rows.length) {
-        await dropTables(querier);
-      }
+      await dropTables(querier);
       await createUserTable(querier);
       await createCompanyTable(querier);
       await createTaxCategoryTable(querier);
@@ -66,8 +62,20 @@ describe(MySql2QuerierPool.name, () => {
         user: null,
       },
     ]);
-    const affectedRows = await querier.updateOne(User, { id }, { status: 1 });
-    expect(affectedRows).toBe(1);
+    const count1 = await querier.count(User);
+    expect(count1).toBe(1);
+    const count2 = await querier.count(User, { status: null });
+    expect(count2).toBe(1);
+    const count3 = await querier.count(User, { status: 1 });
+    expect(count3).toBe(0);
+    const updatedRows = await querier.update(User, { id }, { status: 1 });
+    expect(updatedRows).toBe(1);
+    const count4 = await querier.count(User, { status: 1 });
+    expect(count4).toBe(1);
+    const deletedRows = await querier.remove(User, { status: 1 });
+    expect(deletedRows).toBe(1);
+    const count5 = await querier.count(User);
+    expect(count5).toBe(0);
   });
 
   async function createUserTable(querier: SqlQuerier): Promise<void> {
@@ -121,11 +129,12 @@ describe(MySql2QuerierPool.name, () => {
   );`);
   }
 
-  async function dropTables(querier: SqlQuerier) {
-    await querier.query(`DROP TABLE IF EXISTS Tax`);
-    await querier.query(`DROP TABLE IF EXISTS TaxCategory`);
-    await querier.query(`DROP TABLE IF EXISTS Company`);
-    await querier.query(`DROP TABLE IF EXISTS User`);
-    await querier.query(`DROP TABLE IF EXISTS user`);
+  function dropTables(querier: SqlQuerier) {
+    return Promise.all([
+      querier.query(`DROP TABLE IF EXISTS Tax`),
+      querier.query(`DROP TABLE IF EXISTS TaxCategory`),
+      querier.query(`DROP TABLE IF EXISTS Company`),
+      querier.query(`DROP TABLE IF EXISTS user`),
+    ]);
   }
 });

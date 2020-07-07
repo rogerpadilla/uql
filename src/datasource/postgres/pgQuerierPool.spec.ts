@@ -17,12 +17,7 @@ describe(PgQuerierPool.name, () => {
     });
     const querier = await pool.getQuerier();
     try {
-      const rows: { datname: string }[] = await querier.query(`SELECT datname FROM pg_database WHERE datname = 'test' LIMIT 1`);
-      if (rows.length) {
-        await dropTables(querier);
-      } else {
-        await querier.query(`CREATE DATABASE test`);
-      }
+      await dropTables(querier);
       await createUserTable(querier);
       await createCompanyTable(querier);
       await createTaxCategoryTable(querier);
@@ -71,8 +66,20 @@ describe(PgQuerierPool.name, () => {
         user: null,
       },
     ]);
-    const affectedRows = await querier.updateOne(User, { id }, { status: 1 });
-    expect(affectedRows).toBe(1);
+    const count1 = await querier.count(User);
+    expect(count1).toBe(1);
+    const count2 = await querier.count(User, { status: null });
+    expect(count2).toBe(1);
+    const count3 = await querier.count(User, { status: 1 });
+    expect(count3).toBe(0);
+    const updatedRows = await querier.update(User, { id }, { status: 1 });
+    expect(updatedRows).toBe(1);
+    const count4 = await querier.count(User, { status: 1 });
+    expect(count4).toBe(1);
+    const deletedRows = await querier.remove(User, { status: 1 });
+    expect(deletedRows).toBe(1);
+    const count5 = await querier.count(User);
+    expect(count5).toBe(0);
   });
 
   async function createUserTable(querier: SqlQuerier): Promise<void> {
@@ -126,11 +133,12 @@ describe(PgQuerierPool.name, () => {
   );`);
   }
 
-  async function dropTables(querier: SqlQuerier) {
-    await querier.query(`DROP TABLE IF EXISTS "Tax"`);
-    await querier.query(`DROP TABLE IF EXISTS "TaxCategory"`);
-    await querier.query(`DROP TABLE IF EXISTS "Company"`);
-    await querier.query(`DROP TABLE IF EXISTS "User"`);
-    await querier.query(`DROP TABLE IF EXISTS "user"`);
+  function dropTables(querier: SqlQuerier) {
+    return Promise.all([
+      querier.query(`DROP TABLE IF EXISTS "Tax"`),
+      querier.query(`DROP TABLE IF EXISTS "TaxCategory"`),
+      querier.query(`DROP TABLE IF EXISTS "Company"`),
+      querier.query(`DROP TABLE IF EXISTS "user"`),
+    ]);
   }
 });

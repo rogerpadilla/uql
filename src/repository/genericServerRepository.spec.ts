@@ -24,9 +24,7 @@ beforeEach(() => {
   jest.spyOn(querier, 'insertOne');
   jest.spyOn(querier, 'insert');
   jest.spyOn(querier, 'update');
-  jest.spyOn(querier, 'updateOne');
   jest.spyOn(querier, 'remove');
-  jest.spyOn(querier, 'removeOne');
   jest.spyOn(querier, 'find');
   jest.spyOn(querier, 'beginTransaction');
   jest.spyOn(querier, 'commit');
@@ -75,7 +73,6 @@ it('insertOne cascade oneToOne', async () => {
   expect(querier.insert).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.update).not.toBeCalled();
-  expect(querier.updateOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
@@ -101,7 +98,6 @@ it('insertOne cascade oneToMany', async () => {
   expect(querier.insert).toBeCalledTimes(1);
   expect(querier.find).not.toBeCalled();
   expect(querier.update).not.toBeCalled();
-  expect(querier.updateOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
@@ -116,7 +112,6 @@ it('updateOneById', async () => {
   expect(resp).toEqual(undefined);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.update).toBeCalledTimes(1);
-  expect(querier.updateOne).toBeCalledTimes(1);
   expect(querier.find).not.toBeCalled();
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
@@ -135,15 +130,14 @@ it('updateOneById cascade oneToOne', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
-  expect(querier.query).nthCalledWith(3, "UPDATE `user_profile` SET `image` = 'xyz' WHERE `user` = 1 LIMIT 1");
+  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1");
+  expect(querier.query).nthCalledWith(3, "UPDATE `user_profile` SET `image` = 'xyz' WHERE `user` = 1");
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.insert).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.update).toBeCalledTimes(2);
-  expect(querier.updateOne).toBeCalledTimes(2);
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
@@ -160,17 +154,15 @@ it('updateOneById cascade oneToOne null', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1 LIMIT 1");
-  expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1 LIMIT 1');
+  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1");
+  expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.insert).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.update).toBeCalledTimes(1);
-  expect(querier.updateOne).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
-  expect(querier.removeOne).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
@@ -187,10 +179,7 @@ it('updateOneById cascade oneToMany', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(
-    2,
-    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1 LIMIT 1"
-  );
+  expect(querier.query).nthCalledWith(2, "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1");
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
   expect(querier.query).nthCalledWith(
     4,
@@ -202,7 +191,6 @@ it('updateOneById cascade oneToMany', async () => {
   expect(querier.insert).toBeCalledTimes(1);
   expect(querier.find).not.toBeCalled();
   expect(querier.update).toBeCalledTimes(1);
-  expect(querier.updateOne).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);
@@ -220,10 +208,7 @@ it('updateOneById cascade oneToMany null', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(
-    2,
-    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1 LIMIT 1"
-  );
+  expect(querier.query).nthCalledWith(2, "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1");
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
@@ -231,7 +216,6 @@ it('updateOneById cascade oneToMany null', async () => {
   expect(querier.insert).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.update).toBeCalledTimes(1);
-  expect(querier.updateOne).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commit).toBeCalledTimes(1);

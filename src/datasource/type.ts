@@ -24,12 +24,10 @@ export interface QuerierPoolOptions {
 export abstract class Querier<ID = any> {
   abstract insert<T>(type: { new (): T }, body: T[]): Promise<ID[]>;
   abstract insertOne<T>(type: { new (): T }, body: T): Promise<ID>;
-  abstract updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
   abstract update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
   abstract findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions): Promise<T>;
   abstract find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T[]>;
-  abstract count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
-  abstract removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
+  abstract count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number>;
   abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
   abstract readonly hasOpenTransaction: boolean;
   abstract beginTransaction(): Promise<void>;

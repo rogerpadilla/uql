@@ -31,12 +31,8 @@ export abstract class SqlQuerier extends Querier {
     return res.insertId;
   }
 
-  updateOne<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    return this.update(type, filter, body, 1);
-  }
-
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number): Promise<number> {
-    const query = this.dialect.update(type, filter, body, limit);
+  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
+    const query = this.dialect.update(type, filter, body);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
@@ -53,18 +49,14 @@ export abstract class SqlQuerier extends Querier {
     return data;
   }
 
-  async count<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
+  async count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number> {
     const query = this.dialect.find(type, { project: { 'COUNT(*) count': 1 } as any, filter }, { isTrustedProject: true });
     const res = await this.query<{ count: number }[]>(query);
-    return res[0].count;
+    return Number(res[0].count);
   }
 
-  removeOne<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    return this.remove(type, filter, 1);
-  }
-
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number): Promise<number> {
-    const query = this.dialect.remove(type, filter, limit);
+  async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
+    const query = this.dialect.remove(type, filter);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }

@@ -25,7 +25,7 @@ export abstract class SqlDialect {
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
-  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T, limit?: number): string {
+  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): string {
     const meta = getEntityMeta(type);
     const persistable = filterPersistable(type, body, 'update');
     const persistableData = Object.keys(persistable).reduce((acc, key) => {
@@ -34,15 +34,13 @@ export abstract class SqlDialect {
     }, {} as T);
     const values = this.objectToValues(persistableData);
     const where = this.where(type, filter);
-    const pager = this.pager({ limit });
-    return `UPDATE ${this.escapeId(meta.name)} SET ${values} WHERE ${where}${pager}`;
+    return `UPDATE ${this.escapeId(meta.name)} SET ${values} WHERE ${where}`;
   }
 
-  remove<T>(type: { new (): T }, filter: QueryFilter<T>, limit?: number): string {
+  remove<T>(type: { new (): T }, filter: QueryFilter<T>): string {
     const meta = getEntityMeta(type);
     const where = this.where(type, filter);
-    const pager = this.pager({ limit });
-    return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}${pager}`;
+    return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}`;
   }
 
   find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
