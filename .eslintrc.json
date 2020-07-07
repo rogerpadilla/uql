@@ -62,6 +62,7 @@
     "@typescript-eslint/no-use-before-define": 0,
     "@typescript-eslint/no-unused-vars": 0,
     "@typescript-eslint/explicit-module-boundary-types": 0,
+    "@typescript-eslint/restrict-plus-operands": 0,
     "import/prefer-default-export": 0
   },
   "overrides": [

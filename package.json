@@ -7,6 +7,7 @@
     "lint.fix": "npm run lint -- --fix",
     "test": "rm -rf coverage && concurrently 'npm:lint' 'jest'",
     "test.watch": "jest --clearCache && jest --watchAll",
+    "test.watch-pattern": "jest --clearCache && jest --watchAll --testPathPattern=Pool.spec.ts",
     "build": "rm -rf dist && webpack --progress --profile --bail --mode=production",
     "release": "concurrently 'npm:build' 'tsc'",
     "start": "webpack --profile --bail --watch --info-verbosity verbose"

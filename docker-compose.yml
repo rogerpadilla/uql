@@ -1,12 +1,31 @@
 version: '3.4'
 
 services:
-  postgres-12:
-    image: postgres:12.3
+  mysql:
+    image: 'mysql:8.0.20'
     environment:
-      POSTGRES_USER: corozo_test
-      POSTGRES_PASSWORD: corozo_test
-      POSTGRES_DB: corozo_test
+      MYSQL_ROOT_PASSWORD: 'admin'
+      MYSQL_USER: 'test'
+      MYSQL_PASSWORD: 'test'
+      MYSQL_DATABASE: 'test'
     ports:
-      - '8992:5432'
-    container_name: postgres-12
+      - '3306:3306'
+    container_name: 'corozo-mysql-8'
+  postgres-9:
+    image: postgres:9.6.18
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    ports:
+      - '5432:5432'
+    container_name: corozo-postgres-9
+  # postgres-12:
+  #   image: postgres:12.3
+  #   environment:
+  #     POSTGRES_USER: test
+  #     POSTGRES_PASSWORD: test
+  #     POSTGRES_DB: test
+  #   ports:
+  #     - '5433:5432'
+  #   container_name: corozo-postgres-12

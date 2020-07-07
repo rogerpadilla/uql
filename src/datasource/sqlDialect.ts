@@ -15,20 +15,6 @@ import { getEntityMeta, ColumnPersistableMode } from '../entity';
 export abstract class SqlDialect {
   abstract readonly beginTransactionCommand: string;
 
-  escapeId<T>(val: string | string[] | keyof T | (keyof T)[], forbidQualified?: boolean): string {
-    return escapeId(val, forbidQualified);
-  }
-
-  escape(val: any): string {
-    return escape(val);
-  }
-
-  objectToValues<T>(object: T): string {
-    return Object.keys(object)
-      .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
-      .join(', ');
-  }
-
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const meta = getEntityMeta(type);
     const bodies = Array.isArray(body) ? body : [body];
@@ -233,6 +219,20 @@ export abstract class SqlDialect {
       }
     }
     return sql;
+  }
+
+  escapeId<T>(val: string | string[] | keyof T | (keyof T)[], forbidQualified?: boolean): string {
+    return escapeId(val, forbidQualified);
+  }
+
+  escape(val: any): string {
+    return escape(val);
+  }
+
+  objectToValues<T>(object: T): string {
+    return Object.keys(object)
+      .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
+      .join(', ');
   }
 }
 

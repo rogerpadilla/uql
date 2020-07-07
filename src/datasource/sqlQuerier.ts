@@ -12,8 +12,8 @@ export abstract class SqlQuerier extends Querier {
 
   async query<T>(sql: string): Promise<T> {
     console.debug(`\nquery: ${sql}\n`);
-    const res: { rows: T } = await this.conn.query(sql);
-    return res.rows;
+    const res: [T] = await this.conn.query(sql);
+    return res[0];
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]): Promise<number[]> {

@@ -5,20 +5,6 @@ import { getEntityMeta } from '../../entity';
 export class PostgresDialect extends SqlDialect {
   readonly beginTransactionCommand: string = 'BEGIN';
 
-  escapeId<T>(val: string | string[] | keyof T, forbidQualified?: boolean): string {
-    if (Array.isArray(val)) {
-      return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
-    }
-    const valStr = val as string;
-    if (!forbidQualified && valStr.includes('.')) {
-      return valStr
-        .split('.')
-        .map((it) => this.escapeId(it, true))
-        .join('.');
-    }
-    return escapeId(valStr);
-  }
-
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
     const meta = getEntityMeta(type);
@@ -49,6 +35,20 @@ export class PostgresDialect extends SqlDialect {
       default:
         return super.comparisonOperation(attr, operator, val);
     }
+  }
+
+  escapeId<T>(val: string | string[] | keyof T, forbidQualified?: boolean): string {
+    if (Array.isArray(val)) {
+      return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
+    }
+    const valStr = val as string;
+    if (!forbidQualified && valStr.includes('.')) {
+      return valStr
+        .split('.')
+        .map((it) => this.escapeId(it, true))
+        .join('.');
+    }
+    return escapeId(valStr);
   }
 }
 

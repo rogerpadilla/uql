@@ -1,29 +1,27 @@
 import { User } from '../../entity/entityMock';
+import { SqlQuerier } from '../sqlQuerier';
 import PgQuerierPool from './pgQuerierPool';
-import { PostgresQuerier } from './postgresQuerier';
 
-xdescribe(PgQuerierPool.name, () => {
+describe(PgQuerierPool.name, () => {
   let pool: PgQuerierPool;
-  let querier: PostgresQuerier;
-
-  jest.setTimeout(500);
+  let querier: SqlQuerier;
 
   beforeAll(async () => {
+    jest.setTimeout(1000);
     pool = new PgQuerierPool({
       host: '0.0.0.0',
-      port: 8992,
-      user: 'corozo_test',
-      password: 'corozo_test',
-      database: 'corozo_test',
+      port: 5432,
+      user: 'test',
+      password: 'test',
+      database: 'test',
     });
     const querier = await pool.getQuerier();
     try {
-      const databases: { datname: string }[] = await querier.query(`SELECT datname FROM pg_database`);
-      const hasCorozoDb = databases.some((db) => db.datname === 'corozo_test');
-      if (hasCorozoDb) {
+      const rows: { datname: string }[] = await querier.query(`SELECT datname FROM pg_database WHERE datname = 'test' LIMIT 1`);
+      if (rows.length) {
         await dropTables(querier);
       } else {
-        await querier.query(`CREATE DATABASE corozo_test`);
+        await querier.query(`CREATE DATABASE test`);
       }
       await createUserTable(querier);
       await createCompanyTable(querier);
@@ -36,6 +34,11 @@ xdescribe(PgQuerierPool.name, () => {
 
   beforeEach(async () => {
     querier = await pool.getQuerier();
+    jest.spyOn(querier, 'query');
+    jest.spyOn(querier, 'beginTransaction');
+    jest.spyOn(querier, 'commit');
+    jest.spyOn(querier, 'rollback');
+    jest.spyOn(querier, 'release');
   });
 
   afterEach(async () => {
@@ -46,29 +49,38 @@ xdescribe(PgQuerierPool.name, () => {
     await pool.end();
   });
 
-  // eslint-disable-next-line jest/no-focused-tests
-  it('connection', () => {
-    expect(querier).toBeInstanceOf(PostgresQuerier);
+  it('query', async () => {
+    const now = Date.now();
+    const id = await querier.insertOne(User, {
+      name: 'Some Name',
+      email: 'someemail@example.com',
+      password: '12345678!',
+      createdAt: now,
+    });
+    expect(id).toBe(1);
+    const users = await querier.find(User, { filter: { status: null }, limit: 100 });
+    expect(users).toEqual([
+      {
+        id: 1,
+        name: 'Some Name',
+        email: 'someemail@example.com',
+        password: '12345678!',
+        createdAt: now.toString(),
+        status: null,
+        updatedAt: null,
+        user: null,
+      },
+    ]);
+    const affectedRows = await querier.updateOne(User, { id }, { status: 1 });
+    expect(affectedRows).toBe(1);
   });
 
-  // eslint-disable-next-line jest/no-focused-tests
-  xit('query', async () => {
-    const resp = await querier.find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
-    //   expect(resp).toEqual(mock);
-    expect(querier.query).toBeCalledWith('SELECT `id`, `name` FROM `user` WHERE `company` = 123 LIMIT 100');
-    expect(querier.query).toBeCalledTimes(1);
-    expect(querier.beginTransaction).not.toBeCalled();
-    expect(querier.commit).not.toBeCalled();
-    expect(querier.rollback).not.toBeCalled();
-    expect(querier.release).not.toBeCalled();
-  });
-
-  async function createUserTable(querier: PostgresQuerier): Promise<void> {
-    await querier.query(`CREATE TABLE "User" (
+  async function createUserTable(querier: SqlQuerier): Promise<void> {
+    await querier.query(`CREATE TABLE "user" (
     "id" SERIAL PRIMARY KEY,
+    "name" VARCHAR( 45 ) NOT NULL,
     "email" VARCHAR( 300 ) NOT NULL,
     "password" VARCHAR( 300 ) NOT NULL,
-    "name" VARCHAR( 45 ) NOT NULL,
     "createdAt" Bigint NOT NULL,
     "updatedAt" Bigint,
     "user" INT,
@@ -76,7 +88,7 @@ xdescribe(PgQuerierPool.name, () => {
   );`);
   }
 
-  async function createCompanyTable(querier: PostgresQuerier): Promise<void> {
+  async function createCompanyTable(querier: SqlQuerier): Promise<void> {
     await querier.query(`CREATE TABLE "Company" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
@@ -87,7 +99,7 @@ xdescribe(PgQuerierPool.name, () => {
   );`);
   }
 
-  async function createTaxCategoryTable(querier: PostgresQuerier): Promise<void> {
+  async function createTaxCategoryTable(querier: SqlQuerier): Promise<void> {
     await querier.query(`CREATE TABLE "TaxCategory" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
@@ -100,7 +112,7 @@ xdescribe(PgQuerierPool.name, () => {
   );`);
   }
 
-  async function createTaxTable(querier: PostgresQuerier): Promise<void> {
+  async function createTaxTable(querier: SqlQuerier): Promise<void> {
     await querier.query(`CREATE TABLE "Tax" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
@@ -114,10 +126,11 @@ xdescribe(PgQuerierPool.name, () => {
   );`);
   }
 
-  async function dropTables(querier: PostgresQuerier) {
+  async function dropTables(querier: SqlQuerier) {
     await querier.query(`DROP TABLE IF EXISTS "Tax"`);
     await querier.query(`DROP TABLE IF EXISTS "TaxCategory"`);
     await querier.query(`DROP TABLE IF EXISTS "Company"`);
     await querier.query(`DROP TABLE IF EXISTS "User"`);
+    await querier.query(`DROP TABLE IF EXISTS "user"`);
   }
 });
