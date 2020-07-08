@@ -27,7 +27,7 @@
         "--runInBand",
         "--collectCoverage=false",
         "--watchAll",
-        "src/corozo/repository/genericServerRepository.spec.ts"
+        "packages/core/src/repository/genericServerRepository.spec.ts"
       ],
       "restart": true,
       "console": "integratedTerminal",

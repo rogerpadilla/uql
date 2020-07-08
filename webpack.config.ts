@@ -1,8 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import * as path from 'path';
 import * as webpack from 'webpack';
-import * as CopyPlugin from 'copy-webpack-plugin';
-import * as ForkTsCheckerPlugin from 'fork-ts-checker-webpack-plugin';
+import CopyPlugin from 'copy-webpack-plugin';
+import ForkTsCheckerPlugin from 'fork-ts-checker-webpack-plugin';
 
 const config = (env: string, argv: { mode: 'development' | 'production' | 'none' }): webpack.Configuration => {
   const mode = argv.mode || 'development';
@@ -19,7 +19,7 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     entry: {
-      'corozo.min': ['./src/index.ts', './src/http/index.ts'],
+      'corozo.min': ['./packages/core/src/type/index.ts', './packages/browser/src/index.ts'],
     },
 
     output: {
@@ -49,10 +49,10 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     plugins: [
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] }) as any,
-      new ForkTsCheckerPlugin({
-        eslint: true,
-      }),
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      new ForkTsCheckerPlugin(),
     ],
   };
 };

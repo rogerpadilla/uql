@@ -10,6 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
     "lib": ["esnext", "dom"],
     "sourceMap": true,
     "incremental": true,
