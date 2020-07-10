@@ -1,5 +1,5 @@
 import { getCorozoOptions } from '../config';
-import { QuerierPoolOptions, QuerierPool, DatasourceDriver, DatasourceOptions, Querier } from './type';
+import { QuerierPoolOptions, QuerierPool, DatasourceOptions, Querier } from './type';
 
 let pool: QuerierPool;
 
@@ -9,18 +9,12 @@ export function getQuerier(): Promise<Querier> {
     if (!conf?.datasource) {
       throw new Error('Datasource configuration has not been set');
     }
-    pool = buildQuerierPool(conf.datasource);
+    pool = getQuerierPool(conf.datasource);
   }
   return pool.getQuerier();
 }
 
-function buildQuerierPool(opts: DatasourceOptions) {
-  const { driver, ...poolOpts } = opts;
-  const QuerierPoolConstructor = getQuerierPoolClass(driver);
-  return new QuerierPoolConstructor(poolOpts);
-}
-
-function getQuerierPoolClass(driver: DatasourceDriver): QuerierPoolClass {
+function getQuerierPool(opts: DatasourceOptions): QuerierPool {
   const driverDirectoryMap = {
     mysql: 'mysql',
     mysql2: 'mysql',
@@ -29,13 +23,13 @@ function getQuerierPoolClass(driver: DatasourceDriver): QuerierPoolClass {
     sqlite3: 'sqlite',
     mongodb: 'mongo',
   } as const;
-  const directory = driverDirectoryMap[driver];
+  const directory = driverDirectoryMap[opts.driver];
   if (!directory) {
-    throw new Error(`Unsupported driver '${driver}'`);
+    throw new Error(`Unsupported driver '${opts.driver}'`);
   }
-  // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access
-  const poolClass: QuerierPoolClass = require(`./${directory}/${driver}QuerierPool`).default;
-  return poolClass;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const querierPoolConstructor: QuerierPoolClass = require(`./${directory}/${opts.driver}QuerierPool`).default;
+  return new querierPoolConstructor(opts);
 }
 
 type QuerierPoolClass = { new (opts: QuerierPoolOptions): QuerierPool };
