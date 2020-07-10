@@ -1,8 +1,8 @@
 **<WIP>**
 
-The dream with corozo is to achieve what graphql does but without the need to configure additional servers, it is just a plug&play library which can be use with any NodeJs framework (like express, restify, hapi, koa...), and additionally/optionally, can be used from the browser (to consume REST APIs).
+The dream with `corozo` is to achieve what `GraphQL` does (TODO citation needed) but without the need to configure additional servers (TODO citation needed), it is just a plug & play library which can be use with any NodeJs framework (like `express`, `restify`, `hapi`, `koa`...), and additionally/optionally, can be used from the browser (to consume common REST APIs).
 
-corozo is inspired in MongoDb, Spring, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators as metadata, and then be ready to query the DBs. The advantage over for example, TypeORM, is that corozo provides a type-safe JSON query syntax to allow sending complex (and auto-sanitized) query expressions from the frontend/client to the backend/server (like graphql).
+`corozo` is inspired in `MongoDb`, `Spring`, `TypeORM` and `GraphQL`. One can simply declare the entities (DTOs), add some decorators as metadata, and then start querying the DBs. The main advantage over, for example, `TypeORM`, is that `corozo` provides a type-safe JSON query syntax to allow sending complex (and auto-sanitized) query expressions from the frontend/client to the backend/server (like `GraphQL`).
 
 Steps to use:
 * Be sure to enable the following two flags in the corresponding tsconfig.json file: `experimentalDecorators` and `emitDecoratorMetadata`
