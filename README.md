@@ -5,8 +5,8 @@ The dream with corozo is to achieve what graphql does but without the need to co
 corozo is inspired in MongoDb, Spring, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators as metadata, and then be ready to query the DBs. The advantage over for example, TypeORM, is that corozo provides a type-safe JSON query syntax to allow sending complex (and auto-sanitized) query expressions from the frontend/client to the backend/server (like graphql).
 
 Steps to use:
-# Be sure to enable the following two flags in the corresponding tsconfig.json file: `experimentalDecorators` and `emitDecoratorMetadata`
-# Declare the entities (inheritance is optional)
+* Be sure to enable the following two flags in the corresponding tsconfig.json file: `experimentalDecorators` and `emitDecoratorMetadata`
+* Declare the entities (inheritance is optional)
 ```typescript
 export abstract class BaseEntity {
   @PrimaryColumn()
@@ -70,16 +70,18 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 ```
-# initialize corozo configuration:
+* initialize corozo configuration:
 ```typescript
 import { initCorozo } from '@corozo/core';
 import { GenericServerRepository } from '@corozo/core/repository';
 // `pg` is for postgres driver, other databases are supported.
 initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
 ```
-# start playing
+* start playing
 And your domain logic will look this way:
 
 ```typescript
 const users = await querier.find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
 ```
+
+...
