@@ -1,4 +1,4 @@
-**<WIP>**
+**WIP**
 
 The dream with `corozo` is to achieve what `GraphQL` does (TODO citation needed) but without the need to configure additional servers (TODO citation needed), it is just a plug & play library which can be use with any NodeJs framework (like `express`, `restify`, `hapi`, `koa`...), and additionally/optionally, can be used from the browser (to consume common REST APIs).
 
