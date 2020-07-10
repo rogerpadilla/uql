@@ -24,6 +24,7 @@ export abstract class BaseEntity {
   @Column()
   status?: number;
 }
+
 @Entity()
 export class Company extends BaseEntity {
   @Column()
@@ -31,6 +32,7 @@ export class Company extends BaseEntity {
   @Column()
   description?: string;
 }
+
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   @PrimaryColumn({ name: 'pk' })
@@ -38,6 +40,7 @@ export class Profile extends BaseEntity {
   @Column({ name: 'image' })
   picture?: string;
 }
+
 @Entity({ name: 'user' })
 export class User extends BaseEntity {
   @Column()
@@ -50,6 +53,7 @@ export class User extends BaseEntity {
   @Column()
   profile?: Profile;
 }
+
 @Entity()
 export class TaxCategory extends BaseEntity {
   @Column()
@@ -57,6 +61,7 @@ export class TaxCategory extends BaseEntity {
   @Column()
   description?: string;
 }
+
 @Entity()
 export class Tax extends BaseEntity {
   @Column()
@@ -70,7 +75,7 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 ```
-* initialize corozo configuration:
+* initialize `corozo` configuration:
 ```typescript
 import { initCorozo } from '@corozo/core';
 import { GenericServerRepository } from '@corozo/core/repository';
