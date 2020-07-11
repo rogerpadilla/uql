@@ -1,6 +1,13 @@
 {
   "name": "corozo",
   "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "packages/browser",
+    "packages/core",
+    "packages/express"
+  ],
   "scripts": {
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
@@ -139,7 +146,6 @@
     "printWidth": 120
   },
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
-  "license": "MIT",
   "author": {
     "name": "Roger Padilla",
     "email": "rogerjose81@gmail.com"
