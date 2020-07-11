@@ -114,6 +114,7 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 
 ```typescript
 try {
+  
   await querier.beginTransaction();
 
   // create one user
@@ -156,6 +157,7 @@ try {
   const count: number = await querier.count(User, { company: 3 });
 
   await querier.commit();
+
 } catch (error) {
   await querier.rollback();
 } finally {
