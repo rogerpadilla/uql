@@ -114,14 +114,14 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 
 ```typescript
 // create one user
-const generatedId: number = await repository.insertOne({
+const generatedId: number = await querier.insertOne(User, {
   name: 'Some Name',
   email1: { picture: 'abc1@example.com' },
   profile: { picture: 'abc1' },
 });
 
 // create multiple users
-const generatedIds: number[] = await repository.insert([
+const generatedIds: number[] = await querier.insert(User, [
   {
     name: 'Another Name',
     email: { picture: 'abc2@example.com' },
