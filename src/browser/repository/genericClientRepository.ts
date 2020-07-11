@@ -1,6 +1,6 @@
-import { stringifyQuery, stringifyQueryParameter } from '../../../core/src/util/query.util';
-import { formatKebabCase } from '../../../core/src/util/string.util';
-import { getEntityMeta, EntityMeta } from '../../../core/src/entity';
+import { stringifyQuery, stringifyQueryParameter } from '../../core/util/query.util';
+import { formatKebabCase } from '../../core/util/string.util';
+import { getEntityMeta, EntityMeta } from '../../core/entity';
 import {
   RequestOptions,
   RequestSuccessResponse,
@@ -10,7 +10,7 @@ import {
   QueryOne,
   ClientRepository,
 } from '../type';
-import { get, post, put, remove } from './http';
+import { get, post, put, remove } from '../http';
 
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   readonly meta: EntityMeta<T>;

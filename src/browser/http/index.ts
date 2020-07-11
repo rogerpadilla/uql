@@ -1,5 +1,5 @@
-import { RequestSuccessResponse, RequestErrorResponse, RequestOptions } from '../type';
 import { notify } from '../bus';
+import { RequestOptions, RequestSuccessResponse, RequestErrorResponse } from '../type';
 
 export function get<T>(url: string, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
   return request<T>(url, { method: 'get' }, opts);

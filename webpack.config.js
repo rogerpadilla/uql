@@ -1,10 +1,9 @@
-/* eslint-disable import/no-extraneous-dependencies */
-import * as path from 'path';
-import * as webpack from 'webpack';
-import CopyPlugin from 'copy-webpack-plugin';
-import ForkTsCheckerPlugin from 'fork-ts-checker-webpack-plugin';
+/* eslint-disable @typescript-eslint/no-var-requires */
+const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
+const ForkTsCheckerPlugin = require('fork-ts-checker-webpack-plugin');
 
-const config = (env: string, argv: { mode: 'development' | 'production' | 'none' }): webpack.Configuration => {
+module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
   console.debug('*** Webpack mode', mode);
   const isDevMode = mode === 'development';
@@ -19,7 +18,7 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     entry: {
-      'corozo.min': ['./packages/core/src/type/index.ts', './packages/browser/src/index.ts'],
+      'corozo-browser': ['./src/browser/index.ts'],
     },
 
     output: {
@@ -49,12 +48,8 @@ const config = (env: string, argv: { mode: 'development' | 'production' | 'none'
     },
 
     plugins: [
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] }) as any,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] }),
       new ForkTsCheckerPlugin(),
     ],
   };
 };
-
-export default config;

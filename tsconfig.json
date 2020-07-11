@@ -11,12 +11,15 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
-    "lib": ["esnext", "dom"],
+    "lib": ["ESNext", "DOM"],
     "sourceMap": true,
     "incremental": true,
     "declaration": true,
     "declarationDir": "dist",
-    "outDir": "dist"
+    "outDir": "dist",
+    "importsNotUsedAsValues": "preserve",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
-  "exclude": ["node_modules", "dist", "coverage", ".vscode"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "coverage"]
 }

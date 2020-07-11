@@ -8,7 +8,8 @@
     "test": "rm -rf coverage && concurrently 'npm:lint' 'jest'",
     "test.watch": "jest --clearCache && jest --watchAll",
     "test.watch-pattern": "jest --clearCache && jest --watchAll --testPathPattern=Pool.spec.ts",
-    "build": "rm -rf dist && webpack --progress --profile --bail --mode=production",
+    "build": "rm -rf dist && concurrently 'tsc && rm -rf dist/browser' 'npm:build.browser'",
+    "build.browser": "webpack --progress --profile --bail --mode=production",
     "release": "concurrently 'npm:build' 'tsc'",
     "start": "webpack --profile --bail --watch --info-verbosity verbose"
   },
@@ -114,7 +115,7 @@
     "preset": "ts-jest",
     "testTimeout": 10,
     "roots": [
-      "<rootDir>/packages"
+      "<rootDir>/src"
     ],
     "testMatch": [
       "**/*.spec.ts"
@@ -148,13 +149,22 @@
   "bugs": {
     "url": "https://github.com/rogerpadilla/corozo/issues"
   },
-  "tags": [
-    "entity",
-    "typescript",
-    "mariadb",
+  "keywords": [
+    "orm",
+    "mongo",
     "mongodb",
     "mysql",
-    "postgresql"
+    "mariadb",
+    "postgresql",
+    "sqlite",
+    "sqlite3",
+    "ts",
+    "typescript",
+    "js",
+    "javascript",
+    "entity",
+    "corozo",
+    "data-mapper"
   ],
   "engines": {
     "node": ">= 10.0.0"
