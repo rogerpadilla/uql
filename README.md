@@ -9,7 +9,7 @@
 <!-- [![npm downloads](https://img.shields.io/npm/dm/corozo.svg)](https://www.npmjs.com/package/corozo) -->
 <!-- [![npm version](https://badge.fury.io/js/corozo.svg)](https://www.npmjs.com/corozo) -->
 
-corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo expressible (and type-safe) JSON syntax allows to query/update the data, and gives the power to ask for exactly what is necessary and nothing else.
+corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo's expressible (and type-safe) JSON syntax allows to query/update the data, and gives the power to ask for exactly what is necessary and nothing else.
 
 GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...). 
 
