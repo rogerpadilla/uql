@@ -11,7 +11,7 @@
 
 corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo's expressible (and type-safe) JSON syntax allows to query/update the data, and gives the power to ask for exactly what is necessary and nothing else.
 
-GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...). 
+GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...).
 
 corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
 
@@ -113,8 +113,44 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 - your service logic will look like this:
 
 ```typescript
-const users = await querier
-  .find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
+// create one user
+const generatedId: number = await repository.insertOne({
+  name: 'Some Name',
+  email1: { picture: 'abc1@example.com' },
+  profile: { picture: 'abc1' },
+});
+
+// create multiple users
+const generatedIds: number[] = await repository.insert([
+  {
+    name: 'Another Name',
+    email: { picture: 'abc2@example.com' },
+    profile: { picture: 'abc2' },
+    company: 123,
+  },
+  {
+    name: 'One More Name',
+    email: { picture: 'abc3@example.com' },
+    profile: { picture: 'abc3' },
+    company: 123,
+  },
+]);
+
+// find users
+const users: User[] = await querier.find(User, {
+  populate: { profile: null }, // retrieve all fields for 'profile'
+  filter: { company: 123 },
+  limit: 100,
+});
+
+// update users
+const updatedRows: number = await querier.updateOneById(User, generatedId, { company: 123 });
+
+// removed users
+const updatedRows: number = await querier.removeOneById(User, generatedId);
+
+// count users
+const count: number = await querier.count(User, { company: 3 });
 ```
 
 ...
