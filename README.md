@@ -113,7 +113,8 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 - your service logic will look like this:
 
 ```typescript
-const users = await querier.find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
+const users = await querier
+  .find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
 ```
 
 ...
