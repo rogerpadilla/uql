@@ -15,7 +15,7 @@ GraphQL already allows to do that, but it requires to configure [additional serv
 
 corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
 
-Most important corozo features are:
+Most important features of corozo are:
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns, complex `filtering`, `grouping`,
   and `pagination`.
