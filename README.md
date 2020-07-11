@@ -1,6 +1,6 @@
 **WIP**
 
-#corozo
+# corozo
 
 <!-- [![build status](https://travis-ci.org/rogerpadilla/corozo.svg?branch=master)](https://travis-ci.org/rogerpadilla/corozo?branch=master) -->
 <!-- [![coverage status](https://coveralls.io/repos/rogerpadilla/corozo/badge.svg?branch=master)](https://coveralls.io/r/rogerpadilla/corozo?branch=master) -->
