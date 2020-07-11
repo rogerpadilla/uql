@@ -29,7 +29,6 @@ Most important features of corozo are:
 
 Steps to use:
 
-- Be sure to enable (set as `true`) the following two properties in the `tsconfig.json` file of your `TypeScript` project: `experimentalDecorators` and `emitDecoratorMetadata`
 - Declare the entities (notice inheritance is optional)
 
 ```typescript
@@ -114,7 +113,6 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 
 ```typescript
 try {
-
   await querier.beginTransaction();
 
   // create one user
@@ -157,7 +155,6 @@ try {
   const count: number = await querier.count(User, { company: 3 });
 
   await querier.commit();
-
 } catch (error) {
   await querier.rollback();
 } finally {
@@ -165,4 +162,40 @@ try {
 }
 ```
 
-...
+## Installation
+
+1. Install the npm package:
+
+   `npm install corozo --save` or `yarn add corozo`
+
+2. You need to install `reflect-metadata` shim:
+
+   `npm install reflect-metadata --save` or `yarn add reflect-metadata`
+
+   and import it somewhere in the global place of your app (for example in `app.ts`):
+
+   `import 'reflect-metadata';`
+
+3. Make sure to enable the following properties in the `tsconfig.json` file of your `TypeScript` project: `experimentalDecorators` and `emitDecoratorMetadata`
+
+4. Install a database driver (pick the one you need for your database):
+
+   - for **MySQL** or **MariaDB**
+
+     `npm install mysql2 --save` (you can install `mysql` or `mariadb` instead as well)
+
+   - for **PostgreSQL** or **CockroachDB**
+
+     `npm install pg --save`
+
+   - for **SQLite**
+
+     `npm install sqlite3 --save`
+
+   - for **MongoDB** (experimental)
+
+     `npm install mongodb --save`
+
+
+
+
