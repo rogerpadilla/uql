@@ -1,0 +1,8 @@
+{
+  "name": "@corozo/browser",
+  "version": "0.0.1",
+  "dependencies": {
+    "reflect-metadata": "^0.1.13",
+    "@corozo/core": "^0.0.1"
+  }
+}
