@@ -20,6 +20,5 @@
     "importsNotUsedAsValues": "preserve",
     "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   },
-  "include": ["src"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

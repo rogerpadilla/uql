@@ -1,6 +1,6 @@
-import { stringifyQuery, stringifyQueryParameter } from '../../core/util/query.util';
-import { formatKebabCase } from '../../core/util/string.util';
-import { getEntityMeta, EntityMeta } from '../../core/entity';
+import { stringifyQuery, stringifyQueryParameter } from '../../../core/src/util/query.util';
+import { formatKebabCase } from '../../../core/src/util/string.util';
+import { getEntityMeta, EntityMeta } from '../../../core/src/entity';
 import {
   RequestOptions,
   RequestSuccessResponse,

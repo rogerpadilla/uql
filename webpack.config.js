@@ -18,7 +18,7 @@ module.exports = (env, argv) => {
     },
 
     entry: {
-      'corozo-browser': ['./src/browser/index.ts'],
+      'corozo-browser': ['./packages/browser/src/index.ts'],
     },
 
     output: {
@@ -47,9 +47,6 @@ module.exports = (env, argv) => {
       ],
     },
 
-    plugins: [
-      new CopyPlugin({ patterns: ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'] }),
-      new ForkTsCheckerPlugin(),
-    ],
+    plugins: [new CopyPlugin({ patterns: ['package.json', 'README.md', 'LICENSE'] }), new ForkTsCheckerPlugin()],
   };
 };

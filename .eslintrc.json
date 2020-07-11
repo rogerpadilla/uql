@@ -69,14 +69,14 @@
   },
   "overrides": [
     {
-      "files": ["src/browser/**/*"],
+      "files": ["packages/browser/**/*"],
       "env": {
         "browser": true,
         "node": false
       }
     },
     {
-      "files": ["src/**/*.spec.ts"],
+      "files": ["packages/**/*.spec.ts"],
       "env": {
         "jest": true
       },

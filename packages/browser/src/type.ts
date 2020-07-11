@@ -1,7 +1,7 @@
-import { QueryOne, QueryOneFilter, Query, QueryFilter } from '../core/type';
-import { IsomorphicRepository } from '../core/repository/type';
+import { QueryOne, QueryOneFilter, Query, QueryFilter } from '../../core/src/type';
+import { IsomorphicRepository } from '../../core/src/repository/type';
 
-export * from '../core/type';
+export * from '../../core/src/type';
 
 export interface RequestSuccessResponse<T> {
   data: T;
