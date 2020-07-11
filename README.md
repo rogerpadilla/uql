@@ -17,7 +17,7 @@ corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One can simply
 
 Most important features of corozo are:
 
-- supports on-demand `populate` (at multiple levels), `projection` of fields/columns, complex `filtering`, `grouping`,
+- supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
 - declarative and imperative `transactions`
 - generic and custom `repositories`
