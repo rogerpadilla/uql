@@ -14,7 +14,7 @@ The dream with `corozo` is to achieve what `GraphQL` does (TODO citation needed)
 
 Steps to use:
 
-- Be sure to enable the following two flags in the corresponding tsconfig.json file: `experimentalDecorators` and `emitDecoratorMetadata`
+- Be sure to enable (set as `true`) the following two flags in the corresponding `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
 - Declare the entities (inheritance is optional)
 
 ```typescript
