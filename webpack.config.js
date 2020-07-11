@@ -2,6 +2,7 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 const ForkTsCheckerPlugin = require('fork-ts-checker-webpack-plugin');
+const tsPathAliases = require('./tsconfig.json').compilerOptions.paths;
 
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
@@ -15,6 +16,12 @@ module.exports = (env, argv) => {
 
     resolve: {
       extensions: ['.ts', '.js'],
+      alias: Object.keys(tsPathAliases).reduce((acc, key) => {
+        const prop = key.replace('/*', '');
+        const val = tsPathAliases[key][0].replace('/*', '');
+        acc[prop] = path.resolve(val);
+        return acc;
+      }, {}),
     },
 
     entry: {

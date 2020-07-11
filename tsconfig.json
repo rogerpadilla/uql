@@ -18,7 +18,13 @@
     "declarationDir": "dist",
     "outDir": "dist",
     "importsNotUsedAsValues": "preserve",
-    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "@corozo/browser/*": ["packages/browser/src/*"],
+      "@corozo/core/*": ["packages/core/src/*"],
+      "@corozo/express/*": ["packages/express/src/*"]
+    }
   },
   "exclude": ["node_modules", "dist", "coverage"]
 }

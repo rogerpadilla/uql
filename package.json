@@ -115,28 +115,6 @@
       "optional": true
     }
   },
-  "jest": {
-    "verbose": true,
-    "preset": "ts-jest",
-    "testTimeout": 10,
-    "roots": [
-      "<rootDir>/packages/browser",
-      "<rootDir>/packages/core",
-      "<rootDir>/packages/express"
-    ],
-    "testMatch": [
-      "**/*.spec.ts"
-    ],
-    "collectCoverage": true,
-    "coverageReporters": [
-      "html",
-      "text-summary"
-    ],
-    "coverageDirectory": "coverage",
-    "setupFilesAfterEnv": [
-      "<rootDir>/config/test-setup-after-env.js"
-    ]
-  },
   "prettier": {
     "tabWidth": 2,
     "semi": true,

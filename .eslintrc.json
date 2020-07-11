@@ -44,6 +44,7 @@
     "import/order": "warn",
     "prettier/prettier": "warn",
 
+    "import/no-unresolved": 0,
     "no-case-declarations": 0,
     "class-methods-use-this": 0,
     "no-param-reassign": 0,
