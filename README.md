@@ -182,7 +182,7 @@ try {
 
    - for MySQL or MariaDB
 
-     `npm install mysql2 --save` (you can install `mysql` or `mariadb` instead as well)
+     `npm install mysql2 --save` (possible to install `mysql` or `mariadb` instead as well)
 
    - for PostgreSQL or CockroachDB
 
