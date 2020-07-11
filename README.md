@@ -9,18 +9,20 @@
 <!-- [![npm downloads](https://img.shields.io/npm/dm/corozo.svg)](https://www.npmjs.com/package/corozo) -->
 <!-- [![npm version](https://badge.fury.io/js/corozo.svg)](https://www.npmjs.com/corozo) -->
 
-`corozo`'s dream is to achieve what `GraphQL` does but in a much simpler way "a JSON (type-safe) query language for APIs, to retrieve, update and (optinally) expose your existing data in a esay way. `corozo` provides a expressible (and type-safe) JSON syntax to query/update the data, and gives the power to ask for exactly what is needed and nothing else, making it easier to evolve APIs over time.
+corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo expressible (and type-safe) JSON syntax allows to query/update the data, and gives the power to ask for exactly what is necessary and nothing else.
 
-`GraphQL` allows to do that but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, `corozo` is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, `restify`, `hapi`, `koa`...). `corozo` syntax is inspired in `MongoDb`, `JPA`, `TypeORM` and `GraphQL`. One can simply declare the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like `GraphQL` allows).
+GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...). 
 
-Some `corozo` features are:
+corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
 
-- supports on-demand `populate` (in multiple levels), `projection` of fields/columns, complex `filtering`, `grouping`,
+Most important corozo features are:
+
+- supports on-demand `populate` (at multiple levels), `projection` of fields/columns, complex `filtering`, `grouping`,
   and `pagination`.
 - declarative and imperative `transactions`
 - generic and custom `repositories`
 - `relations` between entities
-- supports multiple `inheritance` patterns
+- supports `inheritance` patterns
 - connection pooling
 - supports Postgres, MySQL, MariaDB, SQLite (WIP), MongoDB (WIP), more soon
 - code is readable, performant and flexible
