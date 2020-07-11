@@ -114,7 +114,7 @@ initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServer
 
 ```typescript
 try {
-  
+
   await querier.beginTransaction();
 
   // create one user
@@ -124,7 +124,7 @@ try {
     profile: { picture: 'abc1' },
   });
 
-  // create multiple users
+  // create multiple users in a batch
   const generatedIds: number[] = await querier.insert(User, [
     {
       name: 'Another Name',
