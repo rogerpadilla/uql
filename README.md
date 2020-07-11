@@ -11,7 +11,7 @@
 
 corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo's expressible (and type-safe) JSON syntax allows to query/update the data and gives the power to ask for exactly what is necessary and nothing else.
 
-GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new syntax](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...).
+GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new language](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library which can be used with (and without) any NodeJs framework (like `express`, restify, hapi, koa...).
 
 corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One can simply declare the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
 
