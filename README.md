@@ -110,47 +110,57 @@ import { GenericServerRepository } from '@corozo/core/repository';
 initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
 ```
 
-- your service logic will look like this:
+- your logic will look like this:
 
 ```typescript
-// create one user
-const generatedId: number = await querier.insertOne(User, {
-  name: 'Some Name',
-  email1: { picture: 'abc1@example.com' },
-  profile: { picture: 'abc1' },
-});
+try {
+  await querier.beginTransaction();
 
-// create multiple users
-const generatedIds: number[] = await querier.insert(User, [
-  {
-    name: 'Another Name',
-    email: { picture: 'abc2@example.com' },
-    profile: { picture: 'abc2' },
-    company: 123,
-  },
-  {
-    name: 'One More Name',
-    email: { picture: 'abc3@example.com' },
-    profile: { picture: 'abc3' },
-    company: 123,
-  },
-]);
+  // create one user
+  const generatedId: number = await querier.insertOne(User, {
+    name: 'Some Name',
+    email1: { picture: 'abc1@example.com' },
+    profile: { picture: 'abc1' },
+  });
 
-// find users
-const users: User[] = await querier.find(User, {
-  populate: { profile: null }, // retrieve all fields for 'profile'
-  filter: { company: 123 },
-  limit: 100,
-});
+  // create multiple users
+  const generatedIds: number[] = await querier.insert(User, [
+    {
+      name: 'Another Name',
+      email: { picture: 'abc2@example.com' },
+      profile: { picture: 'abc2' },
+      company: 123,
+    },
+    {
+      name: 'One More Name',
+      email: { picture: 'abc3@example.com' },
+      profile: { picture: 'abc3' },
+      company: 123,
+    },
+  ]);
 
-// update users
-const updatedRows: number = await querier.updateOneById(User, generatedId, { company: 123 });
+  // find users
+  const users: User[] = await querier.find(User, {
+    populate: { profile: null }, // retrieve all fields for 'profile'
+    filter: { company: 123 },
+    limit: 100,
+  });
 
-// removed users
-const updatedRows: number = await querier.removeOneById(User, generatedId);
+  // update users
+  const updatedRows: number = await querier.updateOneById(User, generatedId, { company: 123 });
 
-// count users
-const count: number = await querier.count(User, { company: 3 });
+  // removed users
+  const updatedRows: number = await querier.removeOneById(User, generatedId);
+
+  // count users
+  const count: number = await querier.count(User, { company: 3 });
+
+  await querier.commit();
+} catch (error) {
+  await querier.rollback();
+} finally {
+  await querier.release();
+}
 ```
 
 ...
