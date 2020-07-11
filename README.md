@@ -180,19 +180,19 @@ try {
 
 4. Install a database driver (pick the one you need for your database):
 
-   - for **MySQL** or **MariaDB**
+   - for MySQL or MariaDB
 
      `npm install mysql2 --save` (you can install `mysql` or `mariadb` instead as well)
 
-   - for **PostgreSQL** or **CockroachDB**
+   - for PostgreSQL or CockroachDB
 
      `npm install pg --save`
 
-   - for **SQLite**
+   - for SQLite (experimental)
 
      `npm install sqlite3 --save`
 
-   - for **MongoDB** (experimental)
+   - for MongoDB (experimental)
 
      `npm install mongodb --save`
 
