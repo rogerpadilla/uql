@@ -1,8 +1,11 @@
 {
   "name": "@corozo/browser",
-  "version": "0.0.1",
+  "version": "0.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "reflect-metadata": "^0.1.13",
-    "@corozo/core": "^0.0.1"
+    "@corozo/core": "^0.0.0"
   }
 }

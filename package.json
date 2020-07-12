@@ -2,7 +2,6 @@
   "name": "corozo",
   "version": "0.0.1",
   "private": true,
-  "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
@@ -57,7 +56,8 @@
     "fork-ts-checker-webpack-plugin": "^5.0.7",
     "husky": "^4.2.5",
     "jest": "26.1.0",
-    "lint-staged": "^10.2.11",    
+    "lerna": "^3.22.1",
+    "lint-staged": "^10.2.11",
     "prettier": "^2.0.5",
     "semantic-release": "^17.1.1",
     "source-map-loader": "^1.0.1",

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.0",
+  "useWorkspaces": true,
+  "command": {
+    "publish": {
+      "ignoreChanges": ["*.md", "*.spec", "*.json", "*.config.js"]
+    }
+  },
+  "npmClient": "yarn",
+  "npmClientArgs": ["--pure-lockfile"],
+  "packages": ["packages/*"]
+}
