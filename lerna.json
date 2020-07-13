@@ -1,11 +1,19 @@
 {
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "useWorkspaces": true,
   "command": {
     "publish": {
-      "ignoreChanges": ["*.md", "*.spec", "*.json", "*.config.js"]
+      "ignoreChanges": [
+        "*.md",
+        "*.spec",
+        "*.json",
+        "*.config.js"
+      ]
     }
   },
   "npmClient": "yarn",
-  "packages": ["packages/*"]
+  "npmClientArgs": ["--pure-lockfile"],
+  "packages": [
+    "packages/*"
+  ]
 }
