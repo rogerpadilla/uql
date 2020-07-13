@@ -24,7 +24,11 @@ beforeEach(() => {
 it('find', async () => {
   const mock: User[] = [{ id: 1, name: 'something' }];
   mockRes = mock;
-  const resp = await querier.find(User, { project: { id: 1, name: 1 }, filter: { company: 123 }, limit: 100 });
+  const resp = await querier.find(User, {
+    project: { id: 1, name: 1 },
+    filter: { company: 123 },
+    limit: 100,
+  });
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledWith('SELECT `id`, `name` FROM `user` WHERE `company` = 123 LIMIT 100');
   expect(querier.query).toBeCalledTimes(1);

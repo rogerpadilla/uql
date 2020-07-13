@@ -4,6 +4,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "scripts": {
+    "build": "tsc"
+  },
   "dependencies": {
     "@corozo/core": "^0.0.0",
     "express": "^4.17.1"

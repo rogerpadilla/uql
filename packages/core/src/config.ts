@@ -13,4 +13,7 @@ export function getCorozoOptions(): CorozoOptions {
   return { ...opts };
 }
 
-type CorozoOptions = { datasource?: DatasourceOptions; defaultRepositoryClass?: GenericRepositoryConstructor<unknown> };
+type CorozoOptions = {
+  datasource?: DatasourceOptions;
+  defaultRepositoryClass?: GenericRepositoryConstructor<unknown>;
+};

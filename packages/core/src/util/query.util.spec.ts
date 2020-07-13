@@ -51,7 +51,10 @@ it('buildQuery stringified', () => {
   const expected: Query<Item> = {
     project: { id: 1, name: 1 },
     filter: { name: 'Batman', company: 40 },
-    populate: { measureUnit: { project: { id: 1, name: 1 } }, tax: { project: { id: 1, name: 1 } } },
+    populate: {
+      measureUnit: { project: { id: 1, name: 1 } },
+      tax: { project: { id: 1, name: 1 } },
+    },
     sort: { name: -1, company: 1 },
   };
   const result = buildQuery(qms);

@@ -40,7 +40,9 @@ export class MongodbQuerier extends Querier<ObjectID> {
         .toArray()
         .then((resp) => resp[0]);
     }
-    return this.collection(type).findOne(this.dialect.buildFilter(qm.filter), { projection: qm.project });
+    return this.collection(type).findOne(this.dialect.buildFilter(qm.filter), {
+      projection: qm.project,
+    });
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {

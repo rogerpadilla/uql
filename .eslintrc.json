@@ -77,6 +77,13 @@
       }
     },
     {
+      "files": ["packages/**/webpack.config.js"],
+      "env": {
+        "browser": false,
+        "node": true
+      }
+    },
+    {
       "files": ["packages/**/*.spec.ts"],
       "env": {
         "jest": true

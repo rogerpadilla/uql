@@ -113,14 +113,24 @@ it('find logical operators', () => {
     `SELECT * FROM "user" WHERE "user" = 1 AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com') AND "id" = 1`
   );
   const query2 = sql.find(User, {
-    filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1, email: 'e' },
+    filter: {
+      user: 1,
+      $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
+      id: 1,
+      email: 'e',
+    },
   });
   expect(query2).toBe(
     'SELECT * FROM "user" WHERE "user" = 1' +
       ` AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com') AND "id" = 1 AND "email" = 'e'`
   );
   const query3 = sql.find(User, {
-    filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1, email: 'e' },
+    filter: {
+      user: 1,
+      $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
+      id: 1,
+      email: 'e',
+    },
     sort: { name: 1, createdAt: -1 },
     skip: 50,
     limit: 10,
@@ -211,7 +221,10 @@ it('find $nin', () => {
 it('find populate with projected fields', () => {
   const query = sql.find(Item, {
     project: { id: 1, name: 1, code: 1 },
-    populate: { tax: { project: { id: 1, name: 1 } }, measureUnit: { project: { id: 1, name: 1, category: 1 } } },
+    populate: {
+      tax: { project: { id: 1, name: 1 } },
+      measureUnit: { project: { id: 1, name: 1, category: 1 } },
+    },
     limit: 100,
   });
   expect(query).toBe(
@@ -252,7 +265,10 @@ it('find deep populate with projected fields', () => {
   const query1 = sql.find(Item, {
     project: { id: 1, name: 1, code: 1 },
     populate: {
-      measureUnit: { project: { id: 1, name: 1, category: 1 }, populate: { category: { project: { name: 1 } } } },
+      measureUnit: {
+        project: { id: 1, name: 1, category: 1 },
+        populate: { category: { project: { name: 1 } } },
+      },
     },
     limit: 100,
   });
@@ -268,7 +284,10 @@ it('find deep populate with projected fields', () => {
   const query2 = sql.find(Item, {
     project: { id: 1, name: 1, code: 1 },
     populate: {
-      measureUnit: { project: { id: 1, name: 1 }, populate: { category: { project: { id: 1, name: 1 } } } },
+      measureUnit: {
+        project: { id: 1, name: 1 },
+        populate: { category: { project: { id: 1, name: 1 } } },
+      },
     },
     limit: 100,
   });
@@ -287,7 +306,10 @@ it('find deep populate with projected fields', () => {
       item: {
         project: { id: 1, name: 1 },
         populate: {
-          measureUnit: { project: { id: 1, name: 1 }, populate: { category: { project: { id: 1, name: 1 } } } },
+          measureUnit: {
+            project: { id: 1, name: 1 },
+            populate: { category: { project: { id: 1, name: 1 } } },
+          },
         },
       },
     },
@@ -377,7 +399,10 @@ it('find select as functions', () => {
   const query = sql.find(
     User,
     {
-      project: { '*': 1, 'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1 } as any,
+      project: {
+        '*': 1,
+        'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
+      } as any,
       filter: { name: 'something' },
     },
     { isTrustedProject: true }
@@ -422,7 +447,11 @@ it('find $text', () => {
   );
 
   const query2 = sql.find(User, {
-    filter: { $text: { fields: ['name'], value: 'something' }, name: { $ne: 'other unwanted' }, status: 1 },
+    filter: {
+      $text: { fields: ['name'], value: 'something' },
+      name: { $ne: 'other unwanted' },
+      status: 1,
+    },
     limit: 10,
   });
   expect(query2).toBe(

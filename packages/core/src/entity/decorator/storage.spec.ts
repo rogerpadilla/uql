@@ -124,7 +124,10 @@ it('item', () => {
         column: { name: 'saleLedgerAccount' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      tax: { column: { name: 'tax' }, relation: { type: expect.any(Function), cardinality: 'manyToOne' } },
+      tax: {
+        column: { name: 'tax' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
       measureUnit: {
         column: { name: 'measureUnit' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },

@@ -315,7 +315,11 @@ it('findOne', async () => {
 it('find', async () => {
   const mock: User[] = [{ id: 1, name: 'something' }];
   mockRes = mock;
-  const resp = await repository.find({ filter: { company: 123 }, project: { id: 1, name: 1 }, limit: 100 });
+  const resp = await repository.find({
+    filter: { company: 123 },
+    project: { id: 1, name: 1 },
+    limit: 100,
+  });
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();

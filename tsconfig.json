@@ -11,20 +11,15 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext"],
     "sourceMap": true,
     "incremental": true,
     "declaration": true,
-    "declarationDir": "dist",
-    "outDir": "dist",
     "importsNotUsedAsValues": "preserve",
-    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
     "baseUrl": ".",
     "paths": {
-      "@corozo/browser/*": ["packages/browser/src/*"],
-      "@corozo/core/*": ["packages/core/src/*"],
-      "@corozo/express/*": ["packages/express/src/*"]
+      "@corozo/core/*": ["packages/core/src/*"]
     }
   },
-  "exclude": ["node_modules", "dist", "coverage"]
+  "exclude": ["node_modules", "packages/**/node_modules", "packages/**/dist"]
 }

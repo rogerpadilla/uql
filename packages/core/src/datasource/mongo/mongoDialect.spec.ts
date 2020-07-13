@@ -26,7 +26,10 @@ it('buildAggregationPipeline empty', () => {
   expect(dialect.buildAggregationPipeline(Item, { filter: {} })).toEqual([]);
   expect(dialect.buildAggregationPipeline(Item, { populate: {} })).toEqual([]);
   expect(
-    dialect.buildAggregationPipeline(Item, { filter: { code: '123' }, populate: { measureUnit: null, tax: null } })
+    dialect.buildAggregationPipeline(Item, {
+      filter: { code: '123' },
+      populate: { measureUnit: null, tax: null },
+    })
   ).toEqual([
     {
       $match: {
