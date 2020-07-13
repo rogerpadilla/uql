@@ -1,6 +1,7 @@
 {
   "name": "@corozo/browser",
   "version": "0.0.0",
+  "main": "corozo-browser.min.js",
   "publishConfig": {
     "access": "public"
   },
@@ -14,11 +15,8 @@
     "reflect-metadata": "^0.1.13"
   },
   "devDependencies": {
-    "@types/copy-webpack-plugin": "^6.0.0",
     "@types/terser-webpack-plugin": "^3.0.0",
     "@types/webpack": "^4.41.21",
-    "copy-webpack-plugin": "^6.0.3",
-    "fork-ts-checker-webpack-plugin": "^5.0.7",
     "source-map-loader": "^1.0.1",
     "ts-loader": "^8.0.0",
     "typescript": "^3.9.6",

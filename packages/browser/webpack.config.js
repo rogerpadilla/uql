@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
-const CopyPlugin = require('copy-webpack-plugin');
-const ForkTsCheckerPlugin = require('fork-ts-checker-webpack-plugin');
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
 
@@ -26,7 +24,7 @@ module.exports = (env, argv) => {
     },
 
     entry: {
-      corozo: ['./src/index.ts'],
+      'corozo-browser.min': ['./src/index.ts'],
     },
 
     output: {
@@ -48,13 +46,8 @@ module.exports = (env, argv) => {
         {
           test: /\.ts$/,
           loader: 'ts-loader',
-          options: {
-            transpileOnly: true,
-          },
         },
       ],
     },
-
-    plugins: [new CopyPlugin({ patterns: ['package.json'] }), new ForkTsCheckerPlugin()],
   };
 };
