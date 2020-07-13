@@ -3,7 +3,7 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "browser": "corozo-browser.min.js",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.0",
   "publishConfig": {
     "access": "public"
   },
