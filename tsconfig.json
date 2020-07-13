@@ -18,8 +18,8 @@
     "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
     "paths": {
-      "@corozo/core/*": ["packages/core/src/*"]
+      "corozo/*": ["packages/corozo/src/*"]
     }
   },
-  "exclude": ["node_modules", "packages/**/node_modules", "packages/**/dist"]
+  "exclude": ["node_modules", "coverage", "packages/**/node_modules", "packages/**/dist"]
 }

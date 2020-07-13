@@ -1,0 +1,59 @@
+{
+  "name": "corozo",
+  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
+  "license": "MIT",
+  "version": "0.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": {
+    "name": "Roger Padilla",
+    "email": "rogerjose81@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogerpadilla/corozo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rogerpadilla/corozo/issues"
+  },
+  "keywords": [
+    "orm",
+    "mongo",
+    "mongodb",
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "sqlite",
+    "sqlite3",
+    "ts",
+    "typescript",
+    "js",
+    "javascript",
+    "entity",
+    "corozo",
+    "data-mapper",
+    "datamapper"
+  ],  
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc --watch"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.1.13",
+    "sqlstring": "^2.3.2"
+  },
+  "devDependencies": {
+    "@types/mongodb": "^3.5.25",
+    "@types/mysql2": "types/mysql2",
+    "@types/node": "^14.0.22",
+    "@types/pg": "^7.14.4",
+    "@types/sqlite3": "^3.1.6",
+    "mariadb": "^2.4.1",
+    "mongodb": "^3.5.9",
+    "mysql": "^2.18.1",
+    "mysql2": "^2.1.0",
+    "pg": "^8.3.0",
+    "sqlite3": "^5.0.0"
+  }
+}

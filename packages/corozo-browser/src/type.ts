@@ -1,7 +1,7 @@
-import { QueryOne, QueryOneFilter, Query, QueryFilter } from '../../core/src/type';
-import { IsomorphicRepository } from '../../core/src/repository/type';
+import { IsomorphicRepository } from 'corozo/repository/type';
+import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'corozo/type';
 
-export * from '../../core/src/type';
+export * from 'corozo/type';
 
 export interface RequestSuccessResponse<T> {
   data: T;

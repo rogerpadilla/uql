@@ -1,6 +1,6 @@
-import { stringifyQuery, stringifyQueryParameter } from '../../../core/src/util/query.util';
-import { formatKebabCase } from '../../../core/src/util/string.util';
-import { getEntityMeta, EntityMeta } from '../../../core/src/entity';
+import { stringifyQuery, stringifyQueryParameter } from 'corozo/util/query.util';
+import { formatKebabCase } from 'corozo/util/string.util';
+import { getEntityMeta, EntityMeta } from 'corozo/entity';
 import {
   RequestOptions,
   RequestSuccessResponse,

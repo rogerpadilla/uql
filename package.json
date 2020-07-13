@@ -1,6 +1,4 @@
 {
-  "name": "corozo",
-  "version": "0.0.1",
   "private": true,
   "workspaces": [
     "packages/*"
@@ -61,37 +59,5 @@
     "semi": true,
     "singleQuote": true,
     "printWidth": 120
-  },
-  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
-  "author": {
-    "name": "Roger Padilla",
-    "email": "rogerjose81@gmail.com"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/rogerpadilla/corozo.git"
-  },
-  "bugs": {
-    "url": "https://github.com/rogerpadilla/corozo/issues"
-  },
-  "keywords": [
-    "orm",
-    "mongo",
-    "mongodb",
-    "mysql",
-    "mariadb",
-    "postgresql",
-    "sqlite",
-    "sqlite3",
-    "ts",
-    "typescript",
-    "js",
-    "javascript",
-    "entity",
-    "corozo",
-    "data-mapper"
-  ],
-  "engines": {
-    "node": ">= 10.0.0"
   }
 }

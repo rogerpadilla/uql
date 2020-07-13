@@ -103,8 +103,8 @@ export class Tax extends BaseEntity {
 - initialize `corozo` configuration:
 
 ```typescript
-import { initCorozo } from '@corozo/core';
-import { GenericServerRepository } from '@corozo/core/repository';
+import { initCorozo } from 'corozo';
+import { GenericServerRepository } from 'corozo/repository';
 // `pg` is for postgres driver, other databases are supported.
 initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
 ```
