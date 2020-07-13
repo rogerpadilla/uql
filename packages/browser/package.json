@@ -5,7 +5,7 @@
     "access": "public"
   },
   "dependencies": {
-    "reflect-metadata": "^0.1.13",
-    "@corozo/core": "^0.0.0"
+    "@corozo/core": "^0.0.0",
+    "reflect-metadata": "^0.1.13"
   }
 }
