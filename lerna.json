@@ -12,7 +12,9 @@
     }
   },
   "npmClient": "yarn",
-  "npmClientArgs": ["--pure-lockfile"],
+  "npmClientArgs": [
+    "--no-package-lock"
+  ],
   "packages": [
     "packages/*"
   ]
