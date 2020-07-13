@@ -2,7 +2,7 @@
   "name": "corozo",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.1-alpha.1",
   "author": {
     "name": "Roger Padilla",
     "email": "rogerjose81@gmail.com"
