@@ -3,7 +3,7 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "browser": "corozo-browser.min.js",
-  "version": "0.0.4-alpha.0",
+  "version": "0.0.2-alpha.0",
   "author": {
     "name": "Roger Padilla",
     "email": "rogerjose81@gmail.com"
@@ -39,7 +39,7 @@
     "start": "webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {
-    "corozo": "^0.0.4-alpha.0",
+    "corozo": "^0.0.2-alpha.0",
     "reflect-metadata": "^0.1.13"
   },
   "devDependencies": {
@@ -52,5 +52,5 @@
     "webpack-cli": "^3.3.12",
     "webpack-log": "^3.0.1"
   },
-  "gitHead": "89986b305634f6ea3de81b5fe71633e1012ad520"
+  "gitHead": "ba2c51325555d77391b2b155477e6d43150d00a1"
 }
