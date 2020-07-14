@@ -25,7 +25,7 @@
   },
   "lint-staged": {
     "*.ts": [
-      "npm run lint.fix"
+      "eslint --fix"
     ]
   },
   "devDependencies": {
