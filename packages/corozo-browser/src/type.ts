@@ -1,7 +1,7 @@
 import { IsomorphicRepository } from 'corozo/repository/type';
 import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'corozo/type';
 
-export * from 'corozo/type';
+export { QueryOne, QueryOneFilter, Query, QueryFilter };
 
 export interface RequestSuccessResponse<T> {
   data: T;
@@ -17,6 +17,12 @@ export interface RequestErrorResponse {
 export type RequestOptions = {
   silent?: boolean;
 };
+
+type RequestBaseNotification = { readonly opts?: RequestOptions };
+type RequestSuccessNotification = { readonly phase: 'start' | 'success' | 'complete' } & RequestBaseNotification;
+type RequestErrorNotification = { readonly phase: 'error' } & RequestErrorResponse & RequestBaseNotification;
+export type RequestNotification = RequestSuccessNotification | RequestErrorNotification;
+export type RequestCallback = (msg: RequestNotification) => any;
 
 export interface ClientRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
   insertOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
