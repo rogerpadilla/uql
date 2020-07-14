@@ -2,7 +2,7 @@
   "name": "corozo-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.0",
+  "version": "0.0.2-alpha.0",
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
@@ -31,11 +31,11 @@
     "express"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "tsc --watch"
+    "build": "rm -rf dist && tsc",
+    "start": "rm -rf dist && tsc --watch"
   },
   "dependencies": {
-    "corozo": "^0.0.0",
+    "corozo": "^0.0.2-alpha.0",
     "express": "^4.17.1"
   },
   "devDependencies": {

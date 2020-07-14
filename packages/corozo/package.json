@@ -2,7 +2,7 @@
   "name": "corozo",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.0",
+  "version": "0.0.2-alpha.0",
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
@@ -30,8 +30,8 @@
     "datamapper"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "tsc --watch"
+    "build": "rm -rf dist && tsc",
+    "start": "rm -rf dist && tsc --watch"
   },
   "dependencies": {
     "reflect-metadata": "^0.1.13",

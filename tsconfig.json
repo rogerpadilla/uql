@@ -13,7 +13,7 @@
     "esModuleInterop": true,
     "lib": ["ESNext"],
     "sourceMap": true,
-    "incremental": true,
+    "incremental": true,    
     "declaration": true,
     "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
