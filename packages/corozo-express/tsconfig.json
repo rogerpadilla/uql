@@ -4,6 +4,6 @@
     "lib": ["ESNext"],
     "outDir": "dist",
     "declarationDir": "dist",
-    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
   }
 }

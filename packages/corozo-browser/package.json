@@ -31,8 +31,8 @@
     "datamapper"
   ],
   "scripts": {
-    "build": "rm -rf dist && webpack --progress --profile --bail --mode=production",
-    "start": "rm -rf dist && webpack --profile --bail --watch --info-verbosity verbose"
+    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
+    "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {
     "corozo": "^0.0.0",
@@ -41,6 +41,7 @@
   "devDependencies": {
     "@types/terser-webpack-plugin": "^3.0.0",
     "@types/webpack": "^4.41.21",
+    "rimraf": "^3.0.2",
     "source-map-loader": "^1.0.1",
     "ts-loader": "^8.0.0",
     "tslib": "^2.0.0",

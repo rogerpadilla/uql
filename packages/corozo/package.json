@@ -30,8 +30,8 @@
     "datamapper"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc",
-    "start": "rm -rf dist && tsc --watch"
+    "build": "rimraf dist && tsc",
+    "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
     "reflect-metadata": "^0.1.13",
@@ -48,6 +48,7 @@
     "mysql": "^2.18.1",
     "mysql2": "^2.1.0",
     "pg": "^8.3.0",
+    "rimraf": "^3.0.2",
     "sqlite3": "^5.0.0",
     "tslib": "^2.0.0"
   },
