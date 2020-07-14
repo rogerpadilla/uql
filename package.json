@@ -3,6 +3,7 @@
   "workspaces": [
     "packages/*"
   ],
+  "author": "Roger Padilla",
   "scripts": {
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
