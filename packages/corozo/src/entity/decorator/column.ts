@@ -1,4 +1,4 @@
-import { defineColumn } from './storage';
+import { defineColumn } from './definition';
 import { ColumnOptions } from './type';
 
 export function Column<T>(opts?: ColumnOptions<T>) {

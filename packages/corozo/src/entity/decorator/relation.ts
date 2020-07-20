@@ -1,4 +1,4 @@
-import { defineRelation } from './storage';
+import { defineRelation } from './definition';
 import {
   RelationOptions,
   RelationOneToOneOptions,

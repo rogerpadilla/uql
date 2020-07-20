@@ -1,4 +1,4 @@
-import { defineEntity } from './storage';
+import { defineEntity } from './definition';
 import { EntityOptions } from './type';
 
 export function Entity(opts?: EntityOptions) {

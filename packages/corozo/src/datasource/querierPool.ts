@@ -23,13 +23,14 @@ function getQuerierPool(opts: DatasourceOptions): QuerierPool {
     sqlite3: 'sqlite',
     mongodb: 'mongo',
   } as const;
-  const directory = driverDirectoryMap[opts.driver];
+  const { driver, ...options } = opts;
+  const directory = driverDirectoryMap[driver];
   if (!directory) {
-    throw new Error(`Unsupported driver '${opts.driver}'`);
+    throw new Error(`Unsupported driver '${driver}'`);
   }
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const querierPoolConstructor: QuerierPoolClass = require(`./${directory}/${opts.driver}QuerierPool`).default;
-  return new querierPoolConstructor(opts);
+  const querierPoolConstructor: QuerierPoolClass = require(`./${directory}/${driver}QuerierPool`).default;
+  return new querierPoolConstructor(options);
 }
 
 type QuerierPoolClass = { new (opts: QuerierPoolOptions): QuerierPool };

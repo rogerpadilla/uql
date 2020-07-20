@@ -58,6 +58,8 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
+  @PrimaryColumn()
+  pk?: string;
   @Column()
   name?: string;
   @Column()

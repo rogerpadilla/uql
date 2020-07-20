@@ -31,14 +31,21 @@ export type EntityMeta<T> = {
   name: string;
   id?: string;
   isEntity?: boolean;
+  /**
+   * 'properties' contains both, columns and relations metadata
+   */
   properties: {
     [prop: string]: PropetyOptions<T>;
   };
-  // readonly shorthand for accesing columns
+  /**
+   * readonly shorthand for accesing 'columns' metadata
+   */
   readonly columns?: {
     [prop: string]: ColumnOptions<T>;
   };
-  // readonly shorthand for accesing relations
+  /**
+   * readonly shorthand for accesing 'relations' metadata
+   */
   readonly relations?: {
     [prop: string]: RelationOptions<T>;
   };

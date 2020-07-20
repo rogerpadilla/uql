@@ -1,5 +1,5 @@
 import { PrimaryColumnOptions } from './type';
-import { definePrimaryColumn } from './storage';
+import { definePrimaryColumn } from './definition';
 
 export function PrimaryColumn<T>(opts?: PrimaryColumnOptions<T>) {
   return (target: object, prop: string): void => {

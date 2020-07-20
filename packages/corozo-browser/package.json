@@ -2,8 +2,33 @@
   "name": "corozo-browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "browser": "corozo-browser.min.js",
   "version": "0.0.0",
+  "browser": "./dist/corozo-browser.min.js",
+  "files": [
+    "./dist"
+  ],
+  "scripts": {
+    "prepublishOnly": "npm run build",
+    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
+    "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
+  },
+  "dependencies": {
+    "corozo": "^0.0.0",
+    "reflect-metadata": "^0.1.13"
+  },
+  "devDependencies": {
+    "@types/terser-webpack-plugin": "^3.0.0",
+    "@types/webpack": "^4.41.21",
+    "copyfiles": "^2.3.0",
+    "rimraf": "^3.0.2",
+    "source-map-loader": "^1.0.1",
+    "ts-loader": "^8.0.1",
+    "tslib": "^2.0.0",
+    "typescript": "^3.9.7",
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.12",
+    "webpack-log": "^3.0.1"
+  },
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
@@ -30,27 +55,5 @@
     "data-mapper",
     "datamapper"
   ],
-  "scripts": {
-    "build": "rimraf dist && webpack --progress --profile --bail --mode=production && npm run build.copy",
-    "build.copy": "copyfiles README.md package.json dist",
-    "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
-  },
-  "dependencies": {
-    "corozo": "^0.0.0",
-    "reflect-metadata": "^0.1.13"
-  },
-  "devDependencies": {
-    "@types/terser-webpack-plugin": "^3.0.0",
-    "@types/webpack": "^4.41.21",
-    "copyfiles": "^2.3.0",
-    "rimraf": "^3.0.2",
-    "source-map-loader": "^1.0.1",
-    "ts-loader": "^8.0.0",
-    "tslib": "^2.0.0",
-    "typescript": "^3.9.6",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.12",
-    "webpack-log": "^3.0.1"
-  },
   "gitHead": "8fd10a2459be7c1372ecd902f94b4b34e7162359"
 }

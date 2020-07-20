@@ -1,7 +1,6 @@
 import {
   User,
   Item,
-  BaseEntity,
   LedgerAccount,
   TaxCategory,
   MeasureUnitCategory,
@@ -13,7 +12,7 @@ import {
   Company,
   Profile,
 } from '../entityMock';
-import { getEntityMeta, getEntities } from './storage';
+import { getEntityMeta, getEntities } from './definition';
 import { PrimaryColumn } from './primaryColumn';
 
 it('entities', () => {
@@ -135,6 +134,32 @@ it('item', () => {
       buyPriceAverage: { column: { name: 'buyPriceAverage', mode: 'read' } },
       salePrice: { column: { name: 'salePrice' } },
       inventoryable: { column: { name: 'inventoryable' } },
+    },
+  });
+});
+
+it('taxCategory', () => {
+  const meta = getEntityMeta(TaxCategory);
+  expect(meta).toEqual({
+    type: TaxCategory,
+    name: 'TaxCategory',
+    id: 'pk',
+    isEntity: true,
+    properties: {
+      pk: { column: { name: 'pk', mode: 'read' } },
+      company: {
+        column: { name: 'company', mode: 'insert' },
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+      },
+      user: {
+        relation: { type: expect.any(Function), cardinality: 'manyToOne' },
+        column: { name: 'user', mode: 'insert' },
+      },
+      createdAt: { column: { name: 'createdAt', mode: 'insert' } },
+      updatedAt: { column: { name: 'updatedAt', mode: 'update' } },
+      status: { column: { name: 'status' } },
+      name: { column: { name: 'name' } },
+      description: { column: { name: 'description' } },
     },
   });
 });

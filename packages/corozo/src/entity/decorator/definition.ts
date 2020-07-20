@@ -55,8 +55,13 @@ export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions): Enti
 
   while (parentProto.constructor !== Object) {
     const parentMeta = entitiesMeta.get(parentProto.constructor as { new (): any });
-    meta.id = meta.id || parentMeta.id;
-    meta.properties = { ...parentMeta.properties, ...meta.properties };
+    const parentProperties = { ...parentMeta.properties };
+    if (meta.id) {
+      delete parentProperties[parentMeta.id];
+    } else {
+      meta.id = parentMeta.id;
+    }
+    meta.properties = { ...parentProperties, ...meta.properties };
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
