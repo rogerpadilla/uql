@@ -3,7 +3,6 @@
   "compilerOptions": {
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
-    "declarationDir": "dist",
-    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+    "declarationDir": "dist"
   }
 }

@@ -30,7 +30,8 @@
     "datamapper"
   ],
   "scripts": {
-    "build": "rimraf dist && tsc",
+    "build": "rimraf dist && tsc && npm run build.copy",
+    "build.copy": "copyfiles README.md package.json dist",
     "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
     "@types/node": "^14.0.22",
     "@types/pg": "^7.14.4",
     "@types/sqlite3": "^3.1.6",
+    "copyfiles": "^2.3.0",
     "mariadb": "^2.4.1",
     "mongodb": "^3.5.9",
     "mysql": "^2.18.1",
@@ -52,5 +54,5 @@
     "sqlite3": "^5.0.0",
     "tslib": "^2.0.0"
   },
-  "gitHead": "bad36ea2cabce0dd75cd15f13525557e54f6591c"
+  "gitHead": "8fd10a2459be7c1372ecd902f94b4b34e7162359"
 }

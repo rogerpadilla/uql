@@ -31,7 +31,8 @@
     "datamapper"
   ],
   "scripts": {
-    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
+    "build": "rimraf dist && webpack --progress --profile --bail --mode=production && npm run build.copy",
+    "build.copy": "copyfiles README.md package.json dist",
     "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@types/terser-webpack-plugin": "^3.0.0",
     "@types/webpack": "^4.41.21",
+    "copyfiles": "^2.3.0",
     "rimraf": "^3.0.2",
     "source-map-loader": "^1.0.1",
     "ts-loader": "^8.0.0",
@@ -50,5 +52,5 @@
     "webpack-cli": "^3.3.12",
     "webpack-log": "^3.0.1"
   },
-  "gitHead": "bad36ea2cabce0dd75cd15f13525557e54f6591c"
+  "gitHead": "8fd10a2459be7c1372ecd902f94b4b34e7162359"
 }
