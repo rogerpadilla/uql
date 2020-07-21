@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { escapeId, escape } from 'sqlstring';
 import {
   QueryFilter,
@@ -20,10 +21,12 @@ export abstract class SqlDialect {
     const bodies = Array.isArray(body) ? body : [body];
     const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
     const properties = Object.keys(samplePersistableBody);
+
     const columns = properties.map((col) => meta.columns[col].name);
     const values = bodies
       .map((body) => properties.map((property) => this.escape(body[property])).join(', '))
       .join('), (');
+
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
@@ -116,7 +119,7 @@ export abstract class SqlDialect {
       const rel = prefix
         ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey)
         : `${this.escapeId(meta.name)}.${joinPath}`;
-      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id)} = ${rel}`;
+      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id.name)} = ${rel}`;
       if (popVal?.populate) {
         const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
         joinsSelect += subJoinSelect;

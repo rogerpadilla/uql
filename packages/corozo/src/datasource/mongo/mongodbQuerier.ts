@@ -29,7 +29,7 @@ export class MongodbQuerier extends Querier<ObjectID> {
 
   async findOneById<T>(type: { new (): T }, id: ObjectID, qm: QueryOne<T> = {}): Promise<T> {
     const meta = getEntityMeta(type);
-    (qm as QueryOneFilter<T>).filter = { [meta.id]: id };
+    (qm as QueryOneFilter<T>).filter = { [meta.id.property]: id };
     return this.findOne(type, qm);
   }
 

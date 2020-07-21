@@ -10,7 +10,7 @@
     "lint.fix": "npm run lint -- --fix",
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
     "test.watch": "jest --clearCache && jest --watchAll",
-    "test.watch.pattern": "jest --clearCache && jest --watchAll --testPathPattern=Pool.spec.ts"
+    "test.watch.pattern": "jest --clearCache && jest --watchAll --testPathPattern=definition.spec.ts"
   },
   "commitlint": {
     "extends": [

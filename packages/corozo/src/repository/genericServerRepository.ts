@@ -13,22 +13,22 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   @Transactional({ propagation: 'required' })
   async insertOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
     const id = await querier.insertOne(this.meta.type, body);
-    await this.insertRelations({ ...body, [this.meta.id]: id }, querier);
+    await this.insertRelations({ ...body, [this.meta.id.property]: id }, querier);
     return id;
   }
 
   @Transactional({ propagation: 'required' })
   async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.update(this.meta.type, { [this.meta.id]: id }, body);
+    const affectedRows = await querier.update(this.meta.type, { [this.meta.id.property]: id }, body);
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
-    await this.updateRelations({ ...body, [this.meta.id]: id }, querier);
+    await this.updateRelations({ ...body, [this.meta.id.property]: id }, querier);
   }
 
   @Transactional({ propagation: 'required' })
   async saveOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
-    const id = body[this.meta.id] as ID;
+    const id = body[this.meta.id.property] as ID;
     if (id) {
       await this.updateOneById(id, body, querier);
       return id;
@@ -38,7 +38,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional()
   findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier): Promise<T> {
-    (qm as QueryOneFilter<T>).filter = { [this.meta.id]: id };
+    (qm as QueryOneFilter<T>).filter = { [this.meta.id.property]: id };
     return querier.findOne(this.meta.type, qm);
   }
 
@@ -54,7 +54,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
 
   @Transactional({ propagation: 'required' })
   async removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<void> {
-    const affectedRows = await querier.remove(this.meta.type, { [this.meta.id]: id });
+    const affectedRows = await querier.remove(this.meta.type, { [this.meta.id.property]: id });
     if (!affectedRows) {
       throw new Error('Unaffected record');
     }
@@ -71,7 +71,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   protected async insertRelations(body: T, querier: Querier): Promise<void> {
-    const id = body[this.meta.id];
+    const id = body[this.meta.id.property];
 
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
       const relOpts = this.meta.relations[prop];
@@ -94,7 +94,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   protected async updateRelations(body: T, querier: Querier): Promise<void> {
-    const id = body[this.meta.id];
+    const id = body[this.meta.id.property];
 
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
       const relOpts = this.meta.relations[prop];

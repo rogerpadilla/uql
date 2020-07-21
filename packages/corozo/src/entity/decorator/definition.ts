@@ -1,33 +1,66 @@
 import 'reflect-metadata';
-import { RelationOptions, PrimaryColumnOptions, EntityOptions, EntityMeta, ColumnOptions } from './type';
+import { RelationOptions, IdColumnOptions, EntityOptions, EntityMeta } from './type';
 
 const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  if (!entitiesMeta.has(type)) {
-    entitiesMeta.set(type, { type, name: type.name, properties: {} });
+  if (entitiesMeta.has(type)) {
+    return entitiesMeta.get(type);
   }
-  const meta: EntityMeta<T> = entitiesMeta.get(type);
+
+  const meta: EntityMeta<T> = { type, name: type.name, properties: {} };
+
+  // readonly shorthands for accesing metadata, this way 'properties'
+  // can be keep as single source of truth.
+  Object.defineProperty(meta, 'id', {
+    get() {
+      for (const prop in meta.properties) {
+        if (meta.properties[prop].column?.isId) {
+          return meta.properties[prop].column;
+        }
+      }
+    },
+  });
+
+  Object.defineProperty(meta, 'columns', {
+    get() {
+      return Object.keys(meta.properties).reduce((acc, prop) => {
+        if (meta.properties[prop].column) {
+          acc[prop] = meta.properties[prop].column;
+        }
+        return acc;
+      }, {} as { [p in keyof T]: IdColumnOptions<T> });
+    },
+  });
+
+  Object.defineProperty(meta, 'relations', {
+    get() {
+      return Object.keys(meta.properties).reduce((acc, prop) => {
+        if (meta.properties[prop].relation) {
+          acc[prop] = meta.properties[prop].relation;
+        }
+        return acc;
+      }, {} as { [p in keyof T]: RelationOptions<T> });
+    },
+  });
+
+  entitiesMeta.set(type, meta);
+
   return meta;
 }
 
-export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
+export function defineColumn<T>(type: { new (): T }, prop: string, opts: IdColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
-  meta.properties[prop] = { ...meta.properties[prop], column: { name: prop, ...opts } };
+  meta.properties[prop] = { ...meta.properties[prop], column: { name: prop, ...opts, property: prop } };
   return meta;
 }
 
-export function definePrimaryColumn<T>(
-  type: { new (): T },
-  prop: string,
-  opts: PrimaryColumnOptions<T>
-): EntityMeta<T> {
-  const meta = defineColumn(type, prop, { mode: 'read', ...opts });
+export function defineIdColumn<T>(type: { new (): T }, prop: string, opts: IdColumnOptions<T>): EntityMeta<T> {
+  const meta = ensureEntityMeta(type);
   if (meta.id) {
-    throw new Error(`'${type.name}' must have a single field decorated with @PrimaryColumn`);
+    throw new Error(`'${type.name}' must have a single field decorated with @IdColumn`);
   }
-  meta.id = prop;
-  return meta;
+  return defineColumn(type, prop, { ...opts, mode: 'read', isId: true });
 }
 
 export function defineRelation<T>(type: { new (): T }, prop: string, opts: RelationOptions<T>): EntityMeta<T> {
@@ -44,51 +77,29 @@ export function defineRelation<T>(type: { new (): T }, prop: string, opts: Relat
   return meta;
 }
 
-export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions): EntityMeta<T> {
-  const meta: EntityMeta<T> = entitiesMeta.get(type);
-  if (!meta) {
+export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): EntityMeta<T> {
+  const meta = ensureEntityMeta(type);
+
+  if (Object.keys(meta.properties).length === 0) {
     throw new Error(`'${type.name}' must have columns`);
   }
 
-  meta.name = opts?.name || type.name;
+  meta.name = opts.name || type.name;
   let parentProto: object = Object.getPrototypeOf(type.prototype);
 
   while (parentProto.constructor !== Object) {
-    const parentMeta = entitiesMeta.get(parentProto.constructor as { new (): any });
+    const parentMeta = ensureEntityMeta(parentProto.constructor as { new (): unknown });
     const parentProperties = { ...parentMeta.properties };
     if (meta.id) {
-      delete parentProperties[parentMeta.id];
-    } else {
-      meta.id = parentMeta.id;
+      delete parentProperties[parentMeta.id.property];
     }
     meta.properties = { ...parentProperties, ...meta.properties };
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
   if (!meta.id) {
-    throw new Error(`'${type.name}' must have at least one field decorated with @PrimaryColumn`);
+    throw new Error(`'${type.name}' must have one field decorated with @IdColumn`);
   }
-
-  // readonly shorthands for accesing 'columns' and 'relations',
-  // that way 'properties' can be used as single source of truth
-  Object.defineProperties(meta, {
-    columns: {
-      value: Object.keys(meta.properties).reduce((acc, prop) => {
-        if (meta.properties[prop].column) {
-          acc[prop] = meta.properties[prop].column;
-        }
-        return acc;
-      }, {} as { [p in keyof T]: ColumnOptions<T> }),
-    },
-    relations: {
-      value: Object.keys(meta.properties).reduce((acc, prop) => {
-        if (meta.properties[prop].relation) {
-          acc[prop] = meta.properties[prop].relation;
-        }
-        return acc;
-      }, {} as { [p in keyof T]: RelationOptions<T> }),
-    },
-  });
 
   meta.isEntity = true;
 
@@ -96,8 +107,8 @@ export function defineEntity<T>(type: { new (): T }, opts?: EntityOptions): Enti
 }
 
 export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  const meta: EntityMeta<T> = entitiesMeta.get(type);
-  if (!meta?.isEntity) {
+  const meta = ensureEntityMeta(type);
+  if (!meta.isEntity) {
     throw new Error(`'${type.name}' is not an entity`);
   }
   return meta;

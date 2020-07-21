@@ -4,17 +4,24 @@ export type EntityOptions = {
 
 export type ColumnPersistableMode = 'insert' | 'update' | 'read';
 
-export type PropetyOptions<T> = {
-  readonly column: ColumnOptions<T>;
+export type PropertyOptions<T> = {
+  readonly column: IdColumnOptions<T>;
   readonly relation: RelationOptions<T>;
 };
+
 export type ColumnOptions<T> = {
+  readonly property?: string;
   readonly name?: string;
   readonly mode?: ColumnPersistableMode;
+  readonly isId?: boolean;
 };
-export type PrimaryColumnOptions<T> = ColumnOptions<T>;
+export type IdColumnOptions<T> = {
+  readonly autoValue?: 'db' | 'uuid';
+  readonly isId?: true;
+} & ColumnOptions<T>;
 
 export type RelationOptions<T> = {
+  readonly property?: string;
   type?: () => { new (): any };
   readonly cardinality: RelationCardinality;
   readonly mappedBy?: keyof T;
@@ -29,24 +36,24 @@ export type RelationManyToManyOptions<T> = { type: () => { new (): T } };
 export type EntityMeta<T> = {
   readonly type: { new (): T };
   name: string;
-  id?: string;
+  readonly id?: IdColumnOptions<T>;
   isEntity?: boolean;
   /**
    * 'properties' contains both, columns and relations metadata
    */
   properties: {
-    [prop: string]: PropetyOptions<T>;
+    [key: string]: PropertyOptions<T>;
   };
   /**
    * readonly shorthand for accesing 'columns' metadata
    */
   readonly columns?: {
-    [prop: string]: ColumnOptions<T>;
+    [key: string]: IdColumnOptions<T>;
   };
   /**
    * readonly shorthand for accesing 'relations' metadata
    */
   readonly relations?: {
-    [prop: string]: RelationOptions<T>;
+    [key: string]: RelationOptions<T>;
   };
 };

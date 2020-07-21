@@ -1,7 +1,7 @@
-import { Column, ManyToOne, PrimaryColumn, OneToMany, Entity, OneToOne } from './decorator';
+import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from './decorator';
 
 export abstract class BaseEntity {
-  @PrimaryColumn()
+  @IdColumn()
   id?: number;
   @ManyToOne({ type: () => Company })
   @Column({ mode: 'insert' })
@@ -27,7 +27,7 @@ export class Company extends BaseEntity {
 
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
-  @PrimaryColumn({ name: 'pk' })
+  @IdColumn({ name: 'pk' })
   id?: number;
   @Column({ name: 'image' })
   picture?: string;
@@ -58,7 +58,7 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
-  @PrimaryColumn()
+  @IdColumn({ autoValue: 'uuid' })
   pk?: string;
   @Column()
   name?: string;
