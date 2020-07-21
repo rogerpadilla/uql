@@ -65,8 +65,14 @@ it('insertOne cascade oneToOne', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "INSERT INTO `user` (`name`) VALUES ('some name')");
-  expect(querier.query).nthCalledWith(3, "INSERT INTO `user_profile` (`image`) VALUES ('abc')");
+  expect(querier.query).nthCalledWith(
+    2,
+    expect.toMatch(/INSERT INTO `user` \(`name`, `createdAt`\) VALUES \('some name', \d+\)/)
+  );
+  expect(querier.query).nthCalledWith(
+    3,
+    expect.toMatch(/INSERT INTO `user_profile` \(`image`, `createdAt`\) VALUES \('abc', \d+\)/)
+  );
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
   expect(querier.insertOne).toBeCalledTimes(2);
@@ -92,11 +98,15 @@ it('insertOne cascade oneToMany', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    "INSERT INTO `InventoryAdjustment` (`description`) VALUES ('some description')"
+    expect.toMatch(
+      /INSERT INTO `InventoryAdjustment` \(`description`, `createdAt`\) VALUES \('some description', \d+\)/
+    )
   );
   expect(querier.query).nthCalledWith(
     3,
-    'INSERT INTO `ItemAdjustment` (`buyPrice`, `inventoryAdjustment`) VALUES (50, 1), (300, 1)'
+    expect.toMatch(
+      /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+    )
   );
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
@@ -136,8 +146,14 @@ it('updateOneById cascade oneToOne', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1");
-  expect(querier.query).nthCalledWith(3, "UPDATE `user_profile` SET `image` = 'xyz' WHERE `user` = 1");
+  expect(querier.query).nthCalledWith(
+    2,
+    expect.toMatch(/UPDATE `user` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+  );
+  expect(querier.query).nthCalledWith(
+    3,
+    expect.toMatch(/UPDATE `user_profile` SET `image` = 'xyz', `updatedAt` = \d+ WHERE `user` = 1/)
+  );
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
   expect(querier.insertOne).not.toBeCalled();
@@ -160,7 +176,10 @@ it('updateOneById cascade oneToOne null', async () => {
   });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
-  expect(querier.query).nthCalledWith(2, "UPDATE `user` SET `name` = 'something' WHERE `id` = 1");
+  expect(querier.query).nthCalledWith(
+    2,
+    expect.toMatch(/UPDATE `user` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+  );
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');
   expect(querier.query).toBeCalledTimes(4);
@@ -187,12 +206,16 @@ it('updateOneById cascade oneToMany', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1"
+    expect.toMatch(
+      /UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1/
+    )
   );
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
   expect(querier.query).nthCalledWith(
     4,
-    'INSERT INTO `ItemAdjustment` (`buyPrice`, `inventoryAdjustment`) VALUES (50, 1), (300, 1)'
+    expect.toMatch(
+      /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+    )
   );
   expect(querier.query).nthCalledWith(5, 'COMMIT');
   expect(querier.query).toBeCalledTimes(5);
@@ -219,7 +242,9 @@ it('updateOneById cascade oneToMany null', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    "UPDATE `InventoryAdjustment` SET `description` = 'some description' WHERE `id` = 1"
+    expect.toMatch(
+      /UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1/
+    )
   );
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');

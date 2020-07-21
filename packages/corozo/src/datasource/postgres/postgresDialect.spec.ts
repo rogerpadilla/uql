@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment } from '../../entity/entityMock';
+import { User, Item, ItemAdjustment, TaxCategory } from '../../entity/entityMock';
 import { Query, QuerySort } from '../../type';
 import { SqlDialect } from '../sqlDialect';
 import { PostgresDialect } from './postgresDialect';
@@ -32,37 +32,46 @@ it('create', () => {
     },
   ];
   const query = sql.insert(User, bodies);
-  expect(query).toStartsWith(
+  expect(query).toBe(
     'INSERT INTO "user" ("name", "email", "createdAt") VALUES' +
       " ('Some Name 1', 'someemail1@example.com', 123)" +
       ", ('Some Name 2', 'someemail2@example.com', 456)" +
-      ", ('Some Name 3', 'someemail3@example.com', 789)"
+      ", ('Some Name 3', 'someemail3@example.com', 789) RETURNING id insertId"
   );
 });
 
 it('create - one', () => {
   const body: User = {
-    id: 1,
     name: 'Some Name',
     email: 'someemail@example.com',
     createdAt: 123,
-    updatedAt: 321,
   };
   const query = sql.insert(User, body);
-  expect(query).toStartsWith(
-    `INSERT INTO "user" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123)`
+  expect(query).toBe(
+    `INSERT INTO "user" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING id insertId`
+  );
+});
+
+it('create - one uuid', () => {
+  const body: TaxCategory = {
+    name: 'Some Name',
+    createdAt: 123,
+  };
+  const query = sql.insert(TaxCategory, body);
+  expect(query).toMatch(
+    /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '[a-f0-9\\-]+'\) RETURNING pk insertId$/
   );
 });
 
 it('update', () => {
-  const body: User = {
-    id: 25,
-    name: 'Some Text',
-    user: 1,
-    createdAt: 123,
-    updatedAt: 321,
-  };
-  const query = sql.update(User, { name: 'some', user: 123 }, body);
+  const query = sql.update(
+    User,
+    { name: 'some', user: 123 },
+    {
+      name: 'Some Text',
+      updatedAt: 321,
+    }
+  );
   expect(query).toBe(
     `UPDATE "user" SET "name" = 'Some Text', "updatedAt" = 321 WHERE "name" = 'some' AND "user" = 123`
   );

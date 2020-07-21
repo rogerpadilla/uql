@@ -36,14 +36,12 @@ export abstract class BaseEntity {
   @IdColumn()
   id?: number;
   @ManyToOne({ type: () => Company })
-  @Column({ mode: 'insert' })
   company?: number | Company;
-  @Column({ mode: 'insert' })
   @ManyToOne({ type: () => User })
   user?: number | User;
-  @Column({ mode: 'insert' })
+  @Column({ onInsert: () => Date.now() })
   createdAt?: number;
-  @Column({ mode: 'update' })
+  @Column({ onUpdate: () => Date.now() })
   updatedAt?: number;
   @Column()
   status?: number;
@@ -195,7 +193,3 @@ try {
    - for MongoDB (experimental)
 
      `npm install mongodb --save`
-
-
-
-

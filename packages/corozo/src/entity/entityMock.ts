@@ -1,17 +1,16 @@
+import { v4 as uuidv4 } from 'uuid';
 import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from './decorator';
 
 export abstract class BaseEntity {
   @IdColumn()
   id?: number;
   @ManyToOne({ type: () => Company })
-  @Column({ mode: 'insert' })
   company?: number | Company;
-  @Column({ mode: 'insert' })
   @ManyToOne({ type: () => User })
   user?: number | User;
-  @Column({ mode: 'insert' })
+  @Column({ onInsert: () => Date.now() })
   createdAt?: number;
-  @Column({ mode: 'update' })
+  @Column({ onUpdate: () => Date.now() })
   updatedAt?: number;
   @Column()
   status?: number;
@@ -42,7 +41,6 @@ export class User extends BaseEntity {
   @Column()
   password?: string;
   @OneToOne({ mappedBy: 'user' })
-  @Column()
   profile?: Profile;
 }
 
@@ -58,7 +56,7 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
-  @IdColumn({ autoValue: 'uuid' })
+  @IdColumn({ onInsert: () => uuidv4() })
   pk?: string;
   @Column()
   name?: string;
@@ -73,7 +71,6 @@ export class Tax extends BaseEntity {
   @Column()
   percentage?: number;
   @ManyToOne()
-  @Column()
   category?: TaxCategory;
   @Column()
   description?: string;
@@ -90,7 +87,6 @@ export class MeasureUnit extends BaseEntity {
   @Column()
   name?: string;
   @ManyToOne()
-  @Column()
   category?: MeasureUnitCategory;
 }
 
@@ -117,18 +113,14 @@ export class Item extends BaseEntity {
   @Column()
   image?: string;
   @ManyToOne()
-  @Column()
   buyLedgerAccount?: LedgerAccount;
   @ManyToOne()
-  @Column()
   saleLedgerAccount?: LedgerAccount;
   @ManyToOne()
-  @Column()
   tax?: Tax;
   @ManyToOne()
-  @Column()
   measureUnit?: MeasureUnit;
-  @Column({ mode: 'read' })
+  @Column()
   buyPriceAverage?: number;
   @Column()
   salePrice?: number;
@@ -139,16 +131,14 @@ export class Item extends BaseEntity {
 @Entity()
 export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
-  @Column()
   item?: Item;
   @Column()
   number?: number;
   @Column()
   buyPrice?: number;
   @ManyToOne()
-  @Column()
   storehouse?: Storehouse;
-  @Column({ mode: 'insert' })
+  @Column()
   inventoryAdjustment?: boolean;
 }
 

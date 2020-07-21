@@ -1,4 +1,4 @@
-import { defineRelation } from './definition';
+import { defineRelation, defineColumn } from './definition';
 import {
   RelationOptions,
   RelationOneToOneOptions,
@@ -10,6 +10,9 @@ import {
 function Relation<T>(opts: RelationOptions<T>) {
   return (target: object, prop: string) => {
     const type = target.constructor as { new (): T };
+    if (opts.cardinality === 'manyToOne' || opts.cardinality === 'oneToOne') {
+      defineColumn(type, prop, {});
+    }
     defineRelation(type, prop, opts);
   };
 }

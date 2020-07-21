@@ -56,7 +56,9 @@ it('insertOne', async () => {
   mockRes = mock;
   const resp = await querier.insertOne(User, { company: 123 });
   expect(resp).toEqual(mock.insertId);
-  expect(querier.query).toBeCalledWith(expect.toStartsWith('INSERT INTO `user` (`company`) VALUES (123)'));
+  expect(querier.query).toBeCalledWith(
+    expect.toMatch(/^INSERT INTO `user` \(`company`, `createdAt`\) VALUES \(123, \d+\)$/)
+  );
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
   expect(querier.commit).not.toBeCalled();
@@ -69,7 +71,9 @@ it('update', async () => {
   mockRes = mock;
   const resp = await querier.update(User, { id: 5 }, { name: 'Hola' });
   expect(resp).toEqual(mock.affectedRows);
-  expect(querier.query).toBeCalledWith("UPDATE `user` SET `name` = 'Hola' WHERE `id` = 5");
+  expect(querier.query).toBeCalledWith(
+    expect.toMatch(/^UPDATE `user` SET `name` = 'Hola', `updatedAt` = \d+ WHERE `id` = 5$/)
+  );
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
   expect(querier.commit).not.toBeCalled();

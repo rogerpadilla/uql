@@ -1,8 +1,8 @@
 expect.extend({
-  toStartsWith(received, expected) {
-    const pass = received.startsWith(expected) && !this.isNot;
+  toMatch(received, expected) {
+    const pass = expected.test(received) && !this.isNot;
     return {
-      message: () => `expected ${received} to starts with ${expected}`,
+      message: () => `expected ${received} to match ${expected}`,
       pass,
     };
   },

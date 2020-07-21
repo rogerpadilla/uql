@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { escapeId, escape } from 'sqlstring';
 import {
   QueryFilter,
@@ -11,30 +10,49 @@ import {
   QueryProject,
   QueryLogicalOperatorValue,
 } from '../type';
-import { getEntityMeta, ColumnPersistableMode } from '../entity';
+import { getEntityMeta } from '../entity';
 
 export abstract class SqlDialect {
   abstract readonly beginTransactionCommand: string;
 
-  insert<T>(type: { new (): T }, body: T | T[]): string {
+  insert<T>(type: { new (): T }, payload: T | T[]): string {
     const meta = getEntityMeta(type);
-    const bodies = Array.isArray(body) ? body : [body];
-    const samplePersistableBody = filterPersistable(type, bodies[0], 'insert');
-    const properties = Object.keys(samplePersistableBody);
+    const payloads = Array.isArray(payload) ? payload : [payload];
 
-    const columns = properties.map((col) => meta.columns[col].name);
-    const values = bodies
-      .map((body) => properties.map((property) => this.escape(body[property])).join(', '))
-      .join('), (');
+    const onInserts = Object.keys(meta.columns).filter((col) => meta.columns[col].onInsert);
+    if (onInserts.length) {
+      for (const item of payloads) {
+        for (const key of onInserts) {
+          if (item[key] === undefined) {
+            item[key] = meta.columns[key].onInsert();
+          }
+        }
+      }
+    }
+
+    const persistable = filterPersistable(type, payloads[0]);
+    const properties = Object.keys(persistable);
+    const columns = properties.map((prop) => meta.columns[prop].name);
+    const values = payloads.map((body) => properties.map((prop) => this.escape(body[prop])).join(', ')).join('), (');
 
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
-  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): string {
+  update<T>(type: { new (): T }, filter: QueryFilter<T>, payload: T): string {
     const meta = getEntityMeta(type);
-    const persistable = filterPersistable(type, body, 'update');
+
+    const onUpdates = Object.keys(meta.columns).filter((col) => meta.columns[col].onUpdate);
+    if (onUpdates.length) {
+      for (const key of onUpdates) {
+        if (payload[key] === undefined) {
+          payload[key] = meta.columns[key].onUpdate();
+        }
+      }
+    }
+
+    const persistable = filterPersistable(type, payload);
     const persistableData = Object.keys(persistable).reduce((acc, key) => {
-      acc[meta.columns[key].name] = body[key];
+      acc[meta.columns[key].name] = payload[key];
       return acc;
     }, {} as T);
     const values = this.objectToValues(persistableData);
@@ -247,20 +265,19 @@ export abstract class SqlDialect {
   }
 }
 
-function filterPersistable<T>(type: { new (): T }, body: T, mode: ColumnPersistableMode): T {
+function filterPersistable<T>(type: { new (): T }, body: T): T {
   const meta = getEntityMeta(type);
   return Object.keys(body).reduce((persistableBody, prop) => {
-    const propVal = body[prop];
-    const colOpts = meta.columns[prop];
-    const relOpts = meta.relations[prop];
+    const isColumn = Boolean(meta.columns[prop]);
+    const value = body[prop];
+    const relationOpts = meta.relations[prop];
     if (
-      propVal !== undefined &&
-      colOpts &&
-      (!colOpts.mode || colOpts.mode === mode) &&
-      // 'manyToOne' is the only relation which doesn't require additional stuff when persisting
-      (!relOpts || relOpts.cardinality === 'manyToOne')
+      isColumn &&
+      value !== undefined &&
+      // 'manyToOne' is the only relation which doesn't require additional stuff when saving
+      (!relationOpts || relationOpts.cardinality === 'manyToOne')
     ) {
-      persistableBody[prop] = propVal;
+      persistableBody[prop] = value;
     }
     return persistableBody;
   }, {} as T);

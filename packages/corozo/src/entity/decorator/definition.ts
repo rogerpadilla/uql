@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { RelationOptions, IdColumnOptions, EntityOptions, EntityMeta } from './type';
+import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './type';
 
 const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
 
@@ -29,7 +29,7 @@ function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
           acc[prop] = meta.properties[prop].column;
         }
         return acc;
-      }, {} as { [p in keyof T]: IdColumnOptions<T> });
+      }, {} as { [p in keyof T]: ColumnOptions<T> });
     },
   });
 
@@ -49,18 +49,18 @@ function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
   return meta;
 }
 
-export function defineColumn<T>(type: { new (): T }, prop: string, opts: IdColumnOptions<T>): EntityMeta<T> {
+export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   meta.properties[prop] = { ...meta.properties[prop], column: { name: prop, ...opts, property: prop } };
   return meta;
 }
 
-export function defineIdColumn<T>(type: { new (): T }, prop: string, opts: IdColumnOptions<T>): EntityMeta<T> {
+export function defineIdColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   if (meta.id) {
     throw new Error(`'${type.name}' must have a single field decorated with @IdColumn`);
   }
-  return defineColumn(type, prop, { ...opts, mode: 'read', isId: true });
+  return defineColumn(type, prop, { ...opts, isId: true });
 }
 
 export function defineRelation<T>(type: { new (): T }, prop: string, opts: RelationOptions<T>): EntityMeta<T> {

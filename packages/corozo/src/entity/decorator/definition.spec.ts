@@ -36,23 +36,23 @@ it('entities', () => {
 
 it('user', () => {
   const meta = getEntityMeta(User);
-  expect(meta.id).toEqual({ property: 'id', name: 'id', mode: 'read', isId: true });
+  expect(meta.id).toEqual({ property: 'id', name: 'id', isId: true });
   expect(meta).toEqual({
     type: User,
     name: 'user',
     isEntity: true,
     properties: {
-      id: { column: { property: 'id', name: 'id', mode: 'read', isId: true } },
+      id: { column: { property: 'id', name: 'id', isId: true } },
       company: {
-        column: { property: 'company', name: 'company', mode: 'insert' },
+        column: { property: 'company', name: 'company' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
       user: {
-        column: { property: 'user', name: 'user', mode: 'insert' },
+        column: { property: 'user', name: 'user' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      createdAt: { column: { property: 'createdAt', name: 'createdAt', mode: 'insert' } },
-      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', mode: 'update' } },
+      createdAt: { column: { property: 'createdAt', name: 'createdAt', onInsert: expect.any(Function) } },
+      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', onUpdate: expect.any(Function) } },
       status: { column: { property: 'status', name: 'status' } },
       name: { column: { property: 'name', name: 'name' } },
       email: { column: { property: 'email', name: 'email' } },
@@ -67,23 +67,23 @@ it('user', () => {
 
 it('profile', () => {
   const meta = getEntityMeta(Profile);
-  expect(meta.id).toEqual({ property: 'id', name: 'pk', mode: 'read', isId: true });
+  expect(meta.id).toEqual({ property: 'id', name: 'pk', isId: true });
   expect(meta).toEqual({
     type: Profile,
     name: 'user_profile',
     isEntity: true,
     properties: {
-      id: { column: { property: 'id', name: 'pk', mode: 'read', isId: true } },
+      id: { column: { property: 'id', name: 'pk', isId: true } },
       company: {
-        column: { property: 'company', name: 'company', mode: 'insert' },
+        column: { property: 'company', name: 'company' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
       user: {
-        column: { property: 'user', name: 'user', mode: 'insert' },
+        column: { property: 'user', name: 'user' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      createdAt: { column: { property: 'createdAt', name: 'createdAt', mode: 'insert' } },
-      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', mode: 'update' } },
+      createdAt: { column: { property: 'createdAt', name: 'createdAt', onInsert: expect.any(Function) } },
+      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', onUpdate: expect.any(Function) } },
       status: { column: { property: 'status', name: 'status' } },
       picture: { column: { property: 'picture', name: 'image' } },
     },
@@ -92,23 +92,23 @@ it('profile', () => {
 
 it('item', () => {
   const meta = getEntityMeta(Item);
-  expect(meta.id).toEqual({ property: 'id', name: 'id', mode: 'read', isId: true });
+  expect(meta.id).toEqual({ property: 'id', name: 'id', isId: true });
   expect(meta).toEqual({
     type: Item,
     name: 'Item',
     isEntity: true,
     properties: {
-      id: { column: { property: 'id', name: 'id', mode: 'read', isId: true } },
+      id: { column: { property: 'id', name: 'id', isId: true } },
       company: {
-        column: { property: 'company', name: 'company', mode: 'insert' },
+        column: { property: 'company', name: 'company' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
       user: {
-        column: { property: 'user', name: 'user', mode: 'insert' },
+        column: { property: 'user', name: 'user' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      createdAt: { column: { property: 'createdAt', name: 'createdAt', mode: 'insert' } },
-      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', mode: 'update' } },
+      createdAt: { column: { property: 'createdAt', name: 'createdAt', onInsert: expect.any(Function) } },
+      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', onUpdate: expect.any(Function) } },
       status: { column: { property: 'status', name: 'status' } },
       name: { column: { property: 'name', name: 'name' } },
       description: { column: { property: 'description', name: 'description' } },
@@ -131,7 +131,7 @@ it('item', () => {
         column: { property: 'measureUnit', name: 'measureUnit' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      buyPriceAverage: { column: { property: 'buyPriceAverage', name: 'buyPriceAverage', mode: 'read' } },
+      buyPriceAverage: { column: { property: 'buyPriceAverage', name: 'buyPriceAverage' } },
       salePrice: { column: { property: 'salePrice', name: 'salePrice' } },
       inventoryable: { column: { property: 'inventoryable', name: 'inventoryable' } },
     },
@@ -140,23 +140,28 @@ it('item', () => {
 
 it('taxCategory', () => {
   const meta = getEntityMeta(TaxCategory);
-  expect(meta.id).toEqual({ property: 'pk', name: 'pk', mode: 'read', autoValue: 'uuid', isId: true });
+  expect(meta.id).toEqual({
+    property: 'pk',
+    name: 'pk',
+    isId: true,
+    onInsert: expect.any(Function),
+  });
   expect(meta).toEqual({
     type: TaxCategory,
     name: 'TaxCategory',
     isEntity: true,
     properties: {
-      pk: { column: { property: 'pk', name: 'pk', mode: 'read', autoValue: 'uuid', isId: true } },
+      pk: { column: { property: 'pk', name: 'pk', isId: true, onInsert: expect.any(Function) } },
       company: {
-        column: { property: 'company', name: 'company', mode: 'insert' },
+        column: { property: 'company', name: 'company' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
       user: {
-        column: { property: 'user', name: 'user', mode: 'insert' },
+        column: { property: 'user', name: 'user' },
         relation: { type: expect.any(Function), cardinality: 'manyToOne' },
       },
-      createdAt: { column: { property: 'createdAt', name: 'createdAt', mode: 'insert' } },
-      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', mode: 'update' } },
+      createdAt: { column: { property: 'createdAt', name: 'createdAt', onInsert: expect.any(Function) } },
+      updatedAt: { column: { property: 'updatedAt', name: 'updatedAt', onUpdate: expect.any(Function) } },
       status: { column: { property: 'status', name: 'status' } },
       name: { column: { property: 'name', name: 'name' } },
       description: { column: { property: 'description', name: 'description' } },

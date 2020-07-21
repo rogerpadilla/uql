@@ -37,7 +37,7 @@ export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
   }
 
   saveOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>> {
-    const id = body[this.meta.id] as ID;
+    const id = body[this.meta.id.property] as ID;
     if (id) {
       return this.updateOneById(id, body, opts).then((res) => {
         return { data: id };
