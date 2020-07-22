@@ -67,7 +67,7 @@ it('insertOne cascade oneToOne', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    expect.toMatch(/INSERT INTO `user` \(`name`, `createdAt`\) VALUES \('some name', \d+\)/)
+    expect.toMatch(/INSERT INTO `User` \(`name`, `createdAt`\) VALUES \('some name', \d+\)/)
   );
   expect(querier.query).nthCalledWith(
     3,
@@ -148,7 +148,7 @@ it('updateOneById cascade oneToOne', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    expect.toMatch(/UPDATE `user` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+    expect.toMatch(/UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
   );
   expect(querier.query).nthCalledWith(
     3,
@@ -178,7 +178,7 @@ it('updateOneById cascade oneToOne null', async () => {
   expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
   expect(querier.query).nthCalledWith(
     2,
-    expect.toMatch(/UPDATE `user` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+    expect.toMatch(/UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
   );
   expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1');
   expect(querier.query).nthCalledWith(4, 'COMMIT');

@@ -33,7 +33,7 @@ it('create', () => {
   ];
   const query = sql.insert(User, bodies);
   expect(query).toBe(
-    'INSERT INTO `user` (`name`, `email`, `createdAt`) VALUES' +
+    'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES' +
       " ('Some Name 1', 'someemail1@example.com', 123)" +
       ", ('Some Name 2', 'someemail2@example.com', 456)" +
       ", ('Some Name 3', 'someemail3@example.com', 789)"
@@ -48,7 +48,7 @@ it('create - one', () => {
   };
   const query = sql.insert(User, body);
   expect(query).toBe(
-    "INSERT INTO `user` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)"
+    "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)"
   );
 });
 
@@ -62,7 +62,7 @@ it('update', () => {
     }
   );
   expect(query).toBe(
-    "UPDATE `user` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `user` = 123"
+    "UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `user` = 123"
   );
 });
 
@@ -70,37 +70,37 @@ it('find', () => {
   const query = sql.find(User, {
     filter: { id: 123, name: 'abc' },
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `id` = 123 AND `name` = 'abc'");
+  expect(query).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
 });
 
 it('find $and', () => {
   const quer1 = sql.find(User, {
     filter: { $and: { id: 123, name: 'abc' } },
   });
-  expect(quer1).toBe("SELECT * FROM `user` WHERE `id` = 123 AND `name` = 'abc'");
+  expect(quer1).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   const query2 = sql.find(User, {
     filter: { $and: { id: 123, name: 'abc' } },
   });
-  expect(query2).toBe("SELECT * FROM `user` WHERE `id` = 123 AND `name` = 'abc'");
+  expect(query2).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   const query3 = sql.find(User, {
     filter: { $and: { id: 123 }, name: 'abc' },
   });
-  expect(query3).toBe("SELECT * FROM `user` WHERE `id` = 123 AND `name` = 'abc'");
+  expect(query3).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
 });
 
 it('find $or', () => {
   const query1 = sql.find(User, {
     filter: { $or: { id: 123 } },
   });
-  expect(query1).toBe('SELECT * FROM `user` WHERE `id` = 123');
+  expect(query1).toBe('SELECT * FROM `User` WHERE `id` = 123');
   const query2 = sql.find(User, {
     filter: { $or: { id: 123, name: 'abc' } },
   });
-  expect(query2).toBe("SELECT * FROM `user` WHERE `id` = 123 OR `name` = 'abc'");
+  expect(query2).toBe("SELECT * FROM `User` WHERE `id` = 123 OR `name` = 'abc'");
   const query3 = sql.find(User, {
     filter: { $or: { id: 123 }, name: 'abc' },
   });
-  expect(query3).toBe("SELECT * FROM `user` WHERE `id` = 123 AND `name` = 'abc'");
+  expect(query3).toBe("SELECT * FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
 });
 
 it('find logical operators', () => {
@@ -108,7 +108,7 @@ it('find logical operators', () => {
     filter: { user: 1, $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: 1 },
   });
   expect(query1).toBe(
-    "SELECT * FROM `user` WHERE `user` = 1 AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1"
+    "SELECT * FROM `User` WHERE `user` = 1 AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1"
   );
   const query2 = sql.find(User, {
     filter: {
@@ -119,7 +119,7 @@ it('find logical operators', () => {
     },
   });
   expect(query2).toBe(
-    'SELECT * FROM `user` WHERE `user` = 1' +
+    'SELECT * FROM `User` WHERE `user` = 1' +
       " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1 AND `email` = 'e'"
   );
   const query3 = sql.find(User, {
@@ -134,7 +134,7 @@ it('find logical operators', () => {
     limit: 10,
   });
   expect(query3).toBe(
-    'SELECT * FROM `user` WHERE `user` = 1' +
+    'SELECT * FROM `User` WHERE `user` = 1' +
       " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com')" +
       " AND `id` = 1 AND `email` = 'e'" +
       ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
@@ -146,7 +146,7 @@ it('find single filter', () => {
     filter: { name: 'some' },
     limit: 3,
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `name` = 'some' LIMIT 3");
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' LIMIT 3");
 });
 
 it('find unsupported comparison operator', () => {
@@ -163,20 +163,20 @@ it('find multiple comparison-operators', () => {
     limit: 10,
   });
   expect(query2).toBe(
-    "SELECT * FROM `user` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1 LIMIT 10"
+    "SELECT * FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1 LIMIT 10"
   );
 
   const query3 = sql.find(User, {
     filter: { createdAt: { $gte: 123, $lte: 999 } },
     limit: 10,
   });
-  expect(query3).toBe('SELECT * FROM `user` WHERE (`createdAt` >= 123 AND `createdAt` <= 999) LIMIT 10');
+  expect(query3).toBe('SELECT * FROM `User` WHERE (`createdAt` >= 123 AND `createdAt` <= 999) LIMIT 10');
 
   const query4 = sql.find(User, {
     filter: { createdAt: { $gt: 123, $lt: 999 } },
     limit: 10,
   });
-  expect(query4).toBe('SELECT * FROM `user` WHERE (`createdAt` > 123 AND `createdAt` < 999) LIMIT 10');
+  expect(query4).toBe('SELECT * FROM `User` WHERE (`createdAt` > 123 AND `createdAt` < 999) LIMIT 10');
 });
 
 it('find $ne', () => {
@@ -184,7 +184,7 @@ it('find $ne', () => {
     filter: { name: 'some', status: { $ne: 5 } },
     limit: 20,
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `name` = 'some' AND `status` <> 5 LIMIT 20");
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' AND `status` <> 5 LIMIT 20");
 });
 
 it('find IS (NOT) NULL', () => {
@@ -192,12 +192,12 @@ it('find IS (NOT) NULL', () => {
     filter: { user: 123, status: null },
     limit: 5,
   });
-  expect(query1).toBe('SELECT * FROM `user` WHERE `user` = 123 AND `status` IS NULL LIMIT 5');
+  expect(query1).toBe('SELECT * FROM `User` WHERE `user` = 123 AND `status` IS NULL LIMIT 5');
   const query2 = sql.find(User, {
     filter: { user: 123, status: { $ne: null } },
     limit: 5,
   });
-  expect(query2).toBe('SELECT * FROM `user` WHERE `user` = 123 AND `status` IS NOT NULL LIMIT 5');
+  expect(query2).toBe('SELECT * FROM `User` WHERE `user` = 123 AND `status` IS NOT NULL LIMIT 5');
 });
 
 it('find $in', () => {
@@ -205,7 +205,7 @@ it('find $in', () => {
     filter: { name: 'some', status: { $in: [1, 2, 3] } },
     limit: 10,
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `name` = 'some' AND `status` IN (1, 2, 3) LIMIT 10");
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' AND `status` IN (1, 2, 3) LIMIT 10");
 });
 
 it('find $nin', () => {
@@ -213,7 +213,7 @@ it('find $nin', () => {
     filter: { name: 'some', status: { $nin: [1, 2, 3] } },
     limit: 10,
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `name` = 'some' AND `status` NOT IN (1, 2, 3) LIMIT 10");
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' AND `status` NOT IN (1, 2, 3) LIMIT 10");
 });
 
 it('find populate with projected fields', () => {
@@ -336,7 +336,7 @@ it('find populate columns with not fixed type', () => {
       ', `user`.`id` `user.id`, `user`.`name` `user.name`' +
       ', `company`.`id` `company.id`, `company`.`name` `company.name`' +
       ' FROM `Item`' +
-      ' LEFT JOIN `user` `user` ON `user`.`id` = `Item`.`user`' +
+      ' LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`user`' +
       ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`company`'
   );
 });
@@ -354,7 +354,7 @@ it('find group', () => {
   const query1 = sql.find(User, {
     group: ['company'],
   });
-  expect(query1).toBe('SELECT * FROM `user` GROUP BY `company`');
+  expect(query1).toBe('SELECT * FROM `User` GROUP BY `company`');
   const query2 = sql.find(User, {
     project: { id: 1, name: 1 },
     filter: { status: 1 },
@@ -364,7 +364,7 @@ it('find group', () => {
     sort: { name: 1 },
   });
   expect(query2).toBe(
-    'SELECT `id`, `name` FROM `user` WHERE `status` = 1 GROUP BY `company`, `profile` ORDER BY `name` LIMIT 100 OFFSET 50'
+    'SELECT `id`, `name` FROM `User` WHERE `status` = 1 GROUP BY `company`, `profile` ORDER BY `name` LIMIT 100 OFFSET 50'
   );
 });
 
@@ -373,24 +373,24 @@ it('find limit', () => {
     filter: { id: 9 },
     limit: 1,
   });
-  expect(query1).toBe('SELECT * FROM `user` WHERE `id` = 9 LIMIT 1');
+  expect(query1).toBe('SELECT * FROM `User` WHERE `id` = 9 LIMIT 1');
   const query2 = sql.find(User, {
     filter: { id: 9 },
     project: { id: 1, name: 1, user: 1 },
     limit: 1,
   });
-  expect(query2).toBe('SELECT `id`, `name`, `user` FROM `user` WHERE `id` = 9 LIMIT 1');
+  expect(query2).toBe('SELECT `id`, `name`, `user` FROM `User` WHERE `id` = 9 LIMIT 1');
   const query3 = sql.find(User, {
     filter: { name: 'something', user: 123 },
     limit: 1,
   });
-  expect(query3).toBe("SELECT * FROM `user` WHERE `name` = 'something' AND `user` = 123 LIMIT 1");
+  expect(query3).toBe("SELECT * FROM `User` WHERE `name` = 'something' AND `user` = 123 LIMIT 1");
   const query4 = sql.find(User, {
     project: { id: 1, name: 1, user: 1 },
     filter: { user: 123 },
     limit: 25,
   });
-  expect(query4).toBe('SELECT `id`, `name`, `user` FROM `user` WHERE `user` = 123 LIMIT 25');
+  expect(query4).toBe('SELECT `id`, `name`, `user` FROM `User` WHERE `user` = 123 LIMIT 25');
 });
 
 it('find select as functions', () => {
@@ -407,15 +407,15 @@ it('find select as functions', () => {
   );
   expect(query).toBe(
     'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' +
-      " FROM `user` WHERE `name` = 'something'"
+      " FROM `User` WHERE `name` = 'something'"
   );
 });
 
 it('remove', () => {
   const query1 = sql.remove(User, { id: 123 });
-  expect(query1).toBe('DELETE FROM `user` WHERE `id` = 123');
+  expect(query1).toBe('DELETE FROM `User` WHERE `id` = 123');
   const query2 = sql.remove(User, { company: 123 });
-  expect(query2).toBe('DELETE FROM `user` WHERE `company` = 123');
+  expect(query2).toBe('DELETE FROM `User` WHERE `company` = 123');
 });
 
 it('find $startsWith', () => {
@@ -426,7 +426,7 @@ it('find $startsWith', () => {
     limit: 50,
   });
   expect(query).toBe(
-    "SELECT * FROM `user` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0"
+    "SELECT * FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0"
   );
 });
 
@@ -434,7 +434,7 @@ it('find $re', () => {
   const query = sql.find(User, {
     filter: { name: { $re: '^some' } },
   });
-  expect(query).toBe("SELECT * FROM `user` WHERE `name` REGEXP '^some'");
+  expect(query).toBe("SELECT * FROM `User` WHERE `name` REGEXP '^some'");
 });
 
 it('find $text', () => {
@@ -455,6 +455,6 @@ it('find $text', () => {
     limit: 10,
   });
   expect(query2).toBe(
-    "SELECT * FROM `user` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `status` = 1 LIMIT 10"
+    "SELECT * FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `status` = 1 LIMIT 10"
   );
 });

@@ -39,7 +39,7 @@ it('user', () => {
   expect(meta.id).toEqual({ property: 'id', name: 'id', isId: true });
   expect(meta).toEqual({
     type: User,
-    name: 'user',
+    name: 'User',
     isEntity: true,
     properties: {
       id: { column: { property: 'id', name: 'id', isId: true } },

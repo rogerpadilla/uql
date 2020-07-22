@@ -32,7 +32,7 @@ export class Profile extends BaseEntity {
   picture?: string;
 }
 
-@Entity({ name: 'user' })
+@Entity()
 export class User extends BaseEntity {
   @Column()
   name?: string;
