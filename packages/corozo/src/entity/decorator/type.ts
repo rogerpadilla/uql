@@ -8,7 +8,6 @@ export type PropertyOptions<T> = {
 };
 
 export type ColumnOptions<T> = {
-  readonly property?: string;
   readonly name?: string;
   readonly isId?: boolean;
   readonly onInsert?: () => any;
@@ -16,7 +15,6 @@ export type ColumnOptions<T> = {
 };
 
 export type RelationOptions<T> = {
-  readonly property?: string;
   type?: () => { new (): any };
   readonly cardinality: RelationCardinality;
   readonly mappedBy?: keyof T;
@@ -31,8 +29,8 @@ export type RelationManyToManyOptions<T> = { type: () => { new (): T } };
 export type EntityMeta<T> = {
   readonly type: { new (): T };
   name: string;
-  readonly id?: ColumnOptions<T>;
-  isEntity?: boolean;
+  readonly id?: { property: string; name: string };
+  readonly hasId?: () => boolean;
   /**
    * 'properties' contains both, columns and relations metadata
    */
