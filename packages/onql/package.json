@@ -2,12 +2,12 @@
   "name": "onql",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.25",
-  "main": "./dist/index.js",
+  "version": "0.0.26",
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles package.json dist",
-    "build": "rimraf dist && tsc",
-    "start": "rimraf dist && tsc --watch"
+    "build": "npm run clean && tsc",
+    "start": "npm run clean && tsc --watch",
+    "clean": "rimraf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "reflect-metadata": "^0.1.13",
