@@ -1,16 +1,25 @@
 {
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.0",
   "useWorkspaces": true,
   "command": {
     "version": {
       "allowBranch": "master"
     },
     "publish": {
-      "ignoreChanges": ["*.md", "*.spec", "*.json", "*.config.js"]
+      "ignoreChanges": [
+        "*.md",
+        "*.spec",
+        "*.json",
+        "*.config.js"
+      ]
     }
   },
   "npmClient": "yarn",
-  "npmClientArgs": ["--no-package-lock"],
-  "packages": ["packages/*"],
+  "npmClientArgs": [
+    "--no-package-lock"
+  ],
+  "packages": [
+    "packages/*"
+  ],
   "contents": "dist"
 }
