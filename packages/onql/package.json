@@ -2,7 +2,7 @@
   "name": "onql",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles package.json dist",
     "build": "npm run clean && tsc",
