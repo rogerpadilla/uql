@@ -2,7 +2,7 @@
   "name": "onql-browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "browser": "./dist/onql-browser.min.js",
   "scripts": {
     "prepublishOnly": "npm run build",
@@ -52,5 +52,5 @@
     "data-mapper",
     "datamapper"
   ],
-  "gitHead": "d9983b46f1108aadacc642b2d6fa269f2f10ffe4"
+  "gitHead": "a5cf2692f8dedd4ec0f52c2fd7a826330561c5c4"
 }
