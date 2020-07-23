@@ -1,21 +1,21 @@
 **WIP**
 
-## corozo
+## onql
 
-<!-- [![build status](https://travis-ci.org/rogerpadilla/corozo.svg?branch=master)](https://travis-ci.org/rogerpadilla/corozo?branch=master) -->
-<!-- [![coverage status](https://coveralls.io/repos/rogerpadilla/corozo/badge.svg?branch=master)](https://coveralls.io/r/rogerpadilla/corozo?branch=master) -->
-<!-- [![dependencies status](https://david-dm.org/rogerpadilla/corozo/status.svg)](https://david-dm.org/rogerpadilla/corozo/status.svg) -->
-<!-- [![dev dependencies status](https://david-dm.org/rogerpadilla/corozo/dev-status.svg)](https://david-dm.org/rogerpadilla/corozo/dev-status.svg) -->
-<!-- [![npm downloads](https://img.shields.io/npm/dm/corozo.svg)](https://www.npmjs.com/package/corozo) -->
-<!-- [![npm version](https://badge.fury.io/js/corozo.svg)](https://www.npmjs.com/corozo) -->
+<!-- [![build status](https://travis-ci.org/rogerpadilla/onql.svg?branch=master)](https://travis-ci.org/rogerpadilla/onql?branch=master) -->
+<!-- [![coverage status](https://coveralls.io/repos/rogerpadilla/onql/badge.svg?branch=master)](https://coveralls.io/r/rogerpadilla/onql?branch=master) -->
+<!-- [![dependencies status](https://david-dm.org/rogerpadilla/onql/status.svg)](https://david-dm.org/rogerpadilla/onql/status.svg) -->
+<!-- [![dev dependencies status](https://david-dm.org/rogerpadilla/onql/dev-status.svg)](https://david-dm.org/rogerpadilla/onql/dev-status.svg) -->
+<!-- [![npm downloads](https://img.shields.io/npm/dm/onql.svg)](https://www.npmjs.com/package/onql) -->
+<!-- [![npm version](https://badge.fury.io/js/onql.svg)](https://www.npmjs.com/onql) -->
 
-corozo's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; corozo's expressible (and type-safe) JSON syntax allows to query/update the data and gives the power to ask for exactly what is necessary and nothing else.
+onql's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; onql's expressible (and type-safe) JSON syntax allows to query/update the data and gives the power to ask for exactly what is necessary and nothing else.
 
-GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new language](https://graphql.org/learn/queries); in the other hand, corozo is a plug & play library, based on JSON syntax, which can be used with (and without) any NodeJs framework (like express, restify, hapi, koa...).
+GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new language](https://graphql.org/learn/queries); in the other hand, onql is a plug & play library, based on JSON syntax, which can be used with (and without) any NodeJs framework (like express, restify, hapi, koa...).
 
-corozo's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One simply declares the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
+onql's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One simply declares the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
 
-Most important features of corozo are:
+Most important features of onql are:
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
@@ -98,13 +98,13 @@ export class Tax extends BaseEntity {
 }
 ```
 
-- initialize `corozo` configuration:
+- initialize `onql` configuration:
 
 ```typescript
-import { initCorozo } from 'corozo';
-import { GenericServerRepository } from 'corozo/repository';
+import { initOnql } from 'onql';
+import { GenericServerRepository } from 'onql/repository';
 // `pg` is for postgres driver, other databases are supported.
-initCorozo({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
+initOnql({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
 ```
 
 - your logic will look like this:
@@ -164,7 +164,7 @@ try {
 
 1. Install the npm package:
 
-   `npm install corozo --save` or `yarn add corozo`
+   `npm install onql --save` or `yarn add onql`
 
 2. You need to install `reflect-metadata` shim:
 

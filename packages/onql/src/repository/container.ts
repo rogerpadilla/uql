@@ -1,11 +1,11 @@
-import { getCorozoOptions } from '../config';
+import { getOnqlOptions } from '../config';
 import { IsomorphicRepository, ServerRepository } from './type';
 
 let cache = new WeakMap<{ new (): unknown }, IsomorphicRepository<any>>();
 
 export function getIsomorphicRepository<T>(type: { new (): T }): IsomorphicRepository<T> {
   if (!cache.has(type)) {
-    const conf = getCorozoOptions();
+    const conf = getOnqlOptions();
     if (!conf.defaultRepositoryClass) {
       throw new Error(
         `Either a generic repository or a specific repository (for the type ${type.name}) must be registered first`

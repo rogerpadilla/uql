@@ -1,5 +1,5 @@
 {
-  "name": "corozo-express",
+  "name": "onql-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.0",
@@ -13,7 +13,7 @@
     "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
-    "corozo": "^0.0.0",
+    "onql": "^0.0.0",
     "express": "^4.17.1"
   },
   "devDependencies": {
@@ -25,10 +25,10 @@
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/corozo.git"
+    "url": "https://github.com/rogerpadilla/onql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/corozo/issues"
+    "url": "https://github.com/rogerpadilla/onql/issues"
   },
   "keywords": [
     "orm",
@@ -44,7 +44,7 @@
     "js",
     "javascript",
     "entity",
-    "corozo",
+    "onql",
     "data-mapper",
     "datamapper",
     "express"

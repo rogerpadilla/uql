@@ -1,41 +1,46 @@
 {
-  "name": "corozo-browser",
+  "name": "onql",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.0",
-  "browser": "./dist/corozo-browser.min.js",
+  "main": "./dist/index.js",
   "files": [
     "./dist"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
-    "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
+    "build": "rimraf dist && tsc",
+    "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
-    "corozo": "^0.0.0",
-    "reflect-metadata": "^0.1.13"
+    "reflect-metadata": "^0.1.13",
+    "sqlstring": "^2.3.2",
+    "uuid": "^8.2.0"
   },
   "devDependencies": {
-    "@types/terser-webpack-plugin": "^3.0.0",
-    "@types/webpack": "^4.41.21",
+    "@types/mongodb": "^3.5.25",
+    "@types/mysql2": "types/mysql2",
+    "@types/node": "^14.0.24",
+    "@types/pg": "^7.14.4",
+    "@types/sqlite3": "^3.1.6",
+    "@types/uuid": "^8.0.0",
     "copyfiles": "^2.3.0",
+    "mariadb": "^2.4.2",
+    "mongodb": "^3.5.9",
+    "mysql": "^2.18.1",
+    "mysql2": "^2.1.0",
+    "pg": "^8.3.0",
     "rimraf": "^3.0.2",
-    "source-map-loader": "^1.0.1",
-    "ts-loader": "^8.0.1",
-    "tslib": "^2.0.0",
-    "typescript": "^3.9.7",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.12",
-    "webpack-log": "^3.0.1"
+    "sqlite3": "^5.0.0",
+    "tslib": "^2.0.0"
   },
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/corozo.git"
+    "url": "https://github.com/rogerpadilla/onql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/corozo/issues"
+    "url": "https://github.com/rogerpadilla/onql/issues"
   },
   "keywords": [
     "orm",
@@ -51,7 +56,7 @@
     "js",
     "javascript",
     "entity",
-    "corozo",
+    "onql",
     "data-mapper",
     "datamapper"
   ],

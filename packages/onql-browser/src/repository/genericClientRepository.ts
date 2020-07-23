@@ -1,6 +1,6 @@
-import { stringifyQuery, stringifyQueryParameter } from 'corozo/util/query.util';
-import { formatKebabCase } from 'corozo/util/string.util';
-import { getEntityMeta, EntityMeta } from 'corozo/entity';
+import { stringifyQuery, stringifyQueryParameter } from 'onql/util/query.util';
+import { formatKebabCase } from 'onql/util/string.util';
+import { getEntityMeta, EntityMeta } from 'onql/entity';
 import {
   RequestOptions,
   RequestSuccessResponse,

@@ -4,7 +4,7 @@ import MySql2QuerierPool from '../datasource/mysql/mysql2QuerierPool';
 import { MySqlQuerier } from '../datasource/mysql/mysqlQuerier';
 import { SqlQuerier } from '../datasource/sqlQuerier';
 import { User, Item, InventoryAdjustment } from '../entity/entityMock';
-import { initCorozo } from '../config';
+import { initOnql } from '../config';
 import { Repository } from './decorator';
 import { GenericServerRepository } from './genericServerRepository';
 import { ServerRepository } from './type';
@@ -16,7 +16,7 @@ const originalGetQuerier = MySql2QuerierPool.prototype.getQuerier;
 
 beforeEach(() => {
   mockRes = undefined;
-  initCorozo({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
+  initOnql({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
   MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
   querier = new MySqlQuerier(undefined);

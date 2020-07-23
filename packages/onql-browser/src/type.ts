@@ -1,5 +1,5 @@
-import { IsomorphicRepository } from 'corozo/repository/type';
-import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'corozo/type';
+import { IsomorphicRepository } from 'onql/repository/type';
+import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'onql/type';
 
 export { QueryOne, QueryOneFilter, Query, QueryFilter };
 

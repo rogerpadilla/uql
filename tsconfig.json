@@ -16,10 +16,7 @@
     "declaration": true,
     "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
-    "importHelpers": true,
-    "paths": {
-      "corozo/*": ["packages/corozo/src/*"]
-    }
+    "importHelpers": true
   },
   "exclude": ["node_modules", "coverage", "packages/**/node_modules", "packages/**/dist"]
 }

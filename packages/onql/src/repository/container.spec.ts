@@ -1,15 +1,15 @@
-import { initCorozo } from '../config';
+import { initOnql } from '../config';
 import { User, Item } from '../entity/entityMock';
 import { GenericServerRepository } from './genericServerRepository';
 import { getServerRepository } from './container';
 import { Repository } from './decorator';
 
 beforeEach(() => {
-  initCorozo({});
+  initOnql({});
 });
 
 it('generic', () => {
-  initCorozo({
+  initOnql({
     defaultRepositoryClass: GenericServerRepository,
   });
   const repository = getServerRepository(User);
@@ -25,7 +25,7 @@ it('no repository', () => {
 it('@Repository()', () => {
   class SomeGenericRepository extends GenericServerRepository<any, number> {}
 
-  initCorozo({ defaultRepositoryClass: SomeGenericRepository });
+  initOnql({ defaultRepositoryClass: SomeGenericRepository });
 
   @Repository()
   class UserRepository extends GenericServerRepository<User, number> {

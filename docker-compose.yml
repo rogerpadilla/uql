@@ -10,7 +10,7 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - '3306:3306'
-    container_name: 'corozo-mysql-8'
+    container_name: 'onql-mysql-8'
   postgres-9:
     image: postgres:9.6.18
     environment:
@@ -19,7 +19,7 @@ services:
       POSTGRES_DB: test
     ports:
       - '5432:5432'
-    container_name: corozo-postgres-9
+    container_name: onql-postgres-9
   # postgres-12:
   #   image: postgres:12.3
   #   environment:
@@ -28,4 +28,4 @@ services:
   #     POSTGRES_DB: test
   #   ports:
   #     - '5433:5432'
-  #   container_name: corozo-postgres-12
+  #   container_name: onql-postgres-12

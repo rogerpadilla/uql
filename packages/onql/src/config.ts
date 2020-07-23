@@ -2,18 +2,18 @@ import { GenericRepositoryConstructor } from './repository/type';
 import { resetContainer } from './repository/container';
 import { DatasourceOptions } from './datasource/type';
 
-let opts: CorozoOptions;
+let opts: OnqlOptions;
 
-export function initCorozo(conf: CorozoOptions): void {
+export function initOnql(conf: OnqlOptions): void {
   opts = { ...conf };
   resetContainer();
 }
 
-export function getCorozoOptions(): CorozoOptions {
+export function getOnqlOptions(): OnqlOptions {
   return { ...opts };
 }
 
-type CorozoOptions = {
+type OnqlOptions = {
   datasource?: DatasourceOptions;
   defaultRepositoryClass?: GenericRepositoryConstructor<unknown>;
 };

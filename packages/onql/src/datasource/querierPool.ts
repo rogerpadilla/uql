@@ -1,11 +1,11 @@
-import { getCorozoOptions } from '../config';
+import { getOnqlOptions } from '../config';
 import { QuerierPoolOptions, QuerierPool, DatasourceOptions, Querier } from './type';
 
 let pool: QuerierPool;
 
 export function getQuerier(): Promise<Querier> {
   if (!pool) {
-    const conf = getCorozoOptions();
+    const conf = getOnqlOptions();
     if (!conf?.datasource) {
       throw new Error('Datasource configuration has not been set');
     }
