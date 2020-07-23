@@ -53,5 +53,8 @@
     "data-mapper",
     "datamapper"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "gitHead": "adc41a5025a93232edb8346f236f79fc411640b9"
 }

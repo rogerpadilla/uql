@@ -18,6 +18,7 @@
     "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
     "importHelpers": true,
+    "incremental": true,
     "paths": {
       "onql/*": ["packages/onql/src/*"]
     }
