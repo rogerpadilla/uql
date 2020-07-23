@@ -8,7 +8,8 @@
     "publish": {
       "ignoreChanges": [
         "*.md",
-        "*.spec",
+        "*.spec.ts",
+        "*.it.ts",
         "*.json",
         "*.config.js"
       ]
