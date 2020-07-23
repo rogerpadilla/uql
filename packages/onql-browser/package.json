@@ -10,7 +10,7 @@
     "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {
-    "onql": "^0.0.14",
+    "onql": "^0.0.19",
     "reflect-metadata": "^0.1.13"
   },
   "devDependencies": {

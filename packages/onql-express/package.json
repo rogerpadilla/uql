@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "express": "^4.17.1",
-    "onql": "^0.0.14"
+    "onql": "^0.0.19"
   },
   "devDependencies": {
     "@types/express": "^4.17.7",
