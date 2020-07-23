@@ -2,7 +2,7 @@
   "name": "onql",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.1-alpha.0",
+  "version": "0.0.0",
   "main": "./dist/index.js",
   "files": [
     "./dist"
@@ -60,5 +60,5 @@
     "data-mapper",
     "datamapper"
   ],
-  "gitHead": "8fd10a2459be7c1372ecd902f94b4b34e7162359"
+  "gitHead": "36aeaf5d61dfe1e4da4c5159dd120bb21ccf131d"
 }
