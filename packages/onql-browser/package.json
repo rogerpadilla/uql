@@ -2,13 +2,11 @@
   "name": "onql-browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "browser": "./dist/onql-browser.min.js",
-  "files": [
-    "./dist"
-  ],
   "scripts": {
-    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
+    "prepublishOnly": "npm run build",
+    "build": "rimraf dist && webpack --progress --profile --bail --mode=production && copyfiles package.json dist",
     "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {
@@ -54,5 +52,5 @@
     "data-mapper",
     "datamapper"
   ],
-  "gitHead": "a54ebd78e6c5ff3fb4b8ef92741d197ffb47e26e"
+  "gitHead": "d9983b46f1108aadacc642b2d6fa269f2f10ffe4"
 }
