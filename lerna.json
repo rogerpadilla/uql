@@ -6,21 +6,11 @@
       "allowBranch": "master"
     },
     "publish": {
-      "ignoreChanges": [
-        "*.md",
-        "*.spec.ts",
-        "*.it.ts",
-        "*.json",
-        "*.config.js"
-      ]
+      "ignoreChanges": ["*.md", "*.json", "*.config.js", "*.spec.ts", "*.it.ts"]
     }
   },
   "npmClient": "yarn",
-  "npmClientArgs": [
-    "--no-package-lock"
-  ],
-  "packages": [
-    "packages/*"
-  ],
+  "npmClientArgs": ["--no-package-lock"],
+  "packages": ["packages/*"],
   "contents": "dist"
 }
