@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+# [0.1.0](https://github.com/rogerpadilla/onql/compare/v0.0.26...v0.1.0) (2020-07-23)
+
+
+### Features
+
+* support express ([32300df](https://github.com/rogerpadilla/onql/commit/32300dfa60d3b6b3d58ff0cb138ba4e58be99225))
+
+
+
+
+
 ## [0.0.26](https://github.com/rogerpadilla/onql/compare/v0.0.25...v0.0.26) (2020-07-23)
 
 **Note:** Version bump only for package onql-express
