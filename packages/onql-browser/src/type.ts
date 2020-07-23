@@ -1,5 +1,5 @@
-import { IsomorphicRepository } from 'onql/repository/type';
 import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'onql/type';
+import { IsomorphicRepository } from 'onql/repository';
 
 export { QueryOne, QueryOneFilter, Query, QueryFilter };
 

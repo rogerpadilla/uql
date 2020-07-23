@@ -2,19 +2,18 @@
   "name": "onql-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.0",
+  "version": "0.0.14",
   "main": "./dist/index.js",
   "files": [
     "./dist"
   ],
   "scripts": {
-    "prepublishOnly": "npm run build",
-    "build": "rimraf dist && tsc",
+    "build": "rimraf dist",
     "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
     "express": "^4.17.1",
-    "onql": "^0.0.0"
+    "onql": "^0.0.14"
   },
   "devDependencies": {
     "@types/express": "^4.17.7",
@@ -49,5 +48,5 @@
     "datamapper",
     "express"
   ],
-  "gitHead": "36aeaf5d61dfe1e4da4c5159dd120bb21ccf131d"
+  "gitHead": "a54ebd78e6c5ff3fb4b8ef92741d197ffb47e26e"
 }

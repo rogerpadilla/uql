@@ -14,9 +14,13 @@
     "lib": ["ESNext"],
     "sourceMap": true,
     "declaration": true,
+    "declarationMap": true,
     "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
-    "importHelpers": true
+    "importHelpers": true,
+    "paths": {
+      "onql/*": ["packages/onql/src/*"]
+    }
   },
   "exclude": ["node_modules", "coverage", "packages/**/node_modules", "packages/**/dist"]
 }

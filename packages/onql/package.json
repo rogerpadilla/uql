@@ -8,7 +8,6 @@
     "./dist"
   ],
   "scripts": {
-    "prepublishOnly": "npm run build",
     "build": "rimraf dist && tsc",
     "start": "rimraf dist && tsc --watch"
   },
@@ -60,5 +59,5 @@
     "data-mapper",
     "datamapper"
   ],
-  "gitHead": "36aeaf5d61dfe1e4da4c5159dd120bb21ccf131d"
+  "gitHead": "a54ebd78e6c5ff3fb4b8ef92741d197ffb47e26e"
 }

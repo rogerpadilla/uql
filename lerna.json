@@ -1,11 +1,13 @@
 {
-  "version": "0.0.0",
+  "version": "0.0.15",
   "useWorkspaces": true,
   "command": {
     "version": {
       "allowBranch": "master"
     },
     "publish": {
+      "conventionalCommits": true,
+      "yes": true,
       "ignoreChanges": [
         "*.md",
         "*.json",
@@ -21,6 +23,5 @@
   ],
   "packages": [
     "packages/*"
-  ],
-  "contents": "dist"
+  ]
 }

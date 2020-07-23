@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
 
+const parentDir = '../../';
+const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
+
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
   console.debug('*** Webpack mode', mode);
@@ -13,6 +16,12 @@ module.exports = (env, argv) => {
 
     resolve: {
       extensions: ['.ts', '.js'],
+      alias: Object.keys(tsPathAliases).reduce((acc, key) => {
+        const prop = key.replace('/*', '');
+        const val = tsPathAliases[key][0].replace('/*', '');
+        acc[prop] = path.resolve(parentDir, val);
+        return acc;
+      }, {}),
     },
 
     entry: {
