@@ -5,8 +5,8 @@
   "version": "0.0.19",
   "browser": "./dist/onql-browser.min.js",
   "scripts": {
-    "prepublishOnly": "npm run build",
-    "build": "rimraf dist && webpack --progress --profile --bail --mode=production && copyfiles package.json dist",
+    "prepublishOnly": "npm run build && copyfiles package.json dist",
+    "build": "rimraf dist && webpack --progress --profile --bail --mode=production",
     "start": "rimraf dist && webpack --profile --bail --watch --info-verbosity verbose"
   },
   "dependencies": {

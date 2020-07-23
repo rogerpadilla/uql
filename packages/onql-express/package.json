@@ -5,8 +5,8 @@
   "version": "0.0.19",
   "main": "./dist/index.js",
   "scripts": {
-    "prepublishOnly": "npm run build",
-    "build": "rimraf dist && tsc && copyfiles package.json dist",
+    "prepublishOnly": "npm run build && copyfiles package.json dist",
+    "build": "rimraf dist && tsc",
     "start": "rimraf dist && tsc --watch"
   },
   "dependencies": {
