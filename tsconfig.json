@@ -15,7 +15,6 @@
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
-    "importsNotUsedAsValues": "preserve",
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
