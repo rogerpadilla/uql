@@ -2,7 +2,7 @@
   "name": "@onql/platform-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "sideEffects": false,
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles package.json dist",
