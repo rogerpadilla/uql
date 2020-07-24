@@ -67,7 +67,6 @@ class DtsBundlePlugin {
         name: 'onql',
         main: rootDir + '/dist/**/*.d.ts',
         out: rootDir + `/dist/${entryName}.d.ts`,
-        removeSource: true,
         outputAsModuleFolder: true,
       });
 
