@@ -2,7 +2,7 @@
   "name": "@onql/browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "main": "onql-browser.min.js",
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles package.json dist",
@@ -11,8 +11,8 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "reflect-metadata": "^0.1.13",
-    "@onql/core": "^0.0.0"
+    "@onql/core": "^0.0.1",
+    "reflect-metadata": "^0.1.13"
   },
   "devDependencies": {
     "@types/terser-webpack-plugin": "^3.0.0",
