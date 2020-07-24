@@ -50,5 +50,23 @@ module.exports = (env, argv) => {
         },
       ],
     },
+
+    plugins: [new DtsBundlePlugin()],
   };
 };
+
+class DtsBundlePlugin {
+  apply(compiler) {
+    compiler.plugin('done', () => {
+      const rootDir = path.resolve(__dirname);
+      const dts = require('dts-bundle');
+      dts.bundle({
+        name: 'onql',
+        main: rootDir + '/dist/**/*.d.ts',
+        out: rootDir + `/dist/onql-browser.min.d.ts`,
+        removeSource: true,
+        outputAsModuleFolder: true,
+      });
+    });
+  }
+}
