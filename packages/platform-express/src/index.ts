@@ -1,10 +1,10 @@
 import * as express from 'express';
 import { Request } from 'express-serve-static-core';
 
-import { Query } from 'onql/type';
-import { getServerRepository } from 'onql/repository';
-import { buildQuery, formatKebabCase } from 'onql/util';
-import { getEntities } from 'onql/entity';
+import { Query } from '@onql/core/type';
+import { getEntities } from '@onql/core/entity';
+import { buildQuery, formatKebabCase } from '@onql/core/util';
+import { getServerRepository } from '@onql/core/repository';
 
 type MiddlewareOptions = { extendQuery?: ExtendQuery };
 type ExtendQuery = <T>(type: { new (): T }, qm: Query<T>, req: Request) => Query<T>;

@@ -6,6 +6,5 @@
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
     "declarationDir": "dist"
-  },
-  "references": [{ "path": "../onql" }]
+  }
 }

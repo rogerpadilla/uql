@@ -1,6 +1,5 @@
-import { stringifyQuery, stringifyQueryParameter } from 'onql/util/query.util';
-import { formatKebabCase } from 'onql/util/string.util';
-import { getEntityMeta, EntityMeta } from 'onql/entity';
+import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from '@onql/core/util';
+import { getEntityMeta, EntityMeta } from '@onql/core/entity';
 import {
   RequestOptions,
   RequestSuccessResponse,
