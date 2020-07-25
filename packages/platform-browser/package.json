@@ -11,8 +11,8 @@
     "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
   },
-  "dependencies": {
-    "@onql/core": "^0.0.29"
+  "peerDependencies": {
+    "@onql/core": "^0.0.30"
   },
   "devDependencies": {
     "copyfiles": "^2.3.0",
