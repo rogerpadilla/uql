@@ -4,6 +4,7 @@
   "license": "MIT",
   "version": "0.0.29",
   "main": "onql-platform-browser.min.js",
+  "sideEffects": false,
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles package.json dist",
     "build": "npm run clean && webpack --progress --profile --bail --mode=production",

@@ -3,7 +3,6 @@
   "workspaces": [
     "packages/*"
   ],
-  "sideEffects": false,
   "author": "Roger Padilla",
   "scripts": {
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
