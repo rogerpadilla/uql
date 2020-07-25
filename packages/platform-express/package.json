@@ -11,7 +11,7 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "@onql/core": "^0.0.22",
+    "@onql/core": "^0.0.23",
     "express": "^4.17.1"
   },
   "devDependencies": {
