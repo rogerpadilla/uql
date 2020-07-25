@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
+const TerserPlugin = require('terser-webpack-plugin');
 
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
@@ -13,6 +14,18 @@ module.exports = (env, argv) => {
     mode,
 
     devtool: 'source-map',
+
+    optimization: {
+      minimizer: [
+        new TerserPlugin({
+          cache: true,
+          sourceMap: true,
+          terserOptions: {
+            keep_fnames: true,
+          },
+        }),
+      ],
+    },
 
     resolve: {
       extensions: ['.ts', '.js'],

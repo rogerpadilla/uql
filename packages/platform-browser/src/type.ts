@@ -1,8 +1,6 @@
 import { QueryOne, QueryOneFilter, Query, QueryFilter } from '@onql/core/type';
 import { IsomorphicRepository } from '@onql/core/repository';
 
-export { QueryOne, QueryOneFilter, Query, QueryFilter };
-
 export interface RequestSuccessResponse<T> {
   data: T;
 }

@@ -1,14 +1,7 @@
-import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from '@onql/core/util';
+import { Query, QueryFilter, QueryOneFilter, QueryOne } from '@onql/core/type';
 import { getEntityMeta, EntityMeta } from '@onql/core/entity';
-import {
-  RequestOptions,
-  RequestSuccessResponse,
-  Query,
-  QueryFilter,
-  QueryOneFilter,
-  QueryOne,
-  ClientRepository,
-} from '../type';
+import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from '@onql/core/util';
+import { RequestOptions, RequestSuccessResponse, ClientRepository } from '../type';
 import { get, post, put, remove } from '../http';
 
 export class GenericClientRepository<T, ID> implements ClientRepository<T, ID> {
