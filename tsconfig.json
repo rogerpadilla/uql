@@ -15,7 +15,6 @@
     "inlineSourceMap": true,
     "inlineSources": true,
     "declaration": true,
-    "declarationMap": true,
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
