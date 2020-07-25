@@ -61,8 +61,5 @@
     "semi": true,
     "singleQuote": true,
     "printWidth": 120
-  },
-  "dependencies": {
-    "@angular/forms": "^10.0.5"
   }
 }
