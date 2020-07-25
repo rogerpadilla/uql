@@ -4,7 +4,7 @@ const TerserPlugin = require('terser-webpack-plugin');
 
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
-const entryName = 'onql-browser.min';
+const entryName = 'onql-platform-browser.min';
 
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
@@ -77,10 +77,9 @@ class DtsBundlePlugin {
 
       dts.bundle({
         name: 'onql',
-        main: rootDir + '/dist/**/*.d.ts',
+        main: rootDir + '/dist/platform-browser/**/*.d.ts',
         out: rootDir + `/dist/${entryName}.d.ts`,
         outputAsModuleFolder: true,
-        exclude: /^core\//,
       });
 
       rimraf('dist/{core,platform-browser}', {}, (err) => {

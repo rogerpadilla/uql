@@ -1,38 +1,6 @@
-import {
-  User,
-  Item,
-  LedgerAccount,
-  TaxCategory,
-  MeasureUnitCategory,
-  MeasureUnit,
-  Storehouse,
-  ItemAdjustment,
-  InventoryAdjustment,
-  Tax,
-  Company,
-  Profile,
-} from '../entityMock';
-import { getEntityMeta, getEntities } from './definition';
+import { User, Item, TaxCategory, Profile } from '../entityMock';
+import { getEntityMeta } from './definition';
 import { IdColumn } from './idColumn';
-
-it('entities', () => {
-  const output = getEntities();
-  const expected = [
-    Company,
-    Profile,
-    User,
-    LedgerAccount,
-    TaxCategory,
-    Tax,
-    MeasureUnitCategory,
-    MeasureUnit,
-    Storehouse,
-    Item,
-    ItemAdjustment,
-    InventoryAdjustment,
-  ];
-  expect(output).toEqual(expected);
-});
 
 it('user', () => {
   const meta = getEntityMeta(User);
