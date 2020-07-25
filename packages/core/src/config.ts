@@ -5,8 +5,8 @@ import { DatasourceOptions } from './datasource/type';
 let opts: OnqlOptions;
 
 export function initOnql(conf: OnqlOptions): void {
-  opts = { ...conf };
   resetContainer();
+  opts = { ...conf };
 }
 
 export function getOnqlOptions(): OnqlOptions {

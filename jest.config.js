@@ -7,6 +7,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
   roots: ['<rootDir>/packages'],
   testMatch: ['**/*.spec.ts'],
+  testPathIgnorePatterns: ['node_modules', 'dist'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary'],
   coverageDirectory: 'coverage',
