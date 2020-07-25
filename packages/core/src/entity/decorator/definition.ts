@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './type';
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  const metaKey = '_onql_meta_' + type.name;
+  const metaKey = '_onql_entiy_meta_' + type.name;
   if (type[metaKey]) {
     return type[metaKey];
   }
