@@ -68,6 +68,7 @@ class DtsBundlePlugin {
         main: rootDir + '/dist/**/*.d.ts',
         out: rootDir + `/dist/${entryName}.d.ts`,
         outputAsModuleFolder: true,
+        exclude: /^core\//,
       });
 
       rimraf('dist/{core,platform-browser}', {}, (err) => {
