@@ -9,7 +9,7 @@
     "build.platform-browser": "cd packages/platform-browser && yarn build",
     "build.platform-express": "cd packages/platform-express && yarn build",
     "build": "concurrently 'npm:build.core' 'npm:build.platform-browser' 'npm:build.platform-express'",
-    "release": "yarn build && lerna publish --contents dist --force-publish --no-git-tag-version --ignore-scripts --no-changelog --yes",
+    "release": "lerna publish --contents dist --force-publish --no-git-tag-version --no-changelog --yes",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn run lint -- --fix",
