@@ -1,8 +1,10 @@
 {
-  "version": "0.0.54",
+  "version": "0.0.55",
   "useWorkspaces": true,
   "npmClient": "yarn",
-  "npmClientArgs": ["--no-package-lock"],
+  "npmClientArgs": [
+    "--no-package-lock"
+  ],
   "publishConfig": {
     "directory": "dist"
   },
