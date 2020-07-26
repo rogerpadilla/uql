@@ -8,7 +8,7 @@
     "src",
     "dist"
   ],
-  "main": "dist/onql-platform-browser.min.js",
+  "browser": "dist/onql-platform-browser.min.js",
   "types": "dist/onql-platform-browser.min.d.ts",
   "scripts": {
     "prepublishOnly": "npm run clean && npm run build",

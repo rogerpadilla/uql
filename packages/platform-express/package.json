@@ -9,6 +9,7 @@
     "dist"
   ],
   "main": "dist/platform-express/src/index.js",
+  "module": "dist/platform-express/src/index.js",
   "types": "dist/platform-express/src/index.d.ts",
   "scripts": {
     "prepublishOnly": "npm run clean && npm run build",
