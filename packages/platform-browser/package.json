@@ -3,18 +3,19 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.30",
-  "main": "onql-platform-browser.min.js",
+  "main": "build/onql-platform-browser.min.js",
   "sideEffects": false,
   "scripts": {
-    "prepublishOnly": "npm run build && copyfiles package.json dist",
-    "build": "npm run clean && webpack --progress --profile --bail --mode=production",
-    "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
+    "prepublishOnly": "npm run clean && concurrently 'npm:build' 'copyfiles package.json dist'",
+    "build": "webpack --progress --profile --bail --mode=production",
+    "start": "webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
   },
   "peerDependencies": {
     "@onql/core": "^0.0.30"
   },
   "devDependencies": {
+    "concurrently": "^5.2.0",
     "copyfiles": "^2.3.0",
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",

@@ -3,12 +3,12 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.30",
-  "main": "platform-express/src/index.js",
+  "main": "build/platform-express/src/index.js",
   "sideEffects": false,
   "scripts": {
-    "prepublishOnly": "npm run build && copyfiles package.json dist",
-    "build": "npm run clean && tsc",
-    "start": "npm run clean && tsc --watch",
+    "prepublishOnly": "npm run clean && concurrently 'npm:build' 'copyfiles \"src/**\" package.json dist'",
+    "build": "tsc",
+    "start": "tsc --watch",
     "clean": "rimraf dist"
   },
   "peerDependencies": {
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.7",
+    "concurrently": "^5.2.0",
     "copyfiles": "^2.3.0",
     "rimraf": "^3.0.2",
     "tslib": "^2.0.0"

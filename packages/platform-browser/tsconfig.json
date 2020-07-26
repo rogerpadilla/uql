@@ -1,10 +1,9 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "module": "ES2020",
     "target": "ES5",
     "lib": ["ESNext", "DOM"],
-    "outDir": "dist",
-    "declarationDir": "dist"
+    "outDir": "dist/build",
+    "declarationDir": "dist/build"
   }
 }

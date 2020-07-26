@@ -12,9 +12,9 @@
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "lib": ["ESNext"],
-    "inlineSourceMap": true,
-    "inlineSources": true,
+    "sourceMap": true,
     "declaration": true,
+    "declarationMap": true,
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
