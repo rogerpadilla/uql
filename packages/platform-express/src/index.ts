@@ -2,24 +2,20 @@ import * as express from 'express';
 import { Request } from 'express-serve-static-core';
 
 import { Query } from '@onql/core/type';
-import { getEntities } from '@onql/core/entity';
 import { buildQuery, formatKebabCase } from '@onql/core/util';
-import { getServerRepository } from '@onql/core/repository';
+import { getServerRepository } from '@onql/core/repository/container';
 
-type MiddlewareOptions = { extendQuery?: ExtendQuery };
-type ExtendQuery = <T>(type: { new (): T }, qm: Query<T>, req: Request) => Query<T>;
-
-export function entitiesMiddleware(opts?: MiddlewareOptions) {
+export function entitiesMiddleware(opts: MiddlewareOptions) {
   const router = express.Router();
-  for (const type of getEntities()) {
+  for (const type of opts.entities) {
     const path = formatKebabCase(type.name);
-    const subRouter = buildCrudRouter(type as { new (): object }, opts);
+    const subRouter = buildCrudRouter(type as { new (): object }, opts.extendQuery);
     router.use('/' + path, subRouter);
   }
   return router;
 }
 
-export function buildCrudRouter<T>(type: { new (): T }, opts?: MiddlewareOptions) {
+export function buildCrudRouter<T>(type: { new (): T }, extendQuery?: ExtendQuery) {
   const router = express.Router();
 
   router.post('/', async (req, res) => {
@@ -33,19 +29,19 @@ export function buildCrudRouter<T>(type: { new (): T }, opts?: MiddlewareOptions
   });
 
   router.get('/one', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts?.extendQuery);
+    const qm = assembleQuery<T>(type, req, extendQuery);
     const model = await getServerRepository(type).findOne(qm);
     res.json({ data: model });
   });
 
   router.get('/:id', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts?.extendQuery);
+    const qm = assembleQuery<T>(type, req, extendQuery);
     const model = await getServerRepository(type).findOneById(req.params.id, qm);
     res.json({ data: model });
   });
 
   router.get('/', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts?.extendQuery);
+    const qm = assembleQuery<T>(type, req, extendQuery);
     const models = await getServerRepository(type).find(qm);
     res.json({ data: models });
   });
@@ -56,7 +52,7 @@ export function buildCrudRouter<T>(type: { new (): T }, opts?: MiddlewareOptions
   });
 
   router.delete('/', async (req, res) => {
-    const qm = assembleQuery(type, req, opts?.extendQuery);
+    const qm = assembleQuery(type, req, extendQuery);
     const affectedRows = await getServerRepository(type).remove(qm.filter);
     res.json({ data: affectedRows });
   });
@@ -71,3 +67,6 @@ function assembleQuery<T>(type: { new (): T }, req: Request, extendQuery?: Exten
   }
   return qm;
 }
+
+type MiddlewareOptions = { entities: { new (): object }[]; extendQuery?: ExtendQuery };
+type ExtendQuery = <T>(type: { new (): T }, qm: Query<T>, req: Request) => Query<T>;
