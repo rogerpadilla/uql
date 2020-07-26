@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.0.41](https://github.com/rogerpadilla/onql/compare/v0.0.34...v0.0.41) (2020-07-26)
+
+**Note:** Version bump only for package @onql/platform-browser
+
+
+
+
+
+## [0.0.40](https://github.com/rogerpadilla/onql/compare/v0.0.34...v0.0.40) (2020-07-26)
+
+**Note:** Version bump only for package @onql/platform-browser
+
+
+
+
+
 ## [0.0.39](https://github.com/rogerpadilla/onql/compare/v0.0.34...v0.0.39) (2020-07-26)
 
 **Note:** Version bump only for package @onql/platform-browser

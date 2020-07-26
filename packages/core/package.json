@@ -11,7 +11,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run clean && concurrently 'npm:build'",
+    "prepublishOnly": "npm run clean && npm run build",
     "build": "tsc",
     "start": "tsc --watch",
     "clean": "rimraf dist"
