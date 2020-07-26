@@ -8,9 +8,6 @@
     "src",
     "dist"
   ],
-  "exports": {
-    ".": "./dist/"
-  },
   "main": "./dist/platform-express/src/index.js",
   "types": "./dist/platform-express/src/index.d.ts",
   "scripts": {

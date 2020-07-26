@@ -8,9 +8,6 @@
     "src",
     "dist"
   ],
-  "exports": {
-    ".": "./dist/"
-  },
   "main": "./dist/onql-platform-browser.min.js",
   "types": "./dist/onql-platform-browser.min.d.ts",
   "scripts": {
