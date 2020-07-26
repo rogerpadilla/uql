@@ -4,6 +4,7 @@ const path = require('path');
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
 const entryName = 'onql-platform-browser.min';
+const outDir = 'dist/build';
 
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
@@ -29,7 +30,7 @@ module.exports = (env, argv) => {
     },
 
     output: {
-      path: path.resolve('dist'),
+      path: path.resolve(outDir),
       publicPath: '/',
       filename: '[name].js',
       chunkFilename: '[id].chunk.js',
@@ -64,14 +65,14 @@ class DtsBundlePlugin {
 
       dts.bundle({
         name: 'onql',
-        main: rootDir + '/dist/platform-browser/**/*.d.ts',
-        out: rootDir + `/dist/${entryName}.d.ts`,
+        main: `${rootDir}/${outDir}/platform-browser/**/*.d.ts`,
+        out: `${rootDir}/${outDir}/${entryName}.d.ts`,
         outputAsModuleFolder: true,
       });
 
-      rimraf('dist/{core,platform-browser}', {}, (err) => {
+      rimraf(`${outDir}/{core,platform-browser}`, {}, (err) => {
         if (err) {
-          console.warn(err);
+          console.error(err);
         }
       });
     });
