@@ -4,14 +4,10 @@
   "license": "MIT",
   "version": "0.0.47",
   "sideEffects": false,
-  "files": [
-    "src",
-    "dist"
-  ],
-  "main": "./dist/onql-platform-browser.min.js",
-  "types": "./dist/onql-platform-browser.min.d.ts",
+  "main": "onql-platform-browser.min.js",
+  "types": "onql-platform-browser.min.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && copyfiles package.json dist",
     "build": "npm run clean && webpack --progress --profile --bail --mode=production",
     "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
@@ -23,6 +19,7 @@
     "@onql/core": "^0.0"
   },
   "devDependencies": {
+    "copyfiles": "^2.3.0",
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",
     "source-map-loader": "^1.0.1",

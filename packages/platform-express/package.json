@@ -4,12 +4,8 @@
   "license": "MIT",
   "version": "0.0.47",
   "sideEffects": false,
-  "files": [
-    "src",
-    "dist"
-  ],
-  "main": "./dist/platform-express/src/index.js",
-  "types": "./dist/platform-express/src/index.d.ts",
+  "main": "platform-express/src/index.js && copyfiles package.json dist",
+  "types": "platform-express/src/index.d.ts",
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "npm run clean && tsc",
@@ -24,6 +20,7 @@
     "express": "^4.17.1"
   },
   "devDependencies": {
+    "copyfiles": "^2.3.0",
     "@types/express": "^4.17.7",
     "rimraf": "^3.0.2"
   },

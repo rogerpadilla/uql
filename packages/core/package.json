@@ -4,14 +4,10 @@
   "license": "MIT",
   "version": "0.0.47",
   "sideEffects": false,
-  "files": [
-    "src",
-    "dist"
-  ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "index.js",
+  "types": "index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build && copyfiles package.json dist",
     "build": "npm run clean && tsc",
     "start": "npm run clean && tsc --watch",
     "clean": "rimraf dist"
@@ -29,6 +25,7 @@
     "@types/pg": "^7.14.4",
     "@types/sqlite3": "^3.1.6",
     "@types/uuid": "^8.0.0",
+    "copyfiles": "^2.3.0",
     "mariadb": "^2.4.2",
     "mongodb": "^3.5.9",
     "mysql": "^2.18.1",
