@@ -4,7 +4,6 @@
     "target": "ES5",
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
-    "declarationDir": "dist",
-    "baseUrl": "."
+    "declarationDir": "dist"
   }
 }
