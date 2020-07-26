@@ -12,9 +12,9 @@
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run clean && npm run build",
-    "build": "tsc",
-    "start": "tsc --watch",
+    "prepublishOnly": "npm run build",
+    "build": "npm run clean && tsc",
+    "start": "npm run clean && tsc --watch",
     "clean": "rimraf dist"
   },
   "dependencies": {
