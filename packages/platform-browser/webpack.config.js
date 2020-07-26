@@ -13,7 +13,7 @@ module.exports = (env, argv) => {
   return {
     mode,
 
-    devtool: 'source-map',
+    devtool: 'inline-source-map',
 
     resolve: {
       extensions: ['.ts', '.js'],
