@@ -13,8 +13,10 @@
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn run lint -- --fix",
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
-    "test.watch": "jest --clearCache && jest --watchAll",
-    "test.watch.pattern": "jest --clearCache && jest --watchAll --testPathPattern=definition.spec.ts"
+    "it": "jest --testMatch '**/*.it.ts'",
+    "it.watch": "jest --testMatch '**/*.it.ts' --watchAll",
+    "test.watch": "jest --watchAll",
+    "test.watch.pattern": "jest --watchAll --testPathPattern=definition.spec.ts"
   },
   "commitlint": {
     "extends": [

@@ -1,9 +1,10 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "target": "ES5",
+    "target": "ES2015",
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
     "declarationDir": "dist"
-  }
+  },
+  "exclude": ["node_modules", "dist"]
 }

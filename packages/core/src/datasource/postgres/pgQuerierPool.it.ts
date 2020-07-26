@@ -83,7 +83,7 @@ describe(PgQuerierPool.name, () => {
   });
 
   async function createUserTable(querier: SqlQuerier): Promise<void> {
-    await querier.query(`CREATE TABLE "user" (
+    await querier.query(`CREATE TABLE "User" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
     "email" VARCHAR( 300 ) NOT NULL,
@@ -138,7 +138,7 @@ describe(PgQuerierPool.name, () => {
       querier.query(`DROP TABLE IF EXISTS "Tax"`),
       querier.query(`DROP TABLE IF EXISTS "TaxCategory"`),
       querier.query(`DROP TABLE IF EXISTS "Company"`),
-      querier.query(`DROP TABLE IF EXISTS "user"`),
+      querier.query(`DROP TABLE IF EXISTS "User"`),
     ]);
   }
 });
