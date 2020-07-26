@@ -14,7 +14,7 @@
     "lib": ["ESNext"],
     "sourceMap": true,
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
