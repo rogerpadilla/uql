@@ -1,16 +1,17 @@
 import 'reflect-metadata';
 import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './type';
 
+const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
+
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  const metaKey = '_onql_entiy_meta_' + type.name;
-  if (type[metaKey]) {
-    return type[metaKey];
+  if (entitiesMeta.has(type)) {
+    return entitiesMeta.get(type);
   }
   const meta: EntityMeta<T> = { type, name: type.name, properties: {} };
   Object.defineProperty(meta, 'hasId', {
     value: () => Object.keys(meta.properties).some((prop) => meta.properties[prop].column?.isId),
   });
-  type[metaKey] = meta;
+  entitiesMeta.set(type, meta);
   return meta;
 }
 
@@ -109,17 +110,6 @@ export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
     throw new Error(`'${type.name}' is not an entity`);
   }
   return meta;
-}
-
-export function getEntities(): { new (): object }[] {
-  // FIXME
-  return [];
-  // return Array.from(entitiesMeta.values()).reduce((acc, it) => {
-  //   if (it.id) {
-  //     acc.push(it.type);
-  //   }
-  //   return acc;
-  // }, [] as { new (): object }[]);
 }
 
 function isPrimitiveType(type: any): boolean {
