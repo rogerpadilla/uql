@@ -2,15 +2,13 @@
   "version": "0.0.56",
   "useWorkspaces": true,
   "npmClient": "yarn",
-  "npmClientArgs": [
-    "--no-package-lock"
-  ],
+  "npmClientArgs": ["--no-package-lock"],
   "command": {
     "publish": {
+      "contents": "dist",
       "conventionalCommits": true,
       "gitReset": false,
-      "yes": true,
-      "contents": "dist"
+      "yes": true
     }
   }
 }
