@@ -8,9 +8,8 @@
     "src",
     "dist"
   ],
-  "main": "dist/platform-express/src/index.js",
-  "module": "dist/platform-express/src/index.js",
-  "types": "dist/platform-express/src/index.d.ts",
+  "main": "./dist/platform-express/src/index.js",
+  "types": "./dist/platform-express/src/index.d.ts",
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "npm run clean && tsc",

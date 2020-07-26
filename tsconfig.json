@@ -15,7 +15,6 @@
     "inlineSourceMap": true,
     "declaration": true,
     "declarationMap": false,
-    "baseUrl": ".",
     "importHelpers": true,
     "paths": {
       "@onql/core/*": ["packages/core/src/*"]

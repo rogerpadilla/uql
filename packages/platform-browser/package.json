@@ -8,8 +8,8 @@
     "src",
     "dist"
   ],
-  "browser": "dist/onql-platform-browser.min.js",
-  "types": "dist/onql-platform-browser.min.d.ts",
+  "main": "./dist/onql-platform-browser.min.js",
+  "types": "./dist/onql-platform-browser.min.d.ts",
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "npm run clean && webpack --progress --profile --bail --mode=production",
