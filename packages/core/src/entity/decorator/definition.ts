@@ -1,17 +1,19 @@
 import 'reflect-metadata';
 import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './type';
 
-const entitiesMeta = new Map<{ new (): any }, EntityMeta<any>>();
+const entityMetaKey = Symbol('entityMeta');
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  if (entitiesMeta.has(type)) {
-    return entitiesMeta.get(type);
+  if (!type[entityMetaKey]) {
+    type[entityMetaKey] = {};
+  } else if (type[entityMetaKey][type.name]) {
+    return type[entityMetaKey][type.name];
   }
   const meta: EntityMeta<T> = { type, name: type.name, properties: {} };
   Object.defineProperty(meta, 'hasId', {
     value: () => Object.keys(meta.properties).some((prop) => meta.properties[prop].column?.isId),
   });
-  entitiesMeta.set(type, meta);
+  type[entityMetaKey][type.name] = meta;
   return meta;
 }
 
