@@ -2,7 +2,7 @@
   "name": "@onql/core",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.34",
+  "version": "0.0.39",
   "sideEffects": false,
   "files": [
     "src",
@@ -19,8 +19,8 @@
   "dependencies": {
     "reflect-metadata": "^0.1.13",
     "sqlstring": "^2.3.2",
-    "uuid": "^8.2.0",
-    "tslib": "^2.0.0"
+    "tslib": "^2.0.0",
+    "uuid": "^8.2.0"
   },
   "devDependencies": {
     "@types/mongodb": "^3.5.25",
@@ -66,5 +66,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "5fb1fed85b7f8131024cda83602cf4cf9a55e338"
+  "gitHead": "60950e3569248afe056a79a7971bff36c2cab1ec"
 }
