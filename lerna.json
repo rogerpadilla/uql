@@ -1,8 +1,10 @@
 {
-  "version": "0.0.46",
+  "version": "0.0.47",
   "useWorkspaces": true,
   "npmClient": "yarn",
-  "npmClientArgs": ["--no-package-lock"],
+  "npmClientArgs": [
+    "--no-package-lock"
+  ],
   "command": {
     "publish": {
       "conventionalCommits": true
