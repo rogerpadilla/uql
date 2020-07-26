@@ -2,7 +2,7 @@
   "name": "@onql/platform-browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.60",
+  "version": "0.0.61",
   "sideEffects": false,
   "main": "onql-platform-browser.min.js",
   "types": "onql-platform-browser.min.d.ts",
