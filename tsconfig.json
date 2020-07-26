@@ -21,6 +21,5 @@
       "@onql/core/*": ["packages/core/src/*"]
     }
   },
-  "include": ["packages"],
   "exclude": ["node_modules", "coverage", "dist"]
 }

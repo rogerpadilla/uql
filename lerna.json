@@ -1,17 +1,9 @@
 {
-  "version": "0.0.45",
+  "version": "0.0.46",
   "useWorkspaces": true,
-  "packages": [
-    "packages/*"
-  ],
   "npmClient": "yarn",
-  "npmClientArgs": [
-    "--no-package-lock"
-  ],
+  "npmClientArgs": ["--no-package-lock"],
   "command": {
-    "version": {
-      "allowBranch": "master"
-    },
     "publish": {
       "conventionalCommits": true
     }

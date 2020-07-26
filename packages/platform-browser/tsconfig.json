@@ -5,6 +5,5 @@
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
     "declarationDir": "dist"
-  },
-  "include": ["src"]
+  }
 }
