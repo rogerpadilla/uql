@@ -4,7 +4,7 @@ const path = require('path');
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
 const entryName = 'onql-platform-browser.min';
-const outDir = 'dist/build';
+const outDir = 'dist';
 
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';

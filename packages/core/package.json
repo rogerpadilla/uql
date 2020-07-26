@@ -8,6 +8,8 @@
     "src",
     "dist"
   ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "prepublishOnly": "npm run clean && concurrently 'npm:build'",
     "build": "tsc",
@@ -17,7 +19,8 @@
   "dependencies": {
     "reflect-metadata": "^0.1.13",
     "sqlstring": "^2.3.2",
-    "uuid": "^8.2.0"
+    "uuid": "^8.2.0",
+    "tslib": "^2.0.0"
   },
   "devDependencies": {
     "@types/mongodb": "^3.5.25",
@@ -26,16 +29,13 @@
     "@types/pg": "^7.14.4",
     "@types/sqlite3": "^3.1.6",
     "@types/uuid": "^8.0.0",
-    "concurrently": "^5.2.0",
-    "copyfiles": "^2.3.0",
     "mariadb": "^2.4.2",
     "mongodb": "^3.5.9",
     "mysql": "^2.18.1",
     "mysql2": "^2.1.0",
     "pg": "^8.3.0",
     "rimraf": "^3.0.2",
-    "sqlite3": "^5.0.0",
-    "tslib": "^2.0.0"
+    "sqlite3": "^5.0.0"
   },
   "author": "Roger Padilla",
   "repository": {

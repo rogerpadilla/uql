@@ -1,8 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist/build",
-    "declarationDir": "dist/build",
-    "sourceRoot": "../../src"
+    "outDir": "dist",
+    "declarationDir": "dist"
   }
 }

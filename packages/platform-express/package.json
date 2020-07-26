@@ -2,14 +2,22 @@
   "name": "@onql/platform-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.32",
-  "main": "build/platform-express/src/index.js",
+  "version": "0.0.34",
   "sideEffects": false,
+  "files": [
+    "src",
+    "dist"
+  ],
+  "main": "dist/platform-express/src/index.js",
+  "types": "dist/platform-express/src/index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run clean && concurrently 'npm:build' 'copyfiles \"src/**\" package.json dist'",
+    "prepublishOnly": "npm run clean && npm run build",
     "build": "tsc",
     "start": "tsc --watch",
     "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "tslib": "^2.0.0"
   },
   "peerDependencies": {
     "@onql/core": "^0.0",
@@ -17,10 +25,7 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.7",
-    "concurrently": "^5.2.0",
-    "copyfiles": "^2.3.0",
-    "rimraf": "^3.0.2",
-    "tslib": "^2.0.0"
+    "rimraf": "^3.0.2"
   },
   "author": "Roger Padilla",
   "repository": {
