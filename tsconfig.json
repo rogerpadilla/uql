@@ -13,8 +13,8 @@
     "esModuleInterop": true,
     "lib": ["ESNext"],
     "inlineSourceMap": true,
+    "inlineSources": true,
     "declaration": true,
-    "declarationMap": false,
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
