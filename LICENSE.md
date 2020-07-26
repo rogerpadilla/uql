@@ -1,4 +1,4 @@
-Copyright (c) 2015-present Lerna Contributors
+Copyright (c) 2015-present onql Contributors
 
 MIT License
 
