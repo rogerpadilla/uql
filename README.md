@@ -185,6 +185,7 @@ initOnql({
 
 ```typescript
 export class ConfirmationService {
+
   @Transactional({ propagation: 'required' })
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -229,7 +230,7 @@ export class ConfirmationService {
 ```typescript
 import { getQuerier } from '@onql/core/datasource/querierPool';
 
-// ... then inside a function of your service
+// ...then inside any of your functions
 
 const querier = getQuerier();
 
