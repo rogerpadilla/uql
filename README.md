@@ -288,7 +288,7 @@ try {
 
 ## <a name="generate-crud-rest-api"></a>Generate CRUD REST APIs and call from Browser
 
-onql do provides an [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
+onql do provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
 
 1. Install express plugin `npm install @onql/platform-express --save` or `yarn add @onql/platform-express`
 2. Install browser plugin `npm install @onql/platform-browser --save` or `yarn add @onql/platform-browser`
