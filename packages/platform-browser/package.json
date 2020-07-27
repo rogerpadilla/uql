@@ -3,7 +3,6 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.0",
-  "sideEffects": false,
   "main": "onql-platform-browser.min.js",
   "types": "onql-platform-browser.min.d.ts",
   "scripts": {
@@ -12,7 +11,7 @@
     "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
   },
-  "peerDependencies": {
+  "dependencies": {
     "@onql/core": "^0.0"
   },
   "devDependencies": {
@@ -35,6 +34,7 @@
     "url": "https://github.com/rogerpadilla/onql/issues"
   },
   "keywords": [
+    "persistence",
     "orm",
     "mongo",
     "mongodb",
@@ -50,7 +50,8 @@
     "entity",
     "onql",
     "data-mapper",
-    "datamapper"
+    "datamapper",
+    "browser"
   ],
   "publishConfig": {
     "access": "public"

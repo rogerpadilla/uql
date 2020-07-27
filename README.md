@@ -1,7 +1,3 @@
-**WIP**
-
-## onql
-
 <!-- [![build status](https://travis-ci.org/rogerpadilla/onql.svg?branch=master)](https://travis-ci.org/rogerpadilla/onql?branch=master) -->
 <!-- [![coverage status](https://coveralls.io/repos/rogerpadilla/onql/badge.svg?branch=master)](https://coveralls.io/r/rogerpadilla/onql?branch=master) -->
 <!-- [![dependencies status](https://david-dm.org/rogerpadilla/onql/status.svg)](https://david-dm.org/rogerpadilla/onql/status.svg) -->
@@ -9,13 +5,21 @@
 <!-- [![npm downloads](https://img.shields.io/npm/dm/onql.svg)](https://www.npmjs.com/package/onql) -->
 <!-- [![npm version](https://badge.fury.io/js/onql.svg)](https://www.npmjs.com/onql) -->
 
-onql's dream is to achieve what [GraphQL](https://graphql.org/learn) but in a much simpler way; onql's expressible (and type-safe) JSON syntax allows to query/update the data and gives the power to ask for exactly what is necessary and nothing else.
+# `{*}` onql
 
-GraphQL already allows to do that, but it requires to configure [additional servers](https://graphql.org/learn/execution) and to learn a [new language](https://graphql.org/learn/queries); in the other hand, onql is a plug & play library, based on JSON syntax, which can be used with (and without) any NodeJs framework (like express, restify, hapi, koa...).
+onql is a plug & play ORM library, with an expressible (and type-safe) JSON syntax allowing to query/update different databases in a minimalistic way.
 
-onql's syntax is inspired in MongoDb, JPA, TypeORM and GraphQL. One simply declares the entities (DTOs), add some decorators to them as metadata, and then start using the (type-safe) JSON syntax to send complex (and auto-sanitized) query-expressions from the frontend/client to the backend/server (like GraphQL allows).
+onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved but in a much simpler way (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)); onql's JSON syntax allows to retrieve what is necessary from the data-sources; it can be used with (and without) any backend/frontend framework (like express, restify, react, angular...). onql's syntax is inspired by MongoDb, JPA, and GraphQL.
 
-Most important features of onql are:
+## Table of Contents
+
+1. [Features](#features)
+2. [Installation](#installation)
+3. [Configuration](#configuration)
+4. [Frequently Asked Questions](#faq)
+5. [License](#license)
+
+## <a name="features"></a>:battery: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
@@ -24,23 +28,65 @@ Most important features of onql are:
 - `relations` between entities
 - supports `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite (WIP), MongoDB (WIP), more soon
-- code is readable, performant and flexible
+- supports Postgres, MySQL, MariaDB, SQLite (experimental), MongoDB (experimental), more soon...
+- code is readable, short, performant and flexible
+- plugins form frameworks: express, more soon...
 
-Steps to use:
+## <a name="installation"></a>:ship: Installation
 
-- Declare the entities (notice inheritance is optional)
+1. Install the npm package:
+
+   `npm install @onql/core --save` or `yarn add @onql/core`
+
+2. Make sure to enable the following properties in the `tsconfig.json` file of your `TypeScript` project: `experimentalDecorators` and `emitDecoratorMetadata`
+
+3. Install a database driver according to your database:
+
+   - for MySQL or MariaDB
+
+     `npm install mysql2 --save` (alternatively, `mysql` or `mariadb` can be used)
+
+   - for PostgreSQL or CockroachDB
+
+     `npm install pg --save`
+
+   - for SQLite (experimental)
+
+     `npm install sqlite3 --save`
+
+   - for MongoDB (experimental)
+
+     `npm install mongodb --save`
+
+## <a name="configuration"></a>Steps to use:
+
+- Declare the entities (notice that inheritance between entities is optional)
 
 ```typescript
+/**
+ * an abstract class can (optionally) be used as a template for the entities (so boilerplate code is reduced)
+ */
+
 export abstract class BaseEntity {
   @IdColumn()
   id?: number;
+  /**
+   * different relations between entities are supported
+   */
   @ManyToOne({ type: () => Company })
   company?: number | Company;
   @ManyToOne({ type: () => User })
   user?: number | User;
+  /**
+   * 'onInsert' callback can be used to specify a custom mechanism for
+   * obtaining the value of a column when inserting:
+   */
   @Column({ onInsert: () => Date.now() })
   createdAt?: number;
+  /**
+   * 'onUpdate' callback can be used to specify a custom mechanism for
+   * obtaining the value of a column when updating:
+   */
   @Column({ onUpdate: () => Date.now() })
   updatedAt?: number;
   @Column()
@@ -55,15 +101,21 @@ export class Company extends BaseEntity {
   description?: string;
 }
 
+/**
+ * a custom name can be specified for the corresponding table/document
+ */
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
+  /**
+   * a custom name can be specified for the corresponding column
+   */
   @IdColumn({ name: 'pk' })
   id?: number;
   @Column({ name: 'image' })
   picture?: string;
 }
 
-@Entity({ name: 'user' })
+@Entity()
 export class User extends BaseEntity {
   @Column()
   name?: string;
@@ -78,6 +130,15 @@ export class User extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
+  /**
+   * Any entity can specify its own ID Column and still inherit the others
+   * columns/relations from its parent entity.
+   * 'onInsert' callback can be used to specify a custom mechanism for
+   * auto-generating the primary-key's value when inserting:
+   * import { v4 as uuidv4 } from 'uuid';
+   */
+  @IdColumn({ onInsert: () => uuidv4() })
+  pk?: string;
   @Column()
   name?: string;
   @Column()
@@ -159,37 +220,3 @@ try {
   await querier.release();
 }
 ```
-
-## Installation
-
-1. Install the npm package:
-
-   `npm install onql --save` or `yarn add onql`
-
-2. You need to install `reflect-metadata` shim:
-
-   `npm install reflect-metadata --save` or `yarn add reflect-metadata`
-
-   and import it somewhere in the global place of your app (for example in `app.ts`):
-
-   `import 'reflect-metadata';`
-
-3. Make sure to enable the following properties in the `tsconfig.json` file of your `TypeScript` project: `experimentalDecorators` and `emitDecoratorMetadata`
-
-4. Install a database driver (pick the one you need for your database):
-
-   - for MySQL or MariaDB
-
-     `npm install mysql2 --save` (possible to install `mysql` or `mariadb` instead as well)
-
-   - for PostgreSQL or CockroachDB
-
-     `npm install pg --save`
-
-   - for SQLite (experimental)
-
-     `npm install sqlite3 --save`
-
-   - for MongoDB (experimental)
-
-     `npm install mongodb --save`

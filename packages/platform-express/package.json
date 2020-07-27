@@ -3,7 +3,6 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.0",
-  "sideEffects": false,
   "main": "platform-express/src/index.js",
   "types": "platform-express/src/index.d.ts",
   "scripts": {
@@ -33,6 +32,7 @@
     "url": "https://github.com/rogerpadilla/onql/issues"
   },
   "keywords": [
+    "persistence",
     "orm",
     "mongo",
     "mongodb",
