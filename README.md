@@ -61,7 +61,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
 ## <a name="entities-definition"></a> :cookie: Entities definition
 
-Notice that inheritance between entities is optional
+Notice that the inheritance between entities is optional
 
 ```typescript
 /**
