@@ -182,7 +182,7 @@ initOnql({
 });
 ```
 
-## <a name="programmatic-api"></a>:hand: Programmatic API
+## <a name="programmatic-api"></a>:hammer: Programmatic API
 
 ```typescript
 import { getQuerier } from '@onql/core/datasource/querierPool';
