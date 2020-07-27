@@ -294,6 +294,10 @@ onql do provides an [express](https://expressjs.com/) (more soon) plugin to easi
 3. Initialize the express middleware to generate CRUD REST APIs for your entities
 
 ```typescript
+import {entitiesMiddleware} from '@onql/platform-express';
+
+const app = express();
+// ...
 app.use(
   '/api',
   entitiesMiddleware({
