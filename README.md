@@ -17,8 +17,8 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 2. [Installation](#installation)
 3. [Entities definition](#entities-definition)
 4. [Configuration](#configuration)
-5. [Declarative transactions](#declarative-transactions)
-6. [Programmatic transactions](#programmatic-transactions)
+5. [Declarative API](#declarative-api)
+6. [Programmatic API](#programmatic-api)
 7. [Use with Express](#platform-express)
 7. [Use from Browser](#platform-browser)
 8. [Frequently Asked Questions](#faq)
@@ -182,7 +182,7 @@ initOnql({
 });
 ```
 
-## <a name="programmatic-transactions"></a>:hand: Programmatic Transactions
+## <a name="programmatic-api"></a>:hand: Programmatic API
 
 ```typescript
 import { getQuerier } from '@onql/core/datasource/querierPool';
@@ -241,3 +241,5 @@ try {
   await querier.release();
 }
 ```
+
+## <a name="declarative-api"></a>:mechanical_arm: Declarative API
