@@ -9,11 +9,12 @@ const outDir = 'dist';
 module.exports = (env, argv) => {
   const mode = argv.mode || 'development';
   console.debug('*** Webpack mode', mode);
+  const isDevMode = mode === 'development';
 
   return {
     mode,
 
-    devtool: 'inline-source-map',
+    devtool: isDevMode ? 'cheap-module-eval-source-map' : 'source-map',
 
     resolve: {
       extensions: ['.ts', '.js'],
