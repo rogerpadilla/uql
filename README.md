@@ -65,7 +65,8 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 /**
- * an abstract class can (optionally) be used as a template for the entities (so boilerplate code is reduced)
+ * an abstract class can (optionally) be used as a template for the entities
+ * (so boilerplate code is reduced)
  */
 export abstract class BaseEntity {
   @IdColumn()
