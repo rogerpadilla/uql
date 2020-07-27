@@ -182,7 +182,7 @@ initOnql({
 });
 ```
 
-## <a name="programmatic-transactions"></a> :hand: Programmatic Transactions
+## :hand: <a name="programmatic-transactions"></a> Programmatic Transactions
 
 ```typescript
 import { getQuerier } from '@onql/core/datasource/querierPool';
