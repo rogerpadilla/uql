@@ -291,7 +291,7 @@ onql do provides an [express](https://expressjs.com/) (more soon) plugin to easi
 
 1. Install express plugin `npm install @onql/platform-express --save` or `yarn add @onql/platform-express`
 2. Install browser plugin `npm install @onql/platform-browser --save` or `yarn add @onql/platform-browser`
-3. Initialize the express middleware to generate CRUD REST APIs for your entities
+3. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
 
 ```typescript
 import { entitiesMiddleware } from '@onql/platform-express';
