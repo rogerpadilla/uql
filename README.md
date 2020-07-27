@@ -164,7 +164,7 @@ export class Tax extends BaseEntity {
 }
 ```
 
-## <a name="configuration"></a> :cookie: Configuration
+## <a name="configuration"></a> :gear: Configuration
 
 ```typescript
 import { initOnql } from '@onql/core';
