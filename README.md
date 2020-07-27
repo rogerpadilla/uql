@@ -11,15 +11,16 @@ onql is a plug & play ORM library, with an expressible (and type-safe) JSON synt
 
 onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved but in a much simpler way (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)); onql's JSON syntax allows to retrieve what is necessary from the data-sources; it can be used with (and without) any backend/frontend framework (like express, restify, react, angular...). onql's syntax is inspired by MongoDb, JPA, and GraphQL.
 
-## Table of Contents
+## :bookmark_tabs: Table of Contents
 
 1. [Features](#features)
 2. [Installation](#installation)
-3. [Configuration](#configuration)
+2. [Entities definition](#entities-definition)
+3. [How to Use](#how-to-use)
 4. [Frequently Asked Questions](#faq)
 5. [License](#license)
 
-## <a name="features"></a>:battery: Features
+## <a name="features"></a>:start2: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
@@ -32,7 +33,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 - code is readable, short, performant and flexible
 - plugins form frameworks: express, more soon...
 
-## <a name="installation"></a>:ship: Installation
+## <a name="installation"></a>:battery: Installation
 
 1. Install the npm package:
 
@@ -58,15 +59,14 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
      `npm install mongodb --save`
 
-## <a name="configuration"></a>Steps to use:
+## <a name="entities-definition"></a>:cookie: Entities definition
 
-- Declare the entities (notice that inheritance between entities is optional)
+Notice that inheritance between entities is optional
 
 ```typescript
 /**
  * an abstract class can (optionally) be used as a template for the entities (so boilerplate code is reduced)
  */
-
 export abstract class BaseEntity {
   @IdColumn()
   id?: number;
@@ -162,16 +162,32 @@ export class Tax extends BaseEntity {
 - initialize `onql` configuration:
 
 ```typescript
-import { initOnql } from 'onql';
-import { GenericServerRepository } from 'onql/repository';
-// `pg` is for postgres driver, other databases are supported.
-initOnql({ datasource: { driver: 'pg' }, defaultRepositoryClass: GenericServerRepository });
+import { initOnql } from '@onql/core';
+import { GenericServerRepository } from '@onql/core/repository';
+
+initOnql({
+  datasource: {
+    driver: 'pg',
+    host: 'localhost',
+    user: 'theUser',
+    password: 'thePassword',
+    database: 'theDatabaseName'
+  },
+  defaultRepositoryClass: GenericServerRepository
+});
 ```
 
 - your logic will look like this:
 
 ```typescript
+import { getQuerier } from '@onql/core/datasource/querierPool';
+
+// ... then inside a function of your service
+
+const querier = getQuerier();
+
 try {
+  // start a transaction
   await querier.beginTransaction();
 
   // create one user
