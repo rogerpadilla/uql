@@ -297,12 +297,12 @@ onql do provides an [express](https://expressjs.com/) (more soon) plugin to easi
 import { entitiesMiddleware } from '@onql/platform-express';
 
 const app = express();
-// this will generate CRUD REST APIs
 app
   // ...other routes may go before and/or after
   .use(
     '/api',
     entitiesMiddleware({
+      // this will generate CRUD REST APIs for your entities
       // all other entities will be automatically included
       // use 'includeEntities' to specifiy exact entities (if needed)
       excludeEntities: [Confirmation, User],
