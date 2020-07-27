@@ -20,7 +20,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 4. [Frequently Asked Questions](#faq)
 5. [License](#license)
 
-## <a name="features"></a>:start2: Features
+## <a name="features"></a> :start2: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
@@ -33,7 +33,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 - code is readable, short, performant and flexible
 - plugins form frameworks: express, more soon...
 
-## <a name="installation"></a>:battery: Installation
+## <a name="installation"></a> :battery: Installation
 
 1. Install the npm package:
 
@@ -59,7 +59,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
      `npm install mongodb --save`
 
-## <a name="entities-definition"></a>:cookie: Entities definition
+## <a name="entities-definition"></a> :cookie: Entities definition
 
 Notice that inheritance between entities is optional
 
