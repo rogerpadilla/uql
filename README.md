@@ -2,7 +2,7 @@
 [![coverage status](https://coveralls.io/repos/rogerpadilla/onql/badge.svg?branch=master)](https://coveralls.io/r/rogerpadilla/onql?branch=master)
 [![dependencies status](https://david-dm.org/rogerpadilla/onql/status.svg)](https://david-dm.org/rogerpadilla/onql/status.svg)
 [![dev dependencies status](https://david-dm.org/rogerpadilla/onql/dev-status.svg)](https://david-dm.org/rogerpadilla/onql/dev-status.svg)
-[![npm version](https://badge.fury.io/js/onql.svg)](https://www.npmjs.com/onql)
+[![npm version](https://badge.fury.io/js/onql.svg)](https://www.npmjs.com/@onql/core)
 
 # `{*}` onql
 
