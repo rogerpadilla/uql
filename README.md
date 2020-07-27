@@ -18,8 +18,8 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 4. [Configuration](#configuration)
 5. [Declarative API](#declarative-api)
 6. [Programmatic API](#programmatic-api)
-7. [Use with Express](#platform-express)
-8. [Use from Browser](#platform-browser)
+7. [Plugins](#plugins)
+8. [Expose as REST API and call from Browser](#platform-browser)
 9. [Frequently Asked Questions](#faq)
 
 ## <a name="features"></a>:star2: Features
@@ -287,6 +287,12 @@ try {
 }
 ```
 
+## <a name="plugins"></a>Plugins
+
+
+## <a name="platform-browser"></a>Expose as REST API and call from Browser
+
+
 ## <a name="faq"></a>Frequently Asked Questions
 
 ### Why onql when there already are things like GraphQL, TypeORM, Mikro-ORM, Sequelize?
@@ -294,3 +300,4 @@ try {
 Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
 
 On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize, do all use an imperative API (call to functions); onql uses a declarative API (JSON) which can be serialized and send as messages (through the network) between the different components of a system.
+
