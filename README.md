@@ -48,7 +48,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
    - for MySQL or MariaDB
 
-     `npm install mysql2 --save` (alternatively, `mysql` or `mariadb` can be used)
+     `npm install mysql2 --save` (alternatively, `mysql` or `mariadb` driver can be used)
 
    - for PostgreSQL or CockroachDB
 
