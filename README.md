@@ -184,6 +184,9 @@ initOnql({
 ## <a name="declarative-api"></a>:mechanical_arm: Declarative API
 
 ```typescript
+import { getServerRepository } from '@onql/core/repository';
+import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
+
 export class ConfirmationService {
 
   @Transactional({ propagation: 'required' })
