@@ -187,7 +187,6 @@ import { getServerRepository } from '@onql/core/repository';
 import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
 
 export class ConfirmationService {
-
   @Transactional({ propagation: 'required' })
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -289,9 +288,11 @@ try {
 
 ## <a name="plugins"></a>Plugins
 
+Although onql can be used with any framework, it provides a few plugins to make it quicker to start (more soon)
+
+### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
 
 ## <a name="platform-browser"></a>Expose as REST API and call from Browser
-
 
 ## <a name="faq"></a>Frequently Asked Questions
 
@@ -300,4 +301,3 @@ try {
 Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
 
 On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize, do all use an imperative API (call to functions); onql uses a declarative API (JSON) which can be serialized and send as messages (through the network) between the different components of a system.
-
