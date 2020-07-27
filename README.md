@@ -290,9 +290,8 @@ try {
 
 onql do provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
 
-1. Install express plugin `npm install @onql/platform-express --save` or `yarn add @onql/platform-express`
-2. Install browser plugin `npm install @onql/platform-browser --save` or `yarn add @onql/platform-browser`
-3. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
+1. Install express plugin in your server project `npm install @onql/platform-express --save` or `yarn add @onql/platform-express`
+2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
 
 ```typescript
 import { entitiesMiddleware } from '@onql/platform-express';
@@ -310,6 +309,19 @@ app
       excludeEntities: [Confirmation, User],
     })
   );
+```
+
+3. Install browser plugin in your frontend project `npm install @onql/platform-browser --save` or `yarn add @onql/platform-browser`
+4. Initialize onql in your frontend code
+
+```typescript
+import { GenericClientRepository, initOnql } from '@onql/platform-browser';
+
+initOnql({
+  defaultRepositoryClass: GenericClientRepository,
+});
+
+const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
 ```
 
 ## <a name="plugins"></a>Plugins
