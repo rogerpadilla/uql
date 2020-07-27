@@ -19,7 +19,8 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 5. [Declarative API](#declarative-api)
 6. [Programmatic API](#programmatic-api)
 7. [Generate CRUD REST APIs and call from Browser](#generate-crud-rest-api)
-8. [Frequently Asked Questions](#faq)
+8. [Plugins](#plugins)
+9. [Frequently Asked Questions](#faq)
 
 ## <a name="features"></a>:star2: Features
 
@@ -311,9 +312,10 @@ app
   );
 ```
 
-### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">express<a>
+## <a name="plugins"></a>Plugins
 
-### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
+- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
+- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">browser<a>
 
 ## <a name="faq"></a>Frequently Asked Questions
 
