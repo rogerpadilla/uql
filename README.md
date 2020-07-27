@@ -62,7 +62,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
      `npm install mongodb --save`
 
-## <a name="entities-definition"></a> :cookie: Entities definition
+## <a name="entities-definition"></a> :egg: Entities definition
 
 Notice that the inheritance between entities is optional
 
