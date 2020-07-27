@@ -242,3 +242,49 @@ try {
 ```
 
 ## <a name="declarative-api"></a>:mechanical_arm: Declarative API
+
+```typescript
+export class ConfirmationService {
+
+  @Transactional({propagation: 'required'})
+  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
+    const userRepository = getServerRepository(User);
+    const confirmationRepository = getServerRepository(User);
+
+    if (body.type === 'register') {
+      const newUser: User = {
+        name: body.name,
+        email: body.email,
+        password: body.password,
+      };
+      await userRepository.insertOne(newUser, querier);
+    } else {
+      const userId = body.user as number;
+      await userRepository.updateOneById(userId, { password: body.password }, querier);
+    }
+
+    await confirmationRepository.updateOneById(
+      body.id,
+      { status: CONFIRM_STATUS_VERIFIED },
+      querier
+    );
+  }
+
+  async obtainConfirm(id: number, hash: number) {
+    const confirmation = await getServerRepository(Confirmation).findOneById(id);
+
+    if (hash !== confirmation.hash) {
+      logger.warning(`Invalid hash code #${hash} for confirmation #${confirmation.id}`);
+      throw new AppValidationError('Confirmation not found.', ERROR_CODES.NOT_FOUND);
+    }
+
+    const resp: Confirmation = {
+      id: confirmation.id,
+      hash,
+      type: confirmation.type,
+    };
+
+    return resp;
+  }
+}
+```
