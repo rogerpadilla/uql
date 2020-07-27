@@ -299,7 +299,7 @@ import { entitiesMiddleware } from '@onql/platform-express';
 const app = express();
 
 app
-  // ...other routes may go before and/or after
+  // ...other routes may go before and/or after (as usual)
   .use(
     '/api',
     entitiesMiddleware({
