@@ -297,6 +297,7 @@ onql do provides an [express](https://expressjs.com/) (more soon) plugin to easi
 import { entitiesMiddleware } from '@onql/platform-express';
 
 const app = express();
+
 app
   // ...other routes may go before and/or after
   .use(
