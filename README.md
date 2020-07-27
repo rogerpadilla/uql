@@ -18,9 +18,8 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 4. [Configuration](#configuration)
 5. [Declarative API](#declarative-api)
 6. [Programmatic API](#programmatic-api)
-7. [Plugins](#plugins)
-8. [Expose as REST API and call from Browser](#platform-browser)
-9. [Frequently Asked Questions](#faq)
+7. [Generate CRUD REST APIs and call from Browser](#generate-crud-rest-api)
+8. [Frequently Asked Questions](#faq)
 
 ## <a name="features"></a>:star2: Features
 
@@ -286,13 +285,28 @@ try {
 }
 ```
 
-## <a name="plugins"></a>Plugins
+## <a name="generate-crud-rest-api"></a>Generate CRUD REST APIs and call from Browser
 
-Although onql can be used with any framework, it provides a few plugins to make it quicker to start (more soon)
+onql do provides an [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
+
+1. Install express plugin `npm install @onql/platform-express --save` or `yarn add @onql/platform-express`
+2. Install browser plugin `npm install @onql/platform-browser --save` or `yarn add @onql/platform-browser`
+3. Initialize the express middleware to generate CRUD REST APIs for your entities
+
+```typescript
+app.use(
+  '/api',
+  entitiesMiddleware({
+    // all other entities will be automatically included
+    // use 'includeEntities' to specifiy exact entities (if needed)
+    excludeEntities: [Confirmation, User],
+  })
+);
+```
+
+### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">express<a>
 
 ### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
-
-## <a name="platform-browser"></a>Expose as REST API and call from Browser
 
 ## <a name="faq"></a>Frequently Asked Questions
 
