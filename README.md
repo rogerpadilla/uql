@@ -15,10 +15,14 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
 1. [Features](#features)
 2. [Installation](#installation)
-2. [Entities definition](#entities-definition)
-3. [How to Use](#how-to-use)
-4. [Frequently Asked Questions](#faq)
-5. [License](#license)
+3. [Entities definition](#entities-definition)
+4. [Configuration](#configuration)
+5. [Declarative transactions](#declarative-transactions)
+6. [Programmatic transactions](#programmatic-transactions)
+7. [Use with Express](#platform-express)
+7. [Use from Browser](#platform-browser)
+8. [Frequently Asked Questions](#faq)
+9. [License](#license)
 
 ## <a name="features"></a> :star2: Features
 
@@ -160,7 +164,7 @@ export class Tax extends BaseEntity {
 }
 ```
 
-- initialize `onql` configuration:
+## <a name="configuration"></a> :cookie: Configuration
 
 ```typescript
 import { initOnql } from '@onql/core';
@@ -178,7 +182,7 @@ initOnql({
 });
 ```
 
-- your logic will look like this:
+## <a name="programmatic-transactions"></a> :cookie: Programmatic Transactions
 
 ```typescript
 import { getQuerier } from '@onql/core/datasource/querierPool';
