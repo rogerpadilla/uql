@@ -33,7 +33,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 - `relations` between entities
 - supports `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite (experimental), MongoDB (experimental), more soon...
+- supports Postgres, MySQL, MariaDB, SQLite (:construction:), MongoDB (:construction:), more soon...
 - code is readable, short, performant and flexible
 - plugins form frameworks: express, more soon...
 
@@ -55,11 +55,11 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 
      `npm install pg --save`
 
-   - for SQLite (experimental)
+   - for SQLite :construction:
 
      `npm install sqlite3 --save`
 
-   - for MongoDB (experimental)
+   - for MongoDB :construction:
 
      `npm install mongodb --save`
 
