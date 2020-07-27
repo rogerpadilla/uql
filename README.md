@@ -294,18 +294,20 @@ onql do provides an [express](https://expressjs.com/) (more soon) plugin to easi
 3. Initialize the express middleware to generate CRUD REST APIs for your entities
 
 ```typescript
-import {entitiesMiddleware} from '@onql/platform-express';
+import { entitiesMiddleware } from '@onql/platform-express';
 
 const app = express();
-// ...
-app.use(
-  '/api',
-  entitiesMiddleware({
-    // all other entities will be automatically included
-    // use 'includeEntities' to specifiy exact entities (if needed)
-    excludeEntities: [Confirmation, User],
-  })
-);
+// this will generate CRUD REST APIs
+app
+  // ...other routes may go before and/or after
+  .use(
+    '/api',
+    entitiesMiddleware({
+      // all other entities will be automatically included
+      // use 'includeEntities' to specifiy exact entities (if needed)
+      excludeEntities: [Confirmation, User],
+    })
+  );
 ```
 
 ### <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">express<a>
