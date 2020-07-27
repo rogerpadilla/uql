@@ -24,7 +24,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 8. [Frequently Asked Questions](#faq)
 9. [License](#license)
 
-## <a name="features"></a> :star2: Features
+## <a name="features"></a> :sparkles: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
