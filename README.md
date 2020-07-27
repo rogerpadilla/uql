@@ -6,9 +6,9 @@
 
 # `{*}` onql
 
-onql is a plug & play ORM library, with an expressible (and type-safe) JSON syntax allowing to query/update different databases in a minimalistic way.
+onql is a plug & play ORM library, with a declarative (and type-safe) JSON syntax allowing to query/update different databases. Basically, you declares (using JSON) what you want from the database, and then onql transform it into efficient SQL or Mongo queries.
 
-onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved but in a much simpler way (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)); onql's JSON syntax allows to retrieve what is necessary from the data-sources; it can be used with (and without) any backend/frontend framework (like express, restify, react, angular...). onql's syntax is inspired by MongoDb, JPA, and GraphQL.
+onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves but in a simple way (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)); onql's syntax allows to retrieve what is necessary; it can be used with (and without) any backend/frontend framework. onql's syntax is inspired by MongoDb, JPA, and GraphQL.
 
 ## Table of Contents
 
@@ -21,7 +21,6 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieved bu
 7. [Use with Express](#platform-express)
 8. [Use from Browser](#platform-browser)
 9. [Frequently Asked Questions](#faq)
-10. [License](#license)
 
 ## <a name="features"></a>:star2: Features
 
@@ -287,3 +286,11 @@ try {
   await querier.release();
 }
 ```
+
+## <a name="faq"></a>Frequently Asked Questions
+
+### Why onql when there already is GraphQL, TypeORM, Mikro-ORM, Sequelize?
+
+Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
+
+On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize, do all use an imperative API (call to functions); onql uses a declarative API (JSON) which can be serialized and send as messages (through the network) between the different components of a system.
