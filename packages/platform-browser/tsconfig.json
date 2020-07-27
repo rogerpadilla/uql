@@ -4,7 +4,8 @@
     "target": "ES2015",
     "lib": ["ESNext", "DOM"],
     "outDir": "dist",
-    "declarationDir": "dist"
+    "declarationDir": "dist",
+    "importHelpers": false
   },
   "exclude": ["node_modules", "dist"]
 }
