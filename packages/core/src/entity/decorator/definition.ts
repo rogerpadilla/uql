@@ -1,16 +1,20 @@
 import 'reflect-metadata';
 import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './type';
 
+declare const window: any;
+const holder = typeof window === 'object' ? window : {};
+const metaKey = '@onql/entities_meta';
+holder[metaKey] = holder[metaKey] || new Map();
+
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  const metaKey = '_onql_entiy_meta_' + type.name;
-  if (type[metaKey]) {
-    return type[metaKey];
+  if (holder[metaKey].has(type)) {
+    return holder[metaKey].get(type);
   }
   const meta: EntityMeta<T> = { type, name: type.name, properties: {} };
   Object.defineProperty(meta, 'hasId', {
     value: () => Object.keys(meta.properties).some((prop) => meta.properties[prop].column?.isId),
   });
-  type[metaKey] = meta;
+  holder[metaKey].set(type, meta);
   return meta;
 }
 
