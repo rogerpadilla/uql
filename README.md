@@ -207,6 +207,7 @@ export class ConfirmationService {
 
     await confirmationRepository.updateOneById(body.id, { status: CONFIRM_STATUS_VERIFIED }, querier);
   }
+  
 }
 ```
 
