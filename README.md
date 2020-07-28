@@ -183,8 +183,8 @@ initOnql({
 ## <a name="declarative-api"></a>:mechanical_arm: Declarative API
 
 ```typescript
-import { getServerRepository } from '@onql/core/repository';
 import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
+import { getServerRepository } from '@onql/core/repository';
 
 export class ConfirmationService {
 
@@ -207,7 +207,7 @@ export class ConfirmationService {
 
     await confirmationRepository.updateOneById(body.id, { status: CONFIRM_STATUS_VERIFIED }, querier);
   }
-  
+
 }
 ```
 
