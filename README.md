@@ -333,6 +333,6 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 
 ### Why onql when there already are GraphQL, TypeORM, Mikro-ORM, Sequelize?
 
-Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
+Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and also [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
 
 On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize, do all use an imperative API (call to functions); onql uses a declarative API (JSON) which can be serialized and send as messages (through the network) between the different components of a system.
