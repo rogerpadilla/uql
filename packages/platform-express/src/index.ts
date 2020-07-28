@@ -6,15 +6,13 @@ import { buildQuery, formatKebabCase } from '@onql/core/util';
 import { getServerRepository } from '@onql/core/repository/container';
 import { getEntities } from '@onql/core/entity';
 
-export function entitiesMiddleware(opts: MiddlewareOptions) {
+export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   const router = express.Router();
 
-  let entities: { new (): object }[] = opts.include ? opts.include : getEntities();
-
+  let entities = opts.include || getEntities();
   if (opts.exclude) {
-    entities = entities.filter((entity) => opts.exclude.includes(entity));
+    entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }
-
   if (entities.length === 0) {
     console.warn('No entities for the onql express middleware');
   }
@@ -82,8 +80,8 @@ function assembleQuery<T>(type: { new (): T }, req: Request, extendQuery?: Exten
 }
 
 type MiddlewareOptions = {
-  include?: { new (): object }[];
-  exclude?: { new (): object }[];
+  include?: { new (): any }[];
+  exclude?: { new (): any }[];
   extendQuery?: ExtendQuery;
 };
 

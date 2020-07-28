@@ -188,6 +188,7 @@ import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
 import { getServerRepository } from '@onql/core/repository';
 
 export class ConfirmationService {
+  
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -286,10 +287,10 @@ app
   // ...other routes may go before and/or after (as usual)
   .use(
     '/api',
-    entitiesMiddleware({
-      // this will generate CRUD REST APIs for your entities
-      // all other entities will be automatically included
-      // 'include' option can also be used
+    // this will generate CRUD REST APIs for the entities.
+    // all entities will be automatically exposed unless
+    // 'include' or 'exclude' options are provided
+    entitiesMiddleware({      
       exclude: [Confirmation, User],
     })
   );
