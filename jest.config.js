@@ -9,7 +9,7 @@ module.exports = {
   testMatch: ['**/*.spec.ts'],
   testPathIgnorePatterns: ['node_modules', 'dist'],
   collectCoverage: true,
-  coverageReporters: ['html', 'text-summary'],
+  coverageReporters: ['html', 'text-summary', 'lcov'],
   coverageDirectory: 'coverage',
   moduleNameMapper: Object.keys(tsPathAliases).reduce((acc, key) => {
     const prop = '^' + key.replace('/*', '/(.*)$');
