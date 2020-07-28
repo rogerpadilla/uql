@@ -26,10 +26,10 @@
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/onql.git"
+    "url": "https://github.com/onql/onql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/onql/issues"
+    "url": "https://github.com/onql/onql/issues"
   },
   "keywords": [
     "persistence",
