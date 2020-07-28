@@ -311,8 +311,8 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 
 ## <a name="plugins"></a>:pill: Plugins
 
-- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">platform-express<a>
-- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">plaform-browser<a>
+- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">onql express<a>
+- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">onql browser<a>
 
 ## <a name="faq"></a>:book: Frequently Asked Questions
 
