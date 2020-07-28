@@ -8,7 +8,7 @@
 
 onql is a plug & play ORM library, with a declarative (and type-safe) JSON syntax allowing to query/update different data-sources. Basically, you declare what you want (using JSON) from your database, and then onql runs efficient (and safe) SQL or Mongo queries.
 
-onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (expressive syntax to retrieve what is necessary), but in a simple way (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)). onql can be used with (and without) any backend/frontend framework. onql's syntax is inspired by MongoDb, JPA, and GraphQL.
+onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (expressive syntax to retrieve what is necessary), but in a simple way using the REST APIs from always (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)). onql can be used with (and without) any backend/frontend framework. onql's syntax is inspired by MongoDb, JPA, and GraphQL.
 
 ## Table of Contents
 
