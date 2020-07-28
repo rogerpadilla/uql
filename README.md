@@ -207,23 +207,6 @@ export class ConfirmationService {
 
     await confirmationRepository.updateOneById(body.id, { status: CONFIRM_STATUS_VERIFIED }, querier);
   }
-
-  async obtainConfirm(id: number, hash: number) {
-    const confirmation = await getServerRepository(Confirmation).findOneById(id);
-
-    if (hash !== confirmation.hash) {
-      logger.warning(`Invalid hash code #${hash} for confirmation #${confirmation.id}`);
-      throw new AppValidationError('Confirmation not found.', ERROR_CODES.NOT_FOUND);
-    }
-
-    const resp: Confirmation = {
-      id: confirmation.id,
-      hash,
-      type: confirmation.type,
-    };
-
-    return resp;
-  }
 }
 ```
 
