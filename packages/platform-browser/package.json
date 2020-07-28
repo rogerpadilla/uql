@@ -6,7 +6,7 @@
   "main": "onql-platform-browser.min.js",
   "types": "onql-platform-browser.min.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run build && copyfiles package.json dist",
+    "prepublishOnly": "npm run build && copyfiles package.json README.md dist",
     "build": "npm run clean && webpack --progress --profile --bail --mode=production",
     "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
