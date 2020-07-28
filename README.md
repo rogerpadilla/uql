@@ -271,7 +271,7 @@ try {
 }
 ```
 
-## <a name="generate-crud-rest-api"></a>Generate CRUD REST APIs and call from Browser
+## <a name="generate-crud-rest-api"></a>:zap: Generate CRUD REST APIs and call from Browser
 
 onql do provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
 
