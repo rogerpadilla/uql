@@ -65,6 +65,9 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 Notice that the inheritance between entities is optional
 
 ```typescript
+import { v4 as uuidv4 } from 'uuid';
+import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from '@onql/core/entity';
+
 /**
  * an abstract class can (optionally) be used as a template for the entities
  * (so boilerplate code is reduced)
@@ -136,8 +139,7 @@ export class TaxCategory extends BaseEntity {
    * Any entity can specify its own ID Column and still inherit the others
    * columns/relations from its parent entity.
    * 'onInsert' callback can be used to specify a custom mechanism for
-   * auto-generating the primary-key's value when inserting:
-   * import { v4 as uuidv4 } from 'uuid';
+   * auto-generating the primary-key's value when inserting
    */
   @IdColumn({ onInsert: () => uuidv4() })
   pk?: string;
