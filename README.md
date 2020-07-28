@@ -19,7 +19,6 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 5. [Declarative API](#declarative-api)
 6. [Programmatic API](#programmatic-api)
 7. [Generate CRUD REST APIs and call from Browser](#generate-crud-rest-api)
-8. [Plugins](#plugins)
 9. [Frequently Asked Questions](#faq)
 
 ## <a name="features"></a>:star2: Features
@@ -308,11 +307,6 @@ initOnql({
 
 const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
 ```
-
-## <a name="plugins"></a>:pill: Plugins
-
-- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">onql express<a>
-- <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">onql browser<a>
 
 ## <a name="faq"></a>:book: Frequently Asked Questions
 
