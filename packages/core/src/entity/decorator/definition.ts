@@ -3,7 +3,7 @@ import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './typ
 
 declare const window: any;
 const holder = typeof window === 'object' ? window : {};
-const metaKey = '@onql/entities_meta';
+const metaKey = '@onql/entitiesMeta';
 holder[metaKey] = holder[metaKey] || new Map();
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
