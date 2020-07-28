@@ -19,7 +19,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 5. [Declarative API](#declarative-api)
 6. [Programmatic API](#programmatic-api)
 7. [Generate CRUD REST APIs and call from Browser](#generate-crud-rest-api)
-9. [Frequently Asked Questions](#faq)
+8. [Frequently Asked Questions](#faq)
 
 ## <a name="features"></a>:star2: Features
 
@@ -188,7 +188,6 @@ import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
 import { getServerRepository } from '@onql/core/repository';
 
 export class ConfirmationService {
-
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -208,7 +207,6 @@ export class ConfirmationService {
 
     await confirmationRepository.updateOneById(body.id, { status: CONFIRM_STATUS_VERIFIED }, querier);
   }
-
 }
 ```
 
@@ -291,8 +289,8 @@ app
     entitiesMiddleware({
       // this will generate CRUD REST APIs for your entities
       // all other entities will be automatically included
-      // use 'includeEntities' to specifiy exact entities (if needed)
-      excludeEntities: [Confirmation, User],
+      // 'include' option can also be used
+      exclude: [Confirmation, User],
     })
   );
 ```

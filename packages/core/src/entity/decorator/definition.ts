@@ -3,18 +3,19 @@ import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './typ
 
 declare const window: any;
 const holder = typeof window === 'object' ? window : {};
-const metaKey = '@onql/entitiesMeta';
-holder[metaKey] = holder[metaKey] || new Map();
+const key = '@onql/entitiesMeta';
+const metas: Map<{ new (): any }, EntityMeta<any>> = holder[key] || new Map();
+holder[key] = metas;
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  if (holder[metaKey].has(type)) {
-    return holder[metaKey].get(type);
+  if (metas.has(type)) {
+    return metas.get(type);
   }
   const meta: EntityMeta<T> = { type, name: type.name, properties: {} };
   Object.defineProperty(meta, 'hasId', {
     value: () => Object.keys(meta.properties).some((prop) => meta.properties[prop].column?.isId),
   });
-  holder[metaKey].set(type, meta);
+  metas.set(type, meta);
   return meta;
 }
 
@@ -113,6 +114,10 @@ export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
     throw new Error(`'${type.name}' is not an entity`);
   }
   return meta;
+}
+
+export function getEntities() {
+  return Array.from(metas.keys());
 }
 
 function isPrimitiveType(type: any): boolean {
