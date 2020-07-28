@@ -309,7 +309,7 @@ initOnql({
 const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
 ```
 
-## <a name="plugins"></a>Plugins
+## <a name="plugins"></a>:pill: Plugins
 
 - <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
 - <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">browser<a>
