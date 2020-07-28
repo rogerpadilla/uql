@@ -181,7 +181,7 @@ initOnql({
 });
 ```
 
-## <a name="declarative-api"></a>:mechanical_arm: Declarative API
+## <a name="declarative-api"></a>:speaking_head: Declarative API
 
 ```typescript
 import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';

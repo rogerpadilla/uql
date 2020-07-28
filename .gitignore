@@ -1,10 +1,10 @@
-node_modules
-dist
-coverage
-yarn-error.log
 .DS_Store
-yarn.lock
+node_modules
 .yarn
+yarn.lock
+yarn-error.log
 .vscode
 tsconfig.tsbuildinfo
 lerna-debug.log
+dist
+coverage
