@@ -2,8 +2,8 @@ language: node_js
 node_js:
   - 'stable'
 install:
-  - yarn install
-  - yarn install coveralls
+  - yarn
+  - yarn add coveralls
 script: 'yarn test && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js'
 notifications:
   email: false
