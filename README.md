@@ -314,7 +314,7 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 - <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-express">express<a>
 - <a href="https://github.com/rogerpadilla/onql/tree/master/packages/platform-browser">browser<a>
 
-## <a name="faq"></a>Frequently Asked Questions
+## <a name="faq"></a>:book: Frequently Asked Questions
 
 ### Why onql when there already are GraphQL, TypeORM, Mikro-ORM, Sequelize?
 
