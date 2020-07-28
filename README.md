@@ -187,8 +187,8 @@ import { getServerRepository } from '@onql/core/repository';
 import { Transactional, InjectQuerier, Querier } from '@onql/core/datasource';
 
 export class ConfirmationService {
-  
-  @Transactional({ propagation: 'required' })
+
+  @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
     const confirmationRepository = getServerRepository(User);
