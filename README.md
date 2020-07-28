@@ -331,7 +331,7 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 
 ## <a name="faq"></a>Frequently Asked Questions
 
-### Why onql when there already are things like GraphQL, TypeORM, Mikro-ORM, Sequelize?
+### Why onql when there already are GraphQL, TypeORM, Mikro-ORM, Sequelize?
 
 Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and [a new language](https://graphql.org/learn/queries); onql should allow same this, but without need to configure and maintain these additional components.
 
