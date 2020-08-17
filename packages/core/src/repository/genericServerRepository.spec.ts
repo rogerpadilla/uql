@@ -27,8 +27,8 @@ beforeEach(() => {
   jest.spyOn(querier, 'remove');
   jest.spyOn(querier, 'find');
   jest.spyOn(querier, 'beginTransaction');
-  jest.spyOn(querier, 'commit');
-  jest.spyOn(querier, 'rollback');
+  jest.spyOn(querier, 'commitTransaction');
+  jest.spyOn(querier, 'rollbackTransaction');
   jest.spyOn(querier, 'release').mockImplementation(() => Promise.resolve());
 
   repository = new GenericServerRepository(User);
@@ -51,9 +51,9 @@ it('insertOne', async () => {
   expect(querier.update).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('insertOne cascade oneToOne', async () => {
@@ -81,9 +81,9 @@ it('insertOne cascade oneToOne', async () => {
   expect(querier.update).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('insertOne cascade oneToMany', async () => {
@@ -116,9 +116,9 @@ it('insertOne cascade oneToMany', async () => {
   expect(querier.update).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById', async () => {
@@ -132,9 +132,9 @@ it('updateOneById', async () => {
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById cascade oneToOne', async () => {
@@ -162,9 +162,9 @@ it('updateOneById cascade oneToOne', async () => {
   expect(querier.update).toBeCalledTimes(2);
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById cascade oneToOne null', async () => {
@@ -189,9 +189,9 @@ it('updateOneById cascade oneToOne null', async () => {
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById cascade oneToMany', async () => {
@@ -225,9 +225,9 @@ it('updateOneById cascade oneToMany', async () => {
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById cascade oneToMany null', async () => {
@@ -255,9 +255,9 @@ it('updateOneById cascade oneToMany null', async () => {
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('updateOneById unaffected record', async () => {
@@ -272,9 +272,9 @@ it('updateOneById unaffected record', async () => {
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
 });
 
 it('saveOne insert', async () => {
@@ -290,9 +290,9 @@ it('saveOne insert', async () => {
   expect(querier.find).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('saveOne update', async () => {
@@ -308,9 +308,9 @@ it('saveOne update', async () => {
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.remove).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('findOneById', async () => {
@@ -320,8 +320,8 @@ it('findOneById', async () => {
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });
 
@@ -332,8 +332,8 @@ it('findOne', async () => {
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });
 
@@ -348,8 +348,8 @@ it('find', async () => {
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });
 
@@ -364,9 +364,9 @@ it('removeOneById', async () => {
   expect(querier.update).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('removeOneById unaffected record', async () => {
@@ -379,9 +379,9 @@ it('removeOneById unaffected record', async () => {
   expect(querier.update).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
 });
 
 it('remove', async () => {
@@ -392,12 +392,12 @@ it('remove', async () => {
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.remove).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
   expect(querier.insertOne).not.toBeCalled();
   expect(querier.update).not.toBeCalled();
   expect(querier.find).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
 });
 
 it('count', async () => {
@@ -409,8 +409,8 @@ it('count', async () => {
   expect(querier.find).toBeCalledTimes(0);
   expect(querier.release).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });
 
@@ -421,9 +421,9 @@ it('rollback - insertOne', async () => {
   expect(querier.update).toBeCalledTimes(0);
   expect(querier.query).toBeCalledTimes(2);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
 });
 
 it('rollback - update', async () => {
@@ -433,9 +433,9 @@ it('rollback - update', async () => {
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.query).toBeCalledTimes(2);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
 });
 
 it('rollback - commit', async () => {
@@ -445,9 +445,9 @@ it('rollback - commit', async () => {
   await expect(repository.saveOne({ company: 123 })).rejects.toThrow('Some Error');
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
+  expect(querier.commitTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(1);
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
 });
 
 it('missing @InjectQuerier()', () => {

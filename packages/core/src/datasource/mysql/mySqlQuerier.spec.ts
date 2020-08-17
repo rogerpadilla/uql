@@ -16,8 +16,8 @@ beforeEach(() => {
   });
   jest.spyOn(querier, 'query');
   jest.spyOn(querier, 'beginTransaction');
-  jest.spyOn(querier, 'commit');
-  jest.spyOn(querier, 'rollback');
+  jest.spyOn(querier, 'commitTransaction');
+  jest.spyOn(querier, 'rollbackTransaction');
   jest.spyOn(querier, 'release');
 });
 
@@ -33,8 +33,8 @@ it('find', async () => {
   expect(querier.query).toBeCalledWith('SELECT `id`, `name` FROM `User` WHERE `company` = 123 LIMIT 100');
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).not.toBeCalled();
 });
 
@@ -46,8 +46,8 @@ it('remove', async () => {
   expect(querier.query).toBeCalledWith('DELETE FROM `User` WHERE `company` = 123');
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).not.toBeCalled();
 });
 
@@ -61,8 +61,8 @@ it('insertOne', async () => {
   );
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).not.toBeCalled();
 });
 
@@ -76,8 +76,8 @@ it('update', async () => {
   );
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).not.toBeCalled();
 });
 
@@ -89,14 +89,14 @@ it('transaction', async () => {
   expect(querier.hasOpenTransaction).toBe(true);
   await querier.update(User, { id: 5 }, { name: 'Hola' });
   expect(querier.hasOpenTransaction).toBe(true);
-  await querier.commit();
+  await querier.commitTransaction();
   expect(querier.hasOpenTransaction).toBeFalsy();
   await querier.release();
   expect(querier.hasOpenTransaction).toBeFalsy();
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });
 
@@ -108,30 +108,30 @@ it('transaction beging pending', async () => {
   expect(querier.hasOpenTransaction).toBe(true);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(2);
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).not.toBeCalled();
 });
 
 it('transaction commit no pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
-  await expect(querier.commit()).rejects.toThrow('There is not a pending transaction.');
+  await expect(querier.commitTransaction()).rejects.toThrow('There is not a pending transaction.');
   expect(querier.hasOpenTransaction).toBeFalsy();
   expect(querier.query).toBeCalledTimes(0);
   expect(querier.beginTransaction).toBeCalledTimes(0);
-  expect(querier.commit).toBeCalledTimes(1);
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).toBeCalledTimes(1);
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(0);
 });
 
 it('transaction rollback no pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
-  await expect(querier.rollback()).rejects.toThrow('There is not a pending transaction.');
+  await expect(querier.rollbackTransaction()).rejects.toThrow('There is not a pending transaction.');
   expect(querier.hasOpenTransaction).toBeFalsy();
   expect(querier.query).toBeCalledTimes(0);
   expect(querier.beginTransaction).toBeCalledTimes(0);
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).toBeCalledTimes(1);
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).toBeCalledTimes(1);
   expect(querier.release).toBeCalledTimes(0);
 });
 
@@ -147,7 +147,7 @@ it('transaction release pending', async () => {
   expect(querier.hasOpenTransaction).toBe(true);
   expect(querier.query).toBeCalledTimes(2);
   expect(querier.beginTransaction).toBeCalledTimes(1);
-  expect(querier.commit).not.toBeCalled();
-  expect(querier.rollback).not.toBeCalled();
+  expect(querier.commitTransaction).not.toBeCalled();
+  expect(querier.rollbackTransaction).not.toBeCalled();
   expect(querier.release).toBeCalledTimes(1);
 });

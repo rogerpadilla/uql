@@ -1,17 +1,17 @@
-import { FilterQuery } from 'mongodb';
+import { FilterQuery, ObjectId } from 'mongodb';
 import { QueryFilter, Query } from '../../type';
 import { getEntityMeta } from '../../entity';
 
 export class MongoDialect {
-  buildFilter<T>(filter: QueryFilter<T>): FilterQuery<T> {
+  buildFilter<T>(filter: QueryFilter<T> = {}): FilterQuery<T> {
     return Object.keys(filter).reduce((acc, key) => {
-      const val = filter[key];
       if (key === '$and' || key === '$or') {
+        const val = filter[key];
         acc[key] = Object.keys(val).map((prop) => {
-          return { [prop]: val[prop] };
+          return { [prop]: castId(prop, val) };
         });
       } else {
-        acc[key] = val;
+        acc[key] = castId(key, filter);
       }
       return acc;
     }, {});
@@ -46,4 +46,8 @@ export class MongoDialect {
 
     return pipeline;
   }
+}
+
+function castId(key: string, obj: any) {
+  return key === '_id' && !(obj[key] instanceof ObjectId) ? new ObjectId(obj[key]) : obj[key];
 }

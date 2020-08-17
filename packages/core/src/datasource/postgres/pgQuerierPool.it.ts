@@ -18,10 +18,7 @@ describe(PgQuerierPool.name, () => {
     const querier = await pool.getQuerier();
     try {
       await dropTables(querier);
-      await createUserTable(querier);
-      await createCompanyTable(querier);
-      await createTaxCategoryTable(querier);
-      await createTaxTable(querier);
+      await createTables(querier);
     } finally {
       await querier.release();
     }
@@ -31,8 +28,8 @@ describe(PgQuerierPool.name, () => {
     querier = await pool.getQuerier();
     jest.spyOn(querier, 'query');
     jest.spyOn(querier, 'beginTransaction');
-    jest.spyOn(querier, 'commit');
-    jest.spyOn(querier, 'rollback');
+    jest.spyOn(querier, 'commitTransaction');
+    jest.spyOn(querier, 'rollbackTransaction');
     jest.spyOn(querier, 'release');
   });
 
@@ -82,6 +79,13 @@ describe(PgQuerierPool.name, () => {
     expect(count5).toBe(0);
   });
 
+  async function createTables(querier: SqlQuerier) {
+    await createUserTable(querier);
+    await createCompanyTable(querier);
+    await createTaxCategoryTable(querier);
+    await createTaxTable(querier);
+  }
+
   async function createUserTable(querier: SqlQuerier): Promise<void> {
     await querier.query(`CREATE TABLE "User" (
     "id" SERIAL PRIMARY KEY,
@@ -101,7 +105,7 @@ describe(PgQuerierPool.name, () => {
     "name" VARCHAR( 45 ) NOT NULL,
     "createdAt" Bigint NOT NULL,
     "updatedAt" Bigint,
-    "user" INT,
+    "user" INT NOT NULL REFERENCES "User",
     "status" SmallInt
   );`);
   }
@@ -113,7 +117,7 @@ describe(PgQuerierPool.name, () => {
     "description" VARCHAR(300),
     "createdAt" Bigint NOT NULL,
     "updatedAt" Bigint,
-    "user" INT,
+    "user" INT NOT NULL REFERENCES "User",
     "company" INT NOT NULL REFERENCES "Company",
     "status" SmallInt
   );`);
@@ -127,7 +131,7 @@ describe(PgQuerierPool.name, () => {
     "createdAt" Bigint NOT NULL,
     "updatedAt" Bigint,
     "category" INT NOT NULL REFERENCES "TaxCategory",
-    "user" INT,
+    "user" INT NOT NULL REFERENCES "User",
     "company" INT NOT NULL REFERENCES "Company",
     "status" SmallInt
   );`);

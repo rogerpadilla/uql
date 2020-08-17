@@ -19,10 +19,7 @@ describe(MySql2QuerierPool.name, () => {
     const querier = await pool.getQuerier();
     try {
       await dropTables(querier);
-      await createUserTable(querier);
-      await createCompanyTable(querier);
-      await createTaxCategoryTable(querier);
-      await createTaxTable(querier);
+      await createTables(querier);
     } finally {
       await querier.release();
     }
@@ -78,6 +75,13 @@ describe(MySql2QuerierPool.name, () => {
     expect(count5).toBe(0);
   });
 
+  async function createTables(querier: SqlQuerier) {
+    await createUserTable(querier);
+    await createCompanyTable(querier);
+    await createTaxCategoryTable(querier);
+    await createTaxTable(querier);
+  }
+
   async function createUserTable(querier: SqlQuerier): Promise<void> {
     await querier.query(`CREATE TABLE User (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -97,7 +101,7 @@ describe(MySql2QuerierPool.name, () => {
     name VARCHAR( 45 ) NOT NULL,
     createdAt Bigint NOT NULL,
     updatedAt Bigint,
-    user INT,
+    user INT NOT NULL REFERENCES User,
     status SmallInt
   );`);
   }
@@ -109,7 +113,7 @@ describe(MySql2QuerierPool.name, () => {
     description VARCHAR(300),
     createdAt Bigint NOT NULL,
     updatedAt Bigint,
-    user INT,
+    user INT NOT NULL REFERENCES User,
     company INT NOT NULL REFERENCES Company,
     status SmallInt
   );`);
@@ -123,7 +127,7 @@ describe(MySql2QuerierPool.name, () => {
     createdAt Bigint NOT NULL,
     updatedAt Bigint,
     category INT NOT NULL REFERENCES TaxCategory,
-    user INT,
+    user INT NOT NULL REFERENCES User,
     company INT NOT NULL REFERENCES Company,
     status SmallInt
   );`);

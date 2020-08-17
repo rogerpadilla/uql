@@ -4,9 +4,9 @@ import { QuerierPoolConnection, Querier } from './type';
 import { SqlDialect } from './sqlDialect';
 
 export abstract class SqlQuerier extends Querier {
-  protected hasPendingTransaction?: boolean;
+  private hasPendingTransaction?: boolean;
 
-  constructor(protected readonly dialect: SqlDialect, protected readonly conn: QuerierPoolConnection) {
+  constructor(readonly dialect: SqlDialect, readonly conn: QuerierPoolConnection) {
     super();
   }
 
@@ -77,7 +77,7 @@ export abstract class SqlQuerier extends Querier {
     this.hasPendingTransaction = true;
   }
 
-  async commit(): Promise<void> {
+  async commitTransaction(): Promise<void> {
     if (!this.hasPendingTransaction) {
       throw new Error('There is not a pending transaction.');
     }
@@ -85,7 +85,7 @@ export abstract class SqlQuerier extends Querier {
     this.hasPendingTransaction = undefined;
   }
 
-  async rollback(): Promise<void> {
+  async rollbackTransaction(): Promise<void> {
     if (!this.hasPendingTransaction) {
       throw new Error('There is not a pending transaction.');
     }

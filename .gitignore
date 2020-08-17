@@ -8,3 +8,4 @@ tsconfig.tsbuildinfo
 lerna-debug.log
 dist
 coverage
+data

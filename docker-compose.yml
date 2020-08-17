@@ -20,6 +20,12 @@ services:
     ports:
       - '5432:5432'
     container_name: onql-postgres-9
+  # Managed with 'run-rs' package
+  # mongodb:
+  #   image: 'mongo:4.4.0'
+  #   container_name: 'onql-mongodb-4'
+  #   ports:
+  #     - '27017:27017'
   # postgres-12:
   #   image: postgres:12.3
   #   environment:

@@ -33,12 +33,12 @@ export function Transactional(opts: { readonly propagation: 'supports' | 'requir
         }
         const resp = await originalMethod.apply(this, args);
         if (isOwnAuto && querier.hasOpenTransaction) {
-          await querier.commit();
+          await querier.commitTransaction();
         }
         return resp;
       } catch (err) {
         if (isOwnAuto && querier.hasOpenTransaction) {
-          await querier.rollback();
+          await querier.rollbackTransaction();
         }
         throw err;
       } finally {
