@@ -16,19 +16,19 @@ export abstract class SqlQuerier extends Querier {
     return res[0];
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]): Promise<number[]> {
+  async insert<T>(type: { new (): T }, bodies: T[]): Promise<string[]> {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
-    const ids = Array<number>(bodies.length)
-      .fill(res.insertId)
+    const ids = Array<string>(bodies.length)
+      .fill(String(res.insertId))
       .map((firstId, index) => firstId + index);
     return ids;
   }
 
-  async insertOne<T>(type: { new (): T }, body: T): Promise<number> {
+  async insertOne<T>(type: { new (): T }, body: T): Promise<string> {
     const query = this.dialect.insert(type, body);
     const res = await this.query<QueryUpdateResult>(query);
-    return res.insertId;
+    return String(res.insertId);
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {

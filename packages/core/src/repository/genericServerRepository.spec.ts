@@ -41,9 +41,9 @@ afterEach(() => {
 });
 
 it('insertOne', async () => {
-  const mock: QueryUpdateResult = { insertId: 1 };
+  const mock: QueryUpdateResult = { insertId: '1' };
   mockRes = mock;
-  const resp = await repository.insertOne({ company: 123 });
+  const resp = await repository.insertOne({ company: '123' });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.insertOne).toBeCalledTimes(1);
@@ -57,7 +57,7 @@ it('insertOne', async () => {
 });
 
 it('insertOne cascade oneToOne', async () => {
-  const mock: QueryUpdateResult = { insertId: 1 };
+  const mock: QueryUpdateResult = { insertId: '1' };
   mockRes = mock;
   const resp = await repository.insertOne({
     name: 'some name',
@@ -87,7 +87,7 @@ it('insertOne cascade oneToOne', async () => {
 });
 
 it('insertOne cascade oneToMany', async () => {
-  const mock: QueryUpdateResult = { insertId: 1 };
+  const mock: QueryUpdateResult = { insertId: '1' };
   mockRes = mock;
   const repo = new GenericServerRepository(InventoryAdjustment);
   const resp = await repo.insertOne({
@@ -124,7 +124,7 @@ it('insertOne cascade oneToMany', async () => {
 it('updateOneById', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
-  const resp = await repository.updateOneById(5, { company: 123 });
+  const resp = await repository.updateOneById(5, { company: '123' });
   expect(resp).toEqual(undefined);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.update).toBeCalledTimes(1);
@@ -263,7 +263,7 @@ it('updateOneById cascade oneToMany null', async () => {
 it('updateOneById unaffected record', async () => {
   const mock: QueryUpdateResult = { affectedRows: 0 };
   mockRes = mock;
-  await expect(repository.updateOneById(5, { company: 123 })).rejects.toThrow('Unaffected record');
+  await expect(repository.updateOneById(5, { company: '123' })).rejects.toThrow('Unaffected record');
   expect(repository.updateOneById).toBeCalledTimes(1);
   expect(repository.insertOne).not.toBeCalled();
   expect(querier.query).toBeCalledTimes(3);
@@ -278,9 +278,9 @@ it('updateOneById unaffected record', async () => {
 });
 
 it('saveOne insert', async () => {
-  const mock: QueryUpdateResult = { insertId: 5 };
+  const mock: QueryUpdateResult = { insertId: '5' };
   mockRes = mock;
-  const resp = await repository.saveOne({ company: 123 });
+  const resp = await repository.saveOne({ company: '123' });
   expect(resp).toEqual(mock.insertId);
   expect(repository.insertOne).toBeCalledTimes(1);
   expect(repository.updateOneById).not.toBeCalled();
@@ -298,7 +298,7 @@ it('saveOne insert', async () => {
 it('saveOne update', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
-  const resp = await repository.saveOne({ id: 5, company: 123 });
+  const resp = await repository.saveOne({ id: '5', company: '123' });
   expect(resp).toEqual(5);
   expect(repository.updateOneById).toBeCalledTimes(1);
   expect(repository.insertOne).not.toBeCalled();
@@ -314,7 +314,7 @@ it('saveOne update', async () => {
 });
 
 it('findOneById', async () => {
-  const mock: User = { id: 1, name: 'something' };
+  const mock: User = { id: '1', name: 'something' };
   mockRes = [mock];
   const resp = await repository.findOneById(1);
   expect(resp).toEqual(mock);
@@ -326,9 +326,9 @@ it('findOneById', async () => {
 });
 
 it('findOne', async () => {
-  const mock: User = { id: 1, name: 'something' };
+  const mock: User = { id: '1', name: 'something' };
   mockRes = [mock];
-  const resp = await repository.findOne({ filter: { company: 123 }, project: { id: 1, name: 1 } });
+  const resp = await repository.findOne({ filter: { company: '123' }, project: { id: 1, name: 1 } });
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();
@@ -338,10 +338,10 @@ it('findOne', async () => {
 });
 
 it('find', async () => {
-  const mock: User[] = [{ id: 1, name: 'something' }];
+  const mock: User[] = [{ id: '1', name: 'something' }];
   mockRes = mock;
   const resp = await repository.find({
-    filter: { company: 123 },
+    filter: { company: '123' },
     project: { id: 1, name: 1 },
     limit: 100,
   });
@@ -387,7 +387,7 @@ it('removeOneById unaffected record', async () => {
 it('remove', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
-  const resp = await repository.remove({ company: 123 });
+  const resp = await repository.remove({ company: '123' });
   expect(resp).toEqual(mock.affectedRows);
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.remove).toBeCalledTimes(1);
@@ -403,7 +403,7 @@ it('remove', async () => {
 it('count', async () => {
   const mock = 1;
   mockRes = [{ count: mock }];
-  const resp = await repository.count({ company: 123 });
+  const resp = await repository.count({ company: '123' });
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.find).toBeCalledTimes(0);
@@ -416,7 +416,7 @@ it('count', async () => {
 
 it('rollback - insertOne', async () => {
   jest.spyOn(querier, 'insertOne').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-  await expect(repository.saveOne({ company: 123 })).rejects.toThrow('Some Error');
+  await expect(repository.saveOne({ company: '123' })).rejects.toThrow('Some Error');
   expect(querier.insertOne).toBeCalledTimes(1);
   expect(querier.update).toBeCalledTimes(0);
   expect(querier.query).toBeCalledTimes(2);
@@ -428,7 +428,7 @@ it('rollback - insertOne', async () => {
 
 it('rollback - update', async () => {
   jest.spyOn(querier, 'update').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-  await expect(repository.saveOne({ id: 1, company: 123 })).rejects.toThrow('Some Error');
+  await expect(repository.saveOne({ id: '1', company: '123' })).rejects.toThrow('Some Error');
   expect(querier.insertOne).toBeCalledTimes(0);
   expect(querier.update).toBeCalledTimes(1);
   expect(querier.query).toBeCalledTimes(2);
@@ -439,10 +439,10 @@ it('rollback - update', async () => {
 });
 
 it('rollback - commit', async () => {
-  const mock: QueryUpdateResult = { insertId: 5 };
+  const mock: QueryUpdateResult = { insertId: '5' };
   mockRes = mock;
-  jest.spyOn(querier, 'commit').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-  await expect(repository.saveOne({ company: 123 })).rejects.toThrow('Some Error');
+  jest.spyOn(querier, 'commitTransaction').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
+  await expect(repository.saveOne({ company: '123' })).rejects.toThrow('Some Error');
   expect(querier.query).toBeCalledTimes(3);
   expect(querier.beginTransaction).toBeCalledTimes(1);
   expect(querier.commitTransaction).toBeCalledTimes(1);
@@ -451,7 +451,7 @@ it('rollback - commit', async () => {
 });
 
 it('missing @InjectQuerier()', () => {
-  const mock: QueryUpdateResult = { insertId: 1 };
+  const mock: QueryUpdateResult = { insertId: '1' };
   mockRes = mock;
 
   expect(() => {

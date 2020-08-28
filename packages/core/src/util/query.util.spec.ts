@@ -30,7 +30,7 @@ it('stringifyQuery', () => {
   const source: Query<Item> = {
     project: { id: 1, name: 1 },
     populate: { tax: null, measureUnit: { project: { id: 1, name: 1, category: 1 } } },
-    filter: { name: 'Batman', company: 38 },
+    filter: { name: 'Batman', company: '38' },
     sort: { company: 1, name: -1 },
     skip: undefined,
     limit: 5,
@@ -50,7 +50,7 @@ it('buildQuery stringified', () => {
   };
   const expected: Query<Item> = {
     project: { id: 1, name: 1 },
-    filter: { name: 'Batman', company: 40 },
+    filter: { name: 'Batman', company: '40' },
     populate: {
       measureUnit: { project: { id: 1, name: 1 } },
       tax: { project: { id: 1, name: 1 } },

@@ -3,11 +3,11 @@ import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from './deco
 
 export abstract class BaseEntity {
   @IdColumn()
-  id?: number;
+  id?: string;
   @ManyToOne({ type: () => Company })
-  company?: number | Company;
+  company?: string | Company;
   @ManyToOne({ type: () => User })
-  user?: number | User;
+  user?: string | User;
   @Column({ onInsert: () => Date.now() })
   createdAt?: number;
   @Column({ onUpdate: () => Date.now() })
@@ -27,7 +27,7 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   @IdColumn({ name: 'pk' })
-  id?: number;
+  id?: string;
   @Column({ name: 'image' })
   picture?: string;
 }
@@ -51,7 +51,7 @@ export class LedgerAccount extends BaseEntity {
   @Column()
   description?: string;
   @Column()
-  parent?: number;
+  parent?: string;
 }
 
 @Entity()

@@ -11,50 +11,50 @@ it('map rows - empty', () => {
 it('mapRows', () => {
   const source: Storehouse[] = [
     {
-      id: 1,
+      id: '1',
       name: 'Auxiliar',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: null,
-      user: 1,
-      company: 1,
+      user: '1',
+      company: '1',
       status: null,
     },
     {
-      id: 2,
+      id: '2',
       name: 'Principal',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      user: 1,
-      company: 1,
+      user: '1',
+      company: '1',
       status: null,
     },
   ];
   const result = mapRows(source);
   const expected: Storehouse[] = [
     {
-      id: 1,
+      id: '1',
       name: 'Auxiliar',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: null,
-      user: 1,
-      company: 1,
+      user: '1',
+      company: '1',
       status: null,
     },
     {
-      id: 2,
+      id: '2',
       name: 'Principal',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      user: 1,
-      company: 1,
+      user: '1',
+      company: '1',
       status: null,
     },
   ];
@@ -64,7 +64,7 @@ it('mapRows', () => {
 it('mapRows deep populate', () => {
   const source = [
     {
-      id: 9,
+      id: '9',
       buyPrice: 1000,
       number: 10,
       'item.id': 1,
@@ -93,7 +93,7 @@ it('mapRows deep populate', () => {
       'item.user.name': null as string,
     },
     {
-      id: 15,
+      id: '15',
       buyPrice: 2000,
       number: 20,
       'item.id': 2,
@@ -108,50 +108,50 @@ it('mapRows deep populate', () => {
   const result = mapRows(source as Item[]);
   const expected: ItemAdjustment[] = [
     {
-      id: 9,
+      id: '9',
       buyPrice: 1000,
       number: 10,
       item: {
-        id: 1,
+        id: '1',
         name: 'Arepa de Yuca y Queso x 6',
         createdAt: 1,
         buyLedgerAccount: {
-          id: 1,
+          id: '1',
           name: 'Ventas',
         },
         saleLedgerAccount: {
-          id: 1,
+          id: '1',
           name: 'Ventas',
         },
         tax: {
-          id: 1,
+          id: '1',
           name: 'IVA 0%',
           percentage: 0,
           category: {
-            id: 1,
+            id: '1',
             name: 'Impuestos',
             description: 'Nacionales',
           },
         },
-        company: 1,
+        company: '1',
         measureUnit: {
-          id: 1,
+          id: '1',
           name: 'Unidad',
         },
         inventoryable: (1 as unknown) as boolean,
       },
     },
     {
-      id: 15,
+      id: '15',
       buyPrice: 2000,
       number: 20,
       item: {
-        id: 2,
+        id: '2',
         name: 'Pony Malta 2 litros',
         createdAt: 1,
-        company: 1,
+        company: '1',
         user: {
-          id: 5,
+          id: '5',
           name: 'Roshi Master',
         },
       },

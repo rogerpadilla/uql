@@ -22,9 +22,13 @@ export class MongodbQuerier extends Querier<string> {
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
-    const res = await this.collection(type).updateMany(this.dialect.buildFilter(filter), body, {
-      session: this.session,
-    });
+    const res = await this.collection(type).updateMany(
+      this.dialect.buildFilter(type, filter),
+      { $set: body },
+      {
+        session: this.session,
+      }
+    );
     return res.modifiedCount;
   }
 
@@ -36,7 +40,7 @@ export class MongodbQuerier extends Querier<string> {
       return parseDocument(document);
     }
 
-    const document = await this.collection(type).findOne(this.dialect.buildFilter(qm.filter), {
+    const document = await this.collection(type).findOne(this.dialect.buildFilter(type, qm.filter), {
       projection: qm.project,
       session: this.session,
     });
@@ -55,7 +59,7 @@ export class MongodbQuerier extends Querier<string> {
     const cursor = this.collection(type).find({}, { session: this.session });
 
     if (qm.filter) {
-      const filter = this.dialect.buildFilter(qm.filter);
+      const filter = this.dialect.buildFilter(type, qm.filter);
       cursor.filter(filter);
     }
     if (qm.project) {
@@ -77,11 +81,13 @@ export class MongodbQuerier extends Querier<string> {
   }
 
   count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number> {
-    return this.collection(type).countDocuments(this.dialect.buildFilter(filter), { session: this.session });
+    return this.collection(type).countDocuments(this.dialect.buildFilter(type, filter), { session: this.session });
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
-    const res = await this.collection(type).deleteMany(this.dialect.buildFilter(filter), { session: this.session });
+    const res = await this.collection(type).deleteMany(this.dialect.buildFilter(type, filter), {
+      session: this.session,
+    });
     return res.deletedCount;
   }
 
@@ -107,7 +113,15 @@ export class MongodbQuerier extends Querier<string> {
       throw new Error('There is not a pending transaction.');
     }
     await this.session.commitTransaction();
-    this.session.endSession();
+    return new Promise((resolve, reject) => {
+      this.session.endSession((err) => {
+        if (err) {
+          return reject(err);
+        }
+        this.session = undefined;
+        resolve();
+      });
+    });
   }
 
   async rollbackTransaction(): Promise<void> {

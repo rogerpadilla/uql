@@ -22,11 +22,11 @@ beforeEach(() => {
 });
 
 it('find', async () => {
-  const mock: User[] = [{ id: 1, name: 'something' }];
+  const mock: User[] = [{ id: '1', name: 'something' }];
   mockRes = mock;
   const resp = await querier.find(User, {
     project: { id: 1, name: 1 },
-    filter: { company: 123 },
+    filter: { company: '123' },
     limit: 100,
   });
   expect(resp).toEqual(mock);
@@ -41,7 +41,7 @@ it('find', async () => {
 it('remove', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
-  const resp = await querier.remove(User, { company: 123 });
+  const resp = await querier.remove(User, { company: '123' });
   expect(resp).toEqual(mock.affectedRows);
   expect(querier.query).toBeCalledWith('DELETE FROM `User` WHERE `company` = 123');
   expect(querier.query).toBeCalledTimes(1);
@@ -52,9 +52,9 @@ it('remove', async () => {
 });
 
 it('insertOne', async () => {
-  const mock: QueryUpdateResult = { insertId: 1 };
+  const mock: QueryUpdateResult = { insertId: '1' };
   mockRes = mock;
-  const resp = await querier.insertOne(User, { company: 123 });
+  const resp = await querier.insertOne(User, { company: '123' });
   expect(resp).toEqual(mock.insertId);
   expect(querier.query).toBeCalledWith(
     expect.toMatch(/^INSERT INTO `User` \(`company`, `createdAt`\) VALUES \(123, \d+\)$/)
@@ -69,7 +69,7 @@ it('insertOne', async () => {
 it('update', async () => {
   const mock: QueryUpdateResult = { affectedRows: 5 };
   mockRes = mock;
-  const resp = await querier.update(User, { id: 5 }, { name: 'Hola' });
+  const resp = await querier.update(User, { id: '5' }, { name: 'Hola' });
   expect(resp).toEqual(mock.affectedRows);
   expect(querier.query).toBeCalledWith(
     expect.toMatch(/^UPDATE `User` SET `name` = 'Hola', `updatedAt` = \d+ WHERE `id` = 5$/)
@@ -87,7 +87,7 @@ it('transaction', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
   await querier.beginTransaction();
   expect(querier.hasOpenTransaction).toBe(true);
-  await querier.update(User, { id: 5 }, { name: 'Hola' });
+  await querier.update(User, { id: '5' }, { name: 'Hola' });
   expect(querier.hasOpenTransaction).toBe(true);
   await querier.commitTransaction();
   expect(querier.hasOpenTransaction).toBeFalsy();
@@ -141,7 +141,7 @@ it('transaction release pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
   await querier.beginTransaction();
   expect(querier.hasOpenTransaction).toBe(true);
-  await querier.update(User, { id: 5 }, { name: 'Hola' });
+  await querier.update(User, { id: '5' }, { name: 'Hola' });
   expect(querier.hasOpenTransaction).toBe(true);
   await expect(querier.release()).rejects.toThrow('Querier should not be released while there is an open transaction.');
   expect(querier.hasOpenTransaction).toBe(true);

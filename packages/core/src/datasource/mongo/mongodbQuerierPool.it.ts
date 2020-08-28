@@ -2,13 +2,11 @@ import { User } from '../../entity/entityMock';
 import MongodbQuerierPool from './mongodbQuerierPool';
 import { MongodbQuerier } from './mongodbQuerier';
 
-// eslint-disable-next-line jest/no-test-prefixes, jest/no-disabled-tests
-xdescribe(MongodbQuerierPool.name, () => {
+describe(MongodbQuerierPool.name, () => {
   let pool: MongodbQuerierPool;
   let querier: MongodbQuerier;
 
   beforeAll(async () => {
-    jest.setTimeout(1000);
     pool = new MongodbQuerierPool({
       host: 'localhost',
       port: 27017,
@@ -16,8 +14,8 @@ xdescribe(MongodbQuerierPool.name, () => {
     });
     const querier = await pool.getQuerier();
     try {
-      await dropTables(querier);
-      await createTables(querier);
+      await dropCollections(querier);
+      await createCollections(querier);
     } finally {
       await querier.release();
     }
@@ -49,8 +47,7 @@ xdescribe(MongodbQuerierPool.name, () => {
       createdAt: now,
     });
     expect(id).toMatch(/^[a-f\d]{24}$/i);
-    console.log('id', id);
-    const user = await querier.findOne(User, { _id: id } as any);
+    const user = await querier.findOne(User, { filter: { id } });
     const users = await querier.find(User, { filter: { status: null }, limit: 100 });
     const expectedUser = {
       _id: id,
@@ -59,7 +56,7 @@ xdescribe(MongodbQuerierPool.name, () => {
       password: '12345678!',
       createdAt: now,
     };
-    // expect(user).toEqual(expectedUser);
+    expect(user).toEqual(expectedUser);
     expect(users).toEqual([expectedUser]);
     const count1 = await querier.count(User);
     expect(count1).toBe(1);
@@ -68,19 +65,19 @@ xdescribe(MongodbQuerierPool.name, () => {
     const count3 = await querier.count(User, { status: 1 });
     expect(count3).toBe(0);
     await querier.beginTransaction();
-    const updatedRows = await querier.update(User, { _id: id } as any, { status: 1 });
+    const updatedRows = await querier.update(User, { id }, { status: 1 });
     expect(updatedRows).toBe(1);
     await querier.commitTransaction();
-    // const count4 = await querier.count(User, { status: 1 });
-    // expect(count4).toBe(1);
-    // const deletedRows = await querier.remove(User, { status: 1 });
-    // expect(deletedRows).toBe(1);
-    // const count5 = await querier.count(User);
-    // expect(count5).toBe(0);
+    const count4 = await querier.count(User, { status: 1 });
+    expect(count4).toBe(1);
+    const deletedRows = await querier.remove(User, { status: 1 });
+    expect(deletedRows).toBe(1);
+    const count5 = await querier.count(User);
+    expect(count5).toBe(0);
   });
 
-  async function createTables(querier: MongodbQuerier) {
-    await Promise.all([
+  function createCollections(querier: MongodbQuerier) {
+    return Promise.all([
       querier.conn.db().createCollection('User'),
       querier.conn.db().createCollection('Company'),
       querier.conn.db().createCollection('TaxCategory'),
@@ -88,11 +85,7 @@ xdescribe(MongodbQuerierPool.name, () => {
     ]);
   }
 
-  async function dropTables(querier: MongodbQuerier) {
-    // const collections = await querier.conn.db().collections();
-    // const proms = collections.map((coll) =>
-    //   querier.conn.db().dropCollection(coll.namespace.substring(coll.namespace.indexOf('.') + 1))
-    // );
-    // return Promise.all(proms);
+  function dropCollections(querier: MongodbQuerier) {
+    return querier.conn.db().dropDatabase();
   }
 });

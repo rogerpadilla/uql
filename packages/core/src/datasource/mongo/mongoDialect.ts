@@ -1,17 +1,21 @@
 import { FilterQuery, ObjectId } from 'mongodb';
 import { QueryFilter, Query } from '../../type';
-import { getEntityMeta } from '../../entity';
+import { EntityMeta, getEntityMeta } from '../../entity';
 
 export class MongoDialect {
-  buildFilter<T>(filter: QueryFilter<T> = {}): FilterQuery<T> {
-    return Object.keys(filter).reduce((acc, key) => {
-      if (key === '$and' || key === '$or') {
-        const val = filter[key];
-        acc[key] = Object.keys(val).map((prop) => {
-          return { [prop]: castId(prop, val) };
+  buildFilter<T>(type: { new (): T }, filter: QueryFilter<T> = {}): FilterQuery<T> {
+    const meta = getEntityMeta(type);
+
+    return Object.keys(filter).reduce((acc, prop) => {
+      if (prop === '$and' || prop === '$or') {
+        const value = filter[prop];
+        acc[prop] = Object.keys(value).map((prop) => {
+          const { key, val } = getFinalKeyVal(prop, value[prop], meta);
+          return { [key]: val };
         });
       } else {
-        acc[key] = castId(key, filter);
+        const { key, val } = getFinalKeyVal(prop, filter[prop], meta);
+        acc[key] = val;
       }
       return acc;
     }, {});
@@ -23,7 +27,7 @@ export class MongoDialect {
     const pipeline: object[] = [];
 
     if (qm.filter && Object.keys(qm.filter).length) {
-      pipeline.push({ $match: this.buildFilter(qm.filter) });
+      pipeline.push({ $match: this.buildFilter(type, qm.filter) });
     }
 
     for (const popKey in qm.populate) {
@@ -48,6 +52,10 @@ export class MongoDialect {
   }
 }
 
-function castId(key: string, obj: any) {
-  return key === '_id' && !(obj[key] instanceof ObjectId) ? new ObjectId(obj[key]) : obj[key];
+function getFinalKeyVal<T>(key: string, val: any, meta: EntityMeta<T>) {
+  if (key === meta.id.property) {
+    const objectId = val instanceof ObjectId ? val : new ObjectId(val);
+    return { key: '_id', val: objectId };
+  }
+  return { key, val };
 }
