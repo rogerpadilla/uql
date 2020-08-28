@@ -52,7 +52,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 
      `npm install pg --save`
 
-  - for MongoDB
+   - for MongoDB
 
      `npm install mongodb --save`
 
