@@ -30,7 +30,7 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 - `relations` between entities
 - supports `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite :construction:, MongoDB :construction:, more soon...
+- supports Postgres, MySQL, MariaDB, MongoDB, SQLite :construction:,  more soon...
 - code is readable, short, performant and flexible
 - plugins form frameworks: express, more soon...
 
@@ -52,13 +52,13 @@ onql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (e
 
      `npm install pg --save`
 
+  - for MongoDB
+
+     `npm install mongodb --save`
+
    - for SQLite :construction:
 
      `npm install sqlite3 --save`
-
-   - for MongoDB :construction:
-
-     `npm install mongodb --save`
 
 ## <a name="entities-definition"></a>:egg: Entities definition
 
@@ -74,28 +74,28 @@ import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from '@onql/
  */
 export abstract class BaseEntity {
   @IdColumn()
-  id?: number;
+  id?: string;
   /**
    * different relations between entities are supported
    */
   @ManyToOne({ type: () => Company })
-  company?: number | Company;
+  company?: string | Company;
   @ManyToOne({ type: () => User })
-  user?: number | User;
+  user?: string | User;
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a column when inserting:
    */
   @Column({ onInsert: () => Date.now() })
-  createdAt?: number;
+  createdAt?: string;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a column when updating:
    */
   @Column({ onUpdate: () => Date.now() })
-  updatedAt?: number;
+  updatedAt?: string;
   @Column()
-  status?: number;
+  status?: string;
 }
 
 @Entity()
@@ -112,10 +112,10 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * a custom name can be specified for the corresponding column
+   * a custom name can be (optionally) specified for every column
    */
   @IdColumn({ name: 'pk' })
-  id?: number;
+  id?: string;
   @Column({ name: 'image' })
   picture?: string;
 }
@@ -202,7 +202,7 @@ export class ConfirmationService {
       };
       await userRepository.insertOne(newUser, querier);
     } else {
-      const userId = body.user as number;
+      const userId = body.user as string;
       await userRepository.updateOneById(userId, { password: body.password }, querier);
     }
 
@@ -225,14 +225,14 @@ try {
   await querier.beginTransaction();
 
   // create one user
-  const generatedId: number = await querier.insertOne(User, {
+  const generatedId: string = await querier.insertOne(User, {
     name: 'Some Name',
     email1: { picture: 'abc1@example.com' },
     profile: { picture: 'abc1' },
   });
 
   // create multiple users in a batch
-  const generatedIds: number[] = await querier.insert(User, [
+  const generatedIds: string[] = await querier.insert(User, [
     {
       name: 'Another Name',
       email: { picture: 'abc2@example.com' },
