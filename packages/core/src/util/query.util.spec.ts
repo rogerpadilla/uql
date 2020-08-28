@@ -37,14 +37,14 @@ it('stringifyQuery', () => {
   };
   const result = stringifyQuery(source);
   const expected =
-    '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":38}&sort={"company":1,"name":-1}&limit=5';
+    '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":"38"}&sort={"company":1,"name":-1}&limit=5';
   expect(result).toBe(expected);
 });
 
 it('buildQuery stringified', () => {
   const qms: QueryStringified = {
-    project: '{"id":1, "name":1}',
-    filter: '{ "name": "Batman", "company": 40 }',
+    project: '{ "id": 1, "name": 1 }',
+    filter: '{ "name": "Batman", "company": "40" }',
     populate: '{ "measureUnit": {"project":{"id":1, "name":1}}, "tax": {"project":{"id":1, "name":1}} }',
     sort: '{ "name": -1, "company": 1 }',
   };

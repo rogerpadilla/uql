@@ -8,16 +8,16 @@ beforeEach(() => {
 });
 
 it('buildFilter empty', () => {
-  const output = dialect.buildFilter({});
+  const output = dialect.buildFilter(Item, {});
   expect(output).toEqual({});
 });
 
 it('buildFilter', () => {
   expect(
-    dialect.buildFilter<Item>({ code: '123' })
+    dialect.buildFilter<Item>(Item, { code: '123' })
   ).toEqual({ code: '123' });
   expect(
-    dialect.buildFilter<Item>({ $and: { code: '123', name: 'abc' } })
+    dialect.buildFilter<Item>(Item, { $and: { code: '123', name: 'abc' } })
   ).toEqual({ $and: [{ code: '123' }, { name: 'abc' }] });
 });
 

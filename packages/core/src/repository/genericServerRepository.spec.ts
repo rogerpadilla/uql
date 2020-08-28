@@ -105,7 +105,7 @@ it('insertOne cascade oneToMany', async () => {
   expect(querier.query).nthCalledWith(
     3,
     expect.toMatch(
-      /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+      /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, '1', \d+\), \(300, '1', \d+\)/
     )
   );
   expect(querier.query).nthCalledWith(4, 'COMMIT');
@@ -299,7 +299,7 @@ it('saveOne update', async () => {
   const mock: QueryUpdateResult = { affectedRows: 1 };
   mockRes = mock;
   const resp = await repository.saveOne({ id: '5', company: '123' });
-  expect(resp).toEqual(5);
+  expect(resp).toEqual('5');
   expect(repository.updateOneById).toBeCalledTimes(1);
   expect(repository.insertOne).not.toBeCalled();
   expect(querier.query).toBeCalledTimes(3);
