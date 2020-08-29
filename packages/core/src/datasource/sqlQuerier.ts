@@ -10,46 +10,46 @@ export abstract class SqlQuerier extends Querier {
     super();
   }
 
-  async query<T>(sql: string): Promise<T> {
+  async query<T>(sql: string) {
     console.debug(`\nquery: ${sql}\n`);
     const res: [T] = await this.conn.query(sql);
     return res[0];
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]): Promise<string[]> {
+  async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
-    const ids = Array<string>(bodies.length)
-      .fill(String(res.insertId))
+    const ids = Array(bodies.length)
+      .fill(res.insertId)
       .map((firstId, index) => firstId + index);
     return ids;
   }
 
-  async insertOne<T>(type: { new (): T }, body: T): Promise<string> {
+  async insertOne<T>(type: { new (): T }, body: T) {
     const query = this.dialect.insert(type, body);
     const res = await this.query<QueryUpdateResult>(query);
-    return String(res.insertId);
+    return res.insertId;
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number> {
+  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
     const query = this.dialect.update(type, filter, body);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions): Promise<T> {
+  findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions) {
     (qm as Query<T>).limit = 1;
     return this.find(type, qm, opts).then((rows) => (rows ? rows[0] : undefined));
   }
 
-  async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T[]> {
+  async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.query<T[]>(query);
     const data = mapRows(res);
     return data;
   }
 
-  async count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number> {
+  async count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
     const query = this.dialect.find(
       type,
       { project: { 'COUNT(*) count': 1 } as any, filter },
@@ -59,7 +59,7 @@ export abstract class SqlQuerier extends Querier {
     return Number(res[0].count);
   }
 
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number> {
+  async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
     const query = this.dialect.remove(type, filter);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
@@ -69,7 +69,7 @@ export abstract class SqlQuerier extends Querier {
     return this.hasPendingTransaction;
   }
 
-  async beginTransaction(): Promise<void> {
+  async beginTransaction() {
     if (this.hasPendingTransaction) {
       throw new Error('There is a pending transaction.');
     }
@@ -77,7 +77,7 @@ export abstract class SqlQuerier extends Querier {
     this.hasPendingTransaction = true;
   }
 
-  async commitTransaction(): Promise<void> {
+  async commitTransaction() {
     if (!this.hasPendingTransaction) {
       throw new Error('There is not a pending transaction.');
     }
@@ -85,7 +85,7 @@ export abstract class SqlQuerier extends Querier {
     this.hasPendingTransaction = undefined;
   }
 
-  async rollbackTransaction(): Promise<void> {
+  async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
       throw new Error('There is not a pending transaction.');
     }
@@ -93,7 +93,7 @@ export abstract class SqlQuerier extends Querier {
     this.hasPendingTransaction = undefined;
   }
 
-  async release(): Promise<void> {
+  async release() {
     if (this.hasPendingTransaction) {
       throw new Error('Querier should not be released while there is an open transaction.');
     }

@@ -11,7 +11,7 @@ import { ServerRepository } from './type';
 
 let mockRes: User[] | QueryUpdateResult | { count: number }[];
 let querier: SqlQuerier;
-let repository: ServerRepository<User, number>;
+let repository: ServerRepository<User>;
 const originalGetQuerier = MySql2QuerierPool.prototype.getQuerier;
 
 beforeEach(() => {

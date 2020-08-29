@@ -2,14 +2,14 @@ import { createPool, Pool, PoolConnection } from 'mysql';
 import { QuerierPool, QuerierPoolOptions, QuerierPoolConnection } from '../type';
 import { MySqlQuerier } from './mysqlQuerier';
 
-export default class MySqlQuerierPool implements QuerierPool {
+export default class MySqlQuerierPool implements QuerierPool<MySqlQuerier> {
   private readonly pool: Pool;
 
   constructor(opts: QuerierPoolOptions) {
     this.pool = createPool(opts);
   }
 
-  getQuerier(): Promise<MySqlQuerier> {
+  getQuerier() {
     return new Promise<MySqlQuerier>((resolve, reject) => {
       this.pool.getConnection((err, connection) => {
         if (err) {
@@ -23,8 +23,8 @@ export default class MySqlQuerierPool implements QuerierPool {
     });
   }
 
-  end(): Promise<void> {
-    return new Promise((resolve, reject) => {
+  end() {
+    return new Promise<void>((resolve, reject) => {
       this.pool.end((err) => {
         if (err) {
           return reject(err);

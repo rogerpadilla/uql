@@ -1,21 +1,13 @@
 import { User } from '../../entity/entityMock';
-import MySql2QuerierPool from './mysql2QuerierPool';
-import { MySqlQuerier } from './mysqlQuerier';
+import Sqlite3QuerierPool from './sqlite3QuerierPool';
+import { SqliteQuerier } from './sqliteQuerier';
 
-// eslint-disable-next-line jest/no-focused-tests
-describe(MySql2QuerierPool.name, () => {
-  let pool: MySql2QuerierPool;
-  let querier: MySqlQuerier;
+describe(Sqlite3QuerierPool.name, () => {
+  let pool: Sqlite3QuerierPool;
+  let querier: SqliteQuerier;
 
   beforeAll(async () => {
-    jest.setTimeout(1000);
-    pool = new MySql2QuerierPool({
-      host: '0.0.0.0',
-      port: 3306,
-      user: 'test',
-      password: 'test',
-      database: 'test',
-    });
+    pool = new Sqlite3QuerierPool(':memory:');
     const querier = await pool.getQuerier();
     try {
       await dropTables(querier);
@@ -27,6 +19,11 @@ describe(MySql2QuerierPool.name, () => {
 
   beforeEach(async () => {
     querier = await pool.getQuerier();
+    jest.spyOn(querier, 'query');
+    jest.spyOn(querier, 'beginTransaction');
+    jest.spyOn(querier, 'commitTransaction');
+    jest.spyOn(querier, 'rollbackTransaction');
+    jest.spyOn(querier, 'release');
   });
 
   afterEach(async () => {
@@ -75,16 +72,16 @@ describe(MySql2QuerierPool.name, () => {
     expect(count5).toBe(0);
   });
 
-  async function createTables(querier: MySqlQuerier) {
+  async function createTables(querier: SqliteQuerier) {
     await createUserTable(querier);
     await createCompanyTable(querier);
     await createTaxCategoryTable(querier);
     await createTaxTable(querier);
   }
 
-  function createUserTable(querier: MySqlQuerier) {
+  function createUserTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE User (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR( 45 ) NOT NULL,
     email VARCHAR( 300 ) NOT NULL,
     password VARCHAR( 300 ) NOT NULL,
@@ -95,20 +92,21 @@ describe(MySql2QuerierPool.name, () => {
   );`);
   }
 
-  function createCompanyTable(querier: MySqlQuerier) {
+  function createCompanyTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Company (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR( 45 ) NOT NULL,
     createdAt BigInt NOT NULL,
     updatedAt BigInt,
     user INT NOT NULL REFERENCES User,
+    company INT NOT NULL REFERENCES Company,
     status SmallInt
   );`);
   }
 
-  function createTaxCategoryTable(querier: MySqlQuerier) {
+  function createTaxCategoryTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE TaxCategory (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR( 45 ) NOT NULL,
     description VARCHAR(300),
     createdAt BigInt NOT NULL,
@@ -119,9 +117,9 @@ describe(MySql2QuerierPool.name, () => {
   );`);
   }
 
-  function createTaxTable(querier: MySqlQuerier) {
+  function createTaxTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Tax (
-    id INT AUTO_INCREMENT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR( 45 ) NOT NULL,
     description VARCHAR(300),
     createdAt BigInt NOT NULL,
@@ -133,7 +131,7 @@ describe(MySql2QuerierPool.name, () => {
   );`);
   }
 
-  function dropTables(querier: MySqlQuerier) {
+  function dropTables(querier: SqliteQuerier) {
     return Promise.all([
       querier.query(`DROP TABLE IF EXISTS Tax`),
       querier.query(`DROP TABLE IF EXISTS TaxCategory`),

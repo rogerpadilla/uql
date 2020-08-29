@@ -1,10 +1,10 @@
 import { User } from '../../entity/entityMock';
-import { SqlQuerier } from '../sqlQuerier';
 import PgQuerierPool from './pgQuerierPool';
+import { PostgresQuerier } from './postgresQuerier';
 
 describe(PgQuerierPool.name, () => {
   let pool: PgQuerierPool;
-  let querier: SqlQuerier;
+  let querier: PostgresQuerier;
 
   beforeAll(async () => {
     jest.setTimeout(1000);
@@ -49,7 +49,7 @@ describe(PgQuerierPool.name, () => {
       password: '12345678!',
       createdAt: now,
     });
-    expect(id).toBe(1);
+    expect(id).toBe('1');
     const users = await querier.find(User, { filter: { status: null }, limit: 100 });
     expect(users).toEqual([
       {
@@ -79,57 +79,57 @@ describe(PgQuerierPool.name, () => {
     expect(count5).toBe(0);
   });
 
-  async function createTables(querier: SqlQuerier) {
+  async function createTables(querier: PostgresQuerier) {
     await createUserTable(querier);
     await createCompanyTable(querier);
     await createTaxCategoryTable(querier);
     await createTaxTable(querier);
   }
 
-  async function createUserTable(querier: SqlQuerier): Promise<void> {
+  async function createUserTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "User" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
     "email" VARCHAR( 300 ) NOT NULL,
     "password" VARCHAR( 300 ) NOT NULL,
-    "createdAt" Bigint NOT NULL,
-    "updatedAt" Bigint,
+    "createdAt" BigInt NOT NULL,
+    "updatedAt" BigInt,
     "user" INT,
     "status" SmallInt
   );`);
   }
 
-  async function createCompanyTable(querier: SqlQuerier): Promise<void> {
+  async function createCompanyTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "Company" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
-    "createdAt" Bigint NOT NULL,
-    "updatedAt" Bigint,
+    "createdAt" BigInt NOT NULL,
+    "updatedAt" BigInt,
     "user" INT NOT NULL REFERENCES "User",
     "status" SmallInt
   );`);
   }
 
-  async function createTaxCategoryTable(querier: SqlQuerier): Promise<void> {
+  async function createTaxCategoryTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "TaxCategory" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
     "description" VARCHAR(300),
-    "createdAt" Bigint NOT NULL,
-    "updatedAt" Bigint,
+    "createdAt" BigInt NOT NULL,
+    "updatedAt" BigInt,
     "user" INT NOT NULL REFERENCES "User",
     "company" INT NOT NULL REFERENCES "Company",
     "status" SmallInt
   );`);
   }
 
-  async function createTaxTable(querier: SqlQuerier): Promise<void> {
+  async function createTaxTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "Tax" (
     "id" SERIAL PRIMARY KEY,
     "name" VARCHAR( 45 ) NOT NULL,
     "description" VARCHAR(300),
-    "createdAt" Bigint NOT NULL,
-    "updatedAt" Bigint,
+    "createdAt" BigInt NOT NULL,
+    "updatedAt" BigInt,
     "category" INT NOT NULL REFERENCES "TaxCategory",
     "user" INT NOT NULL REFERENCES "User",
     "company" INT NOT NULL REFERENCES "Company",
@@ -137,7 +137,7 @@ describe(PgQuerierPool.name, () => {
   );`);
   }
 
-  function dropTables(querier: SqlQuerier) {
+  function dropTables(querier: PostgresQuerier) {
     return Promise.all([
       querier.query(`DROP TABLE IF EXISTS "Tax"`),
       querier.query(`DROP TABLE IF EXISTS "TaxCategory"`),

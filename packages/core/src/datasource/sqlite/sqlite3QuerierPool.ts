@@ -1,48 +1,23 @@
-import { Database, sqlite3 } from 'sqlite3';
-import { QuerierPool, QuerierPoolConnection } from '../type';
+import { Database, open } from 'sqlite';
+import { Database as Sqlite3Driver } from 'sqlite3';
+import { QuerierPool } from '../type';
 import { SqliteQuerier } from './sqliteQuerier';
 
-export default class Sqlite3QuerierPool implements QuerierPool {
-  private readonly db: Database;
+export default class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
+  private db: Database;
 
-  constructor(filename: string) {
-    this.db = new Database(filename);
-  }
+  constructor(readonly filename: string) {}
 
-  getQuerier(): Promise<SqliteQuerier> {
-    const conn = new SqliteConnectionPromisified(this.db);
-    const querier = new SqliteQuerier(conn);
+  async getQuerier() {
+    if (!this.db) {
+      this.db = await open({ filename: this.filename, driver: Sqlite3Driver });
+    }
+    const querier = new SqliteQuerier(this.db);
     return Promise.resolve(querier);
   }
 
-  end(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.db.close((err) => {
-        if (err) {
-          return reject(err);
-        }
-        resolve();
-      });
-    });
-  }
-}
-
-class SqliteConnectionPromisified implements QuerierPoolConnection {
-  constructor(private readonly db: Database) {}
-
-  query<T>(query: string) {
-    return new Promise<T>((resolve, reject) => {
-      this.db.all(query, (err, results) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(({ rows: results } as unknown) as T);
-      });
-    });
-  }
-
-  release() {
-    // NOP
+  async end() {
+    await this.db.close();
+    this.db = undefined;
   }
 }

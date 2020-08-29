@@ -15,7 +15,7 @@
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
     "it": "jest --testMatch '**/*.it.ts'",
     "it.watch": "jest --testMatch '**/*.it.ts' --watchAll",
-    "it.watch.pattern": "jest --testMatch '**/*.it.ts' --watchAll --testPathPattern=mongodbQuerierPool.it.ts",
+    "it.watch.pattern": "jest --testMatch '**/*.it.ts' --watchAll --testPathPattern=sqlite3QuerierPool.it.ts",
     "test.watch": "jest --watchAll",
     "run-rs": "run-rs -v 4.2.9 -l ubuntu1804",
     "test.watch.pattern": "jest --watchAll --testPathPattern=definition.spec.ts"

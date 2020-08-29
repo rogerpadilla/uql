@@ -1,12 +1,12 @@
 import { Query, QueryOptions, QueryFilter, QueryOneFilter } from '../type/query';
 
 export interface QuerierPoolConnection {
-  query<T>(sql: string): Promise<T>;
+  query(sql: string): Promise<any>;
   release(): void | Promise<void>;
 }
 
-export interface QuerierPool {
-  getQuerier(): Promise<Querier>;
+export interface QuerierPool<T extends Querier = Querier> {
+  getQuerier(): Promise<T>;
   end(): Promise<void>;
 }
 

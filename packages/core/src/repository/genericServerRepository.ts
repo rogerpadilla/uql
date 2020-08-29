@@ -3,7 +3,7 @@ import { getEntityMeta, EntityMeta } from '../entity';
 import { Querier, Transactional, InjectQuerier } from '../datasource';
 import { ServerRepository } from './type';
 
-export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
+export class GenericServerRepository<T, ID = any> implements ServerRepository<T, ID> {
   readonly meta: EntityMeta<T>;
 
   constructor(type: { new (): T }) {
@@ -11,14 +11,14 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  async insertOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
+  async insertOne(body: T, @InjectQuerier() querier?: Querier<ID>) {
     const id = await querier.insertOne(this.meta.type, body);
     await this.insertRelations({ ...body, [this.meta.id.property]: id }, querier);
     return id;
   }
 
   @Transactional({ propagation: 'required' })
-  async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier): Promise<void> {
+  async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier<ID>): Promise<void> {
     const affectedRows = await querier.update(this.meta.type, { [this.meta.id.property]: id }, body);
     if (!affectedRows) {
       throw new Error('Unaffected record');
@@ -27,8 +27,8 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  async saveOne(body: T, @InjectQuerier() querier?: Querier<ID>): Promise<ID> {
-    const id = body[this.meta.id.property] as ID;
+  async saveOne(body: T, @InjectQuerier() querier?: Querier<ID>) {
+    const id = body[this.meta.id.property];
     if (id) {
       await this.updateOneById(id, body, querier);
       return id;
@@ -37,23 +37,23 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional()
-  findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier): Promise<T> {
+  findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
     (qm as QueryOneFilter<T>).filter = { [this.meta.id.property]: id };
     return querier.findOne(this.meta.type, qm);
   }
 
   @Transactional()
-  findOne(qm: QueryOneFilter<T>, @InjectQuerier() querier?: Querier): Promise<T> {
+  findOne(qm: QueryOneFilter<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.findOne(this.meta.type, qm);
   }
 
   @Transactional()
-  find(qm: Query<T>, @InjectQuerier() querier?: Querier): Promise<T[]> {
+  find(qm: Query<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.find(this.meta.type, qm);
   }
 
   @Transactional({ propagation: 'required' })
-  async removeOneById(id: ID, @InjectQuerier() querier?: Querier): Promise<void> {
+  async removeOneById(id: ID, @InjectQuerier() querier?: Querier<ID>) {
     const affectedRows = await querier.remove(this.meta.type, { [this.meta.id.property]: id });
     if (!affectedRows) {
       throw new Error('Unaffected record');
@@ -61,16 +61,16 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
   }
 
   @Transactional({ propagation: 'required' })
-  remove(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier): Promise<number> {
+  remove(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.remove(this.meta.type, filter);
   }
 
   @Transactional()
-  count(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier): Promise<number> {
+  count(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.count(this.meta.type, filter);
   }
 
-  protected async insertRelations(body: T, querier: Querier): Promise<void> {
+  protected async insertRelations(body: T, querier: Querier<ID>) {
     const id = body[this.meta.id.property];
 
     const insertProms = this.filterIndependentRelations(body).map((prop) => {
@@ -90,10 +90,10 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
       throw new Error('TODO unsupported cardinality ' + relOpts.cardinality);
     });
 
-    await Promise.all(insertProms);
+    await Promise.all(insertProms as any);
   }
 
-  protected async updateRelations(body: T, querier: Querier): Promise<void> {
+  protected async updateRelations(body: T, querier: Querier<ID>) {
     const id = body[this.meta.id.property];
 
     const removeProms = this.filterIndependentRelations(body).map(async (prop) => {
@@ -122,7 +122,7 @@ export class GenericServerRepository<T, ID> implements ServerRepository<T, ID> {
     await Promise.all(removeProms);
   }
 
-  protected filterIndependentRelations(body: T): string[] {
+  protected filterIndependentRelations(body: T) {
     return Object.keys(body).filter((prop) => {
       const relOpts = this.meta.relations[prop];
       return relOpts && relOpts.cardinality !== 'manyToOne';

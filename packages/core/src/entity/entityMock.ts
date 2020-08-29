@@ -3,7 +3,7 @@ import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from './deco
 
 export abstract class BaseEntity {
   @IdColumn()
-  id?: string;
+  id?: string | number;
   @ManyToOne({ type: () => Company })
   company?: string | Company;
   @ManyToOne({ type: () => User })

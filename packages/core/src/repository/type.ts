@@ -16,15 +16,15 @@ export interface IsomorphicRepository<T, ID = any> {
 }
 
 export interface ServerRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
-  insertOne(body: T, querier?: Querier): Promise<ID>;
-  updateOneById(id: ID, body: T, querier?: Querier): Promise<void>;
-  saveOne(body: T, querier?: Querier): Promise<ID>;
-  findOneById(id: ID, qm?: QueryOne<T>, querier?: Querier): Promise<T>;
+  insertOne(body: T, querier?: Querier<ID>): Promise<ID>;
+  updateOneById(id: ID, body: T, querier?: Querier<ID>): Promise<void>;
+  saveOne(body: T, querier?: Querier<ID>): Promise<ID>;
+  findOneById(id: ID, qm?: QueryOne<T>, querier?: Querier<ID>): Promise<T>;
   findOne(qm: QueryOneFilter<T>, opts?: any): Promise<T>;
-  find(qm: Query<T>, querier?: Querier): Promise<T[]>;
-  removeOneById(id: ID, querier?: Querier): Promise<void>;
-  remove(filter: QueryFilter<T>, querier?: Querier): Promise<number>;
-  count(filter: QueryFilter<T>, querier?: Querier): Promise<number>;
+  find(qm: Query<T>, querier?: Querier<ID>): Promise<T[]>;
+  removeOneById(id: ID, querier?: Querier<ID>): Promise<void>;
+  remove(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;
+  count(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;
 }
 
 export type CustomRepositoryConstructor<T, ID = any> = new () => IsomorphicRepository<T, ID>;
