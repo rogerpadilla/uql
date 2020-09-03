@@ -19,7 +19,7 @@
     "express": "^4.17.1"
   },
   "devDependencies": {
-    "@types/express": "^4.17.7",
+    "@types/express": "^4.17.8",
     "copyfiles": "^2.3.0",
     "rimraf": "^3.0.2"
   },
