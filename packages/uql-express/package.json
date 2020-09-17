@@ -2,7 +2,7 @@
   "name": "uql-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "main": "uql-express/src/index.js",
   "types": "uql-express/src/index.d.ts",
   "scripts": {
@@ -15,8 +15,8 @@
     "tslib": "^2.0.1"
   },
   "peerDependencies": {
-    "uql": "^0.1",
-    "express": "^4.17.1"
+    "express": "^4.17.1",
+    "uql": "^0.1"
   },
   "devDependencies": {
     "@types/express": "4.17.8",
