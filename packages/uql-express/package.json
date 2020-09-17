@@ -6,8 +6,8 @@
   "main": "uql-express/src/index.js",
   "types": "uql-express/src/index.d.ts",
   "scripts": {
-    "prepublishOnly": "npm run build && copyfiles package.json README.md dist",
-    "build": "npm run clean && tsc",
+    "copy": "copyfiles package.json README.md dist",
+    "build": "npm run clean && tsc && npm run copy",
     "start": "npm run clean && tsc --watch",
     "clean": "rimraf dist"
   },
