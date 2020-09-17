@@ -2,11 +2,9 @@
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
-# `{*}` uql
+# `{*}` uql = Universal Query Language
 
-uql is a plug & play ORM library, with a declarative (and type-safe) JSON syntax allowing to query/update different data-sources. Basically, you declare what you want (using JSON) from your database, and then uql runs efficient (and safe) SQL or Mongo queries.
-
-uql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (expressive syntax to retrieve what is necessary), but in a simple way using the REST APIs from always (no need for [additional servers](https://graphql.org/learn/execution) nor [a new language](https://graphql.org/learn/queries)). uql can be used with (and without) any backend/frontend framework. uql's syntax is inspired by MongoDb, JPA, and GraphQL.
+uql is a plug & play ORM, with a declarative JSON syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql runs efficient (and safe) SQL or Mongo queries.
 
 ## Table of Contents
 
