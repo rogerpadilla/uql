@@ -6,8 +6,8 @@
   "main": "uql-browser.min.js",
   "types": "uql-browser.min.d.ts",
   "scripts": {
-    "copy": "copyfiles package.json README.md dist",
-    "build": "npm run clean && webpack --progress --profile --bail --mode=production && npm run copy",
+    "prepublishOnly": "copyfiles package.json README.md dist",
+    "build": "npm run clean && webpack --progress --profile --bail --mode=production",
     "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist"
   },
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "a7cc01ee713f84455080a03014705f6b0a69b489"
+  "gitHead": "35e1fe922c2033b8acb261f3afd1094b4c39e511"
 }

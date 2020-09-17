@@ -6,8 +6,8 @@
   "main": "uql-express/src/index.js",
   "types": "uql-express/src/index.d.ts",
   "scripts": {
-    "copy": "copyfiles package.json README.md dist",
-    "build": "npm run clean && tsc && npm run copy",
+    "prepublishOnly": "copyfiles package.json README.md dist",
+    "build": "npm run clean && tsc",
     "start": "npm run clean && tsc --watch",
     "clean": "rimraf dist"
   },
@@ -54,5 +54,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "a7cc01ee713f84455080a03014705f6b0a69b489"
+  "gitHead": "35e1fe922c2033b8acb261f3afd1094b4c39e511"
 }
