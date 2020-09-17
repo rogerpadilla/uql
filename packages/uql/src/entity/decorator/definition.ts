@@ -25,10 +25,10 @@ export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnO
   return meta;
 }
 
-export function defineIdColumn<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
+export function defineId<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   if (meta.hasId()) {
-    throw new Error(`'${type.name}' must have a single field decorated with @IdColumn`);
+    throw new Error(`'${type.name}' must have a single field decorated with @Id`);
   }
   return defineColumn(type, prop, { ...opts, isId: true });
 }
@@ -72,16 +72,9 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
-  let idProperty: string;
-  for (const prop in meta.properties) {
-    if (meta.properties[prop].column?.isId) {
-      idProperty = prop;
-      break;
-    }
-  }
-
+  const idProperty = Object.keys(meta.properties).find((key) => meta.properties[key].column?.isId);
   if (!idProperty) {
-    throw new Error(`'${type.name}' must have one field decorated with @IdColumn`);
+    throw new Error(`'${type.name}' must have one field decorated with @Id`);
   }
 
   Object.defineProperty(meta, 'id', {

@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from './decorator';
+import { Column, ManyToOne, Id, OneToMany, Entity, OneToOne } from './decorator';
 
 export abstract class BaseEntity {
-  @IdColumn()
+  @Id()
   id?: string | number;
   @ManyToOne({ type: () => Company })
   company?: string | Company;
@@ -26,7 +26,7 @@ export class Company extends BaseEntity {
 
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
-  @IdColumn({ name: 'pk' })
+  @Id({ name: 'pk' })
   id?: string;
   @Column({ name: 'image' })
   picture?: string;
@@ -56,7 +56,7 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
-  @IdColumn({ onInsert: () => uuidv4() })
+  @Id({ onInsert: () => uuidv4() })
   pk?: string;
   @Column()
   name?: string;

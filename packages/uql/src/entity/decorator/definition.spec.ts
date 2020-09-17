@@ -1,6 +1,6 @@
 import { User, Item, TaxCategory, Profile } from '../entityMock';
 import { getEntityMeta } from './definition';
-import { IdColumn } from './idColumn';
+import { Id } from './id';
 
 it('user', () => {
   const meta = getEntityMeta(User);
@@ -136,7 +136,7 @@ it('not an @Entity', () => {
   }).toThrow(`'SomeClass' is not an entity`);
 
   class AnotherClass {
-    @IdColumn()
+    @Id()
     id: string;
   }
 

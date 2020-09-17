@@ -66,14 +66,14 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Column, ManyToOne, IdColumn, OneToMany, Entity, OneToOne } from 'uql/entity';
+import { Column, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/entity';
 
 /**
  * an abstract class can (optionally) be used as a template for the entities
  * (so boilerplate code is reduced)
  */
 export abstract class BaseEntity {
-  @IdColumn()
+  @Id()
   id?: number;
   /**
    * different relations between entities are supported
@@ -114,7 +114,7 @@ export class Profile extends BaseEntity {
   /**
    * a custom name can be specified for the corresponding column
    */
-  @IdColumn({ name: 'pk' })
+  @Id({ name: 'pk' })
   id?: number;
   @Column({ name: 'image' })
   picture?: string;
@@ -141,7 +141,7 @@ export class TaxCategory extends BaseEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
    */
-  @IdColumn({ onInsert: () => uuidv4() })
+  @Id({ onInsert: () => uuidv4() })
   pk?: string;
   @Column()
   name?: string;
