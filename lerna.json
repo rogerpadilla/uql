@@ -9,8 +9,8 @@
     "publish": {
       "contents": "dist",
       "conventionalCommits": true,
-      "gitReset": false,
-      "yes": true
+      "yes": true,
+      "changelog": false
     }
   }
 }
