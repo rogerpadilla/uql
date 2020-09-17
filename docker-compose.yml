@@ -10,7 +10,7 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - '3306:3306'
-    container_name: 'onql-mysql-8'
+    container_name: 'uql-mysql-8'
   postgres-9:
     image: postgres:9.6.18
     environment:
@@ -19,11 +19,11 @@ services:
       POSTGRES_DB: test
     ports:
       - '5432:5432'
-    container_name: onql-postgres-9
+    container_name: uql-postgres-9
   # Managed with 'run-rs' package
   # mongodb:
   #   image: 'mongo:4.4.0'
-  #   container_name: 'onql-mongodb-4'
+  #   container_name: 'uql-mongodb-4'
   #   ports:
   #     - '27017:27017'
   # postgres-12:
@@ -34,4 +34,4 @@ services:
   #     POSTGRES_DB: test
   #   ports:
   #     - '5433:5432'
-  #   container_name: onql-postgres-12
+  #   container_name: uql-postgres-12

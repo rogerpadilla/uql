@@ -1,0 +1,58 @@
+{
+  "name": "uql-express",
+  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
+  "license": "MIT",
+  "version": "0.1.0",
+  "main": "uql-express/src/index.js",
+  "types": "uql-express/src/index.d.ts",
+  "scripts": {
+    "prepublishOnly": "npm run build && copyfiles package.json README.md dist",
+    "build": "npm run clean && tsc",
+    "start": "npm run clean && tsc --watch",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "tslib": "^2.0.1"
+  },
+  "peerDependencies": {
+    "uql": "^0.1",
+    "express": "^4.17.1"
+  },
+  "devDependencies": {
+    "@types/express": "4.17.8",
+    "copyfiles": "^2.3.0",
+    "rimraf": "^3.0.2"
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/impensables/uql-express.git"
+  },
+  "bugs": {
+    "url": "https://github.com/impensables/uql-express/issues"
+  },
+  "keywords": [
+    "uql",
+    "persistence",
+    "orm",
+    "mongo",
+    "mongodb",
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "sqlite",
+    "sqlite3",
+    "ts",
+    "typescript",
+    "js",
+    "javascript",
+    "entity",
+    "data-mapper",
+    "datamapper",
+    "express"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "a7cc01ee713f84455080a03014705f6b0a69b489"
+}

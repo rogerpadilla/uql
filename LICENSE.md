@@ -1,4 +1,4 @@
-Copyright (c) 2015-present onql Contributors
+Copyright (c) 2015-present uql Contributors
 
 MIT License
 

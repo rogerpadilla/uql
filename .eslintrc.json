@@ -76,7 +76,7 @@
       }
     },
     {
-      "files": ["packages/**/*.spec.ts"],
+      "files": ["packages/**/*.{spec,it}.ts"],
       "env": {
         "jest": true
       },
@@ -84,7 +84,8 @@
         "@typescript-eslint/unbound-method": 0,
         "@typescript-eslint/no-empty-function": 0,
         "jest/no-test-prefixes": 0,
-        "jest/no-disabled-tests": 0
+        "jest/no-disabled-tests": 0,
+        "jest/valid-title": 0
       }
     }
   ]

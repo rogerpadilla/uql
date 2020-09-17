@@ -18,7 +18,7 @@
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
-      "@onql/core/*": ["packages/core/src/*"]
+      "uql/*": ["packages/uql/src/*"]
     }
   },
   "exclude": ["node_modules", "coverage", "dist"]
