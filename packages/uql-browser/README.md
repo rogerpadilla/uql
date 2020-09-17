@@ -1,7 +1,7 @@
 [![build status](https://travis-ci.org/impensables/uql.svg?branch=master)](https://travis-ci.org/impensables/uql?branch=master)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
-[![dependencies status](https://david-dm.org/impensables/uql/status.svg)](https://david-dm.org/impensables/uql/status.svg)
-[![dev dependencies status](https://david-dm.org/impensables/uql/dev-status.svg)](https://david-dm.org/impensables/uql/dev-status.svg)
+<!-- [![dependencies status](https://david-dm.org/impensables/uql/status.svg)](https://david-dm.org/impensables/uql/status.svg) -->
+<!-- [![dev dependencies status](https://david-dm.org/impensables/uql/dev-status.svg)](https://david-dm.org/impensables/uql/dev-status.svg) -->
 [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
 # `{*}` uql

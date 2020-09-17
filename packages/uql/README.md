@@ -1,7 +1,7 @@
 [![build status](https://travis-ci.org/impensables/uql.svg?branch=master)](https://travis-ci.org/impensables/uql?branch=master)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
-[![dependencies status](https://david-dm.org/impensables/uql/status.svg)](https://david-dm.org/impensables/uql/status.svg)
-[![dev dependencies status](https://david-dm.org/impensables/uql/dev-status.svg)](https://david-dm.org/impensables/uql/dev-status.svg)
+<!-- [![dependencies status](https://david-dm.org/impensables/uql/status.svg)](https://david-dm.org/impensables/uql/status.svg) -->
+<!-- [![dev dependencies status](https://david-dm.org/impensables/uql/dev-status.svg)](https://david-dm.org/impensables/uql/dev-status.svg) -->
 [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
 # `{*}` uql
@@ -30,7 +30,7 @@ uql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (ex
 - `relations` between entities
 - supports `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite :construction:, MongoDB :construction:, more soon...
+- supports Postgres, MySQL, MariaDB, MongoDB, SQLite :construction:,  more soon...
 - code is readable, short, performant and flexible
 - plugins form frameworks: express, more soon...
 
@@ -52,13 +52,13 @@ uql's dream is to achieve what [GraphQL](https://graphql.org/learn) achieves (ex
 
      `npm install pg --save`
 
+   - for MongoDB
+
+     `npm install mongodb --save`
+
    - for SQLite :construction:
 
      `npm install sqlite3 --save`
-
-   - for MongoDB :construction:
-
-     `npm install mongodb --save`
 
 ## <a name="entities-definition"></a>:egg: Entities definition
 
@@ -74,28 +74,28 @@ import { Column, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/entity';
  */
 export abstract class BaseEntity {
   @Id()
-  id?: number;
+  id?: string;
   /**
    * different relations between entities are supported
    */
   @ManyToOne({ type: () => Company })
-  company?: number | Company;
+  company?: string | Company;
   @ManyToOne({ type: () => User })
-  user?: number | User;
+  user?: string | User;
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a column when inserting:
    */
   @Column({ onInsert: () => Date.now() })
-  createdAt?: number;
+  createdAt?: string;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a column when updating:
    */
   @Column({ onUpdate: () => Date.now() })
-  updatedAt?: number;
+  updatedAt?: string;
   @Column()
-  status?: number;
+  status?: string;
 }
 
 @Entity()
@@ -112,10 +112,10 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * a custom name can be specified for the corresponding column
+   * a custom name can be (optionally) specified for every column
    */
   @Id({ name: 'pk' })
-  id?: number;
+  id?: string;
   @Column({ name: 'image' })
   picture?: string;
 }
@@ -202,7 +202,7 @@ export class ConfirmationService {
       };
       await userRepository.insertOne(newUser, querier);
     } else {
-      const userId = body.user as number;
+      const userId = body.user as string;
       await userRepository.updateOneById(userId, { password: body.password }, querier);
     }
 
@@ -225,14 +225,14 @@ try {
   await querier.beginTransaction();
 
   // create one user
-  const generatedId: number = await querier.insertOne(User, {
+  const generatedId: string = await querier.insertOne(User, {
     name: 'Some Name',
     email1: { picture: 'abc1@example.com' },
     profile: { picture: 'abc1' },
   });
 
   // create multiple users in a batch
-  const generatedIds: number[] = await querier.insert(User, [
+  const generatedIds: string[] = await querier.insert(User, [
     {
       name: 'Another Name',
       email: { picture: 'abc2@example.com' },
@@ -273,7 +273,7 @@ try {
 
 ## <a name="generate-crud-rest-api"></a>:zap: Expose CRUD REST APIs and consume it from Browser
 
-uql do provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
+uql provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
 
 1. Install express plugin in your server project `npm install uql-express --save` or `yarn add uql-express`
 2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
