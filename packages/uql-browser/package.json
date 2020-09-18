@@ -20,8 +20,8 @@
     "rimraf": "^3.0.2",
     "source-map-loader": "^1.1.0",
     "ts-loader": "^8.0.3",
-    "typescript": "^4.0.2",
-    "webpack": "^4.44.1",
+    "typescript": "^4.0.3",
+    "webpack": "^4.44.2",
     "webpack-cli": "^3.3.12",
     "webpack-log": "^3.0.1"
   },
