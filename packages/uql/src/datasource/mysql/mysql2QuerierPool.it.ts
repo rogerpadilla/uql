@@ -15,7 +15,7 @@ describe(MySql2QuerierPool.name, () => {
       user: 'test',
       password: 'test',
       database: 'test',
-    });
+    } as any);
     const querier = await pool.getQuerier();
     try {
       await dropTables(querier);
