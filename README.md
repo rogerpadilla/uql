@@ -27,7 +27,7 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 - `relations` between entities
 - supports entities `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, MongoDB, SQLite
+- supports Postgres, MySQL, MariaDB, SQLite, MongoDB
 - code is readable, short, performant and flexible
 - plugins for frameworks: express, more soon...
 
@@ -49,13 +49,13 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
      `npm install pg --save`
 
+   - for SQLite
+
+     `npm install sqlite3 --save`
+
    - for MongoDB
 
      `npm install mongodb --save`
-
-   - for SQLite :construction:
-
-     `npm install sqlite3 --save`
 
 ## <a name="entities"></a>:egg: Entities
 
