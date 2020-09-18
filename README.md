@@ -301,7 +301,7 @@ uql provides a browser plugin to consume the REST APIs.
 2. Initialize uql in your frontend code
 
 ```typescript
-import { GenericClientRepository, initUql } from 'uql-browser';
+import { initUql, GenericClientRepository, getClientRepository } from 'uql-browser';
 
 initUql({
   defaultRepositoryClass: GenericClientRepository,
