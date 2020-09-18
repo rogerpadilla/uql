@@ -1,5 +1,5 @@
 {
-  "ignorePatterns": ["coverage", "dist", "node_modules"],
+  "ignorePatterns": ["coverage", "node_modules", "packages/*/dist"],
   "env": {
     "node": true,
     "es2020": true
