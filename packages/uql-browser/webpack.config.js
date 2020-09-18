@@ -66,12 +66,12 @@ class DtsBundlePlugin {
 
       dts.bundle({
         name: 'uql',
-        main: `${rootDir}/${outDir}/platform-browser/**/*.d.ts`,
+        main: `${rootDir}/${outDir}/uql-browser/**/*.d.ts`,
         out: `${rootDir}/${outDir}/${entryName}.d.ts`,
         outputAsModuleFolder: true,
       });
 
-      rimraf(`${outDir}/{core,platform-browser}`, {}, (err) => {
+      rimraf(`${outDir}/{uql,uql-browser}`, {}, (err) => {
         if (err) {
           console.error(err);
         }
