@@ -10,12 +10,13 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
 1. [Features](#features)
 2. [Installation](#installation)
-3. [Entities definition](#entities-definition)
+3. [Entities](#entities)
 4. [Configuration](#configuration)
-5. [Declarative API](#declarative-api)
-6. [Programmatic API](#programmatic-api)
-7. [Generate CRUD REST APIs and call from Browser](#generate-crud-rest-api)
-8. [Frequently Asked Questions](#faq)
+5. [Declarative Transactions](#declarative-transactions)
+6. [Programmatic Transactions](#programmatic-transactions)
+7. [Generate REST APIs from Express](#express)
+8. [Consume REST APIs from Frontend](#frontend)
+9. [FAQs](#faq)
 
 ## <a name="features"></a>:star2: Features
 
@@ -24,11 +25,11 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 - declarative and imperative `transactions`
 - generic and custom `repositories`
 - `relations` between entities
-- supports `inheritance` patterns
+- supports entities `inheritance` patterns
 - connection pooling
-- supports Postgres, MySQL, MariaDB, MongoDB, SQLite :construction:,  more soon...
+- supports Postgres, MySQL, MariaDB, MongoDB, SQLite
 - code is readable, short, performant and flexible
-- plugins form frameworks: express, more soon...
+- plugins for frameworks: express, more soon...
 
 ## <a name="installation"></a>:battery: Installation
 
@@ -56,7 +57,7 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
      `npm install sqlite3 --save`
 
-## <a name="entities-definition"></a>:egg: Entities definition
+## <a name="entities"></a>:egg: Entities
 
 Notice that the inheritance between entities is optional
 
@@ -177,7 +178,7 @@ initUql({
 });
 ```
 
-## <a name="declarative-api"></a>:speaking_head: Declarative API
+## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
 
 ```typescript
 import { Transactional, InjectQuerier, Querier } from 'uql/datasource';
@@ -207,7 +208,7 @@ export class ConfirmationService {
 }
 ```
 
-## <a name="programmatic-api"></a>:hammer_and_wrench: Programmatic API
+## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
 
 ```typescript
 import { getQuerier } from 'uql/datasource/querierPool';
@@ -267,9 +268,9 @@ try {
 }
 ```
 
-## <a name="generate-crud-rest-api"></a>:zap: Expose CRUD REST APIs and consume it from Browser
+## <a name="express"></a>:zap: Generate REST APIs from Express
 
-uql provides a [express](https://expressjs.com/) (more soon) plugin to easily generate CRUD REST APIs for your entities.
+uql provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
 
 1. Install express plugin in your server project `npm install uql-express --save` or `yarn add uql-express`
 2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
@@ -292,8 +293,12 @@ app
   );
 ```
 
-3. Install browser plugin in your frontend project `npm install uql-browser --save` or `yarn add uql-browser`
-4. Initialize uql in your frontend code
+## <a name="frontend"></a>:globe_with_meridians: Consume REST APIs from Frontend
+
+uql provides a browser plugin to consume the REST APIs.
+
+1. Install browser plugin in your frontend project `npm install uql-browser --save` or `yarn add uql-browser`
+2. Initialize uql in your frontend code
 
 ```typescript
 import { GenericClientRepository, initUql } from 'uql-browser';
@@ -302,6 +307,7 @@ initUql({
   defaultRepositoryClass: GenericClientRepository,
 });
 
+// 'Item' is an entity class
 const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
 ```
 
