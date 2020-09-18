@@ -18,7 +18,6 @@
   },
   "devDependencies": {
     "@types/mongodb": "^3.5.27",
-    "@types/mysql2": "types/mysql2",
     "@types/node": "^14.11.1",
     "@types/pg": "^7.14.5",
     "@types/sqlite3": "^3.1.6",
@@ -64,5 +63,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "9d65ce3b57c8cb51dec634ce69eb0fa46894af0a"
+  "gitHead": "6495ce0604d3aa827e4f76b82923d7f430794f7a"
 }
