@@ -38,7 +38,13 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
 
   @Transactional()
   findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
-    (qm as QueryOneFilter<T>).filter = { [this.meta.id.property]: id };
+    const idPath =
+      qm.populate && Object.keys(qm.populate).length
+        ? `${this.meta.name}.${this.meta.id.property}`
+        : this.meta.id.property;
+
+    (qm as QueryOneFilter<T>).filter = { [idPath]: id };
+
     return querier.findOne(this.meta.type, qm);
   }
 

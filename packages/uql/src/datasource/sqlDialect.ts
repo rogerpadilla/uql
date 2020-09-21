@@ -107,7 +107,7 @@ export abstract class SqlDialect {
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const meta = getEntityMeta(type);
     const baseSelect = this.columns(type, qm.project, {
-      prefix: qm.populate && type.name,
+      prefix: qm.populate && meta.name,
       ...opts,
     });
     const { joinsSelect, joinsTables } = this.joins(type, qm);

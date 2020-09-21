@@ -39,7 +39,7 @@ export class MongoDialect {
       const relMeta = getEntityMeta(relType);
       pipeline.push({
         $lookup: {
-          from: relType.name,
+          from: relMeta.name,
           localField: popKey,
           foreignField: relMeta.id.name,
           as: popKey,
