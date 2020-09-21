@@ -18,6 +18,7 @@
   },
   "devDependencies": {
     "@types/mongodb": "^3.5.27",
+    "@types/mysql": "^2.15.15",
     "@types/node": "^14.11.1",
     "@types/pg": "^7.14.5",
     "@types/sqlite3": "^3.1.6",
@@ -26,7 +27,7 @@
     "mariadb": "^2.4.2",
     "mongodb": "^3.6.2",
     "mysql": "^2.18.1",
-    "mysql2": "^2.2.1",
+    "mysql2": "^2.2.5",
     "pg": "^8.3.3",
     "rimraf": "^3.0.2",
     "sqlite": "^4.0.14",
@@ -63,5 +64,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "e89bbf1ed7a034dd503807797a2e8c06bda2cb71"
+  "gitHead": "aa12671af7d3192afb1a0db197690f99b502ee4f"
 }

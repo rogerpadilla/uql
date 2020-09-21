@@ -19,7 +19,7 @@
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",
     "source-map-loader": "^1.1.0",
-    "ts-loader": "^8.0.3",
+    "ts-loader": "^8.0.4",
     "typescript": "^4.0.3",
     "webpack": "^4.44.2",
     "webpack-cli": "^3.3.12",
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "e89bbf1ed7a034dd503807797a2e8c06bda2cb71"
+  "gitHead": "aa12671af7d3192afb1a0db197690f99b502ee4f"
 }
