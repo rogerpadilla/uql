@@ -1,5 +1,5 @@
-import { Query, QueryStringified } from '../type';
-import { Item, User } from '../entity/entityMock';
+import { Item, User } from 'uql/mock';
+import { Query, QueryStringified } from 'uql/type';
 import { parseQuery, stringifyQuery, stringifyQueryParameter } from './query.util';
 
 it('stringifyQuery -- empty', () => {

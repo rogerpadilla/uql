@@ -5,8 +5,3 @@ export function formatKebabCase(val: string): string {
   }
   return resp;
 }
-
-export function formatCamelCase(val: string): string {
-  const resp = val.charAt(0).toLowerCase() + val.slice(1);
-  return resp;
-}

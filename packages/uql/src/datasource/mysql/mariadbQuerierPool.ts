@@ -1,5 +1,5 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
-import { QuerierPool } from '../type';
+import { QuerierPool } from 'uql/type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 export default class MariadbQuerierPool implements QuerierPool<MySqlQuerier> {

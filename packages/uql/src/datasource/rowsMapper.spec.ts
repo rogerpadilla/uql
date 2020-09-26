@@ -1,5 +1,5 @@
-import { Item, Storehouse, ItemAdjustment } from '../entity/entityMock';
-import { mapRows } from './rowsMapper.util';
+import { Item, Storehouse, ItemAdjustment } from 'uql/mock';
+import { mapRows } from './rowsMapper';
 
 it('map rows - empty', () => {
   const res1 = mapRows(undefined);

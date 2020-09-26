@@ -2,12 +2,7 @@ export type EntityOptions = {
   readonly name?: string;
 };
 
-export type PropertyOptions<T> = {
-  readonly column: ColumnOptions<T>;
-  readonly relation: RelationOptions<T>;
-};
-
-export type ColumnOptions<T> = {
+export type PropertyOptions = {
   readonly name?: string;
   readonly isId?: boolean;
   readonly onInsert?: () => any;
@@ -29,24 +24,26 @@ export type RelationManyToManyOptions<T> = { type: () => { new (): T } };
 export type EntityMeta<T> = {
   readonly type: { new (): T };
   name: string;
-  readonly id?: { property: string; name: string };
-  readonly hasId?: () => boolean;
+  id?: { property: string; name: string };
   /**
-   * 'properties' contains both, columns and relations metadata
+   * 'properties' contains both, properties and relations metadata
    */
-  properties: {
-    [key: string]: PropertyOptions<T>;
+  attributes: {
+    [key: string]: {
+      readonly property: PropertyOptions;
+      readonly relation: RelationOptions<T>;
+    };
   };
   /**
-   * readonly shorthand for accesing 'columns' metadata
+   * readonly shorthand for accesing 'properties' metadata
    */
-  readonly columns?: {
-    [key: string]: ColumnOptions<T>;
+  properties?: {
+    [key: string]: PropertyOptions;
   };
   /**
    * readonly shorthand for accesing 'relations' metadata
    */
-  readonly relations?: {
+  relations?: {
     [key: string]: RelationOptions<T>;
   };
 };

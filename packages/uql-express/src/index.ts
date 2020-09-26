@@ -1,11 +1,11 @@
-import * as express from 'express';
 import { Request } from 'express-serve-static-core';
+import * as express from 'express';
 
 import { Query } from 'uql/type';
+import { getEntities } from 'uql/decorator';
+import { getServerRepository } from 'uql/container';
 import { parseQuery, formatKebabCase } from 'uql/util';
-import { getEntities } from 'uql/entity';
 import { getUqlOptions } from 'uql/config';
-import { getServerRepository } from 'uql/repository/container';
 
 export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   const router = express.Router();
@@ -65,7 +65,7 @@ export function buildCrudRouter<T>(type: { new (): T }, extendQuery?: ExtendQuer
     const repository = getServerRepository(type);
     const json: { data?: T[]; count?: number } = {};
     const dataPromise = repository.find(qm);
-    if (req.query.count || (opts.count && req.query.count === undefined)) {
+    if (req.query.count || (opts.autoCount && req.query.count === undefined)) {
       const [data, count] = await Promise.all([dataPromise, repository.count(qm.filter)]);
       json.data = data;
       json.count = count;

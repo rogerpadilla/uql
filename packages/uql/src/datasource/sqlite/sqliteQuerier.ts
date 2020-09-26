@@ -1,7 +1,6 @@
 import { Database } from 'sqlite';
-import { Query, QueryFilter, QueryOneFilter, QueryOptions, QueryProject } from 'uql/type';
-import { mapRows } from 'uql/util';
-import { Querier } from '../type';
+import { Query, QueryFilter, QueryOneFilter, QueryOptions, QueryProject, Querier } from 'uql/type';
+import { mapRows } from '../rowsMapper';
 import { SqliteDialect } from './sqliteDialect';
 
 export class SqliteQuerier extends Querier {

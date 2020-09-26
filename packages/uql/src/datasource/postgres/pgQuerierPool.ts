@@ -1,5 +1,5 @@
 import { Pool, PoolConfig } from 'pg';
-import { QuerierPool } from '../type';
+import { QuerierPool } from 'uql/type';
 import { PostgresQuerier } from './postgresQuerier';
 
 export default class PgQuerierPool implements QuerierPool<PostgresQuerier> {

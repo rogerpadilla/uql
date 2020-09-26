@@ -1,4 +1,4 @@
-import { User } from '../../entity/entityMock';
+import { User } from 'uql/mock';
 import Sqlite3QuerierPool from './sqlite3QuerierPool';
 import { SqliteQuerier } from './sqliteQuerier';
 

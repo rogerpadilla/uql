@@ -1,4 +1,4 @@
-import { Query, QueryOptions, QueryFilter, QueryOneFilter } from '../type/query';
+import { Query, QueryFilter, QueryOneFilter, QueryOptions } from './query';
 
 export interface QuerierPoolConnection {
   query(sql: string): Promise<any>;
@@ -8,14 +8,6 @@ export interface QuerierPoolConnection {
 export interface QuerierPool<T extends Querier = Querier> {
   getQuerier(): Promise<T>;
   end(): Promise<void>;
-}
-
-export interface QuerierPoolOptions {
-  host?: string;
-  user?: string;
-  password?: string;
-  database?: string;
-  port?: number;
 }
 
 /**
@@ -35,7 +27,3 @@ export abstract class Querier<ID = any> {
   abstract rollbackTransaction(): Promise<void>;
   abstract release(): Promise<void>;
 }
-
-export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
-
-export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;

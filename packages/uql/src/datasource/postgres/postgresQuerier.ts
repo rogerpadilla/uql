@@ -1,6 +1,5 @@
-import { QuerierPoolConnection } from '../type';
+import { QueryFilter, QuerierPoolConnection } from 'uql/type';
 import { SqlQuerier } from '../sqlQuerier';
-import { QueryFilter } from '../../type';
 import { PostgresDialect } from './postgresDialect';
 
 export class PostgresQuerier extends SqlQuerier {

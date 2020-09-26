@@ -1,5 +1,5 @@
-import { getUqlOptions } from '../config';
-import { QuerierPoolOptions, QuerierPool, DatasourceOptions, Querier } from './type';
+import { QuerierPoolOptions, QuerierPool, DatasourceOptions, Querier } from 'uql/type';
+import { getUqlOptions } from 'uql/config';
 
 let pool: QuerierPool;
 

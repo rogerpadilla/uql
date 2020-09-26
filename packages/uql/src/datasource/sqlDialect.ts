@@ -1,4 +1,5 @@
 import { escapeId, escape } from 'sqlstring';
+import { getEntityMeta } from 'uql/decorator';
 import {
   QueryFilter,
   Query,
@@ -9,8 +10,7 @@ import {
   QueryOptions,
   QueryProject,
   QueryLogicalOperatorValue,
-} from '../type';
-import { getEntityMeta } from '../entity';
+} from 'uql/type';
 
 export abstract class SqlDialect {
   abstract readonly beginTransactionCommand: string;
@@ -19,12 +19,12 @@ export abstract class SqlDialect {
     const meta = getEntityMeta(type);
     const payloads = Array.isArray(payload) ? payload : [payload];
 
-    const onInserts = Object.keys(meta.columns).filter((col) => meta.columns[col].onInsert);
+    const onInserts = Object.keys(meta.properties).filter((col) => meta.properties[col].onInsert);
     if (onInserts.length) {
       for (const item of payloads) {
         for (const key of onInserts) {
           if (item[key] === undefined) {
-            item[key] = meta.columns[key].onInsert();
+            item[key] = meta.properties[key].onInsert();
           }
         }
       }
@@ -32,7 +32,7 @@ export abstract class SqlDialect {
 
     const persistable = filterPersistable(type, payloads[0]);
     const properties = Object.keys(persistable);
-    const columns = properties.map((prop) => meta.columns[prop].name);
+    const columns = properties.map((prop) => meta.properties[prop].name);
     const values = payloads.map((body) => properties.map((prop) => this.escape(body[prop])).join(', ')).join('), (');
 
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
@@ -41,18 +41,18 @@ export abstract class SqlDialect {
   update<T>(type: { new (): T }, filter: QueryFilter<T>, payload: T): string {
     const meta = getEntityMeta(type);
 
-    const onUpdates = Object.keys(meta.columns).filter((col) => meta.columns[col].onUpdate);
+    const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
     if (onUpdates.length) {
       for (const key of onUpdates) {
         if (payload[key] === undefined) {
-          payload[key] = meta.columns[key].onUpdate();
+          payload[key] = meta.properties[key].onUpdate();
         }
       }
     }
 
     const persistable = filterPersistable(type, payload);
     const persistableData = Object.keys(persistable).reduce((acc, key) => {
-      acc[meta.columns[key].name] = payload[key];
+      acc[meta.properties[key].name] = payload[key];
       return acc;
     }, {} as T);
     const values = this.objectToValues(persistableData);
@@ -75,7 +75,7 @@ export abstract class SqlDialect {
     return select + where + group + sort + pager;
   }
 
-  columns<T>(
+  properties<T>(
     type: { new (): T },
     project: QueryProject<T>,
     opts: { prefix?: string; alias?: boolean } & QueryOptions
@@ -91,7 +91,7 @@ export abstract class SqlDialect {
         return `${prefix}*`;
       }
       const meta = getEntityMeta(type);
-      project = Object.keys(meta.columns).reduce((acc, it) => {
+      project = Object.keys(meta.properties).reduce((acc, it) => {
         acc[it] = 1;
         return acc;
       }, {} as QueryProject<T>);
@@ -106,7 +106,7 @@ export abstract class SqlDialect {
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const meta = getEntityMeta(type);
-    const baseSelect = this.columns(type, qm.project, {
+    const baseSelect = this.properties(type, qm.project, {
       prefix: qm.populate && meta.name,
       ...opts,
     });
@@ -127,11 +127,11 @@ export abstract class SqlDialect {
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = qm.populate[popKey];
-      const relColumns = this.columns(relType, popVal?.project, {
+      const relProperties = this.properties(relType, popVal?.project, {
         prefix: joinPrefix,
         alias: true,
       });
-      joinsSelect += `, ${relColumns}`;
+      joinsSelect += `, ${relProperties}`;
       const relMeta = getEntityMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
       const rel = prefix
@@ -268,11 +268,11 @@ export abstract class SqlDialect {
 function filterPersistable<T>(type: { new (): T }, body: T): T {
   const meta = getEntityMeta(type);
   return Object.keys(body).reduce((persistableBody, prop) => {
-    const isColumn = Boolean(meta.columns[prop]);
+    const isProperty = Boolean(meta.properties[prop]);
     const value = body[prop];
     const relationOpts = meta.relations[prop];
     if (
-      isColumn &&
+      isProperty &&
       value !== undefined &&
       // 'manyToOne' is the only relation which doesn't require additional stuff when saving
       (!relationOpts || relationOpts.cardinality === 'manyToOne')

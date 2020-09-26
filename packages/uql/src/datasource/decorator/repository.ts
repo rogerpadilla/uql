@@ -1,5 +1,5 @@
-import { CustomRepositoryConstructor } from '../type';
-import { setCustomRepository } from '../container';
+import { CustomRepositoryConstructor } from 'uql/type';
+import { setCustomRepository } from 'uql/container';
 
 export function Repository() {
   return (repositoryClass: CustomRepositoryConstructor<any>): void => {

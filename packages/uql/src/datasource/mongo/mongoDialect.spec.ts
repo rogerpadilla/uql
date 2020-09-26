@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { Item, TaxCategory } from '../../entity/entityMock';
+import { Item, TaxCategory } from 'uql/mock';
 import { MongoDialect } from './mongoDialect';
 
 let dialect: MongoDialect;

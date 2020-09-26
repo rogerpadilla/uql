@@ -1,4 +1,4 @@
-import { Query, QueryStringified } from '../type';
+import { Query, QueryStringified } from 'uql/type';
 
 export function parseQuery<T>(qmsSrc?: QueryStringified): Query<T> {
   const qm: Query<T> = {};

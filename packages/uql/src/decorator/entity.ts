@@ -1,5 +1,5 @@
+import { EntityOptions } from 'uql/type';
 import { defineEntity } from './definition';
-import { EntityOptions } from './type';
 
 export function Entity(opts?: EntityOptions) {
   return (type: { new (): object }): void => {

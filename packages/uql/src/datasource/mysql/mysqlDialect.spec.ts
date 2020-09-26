@@ -1,6 +1,6 @@
-import { User, Item, ItemAdjustment } from '../../entity/entityMock';
+import { Query, QueryProject, QuerySort } from 'uql/type';
+import { User, Item, ItemAdjustment } from 'uql/mock';
 import { SqlDialect } from '../sqlDialect';
-import { Query, QueryProject, QuerySort } from '../../type';
 import { MySqlDialect } from './mysqlDialect';
 
 let sql: SqlDialect;
@@ -326,7 +326,7 @@ it('find deep populate with projected fields', () => {
   );
 });
 
-it('find populate columns with not fixed type', () => {
+it('find populate properties with not fixed type', () => {
   const query = sql.find(Item, {
     project: { id: 1, name: 1 },
     populate: { user: { project: { id: 1, name: 1 } }, company: { project: { id: 1, name: 1 } } },

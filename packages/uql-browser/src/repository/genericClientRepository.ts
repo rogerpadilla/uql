@@ -1,5 +1,5 @@
-import { Query, QueryFilter, QueryOneFilter, QueryOne } from 'uql/type';
-import { getEntityMeta, EntityMeta } from 'uql/entity';
+import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta } from 'uql/type';
+import { getEntityMeta } from 'uql/decorator';
 import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from 'uql/util';
 import { RequestOptions, ClientRepository } from '../type';
 import { get, post, put, remove } from '../http';

@@ -1,12 +1,12 @@
 import { Entity } from './entity';
-import { Column } from './column';
+import { Property } from './property';
 import { Id } from './id';
 
 it('no @Id', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
-      @Column()
+      @Property()
       id: string;
     }
   }).toThrow(`'SomeEntity' must have one field decorated with @Id`);
@@ -23,11 +23,11 @@ it('one @Id', () => {
   }).toThrow(`'SomeEntity' must have a single field decorated with @Id`);
 });
 
-it('no columns', () => {
+it('no properties', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
       id: string;
     }
-  }).toThrow(`'SomeEntity' must have columns`);
+  }).toThrow(`'SomeEntity' must have properties`);
 });

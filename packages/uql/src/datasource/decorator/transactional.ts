@@ -1,8 +1,8 @@
-import { Querier } from '../type';
+import { Querier } from 'uql/type';
 import { getQuerier } from '../querierPool';
 import { getInjectQuerier } from './injectQuerier';
 
-export function Transactional(opts: { readonly propagation: 'supports' | 'required' } = { propagation: 'supports' }) {
+export function Transactional(opts: { readonly propagation: 'supported' | 'required' } = { propagation: 'supported' }) {
   return (target: object, prop: string, propDescriptor: PropertyDescriptor): void => {
     const originalMethod: (this: object, ...args: unknown[]) => unknown = propDescriptor.value;
     const injectQuerierIndex = getInjectQuerier(target, prop);
@@ -26,10 +26,8 @@ export function Transactional(opts: { readonly propagation: 'supports' | 'requir
       }
 
       try {
-        if (!querier.hasOpenTransaction) {
-          if (opts.propagation === 'required') {
-            await querier.beginTransaction();
-          }
+        if (opts.propagation === 'required' && !querier.hasOpenTransaction) {
+          await querier.beginTransaction();
         }
         const resp = await originalMethod.apply(this, args);
         if (isOwnAuto && querier.hasOpenTransaction) {

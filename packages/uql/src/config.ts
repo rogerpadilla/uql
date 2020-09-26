@@ -1,6 +1,5 @@
-import { GenericRepositoryConstructor } from './repository/type';
-import { resetContainer } from './repository/container';
-import { DatasourceOptions } from './datasource/type';
+import { UqlOptions } from 'uql/type';
+import { resetContainer } from './container';
 
 let opts: UqlOptions;
 
@@ -12,9 +11,3 @@ export function initUql(conf: UqlOptions): void {
 export function getUqlOptions(): UqlOptions {
   return { ...opts };
 }
-
-type UqlOptions = {
-  count?: boolean;
-  datasource?: DatasourceOptions;
-  defaultRepositoryClass?: GenericRepositoryConstructor<unknown>;
-};

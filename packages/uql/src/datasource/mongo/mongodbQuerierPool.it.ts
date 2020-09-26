@@ -1,4 +1,4 @@
-import { User } from '../../entity/entityMock';
+import { User } from 'uql/mock';
 import MongodbQuerierPool from './mongodbQuerierPool';
 import { MongodbQuerier } from './mongodbQuerier';
 

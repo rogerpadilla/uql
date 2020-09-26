@@ -1,6 +1,6 @@
-import { QueryFilter, Query, QueryOne, QueryOneFilter } from '../type/query';
-import { Querier } from '../datasource/type';
-import { EntityMeta } from '../entity';
+import { EntityMeta } from './entity';
+import { Querier } from './querier';
+import { Query, QueryFilter, QueryOne, QueryOneFilter } from './query';
 
 export interface IsomorphicRepository<T, ID = any> {
   readonly meta: EntityMeta<T>;
@@ -27,6 +27,24 @@ export interface ServerRepository<T, ID = any> extends IsomorphicRepository<T, I
   count(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;
 }
 
+export interface QuerierPoolOptions {
+  host?: string;
+  user?: string;
+  password?: string;
+  database?: string;
+  port?: number;
+}
+
+export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
+
+export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;
+
 export type CustomRepositoryConstructor<T, ID = any> = new () => IsomorphicRepository<T, ID>;
 
 export type GenericRepositoryConstructor<T, ID = any> = new (type: { new (): T }) => IsomorphicRepository<T, ID>;
+
+export type UqlOptions = {
+  autoCount?: boolean;
+  datasource?: DatasourceOptions;
+  defaultRepositoryClass?: GenericRepositoryConstructor<any>;
+};

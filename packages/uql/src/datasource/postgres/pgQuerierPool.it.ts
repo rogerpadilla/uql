@@ -1,4 +1,4 @@
-import { User } from '../../entity/entityMock';
+import { User } from 'uql/mock';
 import PgQuerierPool from './pgQuerierPool';
 import { PostgresQuerier } from './postgresQuerier';
 

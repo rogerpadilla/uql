@@ -1,6 +1,6 @@
+import { QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
+import { getEntityMeta } from 'uql/decorator';
 import { SqlDialect } from '../sqlDialect';
-import { QueryTextSearchOptions, QueryPrimitive } from '../../type';
-import { getEntityMeta } from '../../entity';
 
 export class SqliteDialect extends SqlDialect {
   readonly beginTransactionCommand = 'BEGIN TRANSACTION';

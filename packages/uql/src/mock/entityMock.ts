@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Column, ManyToOne, Id, OneToMany, Entity, OneToOne } from './decorator';
+import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/decorator';
 
 export abstract class BaseEntity {
   @Id()
@@ -8,19 +8,19 @@ export abstract class BaseEntity {
   company?: string | Company;
   @ManyToOne({ type: () => User })
   user?: string | User;
-  @Column({ onInsert: () => Date.now() })
+  @Property({ onInsert: () => Date.now() })
   createdAt?: number;
-  @Column({ onUpdate: () => Date.now() })
+  @Property({ onUpdate: () => Date.now() })
   updatedAt?: number;
-  @Column()
+  @Property()
   status?: number;
 }
 
 @Entity()
 export class Company extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
 }
 
@@ -28,17 +28,17 @@ export class Company extends BaseEntity {
 export class Profile extends BaseEntity {
   @Id({ name: 'pk' })
   id?: string;
-  @Column({ name: 'image' })
+  @Property({ name: 'image' })
   picture?: string;
 }
 
 @Entity()
 export class User extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   email?: string;
-  @Column()
+  @Property()
   password?: string;
   @OneToOne({ mappedBy: 'user' })
   profile?: Profile;
@@ -46,11 +46,11 @@ export class User extends BaseEntity {
 
 @Entity()
 export class LedgerAccount extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
-  @Column()
+  @Property()
   parent?: string;
 }
 
@@ -58,33 +58,33 @@ export class LedgerAccount extends BaseEntity {
 export class TaxCategory extends BaseEntity {
   @Id({ onInsert: () => uuidv4() })
   pk?: string;
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
 }
 
 @Entity()
 export class Tax extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   percentage?: number;
   @ManyToOne()
   category?: TaxCategory;
-  @Column()
+  @Property()
   description?: string;
 }
 
 @Entity()
 export class MeasureUnitCategory extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
 }
 
 @Entity()
 export class MeasureUnit extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
   @ManyToOne()
   category?: MeasureUnitCategory;
@@ -92,25 +92,25 @@ export class MeasureUnit extends BaseEntity {
 
 @Entity()
 export class Storehouse extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   address?: string;
-  @Column()
+  @Property()
   description?: string;
 }
 
 @Entity()
 export class Item extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
-  @Column()
+  @Property()
   code?: string;
-  @Column()
+  @Property()
   barcode?: string;
-  @Column()
+  @Property()
   image?: string;
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
@@ -120,11 +120,11 @@ export class Item extends BaseEntity {
   tax?: Tax;
   @ManyToOne()
   measureUnit?: MeasureUnit;
-  @Column()
+  @Property()
   buyPriceAverage?: number;
-  @Column()
+  @Property()
   salePrice?: number;
-  @Column()
+  @Property()
   inventoryable?: boolean;
 }
 
@@ -132,13 +132,13 @@ export class Item extends BaseEntity {
 export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   item?: Item;
-  @Column()
+  @Property()
   number?: number;
-  @Column()
+  @Property()
   buyPrice?: number;
   @ManyToOne()
   storehouse?: Storehouse;
-  @Column()
+  @Property()
   inventoryAdjustment?: boolean;
 }
 
@@ -146,8 +146,8 @@ export class ItemAdjustment extends BaseEntity {
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
   itemsAdjustments?: ItemAdjustment[];
-  @Column()
+  @Property()
   date?: number;
-  @Column()
+  @Property()
   description?: string;
 }

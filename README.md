@@ -63,7 +63,7 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Column, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/entity';
+import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/decorator';
 
 /**
  * an abstract class can (optionally) be used as a template for the entities
@@ -81,25 +81,25 @@ export abstract class BaseEntity {
   user?: string | User;
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
-   * obtaining the value of a column when inserting:
+   * obtaining the value of a property when inserting:
    */
-  @Column({ onInsert: () => Date.now() })
+  @Property({ onInsert: () => Date.now() })
   createdAt?: string;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
-   * obtaining the value of a column when updating:
+   * obtaining the value of a property when updating:
    */
-  @Column({ onUpdate: () => Date.now() })
+  @Property({ onUpdate: () => Date.now() })
   updatedAt?: string;
-  @Column()
+  @Property()
   status?: string;
 }
 
 @Entity()
 export class Company extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
 }
 
@@ -109,53 +109,53 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * a custom name can be (optionally) specified for every column
+   * a custom name can be (optionally) specified for every property
    */
   @Id({ name: 'pk' })
   id?: string;
-  @Column({ name: 'image' })
+  @Property({ name: 'image' })
   picture?: string;
 }
 
 @Entity()
 export class User extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   email?: string;
-  @Column()
+  @Property()
   password?: string;
   @OneToOne({ mappedBy: 'user' })
-  @Column()
+  @Property()
   profile?: Profile;
 }
 
 @Entity()
 export class TaxCategory extends BaseEntity {
   /**
-   * Any entity can specify its own ID Column and still inherit the others
+   * Any entity can specify its own ID Property and still inherit the others
    * columns/relations from its parent entity.
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
    */
   @Id({ onInsert: () => uuidv4() })
   pk?: string;
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   description?: string;
 }
 
 @Entity()
 export class Tax extends BaseEntity {
-  @Column()
+  @Property()
   name?: string;
-  @Column()
+  @Property()
   percentage?: number;
   @ManyToOne()
-  @Column()
+  @Property()
   category?: TaxCategory;
-  @Column()
+  @Property()
   description?: string;
 }
 ```
@@ -163,8 +163,8 @@ export class Tax extends BaseEntity {
 ## <a name="configuration"></a>:gear: Configuration
 
 ```typescript
-import { initUql } from 'uql';
-import { GenericServerRepository } from 'uql/repository';
+import { initUql } from 'uql/config';
+import { GenericServerRepository } from 'uql/datasource';
 
 initUql({
   datasource: {
@@ -181,11 +181,10 @@ initUql({
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
 
 ```typescript
-import { Transactional, InjectQuerier, Querier } from 'uql/datasource';
-import { getServerRepository } from 'uql/repository';
+import { Querier } from 'uql/type';
+import { Transactional, InjectQuerier, getServerRepository } from 'uql/datasource';
 
 export class ConfirmationService {
-  
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -211,7 +210,7 @@ export class ConfirmationService {
 ## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
 
 ```typescript
-import { getQuerier } from 'uql/datasource/querierPool';
+import { getQuerier } from 'uql/datasource';
 
 // ...then inside any of your functions
 
@@ -287,7 +286,7 @@ app
     // this will generate CRUD REST APIs for the entities.
     // all entities will be automatically exposed unless
     // 'include' or 'exclude' options are provided
-    entitiesMiddleware({      
+    entitiesMiddleware({
       exclude: [Confirmation, User],
     })
   );

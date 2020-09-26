@@ -1,4 +1,4 @@
-import { User } from '../../entity/entityMock';
+import { User } from 'uql/mock';
 import MySql2QuerierPool from './mysql2QuerierPool';
 import { MySqlQuerier } from './mysqlQuerier';
 

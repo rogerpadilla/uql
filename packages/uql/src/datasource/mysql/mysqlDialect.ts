@@ -1,5 +1,5 @@
+import { QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
-import { QueryTextSearchOptions, QueryPrimitive } from '../../type';
 
 export class MySqlDialect extends SqlDialect {
   readonly beginTransactionCommand = 'START TRANSACTION';

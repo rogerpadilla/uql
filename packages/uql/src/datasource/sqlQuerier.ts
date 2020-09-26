@@ -1,6 +1,14 @@
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter, QueryProject } from '../type';
-import { mapRows } from '../util/rowsMapper.util';
-import { QuerierPoolConnection, Querier } from './type';
+import {
+  Query,
+  QueryFilter,
+  QueryUpdateResult,
+  QueryOptions,
+  QueryOneFilter,
+  QueryProject,
+  QuerierPoolConnection,
+  Querier,
+} from 'uql/type';
+import { mapRows } from './rowsMapper';
 import { SqlDialect } from './sqlDialect';
 
 export abstract class SqlQuerier extends Querier {

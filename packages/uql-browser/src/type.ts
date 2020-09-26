@@ -1,5 +1,4 @@
-import { QueryOne, QueryOneFilter, Query, QueryFilter } from 'uql/type';
-import { IsomorphicRepository } from 'uql/repository';
+import { QueryOne, QueryOneFilter, Query, QueryFilter, IsomorphicRepository } from 'uql/type';
 
 export interface RequestSuccessResponse<T> {
   data: T;

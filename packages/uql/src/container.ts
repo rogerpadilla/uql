@@ -1,5 +1,5 @@
-import { getUqlOptions } from '../config';
-import { IsomorphicRepository, ServerRepository } from './type';
+import { IsomorphicRepository, ServerRepository } from 'uql/type';
+import { getUqlOptions } from './config';
 
 let cache = new WeakMap<{ new (): unknown }, IsomorphicRepository<any>>();
 

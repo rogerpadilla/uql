@@ -1,7 +1,6 @@
-import { Query, QueryFilter, QueryOneFilter, QueryOne } from '../type';
-import { getEntityMeta, EntityMeta } from '../entity';
-import { Querier, Transactional, InjectQuerier } from '../datasource';
-import { ServerRepository } from './type';
+import { getEntityMeta } from 'uql/decorator';
+import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta, ServerRepository, Querier } from 'uql/type';
+import { Transactional, InjectQuerier } from './decorator';
 
 export class GenericServerRepository<T, ID = any> implements ServerRepository<T, ID> {
   readonly meta: EntityMeta<T>;
