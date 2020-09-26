@@ -8,7 +8,7 @@ export function Transactional(opts: { readonly propagation: 'supports' | 'requir
     const injectQuerierIndex = getInjectQuerier(target, prop);
 
     if (injectQuerierIndex === undefined) {
-      throw new Error(
+      throw new TypeError(
         `Missing decorator @InjectQuerier() in one of the parameters of '${target.constructor.name}.${prop}'`
       );
     }

@@ -406,6 +406,7 @@ it('count', async () => {
   const resp = await repository.count({ company: '123' });
   expect(resp).toEqual(mock);
   expect(querier.query).toBeCalledTimes(1);
+  expect(querier.query).toBeCalledWith("SELECT COUNT(*) count FROM `User` WHERE `company` = '123'");
   expect(querier.find).toBeCalledTimes(0);
   expect(querier.release).toBeCalledTimes(1);
   expect(querier.beginTransaction).not.toBeCalled();

@@ -14,6 +14,7 @@ export function getUqlOptions(): UqlOptions {
 }
 
 type UqlOptions = {
+  count?: boolean;
   datasource?: DatasourceOptions;
   defaultRepositoryClass?: GenericRepositoryConstructor<unknown>;
 };

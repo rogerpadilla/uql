@@ -121,7 +121,7 @@ export abstract class SqlDialect {
     for (const popKey in qm.populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
-        throw new Error(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+        throw new TypeError(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
       }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
       const joinPath = this.escapeId(joinPrefix, true);
@@ -222,7 +222,7 @@ export abstract class SqlDialect {
       case '$re':
         return `${this.escapeId(attr)} REGEXP ${this.escape(val)}`;
       default:
-        throw new Error(`Unsupported comparison operator: ${operator}`);
+        throw new TypeError(`Unsupported comparison operator: ${operator}`);
     }
   }
 

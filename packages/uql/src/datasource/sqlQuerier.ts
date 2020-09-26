@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter } from '../type';
+import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryOneFilter, QueryProject } from '../type';
 import { mapRows } from '../util/rowsMapper.util';
 import { QuerierPoolConnection, Querier } from './type';
 import { SqlDialect } from './sqlDialect';
@@ -52,7 +52,7 @@ export abstract class SqlQuerier extends Querier {
   async count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
     const query = this.dialect.find(
       type,
-      { project: { 'COUNT(*) count': 1 } as any, filter },
+      { project: ({ 'COUNT(*) count': 1 } as unknown) as QueryProject<T>, filter },
       { isTrustedProject: true }
     );
     const res = await this.query<{ count: number }[]>(query);
@@ -71,7 +71,7 @@ export abstract class SqlQuerier extends Querier {
 
   async beginTransaction() {
     if (this.hasPendingTransaction) {
-      throw new Error('There is a pending transaction.');
+      throw new TypeError('There is a pending transaction.');
     }
     await this.query(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
@@ -79,7 +79,7 @@ export abstract class SqlQuerier extends Querier {
 
   async commitTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new Error('There is not a pending transaction.');
+      throw new TypeError('There is not a pending transaction.');
     }
     await this.query('COMMIT');
     this.hasPendingTransaction = undefined;
@@ -87,7 +87,7 @@ export abstract class SqlQuerier extends Querier {
 
   async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new Error('There is not a pending transaction.');
+      throw new TypeError('There is not a pending transaction.');
     }
     await this.query('ROLLBACK');
     this.hasPendingTransaction = undefined;
@@ -95,7 +95,7 @@ export abstract class SqlQuerier extends Querier {
 
   async release() {
     if (this.hasPendingTransaction) {
-      throw new Error('Querier should not be released while there is an open transaction.');
+      throw new TypeError('Querier should not be released while there is an open transaction.');
     }
     return this.conn.release();
   }

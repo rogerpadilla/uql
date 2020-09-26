@@ -21,7 +21,7 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier<ID>): Promise<void> {
     const affectedRows = await querier.update(this.meta.type, { [this.meta.id.property]: id }, body);
     if (!affectedRows) {
-      throw new Error('Unaffected record');
+      throw new TypeError('Unaffected record');
     }
     await this.updateRelations({ ...body, [this.meta.id.property]: id }, querier);
   }
@@ -62,7 +62,7 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   async removeOneById(id: ID, @InjectQuerier() querier?: Querier<ID>) {
     const affectedRows = await querier.remove(this.meta.type, { [this.meta.id.property]: id });
     if (!affectedRows) {
-      throw new Error('Unaffected record');
+      throw new TypeError('Unaffected record');
     }
   }
 
@@ -93,10 +93,10 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
         });
         return querier.insert(relType, relBody);
       }
-      throw new Error('TODO unsupported cardinality ' + relOpts.cardinality);
+      throw new TypeError('TODO unsupported cardinality ' + relOpts.cardinality);
     });
 
-    await Promise.all(insertProms as any);
+    await Promise.all<any>(insertProms);
   }
 
   protected async updateRelations(body: T, querier: Querier<ID>) {
@@ -121,7 +121,7 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
           return querier.insert(relType, relBody);
         }
       } else {
-        throw new Error('TODO unsupported cardinality ' + relOpts.cardinality);
+        throw new TypeError('TODO unsupported cardinality ' + relOpts.cardinality);
       }
     });
 

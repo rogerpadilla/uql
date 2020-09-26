@@ -7,7 +7,7 @@ export function getQuerier(): Promise<Querier> {
   if (!pool) {
     const conf = getUqlOptions();
     if (!conf?.datasource) {
-      throw new Error('Datasource configuration has not been set');
+      throw new TypeError('Datasource configuration has not been set');
     }
     pool = getQuerierPool(conf.datasource);
   }
@@ -26,7 +26,7 @@ function getQuerierPool(opts: DatasourceOptions): QuerierPool {
   const { driver, ...options } = opts;
   const directory = driverDirectoryMap[driver];
   if (!directory) {
-    throw new Error(`Unsupported driver '${driver}'`);
+    throw new TypeError(`Unsupported driver '${driver}'`);
   }
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const querierPoolConstructor: QuerierPoolClass = require(`./${directory}/${driver}QuerierPool`).default;

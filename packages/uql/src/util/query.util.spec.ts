@@ -1,6 +1,6 @@
 import { Query, QueryStringified } from '../type';
 import { Item, User } from '../entity/entityMock';
-import { buildQuery, stringifyQuery, stringifyQueryParameter } from './query.util';
+import { parseQuery, stringifyQuery, stringifyQueryParameter } from './query.util';
 
 it('stringifyQuery -- empty', () => {
   const source: Query<User> = {};
@@ -10,14 +10,14 @@ it('stringifyQuery -- empty', () => {
 });
 
 it('buildQuery -- empty', () => {
-  const res1 = buildQuery(undefined);
+  const res1 = parseQuery(undefined);
   expect(res1).toEqual({});
-  const res2 = buildQuery({});
+  const res2 = parseQuery({});
   expect(res2).toEqual({});
 });
 
 it('stringifyQueryParameter', () => {
-  expect(stringifyQueryParameter('filter', undefined)).toBe('');
+  expect(stringifyQueryParameter('project', undefined)).toBe('?project=undefined');
   expect(stringifyQueryParameter('limit', 10)).toBe('?limit=10');
   expect(stringifyQueryParameter('limit', 10, true)).toBe('limit=10');
   expect(stringifyQueryParameter('limit', null)).toBe('?limit=null');
@@ -26,22 +26,22 @@ it('stringifyQueryParameter', () => {
 
 it('stringifyQuery', () => {
   expect(stringifyQuery(undefined)).toBe('');
-  expect(stringifyQuery({ filter: undefined })).toBe('');
+  expect(stringifyQuery({ project: undefined })).toBe('?project=undefined');
   const source: Query<Item> = {
     project: { id: 1, name: 1 },
     populate: { tax: null, measureUnit: { project: { id: 1, name: 1, category: 1 } } },
     filter: { name: 'Batman', company: '38' },
+    group: ['company'],
     sort: { company: 1, name: -1 },
-    skip: undefined,
     limit: 5,
   };
   const result = stringifyQuery(source);
   const expected =
-    '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":"38"}&sort={"company":1,"name":-1}&limit=5';
+    '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":"38"}&group=["company"]&sort={"company":1,"name":-1}&limit=5';
   expect(result).toBe(expected);
 });
 
-it('buildQuery stringified', () => {
+it('parseQuery stringified', () => {
   const qms: QueryStringified = {
     project: '{ "id": 1, "name": 1 }',
     filter: '{ "name": "Batman", "company": "40" }',
@@ -57,19 +57,19 @@ it('buildQuery stringified', () => {
     },
     sort: { name: -1, company: 1 },
   };
-  const result = buildQuery(qms);
+  const result = parseQuery(qms);
   expect(result).toEqual(expected);
 });
 
-it('buildQuery limit', () => {
+it('parseQuery limit', () => {
   const qm: QueryStringified = {
-    skip: 200,
-    limit: 100,
+    skip: '200',
+    limit: '100',
   };
   const expected: Query<Item> = {
     skip: 200,
     limit: 100,
   };
-  const result = buildQuery(qm);
+  const result = parseQuery(qm);
   expect(result).toEqual(expected);
 });

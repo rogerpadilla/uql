@@ -9,7 +9,7 @@ beforeEach(() => {
   mockRes = undefined;
   querier = new MySqlQuerier({
     query: () => {
-      const res: any = [mockRes];
+      const res = [mockRes];
       return Promise.resolve(res);
     },
     release: () => Promise.resolve(),

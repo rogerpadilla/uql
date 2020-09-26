@@ -4,7 +4,7 @@ import { RelationOptions, ColumnOptions, EntityOptions, EntityMeta } from './typ
 declare const window: any;
 const holder = typeof window === 'object' ? window : {};
 const key = 'uql/entitiesMeta';
-const metas: Map<{ new (): any }, EntityMeta<any>> = holder[key] || new Map();
+const metas: Map<{ new (): unknown }, EntityMeta<any>> = holder[key] || new Map();
 holder[key] = metas;
 
 function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
@@ -28,7 +28,7 @@ export function defineColumn<T>(type: { new (): T }, prop: string, opts: ColumnO
 export function defineId<T>(type: { new (): T }, prop: string, opts: ColumnOptions<T>): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   if (meta.hasId()) {
-    throw new Error(`'${type.name}' must have a single field decorated with @Id`);
+    throw new TypeError(`'${type.name}' must have a single field decorated with @Id`);
   }
   return defineColumn(type, prop, { ...opts, isId: true });
 }
@@ -38,7 +38,7 @@ export function defineRelation<T>(type: { new (): T }, prop: string, opts: Relat
     const inferredType = Reflect.getMetadata('design:type', type.prototype, prop) as { new (): T };
     const isPrimitive = isPrimitiveType(inferredType);
     if (isPrimitive) {
-      throw new Error(`'${type.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
+      throw new TypeError(`'${type.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
     }
     opts.type = () => inferredType;
   }
@@ -51,7 +51,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
   const meta = ensureEntityMeta(type);
 
   if (Object.keys(meta.properties).length === 0) {
-    throw new Error(`'${type.name}' must have columns`);
+    throw new TypeError(`'${type.name}' must have columns`);
   }
 
   meta.name = opts.name || type.name;
@@ -74,7 +74,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
 
   const idProperty = Object.keys(meta.properties).find((key) => meta.properties[key].column?.isId);
   if (!idProperty) {
-    throw new Error(`'${type.name}' must have one field decorated with @Id`);
+    throw new TypeError(`'${type.name}' must have one field decorated with @Id`);
   }
 
   Object.defineProperty(meta, 'id', {
@@ -104,7 +104,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
 export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
   if (!meta.id) {
-    throw new Error(`'${type.name}' is not an entity`);
+    throw new TypeError(`'${type.name}' is not an entity`);
   }
   return meta;
 }

@@ -48,7 +48,7 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
     return get<T>(`${this.basePath}/one${qs}`, opts);
   }
 
-  find(qm: Query<T>, opts?: RequestOptions) {
+  find(qm: Query<T>, opts?: RequestOptions & { count?: boolean }) {
     const qs = stringifyQuery(qm);
     return get<T[]>(`${this.basePath}${qs}`, opts);
   }

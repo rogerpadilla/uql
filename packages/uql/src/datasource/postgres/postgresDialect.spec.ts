@@ -1,5 +1,5 @@
 import { User, Item, ItemAdjustment, TaxCategory } from '../../entity/entityMock';
-import { Query, QuerySort } from '../../type';
+import { Query, QueryProject, QuerySort } from '../../type';
 import { SqlDialect } from '../sqlDialect';
 import { PostgresDialect } from './postgresDialect';
 
@@ -411,7 +411,7 @@ it('find select as functions', () => {
       project: {
         '*': 1,
         'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
-      } as any,
+      } as QueryProject<User>,
       filter: { name: 'something' },
     },
     { isTrustedProject: true }

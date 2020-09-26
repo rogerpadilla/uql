@@ -102,7 +102,7 @@ export class MongodbQuerier extends Querier<string> {
 
   async beginTransaction(): Promise<void> {
     if (this.session?.inTransaction()) {
-      throw new Error('There is a pending transaction.');
+      throw new TypeError('There is a pending transaction.');
     }
     this.session = this.conn.startSession();
     this.session.startTransaction();
@@ -110,7 +110,7 @@ export class MongodbQuerier extends Querier<string> {
 
   async commitTransaction(): Promise<void> {
     if (!this.session?.inTransaction()) {
-      throw new Error('There is not a pending transaction.');
+      throw new TypeError('There is not a pending transaction.');
     }
     await this.session.commitTransaction();
     return new Promise((resolve, reject) => {
@@ -126,14 +126,14 @@ export class MongodbQuerier extends Querier<string> {
 
   async rollbackTransaction(): Promise<void> {
     if (!this.session?.inTransaction()) {
-      throw new Error('There is not a pending transaction.');
+      throw new TypeError('There is not a pending transaction.');
     }
     await this.session.abortTransaction();
   }
 
   release(): Promise<void> {
     if (this.session?.inTransaction()) {
-      throw new Error('Querier should not be released while there is an open transaction.');
+      throw new TypeError('Querier should not be released while there is an open transaction.');
     }
     return this.conn.close();
   }

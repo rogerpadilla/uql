@@ -24,7 +24,7 @@ it('buildFilter', () => {
     dialect.buildFilter<Item>(Item, { id: '507f191e810c19729de860ea' })
   ).toEqual({ _id: new ObjectId('507f191e810c19729de860ea') });
   expect(
-    dialect.buildFilter<Item>(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })
+    dialect.buildFilter<Item>(Item, { id: new ObjectId('507f191e810c19729de860ea') as unknown })
   ).toEqual({ _id: new ObjectId('507f191e810c19729de860ea') });
   expect(
     dialect.buildFilter<TaxCategory>(TaxCategory, { id: '507f191e810c19729de860ea' })
@@ -33,7 +33,7 @@ it('buildFilter', () => {
     dialect.buildFilter<TaxCategory>(TaxCategory, { pk: '507f191e810c19729de860ea' })
   ).toEqual({ _id: new ObjectId('507f191e810c19729de860ea') });
   expect(
-    dialect.buildFilter<TaxCategory>(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })
+    dialect.buildFilter<TaxCategory>(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as unknown })
   ).toEqual({ _id: new ObjectId('507f191e810c19729de860ea') });
 });
 

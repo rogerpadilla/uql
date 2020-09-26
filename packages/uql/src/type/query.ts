@@ -1,7 +1,7 @@
 export type QueryPrimitive = string | number | boolean;
 
 export type QueryProject<T> = {
-  readonly [P in keyof T]: 1 | 0 | boolean;
+  readonly [P in keyof T]: 0 | 1;
 };
 
 export type QueryPopulate<T> = {
@@ -45,7 +45,7 @@ export type QueryLogicalOperator<T> = {
 export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
 
 export type QuerySort<T> = {
-  readonly [P in keyof T]: 1 | -1;
+  readonly [P in keyof T]: -1 | 1;
 };
 
 export type QueryPager = {
@@ -63,7 +63,7 @@ export type QueryOneFilter<T> = QueryOne<T> & {
 };
 export type Query<T> = QueryOneFilter<T> & QueryPager & { sort?: QuerySort<T> };
 export type QueryStringified = {
-  readonly [P in keyof Query<unknown>]?: any;
+  readonly [P in keyof Query<unknown>]?: string;
 };
 
 export type QueryUpdateResult = {
