@@ -1,7 +1,7 @@
 import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
 import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from 'uql/util';
-import { RequestOptions, ClientRepository } from '../type';
+import { RequestOptions, ClientRepository, RequestFindOptions } from '../type';
 import { get, post, put, remove } from '../http';
 
 export class GenericClientRepository<T, ID = any> implements ClientRepository<T, ID> {
@@ -48,8 +48,12 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
     return get<T>(`${this.basePath}/one${qs}`, opts);
   }
 
-  find(qm: Query<T>, opts?: RequestOptions & { count?: boolean }) {
-    const qs = stringifyQuery(qm);
+  find(qm: Query<T>, opts: RequestFindOptions = {}) {
+    const data: typeof qm & Pick<typeof opts, 'count'> = { ...qm };
+    if (opts.count) {
+      data.count = true;
+    }
+    const qs = stringifyQuery(data);
     return get<T[]>(`${this.basePath}${qs}`, opts);
   }
 

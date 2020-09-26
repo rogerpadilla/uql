@@ -63,7 +63,7 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/decorator';
+import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity, } from 'uql/decorator';
 
 /**
  * an abstract class can (optionally) be used as a template for the entities

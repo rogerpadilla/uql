@@ -28,19 +28,15 @@ export function parseQuery<T>(qmsSrc?: QueryStringified): Query<T> {
   return qm;
 }
 
-export function stringifyQueryParameter<T, K extends keyof Query<T>>(
-  key: K,
-  value?: Query<T>[K],
-  noPrefix?: boolean
-): string {
+export function stringifyQueryParameter(key: string, value?: any, noPrefix?: boolean): string {
   const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
   return (noPrefix ? '' : '?') + `${key}=${valStr}`;
 }
 
-export function stringifyQuery<T>(qm?: Query<T>): string {
-  if (!qm) {
+export function stringifyQuery(query: object): string {
+  if (!query) {
     return '';
   }
-  const qsArr = Object.keys(qm).map((key) => stringifyQueryParameter(key as keyof Query<T>, qm[key], true));
+  const qsArr = Object.keys(query).map((key) => stringifyQueryParameter(key, query[key], true));
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }
