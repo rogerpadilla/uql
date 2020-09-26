@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "express": "^4.17.1",
-    "uql": "^0.1"
+    "uql": "^0.2"
   },
   "devDependencies": {
     "@types/express": "4.17.8",
@@ -55,5 +55,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "0cbee30ffdd9ec289ededbbf32f9907db7274f7b"
+  "gitHead": "fd65efba2cc2960ba6f9c7a4d06567e430e0a073"
 }
