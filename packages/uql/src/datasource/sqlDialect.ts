@@ -75,7 +75,7 @@ export abstract class SqlDialect {
     return select + where + group + sort + pager;
   }
 
-  properties<T>(
+  columns<T>(
     type: { new (): T },
     project: QueryProject<T>,
     opts: { prefix?: string; alias?: boolean } & QueryOptions
@@ -85,28 +85,36 @@ export abstract class SqlDialect {
     }
 
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
+    const meta = getEntityMeta(type);
 
-    if (!project) {
+    if (project) {
+      const hasPositives = Object.keys(project).some((key) => project[key]);
+      project = Object.keys(hasPositives ? project : meta.properties).reduce((acc, it) => {
+        if (project[it] !== 0) {
+          acc[it] = project[it];
+        }
+        return acc;
+      }, {} as QueryProject<T>);
+    } else {
       if (!opts.alias) {
         return `${prefix}*`;
       }
-      const meta = getEntityMeta(type);
       project = Object.keys(meta.properties).reduce((acc, it) => {
         acc[it] = 1;
         return acc;
       }, {} as QueryProject<T>);
     }
 
-    const nameMapper = opts.alias
+    const aliasMapper = opts.alias
       ? (name: string) => `${prefix}${this.escapeId(name)} ${this.escapeId(opts.prefix + '.' + name, true)}`
       : (name: string) => `${prefix}${this.escapeId(name)}`;
 
-    return Object.keys(project).map(nameMapper).join(', ');
+    return Object.keys(project).map(aliasMapper).join(', ');
   }
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const meta = getEntityMeta(type);
-    const baseSelect = this.properties(type, qm.project, {
+    const baseSelect = this.columns(type, qm.project, {
       prefix: qm.populate && meta.name,
       ...opts,
     });
@@ -127,7 +135,7 @@ export abstract class SqlDialect {
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = qm.populate[popKey];
-      const relProperties = this.properties(relType, popVal?.project, {
+      const relProperties = this.columns(relType, popVal?.project, {
         prefix: joinPrefix,
         alias: true,
       });

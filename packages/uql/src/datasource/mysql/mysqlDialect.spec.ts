@@ -239,7 +239,7 @@ it('find populate with projected fields', () => {
 it('find populates with all fields and specific fields, and filter by populated', () => {
   const qm: Query<Item> = {
     project: { id: 1, name: 1 },
-    populate: { tax: null, measureUnit: { project: { id: 1, name: 1 } } },
+    populate: { tax: undefined, measureUnit: { project: { id: 1, name: 1 } } },
     filter: { 'measureUnit.name': { $ne: 'unidad' }, 'tax.id': 2 } as Item,
     sort: { 'category.name': 1, 'MeasureUnit.name': 1 } as QuerySort<Item>,
     limit: 100,
@@ -345,7 +345,7 @@ it('find populate not annotated field', () => {
   expect(() =>
     sql.find(Item, {
       project: { id: 1, name: 1 },
-      populate: { status: null },
+      populate: { status: undefined },
     })
   ).toThrow("'Item.status' is not annotated with a relation decorator");
 });
@@ -393,19 +393,44 @@ it('find limit', () => {
   expect(query4).toBe("SELECT `id`, `name`, `user` FROM `User` WHERE `user` = '123' LIMIT 25");
 });
 
-it('find select as functions', () => {
-  const query = sql.find(
-    User,
-    {
-      project: {
-        '*': 1,
-        'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
-      } as QueryProject<User>,
-      filter: { name: 'something' },
-    },
-    { isTrustedProject: true }
-  );
-  expect(query).toBe(
+it('find project', () => {
+  expect(
+    sql.find(User, {
+      project: { password: 0 },
+    })
+  ).toBe('SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `profile` FROM `User`');
+
+  expect(
+    sql.find(User, {
+      project: { name: 0, password: 0 },
+    })
+  ).toBe('SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `email`, `profile` FROM `User`');
+
+  expect(
+    sql.find(User, {
+      project: { id: 1, name: 1, password: 0 },
+    })
+  ).toBe('SELECT `id`, `name` FROM `User`');
+
+  expect(
+    sql.find(User, {
+      project: { id: 1, name: 0, password: 0 },
+    })
+  ).toBe('SELECT `id` FROM `User`');
+
+  expect(
+    sql.find(
+      User,
+      {
+        project: {
+          '*': 1,
+          'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
+        } as QueryProject<User>,
+        filter: { name: 'something' },
+      },
+      { isTrustedProject: true }
+    )
+  ).toBe(
     'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' +
       " FROM `User` WHERE `name` = 'something'"
   );
