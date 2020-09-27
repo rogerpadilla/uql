@@ -1,5 +1,5 @@
-import { Query, QueryProject, QuerySort } from 'uql/type';
 import { User, Item, ItemAdjustment } from 'uql/mock';
+import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 import { MySqlDialect } from './mysqlDialect';
 

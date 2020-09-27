@@ -1,7 +1,7 @@
-import { QueryUpdateResult, ServerRepository, Querier } from 'uql/type';
 import { initUql } from 'uql/config';
 import { getServerRepository } from 'uql/container';
 import { User, Item, InventoryAdjustment } from 'uql/mock';
+import { QueryUpdateResult, ServerRepository, Querier } from 'uql/type';
 import MySql2QuerierPool from './mysql/mysql2QuerierPool';
 import { MySqlQuerier } from './mysql/mysqlQuerier';
 import { SqlQuerier } from './sqlQuerier';

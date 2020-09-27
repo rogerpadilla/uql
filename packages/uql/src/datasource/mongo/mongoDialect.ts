@@ -1,6 +1,6 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
+import { QueryFilter, Query, EntityMeta } from 'uql/type';
 
 export class MongoDialect {
   buildFilter<T>(type: { new (): T }, filter: QueryFilter<T> = {}): FilterQuery<T> {

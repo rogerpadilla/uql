@@ -1,5 +1,5 @@
-import { Query, QueryProject, QuerySort } from 'uql/type';
 import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
+import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 import { PostgresDialect } from './postgresDialect';
 

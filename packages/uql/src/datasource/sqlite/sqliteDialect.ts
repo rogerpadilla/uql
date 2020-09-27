@@ -1,5 +1,5 @@
-import { QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
+import { QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 
 export class SqliteDialect extends SqlDialect {

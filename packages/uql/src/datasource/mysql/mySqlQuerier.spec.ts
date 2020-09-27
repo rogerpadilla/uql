@@ -1,5 +1,5 @@
-import { QueryUpdateResult } from 'uql/type';
 import { User } from 'uql/mock';
+import { QueryUpdateResult } from 'uql/type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 let mockRes: User[] | QueryUpdateResult;

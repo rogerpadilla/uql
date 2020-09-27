@@ -1,8 +1,9 @@
-import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
-import { stringifyQuery, stringifyQueryParameter, formatKebabCase } from 'uql/util';
-import { RequestOptions, ClientRepository, RequestFindOptions } from '../type';
+import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta } from 'uql/type';
+import { formatKebabCase } from 'uql/util';
 import { get, post, put, remove } from '../http';
+import { RequestOptions, ClientRepository, RequestFindOptions } from '../type';
+import { stringifyQuery, stringifyQueryParameter } from './query.util';
 
 export class GenericClientRepository<T, ID = any> implements ClientRepository<T, ID> {
   readonly meta: EntityMeta<T>;

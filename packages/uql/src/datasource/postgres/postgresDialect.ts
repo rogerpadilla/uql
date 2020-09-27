@@ -1,5 +1,5 @@
-import { QueryComparisonOperator, QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
+import { QueryComparisonOperator, QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 
 export class PostgresDialect extends SqlDialect {

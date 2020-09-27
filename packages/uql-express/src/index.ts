@@ -1,11 +1,12 @@
 import { Request } from 'express-serve-static-core';
 import * as express from 'express';
 
-import { Query } from 'uql/type';
-import { getEntities } from 'uql/decorator';
-import { getServerRepository } from 'uql/container';
-import { parseQuery, formatKebabCase } from 'uql/util';
 import { getUqlOptions } from 'uql/config';
+import { getServerRepository } from 'uql/container';
+import { getEntities } from 'uql/decorator';
+import { Query } from 'uql/type';
+import { formatKebabCase } from 'uql/util';
+import { parseQuery } from './query.util';
 
 export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   const router = express.Router();

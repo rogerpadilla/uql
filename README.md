@@ -63,7 +63,7 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity, } from 'uql/decorator';
+import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from 'uql/decorator';
 
 /**
  * an abstract class can (optionally) be used as a template for the entities
@@ -316,4 +316,4 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 
 Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and also [a new language](https://graphql.org/learn/queries); uql should allow same this, but without need to configure and maintain these additional components.
 
-On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize, do all use an imperative API (call to functions); uql uses a declarative API (JSON) which can be serialized and send as messages (through the network) between the different components of a system.
+On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize; are in one way or another, coupled to databases; uql uses a declarative JSON syntax (agnostic from the datasource) which can easily be serialized and send as messages (e.g. through the network) between different components of a system (e.g. micro-services), and then each one has the flexibility to decide how to process these messages.
