@@ -17,4 +17,7 @@ declare namespace jest {
   export interface Expect {
     toMatch: (received: RegExp) => any;
   }
+  export interface Matchers<R> {
+    toStartsWith: (received: string) => any;
+  }
 }
