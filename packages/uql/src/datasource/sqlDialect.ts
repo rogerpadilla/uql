@@ -90,7 +90,7 @@ export abstract class SqlDialect {
     if (project) {
       const hasPositives = Object.keys(project).some((key) => project[key]);
       project = Object.keys(hasPositives ? project : meta.properties).reduce((acc, it) => {
-        if (project[it] !== 0) {
+        if (project[it] !== false && project[it] !== 0) {
           acc[it] = project[it];
         }
         return acc;
@@ -100,7 +100,7 @@ export abstract class SqlDialect {
         return `${prefix}*`;
       }
       project = Object.keys(meta.properties).reduce((acc, it) => {
-        acc[it] = 1;
+        acc[it] = true;
         return acc;
       }, {} as QueryProject<T>);
     }

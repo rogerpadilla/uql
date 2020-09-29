@@ -1,7 +1,7 @@
 export type QueryPrimitive = string | number | boolean;
 
 export type QueryProject<T> = {
-  readonly [P in keyof T]: 0 | 1;
+  readonly [P in keyof T]: boolean | 0 | 1;
 };
 
 export type QueryPopulate<T> = {

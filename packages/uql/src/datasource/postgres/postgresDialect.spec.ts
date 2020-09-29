@@ -407,7 +407,7 @@ it('find limit', () => {
 it('find project', () => {
   expect(
     sql.find(User, {
-      project: { password: 0 },
+      project: { password: false },
     })
   ).toBe('SELECT "id", "company", "user", "createdAt", "updatedAt", "status", "name", "email", "profile" FROM "User"');
 
