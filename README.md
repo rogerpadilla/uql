@@ -312,8 +312,10 @@ const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }
 
 ## <a name="faq"></a>:book: Frequently Asked Questions
 
-### Why uql when there already are GraphQL, TypeORM, Mikro-ORM, Sequelize?
+### Why uql if there already are GraphQL, TypeORM, Mikro-ORM, Sequelize?
 
-Because GraphQL requires [additional servers](https://graphql.org/learn/execution) and also [a new language](https://graphql.org/learn/queries); uql should allow same this, but without need to configure and maintain these additional components.
+GraphQL requires [additional servers](https://graphql.org/learn/execution) and also learning [a new language](https://graphql.org/learn/queries); uql should allow same this, but without need to configure and maintaining additional components.
 
 On the other hand, existing ORMs like TypeORM, Mikro-ORM, and Sequelize; are in one way or another, coupled to databases; uql uses a declarative JSON syntax (agnostic from the datasource) which can easily be serialized and send as messages (e.g. through the network) between different components of a system (e.g. micro-services), and then each one has the flexibility to decide how to process these messages.
+
+At last but not at least, uql helps with the communication between the different tiers of your system, e.g. it allows the frontend to send dynamic requests to the backend (like GraphQL).
