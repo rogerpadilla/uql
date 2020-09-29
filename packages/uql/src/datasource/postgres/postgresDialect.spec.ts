@@ -404,19 +404,44 @@ it('find limit', () => {
   expect(query4).toBe(`SELECT "id", "name", "user" FROM "User" WHERE "user" = '123' LIMIT 25`);
 });
 
-it('find select as functions', () => {
-  const query = sql.find(
-    User,
-    {
-      project: {
-        '*': 1,
-        'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
-      } as QueryProject<User>,
-      filter: { name: 'something' },
-    },
-    { isTrustedProject: true }
-  );
-  expect(query).toBe(
+it('find project', () => {
+  expect(
+    sql.find(User, {
+      project: { password: 0 },
+    })
+  ).toBe('SELECT "id", "company", "user", "createdAt", "updatedAt", "status", "name", "email", "profile" FROM "User"');
+
+  expect(
+    sql.find(User, {
+      project: { name: 0, password: 0 },
+    })
+  ).toBe('SELECT "id", "company", "user", "createdAt", "updatedAt", "status", "email", "profile" FROM "User"');
+
+  expect(
+    sql.find(User, {
+      project: { id: 1, name: 1, password: 0 },
+    })
+  ).toBe('SELECT "id", "name" FROM "User"');
+
+  expect(
+    sql.find(User, {
+      project: { id: 1, name: 0, password: 0 },
+    })
+  ).toBe('SELECT "id" FROM "User"');
+
+  expect(
+    sql.find(
+      User,
+      {
+        project: {
+          '*': 1,
+          'LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness': 1,
+        } as QueryProject<User>,
+        filter: { name: 'something' },
+      },
+      { isTrustedProject: true }
+    )
+  ).toBe(
     'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' +
       ` FROM "User" WHERE "name" = 'something'`
   );

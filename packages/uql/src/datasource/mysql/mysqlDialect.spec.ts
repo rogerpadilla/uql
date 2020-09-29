@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment } from 'uql/mock';
+import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 import { MySqlDialect } from './mysqlDialect';
@@ -49,6 +49,17 @@ it('create - one', () => {
   const query = sql.insert(User, body);
   expect(query).toBe(
     "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)"
+  );
+});
+
+it('create - one uuid', () => {
+  const body: TaxCategory = {
+    name: 'Some Name',
+    createdAt: 123,
+  };
+  const query = sql.insert(TaxCategory, body);
+  expect(query).toMatch(
+    /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name', 123, '[a-f0-9\\-]+'\)$/
   );
 });
 
