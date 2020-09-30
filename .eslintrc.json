@@ -85,6 +85,7 @@
         "max-statements": ["error", 50],
         "@typescript-eslint/unbound-method": 0,
         "@typescript-eslint/no-empty-function": 0,
+        "jest/no-standalone-expect": 0,
         "jest/no-test-prefixes": 0,
         "jest/no-disabled-tests": 0,
         "jest/valid-title": 0

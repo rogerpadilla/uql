@@ -30,7 +30,7 @@
     "mysql2": "^2.2.5",
     "pg": "^8.3.3",
     "rimraf": "^3.0.2",
-    "sqlite": "^4.0.14",
+    "sqlite": "^4.0.15",
     "sqlite3": "^5.0.0",
     "uuid": "^8.3.0"
   },
@@ -64,5 +64,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "db983d5e9e1cc710e1210752e7edc1a61abbc91d"
+  "gitHead": "02e5032274cba991dd722f8569b33b93c6f5f28d"
 }
