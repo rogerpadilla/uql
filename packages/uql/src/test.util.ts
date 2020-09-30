@@ -2,24 +2,23 @@
 /* eslint-disable jest/expect-expect */
 /* eslint-disable jest/no-export */
 export function createSpec<T extends Spec>(spec: T) {
-  let parentProto: object = Object.getPrototypeOf(spec);
-  while (parentProto.constructor !== Object) {
-    setupTestCases(spec, parentProto);
-    parentProto = Object.getPrototypeOf(parentProto);
-  }
-}
+  const specKeys = new Map<string, true>();
+  let proto: object = Object.getPrototypeOf(spec);
 
-function setupTestCases<T extends Spec>(spec: T, proto: object) {
-  Object.getOwnPropertyNames(proto).forEach((key) => {
-    if (typeof spec[key] === 'function' && key !== 'constructor') {
-      const callback = spec[key].bind(spec);
-      if (['beforeEach', 'afterEach', 'beforeAll', 'afterAll'].includes(key)) {
-        globalThis[key](callback);
-      } else {
-        it(key, callback);
+  while (proto.constructor !== Object) {
+    Object.getOwnPropertyNames(proto).forEach((key) => {
+      if (key !== 'constructor' && !specKeys.has(key)) {
+        specKeys.set(key, true);
+        const callback = spec[key].bind(spec);
+        if (['beforeEach', 'afterEach', 'beforeAll', 'afterAll'].includes(key)) {
+          globalThis[key](callback);
+        } else {
+          it(key, callback);
+        }
       }
-    }
-  });
+    });
+    proto = Object.getPrototypeOf(proto);
+  }
 }
 
 export interface Spec {
