@@ -1,7 +1,7 @@
 import { Request } from 'express-serve-static-core';
 import * as express from 'express';
 
-import { getUqlOptions } from 'uql/config';
+import { getUqlOptions, log } from 'uql/config';
 import { getServerRepository } from 'uql/container';
 import { getEntities } from 'uql/decorator';
 import { Query } from 'uql/type';
@@ -16,7 +16,7 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
     entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }
   if (entities.length === 0) {
-    console.warn('No entities for the uql express middleware');
+    log('No entities for the uql express middleware');
   }
 
   for (const type of entities) {

@@ -175,6 +175,7 @@ initUql({
     database: 'theDatabaseName',
   },
   defaultRepositoryClass: GenericServerRepository,
+  loggingLevel: 'debug',
 });
 ```
 
@@ -304,6 +305,7 @@ import { initUql, GenericClientRepository, getClientRepository } from 'uql-brows
 
 initUql({
   defaultRepositoryClass: GenericClientRepository,
+  loggingLevel: 'debug',
 });
 
 // 'Item' is an entity class

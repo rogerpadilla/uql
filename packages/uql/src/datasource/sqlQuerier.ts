@@ -1,3 +1,4 @@
+import { log } from 'uql/config';
 import {
   Query,
   QueryFilter,
@@ -19,7 +20,7 @@ export abstract class SqlQuerier extends Querier {
   }
 
   async query<T>(sql: string) {
-    console.debug(`\nquery: ${sql}\n`);
+    log(`\nquery: ${sql}\n`);
     const res: [T] = await this.conn.query(sql);
     return res[0];
   }

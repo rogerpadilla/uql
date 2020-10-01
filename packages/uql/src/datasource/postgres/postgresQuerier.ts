@@ -1,3 +1,4 @@
+import { log } from 'uql/config';
 import { QueryFilter, QuerierPoolConnection } from 'uql/type';
 import { SqlQuerier } from '../sqlQuerier';
 import { PostgresDialect } from './postgresDialect';
@@ -8,7 +9,7 @@ export class PostgresQuerier extends SqlQuerier {
   }
 
   async query<T>(sql: string) {
-    console.debug(`\nquery: ${sql}\n`);
+    log(`\nquery: ${sql}\n`);
     const res: { rows: T } = await this.conn.query(sql);
     return res.rows;
   }

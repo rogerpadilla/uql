@@ -1,4 +1,5 @@
 import { Database } from 'sqlite';
+import { log } from 'uql/config';
 import { Query, QueryFilter, QueryOneFilter, QueryOptions, QueryProject, Querier } from 'uql/type';
 import { mapRows } from '../rowsMapper';
 import { SqliteDialect } from './sqliteDialect';
@@ -12,7 +13,7 @@ export class SqliteQuerier extends Querier {
   }
 
   query(sql: string) {
-    console.debug(`\nquery: ${sql}\n`);
+    log(`\nquery: ${sql}\n`);
     return this.db.run(sql);
   }
 
