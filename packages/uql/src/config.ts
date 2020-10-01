@@ -19,14 +19,15 @@ export function getUqlOptions(): UqlOptions {
   return { ...options };
 }
 
-export function log(message: any, level = 1) {
+export function log(message: any, level: keyof typeof LOGGING_LEVELS = 'debug') {
   const { logger, loggingLevel } = getUqlOptions();
-  if (level >= loggingLevel) {
+  const val = LOGGING_LEVELS[level];
+  if (val >= loggingLevel) {
     logger[level](message);
   }
 }
 
-export const LOGGING_LEVELS = {
+const LOGGING_LEVELS = {
   debug: 1,
   info: 2,
   warn: 3,

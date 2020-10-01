@@ -1,5 +1,6 @@
 import { Database } from 'sqlite';
 import { log } from 'uql/config';
+import { getEntityMeta } from 'uql/decorator';
 import { Query, QueryFilter, QueryOneFilter, QueryOptions, QueryProject, Querier } from 'uql/type';
 import { mapRows } from '../rowsMapper';
 import { SqliteDialect } from './sqliteDialect';
@@ -20,7 +21,8 @@ export class SqliteQuerier extends Querier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query(query);
-    return res.lastID;
+    const meta = getEntityMeta(type);
+    return bodies[bodies.length - 1][meta.id.property] ?? res.lastID;
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {

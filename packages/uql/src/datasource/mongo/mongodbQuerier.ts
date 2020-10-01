@@ -10,9 +10,9 @@ export class MongodbQuerier extends Querier<string> {
     super();
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]): Promise<string[]> {
+  async insert<T>(type: { new (): T }, bodies: T[]): Promise<string> {
     const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
-    return Object.values(res.insertedIds).map((id) => id.toHexString());
+    return res.insertedIds[res.insertedCount].toHexString();
   }
 
   async insertOne<T>(type: { new (): T }, body: T): Promise<string> {

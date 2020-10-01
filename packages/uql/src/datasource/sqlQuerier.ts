@@ -1,4 +1,5 @@
 import { log } from 'uql/config';
+import { getEntityMeta } from 'uql/decorator';
 import {
   Query,
   QueryFilter,
@@ -28,7 +29,8 @@ export abstract class SqlQuerier extends Querier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
-    return res.insertId;
+    const meta = getEntityMeta(type);
+    return bodies[bodies.length - 1][meta.id.property] ?? res.insertId;
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {

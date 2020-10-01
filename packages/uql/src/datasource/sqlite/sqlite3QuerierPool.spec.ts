@@ -1,4 +1,5 @@
-import { User } from 'uql/mock';
+import { validate as validateUuidv4 } from 'uuid';
+import { Company, TaxCategory, User } from 'uql/mock';
 import { SqliteQuerier } from './sqliteQuerier';
 import Sqlite3QuerierPool from './sqlite3QuerierPool';
 
@@ -75,14 +76,26 @@ describe(Sqlite3QuerierPool.name, () => {
   });
 
   it('insertOne', async () => {
-    const now = Date.now();
-    const id = await querier.insertOne(User, {
+    const userId = await querier.insertOne(User, {
       name: 'Some Name Z',
       email: 'someemailz@example.com',
       password: '123456789z!',
-      createdAt: now,
     });
-    expect(id).toBe(3);
+    expect(userId).toBe(3);
+
+    const companyId = await querier.insertOne(Company, {
+      name: 'Some Name Z',
+      user: String(userId),
+    });
+    expect(companyId).toBe(1);
+
+    const taxCategoryId = await querier.insertOne(TaxCategory, {
+      name: 'Some Name Z',
+      description: 'Some Description Z',
+      user: String(userId),
+      company: String(companyId),
+    });
+    expect(validateUuidv4(taxCategoryId)).toBe(true);
   });
 
   it('findOne', async () => {
@@ -179,7 +192,7 @@ describe(Sqlite3QuerierPool.name, () => {
   function createUserTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE User (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       email VARCHAR( 300 ) NOT NULL,
       password VARCHAR( 300 ) NOT NULL,
       createdAt BIGINT NOT NULL,
@@ -192,19 +205,19 @@ describe(Sqlite3QuerierPool.name, () => {
   function createCompanyTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Company (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       createdAt BIGINT NOT NULL,
       updatedAt BIGINT,
       user INT NOT NULL REFERENCES User,
-      company INT NOT NULL REFERENCES Company,
+      company INT REFERENCES Company,
       status SMALLINT
     );`);
   }
 
   function createTaxCategoryTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE TaxCategory (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name VARCHAR( 45 ) NOT NULL,
+      pk VARCHAR(40) PRIMARY KEY,
+      name VARCHAR(45) NOT NULL,
       description VARCHAR(300),
       createdAt BIGINT NOT NULL,
       updatedAt BIGINT,
@@ -217,7 +230,7 @@ describe(Sqlite3QuerierPool.name, () => {
   function createTaxTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Tax (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       description VARCHAR(300),
       createdAt BIGINT NOT NULL,
       updatedAt BIGINT,

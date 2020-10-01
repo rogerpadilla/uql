@@ -84,7 +84,7 @@ describe(PgQuerierPool.name, () => {
   async function createUserTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "User" (
       "id" SERIAL PRIMARY KEY,
-      "name" VARCHAR( 45 ) NOT NULL,
+      "name" VARCHAR(45) NOT NULL,
       "email" VARCHAR( 300 ) NOT NULL,
       "password" VARCHAR( 300 ) NOT NULL,
       "createdAt" BigInt NOT NULL,
@@ -97,7 +97,7 @@ describe(PgQuerierPool.name, () => {
   async function createCompanyTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "Company" (
       "id" SERIAL PRIMARY KEY,
-      "name" VARCHAR( 45 ) NOT NULL,
+      "name" VARCHAR(45) NOT NULL,
       "createdAt" BigInt NOT NULL,
       "updatedAt" BigInt,
       "user" INT NOT NULL REFERENCES "User",
@@ -108,7 +108,7 @@ describe(PgQuerierPool.name, () => {
   async function createTaxCategoryTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "TaxCategory" (
       "id" SERIAL PRIMARY KEY,
-      "name" VARCHAR( 45 ) NOT NULL,
+      "name" VARCHAR(45) NOT NULL,
       "description" VARCHAR(300),
       "createdAt" BigInt NOT NULL,
       "updatedAt" BigInt,
@@ -121,7 +121,7 @@ describe(PgQuerierPool.name, () => {
   async function createTaxTable(querier: PostgresQuerier) {
     await querier.query(`CREATE TABLE "Tax" (
       "id" SERIAL PRIMARY KEY,
-      "name" VARCHAR( 45 ) NOT NULL,
+      "name" VARCHAR(45) NOT NULL,
       "description" VARCHAR(300),
       "createdAt" BigInt NOT NULL,
       "updatedAt" BigInt,

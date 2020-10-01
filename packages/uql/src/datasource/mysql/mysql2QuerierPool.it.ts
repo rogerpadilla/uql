@@ -85,7 +85,7 @@ describe(MySql2QuerierPool.name, () => {
   function createUserTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE User (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       email VARCHAR( 300 ) NOT NULL,
       password VARCHAR( 300 ) NOT NULL,
       createdAt BIGINT NOT NULL,
@@ -98,7 +98,7 @@ describe(MySql2QuerierPool.name, () => {
   function createCompanyTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE Company (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       createdAt BIGINT NOT NULL,
       updatedAt BIGINT,
       user INT NOT NULL REFERENCES User,
@@ -109,7 +109,7 @@ describe(MySql2QuerierPool.name, () => {
   function createTaxCategoryTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE TaxCategory (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       description VARCHAR(300),
       createdAt BigInt NOT NULL,
       updatedAt BigInt,
@@ -122,7 +122,7 @@ describe(MySql2QuerierPool.name, () => {
   function createTaxTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE Tax (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR( 45 ) NOT NULL,
+      name VARCHAR(45) NOT NULL,
       description VARCHAR(300),
       createdAt BigInt NOT NULL,
       updatedAt BigInt,
