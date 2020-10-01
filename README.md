@@ -84,15 +84,15 @@ export abstract class BaseEntity {
    * obtaining the value of a property when inserting:
    */
   @Property({ onInsert: () => Date.now() })
-  createdAt?: string;
+  createdAt?: number;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when updating:
    */
   @Property({ onUpdate: () => Date.now() })
-  updatedAt?: string;
+  updatedAt?: number;
   @Property()
-  status?: string;
+  status?: number;
 }
 
 @Entity()
