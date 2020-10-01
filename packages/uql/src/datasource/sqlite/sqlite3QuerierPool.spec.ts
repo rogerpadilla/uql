@@ -12,18 +12,6 @@ describe(Sqlite3QuerierPool.name, () => {
     try {
       await dropTables(querier);
       await createTables(querier);
-      await querier.insert(User, [
-        {
-          name: 'Some Name A',
-          email: 'someemaila@example.com',
-          password: '123456789a!',
-        },
-        {
-          name: 'Some Name B',
-          email: 'someemailb@example.com',
-          password: '123456789b!',
-        },
-      ]);
     } finally {
       await querier.release();
     }
@@ -34,15 +22,27 @@ describe(Sqlite3QuerierPool.name, () => {
   });
 
   afterEach(async () => {
-    try {
-      await querier.release();
-    } catch (err) {
-      // console.log(err);
-    }
+    await querier.release();
   });
 
   afterAll(async () => {
     await pool.end();
+  });
+
+  it('insert', async () => {
+    const lastId = await querier.insert(User, [
+      {
+        name: 'Some Name A',
+        email: 'someemaila@example.com',
+        password: '123456789a!',
+      },
+      {
+        name: 'Some Name B',
+        email: 'someemailb@example.com',
+        password: '123456789b!',
+      },
+    ]);
+    expect(lastId).toBe(2);
   });
 
   it('query', async () => {
@@ -82,7 +82,7 @@ describe(Sqlite3QuerierPool.name, () => {
       password: '123456789z!',
       createdAt: now,
     });
-    expect(id).toBeTruthy();
+    expect(id).toBe(3);
   });
 
   it('findOne', async () => {
@@ -149,11 +149,12 @@ describe(Sqlite3QuerierPool.name, () => {
   });
 
   it('beginTransaction after beginTransaction', async () => {
-    await expect(async () => {
-      await querier.beginTransaction();
-      expect(querier.hasOpenTransaction).toBe(true);
-      await querier.beginTransaction();
-    }).rejects.toThrow('There is a pending transaction.');
+    expect(querier.hasOpenTransaction).toBeFalsy();
+    await querier.beginTransaction();
+    expect(querier.hasOpenTransaction).toBe(true);
+    await expect(querier.beginTransaction()).rejects.toThrow('There is a pending transaction.');
+    await expect(querier.release()).rejects.toThrow('There is a pending transaction.');
+    await querier.rollbackTransaction();
   });
 
   it('commitTransaction without beginTransaction', async () => {
@@ -177,54 +178,54 @@ describe(Sqlite3QuerierPool.name, () => {
 
   function createUserTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE User (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR( 45 ) NOT NULL,
-    email VARCHAR( 300 ) NOT NULL,
-    password VARCHAR( 300 ) NOT NULL,
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT,
-    status SmallInt
-  );`);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name VARCHAR( 45 ) NOT NULL,
+      email VARCHAR( 300 ) NOT NULL,
+      password VARCHAR( 300 ) NOT NULL,
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      user INT,
+      status SMALLINT
+    );`);
   }
 
   function createCompanyTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Company (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR( 45 ) NOT NULL,
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT NOT NULL REFERENCES User,
-    company INT NOT NULL REFERENCES Company,
-    status SmallInt
-  );`);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name VARCHAR( 45 ) NOT NULL,
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      user INT NOT NULL REFERENCES User,
+      company INT NOT NULL REFERENCES Company,
+      status SMALLINT
+    );`);
   }
 
   function createTaxCategoryTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE TaxCategory (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR( 45 ) NOT NULL,
-    description VARCHAR(300),
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT NOT NULL REFERENCES User,
-    company INT NOT NULL REFERENCES Company,
-    status SmallInt
-  );`);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name VARCHAR( 45 ) NOT NULL,
+      description VARCHAR(300),
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      user INT NOT NULL REFERENCES User,
+      company INT NOT NULL REFERENCES Company,
+      status SMALLINT
+    );`);
   }
 
   function createTaxTable(querier: SqliteQuerier) {
     return querier.query(`CREATE TABLE Tax (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR( 45 ) NOT NULL,
-    description VARCHAR(300),
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    category INT NOT NULL REFERENCES TaxCategory,
-    user INT NOT NULL REFERENCES User,
-    company INT NOT NULL REFERENCES Company,
-    status SmallInt
-  );`);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name VARCHAR( 45 ) NOT NULL,
+      description VARCHAR(300),
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      category INT NOT NULL REFERENCES TaxCategory,
+      user INT NOT NULL REFERENCES User,
+      company INT NOT NULL REFERENCES Company,
+      status SMALLINT
+    );`);
   }
 
   function dropTables(querier: SqliteQuerier) {

@@ -84,53 +84,53 @@ describe(MySql2QuerierPool.name, () => {
 
   function createUserTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE User (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR( 45 ) NOT NULL,
-    email VARCHAR( 300 ) NOT NULL,
-    password VARCHAR( 300 ) NOT NULL,
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT,
-    status SmallInt
-  );`);
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR( 45 ) NOT NULL,
+      email VARCHAR( 300 ) NOT NULL,
+      password VARCHAR( 300 ) NOT NULL,
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      user INT,
+      status SMALLINT
+    );`);
   }
 
   function createCompanyTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE Company (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR( 45 ) NOT NULL,
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT NOT NULL REFERENCES User,
-    status SmallInt
-  );`);
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR( 45 ) NOT NULL,
+      createdAt BIGINT NOT NULL,
+      updatedAt BIGINT,
+      user INT NOT NULL REFERENCES User,
+      status SMALLINT
+    );`);
   }
 
   function createTaxCategoryTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE TaxCategory (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR( 45 ) NOT NULL,
-    description VARCHAR(300),
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    user INT NOT NULL REFERENCES User,
-    company INT NOT NULL REFERENCES Company,
-    status SmallInt
-  );`);
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR( 45 ) NOT NULL,
+      description VARCHAR(300),
+      createdAt BigInt NOT NULL,
+      updatedAt BigInt,
+      user INT NOT NULL REFERENCES User,
+      company INT NOT NULL REFERENCES Company,
+      status SMALLINT
+    );`);
   }
 
   function createTaxTable(querier: MySqlQuerier) {
     return querier.query(`CREATE TABLE Tax (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR( 45 ) NOT NULL,
-    description VARCHAR(300),
-    createdAt BigInt NOT NULL,
-    updatedAt BigInt,
-    category INT NOT NULL REFERENCES TaxCategory,
-    user INT NOT NULL REFERENCES User,
-    company INT NOT NULL REFERENCES Company,
-    status SmallInt
-  );`);
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR( 45 ) NOT NULL,
+      description VARCHAR(300),
+      createdAt BigInt NOT NULL,
+      updatedAt BigInt,
+      category INT NOT NULL REFERENCES TaxCategory,
+      user INT NOT NULL REFERENCES User,
+      company INT NOT NULL REFERENCES Company,
+      status SMALLINT
+    );`);
   }
 
   function dropTables(querier: MySqlQuerier) {

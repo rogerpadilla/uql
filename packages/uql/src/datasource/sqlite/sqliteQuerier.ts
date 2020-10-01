@@ -20,16 +20,11 @@ export class SqliteQuerier extends Querier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query(query);
-    const ids = Array(bodies.length)
-      .fill(res.lastID)
-      .map((firstId, index) => firstId + index);
-    return ids;
+    return res.lastID;
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {
-    const query = this.dialect.insert(type, body);
-    const res = await this.query(query);
-    return res.lastID;
+    return this.insert(type, [body]);
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
@@ -97,8 +92,7 @@ export class SqliteQuerier extends Querier {
 
   async release() {
     if (this.hasPendingTransaction) {
-      throw new TypeError('Querier should not be released while there is an open transaction.');
+      throw new TypeError('There is a pending transaction.');
     }
-    // no-op
   }
 }

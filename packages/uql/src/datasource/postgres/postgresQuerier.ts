@@ -17,16 +17,11 @@ export class PostgresQuerier extends SqlQuerier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<{ insertid: number }[]>(query);
-    const ids = Array<string>(bodies.length)
-      .fill(String(res[0].insertid))
-      .map((firstId, index) => firstId + index);
-    return ids;
+    return String(res[0].insertid);
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {
-    const query = this.dialect.insert(type, body);
-    const res = await this.query<{ insertid: number }[]>(query);
-    return String(res[0].insertid);
+    return this.insert(type, [body]);
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {

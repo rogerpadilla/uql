@@ -76,7 +76,7 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(4, 'COMMIT');
     expect(querier.query).toBeCalledTimes(4);
     expect(querier.insertOne).toBeCalledTimes(2);
-    expect(querier.insert).not.toBeCalled();
+    expect(querier.insert).toBeCalledTimes(2);
     expect(querier.find).not.toBeCalled();
     expect(querier.update).not.toBeCalled();
     expect(querier.remove).not.toBeCalled();
@@ -111,7 +111,7 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(4, 'COMMIT');
     expect(querier.query).toBeCalledTimes(4);
     expect(querier.insertOne).toBeCalledTimes(1);
-    expect(querier.insert).toBeCalledTimes(1);
+    expect(querier.insert).toBeCalledTimes(2);
     expect(querier.find).not.toBeCalled();
     expect(querier.update).not.toBeCalled();
     expect(querier.remove).not.toBeCalled();
