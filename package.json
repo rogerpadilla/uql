@@ -13,12 +13,11 @@
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn run lint -- --fix",
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
-    "it": "jest --testMatch '**/*.it.ts'",
-    "it.watch": "jest --testMatch '**/*.it.ts' --watchAll",
-    "it.watch.pattern": "jest --testMatch '**/*.it.ts' --watchAll --testPathPattern=sqlite3QuerierPool.it.ts",
+    "test.all": "jest --testMatch '**/*.{it,spec}.ts'",
+    "test.all.watch": "npm run test.all -- --watchAll",
     "test.watch": "jest --watchAll",
-    "run-rs": "run-rs -v 4.2.9 -l ubuntu1804",
-    "test.watch.pattern": "jest --watchAll --testPathPattern=sqlDialect.spec.ts"
+    "test.watch.pattern": "npm run test.watch.all -- --testPathPattern=sqlite3Querier.spec.ts",
+    "run-rs": "run-rs -v 4.2.9 -l ubuntu1804"
   },
   "commitlint": {
     "extends": [

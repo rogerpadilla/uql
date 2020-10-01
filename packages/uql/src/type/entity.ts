@@ -5,6 +5,7 @@ export type EntityOptions = {
 export type PropertyOptions = {
   readonly name?: string;
   readonly isId?: boolean;
+  readonly type?: any;
   readonly onInsert?: () => any;
   readonly onUpdate?: () => any;
 };

@@ -18,7 +18,8 @@ function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
 
 export function defineProperty<T>(type: { new (): T }, prop: string, opts: PropertyOptions): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
-  meta.attributes[prop] = { ...meta.attributes[prop], property: { name: prop, ...opts } };
+  const inferredType = Reflect.getMetadata('design:type', type.prototype, prop) as { new (): T };
+  meta.attributes[prop] = { ...meta.attributes[prop], property: { name: prop, type: inferredType, ...opts } };
   return meta;
 }
 

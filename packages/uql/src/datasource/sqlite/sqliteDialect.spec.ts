@@ -1,18 +1,18 @@
 import { Item, User } from 'uql/mock';
 import { createSpec } from 'uql/test.util';
-import { MySqlDialectSpec } from '../mysql/mysqlDialect.spec';
+import { SqlDialectSpec } from '../sqlDialectSpec';
 import { SqliteDialect } from './sqliteDialect';
 
-class SqliteDialectSpec extends MySqlDialectSpec {
-  beforeEach() {
-    this.sql = new SqliteDialect();
+class SqliteDialectSpec extends SqlDialectSpec {
+  constructor() {
+    super(new SqliteDialect());
   }
 
-  'transaction begin'() {
+  shouldBeginTransaction() {
     expect(this.sql.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
-  'find $text'() {
+  shouldFind$text() {
     const query1 = this.sql.find(Item, {
       filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },
       limit: 30,

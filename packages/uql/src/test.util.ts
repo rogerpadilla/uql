@@ -12,7 +12,7 @@ export function createSpec<T extends Spec>(spec: T) {
         const callback = spec[key].bind(spec);
         if (['beforeEach', 'afterEach', 'beforeAll', 'afterAll'].includes(key)) {
           globalThis[key](callback);
-        } else {
+        } else if (key.startsWith('should')) {
           it(key, callback);
         }
       }
@@ -22,6 +22,8 @@ export function createSpec<T extends Spec>(spec: T) {
 }
 
 export interface Spec {
+  beforeAll?: jest.Lifecycle;
+  afterAll?: jest.Lifecycle;
   beforeEach?: jest.Lifecycle;
   afterEach?: jest.Lifecycle;
   [title: string]: jest.Lifecycle | any;

@@ -10,6 +10,10 @@ export class MongodbQuerier extends Querier<string> {
     super();
   }
 
+  async query(query: string) {
+    throw new Error('Method not implemented.');
+  }
+
   async insert<T>(type: { new (): T }, bodies: T[]): Promise<string> {
     const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
     return res.insertedIds[res.insertedCount].toHexString();

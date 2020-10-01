@@ -41,18 +41,18 @@ export class PostgresDialect extends SqlDialect {
     if (Array.isArray(val)) {
       return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
     }
-    const valStr = val as string;
-    if (!forbidQualified && valStr.includes('.')) {
-      return valStr
+    const str = val as string;
+    if (!forbidQualified && str.includes('.')) {
+      return str
         .split('.')
         .map((it) => this.escapeId(it, true))
         .join('.');
     }
-    return escapeId(valStr);
+    return escapeId(str);
   }
 }
 
-// sourced from https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/client.js#L426
-function escapeId(val: string) {
-  return '"' + val.replace(/"/g, '""') + '"';
+// sourced from https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/client.js#L435
+export function escapeId(str: string) {
+  return '"' + str.replace(/"/g, '""') + '"';
 }
