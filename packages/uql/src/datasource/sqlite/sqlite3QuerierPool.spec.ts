@@ -31,15 +31,14 @@ describe(Sqlite3QuerierPool.name, () => {
 
   beforeEach(async () => {
     querier = await pool.getQuerier();
-    jest.spyOn(querier, 'query');
-    jest.spyOn(querier, 'beginTransaction');
-    jest.spyOn(querier, 'commitTransaction');
-    jest.spyOn(querier, 'rollbackTransaction');
-    jest.spyOn(querier, 'release');
   });
 
   afterEach(async () => {
-    await querier.release();
+    try {
+      await querier.release();
+    } catch (err) {
+      // console.log(err);
+    }
   });
 
   afterAll(async () => {
@@ -147,6 +146,26 @@ describe(Sqlite3QuerierPool.name, () => {
     const deletedRows2 = await querier.remove(User, { status: null });
     expect(deletedRows2).toBe(3);
     await querier.commitTransaction();
+  });
+
+  it('beginTransaction after beginTransaction', async () => {
+    await expect(async () => {
+      await querier.beginTransaction();
+      expect(querier.hasOpenTransaction).toBe(true);
+      await querier.beginTransaction();
+    }).rejects.toThrow('There is a pending transaction.');
+  });
+
+  it('commitTransaction without beginTransaction', async () => {
+    await expect(async () => {
+      await querier.commitTransaction();
+    }).rejects.toThrow('There is not a pending transaction.');
+  });
+
+  it('rollbackTransaction without beginTransaction', async () => {
+    await expect(async () => {
+      await querier.rollbackTransaction();
+    }).rejects.toThrow('There is not a pending transaction.');
   });
 
   async function createTables(querier: SqliteQuerier) {
