@@ -1,13 +1,15 @@
 import { escapeId as sqlstringEscapeId } from 'sqlstring';
 import { getEntityMeta } from 'uql/decorator';
 import { QuerierPool } from 'uql/type';
-import { QuerierSpec } from './querierSpec';
+import { QuerierPoolSpec } from './querierPoolSpec';
 
-export abstract class SqlQuerierSpec extends QuerierSpec {
-  readonly primaryKeyType: string = 'INTEGER PRIMARY KEY AUTOINCREMENT';
-
+export abstract class SqlQuerierPoolSpec extends QuerierPoolSpec {
   constructor(pool: QuerierPool) {
     super(pool);
+  }
+
+  getPrimaryKeyType() {
+    return 'INTEGER PRIMARY KEY AUTOINCREMENT';
   }
 
   async createTables() {
@@ -25,7 +27,7 @@ export abstract class SqlQuerierSpec extends QuerierSpec {
     return Promise.all(
       this.entities.map((type) => {
         const meta = getEntityMeta(type);
-        return this.querier.query(`DROP TABLE IF EXISTS ${meta.name}`);
+        return this.querier.query(`DROP TABLE IF EXISTS ${this.escapeId(meta.name)}`);
       })
     );
   }
@@ -41,23 +43,15 @@ export abstract class SqlQuerierSpec extends QuerierSpec {
       const prop = meta.properties[key];
       let propSql = this.escapeId(prop.name) + ' ';
       if (prop.isId) {
-        propSql += prop.onInsert ? defaultType : this.primaryKeyType;
+        propSql += prop.onInsert ? defaultType : this.getPrimaryKeyType();
       } else {
-        const rel = meta.relations[key];
-        if (rel) {
-          const relMeta = getEntityMeta(rel.type());
-          propSql += `INTEGER REFERENCES ${this.escapeId(relMeta.name)}`;
-        } else {
-          propSql += defaultType;
-        }
+        propSql += prop.type === Number ? 'BIGINT' : defaultType;
       }
       return propSql;
     });
 
     sql += columns.join(',\n\t');
     sql += `\n);`;
-
-    console.log(sql);
 
     return sql;
   }

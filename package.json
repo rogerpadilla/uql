@@ -15,8 +15,8 @@
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
     "test.all": "jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "npm run test.all -- --watchAll",
+    "test.all.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=pgQuerierPool.it.ts",
     "test.watch": "jest --watchAll",
-    "test.watch.pattern": "npm run test.watch.all -- --testPathPattern=sqlite3Querier.spec.ts",
     "run-rs": "run-rs -v 4.2.9 -l ubuntu1804"
   },
   "commitlint": {

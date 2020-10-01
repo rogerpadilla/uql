@@ -22,7 +22,7 @@ export class SqliteQuerier extends Querier {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query(query);
     const meta = getEntityMeta(type);
-    return bodies[bodies.length - 1][meta.id.property] ?? res.lastID;
+    return bodies[bodies.length - 1][meta.id.property] ?? res.lastID - res.changes + 1;
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {

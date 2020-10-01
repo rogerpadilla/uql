@@ -1,8 +1,8 @@
 import { createSpec } from 'uql/test.util';
-import { SqlQuerierSpec } from '../sqlQuerierSpec';
+import { SqlQuerierPoolSpec } from '../sqlQuerierPoolSpec';
 import MySql2QuerierPool from './mysql2QuerierPool';
 
-export class MySqlQuerierSpec extends SqlQuerierSpec {
+export class MySql2QuerierPoolSpec extends SqlQuerierPoolSpec {
   constructor() {
     super(
       new MySql2QuerierPool({
@@ -14,6 +14,10 @@ export class MySqlQuerierSpec extends SqlQuerierSpec {
       })
     );
   }
+
+  getPrimaryKeyType() {
+    return 'INTEGER PRIMARY KEY AUTO_INCREMENT';
+  }
 }
 
-createSpec(new MySqlQuerierSpec());
+createSpec(new MySql2QuerierPoolSpec());

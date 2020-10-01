@@ -2,7 +2,7 @@ import { validate as validateUuidv4 } from 'uuid';
 import { Company, Tax, TaxCategory, User } from 'uql/mock';
 import { Querier, QuerierPool } from 'uql/type';
 
-export abstract class QuerierSpec {
+export abstract class QuerierPoolSpec {
   readonly entities = [Tax, TaxCategory, Company, User] as const;
   querier: Querier;
 
@@ -31,7 +31,7 @@ export abstract class QuerierSpec {
   }
 
   async shouldInsert() {
-    const lastId = await this.querier.insert(User, [
+    const id = await this.querier.insert(User, [
       {
         name: 'Some Name A',
         email: 'someemaila@example.com',
@@ -43,7 +43,7 @@ export abstract class QuerierSpec {
         password: '123456789b!',
       },
     ]);
-    expect(lastId).toBe(2);
+    expect(id).toBe(1);
   }
 
   async shouldQuery() {

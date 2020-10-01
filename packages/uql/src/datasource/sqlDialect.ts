@@ -9,11 +9,12 @@ import {
   QueryOptions,
   QueryProject,
   QueryLogicalOperatorValue,
+  QueryTextSearchOptions,
 } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
 
 export abstract class SqlDialect {
-  abstract readonly beginTransactionCommand: string;
+  readonly beginTransactionCommand: string = 'BEGIN TRANSACTION';
 
   insert<T>(type: { new (): T }, payload: T | T[]): string {
     const meta = getEntityMeta(type);
@@ -195,12 +196,19 @@ export abstract class SqlDialect {
   }
 
   comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
-    const val = typeof value === 'object' && value !== null ? value : { $eq: value };
-    const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
-    const operations = operators
-      .map((operator) => this.comparisonOperation(key, operator, val[operator]))
-      .join(' AND ');
-    return operators.length > 1 ? `(${operations})` : operations;
+    switch (key) {
+      case '$text':
+        const search = value as QueryTextSearchOptions<T>;
+        const meta = getEntityMeta(type);
+        return `${this.escapeId(meta.name)} MATCH ${this.escape(search.value)}`;
+      default:
+        const val = typeof value === 'object' && value !== null ? value : { $eq: value };
+        const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
+        const operations = operators
+          .map((operator) => this.comparisonOperation(key, operator, val[operator]))
+          .join(' AND ');
+        return operators.length > 1 ? `(${operations})` : operations;
+    }
   }
 
   comparisonOperation<T, K extends keyof QueryComparisonOperator<T>>(

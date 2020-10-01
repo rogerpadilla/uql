@@ -2,7 +2,7 @@ import { User } from 'uql/mock';
 import MongodbQuerierPool from './mongodbQuerierPool';
 import { MongodbQuerier } from './mongodbQuerier';
 
-describe(MongodbQuerierPool.name, () => {
+xdescribe(MongodbQuerierPool.name, () => {
   let pool: MongodbQuerierPool;
   let querier: MongodbQuerier;
 

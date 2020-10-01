@@ -1,11 +1,11 @@
 import { createSpec } from 'uql/test.util';
-import { SqlQuerierSpec } from '../sqlQuerierSpec';
+import { SqlQuerierPoolSpec } from '../sqlQuerierPoolSpec';
 import Sqlite3QuerierPool from './sqlite3QuerierPool';
 
-export class Sqlite3QuerierSpec extends SqlQuerierSpec {
+export class Sqlite3QuerierPoolSpec extends SqlQuerierPoolSpec {
   constructor() {
     super(new Sqlite3QuerierPool(':memory:'));
   }
 }
 
-createSpec(new Sqlite3QuerierSpec());
+createSpec(new Sqlite3QuerierPoolSpec());
