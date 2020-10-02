@@ -1,6 +1,20 @@
-import { User, Item, TaxCategory, Profile, Company, MeasureUnit, Tax, LedgerAccount } from 'uql/mock';
+import {
+  User,
+  Item,
+  TaxCategory,
+  Profile,
+  Company,
+  MeasureUnit,
+  Tax,
+  LedgerAccount,
+  BaseEntity,
+  InventoryAdjustment,
+  ItemAdjustment,
+  MeasureUnitCategory,
+  Storehouse,
+} from 'uql/mock';
 import { Id } from './id';
-import { getEntityMeta } from './definition';
+import { getEntities, getEntityMeta } from './definition';
 
 it('user', () => {
   const meta = getEntityMeta(User);
@@ -202,4 +216,22 @@ it('not an @Entity', () => {
   }
 
   expect(() => getEntityMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
+});
+
+it('getEntities', () => {
+  const entities = getEntities();
+  expect(entities).toEqual([
+    Company,
+    Profile,
+    User,
+    LedgerAccount,
+    TaxCategory,
+    Tax,
+    MeasureUnitCategory,
+    MeasureUnit,
+    Storehouse,
+    Item,
+    ItemAdjustment,
+    InventoryAdjustment,
+  ]);
 });

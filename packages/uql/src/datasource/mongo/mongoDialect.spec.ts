@@ -55,7 +55,7 @@ it('buildAggregationPipeline empty', () => {
     {
       $lookup: {
         as: 'measureUnit',
-        foreignField: 'id',
+        foreignField: '_id',
         from: 'MeasureUnit',
         localField: 'measureUnit',
       },
@@ -66,7 +66,7 @@ it('buildAggregationPipeline empty', () => {
     {
       $lookup: {
         as: 'tax',
-        foreignField: 'id',
+        foreignField: '_id',
         from: 'Tax',
         localField: 'tax',
       },

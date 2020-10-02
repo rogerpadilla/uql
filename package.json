@@ -15,8 +15,10 @@
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
     "test.all": "jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "npm run test.all -- --watchAll",
-    "test.all.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=mongodbQuerierPool.it.ts",
+    "test.it": "jest --testMatch '**/*.it.ts'",
+    "test.it.watch": "npm run test.it -- --watchAll",
     "test.watch": "jest --watchAll",
+    "test.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=mongodbQuerierPool.it.ts",
     "rs": "run-rs -v 4.2.9 -l ubuntu1804"
   },
   "commitlint": {

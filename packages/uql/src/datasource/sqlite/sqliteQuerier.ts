@@ -12,7 +12,7 @@ export class SqliteQuerier extends SqlQuerier {
   }
 
   query(sql: string) {
-    log(`\nquery: ${sql}\n`);
+    log(`\nquery: ${sql}\n`, 'info');
     return this.conn.query(sql);
   }
 

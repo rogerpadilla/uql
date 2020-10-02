@@ -29,6 +29,6 @@ export function OneToMany<T>(opts: RelationOneToManyOptions<T>): ReturnType<type
   return Relation({ cardinality: 'oneToMany', ...opts });
 }
 
-export function ManyToMany<T>(opts: RelationManyToManyOptions<T>): ReturnType<typeof Relation> {
-  return Relation({ cardinality: 'manyToMany', ...opts });
-}
+// export function ManyToMany<T>(opts: RelationManyToManyOptions<T>): ReturnType<typeof Relation> {
+//   return Relation({ cardinality: 'manyToMany', ...opts });
+// }

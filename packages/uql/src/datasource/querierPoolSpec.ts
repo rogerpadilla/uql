@@ -1,5 +1,5 @@
 import { Company, Tax, TaxCategory, User } from 'uql/mock';
-import { Querier, QuerierPool } from 'uql/type';
+import { Querier, QuerierPool, QuerySort } from 'uql/type';
 
 export abstract class QuerierPoolSpec {
   readonly entities = [Tax, TaxCategory, Company, User] as const;
@@ -45,54 +45,58 @@ export abstract class QuerierPoolSpec {
     expect(id).toBeDefined();
   }
 
-  async shouldQuery() {
-    const users = await this.querier.find(User, {
-      project: { name: 1, email: 1, password: 1 },
-    });
-    expect(users).toEqual([
-      {
-        name: 'Some Name A',
-        email: 'someemaila@example.com',
-        password: '123456789a!',
-      },
-      {
-        name: 'Some Name B',
-        email: 'someemailb@example.com',
-        password: '123456789b!',
-      },
-    ]);
-  }
-
-  async shouldCount() {
-    const count1 = await this.querier.count(User);
-    expect(count1).toBe(2);
-    const count2 = await this.querier.count(User, { status: null });
-    expect(count2).toBe(2);
-    const count3 = await this.querier.count(User, { status: 1 });
-    expect(count3).toBe(0);
-  }
-
   async shouldInsertOne() {
     const userId = await this.querier.insertOne(User, {
-      name: 'Some Name Z',
-      email: 'someemailz@example.com',
+      name: 'Some Name C',
+      email: 'someemailc@example.com',
       password: '123456789z!',
     });
     expect(userId).toBeDefined();
 
     const companyId = await this.querier.insertOne(Company, {
-      name: 'Some Name Z',
+      name: 'Some Name C',
       user: String(userId),
     });
     expect(companyId).toBeDefined();
 
+    const affectedRows = await this.querier.update(
+      User,
+      {
+        id: userId,
+      },
+      {
+        company: companyId,
+      }
+    );
+    expect(affectedRows).toBe(1);
+
     const taxCategoryId = await this.querier.insertOne(TaxCategory, {
-      name: 'Some Name Z',
+      name: 'Some Name C',
       description: 'Some Description Z',
       user: String(userId),
       company: String(companyId),
     });
     expect(taxCategoryId).toBeDefined();
+  }
+
+  async shouldFind() {
+    const users = await this.querier.find(User, {
+      project: { name: 1 },
+      skip: 1,
+      limit: 2,
+      sort: {
+        'User.id': 1,
+      } as QuerySort<User>,
+    });
+
+    expect(users).toMatchObject([
+      {
+        name: 'Some Name B',
+      },
+      {
+        name: 'Some Name C',
+      },
+    ]);
   }
 
   async shouldFindOne() {
@@ -122,6 +126,76 @@ export abstract class QuerierPoolSpec {
     expect(notFound).toBeUndefined();
   }
 
+  async shouldFindPopulate() {
+    const users = await this.querier.find(User, {
+      project: { name: 1, email: 1, password: 1 },
+      populate: {
+        company: {
+          project: {
+            name: 1,
+          },
+        },
+      },
+      sort: {
+        'User.id': 1,
+      } as QuerySort<User>,
+    });
+
+    expect(users).toMatchObject([
+      {
+        name: 'Some Name A',
+        email: 'someemaila@example.com',
+        password: '123456789a!',
+      },
+      {
+        name: 'Some Name B',
+        email: 'someemailb@example.com',
+        password: '123456789b!',
+      },
+      {
+        name: 'Some Name C',
+        email: 'someemailc@example.com',
+        company: {
+          name: 'Some Name C',
+        },
+      },
+    ]);
+
+    const foundOne = await this.querier.findOne(User, {
+      project: {
+        name: 1,
+        email: 1,
+      },
+      populate: {
+        company: {
+          project: {
+            name: 1,
+          },
+        },
+      },
+      filter: {
+        email: 'someemailc@example.com',
+      },
+    });
+
+    expect(foundOne).toMatchObject({
+      name: 'Some Name C',
+      email: 'someemailc@example.com',
+      company: {
+        name: 'Some Name C',
+      },
+    });
+  }
+
+  async shouldCount() {
+    const count1 = await this.querier.count(User);
+    expect(count1).toBe(3);
+    const count2 = await this.querier.count(User, { status: null });
+    expect(count2).toBe(3);
+    const count3 = await this.querier.count(User, { status: 1 });
+    expect(count3).toBe(0);
+  }
+
   async shouldUpdate() {
     const updatedRows1 = await this.querier.update(User, { status: 1 }, { status: null });
     expect(updatedRows1).toBe(0);
@@ -129,6 +203,29 @@ export abstract class QuerierPoolSpec {
     expect(updatedRows2).toBe(3);
     const updatedRows3 = await this.querier.update(User, { status: 1 }, { status: null });
     expect(updatedRows3).toBe(3);
+  }
+
+  async shouldFindPopulateNotAnnotatedField() {
+    await expect(() =>
+      this.querier.find(User, {
+        project: { id: 1, name: 1 },
+        populate: { status: null },
+      })
+    ).rejects.toThrow("'User.status' is not annotated with a relation decorator");
+  }
+
+  async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
+    await expect(async () => {
+      await this.querier.rollbackTransaction();
+    }).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldFindUnknownComparisonOperator() {
+    await expect(() =>
+      this.querier.find(User, {
+        filter: { name: { $someInvalidOperator: 'some' } as unknown },
+      })
+    ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
   async shouldRollback() {
@@ -170,29 +267,6 @@ export abstract class QuerierPoolSpec {
     await expect(async () => {
       await this.querier.commitTransaction();
     }).rejects.toThrow('not a pending transaction');
-  }
-
-  async shouldFindPopulateNotAnnotatedField() {
-    await expect(() =>
-      this.querier.find(User, {
-        project: { id: 1, name: 1 },
-        populate: { status: null },
-      })
-    ).rejects.toThrow("'User.status' is not annotated with a relation decorator");
-  }
-
-  async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
-    await expect(async () => {
-      await this.querier.rollbackTransaction();
-    }).rejects.toThrow('not a pending transaction');
-  }
-
-  async shouldFindUnknownComparisonOperator() {
-    await expect(() =>
-      this.querier.find(User, {
-        filter: { name: { $someInvalidOperator: 'some' } as unknown },
-      })
-    ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
   abstract createTables(): void;

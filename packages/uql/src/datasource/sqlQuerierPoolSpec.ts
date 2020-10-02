@@ -4,7 +4,7 @@ import { QuerierPool } from 'uql/type';
 import { QuerierPoolSpec } from './querierPoolSpec';
 
 export abstract class SqlQuerierPoolSpec extends QuerierPoolSpec {
-  readonly primaryKeyType: string = 'INTEGER PRIMARY KEY AUTO_INCREMENT';
+  readonly primaryKeyType: string = 'BIGINT PRIMARY KEY AUTO_INCREMENT';
 
   constructor(pool: QuerierPool) {
     super(pool);
@@ -43,7 +43,8 @@ export abstract class SqlQuerierPoolSpec extends QuerierPoolSpec {
       if (prop.isId) {
         propSql += prop.onInsert ? defaultType : this.primaryKeyType;
       } else {
-        propSql += prop.type === Number ? 'BIGINT' : defaultType;
+        const rel = meta.relations[key];
+        propSql += rel || prop.type === Number ? 'BIGINT' : defaultType;
       }
       return propSql;
     });

@@ -1,8 +1,7 @@
 import 'reflect-metadata';
 import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from 'uql/type';
 
-declare const window: any;
-const holder = typeof window === 'object' ? window : {};
+const holder = globalThis;
 const key = 'uql/core/definition';
 const metas: Map<{ new (): unknown }, EntityMeta<any>> = holder[key] || new Map();
 holder[key] = metas;
@@ -60,7 +59,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
     const parentProperties = { ...parentMeta.attributes };
     if (hasId(meta)) {
       for (const prop in parentProperties) {
-        if (parentProperties[prop].property?.isId) {
+        if (parentProperties[prop].property.isId) {
           delete parentProperties[prop];
           break;
         }
@@ -70,7 +69,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
-  const idProperty = Object.keys(meta.attributes).find((key) => meta.attributes[key].property?.isId);
+  const idProperty = Object.keys(meta.attributes).find((key) => meta.attributes[key].property.isId);
   if (!idProperty) {
     throw new TypeError(`'${type.name}' must have one field decorated with @Id`);
   }
@@ -105,7 +104,12 @@ export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
 }
 
 export function getEntities() {
-  return Array.from(metas.keys());
+  return Array.from(metas.entries()).reduce((acc, [key, val]) => {
+    if (val.id) {
+      acc.push(key);
+    }
+    return acc;
+  }, []);
 }
 
 function hasId<T>(meta: EntityMeta<T>): boolean {

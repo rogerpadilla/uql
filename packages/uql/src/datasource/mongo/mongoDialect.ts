@@ -41,7 +41,7 @@ export class MongoDialect {
         $lookup: {
           from: relMeta.name,
           localField: popKey,
-          foreignField: relMeta.id.name,
+          foreignField: '_id',
           as: popKey,
         },
       });
