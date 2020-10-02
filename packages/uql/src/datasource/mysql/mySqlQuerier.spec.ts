@@ -104,7 +104,7 @@ it('transaction beging pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
   await querier.beginTransaction();
   expect(querier.hasOpenTransaction).toBe(true);
-  await expect(querier.beginTransaction()).rejects.toThrow('There is a pending transaction.');
+  await expect(querier.beginTransaction()).rejects.toThrow('pending transaction');
   expect(querier.hasOpenTransaction).toBe(true);
   expect(querier.query).toBeCalledTimes(1);
   expect(querier.beginTransaction).toBeCalledTimes(2);
@@ -115,7 +115,7 @@ it('transaction beging pending', async () => {
 
 it('transaction commit no pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
-  await expect(querier.commitTransaction()).rejects.toThrow('There is not a pending transaction.');
+  await expect(querier.commitTransaction()).rejects.toThrow('pending transaction');
   expect(querier.hasOpenTransaction).toBeFalsy();
   expect(querier.query).toBeCalledTimes(0);
   expect(querier.beginTransaction).toBeCalledTimes(0);
@@ -126,7 +126,7 @@ it('transaction commit no pending', async () => {
 
 it('transaction rollback no pending', async () => {
   expect(querier.hasOpenTransaction).toBeFalsy();
-  await expect(querier.rollbackTransaction()).rejects.toThrow('There is not a pending transaction.');
+  await expect(querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
   expect(querier.hasOpenTransaction).toBeFalsy();
   expect(querier.query).toBeCalledTimes(0);
   expect(querier.beginTransaction).toBeCalledTimes(0);
@@ -143,7 +143,7 @@ it('transaction release pending', async () => {
   expect(querier.hasOpenTransaction).toBe(true);
   await querier.update(User, { id: '5' }, { name: 'Hola' });
   expect(querier.hasOpenTransaction).toBe(true);
-  await expect(querier.release()).rejects.toThrow('There is a pending transaction.');
+  await expect(querier.release()).rejects.toThrow('pending transaction');
   expect(querier.hasOpenTransaction).toBe(true);
   expect(querier.query).toBeCalledTimes(2);
   expect(querier.beginTransaction).toBeCalledTimes(1);

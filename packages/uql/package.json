@@ -23,7 +23,7 @@
     "@types/pg": "^7.14.5",
     "@types/sqlite3": "^3.1.6",
     "@types/uuid": "^8.3.0",
-    "copyfiles": "^2.3.0",
+    "copyfiles": "^2.4.0",
     "mariadb": "^2.4.2",
     "mongodb": "^3.6.2",
     "mysql": "^2.18.1",

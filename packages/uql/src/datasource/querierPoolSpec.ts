@@ -1,4 +1,3 @@
-import { validate as validateUuidv4 } from 'uuid';
 import { Company, Tax, TaxCategory, User } from 'uql/mock';
 import { Querier, QuerierPool } from 'uql/type';
 
@@ -43,22 +42,20 @@ export abstract class QuerierPoolSpec {
         password: '123456789b!',
       },
     ]);
-    expect(id).toBe(1);
+    expect(id).toBeDefined();
   }
 
   async shouldQuery() {
     const users = await this.querier.find(User, {
-      project: { id: 1, name: 1, email: 1, password: 1 },
+      project: { name: 1, email: 1, password: 1 },
     });
     expect(users).toEqual([
       {
-        id: 1,
         name: 'Some Name A',
         email: 'someemaila@example.com',
         password: '123456789a!',
       },
       {
-        id: 2,
         name: 'Some Name B',
         email: 'someemailb@example.com',
         password: '123456789b!',
@@ -81,13 +78,13 @@ export abstract class QuerierPoolSpec {
       email: 'someemailz@example.com',
       password: '123456789z!',
     });
-    expect(userId).toBe(3);
+    expect(userId).toBeDefined();
 
     const companyId = await this.querier.insertOne(Company, {
       name: 'Some Name Z',
       user: String(userId),
     });
-    expect(companyId).toBe(1);
+    expect(companyId).toBeDefined();
 
     const taxCategoryId = await this.querier.insertOne(TaxCategory, {
       name: 'Some Name Z',
@@ -95,15 +92,15 @@ export abstract class QuerierPoolSpec {
       user: String(userId),
       company: String(companyId),
     });
-    expect(validateUuidv4(taxCategoryId)).toBe(true);
+    expect(taxCategoryId).toBeDefined();
   }
 
   async shouldFindOne() {
     const found = await this.querier.findOne(User, {
       project: {
+        id: 1,
         name: 1,
         email: 1,
-        id: 1,
         password: 1,
       },
       filter: {
@@ -111,10 +108,9 @@ export abstract class QuerierPoolSpec {
         status: null,
       },
     });
-    expect(found).toEqual({
+    expect(found).toMatchObject({
       name: 'Some Name A',
       email: 'someemaila@example.com',
-      id: 1,
       password: '123456789a!',
     });
 
@@ -165,21 +161,38 @@ export abstract class QuerierPoolSpec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await expect(this.querier.beginTransaction()).rejects.toThrow('There is a pending transaction.');
-    await expect(this.querier.release()).rejects.toThrow('There is a pending transaction.');
+    await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
+    await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
   }
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
     await expect(async () => {
       await this.querier.commitTransaction();
-    }).rejects.toThrow('There is not a pending transaction.');
+    }).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldFindPopulateNotAnnotatedField() {
+    await expect(() =>
+      this.querier.find(User, {
+        project: { id: 1, name: 1 },
+        populate: { status: null },
+      })
+    ).rejects.toThrow("'User.status' is not annotated with a relation decorator");
   }
 
   async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
     await expect(async () => {
       await this.querier.rollbackTransaction();
-    }).rejects.toThrow('There is not a pending transaction.');
+    }).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldFindUnknownComparisonOperator() {
+    await expect(() =>
+      this.querier.find(User, {
+        filter: { name: { $someInvalidOperator: 'some' } as unknown },
+      })
+    ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
   abstract createTables(): void;

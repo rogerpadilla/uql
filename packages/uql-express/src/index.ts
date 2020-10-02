@@ -16,7 +16,7 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
     entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }
   if (entities.length === 0) {
-    log('No entities for the uql express middleware');
+    log('no entities for the uql express middleware', 'warn');
   }
 
   for (const type of entities) {

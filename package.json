@@ -15,7 +15,7 @@
     "test": "rimraf coverage && concurrently 'npm:lint' 'jest'",
     "test.all": "jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "npm run test.all -- --watchAll",
-    "test.all.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=pgQuerierPool.it.ts",
+    "test.all.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=mongodbQuerierPool.it.ts",
     "test.watch": "jest --watchAll",
     "rs": "run-rs -v 4.2.9 -l ubuntu1804"
   },
@@ -56,7 +56,7 @@
     "lint-staged": "^10.4.0",
     "prettier": "^2.1.2",
     "rimraf": "^3.0.2",
-    "run-rs": "^0.7.0",
+    "run-rs": "0.6.2",
     "semantic-release": "^17.1.2",
     "ts-jest": "^26.4.1",
     "ts-node": "^9.0.0",

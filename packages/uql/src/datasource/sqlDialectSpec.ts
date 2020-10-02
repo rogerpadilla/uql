@@ -157,14 +157,6 @@ export abstract class SqlDialectSpec implements Spec {
     expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' LIMIT 3");
   }
 
-  shouldFindUnsupportedComparisonOperator() {
-    expect(() =>
-      this.sql.find(User, {
-        filter: { name: { $someInvalidOperator: 'some' } as unknown },
-      })
-    ).toThrowError('Unsupported comparison operator: $someInvalidOperator');
-  }
-
   shouldFindMultipleComparisonOperators() {
     const query2 = this.sql.find(User, {
       filter: { $or: { name: { $eq: 'other', $ne: 'other unwanted' }, status: 1 } },
@@ -347,15 +339,6 @@ export abstract class SqlDialectSpec implements Spec {
         ' LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`user`' +
         ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`company`'
     );
-  }
-
-  shouldFindPopulateNotAnnotatedField() {
-    expect(() =>
-      this.sql.find(Item, {
-        project: { id: 1, name: 1 },
-        populate: { status: undefined },
-      })
-    ).toThrow("'Item.status' is not annotated with a relation decorator");
   }
 
   shouldFindGroup() {

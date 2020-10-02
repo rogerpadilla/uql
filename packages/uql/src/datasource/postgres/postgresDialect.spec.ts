@@ -157,12 +157,12 @@ class PostgresDialectSpec implements Spec {
     expect(query).toBe(`SELECT * FROM "User" WHERE "name" = 'some' LIMIT 3`);
   }
 
-  shouldFindUnsupportedComparisonOperator() {
+  shouldFindUnknownComparisonOperator() {
     expect(() =>
       this.sql.find(User, {
         filter: { name: { $someInvalidOperator: 'some' } as unknown },
       })
-    ).toThrowError('Unsupported comparison operator: $someInvalidOperator');
+    ).toThrowError('unknown operator: $someInvalidOperator');
   }
 
   shouldFindMultipleComparisonOperators() {
@@ -347,15 +347,6 @@ class PostgresDialectSpec implements Spec {
         ' LEFT JOIN "User" "user" ON "user"."id" = "Item"."user"' +
         ' LEFT JOIN "Company" "company" ON "company"."id" = "Item"."company"'
     );
-  }
-
-  shouldFindPopulateNotAnnotatedField() {
-    expect(() =>
-      this.sql.find(Item, {
-        project: { id: 1, name: 1 },
-        populate: { status: null },
-      })
-    ).toThrow("'Item.status' is not annotated with a relation decorator");
   }
 
   shouldFindGroup() {

@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession, Collection, OptionalId } from 'mongodb';
 import { getEntityMeta } from 'uql/decorator';
-import { QueryFilter, Query, QueryOneFilter, Querier } from 'uql/type';
+import { QueryFilter, Query, QueryOneFilter, Querier, EntityMeta, QueryProject } from 'uql/type';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends Querier<string> {
@@ -11,12 +11,12 @@ export class MongodbQuerier extends Querier<string> {
   }
 
   async query(query: string) {
-    throw new Error('Method not implemented.');
+    throw new TypeError('method not implemented');
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]): Promise<string> {
     const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
-    return res.insertedIds[res.insertedCount].toHexString();
+    return res.insertedIds[0].toHexString();
   }
 
   async insertOne<T>(type: { new (): T }, body: T): Promise<string> {
@@ -36,11 +36,13 @@ export class MongodbQuerier extends Querier<string> {
   }
 
   async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>): Promise<T> {
+    const meta = getEntityMeta(type);
+
     if (qm.populate && Object.keys(qm.populate).length) {
       const document = this.collection(type)
         .aggregate(this.dialect.buildAggregationPipeline(type, qm), { session: this.session })
         .toArray();
-      return parseDocument(document);
+      return parseDocument(document, qm.project, meta);
     }
 
     const document = await this.collection(type).findOne(this.dialect.buildFilter(type, qm.filter), {
@@ -48,15 +50,17 @@ export class MongodbQuerier extends Querier<string> {
       session: this.session,
     });
 
-    return parseDocument(document);
+    return parseDocument(document, qm.project, meta);
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>): Promise<T[]> {
+    const meta = getEntityMeta(type);
+
     if (qm.populate && Object.keys(qm.populate).length) {
       const documents = await this.collection(type)
         .aggregate(this.dialect.buildAggregationPipeline(type, qm), { session: this.session })
         .toArray();
-      return parseDocuments(documents);
+      return parseDocuments(documents, qm.project, meta);
     }
 
     const cursor = this.collection(type).find({}, { session: this.session });
@@ -80,7 +84,7 @@ export class MongodbQuerier extends Querier<string> {
 
     const documents = await cursor.toArray();
 
-    return parseDocuments(documents);
+    return parseDocuments(documents, qm.project, meta);
   }
 
   count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number> {
@@ -105,7 +109,7 @@ export class MongodbQuerier extends Querier<string> {
 
   async beginTransaction(): Promise<void> {
     if (this.session?.inTransaction()) {
-      throw new TypeError('There is a pending transaction.');
+      throw new TypeError('pending transaction');
     }
     this.session = this.conn.startSession();
     this.session.startTransaction();
@@ -113,9 +117,27 @@ export class MongodbQuerier extends Querier<string> {
 
   async commitTransaction(): Promise<void> {
     if (!this.session?.inTransaction()) {
-      throw new TypeError('There is not a pending transaction.');
+      throw new TypeError('not a pending transaction');
     }
     await this.session.commitTransaction();
+    await this.endSession();
+  }
+
+  async rollbackTransaction(): Promise<void> {
+    if (!this.session?.inTransaction()) {
+      throw new TypeError('not a pending transaction');
+    }
+    await this.session.abortTransaction();
+  }
+
+  async release(): Promise<void> {
+    if (this.session?.inTransaction()) {
+      throw new TypeError('pending transaction');
+    }
+    return this.conn.close();
+  }
+
+  private endSession() {
     return new Promise((resolve, reject) => {
       this.session.endSession((err) => {
         if (err) {
@@ -126,27 +148,20 @@ export class MongodbQuerier extends Querier<string> {
       });
     });
   }
-
-  async rollbackTransaction(): Promise<void> {
-    if (!this.session?.inTransaction()) {
-      throw new TypeError('There is not a pending transaction.');
-    }
-    await this.session.abortTransaction();
-  }
-
-  release(): Promise<void> {
-    if (this.session?.inTransaction()) {
-      throw new TypeError('Querier should not be released while there is an open transaction.');
-    }
-    return this.conn.close();
-  }
 }
 
-function parseDocuments<T>(docs: any[]) {
-  return docs.map((doc) => parseDocument(doc));
+function parseDocuments<T>(docs: T[], project: QueryProject<T>, meta: EntityMeta<T>) {
+  return docs.map((doc) => parseDocument<T>(doc, project, meta));
 }
 
-function parseDocument<T>(doc: any) {
-  doc._id = doc._id.toHexString();
-  return doc;
+function parseDocument<T>(doc: any, project: QueryProject<T>, meta: EntityMeta<T>) {
+  if (!doc) {
+    return;
+  }
+  const hasProjectId = !project || project[meta.id.property] || !Object.keys(project).length;
+  if (hasProjectId) {
+    doc[meta.id.property] = doc._id.toHexString();
+  }
+  delete doc._id;
+  return doc as T;
 }

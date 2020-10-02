@@ -8,7 +8,7 @@ export function getIsomorphicRepository<T>(type: { new (): T }): IsomorphicRepos
     const conf = getUqlOptions();
     if (!conf.defaultRepositoryClass) {
       throw new TypeError(
-        `Either a generic repository or a specific repository (for the type ${type.name}) must be registered first`
+        `either a generic repository or a specific repository (for the type ${type.name}) must be registered first`
       );
     }
     cache.set(type, new conf.defaultRepositoryClass(type));

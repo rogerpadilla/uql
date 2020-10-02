@@ -77,7 +77,7 @@ export abstract class SqlQuerier extends Querier {
 
   async beginTransaction() {
     if (this.hasPendingTransaction) {
-      throw new TypeError('There is a pending transaction.');
+      throw new TypeError('pending transaction');
     }
     await this.query(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
@@ -85,7 +85,7 @@ export abstract class SqlQuerier extends Querier {
 
   async commitTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new TypeError('There is not a pending transaction.');
+      throw new TypeError('not a pending transaction');
     }
     await this.query('COMMIT');
     this.hasPendingTransaction = undefined;
@@ -93,7 +93,7 @@ export abstract class SqlQuerier extends Querier {
 
   async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new TypeError('There is not a pending transaction.');
+      throw new TypeError('not a pending transaction');
     }
     await this.query('ROLLBACK');
     this.hasPendingTransaction = undefined;
@@ -101,7 +101,7 @@ export abstract class SqlQuerier extends Querier {
 
   async release() {
     if (this.hasPendingTransaction) {
-      throw new TypeError('There is a pending transaction.');
+      throw new TypeError('pending transaction');
     }
     return this.conn.release();
   }

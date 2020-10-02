@@ -238,7 +238,7 @@ export abstract class SqlDialect {
       case '$re':
         return `${this.escapeId(attr)} REGEXP ${this.escape(val)}`;
       default:
-        throw new TypeError(`Unsupported comparison operator: ${operator}`);
+        throw new TypeError(`unknown operator: ${operator}`);
     }
   }
 

@@ -263,7 +263,7 @@ describe('persistence', () => {
   it('updateOneById unaffected record', async () => {
     const mock: QueryUpdateResult = { affectedRows: 0 };
     mockRes = mock;
-    await expect(repository.updateOneById(5, { company: '123' })).rejects.toThrow('Unaffected record');
+    await expect(repository.updateOneById(5, { company: '123' })).rejects.toThrow('unaffected records');
     expect(repository.updateOneById).toBeCalledTimes(1);
     expect(repository.insertOne).not.toBeCalled();
     expect(querier.query).toBeCalledTimes(3);
@@ -372,7 +372,7 @@ describe('persistence', () => {
   it('removeOneById unaffected record', async () => {
     const mock: QueryUpdateResult = { affectedRows: 0 };
     mockRes = mock;
-    await expect(repository.removeOneById(5)).rejects.toThrow('Unaffected record');
+    await expect(repository.removeOneById(5)).rejects.toThrow('unaffected records');
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.remove).toBeCalledTimes(1);
     expect(querier.insertOne).not.toBeCalled();
@@ -416,8 +416,8 @@ describe('persistence', () => {
   });
 
   it('rollback - insertOne', async () => {
-    jest.spyOn(querier, 'insertOne').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-    await expect(repository.saveOne({ company: '123' })).rejects.toThrow('Some Error');
+    jest.spyOn(querier, 'insertOne').mockImplementationOnce(() => Promise.reject(new Error('some error')));
+    await expect(repository.saveOne({ company: '123' })).rejects.toThrow('some error');
     expect(querier.insertOne).toBeCalledTimes(1);
     expect(querier.update).toBeCalledTimes(0);
     expect(querier.query).toBeCalledTimes(2);
@@ -428,8 +428,8 @@ describe('persistence', () => {
   });
 
   it('rollback - update', async () => {
-    jest.spyOn(querier, 'update').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-    await expect(repository.saveOne({ id: '1', company: '123' })).rejects.toThrow('Some Error');
+    jest.spyOn(querier, 'update').mockImplementationOnce(() => Promise.reject(new Error('some error')));
+    await expect(repository.saveOne({ id: '1', company: '123' })).rejects.toThrow('some error');
     expect(querier.insertOne).toBeCalledTimes(0);
     expect(querier.update).toBeCalledTimes(1);
     expect(querier.query).toBeCalledTimes(2);
@@ -442,8 +442,8 @@ describe('persistence', () => {
   it('rollback - commit', async () => {
     const mock: QueryUpdateResult = { insertId: '5' };
     mockRes = mock;
-    jest.spyOn(querier, 'commitTransaction').mockImplementationOnce(() => Promise.reject(new Error('Some Error')));
-    await expect(repository.saveOne({ company: '123' })).rejects.toThrow('Some Error');
+    jest.spyOn(querier, 'commitTransaction').mockImplementationOnce(() => Promise.reject(new Error('some error')));
+    await expect(repository.saveOne({ company: '123' })).rejects.toThrow('some error');
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.beginTransaction).toBeCalledTimes(1);
     expect(querier.commitTransaction).toBeCalledTimes(1);
@@ -467,7 +467,7 @@ describe('persistence', () => {
           return Promise.resolve<any>(undefined);
         }
       }
-    }).toThrow(`Missing decorator @InjectQuerier() in one of the parameters of 'ItemRepository.insertOne'`);
+    }).toThrow(`missing decorator @InjectQuerier() in one of the parameters of 'ItemRepository.insertOne'`);
   });
 });
 
@@ -485,8 +485,8 @@ describe('declaration', () => {
   });
 
   it('no repository', () => {
-    expect(() => getServerRepository(User)).toThrowError(
-      'Either a generic repository or a specific repository (for the type User) must be registered first'
+    expect(() => getServerRepository(User)).toThrow(
+      'either a generic repository or a specific repository (for the type User) must be registered first'
     );
   });
 
