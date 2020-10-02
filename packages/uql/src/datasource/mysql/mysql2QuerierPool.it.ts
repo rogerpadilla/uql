@@ -14,10 +14,6 @@ export class MySql2QuerierPoolSpec extends SqlQuerierPoolSpec {
       })
     );
   }
-
-  getPrimaryKeyType() {
-    return 'INTEGER PRIMARY KEY AUTO_INCREMENT';
-  }
 }
 
 createSpec(new MySql2QuerierPoolSpec());

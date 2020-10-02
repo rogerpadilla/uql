@@ -22,10 +22,6 @@ export class PostgresQuerier extends SqlQuerier {
     return bodies[bodies.length - 1][meta.id.property] ?? res[0].insertid;
   }
 
-  async insertOne<T>(type: { new (): T }, body: T) {
-    return this.insert(type, [body]);
-  }
-
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
     const query = this.dialect.update(type, filter, body);
     const res: { rowCount: number } = await this.conn.query(query);

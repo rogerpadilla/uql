@@ -4,6 +4,8 @@ import PgQuerierPool from './pgQuerierPool';
 import { escapeId as postgresEscapeId } from './postgresDialect';
 
 export class PostgresQuerierPoolSpec extends SqlQuerierPoolSpec {
+  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+
   constructor() {
     super(
       new PgQuerierPool({
@@ -14,10 +16,6 @@ export class PostgresQuerierPoolSpec extends SqlQuerierPoolSpec {
         database: 'test',
       })
     );
-  }
-
-  getPrimaryKeyType() {
-    return 'SERIAL PRIMARY KEY';
   }
 
   escapeId(val: string) {
