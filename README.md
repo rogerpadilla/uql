@@ -72,25 +72,30 @@ import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from 'uql/decora
 export abstract class BaseEntity {
   @Id()
   id?: string;
+
   /**
    * different relations between entities are supported
    */
   @ManyToOne({ type: () => Company })
   company?: string | Company;
+
   @ManyToOne({ type: () => User })
   user?: string | User;
+
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when inserting:
    */
   @Property({ onInsert: () => Date.now() })
   createdAt?: number;
+
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when updating:
    */
   @Property({ onUpdate: () => Date.now() })
   updatedAt?: number;
+
   @Property()
   status?: number;
 }
@@ -99,6 +104,7 @@ export abstract class BaseEntity {
 export class Company extends BaseEntity {
   @Property()
   name?: string;
+
   @Property()
   description?: string;
 }
@@ -109,10 +115,11 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * a custom name can be (optionally) specified for every property
+   * a custom name can be (optionally) specified for every property (this also overrides parent's class ID declaration)
    */
   @Id({ name: 'pk' })
   id?: string;
+
   @Property({ name: 'image' })
   picture?: string;
 }
@@ -121,12 +128,14 @@ export class Profile extends BaseEntity {
 export class User extends BaseEntity {
   @Property()
   name?: string;
+
   @Property()
   email?: string;
+
   @Property()
   password?: string;
+
   @OneToOne({ mappedBy: 'user' })
-  @Property()
   profile?: Profile;
 }
 
@@ -140,8 +149,10 @@ export class TaxCategory extends BaseEntity {
    */
   @Id({ onInsert: () => uuidv4() })
   pk?: string;
+
   @Property()
   name?: string;
+
   @Property()
   description?: string;
 }
@@ -150,11 +161,13 @@ export class TaxCategory extends BaseEntity {
 export class Tax extends BaseEntity {
   @Property()
   name?: string;
+
   @Property()
   percentage?: number;
+
   @ManyToOne()
-  @Property()
   category?: TaxCategory;
+
   @Property()
   description?: string;
 }
