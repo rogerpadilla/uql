@@ -32,7 +32,7 @@ export class SqliteQuerier extends SqlQuerier {
   async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.conn.all(query);
-    const data = mapRows(res);
+    const data = mapRows<T>(res);
     return data;
   }
 

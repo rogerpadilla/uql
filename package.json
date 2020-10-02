@@ -17,7 +17,7 @@
     "test.all.watch": "npm run test.all -- --watchAll",
     "test.all.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=pgQuerierPool.it.ts",
     "test.watch": "jest --watchAll",
-    "run-rs": "run-rs -v 4.2.9 -l ubuntu1804"
+    "rs": "run-rs -v 4.2.9 -l ubuntu1804"
   },
   "commitlint": {
     "extends": [
