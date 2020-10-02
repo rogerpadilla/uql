@@ -186,6 +186,7 @@ import { Querier } from 'uql/type';
 import { Transactional, InjectQuerier, getServerRepository } from 'uql/datasource';
 
 export class ConfirmationService {
+  // declarate a transaction
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
@@ -218,7 +219,7 @@ import { getQuerier } from 'uql/datasource';
 const querier = getQuerier();
 
 try {
-  // start a transaction
+  // programmatically start a transaction
   await querier.beginTransaction();
 
   // create one user
