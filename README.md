@@ -260,9 +260,9 @@ try {
   // count users
   const count: number = await querier.count(User, { company: 3 });
 
-  await querier.commit();
+  await querier.commitTransaction();
 } catch (error) {
-  await querier.rollback();
+  await querier.rollbackTransaction();
 } finally {
   await querier.release();
 }
