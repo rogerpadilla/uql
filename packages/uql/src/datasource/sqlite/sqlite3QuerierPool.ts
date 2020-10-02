@@ -1,23 +1,40 @@
 import { Database, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import { QuerierPool } from 'uql/type';
+import { QuerierPool, QuerierPoolConnection } from 'uql/type';
 import { SqliteQuerier } from './sqliteQuerier';
 
 export default class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
-  private db: Database;
+  private querier: SqliteQuerier;
 
   constructor(readonly filename: string) {}
 
   async getQuerier() {
-    if (!this.db) {
-      this.db = await open({ filename: this.filename, driver: Sqlite3Driver });
+    if (!this.querier) {
+      const db = await open({ filename: this.filename, driver: Sqlite3Driver });
+      const conn = new Sqlit3Connection(db);
+      this.querier = new SqliteQuerier(conn);
     }
-    const querier = new SqliteQuerier(this.db);
-    return Promise.resolve(querier);
+    return this.querier;
   }
 
   async end() {
-    await this.db.close();
-    this.db = undefined;
+    await this.querier.conn.db.close();
+    this.querier = undefined;
+  }
+}
+
+export class Sqlit3Connection implements QuerierPoolConnection {
+  constructor(readonly db: Database) {}
+
+  query(query: string): Promise<any> {
+    return this.db.run(query);
+  }
+
+  all(query: string) {
+    return this.db.all(query);
+  }
+
+  release() {
+    // no-op
   }
 }

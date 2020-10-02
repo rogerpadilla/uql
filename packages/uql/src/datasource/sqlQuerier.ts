@@ -43,9 +43,10 @@ export abstract class SqlQuerier extends Querier {
     return res.affectedRows;
   }
 
-  findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions) {
+  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions) {
     (qm as Query<T>).limit = 1;
-    return this.find(type, qm, opts).then((rows) => (rows ? rows[0] : undefined));
+    const rows = await this.find(type, qm, opts);
+    return rows ? rows[0] : undefined;
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
@@ -56,12 +57,11 @@ export abstract class SqlQuerier extends Querier {
   }
 
   async count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
-    const query = this.dialect.find(
+    const res: any = await this.find(
       type,
       { project: ({ 'COUNT(*) count': 1 } as unknown) as QueryProject<T>, filter },
       { isTrustedProject: true }
     );
-    const res = await this.query<{ count: number }[]>(query);
     return Number(res[0].count);
   }
 
