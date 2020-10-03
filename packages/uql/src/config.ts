@@ -3,7 +3,7 @@ import { resetContainer } from './container';
 
 let options: UqlOptions;
 
-export function initUql(conf: UqlOptions) {
+export function setUqlOptions(conf: UqlOptions) {
   resetContainer();
   options = { logger: console, ...conf };
   options.loggingLevel = LOGGING_LEVELS[options.loggingLevel]
@@ -14,7 +14,7 @@ export function initUql(conf: UqlOptions) {
 
 export function getUqlOptions(): UqlOptions {
   if (!options) {
-    initUql({});
+    setUqlOptions({});
   }
   return { ...options };
 }

@@ -3,7 +3,7 @@ import { getUqlOptions } from 'uql/config';
 
 let pool: QuerierPool;
 
-export function getQuerier(): Promise<Querier> {
+export async function getQuerier() {
   if (!pool) {
     const conf = getUqlOptions();
     if (!conf?.datasource) {
