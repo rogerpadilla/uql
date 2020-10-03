@@ -1,3 +1,4 @@
+import { ISqlite } from 'sqlite';
 import { log } from 'uql/config';
 import { getEntityMeta } from 'uql/decorator';
 import { Query, QueryFilter, QueryOptions } from 'uql/type';
@@ -11,16 +12,19 @@ export class SqliteQuerier extends SqlQuerier {
     super(new SqliteDialect(), conn);
   }
 
-  query(sql: string) {
-    log(`\nquery: ${sql}\n`, 'info');
-    return this.conn.query(sql);
+  async query<T = ISqlite.RunResult>(query: string) {
+    log(`\nquery: ${query}\n`, 'info');
+    const res = await this.conn.query(query);
+    return (res as unknown) as T;
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query(query);
     const meta = getEntityMeta(type);
-    return bodies[bodies.length - 1][meta.id.property] ?? res.lastID - res.changes + 1;
+    return bodies.map((body, index) =>
+      body[meta.id.property] ? body[meta.id.property] : res.lastID - res.changes + index + 1
+    );
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {

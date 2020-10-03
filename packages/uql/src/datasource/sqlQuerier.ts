@@ -30,11 +30,12 @@ export abstract class SqlQuerier extends Querier {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
     const meta = getEntityMeta(type);
-    return bodies[bodies.length - 1][meta.id.property] ?? res.insertId;
+    return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {
-    return this.insert(type, [body]);
+    const ids = await this.insert(type, [body]);
+    return ids[0];
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {

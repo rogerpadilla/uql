@@ -14,7 +14,7 @@ export interface QuerierPool<T extends Querier = Querier> {
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class Querier<ID = any> {
-  abstract insert<T>(type: { new (): T }, body: T[]): Promise<ID>;
+  abstract insert<T>(type: { new (): T }, body: T[]): Promise<ID[]>;
   abstract insertOne<T>(type: { new (): T }, body: T): Promise<ID>;
   abstract update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
   abstract findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions): Promise<T>;

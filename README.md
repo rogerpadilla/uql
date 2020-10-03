@@ -236,14 +236,14 @@ try {
   await querier.beginTransaction();
 
   // create one user
-  const generatedId: string = await querier.insertOne(User, {
+  const insertedId: string = await querier.insertOne(User, {
     name: 'Some Name',
     email1: { picture: 'abc1@example.com' },
     profile: { picture: 'abc1' },
   });
 
   // create multiple users in a batch
-  const generatedIds: string[] = await querier.insert(User, [
+  const insertedIds: string[] = await querier.insert(User, [
     {
       name: 'Another Name',
       email: { picture: 'abc2@example.com' },

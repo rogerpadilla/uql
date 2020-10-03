@@ -247,7 +247,7 @@ class PostgresDialectSpec implements Spec {
   shouldFindPopulateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
     const qm: Query<Item> = {
       project: { id: 1, name: 1 },
-      populate: { tax: null, measureUnit: { project: { id: 1, name: 1 } } },
+      populate: { tax: {}, measureUnit: { project: { id: 1, name: 1 } } },
       filter: { 'measureUnit.name': { $ne: 'unidad' }, 'tax.id': 2 } as Item,
       sort: { 'category.name': 1, 'MeasureUnit.name': 1 } as QuerySort<Item>,
       limit: 100,

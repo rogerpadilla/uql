@@ -33,7 +33,7 @@ export class MongoDialect {
     for (const popKey in qm.populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
-        throw new TypeError(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
       }
       const relType = relOpts.type();
       const relMeta = getEntityMeta(relType);

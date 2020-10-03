@@ -30,7 +30,7 @@ export abstract class QuerierPoolSpec {
   }
 
   async shouldInsert() {
-    const id = await this.querier.insert(User, [
+    const ids = await this.querier.insert(User, [
       {
         name: 'Some Name A',
         email: 'someemaila@example.com',
@@ -42,7 +42,8 @@ export abstract class QuerierPoolSpec {
         password: '123456789b!',
       },
     ]);
-    expect(id).toBeDefined();
+    expect(ids).toHaveLength(2);
+    ids.forEach((id) => expect(id).toBeDefined());
   }
 
   async shouldInsertOne() {
@@ -203,15 +204,6 @@ export abstract class QuerierPoolSpec {
     expect(updatedRows2).toBe(3);
     const updatedRows3 = await this.querier.update(User, { status: 1 }, { status: null });
     expect(updatedRows3).toBe(3);
-  }
-
-  async shouldFindPopulateNotAnnotatedField() {
-    await expect(() =>
-      this.querier.find(User, {
-        project: { id: 1, name: 1 },
-        populate: { status: null },
-      })
-    ).rejects.toThrow("'User.status' is not annotated with a relation decorator");
   }
 
   async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {

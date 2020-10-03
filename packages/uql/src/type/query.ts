@@ -68,7 +68,7 @@ export type QueryStringified = {
 
 export type QueryUpdateResult = {
   readonly affectedRows?: number;
-  readonly insertId?: string;
+  readonly insertId?: number;
 };
 
 export type QueryOptions = { isTrustedProject?: boolean };

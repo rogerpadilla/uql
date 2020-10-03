@@ -26,7 +26,7 @@ export default class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
 export class Sqlit3Connection implements QuerierPoolConnection {
   constructor(readonly db: Database) {}
 
-  query(query: string): Promise<any> {
+  query(query: string) {
     return this.db.run(query);
   }
 

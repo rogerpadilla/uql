@@ -7,7 +7,6 @@ import {
   MeasureUnit,
   Tax,
   LedgerAccount,
-  BaseEntity,
   InventoryAdjustment,
   ItemAdjustment,
   MeasureUnitCategory,

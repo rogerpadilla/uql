@@ -130,13 +130,18 @@ export abstract class SqlDialect {
     for (const popKey in qm.populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
-        throw new TypeError(`'${type.name}.${popKey}' is not annotated with a relation decorator`);
+        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
+      }
+      if (relOpts.cardinality.endsWith('ToMany')) {
+        throw new TypeError(
+          `'${type.name}.${popKey}' is annotated as a '${relOpts.cardinality}' relation which is not yet supported for populates, consider running two separate queries in parallel`
+        );
       }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = qm.populate[popKey];
-      const relProperties = this.columns(relType, popVal?.project, {
+      const relProperties = this.columns(relType, popVal.project, {
         prefix: joinPrefix,
         alias: true,
       });
@@ -147,7 +152,7 @@ export abstract class SqlDialect {
         ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey)
         : `${this.escapeId(meta.name)}.${joinPath}`;
       joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id.name)} = ${rel}`;
-      if (popVal?.populate) {
+      if (popVal.populate) {
         const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
         joinsSelect += subJoinSelect;
         joinsTables += subJoinTables;
@@ -166,14 +171,14 @@ export abstract class SqlDialect {
   where<T>(
     type: { new (): T },
     filter: QueryFilter<T>,
-    opts: { filterLink?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}
+    opts: { logicalOperator?: QueryLogicalOperatorValue; usePrefix?: boolean } = {}
   ): string {
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys?.length) {
       return '';
     }
 
-    const filterLink: QueryLogicalOperatorValue = opts.filterLink || 'AND';
+    const logicalOperator: QueryLogicalOperatorValue = opts.logicalOperator || 'AND';
 
     const sql = filterKeys
       .map((key) => {
@@ -182,7 +187,7 @@ export abstract class SqlDialect {
           const logicalOperator = key;
           let whereOpts: typeof opts;
           if (logicalOperator === '$or') {
-            whereOpts = { filterLink: 'OR' };
+            whereOpts = { logicalOperator: 'OR' };
           }
           const hasPrecedence = filterKeys.length > 1 && Object.keys(val).length > 1;
           const filterItCondition = this.where(type, val, whereOpts);
@@ -190,7 +195,7 @@ export abstract class SqlDialect {
         }
         return this.comparison(type, key, val);
       })
-      .join(` ${filterLink} `);
+      .join(` ${logicalOperator} `);
 
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }

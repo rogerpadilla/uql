@@ -16,7 +16,7 @@ export class MongodbQuerier extends Querier<ObjectId> {
 
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
-    return res.insertedIds[0];
+    return Object.values(res.insertedIds);
   }
 
   async insertOne<T>(type: { new (): T }, body: T) {
@@ -119,7 +119,7 @@ export class MongodbQuerier extends Querier<ObjectId> {
       throw new TypeError('not a pending transaction');
     }
     await this.session.commitTransaction();
-    await this.endSession();
+    this.session.endSession();
   }
 
   async rollbackTransaction() {
@@ -134,18 +134,6 @@ export class MongodbQuerier extends Querier<ObjectId> {
       throw new TypeError('pending transaction');
     }
     return this.conn.close();
-  }
-
-  private endSession() {
-    return new Promise((resolve, reject) => {
-      this.session.endSession((err) => {
-        if (err) {
-          return reject(err);
-        }
-        this.session = undefined;
-        resolve();
-      });
-    });
   }
 }
 

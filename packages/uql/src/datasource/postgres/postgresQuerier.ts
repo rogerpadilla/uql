@@ -19,7 +19,7 @@ export class PostgresQuerier extends SqlQuerier {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<{ insertid: number }[]>(query);
     const meta = getEntityMeta(type);
-    return bodies[bodies.length - 1][meta.id.property] ?? res[0].insertid;
+    return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res[index].insertid));
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {

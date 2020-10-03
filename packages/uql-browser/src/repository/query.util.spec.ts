@@ -22,7 +22,7 @@ it('stringifyQuery', () => {
   expect(stringifyQuery({ project: undefined })).toBe('?project=undefined');
   const source: Query<Item> = {
     project: { id: 1, name: 1 },
-    populate: { tax: null, measureUnit: { project: { id: 1, name: 1, category: 1 } } },
+    populate: { tax: {}, measureUnit: { project: { id: 1, name: 1, category: 1 } } },
     filter: { name: 'Batman', company: '38' },
     group: ['company'],
     sort: { company: 1, name: -1 },
@@ -30,6 +30,6 @@ it('stringifyQuery', () => {
   };
   const result = stringifyQuery(source);
   const expected =
-    '?project={"id":1,"name":1}&populate={"tax":null,"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":"38"}&group=["company"]&sort={"company":1,"name":-1}&limit=5';
+    '?project={"id":1,"name":1}&populate={"tax":{},"measureUnit":{"project":{"id":1,"name":1,"category":1}}}&filter={"name":"Batman","company":"38"}&group=["company"]&sort={"company":1,"name":-1}&limit=5';
   expect(result).toBe(expected);
 });

@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
+import { User, Item, ItemAdjustment, TaxCategory, InventoryAdjustment } from 'uql/mock';
 import { Spec } from 'uql/test.util';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from './sqlDialect';
@@ -239,7 +239,7 @@ export abstract class SqlDialectSpec implements Spec {
   shouldFindPopulateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
     const qm: Query<Item> = {
       project: { id: 1, name: 1 },
-      populate: { tax: undefined, measureUnit: { project: { id: 1, name: 1 } } },
+      populate: { tax: {}, measureUnit: { project: { id: 1, name: 1 } } },
       filter: { 'measureUnit.name': { $ne: 'unidad' }, 'tax.id': 2 } as Item,
       sort: { 'category.name': 1, 'MeasureUnit.name': 1 } as QuerySort<Item>,
       limit: 100,
@@ -483,6 +483,22 @@ export abstract class SqlDialectSpec implements Spec {
     });
     expect(query2).toBe(
       "SELECT * FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `status` = 1 LIMIT 10"
+    );
+  }
+
+  shouldFindPopulateNotAnnotatedField() {
+    expect(() =>
+      this.sql.find(User, {
+        populate: { status: {} },
+      })
+    ).toThrow("'User.status' is not annotated as a relation");
+
+    expect(() =>
+      this.sql.find(InventoryAdjustment, {
+        populate: { itemsAdjustments: {} },
+      })
+    ).toThrow(
+      "'InventoryAdjustment.itemsAdjustments' is annotated as a 'oneToMany' relation which is not yet supported for populates, consider running two separate queries in parallel"
     );
   }
 }

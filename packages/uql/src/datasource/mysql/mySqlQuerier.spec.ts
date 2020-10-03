@@ -52,7 +52,7 @@ it('remove', async () => {
 });
 
 it('insertOne', async () => {
-  const mock: QueryUpdateResult = { insertId: '1' };
+  const mock: QueryUpdateResult = { insertId: 1 };
   mockRes = mock;
   const resp = await querier.insertOne(User, { company: '123' });
   expect(resp).toEqual(mock.insertId);
