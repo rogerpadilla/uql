@@ -260,7 +260,19 @@ try {
 
   // find users
   const users: User[] = await querier.find(User, {
-    populate: { profile: {} }, // retrieve all fields for 'profile'
+    project: {
+      id: true,
+      email: true,
+      password: true,
+    },
+    populate: {
+      profile: {
+        project: {
+          id: true,
+          picture: true,
+        },
+      },
+    },
     filter: { company: 123 },
     limit: 100,
   });
