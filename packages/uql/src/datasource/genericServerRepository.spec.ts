@@ -1,4 +1,4 @@
-import { initUql } from 'uql/config';
+import { setUqlOptions } from 'uql/config';
 import { getServerRepository } from 'uql/container';
 import { User, Item, InventoryAdjustment } from 'uql/mock';
 import { QueryUpdateResult, ServerRepository, Querier } from 'uql/type';
@@ -16,7 +16,7 @@ describe('persistence', () => {
 
   beforeEach(() => {
     mockRes = undefined;
-    initUql({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
+    setUqlOptions({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
     MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
     querier = new MySqlQuerier(undefined);
@@ -483,11 +483,11 @@ describe('persistence', () => {
 
 describe('declaration', () => {
   beforeEach(() => {
-    initUql({});
+    setUqlOptions({});
   });
 
   it('generic', () => {
-    initUql({
+    setUqlOptions({
       defaultRepositoryClass: GenericServerRepository,
     });
     const repository = getServerRepository(User);
@@ -503,7 +503,7 @@ describe('declaration', () => {
   it('@Repository()', () => {
     class SomeGenericRepository extends GenericServerRepository<any, number> {}
 
-    initUql({ defaultRepositoryClass: SomeGenericRepository });
+    setUqlOptions({ defaultRepositoryClass: SomeGenericRepository });
 
     @Repository()
     class UserRepository extends GenericServerRepository<User, number> {

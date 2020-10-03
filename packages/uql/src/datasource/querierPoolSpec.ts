@@ -1,5 +1,7 @@
+import { getUqlOptions, setUqlOptions } from 'uql/config';
 import { Company, Tax, TaxCategory, User } from 'uql/mock';
 import { Querier, QuerierPool, QuerySort } from 'uql/type';
+import { getQuerier } from './querierPool';
 
 export abstract class QuerierPoolSpec {
   readonly entities = [Tax, TaxCategory, Company, User] as const;
@@ -256,9 +258,18 @@ export abstract class QuerierPoolSpec {
   }
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
-    await expect(async () => {
-      await this.querier.commitTransaction();
-    }).rejects.toThrow('not a pending transaction');
+    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldThrowWhenNoDatasourceConfig() {
+    await expect(getQuerier()).rejects.toThrow('datasource configuration has not been set');
+  }
+
+  async shouldThrowWhenUnknownDriver() {
+    const opts = getUqlOptions();
+    setUqlOptions({ datasource: { driver: 'xyz' as any } });
+    await expect(getQuerier()).rejects.toThrow(`unknown driver 'xyz'`);
+    setUqlOptions(opts);
   }
 
   abstract createTables(): void;
