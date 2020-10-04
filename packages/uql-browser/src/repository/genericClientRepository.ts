@@ -26,7 +26,7 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
   }
 
   updateOneById(id: ID, body: T, opts?: RequestOptions) {
-    return put<void>(`${this.basePath}/${id}`, body, opts);
+    return put<number>(`${this.basePath}/${id}`, body, opts);
   }
 
   saveOne(body: T, opts?: RequestOptions) {
@@ -39,14 +39,14 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
     return this.insertOne(body, opts);
   }
 
-  findOneById(id: ID, qm: QueryOne<T>, opts?: RequestOptions) {
-    const qs = stringifyQuery(qm);
-    return get<T>(`${this.basePath}/${id}${qs}`, opts);
-  }
-
   findOne(qm: Query<T>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/one${qs}`, opts);
+  }
+
+  findOneById(id: ID, qm: QueryOne<T>, opts?: RequestOptions) {
+    const qs = stringifyQuery(qm);
+    return get<T>(`${this.basePath}/${id}${qs}`, opts);
   }
 
   find(qm: Query<T>, opts: RequestFindOptions = {}) {
@@ -58,13 +58,13 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
     return get<T[]>(`${this.basePath}${qs}`, opts);
   }
 
-  removeOneById(id: ID, opts?: RequestOptions) {
-    return remove<void>(`${this.basePath}/${id}`, opts);
-  }
-
   remove(filter: QueryFilter<T>, opts?: RequestOptions) {
     const qs = stringifyQueryParameter('filter', filter);
     return remove<number>(`${this.basePath}${qs}`, opts);
+  }
+
+  removeOneById(id: ID, opts?: RequestOptions) {
+    return remove<number>(`${this.basePath}/${id}`, opts);
   }
 
   count(filter: QueryFilter<T>, opts?: RequestOptions) {

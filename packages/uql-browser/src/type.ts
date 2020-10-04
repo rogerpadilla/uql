@@ -27,12 +27,12 @@ export type RequestCallback = (msg: RequestNotification) => any;
 
 export interface ClientRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
   insertOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
-  updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<void>>;
+  updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
   saveOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
-  findOneById(id: ID, qm?: QueryOne<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
-  findOne(qm: Query<T>, opts?: any): Promise<RequestSuccessResponse<T>>;
   find(qm: Query<T>, opts?: RequestFindOptions): Promise<RequestSuccessResponse<T[]>>;
-  removeOneById(id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<void>>;
+  findOne(qm: Query<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
+  findOneById(id: ID, qo?: QueryOne<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
   remove(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  removeOneById(id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
   count(filter: QueryFilter<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

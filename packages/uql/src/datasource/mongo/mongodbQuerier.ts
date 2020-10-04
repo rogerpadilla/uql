@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { getEntityMeta } from 'uql/decorator';
-import { QueryFilter, Query, Querier, EntityMeta, QueryProject, QueryOne } from 'uql/type';
+import { QueryFilter, Query, Querier, EntityMeta, QueryProject } from 'uql/type';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends Querier<ObjectId> {
@@ -10,18 +10,9 @@ export class MongodbQuerier extends Querier<ObjectId> {
     super();
   }
 
-  async query(query: string) {
-    throw new TypeError('method not implemented');
-  }
-
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
     return Object.values(res.insertedIds);
-  }
-
-  async insertOne<T>(type: { new (): T }, body: T) {
-    const res = await this.collection(type).insertOne(body as OptionalId<T>, { session: this.session });
-    return res.insertedId;
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
@@ -35,35 +26,11 @@ export class MongodbQuerier extends Querier<ObjectId> {
     return res.modifiedCount;
   }
 
-  async findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>) {
-    (qo as Query<T>).filter = { _id: id } as QueryFilter<T>;
-    return this.findOne(type, qo);
-  }
-
-  async findOne<T>(type: { new (): T }, qm: Query<T>) {
-    qm.limit = 1;
-
-    const meta = getEntityMeta(type);
-
-    if (qm.populate && Object.keys(qm.populate).length) {
-      const pipeline = this.dialect.buildAggregationPipeline(type, qm);
-      const documents = await this.collection(type).aggregate(pipeline, { session: this.session }).toArray();
-      return parseDocument(documents[0], qm.project, meta);
-    }
-
-    const document = await this.collection(type).findOne(this.dialect.buildFilter(type, qm.filter), {
-      projection: qm.project,
-      session: this.session,
-    });
-
-    return parseDocument(document, qm.project, meta);
-  }
-
   async find<T>(type: { new (): T }, qm: Query<T>) {
     const meta = getEntityMeta(type);
 
     if (qm.populate && Object.keys(qm.populate).length) {
-      const documents = await this.collection(type)
+      const documents: T[] = await this.collection(type)
         .aggregate(this.dialect.buildAggregationPipeline(type, qm), { session: this.session })
         .toArray();
       return parseDocuments(documents, qm.project, meta);
@@ -88,13 +55,9 @@ export class MongodbQuerier extends Querier<ObjectId> {
       cursor.limit(qm.limit);
     }
 
-    const documents = await cursor.toArray();
+    const documents: T[] = await cursor.toArray();
 
     return parseDocuments(documents, qm.project, meta);
-  }
-
-  count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
-    return this.collection(type).countDocuments(this.dialect.buildFilter(type, filter), { session: this.session });
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
@@ -104,13 +67,21 @@ export class MongodbQuerier extends Querier<ObjectId> {
     return res.deletedCount;
   }
 
-  collection<T>(type: { new (): T }) {
-    const meta = getEntityMeta(type);
-    return this.conn.db().collection(meta.name);
+  count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
+    return this.collection(type).countDocuments(this.dialect.buildFilter(type, filter), { session: this.session });
+  }
+
+  async query(query: string) {
+    throw new TypeError('method not implemented');
   }
 
   get hasOpenTransaction() {
     return this.session?.inTransaction();
+  }
+
+  collection<T>(type: { new (): T }) {
+    const meta = getEntityMeta(type);
+    return this.conn.db().collection(meta.name);
   }
 
   async beginTransaction() {

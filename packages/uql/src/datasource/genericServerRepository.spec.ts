@@ -125,7 +125,7 @@ describe('persistence', () => {
     const mock: QueryUpdateResult = { affectedRows: 1 };
     mockRes = mock;
     const resp = await repository.updateOneById(5, { company: '123' });
-    expect(resp).toEqual(undefined);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.update).toBeCalledTimes(1);
     expect(querier.find).not.toBeCalled();
@@ -144,7 +144,7 @@ describe('persistence', () => {
       name: 'something',
       profile: { picture: 'xyz' },
     });
-    expect(resp).toEqual(mock.insertId);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
@@ -174,7 +174,7 @@ describe('persistence', () => {
       name: 'something',
       profile: null,
     });
-    expect(resp).toEqual(mock.insertId);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
@@ -202,7 +202,7 @@ describe('persistence', () => {
       description: 'some description',
       itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
-    expect(resp).toEqual(mock.insertId);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
@@ -238,7 +238,7 @@ describe('persistence', () => {
       description: 'some description',
       itemsAdjustments: null,
     });
-    expect(resp).toEqual(mock.insertId);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
@@ -263,7 +263,7 @@ describe('persistence', () => {
   it('updateOneById unaffected record', async () => {
     const mock: QueryUpdateResult = { affectedRows: 0 };
     mockRes = mock;
-    await expect(repository.updateOneById(5, { company: '123' })).rejects.toThrow('unaffected records');
+    await expect(repository.updateOneById(5, { company: '123' })).resolves.toBe(mock.affectedRows);
     expect(repository.updateOneById).toBeCalledTimes(1);
     expect(repository.insertOne).not.toBeCalled();
     expect(querier.query).toBeCalledTimes(3);
@@ -272,9 +272,9 @@ describe('persistence', () => {
     expect(querier.insertOne).not.toBeCalled();
     expect(querier.remove).not.toBeCalled();
     expect(querier.beginTransaction).toBeCalledTimes(1);
-    expect(querier.commitTransaction).not.toBeCalled();
+    expect(querier.commitTransaction).toBeCalledTimes(1);
     expect(querier.release).toBeCalledTimes(1);
-    expect(querier.rollbackTransaction).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).not.toBeCalled();
   });
 
   it('saveOne insert', async () => {
@@ -375,7 +375,7 @@ describe('persistence', () => {
     const mock: QueryUpdateResult = { affectedRows: 1 };
     mockRes = mock;
     const resp = await repository.removeOneById(123);
-    expect(resp).toEqual(undefined);
+    expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.remove).toBeCalledTimes(1);
     expect(querier.insertOne).not.toBeCalled();
@@ -390,16 +390,16 @@ describe('persistence', () => {
   it('removeOneById unaffected record', async () => {
     const mock: QueryUpdateResult = { affectedRows: 0 };
     mockRes = mock;
-    await expect(repository.removeOneById(5)).rejects.toThrow('unaffected records');
+    await expect(repository.removeOneById(5)).resolves.toBe(mock.affectedRows);
     expect(querier.query).toBeCalledTimes(3);
     expect(querier.remove).toBeCalledTimes(1);
     expect(querier.insertOne).not.toBeCalled();
     expect(querier.update).not.toBeCalled();
     expect(querier.find).not.toBeCalled();
     expect(querier.beginTransaction).toBeCalledTimes(1);
-    expect(querier.commitTransaction).not.toBeCalled();
+    expect(querier.commitTransaction).toBeCalledTimes(1);
     expect(querier.release).toBeCalledTimes(1);
-    expect(querier.rollbackTransaction).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).not.toBeCalled();
   });
 
   it('remove', async () => {

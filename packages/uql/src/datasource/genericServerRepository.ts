@@ -17,12 +17,10 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   }
 
   @Transactional({ propagation: 'required' })
-  async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier<ID>): Promise<void> {
+  async updateOneById(id: ID, body: T, @InjectQuerier() querier?: Querier<ID>) {
     const affectedRows = await querier.update(this.meta.type, { [this.meta.id.property]: id }, body);
-    if (!affectedRows) {
-      throw new TypeError('unaffected records');
-    }
     await this.updateRelations({ ...body, [this.meta.id.property]: id }, querier);
+    return affectedRows;
   }
 
   @Transactional({ propagation: 'required' })
@@ -36,8 +34,8 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   }
 
   @Transactional()
-  findOneById(id: ID, qo: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
-    return querier.findOneById(this.meta.type, id, qo);
+  find(qm: Query<T>, @InjectQuerier() querier?: Querier<ID>) {
+    return querier.find(this.meta.type, qm);
   }
 
   @Transactional()
@@ -46,21 +44,18 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   }
 
   @Transactional()
-  find(qm: Query<T>, @InjectQuerier() querier?: Querier<ID>) {
-    return querier.find(this.meta.type, qm);
-  }
-
-  @Transactional({ propagation: 'required' })
-  async removeOneById(id: ID, @InjectQuerier() querier?: Querier<ID>) {
-    const affectedRows = await querier.remove(this.meta.type, { [this.meta.id.property]: id });
-    if (!affectedRows) {
-      throw new TypeError('unaffected records');
-    }
+  findOneById(id: ID, qo: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
+    return querier.findOneById(this.meta.type, id, qo);
   }
 
   @Transactional({ propagation: 'required' })
   remove(filter: QueryFilter<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.remove(this.meta.type, filter);
+  }
+
+  @Transactional({ propagation: 'required' })
+  removeOneById(id: ID, @InjectQuerier() querier?: Querier<ID>) {
+    return querier.removeOneById(this.meta.type, id);
   }
 
   @Transactional()
@@ -85,7 +80,9 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
         });
         return querier.insert(relType, relBody);
       }
-      throw new TypeError(`unknown cardinality ${relOpts.cardinality}`);
+      if (relOpts.cardinality === 'manyToMany') {
+        throw new TypeError(`unsupported update cardinality ${relOpts.cardinality}`);
+      }
     });
 
     await Promise.all<any>(insertProms);
@@ -103,7 +100,8 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
           return querier.remove(relType, { [relOpts.mappedBy]: id });
         }
         return querier.update(relType, { [relOpts.mappedBy]: id }, relBody);
-      } else if (relOpts.cardinality === 'oneToMany') {
+      }
+      if (relOpts.cardinality === 'oneToMany') {
         const relBody: T[] = body[prop];
         await querier.remove(relType, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
@@ -112,8 +110,9 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
           });
           return querier.insert(relType, relBody);
         }
-      } else {
-        throw new TypeError(`unknown cardinality ${relOpts.cardinality}`);
+      }
+      if (relOpts.cardinality === 'manyToMany') {
+        throw new TypeError(`unsupported update cardinality ${relOpts.cardinality}`);
       }
     });
 
