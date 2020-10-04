@@ -139,7 +139,8 @@ export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   storehouse?: Storehouse;
   @Property()
-  inventoryAdjustment?: boolean;
+  // @ManyToOne({ type: () => InventoryAdjustment })
+  inventoryAdjustment?: string;
 }
 
 @Entity()

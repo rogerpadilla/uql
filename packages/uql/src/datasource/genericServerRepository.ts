@@ -1,5 +1,5 @@
 import { getEntityMeta } from 'uql/decorator';
-import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta, ServerRepository, Querier } from 'uql/type';
+import { Query, QueryFilter, QueryOne, EntityMeta, ServerRepository, Querier } from 'uql/type';
 import { Transactional, InjectQuerier } from './decorator';
 
 export class GenericServerRepository<T, ID = any> implements ServerRepository<T, ID> {
@@ -36,19 +36,12 @@ export class GenericServerRepository<T, ID = any> implements ServerRepository<T,
   }
 
   @Transactional()
-  findOneById(id: ID, qm: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
-    const idPath =
-      qm.populate && Object.keys(qm.populate).length
-        ? `${this.meta.type.name}.${this.meta.id.property}`
-        : this.meta.id.property;
-
-    (qm as QueryOneFilter<T>).filter = { [idPath]: id };
-
-    return querier.findOne(this.meta.type, qm);
+  findOneById(id: ID, qo: QueryOne<T> = {}, @InjectQuerier() querier?: Querier<ID>) {
+    return querier.findOneById(this.meta.type, id, qo);
   }
 
   @Transactional()
-  findOne(qm: QueryOneFilter<T>, @InjectQuerier() querier?: Querier<ID>) {
+  findOne(qm: Query<T>, @InjectQuerier() querier?: Querier<ID>) {
     return querier.findOne(this.meta.type, qm);
   }
 

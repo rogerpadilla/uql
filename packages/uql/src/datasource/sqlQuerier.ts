@@ -5,15 +5,15 @@ import {
   QueryFilter,
   QueryUpdateResult,
   QueryOptions,
-  QueryOneFilter,
   QueryProject,
   QuerierPoolConnection,
   Querier,
+  QueryOne,
 } from 'uql/type';
 import { mapRows } from './rowsMapper';
 import { SqlDialect } from './sqlDialect';
 
-export abstract class SqlQuerier extends Querier {
+export abstract class SqlQuerier<ID = any> extends Querier<ID> {
   private hasPendingTransaction?: boolean;
 
   constructor(readonly dialect: SqlDialect, readonly conn: QuerierPoolConnection) {
@@ -44,8 +44,14 @@ export abstract class SqlQuerier extends Querier {
     return res.affectedRows;
   }
 
-  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>, opts?: QueryOptions) {
-    (qm as Query<T>).limit = 1;
+  async findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T>, opts?: QueryOptions) {
+    const meta = getEntityMeta(type);
+    (qo as Query<T>).filter = { [meta.id.property]: id };
+    return this.findOne(type, qo, opts);
+  }
+
+  async findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
+    qm.limit = 1;
     const rows = await this.find(type, qm, opts);
     return rows ? rows[0] : undefined;
   }

@@ -316,19 +316,10 @@ describe('persistence', () => {
   it('findOneById', async () => {
     const mock: User = { id: '1', name: 'something' };
     mockRes = [mock];
-    const resp1 = await repository.findOneById(1, { populate: { company: {} } });
+    const resp1 = await repository.findOneById(1);
     expect(resp1).toEqual(mock);
     expect(querier.query).toBeCalledTimes(1);
-    expect(querier.beginTransaction).not.toBeCalled();
-    expect(querier.commitTransaction).not.toBeCalled();
-    expect(querier.rollbackTransaction).not.toBeCalled();
-    expect(querier.release).toBeCalledTimes(1);
-
-    jest.clearAllMocks();
-
-    const resp2 = await repository.findOneById(1);
-    expect(resp2).toEqual(mock);
-    expect(querier.query).toBeCalledTimes(1);
+    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `User` WHERE `id` = 1 LIMIT 1');
     expect(querier.beginTransaction).not.toBeCalled();
     expect(querier.commitTransaction).not.toBeCalled();
     expect(querier.rollbackTransaction).not.toBeCalled();
@@ -345,6 +336,23 @@ describe('persistence', () => {
     expect(querier.commitTransaction).not.toBeCalled();
     expect(querier.rollbackTransaction).not.toBeCalled();
     expect(querier.release).toBeCalledTimes(1);
+  });
+
+  xit('findOneById populate oneToMany', async () => {
+    const repository = new GenericServerRepository(InventoryAdjustment);
+    await repository.findOneById(123, { populate: { itemsAdjustments: {} } });
+    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `InventoryAdjustment` WHERE `id` = 1');
+    expect(querier.query).nthCalledWith(2, 'SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
+    expect(querier.query).toBeCalledTimes(2);
+    expect(querier.insertOne).not.toBeCalled();
+    expect(querier.insert).not.toBeCalled();
+    expect(querier.find).not.toBeCalled();
+    expect(querier.update).not.toBeCalled();
+    expect(querier.remove).not.toBeCalled();
+    expect(querier.beginTransaction).not.toBeCalled();
+    expect(querier.commitTransaction).not.toBeCalled();
+    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).not.toBeCalled();
   });
 
   it('find', async () => {

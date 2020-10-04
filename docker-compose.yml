@@ -11,27 +11,21 @@ services:
     ports:
       - '3306:3306'
     container_name: 'uql-mysql-8'
-  postgres-9:
-    image: postgres:9.6.18
+  # postgres-9:
+  #   image: postgres:9.6.18
+  #   environment:
+  #     POSTGRES_USER: test
+  #     POSTGRES_PASSWORD: test
+  #     POSTGRES_DB: test
+  #   ports:
+  #     - '5432:5432'
+  #   container_name: uql-postgres-9
+  postgres-12:
+    image: postgres:12.4
     environment:
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
       POSTGRES_DB: test
     ports:
       - '5432:5432'
-    container_name: uql-postgres-9
-  # Managed with 'run-rs' package
-  # mongodb:
-  #   image: 'mongo:4.4.0'
-  #   container_name: 'uql-mongodb-4'
-  #   ports:
-  #     - '27017:27017'
-  # postgres-12:
-  #   image: postgres:12.3
-  #   environment:
-  #     POSTGRES_USER: test
-  #     POSTGRES_PASSWORD: test
-  #     POSTGRES_DB: test
-  #   ports:
-  #     - '5433:5432'
-  #   container_name: uql-postgres-12
+    container_name: uql-postgres-12

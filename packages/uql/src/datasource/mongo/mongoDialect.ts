@@ -53,7 +53,7 @@ export class MongoDialect {
 }
 
 function getFinalKeyVal<T>(key: string, val: any, meta: EntityMeta<T>) {
-  if (key === meta.id.property) {
+  if (key === '_id' || key === meta.id.property) {
     const objectId = val instanceof ObjectId ? val : new ObjectId(val);
     return { key: '_id', val: objectId };
   }

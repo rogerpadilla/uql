@@ -1,6 +1,6 @@
 import { EntityMeta } from './entity';
 import { Querier } from './querier';
-import { Query, QueryFilter, QueryOne, QueryOneFilter } from './query';
+import { Query, QueryFilter, QueryOne } from './query';
 
 export interface IsomorphicRepository<T, ID = any> {
   readonly meta: EntityMeta<T>;
@@ -8,7 +8,7 @@ export interface IsomorphicRepository<T, ID = any> {
   updateOneById(id: ID, body: T, opts?: any): Promise<any>;
   saveOne(body: T, opts?: any): Promise<any>;
   findOneById(id: ID, qm?: QueryOne<T>, opts?: any): Promise<any>;
-  findOne(qm: QueryOneFilter<T>, opts?: any): Promise<any>;
+  findOne(qm: Query<T>, opts?: any): Promise<any>;
   find(qm: Query<T>, opts?: any): Promise<any>;
   removeOneById(id: ID, opts?: any): Promise<any>;
   remove(filter: QueryFilter<T>, opts?: any): Promise<any>;
@@ -20,7 +20,7 @@ export interface ServerRepository<T, ID = any> extends IsomorphicRepository<T, I
   updateOneById(id: ID, body: T, querier?: Querier<ID>): Promise<void>;
   saveOne(body: T, querier?: Querier<ID>): Promise<ID>;
   findOneById(id: ID, qm?: QueryOne<T>, querier?: Querier<ID>): Promise<T>;
-  findOne(qm: QueryOneFilter<T>, opts?: any): Promise<T>;
+  findOne(qm: Query<T>, opts?: any): Promise<T>;
   find(qm: Query<T>, querier?: Querier<ID>): Promise<T[]>;
   removeOneById(id: ID, querier?: Querier<ID>): Promise<void>;
   remove(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;

@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory, InventoryAdjustment } from 'uql/mock';
+import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
 import { Spec } from 'uql/test.util';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from './sqlDialect';
@@ -216,8 +216,8 @@ export abstract class SqlDialectSpec implements Spec {
     expect(query).toBe("SELECT * FROM `User` WHERE `name` = 'some' AND `status` NOT IN (1, 2, 3) LIMIT 10");
   }
 
-  shouldFindPopulateWithProjectedFields() {
-    const query = this.sql.find(Item, {
+  shouldFindPopulateWithProject() {
+    const query1 = this.sql.find(Item, {
       project: { id: 1, name: 1, code: 1 },
       populate: {
         tax: { project: { id: 1, name: 1 } },
@@ -225,7 +225,7 @@ export abstract class SqlDialectSpec implements Spec {
       },
       limit: 100,
     });
-    expect(query).toBe(
+    expect(query1).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`' +
@@ -233,6 +233,11 @@ export abstract class SqlDialectSpec implements Spec {
         ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
         ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
         ' LIMIT 100'
+    );
+
+    const query2 = this.sql.find(User, { populate: { company: {} } });
+    expect(query2).toBe(
+      'SELECT `User`.*, `company`.`id` `company.id`, `company`.`company` `company.company`, `company`.`user` `company.user`, `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`, `company`.`status` `company.status`, `company`.`name` `company.name`, `company`.`description` `company.description` FROM `User` LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`company`'
     );
   }
 
@@ -492,13 +497,5 @@ export abstract class SqlDialectSpec implements Spec {
         populate: { status: {} },
       })
     ).toThrow("'User.status' is not annotated as a relation");
-
-    expect(() =>
-      this.sql.find(InventoryAdjustment, {
-        populate: { itemsAdjustments: {} },
-      })
-    ).toThrow(
-      "'InventoryAdjustment.itemsAdjustments' is annotated as a 'oneToMany' relation which is not yet supported for populates, consider running two separate queries in parallel"
-    );
   }
 }

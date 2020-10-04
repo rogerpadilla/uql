@@ -1,5 +1,5 @@
 import { getEntityMeta } from 'uql/decorator';
-import { Query, QueryFilter, QueryOneFilter, QueryOne, EntityMeta } from 'uql/type';
+import { Query, QueryFilter, QueryOne, EntityMeta } from 'uql/type';
 import { formatKebabCase } from 'uql/util';
 import { get, post, put, remove } from '../http';
 import { RequestOptions, ClientRepository, RequestFindOptions } from '../type';
@@ -44,7 +44,7 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
     return get<T>(`${this.basePath}/${id}${qs}`, opts);
   }
 
-  findOne(qm: QueryOneFilter<T>, opts?: RequestOptions) {
+  findOne(qm: Query<T>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
     return get<T>(`${this.basePath}/one${qs}`, opts);
   }

@@ -16,6 +16,7 @@ export type QueryTextSearchOptions<T> = {
   fields?: (keyof T)[];
   value: string;
 };
+
 export type QueryTextSearch<T> = {
   readonly $text?: QueryTextSearchOptions<T>;
 };
@@ -37,11 +38,15 @@ export type QueryLogicalOperatorMap = {
   readonly $and?: 'AND';
   readonly $or?: 'OR';
 };
+
 export type QueryLogicalOperatorKey = keyof QueryLogicalOperatorMap;
+
 export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOperatorKey];
+
 export type QueryLogicalOperator<T> = {
   [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<T> | QueryTextSearch<T>;
 };
+
 export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
 
 export type QuerySort<T> = {
@@ -57,11 +62,13 @@ export type QueryOne<T> = {
   project?: QueryProject<T>;
   populate?: QueryPopulate<T>;
   group?: (keyof T)[];
-};
-export type QueryOneFilter<T> = QueryOne<T> & {
+  sort?: QuerySort<T>;
+} & QueryPager;
+
+export type Query<T> = QueryOne<T> & {
   filter?: QueryFilter<T>;
 };
-export type Query<T> = QueryOneFilter<T> & QueryPager & { sort?: QuerySort<T> };
+
 export type QueryStringified = {
   readonly [P in keyof Query<unknown>]?: string;
 };

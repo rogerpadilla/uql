@@ -132,11 +132,6 @@ export abstract class SqlDialect {
       if (!relOpts) {
         throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
       }
-      if (relOpts.cardinality.endsWith('ToMany')) {
-        throw new TypeError(
-          `'${type.name}.${popKey}' is annotated as a '${relOpts.cardinality}' relation which is not yet supported for populates, consider running two separate queries in parallel`
-        );
-      }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();

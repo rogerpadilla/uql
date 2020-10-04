@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { getEntityMeta } from 'uql/decorator';
-import { QueryFilter, Query, QueryOneFilter, Querier, EntityMeta, QueryProject } from 'uql/type';
+import { QueryFilter, Query, Querier, EntityMeta, QueryProject, QueryOne } from 'uql/type';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends Querier<ObjectId> {
@@ -35,7 +35,14 @@ export class MongodbQuerier extends Querier<ObjectId> {
     return res.modifiedCount;
   }
 
-  async findOne<T>(type: { new (): T }, qm: QueryOneFilter<T>) {
+  async findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>) {
+    (qo as Query<T>).filter = { _id: id } as QueryFilter<T>;
+    return this.findOne(type, qo);
+  }
+
+  async findOne<T>(type: { new (): T }, qm: Query<T>) {
+    qm.limit = 1;
+
     const meta = getEntityMeta(type);
 
     if (qm.populate && Object.keys(qm.populate).length) {
