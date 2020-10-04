@@ -1,4 +1,4 @@
-import { QuerierPoolOptions, QuerierPool, DatasourceOptions, Querier } from 'uql/type';
+import { QuerierPool, DatasourceOptions, QuerierPoolClass } from 'uql/type';
 import { getUqlOptions } from 'uql/config';
 
 let pool: QuerierPool;
@@ -32,5 +32,3 @@ function getQuerierPool(opts: DatasourceOptions): QuerierPool {
   const querierPoolConstructor: QuerierPoolClass = require(`./${directory}/${driver}QuerierPool`).default;
   return new querierPoolConstructor(options);
 }
-
-type QuerierPoolClass = { new (opts: QuerierPoolOptions): QuerierPool };

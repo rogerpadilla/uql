@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from 'uql/type';
 
 const holder = globalThis;
-const key = 'uql/core/definition';
+const key = 'uql/decorator/definition';
 const metas: Map<{ new (): unknown }, EntityMeta<any>> = holder[key] || new Map();
 holder[key] = metas;
 

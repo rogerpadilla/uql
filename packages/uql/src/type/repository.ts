@@ -1,5 +1,5 @@
 import { EntityMeta } from './entity';
-import { Querier } from './querier';
+import { QuerierContract } from './querier';
 import { Query, QueryFilter, QueryOne } from './query';
 
 export interface IsomorphicRepository<T, ID = any> {
@@ -16,15 +16,15 @@ export interface IsomorphicRepository<T, ID = any> {
 }
 
 export interface ServerRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
-  insertOne(body: T, querier?: Querier<ID>): Promise<ID>;
-  updateOneById(id: ID, body: T, querier?: Querier<ID>): Promise<number>;
-  saveOne(body: T, querier?: Querier<ID>): Promise<ID>;
-  find(qm: Query<T>, querier?: Querier<ID>): Promise<T[]>;
-  findOne(qm: Query<T>, querier?: Querier<ID>): Promise<T>;
-  findOneById(id: ID, qo?: QueryOne<T>, querier?: Querier<ID>): Promise<T>;
-  remove(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;
-  removeOneById(id: ID, querier?: Querier<ID>): Promise<number>;
-  count(filter: QueryFilter<T>, querier?: Querier<ID>): Promise<number>;
+  insertOne(body: T, querier?: QuerierContract<ID>): Promise<ID>;
+  updateOneById(id: ID, body: T, querier?: QuerierContract<ID>): Promise<number>;
+  saveOne(body: T, querier?: QuerierContract<ID>): Promise<ID>;
+  find(qm: Query<T>, querier?: QuerierContract<ID>): Promise<T[]>;
+  findOne(qm: Query<T>, querier?: QuerierContract<ID>): Promise<T>;
+  findOneById(id: ID, qo?: QueryOne<T>, querier?: QuerierContract<ID>): Promise<T>;
+  remove(filter: QueryFilter<T>, querier?: QuerierContract<ID>): Promise<number>;
+  removeOneById(id: ID, querier?: QuerierContract<ID>): Promise<number>;
+  count(filter: QueryFilter<T>, querier?: QuerierContract<ID>): Promise<number>;
 }
 
 export type CustomRepositoryConstructor<T, ID = any> = new () => IsomorphicRepository<T, ID>;

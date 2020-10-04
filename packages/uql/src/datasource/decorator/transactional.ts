@@ -1,4 +1,5 @@
-import { Querier } from 'uql/type';
+import { QuerierContract } from 'uql/type';
+import { Querier } from '../querier';
 import { getQuerier } from '../querierPool';
 import { getInjectQuerier } from './injectQuerier';
 
@@ -15,7 +16,7 @@ export function Transactional(opts: { readonly propagation: 'supported' | 'requi
 
     propDescriptor.value = async function func(this: object, ...args: object[]) {
       let isOwnAuto: boolean;
-      let querier: Querier;
+      let querier: QuerierContract;
 
       if (args[injectQuerierIndex] instanceof Querier) {
         querier = args[injectQuerierIndex] as Querier;

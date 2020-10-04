@@ -1,4 +1,4 @@
-import { QuerierPoolOptions } from './querier';
+import { QuerierPoolOptions } from './querierPool';
 import { GenericRepositoryConstructor } from './repository';
 
 export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';

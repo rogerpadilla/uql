@@ -1,5 +1,5 @@
 import { Item, User } from 'uql/mock';
-import { createSpec } from 'uql/test.util';
+import { createSpec } from 'uql/util';
 import { SqlDialectSpec } from '../sqlDialectSpec';
 import { SqliteDialect } from './sqliteDialect';
 

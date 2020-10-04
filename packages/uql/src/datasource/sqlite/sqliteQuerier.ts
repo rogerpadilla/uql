@@ -2,7 +2,7 @@ import { ISqlite } from 'sqlite';
 import { log } from 'uql/config';
 import { getEntityMeta } from 'uql/decorator';
 import { Query, QueryFilter, QueryOptions } from 'uql/type';
-import { mapRows } from '../rowsMapper';
+import { mapRows } from 'uql/util';
 import { SqlQuerier } from '../sqlQuerier';
 import { Sqlit3Connection } from './sqlite3QuerierPool';
 import { SqliteDialect } from './sqliteDialect';

@@ -1,12 +1,13 @@
 import { setUqlOptions } from 'uql/config';
 import { getServerRepository } from 'uql/container';
 import { User, Item, InventoryAdjustment } from 'uql/mock';
-import { QueryUpdateResult, ServerRepository, Querier } from 'uql/type';
-import MySql2QuerierPool from './mysql/mysql2QuerierPool';
-import { MySqlQuerier } from './mysql/mysqlQuerier';
+import { QueryUpdateResult, ServerRepository } from 'uql/type';
 import { SqlQuerier } from './sqlQuerier';
+import { MySqlQuerier } from './mysql/mysqlQuerier';
+import MySql2QuerierPool from './mysql/mysql2QuerierPool';
 import { Repository, Transactional } from './decorator';
 import { GenericServerRepository } from './genericServerRepository';
+import { Querier } from './querier';
 
 describe('persistence', () => {
   let mockRes: User[] | QueryUpdateResult | { count: number }[];

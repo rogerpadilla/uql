@@ -28,11 +28,11 @@
     "mongodb": "^3.6.2",
     "mysql": "^2.18.1",
     "mysql2": "^2.2.5",
-    "pg": "^8.3.3",
+    "pg": "^8.4.0",
     "rimraf": "^3.0.2",
     "sqlite": "^4.0.15",
     "sqlite3": "^5.0.0",
-    "uuid": "^8.3.0"
+    "uuid": "^8.3.1"
   },
   "author": "Roger Padilla",
   "repository": {

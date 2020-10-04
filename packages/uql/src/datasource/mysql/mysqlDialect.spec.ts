@@ -1,4 +1,4 @@
-import { createSpec } from 'uql/test.util';
+import { createSpec } from 'uql/util';
 import { SqlDialectSpec } from '../sqlDialectSpec';
 import { MySqlDialect } from './mysqlDialect';
 

@@ -1,15 +1,8 @@
 import { log } from 'uql/config';
 import { getEntityMeta } from 'uql/decorator';
-import {
-  Query,
-  QueryFilter,
-  QueryUpdateResult,
-  QueryOptions,
-  QueryProject,
-  QuerierPoolConnection,
-  Querier,
-} from 'uql/type';
-import { mapRows } from './rowsMapper';
+import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from 'uql/type';
+import { mapRows } from 'uql/util';
+import { Querier } from './querier';
 import { SqlDialect } from './sqlDialect';
 
 export abstract class SqlQuerier<ID = any> extends Querier<ID> {

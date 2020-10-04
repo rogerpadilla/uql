@@ -1,11 +1,11 @@
 import { getUqlOptions, setUqlOptions } from 'uql/config';
 import { Company, Tax, TaxCategory, User } from 'uql/mock';
-import { Querier, QuerierPool, QuerySort } from 'uql/type';
+import { QuerierContract, QuerierPool, QuerySort } from 'uql/type';
 import { getQuerier } from './querierPool';
 
 export abstract class QuerierPoolSpec {
   readonly entities = [Tax, TaxCategory, Company, User] as const;
-  querier: Querier;
+  querier: QuerierContract;
 
   constructor(readonly pool: QuerierPool) {}
 

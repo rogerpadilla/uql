@@ -1,5 +1,5 @@
 import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
-import { createSpec, Spec } from 'uql/test.util';
+import { createSpec, Spec } from 'uql/util';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { PostgresDialect } from './postgresDialect';
 

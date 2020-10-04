@@ -1,5 +1,5 @@
 import { User, Item, ItemAdjustment, TaxCategory } from 'uql/mock';
-import { Spec } from 'uql/test.util';
+import { Spec } from 'uql/util';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { SqlDialect } from './sqlDialect';
 
