@@ -1,9 +1,9 @@
 import { getEntityMeta } from 'uql/decorator';
-import { QueryComparisonOperator, QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
+import { QueryComparisonOperator, QueryTextSearchOptions, QuerySimpleValue } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 
 export class PostgresDialect extends SqlDialect {
-  readonly beginTransactionCommand: string = 'BEGIN';
+  readonly beginTransactionCommand = 'BEGIN';
 
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
@@ -11,7 +11,7 @@ export class PostgresDialect extends SqlDialect {
     return `${sql} RETURNING ${meta.id.name} insertId`;
   }
 
-  comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
+  comparison<T>(type: { new (): T }, key: string, value: object | QuerySimpleValue): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;

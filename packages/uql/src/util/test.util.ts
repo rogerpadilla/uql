@@ -1,14 +1,11 @@
-/* eslint-disable jest/valid-title */
-/* eslint-disable jest/expect-expect */
-/* eslint-disable jest/no-export */
 export function createSpec<T extends Spec>(spec: T) {
-  const specKeys = new Map<string, true>();
+  const specKeysMap: { [k: string]: true } = {};
   let proto: object = Object.getPrototypeOf(spec);
 
   while (proto.constructor !== Object) {
     Object.getOwnPropertyNames(proto).forEach((key) => {
-      if (key !== 'constructor' && !specKeys.has(key)) {
-        specKeys.set(key, true);
+      if (key !== 'constructor' && !specKeysMap[key]) {
+        specKeysMap[key] = true;
         const callback = spec[key].bind(spec);
         if (['beforeEach', 'afterEach', 'beforeAll', 'afterAll'].includes(key)) {
           globalThis[key](callback);

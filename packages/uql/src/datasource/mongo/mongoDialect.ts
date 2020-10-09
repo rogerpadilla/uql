@@ -35,6 +35,10 @@ export class MongoDialect {
       if (!relOpts) {
         throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
       }
+      if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
+        // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
+        continue;
+      }
       const relType = relOpts.type();
       const relMeta = getEntityMeta(relType);
       pipeline.push({

@@ -1,5 +1,5 @@
 import { getEntityMeta } from 'uql/decorator';
-import { EntityMeta, QuerierContract, Query, QueryFilter, QueryOne, QueryOptions } from 'uql/type';
+import { EntityMeta, QuerierContract, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate } from 'uql/type';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
@@ -27,8 +27,8 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
 
   async findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     qm.limit = 1;
-    const [row] = await this.find(type, qm, opts);
-    return row;
+    const rows = await this.find(type, qm, opts);
+    return rows ? rows[0] : undefined;
   }
 
   findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T>, opts?: QueryOptions) {
@@ -57,6 +57,39 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
 
   abstract release(): Promise<void>;
 
+  protected async populateToManyRelations<T>(type: { new (): T }, bodies: T[], populate: QueryPopulate<T>) {
+    const meta = getEntityMeta(type);
+    for (const popKey in populate) {
+      const relOpts = meta.relations[popKey];
+      if (!relOpts) {
+        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
+      }
+      const popVal = populate[popKey];
+      const relType = relOpts.type();
+      // const relMeta = getEntityMeta(relType);
+      const relQuery = popVal as Query<any>;
+      if (relOpts.cardinality === 'oneToMany') {
+        const ids = bodies.map((body) => body[meta.id.property]);
+        relQuery.filter = { [relOpts.mappedBy]: { $in: ids } };
+        const founds = await this.find(relType, relQuery);
+        const foundsMap = founds.reduce((acc, it) => {
+          const attr = it[relOpts.mappedBy];
+          if (!acc[attr]) {
+            acc[attr] = [];
+          }
+          acc[attr].push(it);
+          return acc;
+        }, {});
+        bodies.forEach((body) => {
+          body[popKey] = foundsMap[body[meta.id.property]];
+        });
+      } else if (relOpts.cardinality === 'manyToMany') {
+        // TODO manyToMany cardinality
+        throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
+      }
+    }
+  }
+
   private async insertRelations<T>(type: { new (): T }, body: T) {
     const meta = getEntityMeta(type);
 
@@ -77,7 +110,8 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
         return this.insert(relType, relBody);
       }
       if (relOpts.cardinality === 'manyToMany') {
-        throw new TypeError(`unsupported update cardinality ${relOpts.cardinality}`);
+        // TODO manyToMany cardinality
+        throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     });
 
@@ -110,7 +144,8 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
         }
       }
       if (relOpts.cardinality === 'manyToMany') {
-        throw new TypeError(`unsupported update cardinality ${relOpts.cardinality}`);
+        // TODO manyToMany cardinality
+        throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     });
 

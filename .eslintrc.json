@@ -9,19 +9,14 @@
     "sourceType": "module",
     "project": "./tsconfig.json"
   },
-  "plugins": ["@typescript-eslint", "prettier", "eslint-comments", "promise", "jest"],
   "extends": [
     "eslint:recommended",
-    "plugin:@typescript-eslint/eslint-recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:eslint-comments/recommended",
     "plugin:import/errors",
     "plugin:import/warnings",
     "plugin:import/typescript",
-    "plugin:promise/recommended",
-    "prettier",
     "prettier/@typescript-eslint",
-    "plugin:jest/recommended"
+    "plugin:prettier/recommended"
   ],
   "rules": {
     "semi": ["warn", "always"],
@@ -34,16 +29,11 @@
     "new-cap": ["error", { "newIsCap": false, "capIsNew": false }],
     "no-array-constructor": ["error"],
     "max-params": ["error", 4],
-    "max-statements": ["error", 30],
+    "max-lines": ["error", 600],
+    "max-statements": ["error", 50],
     "one-var": ["error", "never"],
     "max-nested-callbacks": ["error", 3],
-    "max-lines": ["error", 500],
     "no-negated-condition": "error",
-    "eslint-comments/disable-enable-pair": ["error", { "allowWholeFile": true }],
-    "import/order": "warn",
-    "prettier/prettier": "warn",
-
-    "import/no-unresolved": 0,
     "no-case-declarations": 0,
     "class-methods-use-this": 0,
     "no-param-reassign": 0,
@@ -54,11 +44,17 @@
     "consistent-return": 0,
     "guard-for-in": 0,
     "max-classes-per-file": 0,
+
+    "prettier/prettier": "warn",
+    "import/order": "warn",
+    "import/prefer-default-export": 0,
+    "import/no-unresolved": 0,
+    "@typescript-eslint/ban-ts-comment": ["error", { "ts-expect-error": true }],
+    "@typescript-eslint/no-inferrable-types": 0,
     "@typescript-eslint/ban-types": 0,
     "@typescript-eslint/explicit-module-boundary-types": 0,
     "@typescript-eslint/no-explicit-any": 0,
-    "@typescript-eslint/no-unused-vars": 0,
-    "import/prefer-default-export": 0
+    "@typescript-eslint/no-unused-vars": 0
   },
   "overrides": [
     {
@@ -81,14 +77,8 @@
         "jest": true
       },
       "rules": {
-        "max-lines": ["error", 600],
-        "max-statements": ["error", 50],
         "@typescript-eslint/unbound-method": 0,
-        "@typescript-eslint/no-empty-function": 0,
-        "jest/no-standalone-expect": 0,
-        "jest/no-test-prefixes": 0,
-        "jest/no-disabled-tests": 0,
-        "jest/valid-title": 0
+        "@typescript-eslint/no-empty-function": 0
       }
     }
   ]

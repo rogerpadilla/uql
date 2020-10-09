@@ -36,8 +36,9 @@ export class SqliteQuerier extends SqlQuerier {
   async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.conn.all(query);
-    const data = mapRows<T>(res);
-    return data;
+    const founds = mapRows(res);
+    await this.populateToManyRelations(type, founds, qm.populate);
+    return founds;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {

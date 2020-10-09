@@ -19,6 +19,7 @@ it('stringifyQueryParameter', () => {
 
 it('stringifyQuery', () => {
   expect(stringifyQuery(undefined)).toBe('');
+  expect(stringifyQuery({})).toBe('');
   expect(stringifyQuery({ project: undefined })).toBe('?project=undefined');
   const source: Query<Item> = {
     project: { id: 1, name: 1 },

@@ -2,7 +2,7 @@ import { escapeId, escape } from 'sqlstring';
 import {
   QueryFilter,
   Query,
-  QueryPrimitive,
+  QuerySimpleValue,
   QueryComparisonOperator,
   QuerySort,
   QueryPager,
@@ -10,6 +10,7 @@ import {
   QueryProject,
   QueryLogicalOperatorValue,
   QueryTextSearchOptions,
+  QueryPopulate,
 } from 'uql/type';
 import { getEntityMeta } from 'uql/decorator';
 
@@ -76,12 +77,15 @@ export abstract class SqlDialect {
     return select + where + group + sort + pager;
   }
 
-  columns<T>(
-    type: { new (): T },
-    project: QueryProject<T>,
-    opts: { prefix?: string; alias?: boolean } & QueryOptions
-  ): string {
+  columns<T>(type: { new (): T }, qm: Query<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions): string {
+    let { project } = { ...qm };
+
     if (opts.isTrustedProject) {
+      if (qm.populate) {
+        for (const popKey in qm.populate) {
+          project[popKey] = true;
+        }
+      }
       return Object.keys(project).join(', ');
     }
 
@@ -106,6 +110,12 @@ export abstract class SqlDialect {
       }, {} as QueryProject<T>);
     }
 
+    if (qm.populate) {
+      for (const popKey in qm.populate) {
+        project[popKey] = true;
+      }
+    }
+
     const aliasMapper = opts.alias
       ? (name: string) => `${prefix}${this.escapeId(name)} ${this.escapeId(opts.prefix + '.' + name, true)}`
       : (name: string) => `${prefix}${this.escapeId(name)}`;
@@ -115,28 +125,38 @@ export abstract class SqlDialect {
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
     const meta = getEntityMeta(type);
-    const baseSelect = this.columns(type, qm.project, {
+    const baseSelect = this.columns(type, qm, {
       prefix: qm.populate && meta.name,
       ...opts,
     });
-    const { joinsSelect, joinsTables } = this.joins(type, qm);
+    const { joinsSelect, joinsTables } = this.joins(type, qm.populate);
     return `SELECT ${baseSelect}${joinsSelect} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
-  joins<T>(type: { new (): T }, qm: Query<T>, prefix = ''): { joinsSelect: string; joinsTables: string } {
+  joins<T>(
+    type: { new (): T },
+    populate: QueryPopulate<T> = {},
+    prefix = ''
+  ): { joinsSelect: string; joinsTables: string } {
     let joinsSelect = '';
     let joinsTables = '';
+
     const meta = getEntityMeta(type);
-    for (const popKey in qm.populate) {
+
+    for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
         throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
       }
+      if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
+        // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
+        continue;
+      }
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
-      const popVal = qm.populate[popKey];
-      const relProperties = this.columns(relType, popVal.project, {
+      const popVal = populate[popKey];
+      const relProperties = this.columns(relType, popVal, {
         prefix: joinPrefix,
         alias: true,
       });
@@ -147,12 +167,15 @@ export abstract class SqlDialect {
         ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey)
         : `${this.escapeId(meta.name)}.${joinPath}`;
       joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id.name)} = ${rel}`;
-      if (popVal.populate) {
-        const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(relType, popVal, joinPrefix);
-        joinsSelect += subJoinSelect;
-        joinsTables += subJoinTables;
-      }
+      const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(
+        relType,
+        popVal.populate,
+        joinPrefix
+      );
+      joinsSelect += subJoinSelect;
+      joinsTables += subJoinTables;
     }
+
     return { joinsSelect, joinsTables };
   }
 
@@ -195,7 +218,7 @@ export abstract class SqlDialect {
     return opts.usePrefix ? ` WHERE ${sql}` : sql;
   }
 
-  comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
+  comparison<T>(type: { new (): T }, key: string, value: object | QuerySimpleValue): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;

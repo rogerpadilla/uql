@@ -68,11 +68,11 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
-      expect.toMatch(/INSERT INTO `User` \(`name`, `createdAt`\) VALUES \('some name', \d+\)/)
+      expect.toMatch(/^INSERT INTO `User` \(`name`, `createdAt`\) VALUES \('some name', \d+\)$/)
     );
     expect(querier.query).nthCalledWith(
       3,
-      expect.toMatch(/INSERT INTO `user_profile` \(`image`, `createdAt`\) VALUES \('abc', \d+\)/)
+      expect.toMatch(/^INSERT INTO `user_profile` \(`image`, `createdAt`\) VALUES \('abc', \d+\)$/)
     );
     expect(querier.query).nthCalledWith(4, 'COMMIT');
     expect(querier.query).toBeCalledTimes(4);
@@ -100,13 +100,13 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(
       2,
       expect.toMatch(
-        /INSERT INTO `InventoryAdjustment` \(`description`, `createdAt`\) VALUES \('some description', \d+\)/
+        /^INSERT INTO `InventoryAdjustment` \(`description`, `createdAt`\) VALUES \('some description', \d+\)$/
       )
     );
     expect(querier.query).nthCalledWith(
       3,
       expect.toMatch(
-        /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+        /^INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)$/
       )
     );
     expect(querier.query).nthCalledWith(4, 'COMMIT');
@@ -149,11 +149,11 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
-      expect.toMatch(/UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+      expect.toMatch(/^UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1$/)
     );
     expect(querier.query).nthCalledWith(
       3,
-      expect.toMatch(/UPDATE `user_profile` SET `image` = 'xyz', `updatedAt` = \d+ WHERE `user` = 1/)
+      expect.toMatch(/^UPDATE `user_profile` SET `image` = 'xyz', `updatedAt` = \d+ WHERE `user` = 1$/)
     );
     expect(querier.query).nthCalledWith(4, 'COMMIT');
     expect(querier.query).toBeCalledTimes(4);
@@ -179,7 +179,7 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(1, 'START TRANSACTION');
     expect(querier.query).nthCalledWith(
       2,
-      expect.toMatch(/UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1/)
+      expect.toMatch(/^UPDATE `User` SET `name` = 'something', `updatedAt` = \d+ WHERE `id` = 1$/)
     );
     expect(querier.query).nthCalledWith(3, 'DELETE FROM `user_profile` WHERE `user` = 1');
     expect(querier.query).nthCalledWith(4, 'COMMIT');
@@ -208,14 +208,14 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(
       2,
       expect.toMatch(
-        /UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1/
+        /^UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1$/
       )
     );
     expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
     expect(querier.query).nthCalledWith(
       4,
       expect.toMatch(
-        /INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+        /^INSERT INTO `ItemAdjustment` \(`buyPrice`, `inventoryAdjustment`, `createdAt`\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)$/
       )
     );
     expect(querier.query).nthCalledWith(5, 'COMMIT');
@@ -244,7 +244,7 @@ describe('persistence', () => {
     expect(querier.query).nthCalledWith(
       2,
       expect.toMatch(
-        /UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1/
+        /^UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = \d+ WHERE `id` = 1$/
       )
     );
     expect(querier.query).nthCalledWith(3, 'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
@@ -339,15 +339,54 @@ describe('persistence', () => {
     expect(querier.release).toBeCalledTimes(1);
   });
 
-  xit('findOneById populate oneToMany', async () => {
+  it('findOne populate oneToMany', async () => {
+    const mock: InventoryAdjustment[] = [
+      { id: '123', description: 'something a', user: '1' },
+      { id: '456', description: 'something b', user: '1' },
+    ];
+    mockRes = mock;
     const repository = new GenericServerRepository(InventoryAdjustment);
-    await repository.findOneById(123, { populate: { itemsAdjustments: {} } });
-    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `InventoryAdjustment` WHERE `id` = 1');
-    expect(querier.query).nthCalledWith(2, 'SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` = 1');
+    await repository.findOne({ filter: { user: '1' }, populate: { itemsAdjustments: {} } });
+    expect(querier.query).nthCalledWith(
+      1,
+      "SELECT `InventoryAdjustment`.* FROM `InventoryAdjustment` WHERE `user` = '1' LIMIT 1"
+    );
+    expect(querier.query).nthCalledWith(
+      2,
+      "SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
+    );
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.insertOne).not.toBeCalled();
     expect(querier.insert).not.toBeCalled();
-    expect(querier.find).not.toBeCalled();
+    expect(querier.find).toBeCalledTimes(2);
+    expect(querier.update).not.toBeCalled();
+    expect(querier.remove).not.toBeCalled();
+    expect(querier.beginTransaction).not.toBeCalled();
+    expect(querier.commitTransaction).not.toBeCalled();
+    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).not.toBeCalled();
+  });
+
+  it('find populate oneToMany', async () => {
+    const mock: InventoryAdjustment[] = [
+      { id: '123', description: 'something a', user: '1' },
+      { id: '456', description: 'something b', user: '1' },
+    ];
+    mockRes = mock;
+    const repository = new GenericServerRepository(InventoryAdjustment);
+    await repository.find({ filter: { user: '1' }, populate: { itemsAdjustments: {} } });
+    expect(querier.query).nthCalledWith(
+      1,
+      "SELECT `InventoryAdjustment`.* FROM `InventoryAdjustment` WHERE `user` = '1'"
+    );
+    expect(querier.query).nthCalledWith(
+      2,
+      "SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
+    );
+    expect(querier.query).toBeCalledTimes(2);
+    expect(querier.insertOne).not.toBeCalled();
+    expect(querier.insert).not.toBeCalled();
+    expect(querier.find).toBeCalledTimes(2);
     expect(querier.update).not.toBeCalled();
     expect(querier.remove).not.toBeCalled();
     expect(querier.beginTransaction).not.toBeCalled();

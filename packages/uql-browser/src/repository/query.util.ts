@@ -7,6 +7,10 @@ export function stringifyQuery(query: object): string {
   if (!query) {
     return '';
   }
-  const qsArr = Object.keys(query).map((key) => stringifyQueryParameter(key, query[key], true));
+  const keys = Object.keys(query);
+  if (keys.length === 0) {
+    return '';
+  }
+  const qsArr = keys.map((key) => stringifyQueryParameter(key, query[key], true));
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }

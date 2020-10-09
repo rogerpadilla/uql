@@ -234,7 +234,7 @@ class PostgresDialectSpec implements Spec {
       limit: 100,
     });
     expect(query1).toBe(
-      'SELECT "Item"."id", "Item"."name", "Item"."code"' +
+      'SELECT "Item"."id", "Item"."name", "Item"."code", "Item"."tax", "Item"."measureUnit"' +
         ', "tax"."id" "tax.id", "tax"."name" "tax.name"' +
         ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name", "measureUnit"."category" "measureUnit.category"' +
         ' FROM "Item"' +
@@ -259,7 +259,7 @@ class PostgresDialectSpec implements Spec {
     };
     const query = this.sql.find(Item, qm);
     expect(query).toBe(
-      'SELECT "Item"."id", "Item"."name"' +
+      'SELECT "Item"."id", "Item"."name", "Item"."tax", "Item"."measureUnit"' +
         ', "tax"."id" "tax.id", "tax"."company" "tax.company", "tax"."user" "tax.user", "tax"."createdAt" "tax.createdAt"' +
         ', "tax"."updatedAt" "tax.updatedAt", "tax"."status" "tax.status", "tax"."name" "tax.name", "tax"."percentage" "tax.percentage"' +
         ', "tax"."category" "tax.category", "tax"."description" "tax.description"' +
@@ -284,7 +284,7 @@ class PostgresDialectSpec implements Spec {
       limit: 100,
     });
     expect(query1).toBe(
-      'SELECT "Item"."id", "Item"."name", "Item"."code"' +
+      'SELECT "Item"."id", "Item"."name", "Item"."code", "Item"."measureUnit"' +
         ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name", "measureUnit"."category" "measureUnit.category"' +
         ', "measureUnit.category"."name" "measureUnit.category.name"' +
         ' FROM "Item"' +
@@ -303,8 +303,8 @@ class PostgresDialectSpec implements Spec {
       limit: 100,
     });
     expect(query2).toBe(
-      'SELECT "Item"."id", "Item"."name", "Item"."code"' +
-        ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name"' +
+      'SELECT "Item"."id", "Item"."name", "Item"."code", "Item"."measureUnit"' +
+        ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name", "measureUnit"."category" "measureUnit.category"' +
         ', "measureUnit.category"."id" "measureUnit.category.id", "measureUnit.category"."name" "measureUnit.category.name"' +
         ' FROM "Item"' +
         ' LEFT JOIN "MeasureUnit" "measureUnit" ON "measureUnit"."id" = "Item"."measureUnit"' +
@@ -327,9 +327,9 @@ class PostgresDialectSpec implements Spec {
       limit: 100,
     });
     expect(query3).toBe(
-      'SELECT "ItemAdjustment"."id", "ItemAdjustment"."buyPrice", "ItemAdjustment"."number"' +
-        ', "item"."id" "item.id", "item"."name" "item.name"' +
-        ', "item.measureUnit"."id" "item.measureUnit.id", "item.measureUnit"."name" "item.measureUnit.name"' +
+      'SELECT "ItemAdjustment"."id", "ItemAdjustment"."buyPrice", "ItemAdjustment"."number", "ItemAdjustment"."item"' +
+        ', "item"."id" "item.id", "item"."name" "item.name", "item"."measureUnit" "item.measureUnit"' +
+        ', "item.measureUnit"."id" "item.measureUnit.id", "item.measureUnit"."name" "item.measureUnit.name", "item.measureUnit"."category" "item.measureUnit.category"' +
         ', "item.measureUnit.category"."id" "item.measureUnit.category.id", "item.measureUnit.category"."name" "item.measureUnit.category.name"' +
         ' FROM "ItemAdjustment"' +
         ' LEFT JOIN "Item" "item" ON "item"."id" = "ItemAdjustment"."item"' +
@@ -345,7 +345,7 @@ class PostgresDialectSpec implements Spec {
       populate: { user: { project: { id: 1, name: 1 } }, company: { project: { id: 1, name: 1 } } },
     });
     expect(query).toBe(
-      'SELECT "Item"."id", "Item"."name"' +
+      'SELECT "Item"."id", "Item"."name", "Item"."user", "Item"."company"' +
         ', "user"."id" "user.id", "user"."name" "user.name"' +
         ', "company"."id" "company.id", "company"."name" "company.name"' +
         ' FROM "Item"' +

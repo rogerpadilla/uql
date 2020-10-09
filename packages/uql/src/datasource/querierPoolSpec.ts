@@ -1,10 +1,10 @@
 import { getUqlOptions, setUqlOptions } from 'uql/config';
-import { Company, Tax, TaxCategory, User } from 'uql/mock';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, Tax, TaxCategory, User } from 'uql/mock';
 import { QuerierContract, QuerierPool, QuerySort } from 'uql/type';
 import { getQuerier } from './querierPool';
 
 export abstract class QuerierPoolSpec {
-  readonly entities = [Tax, TaxCategory, Company, User] as const;
+  readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Company, User] as const;
   querier: QuerierContract;
 
   constructor(readonly pool: QuerierPool) {}
@@ -239,15 +239,6 @@ export abstract class QuerierPoolSpec {
     expect(count4).toBe(count1);
   }
 
-  async shouldRemove() {
-    await this.querier.beginTransaction();
-    const deletedRows1 = await this.querier.remove(User, { status: 1 });
-    expect(deletedRows1).toBe(0);
-    const deletedRows2 = await this.querier.remove(User, { status: null });
-    expect(deletedRows2).toBe(3);
-    await this.querier.commitTransaction();
-  }
-
   async shouldThrowWhenBeginTransactionAfterBeginTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
@@ -255,6 +246,64 @@ export abstract class QuerierPoolSpec {
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
+  }
+
+  async shouldPopulateOneToMany() {
+    const [user, company] = await Promise.all([
+      this.querier.findOne(User, { project: { id: 1 } }),
+      this.querier.findOne(Company, { project: { id: 1 } }),
+    ]);
+
+    const [itemsIds, inventoryAdjustmentId] = await Promise.all([
+      this.querier.insert(Item, [
+        {
+          name: 'some item name a',
+          user: user.id,
+          company: company.id,
+        },
+        {
+          name: 'some item name b',
+          user: user.id,
+          company: company.id,
+        },
+      ]),
+
+      this.querier.insertOne(InventoryAdjustment, {
+        description: 'some inventory adjustment',
+        user: user.id,
+        company: company.id,
+      }),
+    ]);
+
+    await this.querier.insert(ItemAdjustment, [
+      { buyPrice: 1000, item: itemsIds[0] },
+      { buyPrice: 2000, item: itemsIds[2] },
+    ]);
+
+    const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      populate: { itemsAdjustments: {}, user: {} },
+    });
+
+    expect(inventoryAdjustment).toEqual({
+      company: '5f7c91c3e5b60d3681f31cb4',
+      description: 'some inventory adjustment',
+      itemsAdjustments: undefined,
+      user: {
+        email: 'someemaila@example.com',
+        name: 'Some Name A',
+        password: '123456789a!',
+        status: null,
+      },
+    });
+  }
+
+  async shouldRemove() {
+    await this.querier.beginTransaction();
+    const deletedRows1 = await this.querier.remove(User, { status: 1 });
+    expect(deletedRows1).toBe(0);
+    const deletedRows2 = await this.querier.remove(User, { status: null });
+    expect(deletedRows2).toBe(3);
+    await this.querier.commitTransaction();
   }
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {

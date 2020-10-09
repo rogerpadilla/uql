@@ -14,7 +14,7 @@ export class GenericClientRepository<T, ID = any> implements ClientRepository<T,
    * something like '/api/v1/'. It can also be dynamically calculated if necessary
    * (by using a getter called 'basePath')
    */
-  protected readonly basePath: string;
+  readonly basePath: string;
 
   constructor(type: { new (): T }) {
     this.meta = getEntityMeta(type);

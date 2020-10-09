@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/decorator';
 
-export abstract class BaseEntity {
+export abstract class BaseEntity<ID = any> {
   @Id()
-  id?: string | number;
+  id?: ID;
   @ManyToOne({ type: () => Company })
   company?: string | Company;
   @ManyToOne({ type: () => User })
@@ -139,7 +139,7 @@ export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   storehouse?: Storehouse;
   @Property()
-  // @ManyToOne({ type: () => InventoryAdjustment })
+  @ManyToOne({ type: () => InventoryAdjustment })
   inventoryAdjustment?: string;
 }
 

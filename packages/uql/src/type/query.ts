@@ -1,7 +1,7 @@
-export type QueryPrimitive = string | number | boolean;
+export type QuerySimpleValue = string | number | boolean | null;
 
 export type QueryProject<T> = {
-  readonly [P in keyof T]: boolean | 0 | 1;
+  [P in keyof T]: boolean | 0 | 1;
 };
 
 export type QueryPopulate<T> = {
@@ -9,7 +9,7 @@ export type QueryPopulate<T> = {
 };
 
 export type QueryFieldFilter<T> = {
-  readonly [P in keyof T]: T[P] | string | QueryComparisonOperator<T>;
+  readonly [P in keyof T]: T[P] | QueryComparisonOperator<T> | QuerySimpleValue;
 };
 
 export type QueryTextSearchOptions<T> = {
@@ -22,15 +22,15 @@ export type QueryTextSearch<T> = {
 };
 
 export type QueryComparisonOperator<T> = {
-  readonly $eq?: QueryPrimitive;
-  readonly $ne?: QueryPrimitive;
+  readonly $eq?: QuerySimpleValue;
+  readonly $ne?: QuerySimpleValue;
   readonly $lt?: number;
   readonly $lte?: number;
   readonly $gt?: number;
   readonly $gte?: number;
   readonly $startsWith?: string;
-  readonly $in?: QueryPrimitive[];
-  readonly $nin?: QueryPrimitive[];
+  readonly $in?: QuerySimpleValue[];
+  readonly $nin?: QuerySimpleValue[];
   readonly $re?: string;
 };
 

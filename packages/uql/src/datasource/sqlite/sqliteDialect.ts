@@ -1,11 +1,11 @@
 import { getEntityMeta } from 'uql/decorator';
-import { QueryTextSearchOptions, QueryPrimitive } from 'uql/type';
+import { QueryTextSearchOptions, QuerySimpleValue } from 'uql/type';
 import { SqlDialect } from '../sqlDialect';
 
 export class SqliteDialect extends SqlDialect {
   readonly beginTransactionCommand = 'BEGIN TRANSACTION';
 
-  comparison<T>(type: { new (): T }, key: string, value: object | QueryPrimitive): string {
+  comparison<T>(type: { new (): T }, key: string, value: object | QuerySimpleValue): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;

@@ -34,7 +34,6 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions): Prom
 
   return fetch(url, init)
     .then((rawResp) =>
-      // eslint-disable-next-line promise/no-nesting
       rawResp.json().then((resp: RequestSuccessResponse<T> | RequestErrorResponse) => {
         const isSuccess = rawResp.status >= 200 && rawResp.status < 300;
         if (isSuccess) {

@@ -3,7 +3,7 @@ import { QuerierPool, QuerierPoolOptions } from 'uql/type';
 import { MongodbQuerier } from './mongodbQuerier';
 
 export default class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
-  constructor(protected readonly opts: QuerierPoolOptions) {}
+  constructor(readonly opts: QuerierPoolOptions) {}
 
   async getQuerier() {
     const uri = `mongodb://${this.opts.host}${this.opts.port ? `:${this.opts.port}` : ''}/${this.opts.database}`;

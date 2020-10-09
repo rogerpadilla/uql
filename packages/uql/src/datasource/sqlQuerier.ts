@@ -28,7 +28,9 @@ export abstract class SqlQuerier<ID = any> extends Querier<ID> {
   async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     const query = this.dialect.find(type, qm, opts);
     const res = await this.query<T[]>(query);
-    return mapRows(res);
+    const founds = mapRows(res);
+    await this.populateToManyRelations(type, founds, qm.populate);
+    return founds;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {

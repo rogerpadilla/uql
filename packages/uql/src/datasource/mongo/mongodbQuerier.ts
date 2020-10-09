@@ -30,35 +30,39 @@ export class MongodbQuerier extends Querier<ObjectId> {
   async find<T>(type: { new (): T }, qm: Query<T>) {
     const meta = getEntityMeta(type);
 
+    let documents: T[];
+
     if (qm.populate && Object.keys(qm.populate).length) {
-      const documents: T[] = await this.collection(type)
-        .aggregate(this.dialect.buildAggregationPipeline(type, qm), { session: this.session })
-        .toArray();
-      return parseDocuments(documents, qm.project, meta);
+      const pipeline = this.dialect.buildAggregationPipeline(type, qm);
+      documents = await this.collection(type).aggregate(pipeline, { session: this.session }).toArray();
+    } else {
+      const cursor = this.collection(type).find({}, { session: this.session });
+
+      if (qm.filter) {
+        const filter = this.dialect.buildFilter(type, qm.filter);
+        cursor.filter(filter);
+      }
+      if (qm.project) {
+        cursor.project(qm.project);
+      }
+      if (qm.sort) {
+        cursor.sort(qm.sort);
+      }
+      if (qm.skip) {
+        cursor.skip(qm.skip);
+      }
+      if (qm.limit) {
+        cursor.limit(qm.limit);
+      }
+
+      documents = await cursor.toArray();
     }
 
-    const cursor = this.collection(type).find({}, { session: this.session });
+    const bodies = parseDocuments(documents, meta);
 
-    if (qm.filter) {
-      const filter = this.dialect.buildFilter(type, qm.filter);
-      cursor.filter(filter);
-    }
-    if (qm.project) {
-      cursor.project(qm.project);
-    }
-    if (qm.sort) {
-      cursor.sort(qm.sort);
-    }
-    if (qm.skip) {
-      cursor.skip(qm.skip);
-    }
-    if (qm.limit) {
-      cursor.limit(qm.limit);
-    }
+    await this.populateToManyRelations(type, bodies, qm.populate);
 
-    const documents: T[] = await cursor.toArray();
-
-    return parseDocuments(documents, qm.project, meta);
+    return bodies;
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
@@ -116,17 +120,14 @@ export class MongodbQuerier extends Querier<ObjectId> {
   }
 }
 
-function parseDocuments<T>(docs: T[], project: QueryProject<T>, meta: EntityMeta<T>) {
-  return docs.map((doc) => parseDocument<T>(doc, project, meta));
+function parseDocuments<T>(docs: T[], meta: EntityMeta<T>) {
+  return docs.map((doc) => parseDocument<T>(doc, meta));
 }
 
-function parseDocument<T>(doc: any, project: QueryProject<T>, meta: EntityMeta<T>) {
+function parseDocument<T>(doc: any, meta: EntityMeta<T>) {
   if (!doc) {
     return;
   }
-  const hasProjectId = !project || project[meta.id.property] || !Object.keys(project).length;
-  if (hasProjectId) {
-    doc[meta.id.property] = doc._id;
-  }
+  doc[meta.id.property] = doc._id;
   return doc as T;
 }
