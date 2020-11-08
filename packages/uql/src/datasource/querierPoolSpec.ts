@@ -284,8 +284,8 @@ export abstract class QuerierPoolSpec {
       populate: { itemsAdjustments: {}, user: {} },
     });
 
-    expect(inventoryAdjustment).toEqual({
-      company: '5f7c91c3e5b60d3681f31cb4',
+    expect(inventoryAdjustment).toMatchObject({
+      company: company.id,
       description: 'some inventory adjustment',
       itemsAdjustments: undefined,
       user: {
