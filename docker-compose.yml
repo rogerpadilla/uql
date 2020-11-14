@@ -12,7 +12,7 @@ services:
       - '3306:3306'
     container_name: 'uql-mysql-8'
   # postgres-9:
-  #   image: postgres:9.6.18
+  #   image: postgres:9.6.20
   #   environment:
   #     POSTGRES_USER: test
   #     POSTGRES_PASSWORD: test
@@ -21,7 +21,7 @@ services:
   #     - '5432:5432'
   #   container_name: uql-postgres-9
   postgres-12:
-    image: postgres:12.4
+    image: postgres:12.5
     environment:
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test

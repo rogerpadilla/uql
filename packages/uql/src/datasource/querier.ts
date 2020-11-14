@@ -33,14 +33,14 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
 
   findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T>, opts?: QueryOptions) {
     const meta = getEntityMeta(type);
-    return this.findOne(type, { ...qo, filter: { [meta.id.property]: id } }, opts);
+    return this.findOne(type, { ...qo, filter: { [`${meta.name}.${meta.id.name}`]: id } }, opts);
   }
 
   abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
 
   removeOneById<T>(type: { new (): T }, id: ID) {
     const meta = getEntityMeta(type);
-    return this.remove(type, { [meta.id.property]: id });
+    return this.remove(type, { [meta.id.name]: id });
   }
 
   abstract count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number>;

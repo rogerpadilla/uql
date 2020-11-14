@@ -18,8 +18,8 @@
     "test.it": "jest --testMatch '**/*.it.ts'",
     "test.it.watch": "npm run test.it -- --watchAll",
     "test.watch": "jest --watchAll",
-    "test.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=mongodbQuerierPool.it.ts",
-    "rs": "run-rs -v 4.2.9 -l ubuntu1804"
+    "test.watch.pattern": "npm run test.all -- --watchAll --testPathPattern=.*QuerierPool.it.ts",
+    "rs": "run-rs -v 4.2.10 -l ubuntu1804"
   },
   "commitlint": {
     "extends": [
@@ -41,8 +41,8 @@
     "@commitlint/cli": "^11.0.0",
     "@commitlint/config-conventional": "^11.0.0",
     "@types/jest": "^26.0.15",
-    "@typescript-eslint/eslint-plugin": "^4.6.1",
-    "@typescript-eslint/parser": "^4.6.1",
+    "@typescript-eslint/eslint-plugin": "^4.7.0",
+    "@typescript-eslint/parser": "^4.7.0",
     "concurrently": "^5.3.0",
     "conventional-changelog-cli": "^2.1.1",
     "coveralls": "^3.1.0",
@@ -57,7 +57,7 @@
     "rimraf": "^3.0.2",
     "run-rs": "0.6.2",
     "semantic-release": "^17.2.2",
-    "ts-jest": "^26.4.3",
+    "ts-jest": "^26.4.4",
     "ts-node": "^9.0.0",
     "ts-node-dev": "^1.0.0",
     "typescript": "^4.0.5"

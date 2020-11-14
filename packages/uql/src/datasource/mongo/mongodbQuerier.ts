@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { getEntityMeta } from 'uql/decorator';
-import { QueryFilter, Query, EntityMeta, QueryProject } from 'uql/type';
+import { QueryFilter, Query, EntityMeta, QueryProject, QueryOne, QueryOptions } from 'uql/type';
 import { Querier } from '../querier';
 import { MongoDialect } from './mongoDialect';
 
@@ -63,6 +63,11 @@ export class MongodbQuerier extends Querier<ObjectId> {
     await this.populateToManyRelations(type, bodies, qm.populate);
 
     return bodies;
+  }
+
+  findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>, opts?: QueryOptions) {
+    const meta = getEntityMeta(type);
+    return this.findOne(type, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {

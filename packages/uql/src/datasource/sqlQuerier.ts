@@ -49,7 +49,7 @@ export abstract class SqlQuerier<ID = any> extends Querier<ID> {
   }
 
   async query<T>(query: string) {
-    log(`\nquery: ${query}\n`, 'info');
+    log(`\nquery: ${query}\n`);
     const res: [T] = await this.conn.query(query);
     return res[0];
   }

@@ -13,7 +13,7 @@ export class SqliteQuerier extends SqlQuerier {
   }
 
   async query<T = ISqlite.RunResult>(query: string) {
-    log(`\nquery: ${query}\n`, 'info');
+    log(`\nquery: ${query}\n`);
     const res = await this.conn.query(query);
     return (res as unknown) as T;
   }

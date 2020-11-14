@@ -179,13 +179,6 @@ export abstract class SqlDialect {
     return { joinsSelect, joinsTables };
   }
 
-  group<T>(fields: (keyof T)[]): string {
-    if (!fields?.length) {
-      return '';
-    }
-    return ` GROUP BY ${this.escapeId(fields)}`;
-  }
-
   where<T>(
     type: { new (): T },
     filter: QueryFilter<T>,
@@ -263,6 +256,13 @@ export abstract class SqlDialect {
       default:
         throw new TypeError(`unknown operator: ${operator}`);
     }
+  }
+
+  group<T>(fields: (keyof T)[]): string {
+    if (!fields?.length) {
+      return '';
+    }
+    return ` GROUP BY ${this.escapeId(fields)}`;
   }
 
   sort<T>(sort: QuerySort<T>): string {

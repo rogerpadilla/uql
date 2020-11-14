@@ -10,7 +10,7 @@ export class PostgresQuerier extends SqlQuerier {
   }
 
   async query<T>(sql: string) {
-    log(`\nquery: ${sql}\n`, 'info');
+    log(`\nquery: ${sql}\n`);
     const res: { rows: T } = await this.conn.query(sql);
     return res.rows;
   }

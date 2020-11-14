@@ -285,14 +285,12 @@ export abstract class QuerierPoolSpec {
     });
 
     expect(inventoryAdjustment).toMatchObject({
-      company: company.id,
       description: 'some inventory adjustment',
       itemsAdjustments: undefined,
       user: {
         email: 'someemaila@example.com',
         name: 'Some Name A',
         password: '123456789a!',
-        status: null,
       },
     });
   }

@@ -320,7 +320,7 @@ describe('persistence', () => {
     const resp1 = await repository.findOneById(1);
     expect(resp1).toEqual(mock);
     expect(querier.query).toBeCalledTimes(1);
-    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `User` WHERE `id` = 1 LIMIT 1');
+    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `User` WHERE `User`.`id` = 1 LIMIT 1');
     expect(querier.beginTransaction).not.toBeCalled();
     expect(querier.commitTransaction).not.toBeCalled();
     expect(querier.rollbackTransaction).not.toBeCalled();
