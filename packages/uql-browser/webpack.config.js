@@ -59,7 +59,7 @@ module.exports = (env, argv) => {
 
 class DtsBundlePlugin {
   apply(compiler) {
-    compiler.plugin('done', () => {
+    compiler.hooks.done.tapAsync('DtsBundlePlugin', (compilation, callback) => {
       const rootDir = path.resolve(__dirname);
       const dts = require('dts-bundle');
       const rimraf = require('rimraf');
@@ -75,6 +75,7 @@ class DtsBundlePlugin {
         if (err) {
           console.error(err);
         }
+        callback(err);
       });
     });
   }
