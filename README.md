@@ -63,7 +63,7 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from 'uql/decorator';
+import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from 'uql/entity/decorator';
 
 /**
  * an abstract class can (optionally) be used as a template for the entities
@@ -177,7 +177,7 @@ export class Tax extends BaseEntity {
 
 ```typescript
 import { initUql } from 'uql/config';
-import { GenericServerRepository } from 'uql/datasource';
+import { GenericServerRepository } from 'uql/repository';
 
 initUql({
   datasource: {
@@ -196,14 +196,15 @@ initUql({
 
 ```typescript
 import { Querier } from 'uql/type';
-import { Transactional, InjectQuerier, getServerRepository } from 'uql/datasource';
+import { Transactional, InjectQuerier } from 'uql/querier/decorator';
+import { getServerRepository } from 'uql/repository';
 
 export class ConfirmationService {
   // declarate a transaction
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     const userRepository = getServerRepository(User);
-    const confirmationRepository = getServerRepository(User);
+    const confirmationRepository = getServerRepository(Confirmation);
 
     if (body.type === 'register') {
       const newUser: User = {
@@ -225,11 +226,11 @@ export class ConfirmationService {
 ## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
 
 ```typescript
-import { getQuerier } from 'uql/datasource';
+import { getQuerier } from 'uql/querier';
 
 // ...then inside any of your functions
 
-const querier = getQuerier();
+const querier = await getQuerier();
 
 try {
   // programmatically start a transaction

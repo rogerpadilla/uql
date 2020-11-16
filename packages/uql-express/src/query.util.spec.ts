@@ -1,5 +1,5 @@
 import { Query, QueryStringified } from 'uql/type';
-import { Item } from 'uql/mock';
+import { Item } from 'uql/test';
 import { parseQuery } from './query.util';
 
 it('buildQuery -- empty', () => {

@@ -1,5 +1,5 @@
 import { Query } from 'uql/type';
-import { Item, User } from 'uql/mock';
+import { Item, User } from 'uql/test';
 import { stringifyQuery, stringifyQueryParameter } from './query.util';
 
 it('stringifyQuery -- empty', () => {

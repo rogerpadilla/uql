@@ -1,4 +1,4 @@
-import { Item, Storehouse, ItemAdjustment } from 'uql/mock';
+import { Item, Storehouse, ItemAdjustment } from 'uql/test';
 import { mapRows } from './rowsMapper.util';
 
 it('map rows - empty', () => {

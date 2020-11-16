@@ -1,8 +1,8 @@
-import { getEntityMeta } from 'uql/decorator';
+import { getEntityMeta } from 'uql/entity/decorator';
 import { Query, QueryFilter, QueryOne, EntityMeta } from 'uql/type';
 import { formatKebabCase } from 'uql/util';
-import { get, post, put, remove } from '../http';
 import { RequestOptions, ClientRepository, RequestFindOptions } from '../type';
+import { get, post, put, remove } from '../http';
 import { stringifyQuery, stringifyQueryParameter } from './query.util';
 
 export class GenericClientRepository<T, ID = any> implements ClientRepository<T, ID> {

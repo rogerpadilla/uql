@@ -59,7 +59,7 @@ module.exports = (env, argv) => {
 
 class DtsBundlePlugin {
   apply(compiler) {
-    compiler.hooks.done.tapAsync('DtsBundlePlugin', (compilation, callback) => {
+    compiler.hooks.done.tapAsync('DtsBundlePlugin', () => {
       const rootDir = path.resolve(__dirname);
       const dts = require('dts-bundle');
       const rimraf = require('rimraf');
@@ -71,12 +71,7 @@ class DtsBundlePlugin {
         outputAsModuleFolder: true,
       });
 
-      rimraf(`${outDir}/{uql,uql-browser}`, {}, (err) => {
-        if (err) {
-          console.error(err);
-        }
-        callback(err);
-      });
+      rimraf.sync(`${outDir}/{uql,uql-browser}`);
     });
   }
 }

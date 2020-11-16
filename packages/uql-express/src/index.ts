@@ -3,7 +3,7 @@ import * as express from 'express';
 
 import { getUqlOptions, log } from 'uql/config';
 import { getServerRepository } from 'uql/container';
-import { getEntities } from 'uql/decorator';
+import { getEntities } from 'uql/entity/decorator';
 import { Query } from 'uql/type';
 import { formatKebabCase } from 'uql/util';
 import { parseQuery } from './query.util';
