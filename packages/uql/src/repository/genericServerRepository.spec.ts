@@ -2,11 +2,10 @@ import { setUqlOptions } from 'uql/config';
 import { getServerRepository } from 'uql/container';
 import { User, Item, InventoryAdjustment } from 'uql/test';
 import { QueryUpdateResult, ServerRepository } from 'uql/type';
-import { Transactional } from 'uql/querier/decorator';
 import { MySqlQuerier } from 'uql/driver/mysql/mysqlQuerier';
 import { MySql2QuerierPool } from 'uql/driver/mysql/mysql2QuerierPool';
-import { SqlQuerier, Querier } from 'uql/querier';
-import { Repository } from './decorator';
+import { SqlQuerier } from 'uql/querier';
+import { CustomRepository } from './decorator';
 import { GenericServerRepository } from './genericServerRepository';
 
 describe('persistence', () => {
@@ -508,17 +507,6 @@ describe('persistence', () => {
     expect(querier.release).toBeCalledTimes(1);
     expect(querier.rollbackTransaction).toBeCalledTimes(1);
   });
-
-  it('missing @InjectQuerier()', () => {
-    expect(() => {
-      class ItemRepository {
-        @Transactional({ propagation: 'required' })
-        insertOne(body: Item, querier?: Querier) {
-          return Promise.resolve<any>(undefined);
-        }
-      }
-    }).toThrow(`missing decorator @InjectQuerier() in one of the parameters of 'ItemRepository.insertOne'`);
-  });
 });
 
 describe('declaration', () => {
@@ -545,7 +533,7 @@ describe('declaration', () => {
 
     setUqlOptions({ defaultRepositoryClass: SomeGenericRepository });
 
-    @Repository()
+    @CustomRepository()
     class UserRepository extends GenericServerRepository<User, number> {
       constructor() {
         super(User);
