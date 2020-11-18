@@ -176,7 +176,7 @@ export class Tax extends BaseEntity {
 ## <a name="configuration"></a>:gear: Configuration
 
 ```typescript
-import { setOptions } from 'uql/options';
+import { setOptions } from 'uql';
 import { GenericRepository } from 'uql/repository';
 
 setOptions({
