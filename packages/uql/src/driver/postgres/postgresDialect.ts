@@ -1,6 +1,6 @@
 import { getEntityMeta } from 'uql/entity/decorator';
 import { QueryComparisonOperator, QueryTextSearchOptions, QuerySimpleValue } from 'uql/type';
-import { SqlDialect } from 'uql/querier';
+import { SqlDialect } from '../sqlDialect';
 
 export class PostgresDialect extends SqlDialect {
   readonly beginTransactionCommand = 'BEGIN';

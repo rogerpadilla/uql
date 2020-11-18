@@ -1,9 +1,7 @@
-import { getUqlOptions, setUqlOptions } from 'uql/config';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, Tax, TaxCategory, User } from 'uql/test';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, Spec, Tax, TaxCategory, User } from 'uql/test';
 import { QuerierContract, QuerierPool, QuerySort } from 'uql/type';
-import { getQuerier } from './querierPool';
 
-export abstract class QuerierPoolSpec {
+export abstract class QuerierPoolSpec implements Spec {
   readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Company, User] as const;
   querier: QuerierContract;
 
@@ -306,17 +304,6 @@ export abstract class QuerierPoolSpec {
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
-  }
-
-  async shouldThrowWhenNoDatasourceConfig() {
-    await expect(getQuerier()).rejects.toThrow('datasource configuration has not been set');
-  }
-
-  async shouldThrowWhenUnknownDriver() {
-    const opts = getUqlOptions();
-    setUqlOptions({ datasource: { driver: 'xyz' as any } });
-    await expect(getQuerier()).rejects.toThrow(`unknown driver 'xyz'`);
-    setUqlOptions(opts);
   }
 
   abstract createTables(): void;

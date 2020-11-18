@@ -1,3 +1,2 @@
-export * from './container';
-export * from './genericClientRepository';
+export * from './genericHttpRepository';
 export * from './query.util';

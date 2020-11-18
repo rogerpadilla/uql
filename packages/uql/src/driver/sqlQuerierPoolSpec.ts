@@ -1,7 +1,7 @@
 import { escapeId as sqlstringEscapeId } from 'sqlstring';
 import { getEntityMeta } from 'uql/entity/decorator';
 import { QuerierPool } from 'uql/type';
-import { QuerierPoolSpec } from './querierPoolSpec';
+import { QuerierPoolSpec } from 'uql/querier/querierPoolSpec';
 
 export abstract class SqlQuerierPoolSpec extends QuerierPoolSpec {
   readonly primaryKeyType: string = 'BIGINT PRIMARY KEY AUTO_INCREMENT';

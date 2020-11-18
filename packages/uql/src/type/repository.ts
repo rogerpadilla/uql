@@ -15,7 +15,7 @@ export interface IsomorphicRepository<T, ID = any> {
   count(filter: QueryFilter<T>): Promise<any>;
 }
 
-export interface ServerRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
+export interface Repository<T, ID = any> extends IsomorphicRepository<T, ID> {
   insertOne(body: T, querier?: QuerierContract<ID>): Promise<ID>;
   updateOneById(id: ID, body: T, querier?: QuerierContract<ID>): Promise<number>;
   saveOne(body: T, querier?: QuerierContract<ID>): Promise<ID>;

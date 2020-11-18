@@ -1,6 +1,6 @@
-import { getIsomorphicRepository } from 'uql/container';
-import { ClientRepository } from '../type';
+import { getIsomorphicRepository } from 'uql/repository';
+import { HttpRepository } from '../type';
 
-export function getClientRepository<T>(type: { new (): T }): ClientRepository<T> {
+export function getRepository<T>(type: { new (): T }): HttpRepository<T> {
   return getIsomorphicRepository(type);
 }

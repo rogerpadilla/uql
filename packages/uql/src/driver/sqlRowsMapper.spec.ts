@@ -1,5 +1,5 @@
 import { Item, Storehouse, ItemAdjustment } from 'uql/test';
-import { mapRows } from './rowsMapper.util';
+import { mapRows } from './sqlRowsMapper';
 
 it('map rows - empty', () => {
   const res1 = mapRows(undefined);

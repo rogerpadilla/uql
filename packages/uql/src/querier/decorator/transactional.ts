@@ -1,6 +1,6 @@
+import { getQuerier } from 'uql/querier';
 import { QuerierContract } from 'uql/type';
 import { Querier } from '../querier';
-import { getQuerier } from '../querierPool';
 import { getInjectQuerier } from './injectQuerier';
 
 export function Transactional(opts: { readonly propagation: 'supported' | 'required' } = { propagation: 'supported' }) {

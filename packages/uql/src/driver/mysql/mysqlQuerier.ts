@@ -1,5 +1,5 @@
 import { QuerierPoolConnection } from 'uql/type';
-import { SqlQuerier } from 'uql/querier';
+import { SqlQuerier } from '../sqlQuerier';
 import { MySqlDialect } from './mysqlDialect';
 
 export class MySqlQuerier extends SqlQuerier {

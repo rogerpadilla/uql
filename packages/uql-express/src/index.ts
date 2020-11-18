@@ -1,11 +1,12 @@
 import { Request } from 'express-serve-static-core';
 import * as express from 'express';
 
-import { getUqlOptions, log } from 'uql/config';
-import { getServerRepository } from 'uql/container';
+import { log, getOptions } from 'uql/options';
 import { getEntities } from 'uql/entity/decorator';
 import { Query } from 'uql/type';
 import { formatKebabCase } from 'uql/util';
+
+import { getRepository } from 'uql/repository/container';
 import { parseQuery } from './query.util';
 
 export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
@@ -29,41 +30,41 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
 }
 
 export function buildCrudRouter<T>(type: { new (): T }, extendQuery?: ExtendQuery) {
-  const opts = getUqlOptions();
+  const opts = getOptions();
 
   const router = express.Router();
 
   router.post('/', async (req, res) => {
-    const data = await getServerRepository(type).insertOne(req.body);
+    const data = await getRepository(type).insertOne(req.body);
     res.json({ data });
   });
 
   router.put('/:id', async (req, res) => {
-    await getServerRepository(type).updateOneById(req.params.id, req.body);
+    await getRepository(type).updateOneById(req.params.id, req.body);
     res.json({ data: req.params.id });
   });
 
   router.get('/one', async (req, res) => {
     const qm = assembleQuery<T>(type, req, extendQuery);
-    const data = await getServerRepository(type).findOne(qm);
+    const data = await getRepository(type).findOne(qm);
     res.json({ data });
   });
 
   router.get('/count', async (req, res) => {
     const qm = assembleQuery<T>(type, req, extendQuery);
-    const data = await getServerRepository(type).count(qm.filter);
+    const data = await getRepository(type).count(qm.filter);
     res.json({ data });
   });
 
   router.get('/:id', async (req, res) => {
     const qm = assembleQuery<T>(type, req, extendQuery);
-    const data = await getServerRepository(type).findOneById(req.params.id, qm);
+    const data = await getRepository(type).findOneById(req.params.id, qm);
     res.json({ data });
   });
 
   router.get('/', async (req, res) => {
     const qm = assembleQuery<T>(type, req, extendQuery);
-    const repository = getServerRepository(type);
+    const repository = getRepository(type);
     const json: { data?: T[]; count?: number } = {};
     const dataPromise = repository.find(qm);
     if (req.query.count || (opts.autoCount && req.query.count === undefined)) {
@@ -77,13 +78,13 @@ export function buildCrudRouter<T>(type: { new (): T }, extendQuery?: ExtendQuer
   });
 
   router.delete('/:id', async (req, res) => {
-    const data = await getServerRepository(type).removeOneById(req.params.id);
+    const data = await getRepository(type).removeOneById(req.params.id);
     res.json({ data });
   });
 
   router.delete('/', async (req, res) => {
     const qm = assembleQuery(type, req, extendQuery);
-    const data = await getServerRepository(type).remove(qm.filter);
+    const data = await getRepository(type).remove(qm.filter);
     res.json({ data });
   });
 

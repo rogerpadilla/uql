@@ -25,7 +25,7 @@ type RequestErrorNotification = { readonly phase: 'error' } & RequestErrorRespon
 export type RequestNotification = RequestSuccessNotification | RequestErrorNotification;
 export type RequestCallback = (msg: RequestNotification) => any;
 
-export interface ClientRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
+export interface HttpRepository<T, ID = any> extends IsomorphicRepository<T, ID> {
   insertOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
   updateOneById(id: ID, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
   saveOne(body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;

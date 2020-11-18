@@ -2,7 +2,7 @@ import { Query, QueryStringified } from 'uql/type';
 import { Item } from 'uql/test';
 import { parseQuery } from './query.util';
 
-it('buildQuery -- empty', () => {
+it('parseQuery -- empty', () => {
   const res1 = parseQuery(undefined);
   expect(res1).toEqual({});
   const res2 = parseQuery({});
@@ -16,6 +16,8 @@ it('parseQuery stringified', () => {
     populate: '{ "measureUnit": {"project":{"id":1, "name":1}}, "tax": {"project":{"id":1, "name":1}} }',
     group: '["company"]',
     sort: '{ "name": -1, "company": 1 }',
+    skip: '200',
+    limit: '100',
   };
   const expected: Query<Item> = {
     project: { id: 1, name: 1 },
@@ -26,20 +28,9 @@ it('parseQuery stringified', () => {
     },
     group: ['company'],
     sort: { name: -1, company: 1 },
-  };
-  const result = parseQuery(qms);
-  expect(result).toEqual(expected);
-});
-
-it('parseQuery limit', () => {
-  const qm: QueryStringified = {
-    skip: '200',
-    limit: '100',
-  };
-  const expected: Query<Item> = {
     skip: 200,
     limit: 100,
   };
-  const result = parseQuery(qm);
+  const result = parseQuery(qms);
   expect(result).toEqual(expected);
 });

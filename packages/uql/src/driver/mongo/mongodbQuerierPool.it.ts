@@ -1,4 +1,4 @@
-import { createSpec } from 'uql/test/test.util';
+import { createSpec } from 'uql/test';
 import { getEntityMeta } from 'uql/entity/decorator';
 import { QuerierPoolSpec } from 'uql/querier/querierPoolSpec';
 import { MongodbQuerierPool } from './mongodbQuerierPool';

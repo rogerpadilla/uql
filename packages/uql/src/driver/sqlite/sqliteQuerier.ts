@@ -1,9 +1,8 @@
 import { ISqlite } from 'sqlite';
-import { log } from 'uql/config';
 import { getEntityMeta } from 'uql/entity/decorator';
 import { Query, QueryFilter, QueryOptions } from 'uql/type';
-import { mapRows } from 'uql/util';
-import { SqlQuerier } from 'uql/querier';
+import { mapRows } from '../sqlRowsMapper';
+import { SqlQuerier } from '../sqlQuerier';
 import { Sqlit3Connection } from './sqlite3QuerierPool';
 import { SqliteDialect } from './sqliteDialect';
 
@@ -13,7 +12,6 @@ export class SqliteQuerier extends SqlQuerier {
   }
 
   async query<T = ISqlite.RunResult>(query: string) {
-    log(`\nquery: ${query}\n`);
     const res = await this.conn.query(query);
     return (res as unknown) as T;
   }

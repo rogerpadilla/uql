@@ -1,6 +1,5 @@
-import { Item, User } from 'uql/test';
-import { createSpec } from 'uql/test/test.util';
-import { SqlDialectSpec } from 'uql/querier/sqlDialectSpec';
+import { Item, User, createSpec } from 'uql/test';
+import { SqlDialectSpec } from '../sqlDialectSpec';
 import { SqliteDialect } from './sqliteDialect';
 
 class SqliteDialectSpec extends SqlDialectSpec {

@@ -1,5 +1,5 @@
 import { createSpec } from 'uql/test';
-import { SqlQuerierPoolSpec } from 'uql/querier/sqlQuerierPoolSpec';
+import { SqlQuerierPoolSpec } from '../sqlQuerierPoolSpec';
 import { Sqlite3QuerierPool } from './sqlite3QuerierPool';
 
 export class Sqlite3QuerierPoolSpec extends SqlQuerierPoolSpec {

@@ -1,8 +1,7 @@
-import { log } from 'uql/config';
 import { getEntityMeta } from 'uql/entity/decorator';
 import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from 'uql/type';
-import { mapRows } from 'uql/util';
-import { Querier } from './querier';
+import { Querier } from 'uql/querier';
+import { mapRows } from './sqlRowsMapper';
 import { SqlDialect } from './sqlDialect';
 
 export abstract class SqlQuerier<ID = any> extends Querier<ID> {
@@ -49,7 +48,6 @@ export abstract class SqlQuerier<ID = any> extends Querier<ID> {
   }
 
   async query<T>(query: string) {
-    log(`\nquery: ${query}\n`);
     const res: [T] = await this.conn.query(query);
     return res[0];
   }

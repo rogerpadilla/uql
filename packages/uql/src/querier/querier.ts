@@ -90,12 +90,12 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
     }
   }
 
-  private async insertRelations<T>(type: { new (): T }, body: T) {
+  protected async insertRelations<T>(type: { new (): T }, body: T) {
     const meta = getEntityMeta(type);
 
     const id = body[meta.id.property];
 
-    const insertProms = this.filterIndependentRelations(meta, body).map((prop) => {
+    const insertProms = filterIndependentRelations(meta, body).map((prop) => {
       const relOpts = meta.relations[prop];
       const relType = relOpts.type();
       if (relOpts.cardinality === 'oneToOne') {
@@ -118,12 +118,12 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
     await Promise.all<any>(insertProms);
   }
 
-  private async updateRelations<T>(type: { new (): T }, body: T) {
+  protected async updateRelations<T>(type: { new (): T }, body: T) {
     const meta = getEntityMeta(type);
 
     const id = body[meta.id.property];
 
-    const removeProms = this.filterIndependentRelations(meta, body).map(async (prop) => {
+    const removeProms = filterIndependentRelations(meta, body).map(async (prop) => {
       const relOpts = meta.relations[prop];
       const relType = relOpts.type();
       if (relOpts.cardinality === 'oneToOne') {
@@ -151,11 +151,11 @@ export abstract class Querier<ID = any> implements QuerierContract<ID> {
 
     await Promise.all(removeProms);
   }
+}
 
-  private filterIndependentRelations<T>(meta: EntityMeta<T>, body: T) {
-    return Object.keys(body).filter((prop) => {
-      const relOpts = meta.relations[prop];
-      return relOpts && relOpts.cardinality !== 'manyToOne';
-    });
-  }
+function filterIndependentRelations<T>(meta: EntityMeta<T>, body: T) {
+  return Object.keys(body).filter((prop) => {
+    const relOpts = meta.relations[prop];
+    return relOpts && relOpts.cardinality !== 'manyToOne';
+  });
 }

@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory, createSpec, Spec } from 'uql/test';
+import { User, Item, ItemAdjustment, TaxCategory, Spec, createSpec } from 'uql/test';
 import { Query, QueryProject, QuerySort } from 'uql/type';
 import { PostgresDialect } from './postgresDialect';
 

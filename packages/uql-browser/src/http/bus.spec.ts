@@ -1,7 +1,7 @@
 import { RequestNotification } from '../type';
 import { on, notify } from './bus';
 
-it('runQuery', () => {
+it('bus', () => {
   const off = on((msg) => {
     const expected: RequestNotification = {
       phase: 'start',

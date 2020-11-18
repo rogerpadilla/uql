@@ -1,22 +1,19 @@
-import { setUqlOptions } from 'uql/config';
-import { getServerRepository } from 'uql/container';
-import { User, Item, InventoryAdjustment } from 'uql/test';
-import { QueryUpdateResult, ServerRepository } from 'uql/type';
-import { MySqlQuerier } from 'uql/driver/mysql/mysqlQuerier';
-import { MySql2QuerierPool } from 'uql/driver/mysql/mysql2QuerierPool';
-import { SqlQuerier } from 'uql/querier';
-import { CustomRepository } from './decorator';
-import { GenericServerRepository } from './genericServerRepository';
+import { User, InventoryAdjustment } from 'uql/test';
+import { QueryUpdateResult, Repository } from 'uql/type';
+import { SqlQuerier } from 'uql/driver';
+import { MySqlQuerier, MySql2QuerierPool } from 'uql/driver/mysql';
+import { init } from 'uql/options';
+import { GenericRepository } from './genericServerRepository';
 
 describe('persistence', () => {
   let mockRes: User[] | QueryUpdateResult | { count: number }[];
   let querier: SqlQuerier;
-  let repository: ServerRepository<User>;
+  let repository: Repository<User>;
   const originalGetQuerier = MySql2QuerierPool.prototype.getQuerier;
 
   beforeEach(() => {
     mockRes = undefined;
-    setUqlOptions({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericServerRepository });
+    init({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericRepository });
     MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
     querier = new MySqlQuerier(undefined);
@@ -31,7 +28,7 @@ describe('persistence', () => {
     jest.spyOn(querier, 'rollbackTransaction');
     jest.spyOn(querier, 'release').mockImplementation(() => Promise.resolve());
 
-    repository = new GenericServerRepository(User);
+    repository = new GenericRepository(User);
     jest.spyOn(repository, 'insertOne');
     jest.spyOn(repository, 'updateOneById');
   });
@@ -89,7 +86,7 @@ describe('persistence', () => {
   it('insertOne cascade oneToMany', async () => {
     const mock: QueryUpdateResult = { insertId: 1 };
     mockRes = mock;
-    const repo = new GenericServerRepository(InventoryAdjustment);
+    const repo = new GenericRepository(InventoryAdjustment);
     const resp = await repo.insertOne({
       description: 'some description',
       itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
@@ -197,7 +194,7 @@ describe('persistence', () => {
   it('updateOneById cascade oneToMany', async () => {
     const mock: QueryUpdateResult = { affectedRows: 1 };
     mockRes = mock;
-    const repo = new GenericServerRepository(InventoryAdjustment);
+    const repo = new GenericRepository(InventoryAdjustment);
     const resp = await repo.updateOneById(1, {
       description: 'some description',
       itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
@@ -233,7 +230,7 @@ describe('persistence', () => {
   it('updateOneById cascade oneToMany null', async () => {
     const mock: QueryUpdateResult = { affectedRows: 1 };
     mockRes = mock;
-    const repo = new GenericServerRepository(InventoryAdjustment);
+    const repo = new GenericRepository(InventoryAdjustment);
     const resp = await repo.updateOneById(1, {
       description: 'some description',
       itemsAdjustments: null,
@@ -344,7 +341,7 @@ describe('persistence', () => {
       { id: '456', description: 'something b', user: '1' },
     ];
     mockRes = mock;
-    const repository = new GenericServerRepository(InventoryAdjustment);
+    const repository = new GenericRepository(InventoryAdjustment);
     await repository.findOne({ filter: { user: '1' }, populate: { itemsAdjustments: {} } });
     expect(querier.query).nthCalledWith(
       1,
@@ -372,7 +369,7 @@ describe('persistence', () => {
       { id: '456', description: 'something b', user: '1' },
     ];
     mockRes = mock;
-    const repository = new GenericServerRepository(InventoryAdjustment);
+    const repository = new GenericRepository(InventoryAdjustment);
     await repository.find({ filter: { user: '1' }, populate: { itemsAdjustments: {} } });
     expect(querier.query).nthCalledWith(
       1,
@@ -506,43 +503,5 @@ describe('persistence', () => {
     expect(querier.commitTransaction).toBeCalledTimes(1);
     expect(querier.release).toBeCalledTimes(1);
     expect(querier.rollbackTransaction).toBeCalledTimes(1);
-  });
-});
-
-describe('declaration', () => {
-  beforeEach(() => {
-    setUqlOptions({});
-  });
-
-  it('generic', () => {
-    setUqlOptions({
-      defaultRepositoryClass: GenericServerRepository,
-    });
-    const repository = getServerRepository(User);
-    expect(repository).toBeInstanceOf(GenericServerRepository);
-  });
-
-  it('no repository', () => {
-    expect(() => getServerRepository(User)).toThrow(
-      'either a generic repository or a specific repository (for the type User) must be registered first'
-    );
-  });
-
-  it('@Repository()', () => {
-    class SomeGenericRepository extends GenericServerRepository<any, number> {}
-
-    setUqlOptions({ defaultRepositoryClass: SomeGenericRepository });
-
-    @CustomRepository()
-    class UserRepository extends GenericServerRepository<User, number> {
-      constructor() {
-        super(User);
-      }
-    }
-
-    expect(getServerRepository(Item)).toBeInstanceOf(SomeGenericRepository);
-    expect(getServerRepository(Item)).not.toBeInstanceOf(UserRepository);
-    expect(getServerRepository(User)).toBeInstanceOf(UserRepository);
-    expect(getServerRepository(User)).not.toBeInstanceOf(SomeGenericRepository);
   });
 });

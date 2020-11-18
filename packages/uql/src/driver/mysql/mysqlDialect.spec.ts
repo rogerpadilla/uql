@@ -1,5 +1,5 @@
-import { createSpec } from 'uql/test/test.util';
-import { SqlDialectSpec } from 'uql/querier/sqlDialectSpec';
+import { createSpec } from 'uql/test';
+import { SqlDialectSpec } from '../sqlDialectSpec';
 import { MySqlDialect } from './mysqlDialect';
 
 export class MySqlDialectSpec extends SqlDialectSpec {
