@@ -27,3 +27,5 @@ export function setCustomRepository<T>(repository: IsomorphicRepository<T>): voi
 export function clearRepositoriesCache() {
   repositoriesCache = new WeakMap<{ new (): unknown }, IsomorphicRepository<any>>();
 }
+
+clearRepositoriesCache();

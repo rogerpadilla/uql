@@ -1,5 +1,5 @@
 import { QuerierPoolOptions } from './querierPool';
-import { GenericRepositoryConstructor } from './repository';
+import { GenericRepositoryClass } from './repository';
 
 export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
 
@@ -8,7 +8,7 @@ export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOption
 export type UqlOptions = {
   autoCount?: boolean;
   datasource?: DatasourceOptions;
-  defaultRepositoryClass?: GenericRepositoryConstructor<any>;
+  defaultRepositoryClass?: GenericRepositoryClass<unknown>;
   logger?: UqlLogger;
   debug?: boolean;
 };

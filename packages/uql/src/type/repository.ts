@@ -27,6 +27,4 @@ export interface Repository<T, ID = any> extends IsomorphicRepository<T, ID> {
   count(filter: QueryFilter<T>, querier?: QuerierContract<ID>): Promise<number>;
 }
 
-export type GenericRepositoryConstructor<T, ID = any> = new (type: { new (): T }) => IsomorphicRepository<T, ID>;
-
-export type CustomRepositoryConstructor<T, ID = any> = new () => IsomorphicRepository<T, ID>;
+export type GenericRepositoryClass<T, ID = any> = new (type: { new (): T }) => IsomorphicRepository<T, ID>;
