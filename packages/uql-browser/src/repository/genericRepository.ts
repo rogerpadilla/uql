@@ -5,7 +5,7 @@ import { RequestOptions, HttpRepository, RequestFindOptions } from '../type';
 import { get, post, put, remove } from '../http';
 import { stringifyQuery, stringifyQueryParameter } from './query.util';
 
-export class GenericHttpRepository<T, ID = any> implements HttpRepository<T, ID> {
+export class GenericRepository<T, ID = any> implements HttpRepository<T, ID> {
   readonly meta: EntityMeta<T>;
 
   /**
