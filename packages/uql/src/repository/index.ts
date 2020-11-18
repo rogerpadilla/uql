@@ -1,2 +1,2 @@
-export * from './genericServerRepository';
+export * from './genericRepository';
 export * from './container';

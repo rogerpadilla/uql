@@ -1,9 +1,9 @@
-import { User, InventoryAdjustment } from 'uql/test';
-import { QueryUpdateResult, Repository } from 'uql/type';
-import { SqlQuerier } from 'uql/driver';
-import { MySqlQuerier, MySql2QuerierPool } from 'uql/driver/mysql';
-import { init } from 'uql/options';
-import { GenericRepository } from './genericServerRepository';
+import { User, InventoryAdjustment } from '../test';
+import { QueryUpdateResult, Repository } from '../type';
+import { SqlQuerier } from '../driver';
+import { MySqlQuerier, MySql2QuerierPool } from '../driver/mysql';
+import { setOptions } from '../options';
+import { GenericRepository } from './genericRepository';
 
 describe('persistence', () => {
   let mockRes: User[] | QueryUpdateResult | { count: number }[];
@@ -13,7 +13,7 @@ describe('persistence', () => {
 
   beforeEach(() => {
     mockRes = undefined;
-    init({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericRepository });
+    setOptions({ datasource: { driver: 'mysql2' }, defaultRepositoryClass: GenericRepository });
     MySql2QuerierPool.prototype.getQuerier = () => Promise.resolve(querier as MySqlQuerier);
 
     querier = new MySqlQuerier(undefined);

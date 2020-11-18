@@ -1,5 +1,5 @@
-import { getOptions } from 'uql/options';
-import { IsomorphicRepository, Repository } from 'uql/type';
+import { getOptions } from '../options';
+import { IsomorphicRepository, Repository } from '../type';
 
 let repositoriesCache: WeakMap<{ new (): unknown }, IsomorphicRepository<any>>;
 

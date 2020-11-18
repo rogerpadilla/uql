@@ -1,6 +1,6 @@
 import { Database, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import { QuerierPool, QuerierPoolConnection } from 'uql/type';
+import { QuerierPool, QuerierPoolConnection } from '../../type';
 import { SqliteQuerier } from './sqliteQuerier';
 
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {

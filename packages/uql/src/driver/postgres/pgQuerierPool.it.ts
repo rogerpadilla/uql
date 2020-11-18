@@ -1,4 +1,4 @@
-import { createSpec } from 'uql/test';
+import { createSpec } from '../../test';
 import { SqlQuerierPoolSpec } from '../sqlQuerierPoolSpec';
 import { PgQuerierPool } from './pgQuerierPool';
 import { escapeId as postgresEscapeId } from './postgresDialect';

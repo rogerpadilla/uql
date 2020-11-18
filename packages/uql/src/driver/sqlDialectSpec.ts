@@ -1,6 +1,6 @@
-import { User, Item, ItemAdjustment, TaxCategory, Spec } from 'uql/test';
+import { User, Item, ItemAdjustment, TaxCategory, Spec } from '../test';
 
-import { Query, QueryProject, QuerySort } from 'uql/type';
+import { Query, QueryProject, QuerySort } from '../type';
 import { SqlDialect } from './sqlDialect';
 
 export abstract class SqlDialectSpec implements Spec {

@@ -1,5 +1,5 @@
-import { getEntityMeta } from 'uql/entity/decorator';
-import { EntityMeta, QuerierContract, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate } from 'uql/type';
+import { EntityMeta, QuerierContract, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate } from '../type';
+import { getEntityMeta } from '../entity/decorator';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).

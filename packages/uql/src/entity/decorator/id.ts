@@ -1,4 +1,4 @@
-import { PropertyOptions } from 'uql/type';
+import { PropertyOptions } from '../../type';
 import { defineId } from './definition';
 
 export function Id<T>(opts?: PropertyOptions) {

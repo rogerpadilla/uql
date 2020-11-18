@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from 'uql/type';
+import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../../type';
 
 const holder = globalThis;
 const key = 'uql/entity';

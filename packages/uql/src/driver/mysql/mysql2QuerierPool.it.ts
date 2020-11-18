@@ -1,4 +1,4 @@
-import { createSpec } from 'uql/test';
+import { createSpec } from '../../test';
 import { SqlQuerierPoolSpec } from '../sqlQuerierPoolSpec';
 import { MySql2QuerierPool } from './mysql2QuerierPool';
 

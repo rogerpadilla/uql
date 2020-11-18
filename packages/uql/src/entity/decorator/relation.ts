@@ -4,7 +4,7 @@ import {
   RelationOneToManyOptions,
   RelationManyToOneOptions,
   RelationManyToManyOptions,
-} from 'uql/type';
+} from '../../type';
 import { defineRelation, defineProperty } from './definition';
 
 function Relation<T>(opts: RelationOptions<T>) {

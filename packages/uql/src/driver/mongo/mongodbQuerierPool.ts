@@ -1,5 +1,5 @@
 import * as mongoose from 'mongodb';
-import { QuerierPool, QuerierPoolOptions } from 'uql/type';
+import { QuerierPool, QuerierPoolOptions } from '../../type';
 import { MongodbQuerier } from './mongodbQuerier';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {

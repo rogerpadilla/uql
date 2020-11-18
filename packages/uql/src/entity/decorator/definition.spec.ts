@@ -11,7 +11,7 @@ import {
   ItemAdjustment,
   MeasureUnitCategory,
   Storehouse,
-} from 'uql/test';
+} from '../../test';
 import { Id } from './id';
 import { getEntities, getEntityMeta } from './definition';
 

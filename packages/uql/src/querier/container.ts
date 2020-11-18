@@ -1,5 +1,5 @@
-import { getOptions } from 'uql/options';
-import { QuerierPool, QuerierPoolClass } from 'uql/type';
+import { QuerierPool, QuerierPoolClass } from '../type';
+import { getOptions } from '../options';
 
 let querierPool: QuerierPool;
 
@@ -21,7 +21,7 @@ function getQuerierPool(): QuerierPool {
     throw new TypeError(`unknown driver '${driver}'`);
   }
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const querierPoolConstructor: QuerierPoolClass = require(`uql/driver/${directory}/${driver}QuerierPool`).default;
+  const querierPoolConstructor: QuerierPoolClass = require(`../driver/${directory}/${driver}QuerierPool`).default;
   return new querierPoolConstructor(opts);
 }
 

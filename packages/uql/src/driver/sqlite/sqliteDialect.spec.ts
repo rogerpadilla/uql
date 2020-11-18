@@ -1,4 +1,4 @@
-import { Item, User, createSpec } from 'uql/test';
+import { Item, User, createSpec } from '../../test';
 import { SqlDialectSpec } from '../sqlDialectSpec';
 import { SqliteDialect } from './sqliteDialect';
 

@@ -1,5 +1,5 @@
-import { Spec, createSpec, User } from 'uql/test';
-import { QueryUpdateResult } from 'uql/type';
+import { Spec, createSpec, User } from '../../test';
+import { QueryUpdateResult } from '../../type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 class MySqlQuerierSpec implements Spec {

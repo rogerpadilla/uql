@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { Item, Spec, TaxCategory, User, createSpec } from 'uql/test';
+import { Item, Spec, TaxCategory, User, createSpec } from '../../test';
 import { MongoDialect } from './mongoDialect';
 
 class MongoDialectSpec implements Spec {

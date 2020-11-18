@@ -1,5 +1,5 @@
-import { User, Item, ItemAdjustment, TaxCategory, Spec, createSpec } from 'uql/test';
-import { Query, QueryProject, QuerySort } from 'uql/type';
+import { User, Item, ItemAdjustment, TaxCategory, Spec, createSpec } from '../../test';
+import { Query, QueryProject, QuerySort } from '../../type';
 import { PostgresDialect } from './postgresDialect';
 
 class PostgresDialectSpec implements Spec {

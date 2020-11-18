@@ -1,4 +1,4 @@
-import { QuerierPoolConnection } from 'uql/type';
+import { QuerierPoolConnection } from '../../type';
 import { SqlQuerier } from '../sqlQuerier';
 import { MySqlDialect } from './mysqlDialect';
 

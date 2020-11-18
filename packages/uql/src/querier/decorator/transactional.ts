@@ -1,5 +1,5 @@
-import { getQuerier } from 'uql/querier';
-import { QuerierContract } from 'uql/type';
+import { QuerierContract } from '../../type';
+import { getQuerier } from '../container';
 import { Querier } from '../querier';
 import { getInjectQuerier } from './injectQuerier';
 

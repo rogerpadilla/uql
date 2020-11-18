@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from 'uql/entity/decorator';
+import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne } from '../entity/decorator';
 
 export abstract class BaseEntity<ID = any> {
   @Id()

@@ -1,7 +1,7 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { getEntityMeta } from 'uql/entity/decorator';
-import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from 'uql/type';
-import { Querier } from 'uql/querier';
+import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from '../../type';
+import { Querier } from '../../querier';
+import { getEntityMeta } from '../../entity/decorator';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends Querier<ObjectId> {

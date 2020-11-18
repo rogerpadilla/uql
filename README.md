@@ -176,10 +176,10 @@ export class Tax extends BaseEntity {
 ## <a name="configuration"></a>:gear: Configuration
 
 ```typescript
-import { initUql } from 'uql/config';
-import { GenericServerRepository } from 'uql/repository';
+import { setOptions } from 'uql/options';
+import { GenericRepository } from 'uql/repository';
 
-initUql({
+setOptions({
   datasource: {
     driver: 'pg',
     host: 'localhost',
@@ -187,8 +187,8 @@ initUql({
     password: 'thePassword',
     database: 'theDatabaseName',
   },
-  defaultRepositoryClass: GenericServerRepository,
-  loggingLevel: 'debug',
+  defaultRepositoryClass: GenericRepository,
+  debug: true,
 });
 ```
 
@@ -197,14 +197,14 @@ initUql({
 ```typescript
 import { Querier } from 'uql/type';
 import { Transactional, InjectQuerier } from 'uql/querier/decorator';
-import { getServerRepository } from 'uql/repository';
+import { getRepository } from 'uql/repository';
 
 export class ConfirmationService {
   // declarate a transaction
   @Transactional()
   async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
-    const userRepository = getServerRepository(User);
-    const confirmationRepository = getServerRepository(Confirmation);
+    const userRepository = getRepository(User);
+    const confirmationRepository = getRepository(Confirmation);
 
     if (body.type === 'register') {
       const newUser: User = {
@@ -328,15 +328,15 @@ uql provides a browser plugin to consume the REST APIs.
 2. Initialize uql in your frontend code
 
 ```typescript
-import { initUql, GenericClientRepository, getClientRepository } from 'uql-browser';
+import { setOptions, GenericRepository, getRepository } from 'uql-browser';
 
-initUql({
-  defaultRepositoryClass: GenericClientRepository,
-  loggingLevel: 'debug',
+setOptions({
+  defaultRepositoryClass: GenericRepository,
+  debug: true,
 });
 
 // 'Item' is an entity class
-const lastItems = await getClientRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
+const lastItems = await getRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
 ```
 
 ## <a name="faq"></a>:book: Frequently Asked Questions

@@ -1,5 +1,5 @@
-import { getEntityMeta } from 'uql/entity/decorator';
-import { QueryFilter, QuerierPoolConnection } from 'uql/type';
+import { getEntityMeta } from '../../entity/decorator';
+import { QueryFilter, QuerierPoolConnection } from '../../type';
 import { SqlQuerier } from '../sqlQuerier';
 import { PostgresDialect } from './postgresDialect';
 

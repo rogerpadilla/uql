@@ -1,4 +1,4 @@
-import { Item, Storehouse, ItemAdjustment } from 'uql/test';
+import { Item, Storehouse, ItemAdjustment } from '../test';
 import { mapRows } from './sqlRowsMapper';
 
 it('map rows - empty', () => {

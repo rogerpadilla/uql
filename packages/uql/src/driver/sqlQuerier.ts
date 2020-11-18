@@ -1,6 +1,6 @@
-import { getEntityMeta } from 'uql/entity/decorator';
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from 'uql/type';
-import { Querier } from 'uql/querier';
+import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from '../type';
+import { Querier } from '../querier';
+import { getEntityMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
 import { SqlDialect } from './sqlDialect';
 

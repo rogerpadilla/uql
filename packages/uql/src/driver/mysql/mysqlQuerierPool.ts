@@ -1,5 +1,5 @@
 import { createPool, Pool, PoolConnection } from 'mysql';
-import { QuerierPool, QuerierPoolOptions, QuerierPoolConnection } from 'uql/type';
+import { QuerierPool, QuerierPoolOptions, QuerierPoolConnection } from '../../type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 export class MySqlQuerierPool implements QuerierPool<MySqlQuerier> {

@@ -1,5 +1,5 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, Spec, Tax, TaxCategory, User } from 'uql/test';
-import { QuerierContract, QuerierPool, QuerySort } from 'uql/type';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, Spec, Tax, TaxCategory, User } from '../test';
+import { QuerierContract, QuerierPool, QuerySort } from '../type';
 
 export abstract class QuerierPoolSpec implements Spec {
   readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Company, User] as const;

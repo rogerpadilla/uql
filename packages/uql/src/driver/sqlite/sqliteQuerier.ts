@@ -1,6 +1,6 @@
 import { ISqlite } from 'sqlite';
-import { getEntityMeta } from 'uql/entity/decorator';
-import { Query, QueryFilter, QueryOptions } from 'uql/type';
+import { Query, QueryFilter, QueryOptions } from '../../type';
+import { getEntityMeta } from '../../entity/decorator';
 import { mapRows } from '../sqlRowsMapper';
 import { SqlQuerier } from '../sqlQuerier';
 import { Sqlit3Connection } from './sqlite3QuerierPool';

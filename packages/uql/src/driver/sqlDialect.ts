@@ -1,4 +1,5 @@
 import { escapeId, escape } from 'sqlstring';
+import { getEntityMeta } from '../entity/decorator';
 import {
   QueryFilter,
   Query,
@@ -11,8 +12,7 @@ import {
   QueryLogicalOperatorValue,
   QueryTextSearchOptions,
   QueryPopulate,
-} from 'uql/type';
-import { getEntityMeta } from 'uql/entity/decorator';
+} from '../type';
 
 export abstract class SqlDialect {
   readonly beginTransactionCommand: string = 'START TRANSACTION';

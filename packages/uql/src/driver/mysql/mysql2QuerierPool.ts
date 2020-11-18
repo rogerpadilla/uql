@@ -1,5 +1,5 @@
 import { createPool, Pool, PoolOptions } from 'mysql2/promise';
-import { QuerierPool } from 'uql/type';
+import { QuerierPool } from '../../type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 export class MySql2QuerierPool implements QuerierPool<MySqlQuerier> {

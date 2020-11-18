@@ -1,4 +1,4 @@
-import { PropertyOptions } from 'uql/type';
+import { PropertyOptions } from '../../type';
 import { defineProperty } from './definition';
 
 export function Property<T>(opts?: PropertyOptions) {
