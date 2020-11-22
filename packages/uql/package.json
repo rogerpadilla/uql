@@ -17,9 +17,9 @@
     "tslib": "^2.0.3"
   },
   "devDependencies": {
-    "@types/mongodb": "^3.5.33",
+    "@types/mongodb": "^3.5.34",
     "@types/mysql": "^2.15.15",
-    "@types/node": "^14.14.8",
+    "@types/node": "^14.14.9",
     "@types/pg": "^7.14.7",
     "@types/sqlite3": "^3.1.6",
     "@types/uuid": "^8.3.0",
@@ -64,5 +64,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "f6b2cede2a1abd55654dce9dbb0d956eeae2b4a3"
+  "gitHead": "58797998db9ab0dd2afe47876ee4a48b730b06e4"
 }

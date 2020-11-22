@@ -20,8 +20,8 @@
     "rimraf": "^3.0.2",
     "source-map-loader": "^1.1.2",
     "ts-loader": "^8.0.11",
-    "typescript": "^4.0.5",
-    "webpack": "^5.5.1",
+    "typescript": "^4.1.2",
+    "webpack": "^5.6.0",
     "webpack-cli": "^4.2.0",
     "webpack-log": "^3.0.1"
   },
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "f6b2cede2a1abd55654dce9dbb0d956eeae2b4a3"
+  "gitHead": "58797998db9ab0dd2afe47876ee4a48b730b06e4"
 }

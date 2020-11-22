@@ -16,4 +16,10 @@ it('injectQuerier', () => {
     find(something: string, @InjectQuerier() theQuerier: Querier) {}
   }
   expect(getInjectQuerier(ServiceC.prototype, 'find')).toBe(1);
+
+  expect(() => {
+    class ServiceD {
+      find(something: string, @InjectQuerier() querier: Querier, @InjectQuerier() anotherQuerier: Querier) {}
+    }
+  }).toThrow("Decorator @InjectQuerier() must appear only once in the parameters of 'ServiceD.find'");
 });

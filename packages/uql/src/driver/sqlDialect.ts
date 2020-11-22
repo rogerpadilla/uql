@@ -116,11 +116,18 @@ export abstract class SqlDialect {
       }
     }
 
-    const aliasMapper = opts.alias
-      ? (name: string) => `${prefix}${this.escapeId(name)} ${this.escapeId(opts.prefix + '.' + name, true)}`
-      : (name: string) => `${prefix}${this.escapeId(name)}`;
+    const projectItemMapper = (name: string) => {
+      if (name === '*') {
+        return name;
+      }
+      const col = `${prefix}${this.escapeId(name)}`;
+      if (!opts.alias) {
+        return col;
+      }
+      return `${col} ${this.escapeId(opts.prefix + '.' + name, true)}`;
+    };
 
-    return Object.keys(project).map(aliasMapper).join(', ');
+    return Object.keys(project).map(projectItemMapper).join(', ');
   }
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
