@@ -1,0 +1,60 @@
+{
+  "name": "@uql/platform-browser",
+  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
+  "license": "MIT",
+  "version": "0.0.1",
+  "main": "uql-platform-browser.min.js",
+  "types": "uql-platform-browser.min.d.ts",
+  "scripts": {
+    "prepublishOnly": "npm run build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "build": "npm run clean && webpack --progress --profile --bail --mode=production",
+    "start": "npm run clean && webpack --profile --bail --watch --info-verbosity verbose",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@uql/core": "^0.0.1"
+  },
+  "devDependencies": {
+    "copyfiles": "^2.4.0",
+    "dts-bundle": "^0.7.3",
+    "rimraf": "^3.0.2",
+    "source-map-loader": "^1.1.2",
+    "ts-loader": "^8.0.11",
+    "typescript": "^4.1.2",
+    "webpack": "^5.6.0",
+    "webpack-cli": "^4.2.0",
+    "webpack-log": "^3.0.1"
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/impensables/uql.git"
+  },
+  "bugs": {
+    "url": "https://github.com/impensables/uql/issues"
+  },
+  "keywords": [
+    "uql",
+    "persistence",
+    "orm",
+    "mongo",
+    "mongodb",
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "sqlite",
+    "sqlite3",
+    "ts",
+    "typescript",
+    "js",
+    "javascript",
+    "entity",
+    "data-mapper",
+    "datamapper",
+    "browser"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "d5eef30b6d5acb24347dc1a2df1a21fd76bdd2fc"
+}

@@ -12,17 +12,17 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 2. [Installation](#installation)
 3. [Entities](#entities)
 4. [Configuration](#configuration)
-5. [Declarative Transactions](#declarative-transactions)
-6. [Programmatic Transactions](#programmatic-transactions)
-7. [Generate REST APIs from Express](#express)
-8. [Consume REST APIs from Frontend](#frontend)
+5. [Programmatic Transactions](#programmatic-transactions)
+6. [Declarative Transactions](#declarative-transactions)
+7. [Generate REST APIs from Express](#plugin-express)
+8. [Consume REST APIs from Frontend](#platform-browser)
 9. [FAQs](#faq)
 
 ## <a name="features"></a>:star2: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
-- declarative and imperative `transactions`
+- programmatic and declarative `transactions`
 - generic and custom `repositories`
 - `relations` between entities
 - supports entities `inheritance` patterns
@@ -35,9 +35,9 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
 1. Install the npm package:
 
-   `npm install uql --save` or `yarn add uql`
+   `npm install @uql/core --save` or `yarn add @uql/core`
 
-2. Make sure to enable the following properties in the `tsconfig.json` file of your `TypeScript` project: `experimentalDecorators` and `emitDecoratorMetadata`
+2. Make sure to enable the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
 
 3. Install a database driver according to your database:
 
@@ -63,10 +63,10 @@ Notice that the inheritance between entities is optional
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
-import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from 'uql/entity/decorator';
+import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/entity/decorator';
 
 /**
- * an abstract class can (optionally) be used as a template for the entities
+ * an abstract class can optionally be used as a template for the entities
  * (so boilerplate code is reduced)
  */
 export abstract class BaseEntity {
@@ -115,7 +115,7 @@ export class Company extends BaseEntity {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * a custom name can be (optionally) specified for every property (this also overrides parent's class ID declaration)
+   * a custom name can be optionally specified for every property (this also overrides parent's class ID declaration)
    */
   @Id({ name: 'pk' })
   id?: string;
@@ -176,8 +176,7 @@ export class Tax extends BaseEntity {
 ## <a name="configuration"></a>:gear: Configuration
 
 ```typescript
-import { setOptions } from 'uql';
-import { GenericRepository } from 'uql/repository';
+import { setOptions } from '@uql/core';
 
 setOptions({
   datasource: {
@@ -185,125 +184,95 @@ setOptions({
     host: 'localhost',
     user: 'theUser',
     password: 'thePassword',
-    database: 'theDatabaseName',
+    database: 'theDatabase',
   },
-  defaultRepositoryClass: GenericRepository,
+  logger: console.log,
   debug: true,
 });
+```
+
+## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
+
+```typescript
+import { getQuerier } from '@uql/core/querier';
+
+async function confirmAction(confirmation: Confirmation): Promise<void> {
+  const querier = await getQuerier();
+
+  try {
+    await querier.beginTransaction();
+
+    if (confirmation.type === 'register') {
+      const newUser: User = {
+        name: confirmation.name,
+        email: confirmation.email,
+        password: confirmation.password,
+      };
+      await querier.insertOne(User, newUser);
+    } else {
+      // confirm change password
+      const userId = confirmation.user as string;
+      await querier.updateOneById(User, userId, { password: confirmation.password });
+    }
+
+    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
+
+    await querier.commitTransaction();
+  } catch (error) {
+    await querier.rollbackTransaction();
+    throw error;
+  } finally {
+    await querier.release();
+  }
+}
 ```
 
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
 
 ```typescript
-import { Querier } from 'uql/type';
-import { Transactional, InjectQuerier } from 'uql/querier/decorator';
-import { getRepository } from 'uql/repository';
+import { Querier } from '@uql/core/type';
+import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
-export class ConfirmationService {
-  // declarate a transaction
+class ConfirmationService {
+  @InjectQuerier()
+  querier: Querier;
+
   @Transactional()
-  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
-    const userRepository = getRepository(User);
-    const confirmationRepository = getRepository(Confirmation);
-
+  async confirmAction(body: Confirmation): Promise<void> {
     if (body.type === 'register') {
       const newUser: User = {
         name: body.name,
         email: body.email,
         password: body.password,
       };
-      await userRepository.insertOne(newUser, querier);
+      await this.querier.insertOne(User, newUser);
     } else {
       const userId = body.user as string;
-      await userRepository.updateOneById(userId, { password: body.password }, querier);
+      await this.querier.updateOneById(User, userId, { password: body.password });
     }
 
-    await confirmationRepository.updateOneById(body.id, { status: CONFIRM_STATUS_VERIFIED }, querier);
+    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
   }
 }
+
+export const confirmationService = new ConfirmationService();
+
+// then you can just import the constant `confirmationService` in another file,
+// and when you call `confirmationService.confirmAction` all the operations there
+// will automatically run inside a single transaction
+await confirmationService.confirmAction(data);
 ```
 
-## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
-
-```typescript
-import { getQuerier } from 'uql/querier';
-
-// ...then inside any of your functions
-
-const querier = await getQuerier();
-
-try {
-  // programmatically start a transaction
-  await querier.beginTransaction();
-
-  // create one user
-  const insertedId: string = await querier.insertOne(User, {
-    name: 'Some Name',
-    email1: { picture: 'abc1@example.com' },
-    profile: { picture: 'abc1' },
-  });
-
-  // create multiple users in a batch
-  const insertedIds: string[] = await querier.insert(User, [
-    {
-      name: 'Another Name',
-      email: { picture: 'abc2@example.com' },
-      profile: { picture: 'abc2' },
-      company: 123,
-    },
-    {
-      name: 'One More Name',
-      email: { picture: 'abc3@example.com' },
-      profile: { picture: 'abc3' },
-      company: 123,
-    },
-  ]);
-
-  // find users
-  const users: User[] = await querier.find(User, {
-    project: {
-      id: true,
-      email: true,
-      password: true,
-    },
-    populate: {
-      profile: {
-        project: {
-          id: true,
-          picture: true,
-        },
-      },
-    },
-    filter: { company: 123 },
-    limit: 100,
-  });
-
-  // update users
-  const updatedRows: number = await querier.updateOneById(User, generatedId, { company: 123 });
-
-  // removed users
-  const updatedRows: number = await querier.removeOneById(User, generatedId);
-
-  // count users
-  const count: number = await querier.count(User, { company: 3 });
-
-  await querier.commitTransaction();
-} catch (error) {
-  await querier.rollbackTransaction();
-} finally {
-  await querier.release();
-}
-```
-
-## <a name="express"></a>:zap: Generate REST APIs from Express
+## <a name="plugin-express"></a>:zap: Generate REST APIs from Express
 
 uql provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
 
-1. Install express plugin in your server project `npm install uql-express --save` or `yarn add uql-express`
+1. Install express plugin in your server project `npm install @uql/pluin-express --save` or `yarn add @uql/plugin-express`
 2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
 
 ```typescript
-import { entitiesMiddleware } from 'uql-express';
+import * as express from 'express';
+import { entitiesMiddleware } from '@uql/plugin-express';
 
 const app = express();
 
@@ -315,28 +284,22 @@ app
     // all entities will be automatically exposed unless
     // 'include' or 'exclude' options are provided
     entitiesMiddleware({
-      exclude: [Confirmation, User],
+      exclude: [Confirmation],
     })
   );
 ```
 
-## <a name="frontend"></a>:globe_with_meridians: Consume REST APIs from Frontend
+## <a name="platform-browser"></a>:globe_with_meridians: Consume REST APIs from Frontend
 
 uql provides a browser plugin to consume the REST APIs.
 
-1. Install browser plugin in your frontend project `npm install uql-browser --save` or `yarn add uql-browser`
-2. Initialize uql in your frontend code
+1. Install browser plugin in your frontend project `npm install @uql/platform-browser --save` or `yarn add @uql/platform-browser`
 
 ```typescript
-import { setOptions, GenericRepository, getRepository } from 'uql-browser';
-
-setOptions({
-  defaultRepositoryClass: GenericRepository,
-  debug: true,
-});
+import { querier } from '@uql/platform-browser';
 
 // 'Item' is an entity class
-const lastItems = await getRepository(Item).find({ sort: { createdAt: -1 }, limit: 100 });
+const lastItems = await querier.find(Item, { sort: { createdAt: -1 }, limit: 100 });
 ```
 
 ## <a name="faq"></a>:book: Frequently Asked Questions
