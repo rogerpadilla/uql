@@ -2,7 +2,7 @@
   "name": "@uql/plugin-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "plugin-express/src/index.js",
   "types": "plugin-express/src/index.d.ts",
   "scripts": {
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "d5eef30b6d5acb24347dc1a2df1a21fd76bdd2fc"
+  "gitHead": "600967baa75b772a57bfa560676929af57111460"
 }
