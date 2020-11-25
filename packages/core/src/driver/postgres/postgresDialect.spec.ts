@@ -75,49 +75,58 @@ class PostgresDialectSpec implements Spec {
 
   shouldFind() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { id: '123', name: 'abc' },
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
   }
 
   shouldFind$and() {
     const quer1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $and: { id: '123', name: 'abc' } },
     });
-    expect(quer1).toBe(`SELECT * FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(quer1).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $and: { id: '123', name: 'abc' } },
     });
-    expect(query2).toBe(`SELECT * FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(query2).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
     const query3 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $and: { id: '123' }, name: 'abc' },
     });
-    expect(query3).toBe(`SELECT * FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(query3).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
   }
 
   shouldFind$or() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $or: { id: '123' } },
     });
-    expect(query1).toBe(`SELECT * FROM "User" WHERE "id" = '123'`);
+    expect(query1).toBe(`SELECT "id" FROM "User" WHERE "id" = '123'`);
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $or: { id: '123', name: 'abc' } },
     });
-    expect(query2).toBe(`SELECT * FROM "User" WHERE "id" = '123' OR "name" = 'abc'`);
+    expect(query2).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' OR "name" = 'abc'`);
     const query3 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $or: { id: '123' }, name: 'abc' },
     });
-    expect(query3).toBe(`SELECT * FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(query3).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
   }
 
   shouldFindLogicalOperators() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { user: '1', $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: '1' },
     });
     expect(query1).toBe(
-      `SELECT * FROM "User" WHERE "user" = '1' AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com') AND "id" = '1'`
+      `SELECT "id" FROM "User" WHERE "user" = '1' AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com') AND "id" = '1'`
     );
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: {
         user: '1',
         $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
@@ -126,10 +135,11 @@ class PostgresDialectSpec implements Spec {
       },
     });
     expect(query2).toBe(
-      `SELECT * FROM "User" WHERE "user" = '1'` +
+      `SELECT "id" FROM "User" WHERE "user" = '1'` +
         ` AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com') AND "id" = '1' AND "email" = 'e'`
     );
     const query3 = this.sql.find(User, {
+      project: { id: 1 },
       filter: {
         user: '1',
         $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
@@ -141,7 +151,7 @@ class PostgresDialectSpec implements Spec {
       limit: 10,
     });
     expect(query3).toBe(
-      `SELECT * FROM "User" WHERE "user" = '1'` +
+      `SELECT "id" FROM "User" WHERE "user" = '1'` +
         ` AND ("name" IN ('a', 'b', 'c') OR "email" = 'abc@example.com')` +
         ` AND "id" = '1' AND "email" = 'e'` +
         ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50'
@@ -150,10 +160,11 @@ class PostgresDialectSpec implements Spec {
 
   shouldFindSingleFilter() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: 'some' },
       limit: 3,
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "name" = 'some' LIMIT 3`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" = 'some' LIMIT 3`);
   }
 
   shouldFindUnknownComparisonOperator() {
@@ -166,61 +177,69 @@ class PostgresDialectSpec implements Spec {
 
   shouldFindMultipleComparisonOperators() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { $or: { name: { $eq: 'other', $ne: 'other unwanted' }, status: 1 } },
       limit: 10,
     });
     expect(query1).toBe(
-      `SELECT * FROM "User" WHERE ("name" = 'other' AND "name" <> 'other unwanted') OR "status" = 1 LIMIT 10`
+      `SELECT "id" FROM "User" WHERE ("name" = 'other' AND "name" <> 'other unwanted') OR "status" = 1 LIMIT 10`
     );
 
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { createdAt: { $gte: 123, $lte: 999 } },
       limit: 10,
     });
-    expect(query2).toBe('SELECT * FROM "User" WHERE ("createdAt" >= 123 AND "createdAt" <= 999) LIMIT 10');
+    expect(query2).toBe('SELECT "id" FROM "User" WHERE ("createdAt" >= 123 AND "createdAt" <= 999) LIMIT 10');
 
     const query3 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { createdAt: { $gt: 123, $lt: 999 } },
       limit: 10,
     });
-    expect(query3).toBe('SELECT * FROM "User" WHERE ("createdAt" > 123 AND "createdAt" < 999) LIMIT 10');
+    expect(query3).toBe('SELECT "id" FROM "User" WHERE ("createdAt" > 123 AND "createdAt" < 999) LIMIT 10');
   }
 
   shouldFind$ne() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: 'some', status: { $ne: 5 } },
       limit: 20,
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "name" = 'some' AND "status" <> 5 LIMIT 20`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" = 'some' AND "status" <> 5 LIMIT 20`);
   }
 
   shouldFindIsNotNull() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { user: '123', status: null },
       limit: 5,
     });
-    expect(query1).toBe(`SELECT * FROM "User" WHERE "user" = '123' AND "status" IS NULL LIMIT 5`);
+    expect(query1).toBe(`SELECT "id" FROM "User" WHERE "user" = '123' AND "status" IS NULL LIMIT 5`);
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { user: '123', status: { $ne: null } },
       limit: 5,
     });
-    expect(query2).toBe(`SELECT * FROM "User" WHERE "user" = '123' AND "status" IS NOT NULL LIMIT 5`);
+    expect(query2).toBe(`SELECT "id" FROM "User" WHERE "user" = '123' AND "status" IS NOT NULL LIMIT 5`);
   }
 
   shouldFind$in() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: 'some', status: { $in: [1, 2, 3] } },
       limit: 10,
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "name" = 'some' AND "status" IN (1, 2, 3) LIMIT 10`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" = 'some' AND "status" IN (1, 2, 3) LIMIT 10`);
   }
 
   shouldFind$nin() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: 'some', status: { $nin: [1, 2, 3] } },
       limit: 10,
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "name" = 'some' AND "status" NOT IN (1, 2, 3) LIMIT 10`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" = 'some' AND "status" NOT IN (1, 2, 3) LIMIT 10`);
   }
 
   shouldFindPopulateWithProjectedFields() {
@@ -242,9 +261,9 @@ class PostgresDialectSpec implements Spec {
         ' LIMIT 100'
     );
 
-    const query2 = this.sql.find(User, { populate: { company: {} } });
+    const query2 = this.sql.find(User, { project: { id: 1 }, populate: { company: {} } });
     expect(query2).toBe(
-      'SELECT "User".*, "company"."id" "company.id", "company"."company" "company.company", "company"."user" "company.user", "company"."createdAt" "company.createdAt", "company"."updatedAt" "company.updatedAt", "company"."status" "company.status", "company"."name" "company.name", "company"."description" "company.description" FROM "User" LEFT JOIN "Company" "company" ON "company"."id" = "User"."company"'
+      'SELECT "User"."id", "User"."company", "company"."id" "company.id", "company"."company" "company.company", "company"."user" "company.user", "company"."createdAt" "company.createdAt", "company"."updatedAt" "company.updatedAt", "company"."status" "company.status", "company"."name" "company.name", "company"."description" "company.description" FROM "User" LEFT JOIN "Company" "company" ON "company"."id" = "User"."company"'
     );
   }
 
@@ -355,9 +374,10 @@ class PostgresDialectSpec implements Spec {
 
   shouldFindGroup() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       group: ['company'],
     });
-    expect(query1).toBe('SELECT * FROM "User" GROUP BY "company"');
+    expect(query1).toBe('SELECT "id" FROM "User" GROUP BY "company"');
     const query2 = this.sql.find(User, {
       project: { id: 1, name: 1 },
       filter: { status: 1 },
@@ -373,21 +393,23 @@ class PostgresDialectSpec implements Spec {
 
   shouldFindLimit() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { id: '9' },
       limit: 1,
     });
-    expect(query1).toBe(`SELECT * FROM "User" WHERE "id" = '9' LIMIT 1`);
+    expect(query1).toBe(`SELECT "id" FROM "User" WHERE "id" = '9' LIMIT 1`);
     const query2 = this.sql.find(User, {
-      filter: { id: '9' },
       project: { id: 1, name: 1, user: 1 },
+      filter: { id: '9' },
       limit: 1,
     });
     expect(query2).toBe(`SELECT "id", "name", "user" FROM "User" WHERE "id" = '9' LIMIT 1`);
     const query3 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: 'something', user: '123' },
       limit: 1,
     });
-    expect(query3).toBe(`SELECT * FROM "User" WHERE "name" = 'something' AND "user" = '123' LIMIT 1`);
+    expect(query3).toBe(`SELECT "id" FROM "User" WHERE "name" = 'something' AND "user" = '123' LIMIT 1`);
     const query4 = this.sql.find(User, {
       project: { id: 1, name: 1, user: 1 },
       filter: { user: '123' },
@@ -450,40 +472,47 @@ class PostgresDialectSpec implements Spec {
 
   shouldFind$startsWith() {
     const query1 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: { $startsWith: 'Some' } },
       sort: { name: 1, id: -1 },
       skip: 0,
       limit: 50,
     });
-    expect(query1).toBe(`SELECT * FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+    expect(query1).toBe(
+      `SELECT "id" FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+    );
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: { $startsWith: 'Some', $ne: 'Something' } },
       sort: { name: 1, id: -1 },
       skip: 0,
       limit: 50,
     });
     expect(query2).toBe(
-      `SELECT * FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
     );
   }
 
   shouldFind$re() {
     const query = this.sql.find(User, {
+      project: { id: 1 },
       filter: { name: { $re: '^some' } },
     });
-    expect(query).toBe(`SELECT * FROM "User" WHERE "name" ~ '^some'`);
+    expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }
 
   shouldFind$text() {
     const query1 = this.sql.find(Item, {
+      project: { id: 1 },
       filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },
       limit: 30,
     });
     expect(query1).toBe(
-      `SELECT * FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "status" = 1 LIMIT 30`
+      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "status" = 1 LIMIT 30`
     );
 
     const query2 = this.sql.find(User, {
+      project: { id: 1 },
       filter: {
         $text: { fields: ['name'], value: 'something' },
         name: { $ne: 'other unwanted' },
@@ -492,7 +521,7 @@ class PostgresDialectSpec implements Spec {
       limit: 10,
     });
     expect(query2).toBe(
-      `SELECT * FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "status" = 1 LIMIT 10`
+      `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "status" = 1 LIMIT 10`
     );
   }
 }

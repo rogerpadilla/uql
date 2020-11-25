@@ -33,7 +33,8 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T> = {}, opts?: QueryOptions) {
     const meta = getEntityMeta(type);
-    return this.findOne(type, { ...qo, filter: { [`${meta.name}.${meta.id.name}`]: id } }, opts);
+    const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
+    return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
   }
 
   abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
@@ -66,7 +67,6 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       }
       const popVal = populate[popKey];
       const relType = relOpts.type();
-      // const relMeta = getEntityMeta(relType);
       const relQuery = popVal as Query<any>;
       if (relOpts.cardinality === 'oneToMany') {
         const ids = bodies.map((body) => body[meta.id.property]);

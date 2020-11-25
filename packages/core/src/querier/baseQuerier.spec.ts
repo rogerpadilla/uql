@@ -249,7 +249,10 @@ describe('baseQuerier', () => {
     const resp1 = await querier.findOneById(User, 1);
     expect(resp1).toEqual(mock);
     expect(querier.query).toBeCalledTimes(1);
-    expect(querier.query).nthCalledWith(1, 'SELECT * FROM `User` WHERE `User`.`id` = 1 LIMIT 1');
+    expect(querier.query).nthCalledWith(
+      1,
+      'SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `password`, `profile` FROM `User` WHERE `id` = 1 LIMIT 1'
+    );
     expect(querier.beginTransaction).toBeCalledTimes(0);
     expect(querier.commitTransaction).toBeCalledTimes(0);
     expect(querier.rollbackTransaction).toBeCalledTimes(0);
@@ -274,14 +277,18 @@ describe('baseQuerier', () => {
       { id: '456', description: 'something b', user: '1' },
     ];
     mockRes = mock;
-    await querier.findOne(InventoryAdjustment, { filter: { user: '1' }, populate: { itemsAdjustments: {} } });
+    await querier.findOne(InventoryAdjustment, {
+      project: { id: 1 },
+      filter: { user: '1' },
+      populate: { itemsAdjustments: {} },
+    });
     expect(querier.query).nthCalledWith(
       1,
-      "SELECT `InventoryAdjustment`.* FROM `InventoryAdjustment` WHERE `user` = '1' LIMIT 1"
+      "SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `user` = '1' LIMIT 1"
     );
     expect(querier.query).nthCalledWith(
       2,
-      "SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
+      "SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `item`, `number`, `buyPrice`, `storehouse`, `inventoryAdjustment` FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
     );
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.insertOne).toBeCalledTimes(0);
@@ -301,14 +308,18 @@ describe('baseQuerier', () => {
       { id: '456', description: 'something b', user: '1' },
     ];
     mockRes = mock;
-    await querier.find(InventoryAdjustment, { filter: { user: '1' }, populate: { itemsAdjustments: {} } });
+    await querier.find(InventoryAdjustment, {
+      project: { id: 1 },
+      filter: { user: '1' },
+      populate: { itemsAdjustments: {} },
+    });
     expect(querier.query).nthCalledWith(
       1,
-      "SELECT `InventoryAdjustment`.* FROM `InventoryAdjustment` WHERE `user` = '1'"
+      "SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `user` = '1'"
     );
     expect(querier.query).nthCalledWith(
       2,
-      "SELECT * FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
+      "SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `item`, `number`, `buyPrice`, `storehouse`, `inventoryAdjustment` FROM `ItemAdjustment` WHERE `inventoryAdjustment` IN ('123', '456')"
     );
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.insertOne).toBeCalledTimes(0);

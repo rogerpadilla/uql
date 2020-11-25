@@ -80,17 +80,20 @@ export abstract class BaseSqlDialect {
   columns<T>(type: { new (): T }, qm: Query<T>, opts: { prefix?: string; alias?: boolean } & QueryOptions): string {
     let { project } = { ...qm };
 
+    const meta = getEntityMeta(type);
+
     if (opts.isTrustedProject) {
       if (qm.populate) {
         for (const popKey in qm.populate) {
-          project[popKey] = true;
+          if (meta.properties[popKey]) {
+            project[popKey] = true;
+          }
         }
       }
       return Object.keys(project).join(', ');
     }
 
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
-    const meta = getEntityMeta(type);
 
     if (project) {
       const hasPositives = Object.keys(project).some((key) => project[key]);
@@ -101,9 +104,6 @@ export abstract class BaseSqlDialect {
         return acc;
       }, {} as QueryProject<T>);
     } else {
-      if (!opts.alias) {
-        return `${prefix}*`;
-      }
       project = Object.keys(meta.properties).reduce((acc, it) => {
         acc[it] = true;
         return acc;
@@ -112,14 +112,13 @@ export abstract class BaseSqlDialect {
 
     if (qm.populate) {
       for (const popKey in qm.populate) {
-        project[popKey] = true;
+        if (meta.properties[popKey]) {
+          project[popKey] = true;
+        }
       }
     }
 
     const projectItemMapper = (name: string) => {
-      if (name === '*') {
-        return name;
-      }
       const col = `${prefix}${this.escapeId(name)}`;
       if (!opts.alias) {
         return col;
