@@ -1,6 +1,6 @@
 [![build status](https://travis-ci.org/impensables/uql.svg?branch=master)](https://travis-ci.org/impensables/uql?branch=master)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
-[![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
+[![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
 # `{*}` uql = Universal Query Language
 
