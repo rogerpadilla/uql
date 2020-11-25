@@ -22,7 +22,7 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
   and `pagination`.
-- `transactions`
+- programmatic and declarative `transactions`
 - generic and custom `repositories`
 - `relations` between entities
 - supports entities `inheritance` patterns
@@ -191,7 +191,7 @@ setOptions({
 });
 ```
 
-## <a name="programmatic-transactions"></a>:hammer_and_wrench: Transactions
+## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
 
 ```typescript
 import { getQuerier } from '@uql/core/querier';
@@ -256,6 +256,10 @@ class ConfirmationService {
 }
 
 export const confirmationService = new ConfirmationService();
+
+// then just import `confirmationService` constant in another file, when you call `confirmationService.confirmAction`,
+// all the operations there will automatically run inside a single transaction
+await confirmationService.confirmAction(data);
 ```
 
 ## <a name="plugin-express"></a>:zap: Generate REST APIs from Express
