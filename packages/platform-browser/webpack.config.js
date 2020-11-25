@@ -3,7 +3,7 @@ const path = require('path');
 
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
-const entryName = 'uql-browser.min';
+const entryName = 'uql-platform-browser.min';
 const outDir = 'dist';
 
 module.exports = (env, argv) => {

@@ -1,4 +1,4 @@
-import { DatasourceOptions, QuerierPool, QuerierPoolClass } from '../type';
+import { UqlDatasourceOptions, QuerierPool, QuerierPoolClass } from '../type';
 import { getOptions } from '../options';
 
 let querierPool: QuerierPool;
@@ -11,7 +11,7 @@ export async function getQuerier() {
   return querierPool.getQuerier();
 }
 
-export function getQuerierPool(options: DatasourceOptions): QuerierPool {
+export function getQuerierPool(options: UqlDatasourceOptions): QuerierPool {
   if (!options) {
     throw new TypeError('datasource configuration has not been set');
   }

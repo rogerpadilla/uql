@@ -1,5 +1,5 @@
 import { Request, Response } from 'express-serve-static-core';
-import * as express from 'express';
+import { Router as expressRouter } from 'express';
 
 import { getOptions } from '@uql/core/options';
 import { Query } from '@uql/core/type';
@@ -9,7 +9,7 @@ import { getQuerier } from '@uql/core/querier';
 import { parseQuery } from './query.util';
 
 export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
-  const router = express.Router();
+  const router = expressRouter();
   const options = getOptions();
 
   let entities = opts.include || getEntities();
@@ -22,7 +22,6 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
 
   const crudRouterOpts = {
     extendQuery: opts.extendQuery,
-    autoCount: options.autoCount,
   };
 
   for (const type of entities) {
@@ -34,8 +33,8 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   return router;
 }
 
-export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: ExtendQuery; autoCount?: boolean }) {
-  const router = express.Router();
+export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: ExtendQuery }) {
+  const router = expressRouter();
 
   router.post('/', async (req, res) => {
     const querier = await getQuerier();
@@ -111,13 +110,14 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
     const querier = await getQuerier();
     try {
       const json: { data?: T[]; count?: number } = {};
-      const dataPromise = querier.find(type, qm);
-      if (req.query.count || (opts.autoCount && req.query.count === undefined)) {
-        const [data, count] = await Promise.all([dataPromise, querier.count(type, qm.filter)]);
+      const findPromise = querier.find(type, qm);
+      if (req.query.count) {
+        const countPromise = querier.count(type, qm.filter);
+        const [data, count] = await Promise.all([findPromise, countPromise]);
         json.data = data;
         json.count = count;
       } else {
-        json.data = await dataPromise;
+        json.data = await findPromise;
       }
       res.json(json);
     } catch (err) {
