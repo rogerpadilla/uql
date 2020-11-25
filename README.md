@@ -4,7 +4,9 @@
 
 # `{*}` uql = Universal Query Language
 
-uql is a plug & play ORM, with a declarative JSON syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql runs efficient (and safe) SQL or Mongo queries.
+uql is a plug & play ORM, with a declarative `JSON` syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql will run efficient (and safe) SQL (or Mongo) queries.
+
+uql is inspired in `Spring` and `JPA`.
 
 ## Table of Contents
 
@@ -59,7 +61,8 @@ uql is a plug & play ORM, with a declarative JSON syntax to query/update differe
 
 ## <a name="entities"></a>:egg: Entities
 
-Notice that the inheritance between entities is optional
+Take any dump class (DTO) and annotate it with the decorators from package '@uql/core/entity/decorator'.
+Notice that the inheritance between entities is optional.
 
 ```typescript
 import { v4 as uuidv4 } from 'uuid';
@@ -175,6 +178,8 @@ export class Tax extends BaseEntity {
 
 ## <a name="configuration"></a>:gear: Configuration
 
+uql's initialization should be done once in a bootstrap file of your code (typically called `server.js`).
+
 ```typescript
 import { setOptions } from '@uql/core';
 
@@ -192,6 +197,17 @@ setOptions({
 ```
 
 ## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
+
+uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
+(hence more responsibility), with the later you can describe the scope of your transactions.
+
+1. obtain the `querier` object with `await getQuerier()`
+2. open a `try/catch/finally` block
+3. start the transaction with `await querier.beginTransaction()`
+4. perform the different operations using the `querier`
+5. commit the transaction with `await querier.commitTransaction()`
+6. in the `catch` block, add `await querier.rollbackTransaction()`
+7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
 
 ```typescript
 import { getQuerier } from '@uql/core/querier';
@@ -228,6 +244,13 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
 ```
 
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
+
+uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
+(hence more responsibility), with the later you can describe the scope of your transactions.
+
+1. take any service class, annotate a property to inject the `querier` with `@InjectQuerier()`
+2. add `Transactional()` decorator on the function. Attribute `propagation` (defaults to `required`)
+   can be passed to customize its value, e.g. `@Transactional({ propagation: 'supported' })`.
 
 ```typescript
 import { Querier } from '@uql/core/type';
