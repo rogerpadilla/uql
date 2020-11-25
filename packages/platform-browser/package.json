@@ -3,8 +3,8 @@
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.0.0",
-  "main": "uql-browser.min.js",
-  "types": "uql-browser.min.d.ts",
+  "main": "uql-platform-browser.min.js",
+  "types": "uql-platform-browser.min.d.ts",
   "scripts": {
     "prepublishOnly": "npm run build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "npm run clean && webpack --progress --profile --bail --mode=production",
