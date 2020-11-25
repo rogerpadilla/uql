@@ -220,8 +220,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
     const query1 = this.sql.find(Item, {
       project: { id: 1, name: 1, code: 1 },
       populate: {
-        tax: { project: { id: 1, name: 1 } },
-        measureUnit: { project: { id: 1, name: 1, category: 1 } },
+        tax: { project: { id: 1, name: 1 }, required: true },
+        measureUnit: { project: { id: 1, name: 1, category: 1 }, required: true },
       },
       limit: 100,
     });
@@ -230,8 +230,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`' +
         ' FROM `Item`' +
-        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
-        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
+        ' INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
         ' LIMIT 100'
     );
 

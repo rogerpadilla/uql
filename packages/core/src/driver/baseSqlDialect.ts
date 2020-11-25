@@ -173,7 +173,10 @@ export abstract class BaseSqlDialect {
       const rel = prefix
         ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey)
         : `${this.escapeId(meta.name)}.${joinPath}`;
-      joinsTables += ` LEFT JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(relMeta.id.name)} = ${rel}`;
+      const joinType = popVal.required ? 'INNER' : 'LEFT';
+      joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(
+        relMeta.id.name
+      )} = ${rel}`;
       const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.joins(
         relType,
         popVal.populate,
