@@ -18,7 +18,9 @@
     "baseUrl": ".",
     "importHelpers": true,
     "paths": {
-      "uql/*": ["packages/uql/src/*"]
+      "@uql/core/*": ["packages/core/src/*"],
+      "@uql/platform-browser/*": ["packages/platform-browser/src/*"],
+      "@uql/plugin-express/*": ["packages/plugin-express/src/*"]
     }
   },
   "exclude": ["node_modules", "coverage", "dist"]
