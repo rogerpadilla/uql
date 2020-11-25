@@ -257,8 +257,9 @@ class ConfirmationService {
 
 export const confirmationService = new ConfirmationService();
 
-// then just import `confirmationService` constant in another file, when you call `confirmationService.confirmAction`,
-// all the operations there will automatically run inside a single transaction
+// then you can just import the constant `confirmationService` in another file,
+// and when you call `confirmationService.confirmAction` all the operations there
+// will automatically run inside a single transaction
 await confirmationService.confirmAction(data);
 ```
 
