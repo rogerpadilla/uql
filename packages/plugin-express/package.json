@@ -15,13 +15,13 @@
     "tslib": "^2.0.3"
   },
   "peerDependencies": {
-    "@uql/core": "^0.0.0",
+    "@uql/core": "^0.0.8",
     "express": "^4.17.1"
   },
   "devDependencies": {
     "@types/express": "4.17.9",
-    "@types/express-serve-static-core": "4.17.13",
-    "copyfiles": "^2.4.0",
+    "@types/express-serve-static-core": "4.17.17",
+    "copyfiles": "^2.4.1",
     "express": "^4.17.1",
     "rimraf": "^3.0.2"
   },
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "aedd9750031ec755e0539075cb2fe6be4cdd598d"
+  "gitHead": "dc3877c7252b971159512dd4d91ae556807d55e6"
 }

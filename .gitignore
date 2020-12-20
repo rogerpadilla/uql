@@ -9,3 +9,6 @@ lerna-debug.log
 dist
 coverage
 data
+.pnp.js
+.yarnrc.yml
+mongodb-*

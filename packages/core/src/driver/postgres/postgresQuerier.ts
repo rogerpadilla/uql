@@ -8,9 +8,8 @@ export class PostgresQuerier extends BaseSqlQuerier {
     super(new PostgresDialect(), conn);
   }
 
-  async query<T>(sql: string) {
-    const res: { rows: T } = await this.conn.query(sql);
-    return res.rows;
+  processQueryResult<T>({ rows }: { rows: T }): T {
+    return rows;
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]) {
@@ -28,7 +27,7 @@ export class PostgresQuerier extends BaseSqlQuerier {
 
   async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
     const query = this.dialect.remove(type, filter);
-    const res = await this.conn.query(query);
+    const res: { rowCount: number } = await this.conn.query(query);
     return res.rowCount;
   }
 }

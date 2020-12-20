@@ -43,7 +43,7 @@ uql is a plug & play ORM, with a declarative `JSON` syntax to query/update diffe
 
    - for MySQL or MariaDB
 
-     `npm install mysql2 --save` (alternatively, `mysql` or `mariadb` driver can be used)
+     `npm install mysql2 --save` (alternatively, `mariadb` driver can be used)
 
    - for PostgreSQL or CockroachDB
 

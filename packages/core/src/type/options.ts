@@ -1,6 +1,6 @@
 import { QuerierPoolOptions } from './querierPool';
 
-export type DatasourceDriver = 'mysql' | 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
+export type DatasourceDriver = 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
 
 export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;
 

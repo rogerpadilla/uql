@@ -28,7 +28,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   async findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
     qm.limit = 1;
     const rows = await this.find(type, qm, opts);
-    return rows ? rows[0] : undefined;
+    return rows[0];
   }
 
   findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T> = {}, opts?: QueryOptions) {

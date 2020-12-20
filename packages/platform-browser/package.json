@@ -15,13 +15,13 @@
     "@uql/core": "^0.0.8"
   },
   "devDependencies": {
-    "copyfiles": "^2.4.0",
+    "copyfiles": "^2.4.1",
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",
-    "source-map-loader": "^1.1.2",
-    "ts-loader": "^8.0.11",
-    "typescript": "^4.1.2",
-    "webpack": "^5.6.0",
+    "source-map-loader": "^1.1.3",
+    "ts-loader": "^8.0.12",
+    "typescript": "^4.1.3",
+    "webpack": "^5.11.0",
     "webpack-cli": "^4.2.0",
     "webpack-log": "^3.0.1"
   },
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "aedd9750031ec755e0539075cb2fe6be4cdd598d"
+  "gitHead": "dc3877c7252b971159512dd4d91ae556807d55e6"
 }

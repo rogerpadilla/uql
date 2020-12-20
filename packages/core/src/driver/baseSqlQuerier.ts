@@ -11,6 +11,15 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     super();
   }
 
+  async query<T>(query: string) {
+    const res = await this.conn.query(query);
+    return this.processQueryResult<T>(res);
+  }
+
+  protected processQueryResult<T>(result: any): T {
+    return result;
+  }
+
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
@@ -45,11 +54,6 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
       { isTrustedProject: true }
     );
     return Number(res[0].count);
-  }
-
-  async query<T>(query: string) {
-    const res: [T] = await this.conn.query(query);
-    return res[0];
   }
 
   get hasOpenTransaction(): boolean {

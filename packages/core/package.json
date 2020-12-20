@@ -17,22 +17,21 @@
     "tslib": "^2.0.3"
   },
   "devDependencies": {
-    "@types/mongodb": "^3.5.34",
-    "@types/mysql": "^2.15.15",
-    "@types/node": "^14.14.10",
+    "@types/mongodb": "^3.6.3",
+    "@types/mysql": "^2.15.16",
+    "@types/node": "^14.14.14",
     "@types/pg": "^7.14.7",
     "@types/sqlite3": "^3.1.6",
     "@types/uuid": "^8.3.0",
-    "copyfiles": "^2.4.0",
-    "mariadb": "^2.5.1",
+    "copyfiles": "^2.4.1",
+    "mariadb": "^2.5.2",
     "mongodb": "^3.6.3",
-    "mysql": "^2.18.1",
     "mysql2": "^2.2.5",
     "pg": "^8.5.1",
     "rimraf": "^3.0.2",
-    "sqlite": "^4.0.17",
+    "sqlite": "^4.0.18",
     "sqlite3": "^5.0.0",
-    "uuid": "^8.3.1"
+    "uuid": "^8.3.2"
   },
   "author": "Roger Padilla",
   "repository": {
@@ -64,5 +63,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "aedd9750031ec755e0539075cb2fe6be4cdd598d"
+  "gitHead": "dc3877c7252b971159512dd4d91ae556807d55e6"
 }

@@ -1,8 +1,8 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
 import { QuerierPool } from '../../type';
-import { MySqlQuerier } from './mysqlQuerier';
+import { MariadbQuerier } from './mariadbQuerier';
 
-export class MariadbQuerierPool implements QuerierPool<MySqlQuerier> {
+export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
   private readonly pool: Pool;
 
   constructor(opts: PoolConfig) {
@@ -11,7 +11,7 @@ export class MariadbQuerierPool implements QuerierPool<MySqlQuerier> {
 
   async getQuerier() {
     const conn = await this.pool.getConnection();
-    return new MySqlQuerier(conn);
+    return new MariadbQuerier(conn);
   }
 
   end() {
