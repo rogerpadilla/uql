@@ -2,6 +2,7 @@ import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from '../../type';
 import { BaseQuerier } from '../../querier';
 import { getEntityMeta } from '../../entity/decorator';
+import { filterPersistableKeys } from '../dialect.util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier<ObjectId> {
@@ -12,18 +13,34 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]) {
-    const res = await this.collection(type).insertMany(bodies as OptionalId<T>[], { session: this.session });
+    const persistableKeys = filterPersistableKeys(type, bodies[0]);
+    const persistables = bodies.map((body) =>
+      persistableKeys.reduce((acc, key) => {
+        acc[key] = body[key];
+        return acc;
+      }, {} as OptionalId<T>)
+    );
+
+    const res = await this.collection(type).insertMany(persistables, { session: this.session });
+
     return Object.values(res.insertedIds);
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
+    const persistableKeys = filterPersistableKeys(type, body);
+    const persistable = persistableKeys.reduce((acc, key) => {
+      acc[key] = body[key];
+      return acc;
+    }, {} as OptionalId<T>);
+
     const res = await this.collection(type).updateMany(
       this.dialect.buildFilter(type, filter),
-      { $set: body },
+      { $set: persistable },
       {
         session: this.session,
       }
     );
+
     return res.modifiedCount;
   }
 
@@ -34,9 +51,13 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
 
     if (qm.populate && Object.keys(qm.populate).length) {
       const pipeline = this.dialect.buildAggregationPipeline(type, qm);
-      documents = await this.collection(type).aggregate(pipeline, { session: this.session }).toArray();
+      documents = await this.collection(type)
+        .aggregate<T>(pipeline, { session: this.session })
+        .toArray();
+      normalizeIds(documents, meta);
+      await this.populateToManyRelations(type, documents, qm.populate);
     } else {
-      const cursor = this.collection(type).find({}, { session: this.session });
+      const cursor = this.collection(type).find<T>({}, { session: this.session });
 
       if (qm.filter) {
         const filter = this.dialect.buildFilter(type, qm.filter);
@@ -56,13 +77,10 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
       }
 
       documents = await cursor.toArray();
+      normalizeIds(documents, meta);
     }
 
-    const bodies = parseDocuments(documents, meta);
-
-    await this.populateToManyRelations(type, bodies, qm.populate);
-
-    return bodies;
+    return documents;
   }
 
   findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>, opts?: QueryOptions) {
@@ -125,14 +143,29 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 }
 
-function parseDocuments<T>(docs: T[], meta: EntityMeta<T>) {
-  return docs.map((doc) => parseDocument<T>(doc, meta));
+export function normalizeIds<T>(docs: T | T[], meta: EntityMeta<T>) {
+  if (Array.isArray(docs)) {
+    for (const doc of docs) {
+      normalizeId<T>(doc, meta);
+    }
+  } else {
+    normalizeId<T>(docs, meta);
+  }
 }
 
-function parseDocument<T>(doc: any, meta: EntityMeta<T>) {
+function normalizeId<T>(doc: T, meta: EntityMeta<T>) {
   if (!doc) {
     return;
   }
-  doc[meta.id.property] = doc._id;
+  doc[meta.id.property] = (doc as any)._id;
+  delete (doc as any)._id;
+  for (const relProp of Object.keys(meta.relations)) {
+    const relOpts = meta.relations[relProp];
+    const relData = doc[relProp];
+    if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
+      const relMeta = getEntityMeta(relOpts.type());
+      normalizeIds(relData, relMeta);
+    }
+  }
   return doc as T;
 }

@@ -1,5 +1,5 @@
-import { User, Item, ItemAdjustment, TaxCategory, Spec, createSpec } from '../../test';
-import { Query, QueryProject, QuerySort } from '../../type';
+import { User, Item, ItemAdjustment, TaxCategory, Spec, createSpec, Profile } from '../../test';
+import { QueryFilter, QueryProject, QuerySort } from '../../type';
 import { PostgresDialect } from './postgresDialect';
 
 class PostgresDialectSpec implements Spec {
@@ -74,11 +74,19 @@ class PostgresDialectSpec implements Spec {
   }
 
   shouldFind() {
-    const query = this.sql.find(User, {
+    const query1 = this.sql.find(User, {
       project: { id: 1 },
       filter: { id: '123', name: 'abc' },
     });
-    expect(query).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+    expect(query1).toBe(`SELECT "id" FROM "User" WHERE "id" = '123' AND "name" = 'abc'`);
+
+    const query2 = this.sql.find(Profile, {
+      project: { id: 1, picture: 1, status: 1 },
+      filter: { id: '123', picture: 'abc' },
+    });
+    expect(query2).toBe(
+      `SELECT "pk" "id", "image" "picture", "status" FROM "user_profile" WHERE "pk" = '123' AND "image" = 'abc'`
+    );
   }
 
   shouldFind$and() {
@@ -242,6 +250,18 @@ class PostgresDialectSpec implements Spec {
     expect(query).toBe(`SELECT "id" FROM "User" WHERE "name" = 'some' AND "status" NOT IN (1, 2, 3) LIMIT 10`);
   }
 
+  shouldFindPopulate() {
+    const query1 = this.sql.find(User, {
+      project: { id: true, name: true },
+      populate: {
+        profile: { project: { id: true, picture: true } },
+      },
+    });
+    expect(query1).toBe(
+      'SELECT "User"."id", "User"."name", "User"."profile", "profile"."pk" "profile.id", "profile"."image" "profile.picture" FROM "User" LEFT JOIN "user_profile" "profile" ON "profile"."pk" = "User"."profile"'
+    );
+  }
+
   shouldFindPopulateWithProjectedFields() {
     const query1 = this.sql.find(Item, {
       project: { id: 1, name: 1, code: 1 },
@@ -268,25 +288,46 @@ class PostgresDialectSpec implements Spec {
   }
 
   shouldFindPopulateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
-    const qm: Query<Item> = {
+    const query1 = this.sql.find(Item, {
       project: { id: 1, name: 1 },
-      populate: { tax: {}, measureUnit: { project: { id: 1, name: 1 } } },
-      filter: { 'measureUnit.name': { $ne: 'unidad' }, 'tax.id': 2 } as Item,
-      sort: { 'category.name': 1, 'MeasureUnit.name': 1 } as QuerySort<Item>,
+      populate: {
+        tax: { project: { id: true, name: true }, filter: { id: 2 }, required: true },
+        measureUnit: { project: { id: 1, name: 1 }, filter: { name: { $ne: 'unidad' } }, required: true },
+      },
+      sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
       limit: 100,
-    };
-    const query = this.sql.find(Item, qm);
-    expect(query).toBe(
+    });
+
+    expect(query1).toBe(
       'SELECT "Item"."id", "Item"."name", "Item"."tax", "Item"."measureUnit"' +
-        ', "tax"."id" "tax.id", "tax"."company" "tax.company", "tax"."user" "tax.user", "tax"."createdAt" "tax.createdAt"' +
-        ', "tax"."updatedAt" "tax.updatedAt", "tax"."status" "tax.status", "tax"."name" "tax.name", "tax"."percentage" "tax.percentage"' +
-        ', "tax"."category" "tax.category", "tax"."description" "tax.description"' +
+        ', "tax"."id" "tax.id", "tax"."name" "tax.name"' +
+        ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name"' +
+        ' FROM "Item"' +
+        ' INNER JOIN "Tax" "tax" ON "tax"."id" = "Item"."tax" AND "tax"."id" = 2' +
+        ` INNER JOIN "MeasureUnit" "measureUnit" ON "measureUnit"."id" = "Item"."measureUnit" AND "measureUnit"."name" <> 'unidad'` +
+        ' ORDER BY "category"."name", "measureUnit"."name" LIMIT 100'
+    );
+
+    const query2 = this.sql.find(Item, {
+      project: { id: 1, name: 1 },
+      populate: {
+        tax: { project: { id: true, name: true } },
+        measureUnit: { project: { id: 1, name: 1 } },
+      },
+      filter: { 'tax.id': 2, 'measureUnit.name': { $ne: 'unidad' } } as QueryFilter<Item>,
+      sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
+      limit: 100,
+    });
+
+    expect(query2).toBe(
+      'SELECT "Item"."id", "Item"."name", "Item"."tax", "Item"."measureUnit"' +
+        ', "tax"."id" "tax.id", "tax"."name" "tax.name"' +
         ', "measureUnit"."id" "measureUnit.id", "measureUnit"."name" "measureUnit.name"' +
         ' FROM "Item"' +
         ' LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."tax"' +
-        ' LEFT JOIN "MeasureUnit" "measureUnit" ON "measureUnit"."id" = "Item"."measureUnit"' +
-        ` WHERE "measureUnit"."name" <> 'unidad' AND "tax"."id" = 2` +
-        ' ORDER BY "category"."name", "MeasureUnit"."name" LIMIT 100'
+        ` LEFT JOIN "MeasureUnit" "measureUnit" ON "measureUnit"."id" = "Item"."measureUnit"` +
+        ` WHERE "tax"."id" = 2 AND "measureUnit"."name" <> 'unidad'` +
+        ' ORDER BY "category"."name", "measureUnit"."name" LIMIT 100'
     );
   }
 

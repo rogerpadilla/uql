@@ -11,7 +11,7 @@ export interface QuerierPoolOptions {
 }
 
 export interface QuerierPoolConnection {
-  query(query: string): Promise<any>;
+  query(query: string, ...args: any[]): Promise<any>;
   release(): void | Promise<void>;
 }
 

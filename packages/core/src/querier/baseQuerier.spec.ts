@@ -43,16 +43,14 @@ describe('baseQuerier', () => {
     mockRes = mock;
     const resp = await querier.insertOne(User, {
       name: 'some name',
-      profile: { picture: 'abc' },
+      profile: { picture: 'abc', createdAt: 123 },
+      createdAt: 123,
     });
     expect(resp).toEqual(mock.insertId);
-    expect(querier.query).nthCalledWith(
-      1,
-      expect.toMatch(/^INSERT INTO `User` \(`name`, `createdAt`\) VALUES \('some name', \d+\)$/)
-    );
+    expect(querier.query).nthCalledWith(1, "INSERT INTO `User` (`name`, `createdAt`) VALUES ('some name', 123)");
     expect(querier.query).nthCalledWith(
       2,
-      expect.toMatch(/^INSERT INTO `user_profile` \(`image`, `createdAt`\) VALUES \('abc', \d+\)$/)
+      "INSERT INTO `user_profile` (`image`, `createdAt`, `user`) VALUES ('abc', 123, 1)"
     );
     expect(querier.query).toBeCalledTimes(2);
     expect(querier.insertOne).toBeCalledTimes(2);
@@ -71,7 +69,7 @@ describe('baseQuerier', () => {
     mockRes = mock;
     const resp = await querier.insertOne(InventoryAdjustment, {
       description: 'some description',
-      itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
     expect(resp).toEqual(mock.insertId);
     expect(querier.query).nthCalledWith(
@@ -172,7 +170,7 @@ describe('baseQuerier', () => {
     mockRes = mock;
     const resp = await querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
-      itemsAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
     expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(
@@ -205,7 +203,7 @@ describe('baseQuerier', () => {
     mockRes = mock;
     const resp = await querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
-      itemsAdjustments: null,
+      itemAdjustments: null,
     });
     expect(resp).toEqual(mock.affectedRows);
     expect(querier.query).nthCalledWith(
@@ -280,7 +278,7 @@ describe('baseQuerier', () => {
     await querier.findOne(InventoryAdjustment, {
       project: { id: 1 },
       filter: { user: '1' },
-      populate: { itemsAdjustments: {} },
+      populate: { itemAdjustments: {} },
     });
     expect(querier.query).nthCalledWith(
       1,
@@ -311,7 +309,7 @@ describe('baseQuerier', () => {
     await querier.find(InventoryAdjustment, {
       project: { id: 1 },
       filter: { user: '1' },
-      populate: { itemsAdjustments: {} },
+      populate: { itemAdjustments: {} },
     });
     expect(querier.query).nthCalledWith(
       1,

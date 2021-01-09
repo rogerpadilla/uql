@@ -80,9 +80,9 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
           acc[attr].push(it);
           return acc;
         }, {});
-        bodies.forEach((body) => {
+        for (const body of bodies) {
           body[popKey] = foundsMap[body[meta.id.property]];
-        });
+        }
       } else if (relOpts.cardinality === 'manyToMany') {
         // TODO manyToMany cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
@@ -99,15 +99,15 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       const relOpts = meta.relations[prop];
       const relType = relOpts.type();
       if (relOpts.cardinality === 'oneToOne') {
-        const relBody: T = body[prop];
+        const relBody: T = { ...body[prop], [relOpts.mappedBy]: id };
         return this.insertOne(relType, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
-        const relBody: T[] = body[prop];
-        relBody.forEach((it: T) => {
+        const relBodies: T[] = body[prop].map((it: T) => {
           it[relOpts.mappedBy] = id;
+          return it;
         });
-        return this.insert(relType, relBody);
+        return this.insert(relType, relBodies);
       }
       if (relOpts.cardinality === 'manyToMany') {
         // TODO manyToMany cardinality
@@ -137,9 +137,9 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
         const relBody: T[] = body[prop];
         await this.remove(relType, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
-          relBody.forEach((it: T) => {
+          for (const it of relBody) {
             it[relOpts.mappedBy] = id;
-          });
+          }
           return this.insert(relType, relBody);
         }
       }

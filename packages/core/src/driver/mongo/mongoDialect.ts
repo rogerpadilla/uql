@@ -41,14 +41,26 @@ export class MongoDialect {
       }
       const relType = relOpts.type();
       const relMeta = getEntityMeta(relType);
-      pipeline.push({
-        $lookup: {
-          from: relMeta.name,
-          localField: popKey,
-          foreignField: '_id',
-          as: popKey,
-        },
-      });
+
+      if (relOpts.cardinality === 'manyToOne') {
+        pipeline.push({
+          $lookup: {
+            from: relMeta.name,
+            localField: popKey,
+            foreignField: '_id',
+            as: popKey,
+          },
+        });
+      } else {
+        pipeline.push({
+          $lookup: {
+            from: relMeta.name,
+            pipeline: [{ $match: { [relOpts.mappedBy]: qm.filter[meta.id.name] } }],
+            as: popKey,
+          },
+        });
+      }
+
       pipeline.push({ $unwind: { path: `$${popKey}`, preserveNullAndEmptyArrays: true } });
     }
 

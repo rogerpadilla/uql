@@ -1,8 +1,8 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, Spec, Tax, TaxCategory, User } from '../test';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, Profile, Spec, Tax, TaxCategory, User } from '../test';
 import { Querier, QuerierPool, QuerySort } from '../type';
 
 export abstract class BaseQuerierPoolIt implements Spec {
-  readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Company, User] as const;
+  readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Profile, Company, User] as const;
   querier: Querier;
 
   constructor(readonly pool: QuerierPool) {}
@@ -43,7 +43,9 @@ export abstract class BaseQuerierPoolIt implements Spec {
       },
     ]);
     expect(ids).toHaveLength(2);
-    ids.forEach((id) => expect(id).toBeDefined());
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
   }
 
   async shouldInsertOne() {
@@ -78,6 +80,28 @@ export abstract class BaseQuerierPoolIt implements Spec {
       company: String(companyId),
     });
     expect(taxCategoryId).toBeDefined();
+  }
+
+  async XXXshouldInsertOneAndCascadeOneToOne() {
+    const body: User = {
+      name: 'some name',
+      profile: { picture: 'abc', createdAt: 123 },
+      createdAt: 123,
+    };
+
+    const id = await this.querier.insertOne(User, body);
+
+    expect(id).toBeDefined();
+
+    const user = await this.querier.findOneById(User, id, { populate: { profile: {} } });
+
+    console.log('user', user);
+
+    // expect(user).toMatchObject(body);
+
+    // const n = await this.querier.removeOneById(User, id);
+
+    // expect(n).toBe(1);
   }
 
   async shouldFind() {
@@ -252,39 +276,39 @@ export abstract class BaseQuerierPoolIt implements Spec {
       this.querier.findOne(Company, { project: { id: 1 } }),
     ]);
 
-    const [itemsIds, inventoryAdjustmentId] = await Promise.all([
-      this.querier.insert(Item, [
-        {
-          name: 'some item name a',
-          user: user.id,
-          company: company.id,
-        },
-        {
-          name: 'some item name b',
-          user: user.id,
-          company: company.id,
-        },
-      ]),
-
-      this.querier.insertOne(InventoryAdjustment, {
-        description: 'some inventory adjustment',
+    const itemIds = await this.querier.insert(Item, [
+      {
+        name: 'some item name a',
         user: user.id,
         company: company.id,
-      }),
+      },
+      {
+        name: 'some item name b',
+        user: user.id,
+        company: company.id,
+      },
     ]);
 
-    await this.querier.insert(ItemAdjustment, [
-      { buyPrice: 1000, item: itemsIds[0] },
-      { buyPrice: 2000, item: itemsIds[2] },
-    ]);
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some inventory adjustment',
+      user: user.id,
+      company: company.id,
+      itemAdjustments: [
+        { buyPrice: 1000, item: itemIds[0] },
+        { buyPrice: 2000, item: itemIds[1] },
+      ],
+    });
 
     const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      populate: { itemsAdjustments: {}, user: {} },
+      populate: { itemAdjustments: {}, user: {} },
     });
 
     expect(inventoryAdjustment).toMatchObject({
       description: 'some inventory adjustment',
-      itemsAdjustments: undefined,
+      itemAdjustments: [
+        { buyPrice: 1000, item: itemIds[0] },
+        { buyPrice: 2000, item: itemIds[1] },
+      ],
       user: {
         email: 'someemaila@example.com',
         name: 'Some Name A',

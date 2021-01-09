@@ -3,7 +3,9 @@ import { RequestCallback, RequestNotification } from '../type';
 const subscriptors: RequestCallback[] = [];
 
 export function notify(notification: RequestNotification): void {
-  subscriptors.forEach((subscriptor) => subscriptor(notification));
+  for (const subscriptor of subscriptors) {
+    subscriptor(notification);
+  }
 }
 
 export function on(cb: RequestCallback): () => void {

@@ -16,7 +16,7 @@ export interface Querier<ID = any> {
 
   findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T>;
 
-  findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T>, opts?: QueryOptions): Promise<T>;
+  findOneById<T>(type: { new (): T }, id: ID, qo?: QueryOne<T>, opts?: QueryOptions): Promise<T>;
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
 

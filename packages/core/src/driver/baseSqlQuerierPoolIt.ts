@@ -2,23 +2,26 @@ import { escapeId as sqlstringEscapeId } from 'sqlstring';
 import { BaseQuerierPoolIt } from '../querier/baseQuerierPoolIt';
 import { getEntityMeta } from '../entity/decorator';
 import { QuerierPool } from '../type';
+import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
   readonly primaryKeyType: string = 'BIGINT PRIMARY KEY AUTO_INCREMENT';
+  querier: BaseSqlQuerier;
 
   constructor(pool: QuerierPool) {
     super(pool);
   }
 
   async createTables() {
-    const run = async (index = 0) => {
+    const run = async (index: number) => {
       if (index >= this.entities.length) {
         return;
       }
-      await this.querier.query(this.buildDdlForTable(this.entities[index]));
+      const ddl = this.buildDdlForTable(this.entities[index]);
+      await this.querier.query(ddl);
       await run(index + 1);
     };
-    await run();
+    await run(0);
   }
 
   dropTables() {

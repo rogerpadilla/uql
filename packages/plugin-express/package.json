@@ -12,10 +12,10 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "tslib": "^2.0.3"
+    "tslib": "^2.1.0"
   },
   "peerDependencies": {
-    "@uql/core": "^0.0.8",
+    "@uql/core": "^0.0.11",
     "express": "^4.17.1"
   },
   "devDependencies": {
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "d3f4082ef72e4005d0e7579dfe274f86e78d89a4"
+  "gitHead": "0b67901f5b266163184c1b18fafc4f3fddd26cb3"
 }

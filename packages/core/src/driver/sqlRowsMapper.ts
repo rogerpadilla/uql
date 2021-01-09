@@ -18,11 +18,11 @@ export function mapRows<T>(rows: T[]): T[] {
       }
       const attrPath = attrsPaths[col];
       if (attrPath) {
-        const target = attrPath.slice(0, -1).reduce((obj, key) => {
-          if (typeof obj[key] !== 'object') {
-            obj[key] = {};
+        const target = attrPath.slice(0, -1).reduce((acc, prop) => {
+          if (typeof acc[prop] !== 'object') {
+            acc[prop] = {};
           }
-          return obj[key] as T;
+          return acc[prop];
         }, dto);
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {

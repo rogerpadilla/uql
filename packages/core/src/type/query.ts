@@ -5,7 +5,7 @@ export type QueryProject<T> = {
 };
 
 export type QueryPopulate<T> = {
-  readonly [P in keyof T]?: QueryOne<T[P]> & { required?: boolean };
+  readonly [P in keyof T]?: Query<T[P]> & { required?: boolean };
 };
 
 export type QueryFieldFilter<T> = {

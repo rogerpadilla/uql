@@ -138,7 +138,6 @@ export class ItemAdjustment extends BaseEntity {
   buyPrice?: number;
   @ManyToOne()
   storehouse?: Storehouse;
-  @Property()
   @ManyToOne({ type: () => InventoryAdjustment })
   inventoryAdjustment?: string;
 }
@@ -146,7 +145,7 @@ export class ItemAdjustment extends BaseEntity {
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustment' })
-  itemsAdjustments?: ItemAdjustment[];
+  itemAdjustments?: ItemAdjustment[];
   @Property()
   date?: number;
   @Property()

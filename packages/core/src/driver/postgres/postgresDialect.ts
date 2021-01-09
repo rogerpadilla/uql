@@ -11,29 +11,40 @@ export class PostgresDialect extends BaseSqlDialect {
     return `${sql} RETURNING ${meta.id.name} insertId`;
   }
 
-  comparison<T>(type: { new (): T }, key: string, value: object | QueryScalarValue): string {
+  compare<T>(
+    type: { new (): T },
+    key: string,
+    value: object | QueryScalarValue,
+    opts: { prefix?: string } = {}
+  ): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;
         const fields = search.fields.map((field) => this.escapeId(field)).join(` || ' ' || `);
         return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.value)})`;
       default:
-        return super.comparison(type, key, value);
+        return super.compare(type, key, value, opts);
     }
   }
 
-  comparisonOperation<T, K extends keyof QueryComparisonOperator<T>>(
-    attr: keyof T,
+  compareProperty<T, K extends keyof QueryComparisonOperator<T>>(
+    type: { new (): T },
+    prop: string,
     operator: K,
-    val: QueryComparisonOperator<T>[K]
+    val: QueryComparisonOperator<T>[K],
+    opts: { prefix?: string } = {}
   ): string {
+    const meta = getEntityMeta(type);
+    const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
+    const name = meta.properties[prop]?.name || prop;
+    const col = prefix + this.escapeId(name);
     switch (operator) {
       case '$startsWith':
-        return `${this.escapeId(attr)} ILIKE ${this.escape(`${val}%`)}`;
+        return `${col} ILIKE ${this.escape(`${val}%`)}`;
       case '$re':
-        return `${this.escapeId(attr)} ~ ${this.escape(val)}`;
+        return `${col} ~ ${this.escape(val)}`;
       default:
-        return super.comparisonOperation(attr, operator, val);
+        return super.compareProperty(type, prop, operator, val, opts);
     }
   }
 

@@ -15,6 +15,18 @@ describe('options', () => {
     expect(() => getDatasourceOptions()).toThrow('datasource options has to be specified');
   });
 
+  it('getOptions datasource unset', () => {
+    setOptions({
+      datasource: {
+        driver: 'pg',
+      },
+    });
+    const datasourceOptions = getDatasourceOptions();
+    expect(datasourceOptions).toEqual({
+      driver: 'pg',
+    });
+  });
+
   it('setOptions', () => {
     const opts: UqlOptions = {
       logger: console.log,
