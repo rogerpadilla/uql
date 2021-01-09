@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.1.1",
   "useWorkspaces": true,
   "npmClient": "yarn",
   "npmClientArgs": [
@@ -13,7 +13,7 @@
       "changelog": false,
       "yes": true,
       "amend": true,
-      "forceGittag": true
+      "forceGitTag": true
     }
   }
 }
