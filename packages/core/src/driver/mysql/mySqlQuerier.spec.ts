@@ -3,19 +3,19 @@ import { QueryUpdateResult } from '../../type';
 import { MySqlQuerier } from './mysqlQuerier';
 
 class MySqlQuerierSpec implements Spec {
-  mockRes: User[] | QueryUpdateResult;
   querier: MySqlQuerier;
 
   beforeEach() {
-    this.mockRes = undefined;
     this.querier = new MySqlQuerier({
-      query: () => {
-        const res = [this.mockRes];
-        return Promise.resolve(res);
-      },
+      query: () => Promise.resolve([{}]),
       release: () => Promise.resolve(),
     });
     jest.spyOn(this.querier, 'query');
+    jest.spyOn(this.querier, 'insertOne');
+    jest.spyOn(this.querier, 'insert');
+    jest.spyOn(this.querier, 'update');
+    jest.spyOn(this.querier, 'remove');
+    jest.spyOn(this.querier, 'find');
     jest.spyOn(this.querier, 'beginTransaction');
     jest.spyOn(this.querier, 'commitTransaction');
     jest.spyOn(this.querier, 'rollbackTransaction');
@@ -23,14 +23,11 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldFind() {
-    const mock: User[] = [{ id: '1', name: 'something' }];
-    this.mockRes = mock;
-    const resp = await this.querier.find(User, {
+    await this.querier.find(User, {
       project: { id: 1, name: 1 },
       filter: { company: '123' },
       limit: 100,
     });
-    expect(resp).toEqual(mock);
     expect(this.querier.query).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -39,10 +36,7 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldRemove() {
-    const mock: QueryUpdateResult = { affectedRows: 1 };
-    this.mockRes = mock;
-    const resp = await this.querier.remove(User, { company: '123' });
-    expect(resp).toEqual(mock.affectedRows);
+    await this.querier.remove(User, { company: '123' });
     expect(this.querier.query).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -51,11 +45,12 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldInsertOne() {
-    const mock: QueryUpdateResult = { insertId: 1 };
-    this.mockRes = mock;
-    const resp = await this.querier.insertOne(User, { company: '123' });
-    expect(resp).toEqual(mock.insertId);
+    await this.querier.insertOne(User, { company: '123' });
     expect(this.querier.query).toBeCalledTimes(1);
+    expect(this.querier.insertOne).toBeCalledTimes(1);
+    expect(this.querier.find).toBeCalledTimes(0);
+    expect(this.querier.update).toBeCalledTimes(0);
+    expect(this.querier.remove).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
@@ -63,10 +58,7 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldUpdate() {
-    const mock: QueryUpdateResult = { affectedRows: 5 };
-    this.mockRes = mock;
-    const resp = await this.querier.update(User, { id: '5' }, { name: 'Hola' });
-    expect(resp).toEqual(mock.affectedRows);
+    await this.querier.update(User, { id: '5' }, { name: 'Hola' });
     expect(this.querier.query).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -75,8 +67,6 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldUseTransaction() {
-    const mock: QueryUpdateResult = { affectedRows: 5 };
-    this.mockRes = mock;
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
@@ -129,8 +119,6 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldThrowIfReleaseWithPendingTransaction() {
-    const mock: QueryUpdateResult = { affectedRows: 5 };
-    this.mockRes = mock;
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);

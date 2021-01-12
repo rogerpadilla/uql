@@ -1,4 +1,3 @@
-import { escapeId as sqlstringEscapeId } from 'sqlstring';
 import { BaseQuerierPoolIt } from '../querier/baseQuerierPoolIt';
 import { getEntityMeta } from '../entity/decorator';
 import { QuerierPool } from '../type';
@@ -28,7 +27,7 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
     return Promise.all(
       this.entities.map((type) => {
         const meta = getEntityMeta(type);
-        return this.querier.query(`DROP TABLE IF EXISTS ${this.escapeId(meta.name)}`);
+        return this.querier.query(`DROP TABLE IF EXISTS ${this.querier.dialect.escapeId(meta.name)}`);
       })
     );
   }
@@ -36,13 +35,13 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
   buildDdlForTable<T>(type: { new (): T }) {
     const meta = getEntityMeta(type);
 
-    let sql = `CREATE TABLE ${this.escapeId(meta.name)} (\n\t`;
+    let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
 
     const defaultType = 'VARCHAR(50)';
 
     const columns = Object.keys(meta.properties).map((key) => {
       const prop = meta.properties[key];
-      let propSql = this.escapeId(prop.name) + ' ';
+      let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
       if (prop.isId) {
         propSql += prop.onInsert ? defaultType : this.primaryKeyType;
       } else {
@@ -56,9 +55,5 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
     sql += `\n);`;
 
     return sql;
-  }
-
-  escapeId(val: any) {
-    return sqlstringEscapeId(val);
   }
 }

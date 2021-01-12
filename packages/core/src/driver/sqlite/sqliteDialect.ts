@@ -3,7 +3,9 @@ import { getEntityMeta } from '../../entity/decorator';
 import { BaseSqlDialect } from '../baseSqlDialect';
 
 export class SqliteDialect extends BaseSqlDialect {
-  readonly beginTransactionCommand = 'BEGIN TRANSACTION';
+  constructor() {
+    super('BEGIN TRANSACTION', '`');
+  }
 
   compare<T>(
     type: { new (): T },

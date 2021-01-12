@@ -17,7 +17,7 @@ export type RelationOptions<T> = {
 };
 
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationOneToOneOptions<T> = { type?: () => { new (): T }; mappedBy: keyof T };
+export type RelationOneToOneOptions<T> = { type?: () => { new (): T }; mappedBy?: keyof T };
 export type RelationOneToManyOptions<T> = { type: () => { new (): T }; mappedBy: keyof T };
 export type RelationManyToOneOptions<T> = { type?: () => { new (): T } };
 export type RelationManyToManyOptions<T> = { type: () => { new (): T } };

@@ -3,7 +3,9 @@ import { QueryComparisonOperator, QueryTextSearchOptions, QueryScalarValue } fro
 import { BaseSqlDialect } from '../baseSqlDialect';
 
 export class PostgresDialect extends BaseSqlDialect {
-  readonly beginTransactionCommand = 'BEGIN';
+  constructor() {
+    super('BEGIN', '"');
+  }
 
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
@@ -47,23 +49,4 @@ export class PostgresDialect extends BaseSqlDialect {
         return super.compareProperty(type, prop, operator, val, opts);
     }
   }
-
-  escapeId<T>(val: string | string[] | keyof T, forbidQualified?: boolean): string {
-    if (Array.isArray(val)) {
-      return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
-    }
-    const str = val as string;
-    if (!forbidQualified && str.includes('.')) {
-      return str
-        .split('.')
-        .map((it) => this.escapeId(it, true))
-        .join('.');
-    }
-    return escapeId(str);
-  }
-}
-
-export function escapeId(str: string) {
-  // sourced from escapeIdentifier here https://github.com/brianc/node-postgres/blob/master/packages/pg/lib/client.js
-  return '"' + str.replace(/"/g, '""') + '"';
 }

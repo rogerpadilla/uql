@@ -1,4 +1,4 @@
-import { escapeId, escape } from 'sqlstring';
+import { escape } from 'sqlstring';
 import { getEntityMeta } from '../entity/decorator/definition';
 import {
   QueryFilter,
@@ -16,7 +16,11 @@ import {
 import { filterPersistableKeys } from './dialect.util';
 
 export abstract class BaseSqlDialect {
-  readonly beginTransactionCommand: string = 'START TRANSACTION';
+  protected readonly escapeIdRegex: RegExp;
+
+  constructor(readonly beginTransactionCommand: string, readonly escapeIdChar: '`' | '"') {
+    this.escapeIdRegex = RegExp(escapeIdChar, 'g');
+  }
 
   insert<T>(type: { new (): T }, payload: T | T[]): string {
     const meta = getEntityMeta(type);
@@ -320,7 +324,23 @@ export abstract class BaseSqlDialect {
   }
 
   escapeId<T>(val: string | string[] | keyof T | (keyof T)[], forbidQualified?: boolean): string {
-    return escapeId(val, forbidQualified);
+    if (Array.isArray(val)) {
+      return (val as string[]).map((it) => this.escapeId(it, forbidQualified)).join(', ');
+    }
+
+    const str = val as string;
+
+    if (!forbidQualified && str.includes('.')) {
+      return str
+        .split('.')
+        .map((it) => this.escapeId(it))
+        .join('.');
+    }
+
+    // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
+    return (
+      this.escapeIdChar + str.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar
+    );
   }
 
   escape(val: any): string {
