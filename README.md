@@ -6,6 +6,8 @@
 
 uql is a plug & play ORM, with a declarative `JSON` syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql will run efficient (and safe) SQL (or Mongo) queries.
 
+Given uql is just a library/parser, its queries can be written and sent from the web/mobile to the backend, or use directly in the backend, or even use in the mobile with an embedded database.
+
 ## Table of Contents
 
 1. [Features](#features)
