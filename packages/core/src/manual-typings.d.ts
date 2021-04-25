@@ -1,8 +1,8 @@
-declare module 'sqlstring' {
-  export function escape(value: any): string;
-  export function escapeId(value: any, dotQualifier?: boolean): string;
-  export function objectToValues(value: any): string;
-}
+// declare module 'sqlstring' {
+//   export function escape(value: any): string;
+//   export function escapeId(value: any, dotQualifier?: boolean): string;
+//   export function objectToValues(value: any): string;
+// }
 
 declare namespace Express {
   export interface Request {

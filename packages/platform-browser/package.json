@@ -2,7 +2,7 @@
   "name": "@uql/platform-browser",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.3.6",
+  "version": "0.3.3",
   "main": "uql-platform-browser.min.js",
   "types": "uql-platform-browser.min.d.ts",
   "scripts": {
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "be8c6840983f779aa05c7b8490e47b6654fd1f45"
+  "gitHead": "e5ffc9f457190ce256e635f5d668e849c6ef90c2"
 }
