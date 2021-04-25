@@ -2,7 +2,7 @@ import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from '../../type';
 import { BaseQuerier } from '../../querier';
 import { getEntityMeta } from '../../entity/decorator';
-import { filterPersistableKeys } from '../dialect.util';
+import { filterPersistableProperties } from '../entity.util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier<ObjectId> {
@@ -13,7 +13,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   async insert<T>(type: { new (): T }, bodies: T[]) {
-    const persistableKeys = filterPersistableKeys(type, bodies[0]);
+    const persistableKeys = filterPersistableProperties(type, bodies[0]);
     const persistables = bodies.map((body) =>
       persistableKeys.reduce((acc, key) => {
         acc[key] = body[key];
@@ -27,8 +27,8 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const persistableKeys = filterPersistableKeys(type, body);
-    const persistable = persistableKeys.reduce((acc, key) => {
+    const persistableProperties = filterPersistableProperties(type, body);
+    const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
       return acc;
     }, {} as OptionalId<T>);

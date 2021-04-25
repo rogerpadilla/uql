@@ -37,10 +37,6 @@ it('user', () => {
       name: { name: 'name', type: String },
       email: { name: 'email', type: String },
       password: { name: 'password', type: String },
-      profile: {
-        name: 'profile',
-        type: Profile,
-      },
     },
     relations: {
       company: {

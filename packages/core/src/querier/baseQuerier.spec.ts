@@ -249,7 +249,7 @@ describe('baseQuerier', () => {
     expect(querier.query).toBeCalledTimes(1);
     expect(querier.query).nthCalledWith(
       1,
-      'SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `password`, `profile` FROM `User` WHERE `id` = 1 LIMIT 1'
+      'SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `password` FROM `User` WHERE `id` = 1 LIMIT 1'
     );
     expect(querier.beginTransaction).toBeCalledTimes(0);
     expect(querier.commitTransaction).toBeCalledTimes(0);

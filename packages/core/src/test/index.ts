@@ -1,2 +1,3 @@
 export * from './entityMock';
-export * from './test.util';
+export * from './spec.util';
+export * from './sql.util';

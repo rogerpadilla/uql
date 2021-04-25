@@ -19,7 +19,7 @@ describe('querierPool', () => {
     clearOptions();
   });
 
-  it('getQuerierPool invalid driver', async () => {
+  it('getQuerier', async () => {
     const querier1 = await getQuerier();
     expect(querier1).toBeDefined();
     const querier2 = await getQuerier();

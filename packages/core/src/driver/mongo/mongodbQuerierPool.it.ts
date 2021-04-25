@@ -19,9 +19,9 @@ class MongodbQuerierPoolIt extends BaseQuerierPoolIt {
     await expect(this.querier.query('something')).rejects.toThrow('method not implemented');
   }
 
-  createTables() {
+  async createTables() {
     const querier = this.querier as MongodbQuerier;
-    return Promise.all(
+    await Promise.all(
       this.entities.map((entity) => {
         const meta = getEntityMeta(entity);
         return querier.conn.db().createCollection(meta.name);
@@ -29,9 +29,9 @@ class MongodbQuerierPoolIt extends BaseQuerierPoolIt {
     );
   }
 
-  dropTables() {
+  async dropTables() {
     const querier = this.querier as MongodbQuerier;
-    return querier.conn.db().dropDatabase();
+    await querier.conn.db().dropDatabase();
   }
 }
 

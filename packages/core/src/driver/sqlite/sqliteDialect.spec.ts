@@ -8,18 +8,18 @@ class SqliteDialectSpec extends BaseSqlDialectSpec {
   }
 
   shouldBeginTransaction() {
-    expect(this.sql.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
   shouldFind$text() {
-    const query1 = this.sql.find(Item, {
+    const sql1 = this.dialect.find(Item, {
       project: { id: 1 },
       filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },
       limit: 30,
     });
-    expect(query1).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH 'some text' AND `status` = 1 LIMIT 30");
+    expect(sql1).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH 'some text' AND `status` = 1 LIMIT 30");
 
-    const query2 = this.sql.find(User, {
+    const sql2 = this.dialect.find(User, {
       project: { id: 1 },
       filter: {
         $text: { fields: ['name'], value: 'something' },
@@ -28,7 +28,7 @@ class SqliteDialectSpec extends BaseSqlDialectSpec {
       },
       limit: 10,
     });
-    expect(query2).toBe(
+    expect(sql2).toBe(
       "SELECT `id` FROM `User` WHERE `User` MATCH 'something' AND `name` <> 'other unwanted' AND `status` = 1 LIMIT 10"
     );
   }

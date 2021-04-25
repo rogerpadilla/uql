@@ -14,22 +14,22 @@
   "dependencies": {
     "reflect-metadata": "^0.1.13",
     "sqlstring": "^2.3.2",
-    "tslib": "^2.1.0"
+    "tslib": "^2.2.0"
   },
   "devDependencies": {
-    "@types/mongodb": "^3.6.8",
-    "@types/mysql": "^2.15.17",
-    "@types/node": "^14.14.31",
-    "@types/pg": "^7.14.10",
+    "@types/mongodb": "^3.6.12",
+    "@types/mysql": "^2.15.18",
+    "@types/node": "^14.14.41",
+    "@types/pg": "^7.14.11",
     "@types/sqlite3": "^3.1.7",
     "@types/uuid": "^8.3.0",
     "copyfiles": "^2.4.1",
     "mariadb": "^2.5.3",
-    "mongodb": "^3.6.4",
+    "mongodb": "^3.6.6",
     "mysql2": "^2.2.5",
-    "pg": "^8.5.1",
+    "pg": "^8.6.0",
     "rimraf": "^3.0.2",
-    "sqlite": "^4.0.19",
+    "sqlite": "^4.0.21",
     "sqlite3": "^5.0.2",
     "uuid": "^8.3.2"
   },

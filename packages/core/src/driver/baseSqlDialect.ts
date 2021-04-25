@@ -13,7 +13,7 @@ import {
   QueryTextSearchOptions,
   QueryPopulate,
 } from '../type';
-import { filterPersistableKeys } from './dialect.util';
+import { filterPersistableProperties } from './entity.util';
 
 export abstract class BaseSqlDialect {
   protected readonly escapeIdRegex: RegExp;
@@ -37,7 +37,7 @@ export abstract class BaseSqlDialect {
       }
     }
 
-    const persistableKeys = filterPersistableKeys(type, payloads[0]);
+    const persistableKeys = filterPersistableProperties(type, payloads[0]);
     const columns = persistableKeys.map((prop) => meta.properties[prop].name);
     const values = payloads
       .map((body) => persistableKeys.map((prop) => this.escape(body[prop])).join(', '))
@@ -58,7 +58,7 @@ export abstract class BaseSqlDialect {
       }
     }
 
-    const persistableKeys = filterPersistableKeys(type, payload);
+    const persistableKeys = filterPersistableProperties(type, payload);
     const persistableData = persistableKeys.reduce((acc, key) => {
       acc[meta.properties[key].name] = payload[key];
       return acc;
@@ -181,11 +181,11 @@ export abstract class BaseSqlDialect {
       const relMeta = getEntityMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
       const rel = prefix
-        ? this.escapeId(prefix, true) + '.' + this.escapeId(popKey)
-        : `${this.escapeId(meta.name)}.${joinPath}`;
+        ? this.escapeId(prefix, true) + '.' + this.escapeId(relOpts.mappedBy ? meta.id.name : popKey)
+        : `${this.escapeId(meta.name)}.${relOpts.mappedBy ? this.escapeId(meta.id.name) : joinPath}`;
       const joinType = popVal.required ? 'INNER' : 'LEFT';
       joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(
-        relMeta.id.name
+        relOpts.mappedBy ?? relMeta.id.name
       )} = ${rel}`;
       if (popVal.filter && Object.keys(popVal.filter).length) {
         const where = this.where(relType, popVal.filter, { prefix: popKey });

@@ -7,18 +7,10 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
   constructor(readonly pool: QuerierPool) {}
 
-  async beforeAll() {
-    try {
-      this.querier = await this.pool.getQuerier();
-      await this.dropTables();
-      await this.createTables();
-    } finally {
-      await this.querier.release();
-    }
-  }
-
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
+    await this.dropTables();
+    await this.createTables();
   }
 
   async afterEach() {
@@ -82,7 +74,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(taxCategoryId).toBeDefined();
   }
 
-  async XXXshouldInsertOneAndCascadeOneToOne() {
+  async shouldInsertOneAndCascadeOneToOne() {
     const body: User = {
       name: 'some name',
       profile: { picture: 'abc', createdAt: 123 },
@@ -95,16 +87,16 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
     const user = await this.querier.findOneById(User, id, { populate: { profile: {} } });
 
-    console.log('user', user);
+    expect(user).toMatchObject(body);
 
-    // expect(user).toMatchObject(body);
+    const affectedRows = await this.querier.removeOneById(User, id);
 
-    // const n = await this.querier.removeOneById(User, id);
-
-    // expect(n).toBe(1);
+    expect(affectedRows).toBe(1);
   }
 
   async shouldFind() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const users = await this.querier.find(User, {
       project: { name: 1 },
       skip: 1,
@@ -125,6 +117,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldFindOne() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const found = await this.querier.findOne(User, {
       project: {
         id: 1,
@@ -152,6 +146,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldFindPopulate() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const users = await this.querier.find(User, {
       project: { name: 1, email: 1, password: 1 },
       populate: {
@@ -213,6 +209,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldCount() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const count1 = await this.querier.count(User);
     expect(count1).toBe(3);
     const count2 = await this.querier.count(User, { status: null });
@@ -222,6 +220,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldUpdate() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const updatedRows1 = await this.querier.update(User, { status: 1 }, { status: null });
     expect(updatedRows1).toBe(0);
     const updatedRows2 = await this.querier.update(User, { status: null }, { status: 1 });
@@ -245,6 +245,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldRollback() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const count1 = await this.querier.count(User);
     expect(count1).toBe(3);
     await this.querier.beginTransaction();
@@ -271,6 +273,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
   }
 
   async shouldPopulateOneToMany() {
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+
     const [user, company] = await Promise.all([
       this.querier.findOne(User, { project: { id: 1 } }),
       this.querier.findOne(Company, { project: { id: 1 } }),
@@ -319,6 +323,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
   async shouldRemove() {
     await this.querier.beginTransaction();
+    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
     const deletedRows1 = await this.querier.remove(User, { status: 1 });
     expect(deletedRows1).toBe(0);
     const deletedRows2 = await this.querier.remove(User, { status: null });
@@ -330,7 +335,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
-  abstract createTables(): void;
+  abstract createTables(): Promise<void>;
 
-  abstract dropTables(): void;
+  abstract dropTables(): Promise<void>;
 }

@@ -27,10 +27,12 @@ export class Sqlit3Connection implements QuerierPoolConnection {
   constructor(readonly db: Database) {}
 
   query(query: string) {
+    // console.debug(query);
     return this.db.run(query);
   }
 
   all(query: string) {
+    // console.debug(query);
     return this.db.all(query);
   }
 

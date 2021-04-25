@@ -12,6 +12,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
   }
 
   async query<T>(query: string, ...args: any[]) {
+    // console.debug(query);
     const res = await this.conn.query(query, args);
     return this.processQueryResult<T>(res);
   }

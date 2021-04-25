@@ -10,7 +10,8 @@ import { defineRelation, defineProperty } from './definition';
 function Relation<T>(opts: RelationOptions<T>) {
   return (target: object, prop: string) => {
     const type = target.constructor as { new (): T };
-    if (opts.cardinality === 'manyToOne' || opts.cardinality === 'oneToOne') {
+    // TODO: don't auto-define properties via relations
+    if (opts.cardinality === 'manyToOne' || (opts.cardinality === 'oneToOne' && !opts.mappedBy)) {
       defineProperty(type, prop, {});
     }
     defineRelation(type, prop, opts);
