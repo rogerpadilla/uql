@@ -2,7 +2,7 @@
   "name": "@uql/plugin-express",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.3.3",
+  "version": "0.3.6",
   "main": "plugin-express/src/index.js",
   "types": "plugin-express/src/index.d.ts",
   "scripts": {
@@ -23,7 +23,8 @@
     "@types/express-serve-static-core": "4.17.19",
     "copyfiles": "^2.4.1",
     "express": "^4.17.1",
-    "rimraf": "^3.0.2"
+    "rimraf": "^3.0.2",
+    "typescript": "^4.2.4"
   },
   "author": "Roger Padilla",
   "repository": {
@@ -56,5 +57,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "710831435e748f94b0598b3848b6874f6dd5de1a"
+  "gitHead": "be8c6840983f779aa05c7b8490e47b6654fd1f45"
 }
