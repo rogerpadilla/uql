@@ -25,7 +25,7 @@ class MySqlQuerierSpec implements Spec {
   async shouldFind() {
     await this.querier.find(User, {
       project: { id: 1, name: 1 },
-      filter: { company: '123' },
+      filter: { companyId: '123' },
       limit: 100,
     });
     expect(this.querier.query).toBeCalledTimes(1);
@@ -36,7 +36,7 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldRemove() {
-    await this.querier.remove(User, { company: '123' });
+    await this.querier.remove(User, { companyId: '123' });
     expect(this.querier.query).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -45,7 +45,7 @@ class MySqlQuerierSpec implements Spec {
   }
 
   async shouldInsertOne() {
-    await this.querier.insertOne(User, { company: '123' });
+    await this.querier.insertOne(User, { companyId: '123' });
     expect(this.querier.query).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(1);
     expect(this.querier.find).toBeCalledTimes(0);

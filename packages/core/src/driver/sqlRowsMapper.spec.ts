@@ -1,4 +1,4 @@
-import { Item, Storehouse, ItemAdjustment } from '../test';
+import { Item, Storehouse, ItemAdjustment, User } from '../test';
 import { mapRows } from './sqlRowsMapper';
 
 it('map rows - empty', () => {
@@ -17,8 +17,8 @@ it('mapRows', () => {
       description: null,
       createdAt: 1,
       updatedAt: null,
-      user: '1',
-      company: '1',
+      userId: '1',
+      companyId: '1',
       status: null,
     },
     {
@@ -28,8 +28,8 @@ it('mapRows', () => {
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      user: '1',
-      company: '1',
+      userId: '1',
+      companyId: '1',
       status: null,
     },
   ];
@@ -42,8 +42,8 @@ it('mapRows', () => {
       description: null,
       createdAt: 1,
       updatedAt: null,
-      user: '1',
-      company: '1',
+      userId: '1',
+      companyId: '1',
       status: null,
     },
     {
@@ -53,8 +53,8 @@ it('mapRows', () => {
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      user: '1',
-      company: '1',
+      userId: '1',
+      companyId: '1',
       status: null,
     },
   ];
@@ -73,7 +73,7 @@ it('mapRows deep populate', () => {
       'item.buyLedgerAccount': '1',
       'item.saleLedgerAccount': '1',
       'item.tax': '1',
-      'item.company': '1',
+      'item.companyId': '1',
       'item.measureUnit': '1',
       'item.inventoryable': 1,
       'item.buyLedgerAccount.id': '1',
@@ -88,8 +88,8 @@ it('mapRows deep populate', () => {
       'item.tax.category.description': 'Nacionales',
       'item.measureUnit.id': '1',
       'item.measureUnit.name': 'Unidad',
-      'item.user': null as number,
-      'item.user.id': null as number,
+      'item.userId': null as string,
+      'item.user.id': null as string,
       'item.user.name': null as string,
     },
     {
@@ -99,8 +99,8 @@ it('mapRows deep populate', () => {
       'item.id': '2',
       'item.name': 'Pony Malta 2 litros',
       'item.createdAt': 1,
-      'item.user': '1',
-      'item.company': '1',
+      'item.companyId': '1',
+      'item.userId': '5',
       'item.user.id': '5',
       'item.user.name': 'Roshi Master',
     },
@@ -133,7 +133,7 @@ it('mapRows deep populate', () => {
             description: 'Nacionales',
           },
         },
-        company: '1',
+        companyId: '1',
         measureUnit: {
           id: '1',
           name: 'Unidad',
@@ -149,7 +149,8 @@ it('mapRows deep populate', () => {
         id: '2',
         name: 'Pony Malta 2 litros',
         createdAt: 1,
-        company: '1',
+        companyId: '1',
+        userId: '5',
         user: {
           id: '5',
           name: 'Roshi Master',

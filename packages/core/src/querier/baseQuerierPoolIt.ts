@@ -50,7 +50,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
     const companyId = await this.querier.insertOne(Company, {
       name: 'Some Name C',
-      user: String(userId),
+      userId,
     });
     expect(companyId).toBeDefined();
 
@@ -60,7 +60,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
         id: userId,
       },
       {
-        company: companyId,
+        companyId,
       }
     );
     expect(affectedRows).toBe(1);
@@ -68,8 +68,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
     const taxCategoryId = await this.querier.insertOne(TaxCategory, {
       name: 'Some Name C',
       description: 'Some Description Z',
-      user: String(userId),
-      company: String(companyId),
+      userId,
+      companyId,
     });
     expect(taxCategoryId).toBeDefined();
   }
@@ -280,26 +280,26 @@ export abstract class BaseQuerierPoolIt implements Spec {
       this.querier.findOne(Company, { project: { id: 1 } }),
     ]);
 
-    const itemIds = await this.querier.insert(Item, [
+    const [firstItemId, secondItemId] = await this.querier.insert(Item, [
       {
         name: 'some item name a',
-        user: user.id,
-        company: company.id,
+        userId: user.id,
+        companyId: company.id,
       },
       {
         name: 'some item name b',
-        user: user.id,
-        company: company.id,
+        userId: user.id,
+        companyId: company.id,
       },
     ]);
 
     const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some inventory adjustment',
-      user: user.id,
-      company: company.id,
+      userId: user.id,
+      companyId: company.id,
       itemAdjustments: [
-        { buyPrice: 1000, item: itemIds[0] },
-        { buyPrice: 2000, item: itemIds[1] },
+        { buyPrice: 1000, item: firstItemId },
+        { buyPrice: 2000, item: secondItemId },
       ],
     });
 
@@ -310,8 +310,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(inventoryAdjustment).toMatchObject({
       description: 'some inventory adjustment',
       itemAdjustments: [
-        { buyPrice: 1000, item: itemIds[0] },
-        { buyPrice: 2000, item: itemIds[1] },
+        { buyPrice: 1000, item: firstItemId },
+        { buyPrice: 2000, item: secondItemId },
       ],
       user: {
         email: 'someemaila@example.com',

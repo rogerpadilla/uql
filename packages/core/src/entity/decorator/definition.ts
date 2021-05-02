@@ -1,8 +1,9 @@
 import 'reflect-metadata';
 import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../../type';
+import { isPrimitiveType, copyAttributes, completeRelations, findId } from './definition.util';
 
 const holder = globalThis;
-const key = '@uql/entity';
+const key = '@uql/core/entity';
 const metas: Map<{ new (): any }, EntityMeta<any>> = holder[key] || new Map();
 holder[key] = metas;
 
@@ -10,7 +11,7 @@ function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
   if (metas.has(type)) {
     return metas.get(type);
   }
-  const meta: EntityMeta<T> = { type, name: type.name, attributes: {} };
+  const meta: EntityMeta<T> = { type, name: type.name, attributes: {}, properties: {}, relations: {} };
   metas.set(type, meta);
   return meta;
 }
@@ -24,7 +25,8 @@ export function defineProperty<T>(type: { new (): T }, prop: string, opts: Prope
 
 export function defineId<T>(type: { new (): T }, prop: string, opts: PropertyOptions): EntityMeta<T> {
   const meta = ensureEntityMeta(type);
-  if (hasId(meta)) {
+  const id = findId(meta);
+  if (id) {
     throw new TypeError(`'${type.name}' must have a single field decorated with @Id`);
   }
   return defineProperty(type, prop, { ...opts, isId: true });
@@ -56,43 +58,27 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
 
   while (parentProto.constructor !== Object) {
     const parentMeta = ensureEntityMeta(parentProto.constructor as { new (): any });
-    const parentProperties = { ...parentMeta.attributes };
-    if (hasId(meta)) {
-      for (const prop in parentProperties) {
-        if (parentProperties[prop].property.isId) {
-          delete parentProperties[prop];
-          break;
-        }
-      }
-    }
-    meta.attributes = { ...parentProperties, ...meta.attributes };
+    copyAttributes(parentMeta, meta);
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
-  const idProperty = Object.keys(meta.attributes).find((key) => meta.attributes[key].property.isId);
-  if (!idProperty) {
+  const id = findId(meta);
+  if (!id) {
     throw new TypeError(`'${type.name}' must have one field decorated with @Id`);
   }
+  meta.id = id;
 
-  meta.id = { property: idProperty, name: meta.attributes[idProperty].property.name };
-
-  meta.properties = Object.keys(meta.attributes).reduce((acc, prop) => {
+  Object.keys(meta.attributes).forEach((prop) => {
     if (meta.attributes[prop].property) {
-      acc[prop] = meta.attributes[prop].property;
+      meta.properties[prop] = meta.attributes[prop].property;
+    } else {
+      meta.relations[prop] = meta.attributes[prop].relation;
     }
-    return acc;
-  }, {} as { [p: string]: PropertyOptions });
-
-  meta.relations = Object.keys(meta.attributes).reduce((acc, prop) => {
-    if (meta.attributes[prop].relation) {
-      acc[prop] = meta.attributes[prop].relation;
-    }
-    return acc;
-  }, {} as { [p in keyof T]: RelationOptions<T> });
+  });
 
   delete meta.attributes;
 
-  return meta;
+  return completeRelations(meta);
 }
 
 export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
@@ -110,20 +96,4 @@ export function getEntities() {
     }
     return acc;
   }, []);
-}
-
-function hasId<T>(meta: EntityMeta<T>): boolean {
-  return Object.keys(meta.attributes).some((prop) => meta.attributes[prop].property?.isId);
-}
-
-function isPrimitiveType(type: any): boolean {
-  return (
-    type === undefined ||
-    type === Number ||
-    type === String ||
-    type === Boolean ||
-    type === BigInt ||
-    type === Symbol ||
-    type === Object
-  );
 }

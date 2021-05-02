@@ -12,7 +12,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@uql/core": "^0.3.6"
+    "@uql/core": "^0.3.4"
   },
   "devDependencies": {
     "copyfiles": "^2.4.1",
@@ -21,7 +21,7 @@
     "source-map-loader": "^2.0.1",
     "ts-loader": "^9.1.1",
     "typescript": "^4.2.4",
-    "webpack": "^5.35.1",
+    "webpack": "^5.36.2",
     "webpack-cli": "^4.6.0",
     "webpack-log": "^3.0.2"
   },
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "e5ffc9f457190ce256e635f5d668e849c6ef90c2"
+  "gitHead": "f1630ef58cc9f66b850bdf8a5980aa4d26e1ba67"
 }

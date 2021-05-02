@@ -68,14 +68,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
     const sql = update(
       this.dialect,
       User,
-      { name: 'some', user: '123' },
+      { name: 'some', userId: '123' },
       {
         name: 'Some Text',
         updatedAt: 321,
       }
     );
     expect(sql).toBe(
-      "UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `user` = '123'"
+      "UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `userId` = '123'"
     );
   }
 
@@ -134,28 +134,28 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindLogicalOperators() {
     const sql1 = find(this.dialect, User, {
       project: { id: 1 },
-      filter: { user: '1', $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: '1' },
+      filter: { userId: '1', $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: '1' },
     });
     expect(sql1).toBe(
-      "SELECT `id` FROM `User` WHERE `user` = '1' AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = '1'"
+      "SELECT `id` FROM `User` WHERE `userId` = '1' AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = '1'"
     );
     const sql2 = find(this.dialect, User, {
       project: { id: 1 },
       filter: {
-        user: '1',
+        userId: '1',
         $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
         id: '1',
         email: 'e',
       },
     });
     expect(sql2).toBe(
-      "SELECT `id` FROM `User` WHERE `user` = '1'" +
+      "SELECT `id` FROM `User` WHERE `userId` = '1'" +
         " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = '1' AND `email` = 'e'"
     );
     const sql3 = find(this.dialect, User, {
       project: { id: 1 },
       filter: {
-        user: '1',
+        userId: '1',
         $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
         id: '1',
         email: 'e',
@@ -165,7 +165,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
       limit: 10,
     });
     expect(sql3).toBe(
-      "SELECT `id` FROM `User` WHERE `user` = '1'" +
+      "SELECT `id` FROM `User` WHERE `userId` = '1'" +
         " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com')" +
         " AND `id` = '1' AND `email` = 'e'" +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
@@ -218,16 +218,16 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindIsNotNull() {
     const sql1 = find(this.dialect, User, {
       project: { id: 1 },
-      filter: { user: '123', status: null },
+      filter: { userId: '123', status: null },
       limit: 5,
     });
-    expect(sql1).toBe("SELECT `id` FROM `User` WHERE `user` = '123' AND `status` IS NULL LIMIT 5");
+    expect(sql1).toBe("SELECT `id` FROM `User` WHERE `userId` = '123' AND `status` IS NULL LIMIT 5");
     const sql2 = find(this.dialect, User, {
       project: { id: 1 },
-      filter: { user: '123', status: { $ne: null } },
+      filter: { userId: '123', status: { $ne: null } },
       limit: 5,
     });
-    expect(sql2).toBe("SELECT `id` FROM `User` WHERE `user` = '123' AND `status` IS NOT NULL LIMIT 5");
+    expect(sql2).toBe("SELECT `id` FROM `User` WHERE `userId` = '123' AND `status` IS NOT NULL LIMIT 5");
   }
 
   shouldFind$in() {
@@ -256,8 +256,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
       },
     });
     expect(sql1).toBe(
-      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture`' +
-        ' FROM `User` LEFT JOIN `user_profile` `profile` ON `profile`.`user` = `User`.`id`'
+      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture` FROM `User`' +
+        ' LEFT JOIN `user_profile` `profile` ON `profile`.`userId` = `User`.`id`'
     );
   }
 
@@ -282,7 +282,10 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     const sql2 = find(this.dialect, User, { project: { id: 1 }, populate: { company: {} } });
     expect(sql2).toBe(
-      'SELECT `User`.`id`, `User`.`company`, `company`.`id` `company.id`, `company`.`company` `company.company`, `company`.`user` `company.user`, `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`, `company`.`status` `company.status`, `company`.`name` `company.name`, `company`.`description` `company.description` FROM `User` LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`company`'
+      'SELECT `User`.`id`, `User`.`companyId`, `company`.`id` `company.id`, `company`.`company` `company.company`, `company`.`userId` `company.userId`' +
+        ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`, `company`.`status` `company.status`' +
+        ', `company`.`name` `company.name`, `company`.`description` `company.description` FROM `User`' +
+        ' LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`companyId`'
     );
   }
 
@@ -298,7 +301,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     });
 
     expect(sql1).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`tax`, `Item`.`measureUnit`' +
+      'SELECT `Item`.`id`, `Item`.`name`' +
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ' FROM `Item`' +
@@ -319,7 +322,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     });
 
     expect(sql2).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`tax`, `Item`.`measureUnit`' +
+      'SELECT `Item`.`id`, `Item`.`name`' +
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ' FROM `Item`' +
@@ -403,32 +406,32 @@ export abstract class BaseSqlDialectSpec implements Spec {
       populate: { user: { project: { id: 1, name: 1 } }, company: { project: { id: 1, name: 1 } } },
     });
     expect(sql).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`user`, `Item`.`company`' +
+      'SELECT `Item`.`id`, `Item`.`name`' +
         ', `user`.`id` `user.id`, `user`.`name` `user.name`' +
         ', `company`.`id` `company.id`, `company`.`name` `company.name`' +
         ' FROM `Item`' +
-        ' LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`user`' +
-        ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`company`'
+        ' LEFT JOIN `User` `user` ON `user`.`id` = `Item`.`userId`' +
+        ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`companyId`'
     );
   }
 
   shouldFindGroup() {
     const sql1 = find(this.dialect, User, {
-      group: ['company'],
+      group: ['companyId'],
     });
     expect(sql1).toBe(
-      'SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `password` FROM `User` GROUP BY `company`'
+      'SELECT `id`, `companyId`, `userId`, `createdAt`, `updatedAt`, `status`, `name`, `email`, `password` FROM `User` GROUP BY `companyId`'
     );
     const sql2 = find(this.dialect, User, {
       project: { id: 1, name: 1 },
       filter: { status: 1 },
-      group: ['company'],
+      group: ['companyId'],
       skip: 50,
       limit: 100,
       sort: { name: 1 },
     });
     expect(sql2).toBe(
-      'SELECT `id`, `name` FROM `User` WHERE `status` = 1 GROUP BY `company` ORDER BY `name` LIMIT 100 OFFSET 50'
+      'SELECT `id`, `name` FROM `User` WHERE `status` = 1 GROUP BY `companyId` ORDER BY `name` LIMIT 100 OFFSET 50'
     );
   }
 
@@ -440,23 +443,23 @@ export abstract class BaseSqlDialectSpec implements Spec {
     });
     expect(sql1).toBe("SELECT `id` FROM `User` WHERE `id` = '9' LIMIT 1");
     const sql2 = find(this.dialect, User, {
-      project: { id: 1, name: 1, user: 1 },
+      project: { id: 1, name: 1, userId: 1 },
       filter: { id: '9' },
       limit: 1,
     });
-    expect(sql2).toBe("SELECT `id`, `name`, `user` FROM `User` WHERE `id` = '9' LIMIT 1");
+    expect(sql2).toBe("SELECT `id`, `name`, `userId` FROM `User` WHERE `id` = '9' LIMIT 1");
     const sql3 = find(this.dialect, User, {
       project: { id: 1 },
-      filter: { name: 'something', user: '123' },
+      filter: { name: 'something', userId: '123' },
       limit: 1,
     });
-    expect(sql3).toBe("SELECT `id` FROM `User` WHERE `name` = 'something' AND `user` = '123' LIMIT 1");
+    expect(sql3).toBe("SELECT `id` FROM `User` WHERE `name` = 'something' AND `userId` = '123' LIMIT 1");
     const sql4 = find(this.dialect, User, {
-      project: { id: 1, name: 1, user: 1 },
-      filter: { user: '123' },
+      project: { id: 1, name: 1, userId: 1 },
+      filter: { userId: '123' },
       limit: 25,
     });
-    expect(sql4).toBe("SELECT `id`, `name`, `user` FROM `User` WHERE `user` = '123' LIMIT 25");
+    expect(sql4).toBe("SELECT `id`, `name`, `userId` FROM `User` WHERE `userId` = '123' LIMIT 25");
   }
 
   shouldFindProject() {
@@ -464,13 +467,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
       find(this.dialect, User, {
         project: { password: false },
       })
-    ).toBe('SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `name`, `email` FROM `User`');
+    ).toBe('SELECT `id`, `companyId`, `userId`, `createdAt`, `updatedAt`, `status`, `name`, `email` FROM `User`');
 
     expect(
       find(this.dialect, User, {
         project: { name: 0, password: 0 },
       })
-    ).toBe('SELECT `id`, `company`, `user`, `createdAt`, `updatedAt`, `status`, `email` FROM `User`');
+    ).toBe('SELECT `id`, `companyId`, `userId`, `createdAt`, `updatedAt`, `status`, `email` FROM `User`');
 
     expect(
       find(this.dialect, User, {

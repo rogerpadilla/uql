@@ -5,20 +5,16 @@ import {
   RelationManyToOneOptions,
   RelationManyToManyOptions,
 } from '../../type';
-import { defineRelation, defineProperty } from './definition';
+import { defineRelation } from './definition';
 
 function Relation<T>(opts: RelationOptions<T>) {
   return (target: object, prop: string) => {
     const type = target.constructor as { new (): T };
-    // TODO: don't auto-define properties via relations
-    if (opts.cardinality === 'manyToOne' || (opts.cardinality === 'oneToOne' && !opts.mappedBy)) {
-      defineProperty(type, prop, {});
-    }
     defineRelation(type, prop, opts);
   };
 }
 
-export function OneToOne<T>(opts: RelationOneToOneOptions<T>): ReturnType<typeof Relation> {
+export function OneToOne<T>(opts?: RelationOneToOneOptions<T>): ReturnType<typeof Relation> {
   return Relation({ cardinality: 'oneToOne', ...opts });
 }
 
@@ -30,6 +26,6 @@ export function OneToMany<T>(opts: RelationOneToManyOptions<T>): ReturnType<type
   return Relation({ cardinality: 'oneToMany', ...opts });
 }
 
-// export function ManyToMany<T>(opts: RelationManyToManyOptions<T>): ReturnType<typeof Relation> {
-//   return Relation({ cardinality: 'manyToMany', ...opts });
-// }
+export function ManyToMany<T>(opts: RelationManyToManyOptions<T>): ReturnType<typeof Relation> {
+  return Relation({ cardinality: 'manyToMany', ...opts });
+}

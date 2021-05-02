@@ -15,7 +15,7 @@
     "tslib": "^2.2.0"
   },
   "peerDependencies": {
-    "@uql/core": "^0.3.3",
+    "@uql/core": "^0.3.4",
     "express": "^4.17.1"
   },
   "devDependencies": {
@@ -56,5 +56,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "e5ffc9f457190ce256e635f5d668e849c6ef90c2"
+  "gitHead": "f1630ef58cc9f66b850bdf8a5980aa4d26e1ba67"
 }

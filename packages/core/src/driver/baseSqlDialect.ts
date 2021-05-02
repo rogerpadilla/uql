@@ -173,11 +173,11 @@ export abstract class BaseSqlDialect {
       const joinPath = this.escapeId(joinPrefix, true);
       const relType = relOpts.type();
       const popVal = populate[popKey];
-      const relProperties = this.columns(relType, popVal, {
+      const relColumns = this.columns(relType, popVal, {
         prefix: joinPrefix,
         usePrefixForAlias: true,
       });
-      joinsSelect += `, ${relProperties}`;
+      joinsSelect += `, ${relColumns}`;
       const relMeta = getEntityMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
       const rel = prefix

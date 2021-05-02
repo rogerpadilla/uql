@@ -37,22 +37,33 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
 
     let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
 
+    const defaultIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
     const columns = Object.keys(meta.properties).map((key) => {
       const prop = meta.properties[key];
       let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
       if (prop.isId) {
-        propSql += prop.onInsert ? defaultType : this.primaryKeyType;
+        propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
+      } else if (prop.reference) {
+        const rel = prop.reference.type();
+        const relMeta = getEntityMeta(rel);
+        const type = relMeta.id.onInsert
+          ? defaultIdType
+          : this.primaryKeyType.startsWith('INTEGER')
+          ? 'INTEGER'
+          : 'BIGINT';
+        propSql += `${type} REFERENCES ${relMeta.name}(${relMeta.id.name})`;
       } else {
-        const rel = meta.relations[key];
-        propSql += rel || prop.type === Number ? 'BIGINT' : defaultType;
+        propSql += prop.type === Number ? 'BIGINT' : defaultType;
       }
       return propSql;
     });
 
     sql += columns.join(',\n\t');
     sql += `\n);`;
+
+    // console.log('sql', sql);
 
     return sql;
   }
