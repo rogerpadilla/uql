@@ -164,15 +164,15 @@ export abstract class BaseSqlDialect {
       const relMeta = getEntityMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
 
-      const rel = prefix
-        ? this.escapeId(prefix, true) + '.' + this.escapeId(relOpts.mappedBy ? meta.id.name : popKey)
-        : `${this.escapeId(meta.name)}.${relOpts.mappedBy ? this.escapeId(meta.id.name) : joinPath}`;
+      const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
 
       const joinType = popVal.required ? 'INNER' : 'LEFT';
 
-      joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON ${joinPath}.${this.escapeId(
-        relOpts.mappedBy ?? relMeta.id.name
-      )} = ${rel}`;
+      joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON `;
+
+      joinsTables += relOpts.references
+        .map((it) => `${joinPath}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
+        .join(' AND ');
 
       if (popVal.filter && Object.keys(popVal.filter).length) {
         const where = this.filter(relType, popVal.filter, { prefix: popKey });

@@ -66,7 +66,7 @@ it('user', () => {
         cardinality: 'oneToMany',
         type: expect.any(Function),
         mappedBy: 'userId',
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'id', target: 'userId' }],
       },
       profile: {
         cardinality: 'oneToOne',
@@ -74,8 +74,8 @@ it('user', () => {
         mappedBy: 'userId',
         references: [
           {
-            source: 'userId',
-            target: 'id',
+            source: 'id',
+            target: 'userId',
           },
         ],
       },
@@ -287,7 +287,7 @@ it('InventoryAdjustment', () => {
         cardinality: 'oneToMany',
         type: expect.any(Function),
         mappedBy: 'inventoryAdjustmentId',
-        references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
+        references: [{ source: 'id', target: 'inventoryAdjustmentId' }],
       },
       company: {
         cardinality: 'manyToOne',

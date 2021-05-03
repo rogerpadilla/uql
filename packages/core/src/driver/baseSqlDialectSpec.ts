@@ -305,8 +305,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ' FROM `Item`' +
-        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax` AND `tax`.`id` = 2' +
-        " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit` AND `measureUnit`.`name` <> 'unidad'" +
+        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId` AND `tax`.`id` = 2' +
+        " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad'" +
         ' ORDER BY `category`.`name`, `measureUnit`.`name` LIMIT 100'
     );
 
@@ -326,8 +326,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ' FROM `Item`' +
-        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
-        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         " WHERE `tax`.`id` = 2 AND `measureUnit`.`name` <> 'unidad'" +
         ' ORDER BY `category`.`name`, `measureUnit`.`name` LIMIT 100'
     );
@@ -348,8 +348,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit.id`' +
         ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ', `measureUnit.category`.`name` `measureUnit.category.name`' +
-        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
-        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category`' +
+        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100'
     );
     const sql2 = find(this.dialect, Item, {
@@ -366,8 +366,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit.id`' +
         ', `measureUnit`.`name` `measureUnit.name`, `measureUnit.category`.`id` `measureUnit.category.id`' +
         ', `measureUnit.category`.`name` `measureUnit.category.name`' +
-        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
-        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`category`' +
+        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100'
     );
     const sql3 = find(this.dialect, ItemAdjustment, {
@@ -393,7 +393,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ' FROM `ItemAdjustment`' +
         ' LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`item`' +
         ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnit`' +
-        ' LEFT JOIN `MeasureUnitCategory` `item.measureUnit.category` ON `item.measureUnit.category`.`id` = `item.measureUnit`.`category`' +
+        ' LEFT JOIN `MeasureUnitCategory` `item.measureUnit.category` ON `item.measureUnit.category`.`id` = `item.measureUnit`.`categoryId`' +
         ' LIMIT 100'
     );
   }

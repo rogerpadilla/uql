@@ -107,7 +107,7 @@ function completeRelations<T>(meta: EntityMeta<T>) {
           { source: target, target: relMeta.id.name },
         ];
       } else if (rel.mappedBy) {
-        rel.references = [{ source: rel.mappedBy as string, target: meta.id.property }];
+        rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
       } else {
         const defaultSourcePropertyName = relKey + startUpperCase(relMeta.id.property);
         const defaultSourceProperty = meta.properties[defaultSourcePropertyName];
