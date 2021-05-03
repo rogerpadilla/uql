@@ -11,8 +11,6 @@ import {
   QueryLogicalOperatorValue,
   QueryTextSearchOptions,
   QueryPopulate,
-  RelationOptions,
-  QueryPopulateValue,
 } from '../type';
 import { filterPersistableProperties } from './entity.util';
 
@@ -163,9 +161,7 @@ export abstract class BaseSqlDialect {
 
       const relMeta = getEntityMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
-
       const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
-
       const joinType = popVal.required ? 'INNER' : 'LEFT';
 
       joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON `;
@@ -191,36 +187,6 @@ export abstract class BaseSqlDialect {
 
     return { joinsSelect, joinsTables };
   }
-
-  // joinCriteria<T>(
-  //   type: { new (): T },
-  //   { popKey, popVal, prefix }: { popKey: string; popVal: QueryPopulateValue<any>; prefix: string }
-  // ) {
-  //   const meta = getEntityMeta(type);
-  //   const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
-  //   const joinPath = this.escapeId(joinPrefix, true);
-  //   const relOpts = meta.relations[popKey as string];
-  //   const relType = relOpts.type();
-  //   const relMeta = getEntityMeta(relType);
-
-  //   const relTypeName = this.escapeId(relMeta.name);
-
-  //   const sourceJoinCriteria = prefix
-  //     ? this.escapeId(prefix, true) + '.' + this.escapeId(relOpts.mappedBy ? meta.id.name : joinPath)
-  //     : `${this.escapeId(meta.name)}.${relOpts.mappedBy ? this.escapeId(meta.id.name) : joinPath}`;
-
-  //   const targetJoinCriteria = `${joinPath}.${this.escapeId(relOpts.mappedBy ?? relMeta.id.name)}`;
-  //   let criteria = ` ${
-  //     popVal.required ? 'INNER' : 'LEFT'
-  //   } JOIN ${relTypeName} ${joinPath} ON ${targetJoinCriteria} = ${sourceJoinCriteria}`;
-
-  //   if (popVal.filter && Object.keys(popVal.filter).length) {
-  //     const where = this.filter(relType, popVal.filter, { prefix: popKey as string });
-  //     criteria += ` AND ${where}`;
-  //   }
-
-  //   return criteria;
-  // }
 
   filter<T>(
     type: { new (): T },

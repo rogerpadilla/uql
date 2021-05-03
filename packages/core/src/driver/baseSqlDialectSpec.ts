@@ -263,26 +263,26 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   shouldFindPopulateWithProject() {
     const sql1 = find(this.dialect, Item, {
-      project: { id: 1, name: 1, code: 1 },
+      project: ['id', 'name', 'code'],
       populate: {
-        tax: { project: { id: 1, name: 1 }, required: true },
-        measureUnit: { project: { id: 1, name: 1, category: 1 }, required: true },
+        tax: { project: ['id', 'name'], required: true },
+        measureUnit: { project: ['id', 'name', 'categoryId'] },
       },
       limit: 100,
     });
     expect(sql1).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `Item`.`tax`, `Item`.`measureUnit`' +
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
-        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`category` `measureUnit.category`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ' FROM `Item`' +
-        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`tax`' +
-        ' INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnit`' +
+        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
+        ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LIMIT 100'
     );
 
     const sql2 = find(this.dialect, User, { project: { id: 1 }, populate: { company: {} } });
     expect(sql2).toBe(
-      'SELECT `User`.`id`, `User`.`companyId`, `company`.`id` `company.id`, `company`.`company` `company.company`, `company`.`userId` `company.userId`' +
+      'SELECT `User`.`id`, `company`.`id` `company.id`, `company`.`companyId` `company.companyId`, `company`.`userId` `company.userId`' +
         ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`, `company`.`status` `company.status`' +
         ', `company`.`name` `company.name`, `company`.`description` `company.description` FROM `User`' +
         ' LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`companyId`'
