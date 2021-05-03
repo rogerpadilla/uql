@@ -68,7 +68,7 @@ export class User extends BaseEntity implements IUser {
   password?: string;
   @OneToOne({ mappedBy: 'userId' })
   profile?: Profile;
-  @OneToMany({ type: () => User })
+  @OneToMany({ type: () => User, mappedBy: 'userId' })
   users?: User[];
 }
 
@@ -198,7 +198,7 @@ export class ItemAdjustment extends BaseEntity {
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({ type: () => ItemAdjustment })
+  @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustmentId' })
   itemAdjustments?: ItemAdjustment[];
   @Property()
   date?: number;

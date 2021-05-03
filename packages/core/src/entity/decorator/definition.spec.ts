@@ -31,17 +31,18 @@ it('user', () => {
     type: User,
     name: 'User',
     id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
     properties: {
       id: { name: 'id', type: String, isId: true },
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function), target: 'id' },
+        reference: { type: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function), target: 'id' },
+        reference: { type: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -64,12 +65,19 @@ it('user', () => {
       users: {
         cardinality: 'oneToMany',
         type: expect.any(Function),
+        mappedBy: 'userId',
         references: [{ source: 'userId', target: 'id' }],
       },
       profile: {
         cardinality: 'oneToOne',
         type: expect.any(Function),
         mappedBy: 'userId',
+        references: [
+          {
+            source: 'userId',
+            target: 'id',
+          },
+        ],
       },
     },
   });
@@ -81,6 +89,7 @@ it('profile', () => {
     type: Profile,
     name: 'user_profile',
     id: { name: 'pk', type: String, isId: true, property: 'id' },
+    processed: true,
     properties: {
       id: { name: 'pk', type: String, isId: true },
       companyId: {
@@ -119,6 +128,7 @@ it('item', () => {
     type: Item,
     name: 'Item',
     id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
     properties: {
       id: { name: 'id', type: String, isId: true },
       companyId: {
@@ -182,7 +192,7 @@ it('item', () => {
       saleLedgerAccount: {
         cardinality: 'manyToOne',
         type: expect.any(Function),
-        references: [{ source: 'saleAccountId', target: 'id' }],
+        references: [{ source: 'saleLedgerAccountId', target: 'id' }],
       },
       tax: {
         cardinality: 'manyToOne',
@@ -197,7 +207,7 @@ it('item', () => {
       tags: {
         cardinality: 'manyToMany',
         type: expect.any(Function),
-        through: 'item_tag',
+        through: 'ItemTag',
         references: [
           { source: 'itemId', target: 'id' },
           { source: 'tagId', target: 'id' },
@@ -213,6 +223,7 @@ it('taxCategory', () => {
     type: TaxCategory,
     name: 'TaxCategory',
     id: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function), property: 'pk' },
+    processed: true,
     properties: {
       pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
       companyId: {
@@ -252,6 +263,7 @@ it('InventoryAdjustment', () => {
     type: InventoryAdjustment,
     name: 'InventoryAdjustment',
     id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
     properties: {
       id: { name: 'id', type: String, isId: true },
       companyId: {
@@ -274,6 +286,7 @@ it('InventoryAdjustment', () => {
       itemAdjustments: {
         cardinality: 'oneToMany',
         type: expect.any(Function),
+        mappedBy: 'inventoryAdjustmentId',
         references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
       },
       company: {

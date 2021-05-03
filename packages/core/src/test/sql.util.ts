@@ -12,8 +12,8 @@ export function insert<T>(dialect: BaseSqlDialect, type: { new (): T }, payload:
   const sql = dialect.insert(type, payload);
   if (dialect instanceof PostgresDialect) {
     const reEscapedSql = reEscape(dialect, sql);
-    const pkName = getEntityMeta(type).id.name;
-    const returnId = ` RETURNING ${pkName} insertId`;
+    const idName = getEntityMeta(type).id.name;
+    const returnId = ` RETURNING ${idName} insertId`;
     if (!reEscapedSql.endsWith(returnId)) {
       throw new Error();
     }

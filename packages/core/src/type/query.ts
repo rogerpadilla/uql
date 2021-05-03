@@ -1,12 +1,16 @@
 export type QueryScalarValue = string | number | boolean | null;
 
-export type QueryProject<T> = {
-  [P in keyof T]: boolean | 0 | 1;
-};
+export type QueryProject<T> =
+  | (keyof T)[]
+  | {
+      [P in keyof T]: boolean | 0 | 1;
+    };
 
 export type QueryPopulate<T> = {
-  readonly [P in keyof T]?: Query<T[P]> & { required?: boolean };
+  readonly [P in keyof T]?: QueryPopulateValue<T[P]>;
 };
+
+export type QueryPopulateValue<P> = Query<P> & { required?: boolean };
 
 export type QueryFieldFilter<T> = {
   readonly [P in keyof T]: T[P] | QueryComparisonOperator<T> | QueryScalarValue;
