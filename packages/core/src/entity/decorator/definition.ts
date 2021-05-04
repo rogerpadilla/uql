@@ -113,9 +113,10 @@ function completeRelations<T>(meta: EntityMeta<T>) {
         const defaultSourceProperty = meta.properties[defaultSourcePropertyName];
         if (defaultSourceProperty) {
           rel.references = [{ source: defaultSourcePropertyName, target: relMeta.id.property }];
+        } else {
+          // TODO
+          console.warn(`missing references ${meta.type.name}.${relKey}`, defaultSourcePropertyName);
         }
-        // TODO
-        console.warn(`missing references ${meta.type.name}.${relKey}`);
       }
     }
   }
