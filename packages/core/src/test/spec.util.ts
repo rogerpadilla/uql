@@ -17,17 +17,7 @@ export function createSpec<T extends Spec>(spec: T) {
 
   const specName = proto.constructor.name;
 
-  let describeFn: typeof fdescribe;
-
-  if (specName.startsWith('FFF')) {
-    describeFn = fdescribe;
-  } else if (specName.startsWith('XXX')) {
-    describeFn = xdescribe;
-  } else {
-    describeFn = describe;
-  }
-
-  describeFn(specName, () => {
+  describe(specName, () => {
     while (proto.constructor !== Object) {
       Object.getOwnPropertyNames(proto).forEach((key) => {
         if (key === 'constructor' || specKeysMap[key]) {
@@ -39,10 +29,6 @@ export function createSpec<T extends Spec>(spec: T) {
           hooks[key](callback);
         } else if (key.startsWith('should')) {
           it(key, callback);
-        } else if (key.startsWith('fffshould')) {
-          fit(key, callback);
-        } else if (key.startsWith('xxxshould')) {
-          xit(key, callback);
         }
       });
       proto = Object.getPrototypeOf(proto);
