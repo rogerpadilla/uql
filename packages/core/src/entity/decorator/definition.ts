@@ -95,31 +95,40 @@ function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
 function completeRelations<T>(meta: EntityMeta<T>) {
   for (const relKey in meta.relations) {
     const rel = meta.relations[relKey];
-    if (!rel.references) {
-      const relType = rel.type();
-      const relMeta = ensureEntityMeta(relType);
-      if (rel.cardinality === 'manyToMany') {
-        rel.through = `${meta.name}${relMeta.name}`;
-        const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
-        const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
-        rel.references = [
-          { source, target: meta.id.name },
-          { source: target, target: relMeta.id.name },
-        ];
-      } else if (rel.mappedBy) {
-        rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
+
+    if (rel.references) {
+      continue;
+    }
+
+    const relType = rel.type();
+    const relMeta = ensureEntityMeta(relType);
+
+    if (rel.cardinality === 'manyToMany') {
+      rel.through = `${meta.name}${relMeta.name}`;
+      const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
+      const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
+      rel.references = [
+        { source, target: meta.id.name },
+        { source: target, target: relMeta.id.name },
+      ];
+    } else if (rel.mappedBy) {
+      rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
+    } else {
+      const defaultSourcePropertyName = relKey + startUpperCase(relMeta.id.property);
+      if (meta.properties[defaultSourcePropertyName]) {
+        rel.references = [{ source: defaultSourcePropertyName, target: relMeta.id.property }];
       } else {
-        const defaultSourcePropertyName = relKey + startUpperCase(relMeta.id.property);
-        const defaultSourceProperty = meta.properties[defaultSourcePropertyName];
-        if (defaultSourceProperty) {
-          rel.references = [{ source: defaultSourcePropertyName, target: relMeta.id.property }];
+        const [key] = Object.entries(meta.properties).find(([key, val]) => val.reference?.type() === relType);
+        if (key) {
+          rel.references = [{ source: key, target: relMeta.id.property }];
         } else {
-          // TODO
-          console.warn(`missing references ${meta.type.name}.${relKey}`, defaultSourcePropertyName);
+          // TODO: auto-infer name of fk-col if there are not explicit fks to that relType
+          console.warn(`missing reference ${meta.type.name}.${relKey} -> ${relType.name}`);
         }
       }
     }
   }
+
   return meta;
 }
 

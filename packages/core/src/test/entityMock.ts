@@ -182,6 +182,8 @@ export class Item extends BaseEntity {
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
+  @Property({ reference: { type: () => Item } })
+  itemId?: string;
   @ManyToOne()
   item?: Item;
   @Property()

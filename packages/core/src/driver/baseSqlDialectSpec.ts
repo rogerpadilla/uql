@@ -391,8 +391,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', `item.measureUnit`.`id` `item.measureUnit.id`, `item.measureUnit`.`name` `item.measureUnit.name`' +
         ', `item.measureUnit.category`.`id` `item.measureUnit.category.id`, `item.measureUnit.category`.`name` `item.measureUnit.category.name`' +
         ' FROM `ItemAdjustment`' +
-        ' LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`item`' +
-        ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnit`' +
+        ' LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId`' +
+        ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `item.measureUnit.category` ON `item.measureUnit.category`.`id` = `item.measureUnit`.`categoryId`' +
         ' LIMIT 100'
     );

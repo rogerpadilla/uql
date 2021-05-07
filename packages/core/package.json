@@ -19,7 +19,7 @@
   "devDependencies": {
     "@types/mongodb": "^3.6.12",
     "@types/mysql": "^2.15.18",
-    "@types/node": "^15.0.1",
+    "@types/node": "^15.0.2",
     "@types/pg": "^7.14.11",
     "@types/sqlite3": "^3.1.7",
     "@types/sqlstring": "^2.3.0",
