@@ -1,4 +1,4 @@
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { QueryFilter, QuerierPoolConnection } from '../../type';
 import { BaseSqlQuerier } from '../baseSqlQuerier';
 import { PostgresDialect } from './postgresDialect';
@@ -15,7 +15,7 @@ export class PostgresQuerier extends BaseSqlQuerier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<{ insertid: number }[]>(query);
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res[index].insertid));
   }
 

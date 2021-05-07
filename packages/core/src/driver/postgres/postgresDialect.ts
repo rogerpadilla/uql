@@ -1,4 +1,4 @@
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { QueryComparisonOperator, QueryTextSearchOptions, QueryScalarValue } from '../../type';
 import { BaseSqlDialect } from '../baseSqlDialect';
 
@@ -9,7 +9,7 @@ export class PostgresDialect extends BaseSqlDialect {
 
   insert<T>(type: { new (): T }, body: T | T[]): string {
     const sql = super.insert(type, body);
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return `${sql} RETURNING ${meta.id.name} insertId`;
   }
 
@@ -36,7 +36,7 @@ export class PostgresDialect extends BaseSqlDialect {
     val: QueryComparisonOperator<T>[K],
     opts: { prefix?: string } = {}
   ): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
     const name = meta.properties[prop]?.name || prop;
     const col = prefix + this.escapeId(name);

@@ -1,10 +1,10 @@
 import { FilterQuery, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta } from '../../type';
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 
 export class MongoDialect {
   buildFilter<T>(type: { new (): T }, filter: QueryFilter<T> = {}): FilterQuery<T> {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     return Object.keys(filter).reduce((acc, prop) => {
       if (prop === '$and' || prop === '$or') {
@@ -22,7 +22,7 @@ export class MongoDialect {
   }
 
   buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>): object[] {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     const pipeline: object[] = [];
 
@@ -40,7 +40,7 @@ export class MongoDialect {
         continue;
       }
       const relType = relOpts.type();
-      const relMeta = getEntityMeta(relType);
+      const relMeta = getMeta(relType);
 
       if (relOpts.cardinality === 'manyToOne') {
         pipeline.push({

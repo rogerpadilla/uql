@@ -1,6 +1,6 @@
 import { BaseSqlDialect } from '../driver/baseSqlDialect';
 import { PostgresDialect } from '../driver/postgres/postgresDialect';
-import { getEntityMeta } from '../entity/decorator/definition';
+import { getMeta } from '../entity/decorator/definition';
 import { Query, QueryFilter, QueryOptions } from '../type/query';
 
 export function find<T>(dialect: BaseSqlDialect, type: { new (): T }, query: Query<T>, opts?: QueryOptions) {
@@ -12,7 +12,7 @@ export function insert<T>(dialect: BaseSqlDialect, type: { new (): T }, payload:
   const sql = dialect.insert(type, payload);
   if (dialect instanceof PostgresDialect) {
     const reEscapedSql = reEscape(dialect, sql);
-    const idName = getEntityMeta(type).id.name;
+    const idName = getMeta(type).id.name;
     const returnId = ` RETURNING ${idName} insertId`;
     if (!reEscapedSql.endsWith(returnId)) {
       throw new Error();

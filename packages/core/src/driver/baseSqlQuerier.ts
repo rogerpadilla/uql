@@ -1,6 +1,6 @@
 import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from '../type';
 import { BaseQuerier } from '../querier';
-import { getEntityMeta } from '../entity/decorator';
+import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
 
@@ -24,7 +24,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<QueryUpdateResult>(query);
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 

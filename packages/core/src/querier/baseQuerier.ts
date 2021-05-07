@@ -1,5 +1,5 @@
 import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate } from '../type';
-import { getEntityMeta } from '../entity/decorator';
+import { getMeta } from '../entity/decorator';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
@@ -9,7 +9,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   async insertOne<T>(type: { new (): T }, body: T, opts?: QueryOptions) {
     const [id] = await this.insert(type, [body], opts);
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     await this.insertRelations(type, { ...body, [meta.id.property]: id });
     return id;
   }
@@ -17,7 +17,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   abstract update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
 
   async updateOneById<T>(type: { new (): T }, id: ID, body: T) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const affectedRows = await this.update(type, { [meta.id.property]: id }, body);
     await this.updateRelations(type, { ...body, [meta.id.property]: id });
     return affectedRows;
@@ -32,7 +32,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   }
 
   findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T> = {}, opts?: QueryOptions) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
     return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
   }
@@ -40,7 +40,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
 
   removeOneById<T>(type: { new (): T }, id: ID) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return this.remove(type, { [meta.id.name]: id });
   }
 
@@ -59,7 +59,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   abstract release(): Promise<void>;
 
   protected async populateToManyRelations<T>(type: { new (): T }, bodies: T[], populate: QueryPopulate<T>) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
@@ -91,7 +91,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   }
 
   protected async insertRelations<T>(type: { new (): T }, body: T) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     const id = body[meta.id.property];
 
@@ -119,7 +119,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   }
 
   protected async updateRelations<T>(type: { new (): T }, body: T) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     const id = body[meta.id.property];
 

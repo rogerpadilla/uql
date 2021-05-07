@@ -1,5 +1,5 @@
 import { escape } from 'sqlstring';
-import { getEntityMeta } from '../entity/decorator/definition';
+import { getMeta } from '../entity/decorator/definition';
 import {
   QueryFilter,
   Query,
@@ -22,7 +22,7 @@ export abstract class BaseSqlDialect {
   }
 
   insert<T>(type: { new (): T }, payload: T | T[]): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const payloads = Array.isArray(payload) ? payload : [payload];
 
     const onInserts = Object.keys(meta.properties).filter((col) => meta.properties[col].onInsert);
@@ -45,7 +45,7 @@ export abstract class BaseSqlDialect {
   }
 
   update<T>(type: { new (): T }, filter: QueryFilter<T>, payload: T): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
@@ -66,7 +66,7 @@ export abstract class BaseSqlDialect {
   }
 
   remove<T>(type: { new (): T }, filter: QueryFilter<T>): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const where = this.filter(type, filter);
     return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}`;
   }
@@ -87,7 +87,7 @@ export abstract class BaseSqlDialect {
   ): string {
     let { project } = { ...qm };
 
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
     if (project) {
@@ -117,7 +117,7 @@ export abstract class BaseSqlDialect {
   }
 
   select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const baseSelect = this.columns(type, qm, {
       prefix: qm.populate && meta.name,
       ...opts,
@@ -134,7 +134,7 @@ export abstract class BaseSqlDialect {
     let joinsSelect = '';
     let joinsTables = '';
 
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
@@ -159,7 +159,7 @@ export abstract class BaseSqlDialect {
 
       joinsSelect += `, ${relColumns}`;
 
-      const relMeta = getEntityMeta(relType);
+      const relMeta = getMeta(relType);
       const relTypeName = this.escapeId(relMeta.name);
       const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
       const joinType = popVal.required ? 'INNER' : 'LEFT';
@@ -247,7 +247,7 @@ export abstract class BaseSqlDialect {
     val: QueryComparisonOperator<T>[K],
     opts: { prefix?: string } = {}
   ): string {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
     const name = meta.properties[prop]?.name || prop;
     const col = prefix + this.escapeId(name);

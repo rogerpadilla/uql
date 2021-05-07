@@ -1,6 +1,6 @@
 import { ISqlite } from 'sqlite';
 import { Query, QueryFilter, QueryOptions } from '../../type';
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { mapRows } from '../sqlRowsMapper';
 import { BaseSqlQuerier } from '../baseSqlQuerier';
 import { Sqlit3Connection } from './sqlite3QuerierPool';
@@ -14,7 +14,7 @@ export class SqliteQuerier extends BaseSqlQuerier {
   async insert<T>(type: { new (): T }, bodies: T[]) {
     const query = this.dialect.insert(type, bodies);
     const res = await this.query<ISqlite.RunResult>(query);
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return bodies.map((body, index) =>
       body[meta.id.property] ? body[meta.id.property] : res.lastID - res.changes + index + 1
     );

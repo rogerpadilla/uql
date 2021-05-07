@@ -1,7 +1,7 @@
-import { getEntityMeta } from '../entity/decorator/definition';
+import { getMeta } from '../entity/decorator/definition';
 
 export function filterPersistableProperties<T>(type: { new (): T }, body: T): string[] {
-  const meta = getEntityMeta(type);
+  const meta = getMeta(type);
   return Object.keys(body).filter((prop) => {
     const isProperty = !!meta.properties[prop];
     const value = body[prop];

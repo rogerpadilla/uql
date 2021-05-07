@@ -1,7 +1,7 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from '../../type';
 import { BaseQuerier } from '../../querier';
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { filterPersistableProperties } from '../entity.util';
 import { MongoDialect } from './mongoDialect';
 
@@ -45,7 +45,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   async find<T>(type: { new (): T }, qm: Query<T>) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
 
     let documents: T[];
 
@@ -84,7 +84,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>, opts?: QueryOptions) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return this.findOne(type, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
@@ -108,7 +108,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   collection<T>(type: { new (): T }) {
-    const meta = getEntityMeta(type);
+    const meta = getMeta(type);
     return this.conn.db().collection(meta.name);
   }
 
@@ -163,7 +163,7 @@ function normalizeId<T>(doc: T, meta: EntityMeta<T>) {
     const relOpts = meta.relations[relProp];
     const relData = doc[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
-      const relMeta = getEntityMeta(relOpts.type());
+      const relMeta = getMeta(relOpts.type());
       normalizeIds(relData, relMeta);
     }
   }

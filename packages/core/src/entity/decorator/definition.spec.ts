@@ -14,10 +14,10 @@ import {
   Tag,
 } from '../../test';
 import { Id } from './id';
-import { getEntities, getEntityMeta } from './definition';
+import { getEntities, getMeta } from './definition';
 
 it('user', () => {
-  const meta = getEntityMeta(User);
+  const meta = getMeta(User);
 
   expect(meta.properties['companyId'].reference.type()).toBe(Company);
   expect(meta.relations['company'].type()).toBe(Company);
@@ -84,7 +84,7 @@ it('user', () => {
 });
 
 it('profile', () => {
-  const meta = getEntityMeta(Profile);
+  const meta = getMeta(Profile);
   expect(meta).toEqual({
     type: Profile,
     name: 'user_profile',
@@ -123,7 +123,7 @@ it('profile', () => {
 });
 
 it('item', () => {
-  const meta = getEntityMeta(Item);
+  const meta = getMeta(Item);
   expect(meta).toEqual({
     type: Item,
     name: 'Item',
@@ -218,7 +218,7 @@ it('item', () => {
 });
 
 it('taxCategory', () => {
-  const meta = getEntityMeta(TaxCategory);
+  const meta = getMeta(TaxCategory);
   expect(meta).toEqual({
     type: TaxCategory,
     name: 'TaxCategory',
@@ -258,7 +258,7 @@ it('taxCategory', () => {
 });
 
 it('InventoryAdjustment', () => {
-  const meta = getEntityMeta(InventoryAdjustment);
+  const meta = getMeta(InventoryAdjustment);
   expect(meta).toEqual({
     type: InventoryAdjustment,
     name: 'InventoryAdjustment',
@@ -307,7 +307,7 @@ it('not an @Entity', () => {
   class SomeClass {}
 
   expect(() => {
-    getEntityMeta(SomeClass);
+    getMeta(SomeClass);
   }).toThrow(`'SomeClass' is not an entity`);
 
   class AnotherClass {
@@ -315,7 +315,7 @@ it('not an @Entity', () => {
     id: string;
   }
 
-  expect(() => getEntityMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
+  expect(() => getMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
 });
 
 it('getEntities', () => {

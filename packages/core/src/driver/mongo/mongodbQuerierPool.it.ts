@@ -1,4 +1,4 @@
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { BaseQuerierPoolIt } from '../../querier/baseQuerierPoolIt';
 import { createSpec } from '../../test';
 import { MongodbQuerierPool } from './mongodbQuerierPool';
@@ -23,7 +23,7 @@ class MongodbQuerierPoolIt extends BaseQuerierPoolIt {
     const querier = this.querier as MongodbQuerier;
     await Promise.all(
       this.entities.map((entity) => {
-        const meta = getEntityMeta(entity);
+        const meta = getMeta(entity);
         return querier.conn.db().createCollection(meta.name);
       })
     );

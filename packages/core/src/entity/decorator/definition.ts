@@ -8,14 +8,14 @@ const metas: Map<{ new (): any }, EntityMeta<any>> = holder[key] || new Map();
 holder[key] = metas;
 
 export function defineProperty<T>(type: { new (): T }, prop: string, opts: PropertyOptions): EntityMeta<T> {
-  const meta = ensureEntityMeta(type);
+  const meta = ensureMeta(type);
   const inferredType = Reflect.getMetadata('design:type', type.prototype, prop) as { new (): T };
   meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, type: inferredType, ...opts } };
   return meta;
 }
 
 export function defineId<T>(type: { new (): T }, prop: string, opts: PropertyOptions): EntityMeta<T> {
-  const meta = ensureEntityMeta(type);
+  const meta = ensureMeta(type);
   const id = findId(meta);
   if (id) {
     throw new TypeError(`'${type.name}' must have a single field decorated with @Id`);
@@ -32,13 +32,13 @@ export function defineRelation<T>(type: { new (): T }, prop: string, opts: Relat
     }
     opts.type = () => inferredType;
   }
-  const meta = ensureEntityMeta(type);
+  const meta = ensureMeta(type);
   meta.relations[prop] = { ...meta.relations[prop], ...opts };
   return meta;
 }
 
-export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): EntityMeta<T> {
-  const meta = ensureEntityMeta(type);
+export function define<T>(type: { new (): T }, opts: EntityOptions = {}): EntityMeta<T> {
+  const meta = ensureMeta(type);
 
   if (Object.keys(meta.properties).length === 0) {
     throw new TypeError(`'${type.name}' must have properties`);
@@ -48,7 +48,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
   let parentProto: object = Object.getPrototypeOf(type.prototype);
 
   while (parentProto.constructor !== Object) {
-    const parentMeta = ensureEntityMeta(parentProto.constructor as { new (): any });
+    const parentMeta = ensureMeta(parentProto.constructor as { new (): any });
     extend(parentMeta, meta);
     parentProto = Object.getPrototypeOf(parentProto);
   }
@@ -62,7 +62,7 @@ export function defineEntity<T>(type: { new (): T }, opts: EntityOptions = {}): 
   return meta;
 }
 
-export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
+export function getMeta<T>(type: { new (): T }): EntityMeta<T> {
   const meta = metas.get(type);
   if (!meta?.id) {
     throw new TypeError(`'${type.name}' is not an entity`);
@@ -71,7 +71,7 @@ export function getEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
     return meta;
   }
   meta.processed = true;
-  return completeRelations(meta);
+  return inferReferences(meta);
 }
 
 export function getEntities() {
@@ -83,16 +83,17 @@ export function getEntities() {
   }, []);
 }
 
-function ensureEntityMeta<T>(type: { new (): T }): EntityMeta<T> {
-  if (metas.has(type)) {
-    return metas.get(type);
+function ensureMeta<T>(type: { new (): T }): EntityMeta<T> {
+  let meta = metas.get(type);
+  if (meta) {
+    return meta;
   }
-  const meta: EntityMeta<T> = { type, name: type.name, properties: {}, relations: {} };
+  meta = { type, name: type.name, properties: {}, relations: {} };
   metas.set(type, meta);
   return meta;
 }
 
-function completeRelations<T>(meta: EntityMeta<T>) {
+function inferReferences<T>(meta: EntityMeta<T>) {
   for (const relKey in meta.relations) {
     const rel = meta.relations[relKey];
 
@@ -101,7 +102,7 @@ function completeRelations<T>(meta: EntityMeta<T>) {
     }
 
     const relType = rel.type();
-    const relMeta = ensureEntityMeta(relType);
+    const relMeta = ensureMeta(relType);
 
     if (rel.cardinality === 'manyToMany') {
       rel.through = `${meta.name}${relMeta.name}`;
@@ -133,11 +134,10 @@ function completeRelations<T>(meta: EntityMeta<T>) {
 }
 
 function findId<T>(meta: EntityMeta<T>) {
-  const propertyName = Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
-  if (!propertyName) {
-    return;
+  const key = Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  if (key) {
+    return { ...meta.properties[key], property: key };
   }
-  return { ...meta.properties[propertyName], property: propertyName };
 }
 
 function extend<T>(source: EntityMeta<T>, target: EntityMeta<T>) {

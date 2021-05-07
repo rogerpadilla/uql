@@ -1,5 +1,5 @@
 import { QueryTextSearchOptions, QueryScalarValue } from '../../type';
-import { getEntityMeta } from '../../entity/decorator';
+import { getMeta } from '../../entity/decorator';
 import { BaseSqlDialect } from '../baseSqlDialect';
 
 export class SqliteDialect extends BaseSqlDialect {
@@ -16,7 +16,7 @@ export class SqliteDialect extends BaseSqlDialect {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<T>;
-        const meta = getEntityMeta(type);
+        const meta = getMeta(type);
         return `${this.escapeId(meta.name)} MATCH ${this.escape(search.value)}`;
       default:
         return super.compare(type, key, value, opts);
