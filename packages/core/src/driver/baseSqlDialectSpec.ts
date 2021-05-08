@@ -567,7 +567,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulateNotAnnotatedField() {
     expect(() =>
       find(this.dialect, User, {
-        populate: { status: {} },
+        populate: { status: {} } as any,
       })
     ).toThrow("'User.status' is not annotated as a relation");
   }

@@ -142,10 +142,11 @@ function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
 function isScalarType(type: any): boolean {
   return (
     type === undefined ||
-    type === Number ||
-    type === String ||
     type === Boolean ||
+    type === String ||
+    type === Number ||
     type === BigInt ||
+    type === Date ||
     type === Symbol ||
     type === Object
   );

@@ -1,23 +1,31 @@
-export type QueryScalarValue = string | number | boolean | null;
+type Properties<E> = {
+  [K in keyof E]: E[K] extends QueryScalarValue ? K : never;
+}[keyof E];
+
+type Relations<E> = {
+  [K in keyof E]: E[K] extends QueryScalarValue ? never : K;
+}[keyof E];
+
+type QueryPopulateValue<P> = Query<P> & { required?: boolean };
+
+type QueryFieldFilter<E> = {
+  readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | QueryScalarValue;
+};
+
+export type QueryScalarValue = null | boolean | string | number | BigInt | Date;
 
 export type QueryProject<E> =
-  | (keyof E)[]
+  | Properties<E>[]
   | {
-      [P in keyof E]: boolean | 0 | 1;
+      [P in Properties<E>]?: boolean | 0 | 1;
     };
 
 export type QueryPopulate<E> = {
-  readonly [P in keyof E]?: QueryPopulateValue<E[P]>;
-};
-
-export type QueryPopulateValue<P> = Query<P> & { required?: boolean };
-
-export type QueryFieldFilter<E> = {
-  readonly [P in keyof E]: E[P] | QueryComparisonOperator<E> | QueryScalarValue;
+  readonly [P in Relations<E>]?: QueryPopulateValue<E[P]>;
 };
 
 export type QueryTextSearchOptions<E> = {
-  fields?: (keyof E)[];
+  fields?: Properties<E>[];
   value: string;
 };
 
@@ -43,9 +51,7 @@ export type QueryLogicalOperatorMap = {
   readonly $or?: 'OR';
 };
 
-export type QueryLogicalOperatorKey = keyof QueryLogicalOperatorMap;
-
-export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOperatorKey];
+export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[keyof QueryLogicalOperatorMap];
 
 export type QueryLogicalOperator<E> = {
   [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<E> | QueryTextSearch<E>;
@@ -54,7 +60,7 @@ export type QueryLogicalOperator<E> = {
 export type QueryFilter<E> = QueryLogicalOperator<E> | QueryTextSearch<E> | QueryFieldFilter<E>;
 
 export type QuerySort<E> = {
-  readonly [P in keyof E]: -1 | 1;
+  readonly [P in Properties<E>]?: -1 | 1;
 };
 
 export type QueryPager = {
@@ -65,7 +71,7 @@ export type QueryPager = {
 export type QueryOne<E> = {
   project?: QueryProject<E>;
   populate?: QueryPopulate<E>;
-  group?: (keyof E)[];
+  group?: Properties<E>[];
   sort?: QuerySort<E>;
 } & QueryPager;
 
