@@ -3,44 +3,44 @@ import { QueryFilter, Query, EntityMeta } from '../../type';
 import { getMeta } from '../../entity/decorator';
 
 export class MongoDialect {
-  buildFilter<T>(type: { new (): T }, filter: QueryFilter<T> = {}): FilterQuery<T> {
-    const meta = getMeta(type);
+  buildFilter<E>(entity: { new (): E }, filter: QueryFilter<E> = {}): FilterQuery<E> {
+    const meta = getMeta(entity);
 
     return Object.keys(filter).reduce((acc, prop) => {
       if (prop === '$and' || prop === '$or') {
         const value = filter[prop];
         acc[prop] = Object.keys(value).map((prop) => {
-          const { key, val } = getFinalKeyVal(prop, value[prop], meta);
+          const { key, val } = obtainFinalKeyValue(prop, value[prop], meta);
           return { [key]: val };
         });
       } else {
-        const { key, val } = getFinalKeyVal(prop, filter[prop], meta);
+        const { key, val } = obtainFinalKeyValue(prop, filter[prop], meta);
         acc[key] = val;
       }
       return acc;
     }, {});
   }
 
-  buildAggregationPipeline<T>(type: { new (): T }, qm: Query<T>): object[] {
-    const meta = getMeta(type);
+  buildAggregationPipeline<E>(entity: { new (): E }, qm: Query<E>): object[] {
+    const meta = getMeta(entity);
 
     const pipeline: object[] = [];
 
     if (qm.filter && Object.keys(qm.filter).length) {
-      pipeline.push({ $match: this.buildFilter(type, qm.filter) });
+      pipeline.push({ $match: this.buildFilter(entity, qm.filter) });
     }
 
     for (const popKey in qm.populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
-        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
       }
       if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
         // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
         continue;
       }
-      const relType = relOpts.type();
-      const relMeta = getMeta(relType);
+      const relEntity = relOpts.entity();
+      const relMeta = getMeta(relEntity);
 
       if (relOpts.cardinality === 'manyToOne') {
         pipeline.push({
@@ -68,7 +68,7 @@ export class MongoDialect {
   }
 }
 
-function getFinalKeyVal<T>(key: string, val: any, meta: EntityMeta<T>) {
+function obtainFinalKeyValue<E>(key: string, val: any, meta: EntityMeta<E>) {
   if (key === '_id' || key === meta.id.property) {
     const objectId = val instanceof ObjectId ? val : new ObjectId(val);
     return { key: '_id', val: objectId };

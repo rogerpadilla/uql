@@ -3,7 +3,7 @@ import { Router as expressRouter } from 'express';
 
 import { getOptions } from '@uql/core/options';
 import { Query } from '@uql/core/type';
-import { formatKebabCase } from '@uql/core/util';
+import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { getQuerier } from '@uql/core/querier';
 import { parseQuery } from './query.util';
@@ -24,23 +24,23 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
     extendQuery: opts.extendQuery,
   };
 
-  for (const type of entities) {
-    const path = formatKebabCase(type.name);
-    const subRouter = buildCrudRouter(type, crudRouterOpts);
+  for (const entity of entities) {
+    const path = kebabCase(entity.name);
+    const subRouter = buildCrudRouter(entity, crudRouterOpts);
     router.use('/' + path, subRouter);
   }
 
   return router;
 }
 
-export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: ExtendQuery }) {
+export function buildCrudRouter<E>(entity: { new (): E }, opts: { extendQuery?: ExtendQuery }) {
   const router = expressRouter();
 
   router.post('/', async (req, res) => {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.insertOne(type, req.body);
+      const data = await querier.insertOne(entity, req.body);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -55,7 +55,7 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      await querier.updateOneById(type, req.params.id, req.body);
+      await querier.updateOneById(entity, req.params.id, req.body);
       await querier.commitTransaction();
       res.json({ data: req.params.id });
     } catch (err) {
@@ -67,10 +67,10 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   });
 
   router.get('/one', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
-      const data = await querier.findOne(type, qm);
+      const data = await querier.findOne(entity, qm);
       res.json({ data });
     } catch (err) {
       sendError(err, res);
@@ -80,10 +80,10 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   });
 
   router.get('/count', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
-      const data = await querier.count(type, qm.filter);
+      const data = await querier.count(entity, qm.filter);
       res.json({ data });
     } catch (err) {
       sendError(err, res);
@@ -93,10 +93,10 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   });
 
   router.get('/:id', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
-      const data = await querier.findOneById(type, req.params.id, qm);
+      const data = await querier.findOneById(entity, req.params.id, qm);
       res.json({ data });
     } catch (err) {
       sendError(err, res);
@@ -106,13 +106,13 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   });
 
   router.get('/', async (req, res) => {
-    const qm = assembleQuery<T>(type, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
-      const json: { data?: T[]; count?: number } = {};
-      const findPromise = querier.find(type, qm);
+      const json: { data?: E[]; count?: number } = {};
+      const findPromise = querier.find(entity, qm);
       if (req.query.count) {
-        const countPromise = querier.count(type, qm.filter);
+        const countPromise = querier.count(entity, qm.filter);
         const [data, count] = await Promise.all([findPromise, countPromise]);
         json.data = data;
         json.count = count;
@@ -131,7 +131,7 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.removeOneById(type, req.params.id);
+      const data = await querier.removeOneById(entity, req.params.id);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -143,11 +143,11 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   });
 
   router.delete('/', async (req, res) => {
-    const qm = assembleQuery(type, req, opts.extendQuery);
+    const qm = assembleQuery(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.remove(type, qm.filter);
+      const data = await querier.remove(entity, qm.filter);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -161,9 +161,9 @@ export function buildCrudRouter<T>(type: { new (): T }, opts: { extendQuery?: Ex
   return router;
 }
 
-function assembleQuery<T>(type: { new (): T }, req: Request, extendQuery?: ExtendQuery) {
-  const qm = parseQuery<T>(req.query);
-  return extendQuery ? extendQuery(type, qm, req) : qm;
+function assembleQuery<E>(entity: { new (): E }, req: Request, extendQuery?: ExtendQuery) {
+  const qm = parseQuery<E>(req.query);
+  return extendQuery ? extendQuery(entity, qm, req) : qm;
 }
 
 function sendError(err: Error, res: Response) {
@@ -183,4 +183,4 @@ type MiddlewareOptions = {
   extendQuery?: ExtendQuery;
 };
 
-type ExtendQuery = <T>(type: { new (): T }, qm: Query<T>, req: Request) => Query<T>;
+type ExtendQuery = <E>(entity: { new (): E }, qm: Query<E>, req: Request) => Query<E>;

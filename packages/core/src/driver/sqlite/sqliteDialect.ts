@@ -7,19 +7,19 @@ export class SqliteDialect extends BaseSqlDialect {
     super('BEGIN TRANSACTION', '`');
   }
 
-  compare<T>(
-    type: { new (): T },
+  compare<E>(
+    entity: { new (): E },
     key: string,
     value: object | QueryScalarValue,
     opts: { prefix?: string } = {}
   ): string {
     switch (key) {
       case '$text':
-        const search = value as QueryTextSearchOptions<T>;
-        const meta = getMeta(type);
+        const search = value as QueryTextSearchOptions<E>;
+        const meta = getMeta(entity);
         return `${this.escapeId(meta.name)} MATCH ${this.escape(search.value)}`;
       default:
-        return super.compare(type, key, value, opts);
+        return super.compare(entity, key, value, opts);
     }
   }
 }

@@ -4,25 +4,25 @@ import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export interface Querier<ID = any> {
-  insert<T>(type: { new (): T }, body: T[]): Promise<ID[]>;
+  insert<E>(entity: { new (): E }, body: E[]): Promise<ID[]>;
 
-  insertOne<T>(type: { new (): T }, body: T): Promise<ID>;
+  insertOne<E>(entity: { new (): E }, body: E): Promise<ID>;
 
-  update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
+  update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E): Promise<number>;
 
-  updateOneById<T>(type: { new (): T }, id: ID, body: T): Promise<number>;
+  updateOneById<E>(entity: { new (): E }, id: ID, body: E): Promise<number>;
 
-  find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T[]>;
+  find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
-  findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T>;
+  findOne<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): Promise<E>;
 
-  findOneById<T>(type: { new (): T }, id: ID, qo?: QueryOne<T>, opts?: QueryOptions): Promise<T>;
+  findOneById<E>(entity: { new (): E }, id: ID, qo?: QueryOne<E>, opts?: QueryOptions): Promise<E>;
 
-  remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
+  remove<E>(entity: { new (): E }, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<T>(type: { new (): T }, id: ID): Promise<number>;
+  removeOneById<E>(entity: { new (): E }, id: ID): Promise<number>;
 
-  count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number>;
+  count<E>(entity: { new (): E }, filter?: QueryFilter<E>): Promise<number>;
 
   query(query: string): Promise<any>;
 

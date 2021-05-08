@@ -2,39 +2,39 @@ import { QueryFilter, Query, QueryOne } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface Querier<ID = any> {
-  insertOne<T>(type: { new (): T }, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
+  insertOne<E>(entity: { new (): E }, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
 
-  updateOneById<T>(
-    type: { new (): T },
+  updateOneById<E>(
+    entity: { new (): E },
     id: ID,
-    body: T,
+    body: E,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 
-  saveOne<T>(type: { new (): T }, body: T, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
+  saveOne<E>(entity: { new (): E }, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  find<T>(type: { new (): T }, qm: Query<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T[]>>;
+  find<E>(entity: { new (): E }, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  findOne<T>(type: { new (): T }, qm: Query<T>, opts?: RequestOptions): Promise<RequestSuccessResponse<T>>;
+  findOne<E>(entity: { new (): E }, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findOneById<T>(
-    type: { new (): T },
+  findOneById<E>(
+    entity: { new (): E },
     id: ID,
-    qo: QueryOne<T>,
+    qo: QueryOne<E>,
     opts?: RequestOptions
-  ): Promise<RequestSuccessResponse<T>>;
+  ): Promise<RequestSuccessResponse<E>>;
 
-  remove<T>(
-    type: { new (): T },
-    filter: QueryFilter<T>,
+  remove<E>(
+    entity: { new (): E },
+    filter: QueryFilter<E>,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 
-  removeOneById<T>(type: { new (): T }, id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  removeOneById<E>(entity: { new (): E }, id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  count<T>(
-    type: { new (): T },
-    filter?: QueryFilter<T>,
+  count<E>(
+    entity: { new (): E },
+    filter?: QueryFilter<E>,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 }

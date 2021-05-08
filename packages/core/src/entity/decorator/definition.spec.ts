@@ -19,16 +19,16 @@ import { getEntities, getMeta } from './definition';
 it('user', () => {
   const meta = getMeta(User);
 
-  expect(meta.properties['companyId'].reference.type()).toBe(Company);
-  expect(meta.relations['company'].type()).toBe(Company);
+  expect(meta.properties['companyId'].reference.entity()).toBe(Company);
+  expect(meta.relations['company'].entity()).toBe(Company);
   expect(meta.relations['company'].references).toEqual([{ source: 'companyId', target: 'id' }]);
 
-  expect(meta.properties['userId'].reference.type()).toBe(User);
-  expect(meta.relations['user'].type()).toBe(User);
+  expect(meta.properties['userId'].reference.entity()).toBe(User);
+  expect(meta.relations['user'].entity()).toBe(User);
   expect(meta.relations['user'].references).toEqual([{ source: 'userId', target: 'id' }]);
 
   expect(meta).toEqual({
-    type: User,
+    entity: User,
     name: 'User',
     id: { name: 'id', type: String, isId: true, property: 'id' },
     processed: true,
@@ -37,12 +37,12 @@ it('user', () => {
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -54,23 +54,23 @@ it('user', () => {
     relations: {
       company: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       users: {
         cardinality: 'oneToMany',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         mappedBy: 'userId',
         references: [{ source: 'id', target: 'userId' }],
       },
       profile: {
         cardinality: 'oneToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         mappedBy: 'userId',
         references: [
           {
@@ -86,7 +86,7 @@ it('user', () => {
 it('profile', () => {
   const meta = getMeta(Profile);
   expect(meta).toEqual({
-    type: Profile,
+    entity: Profile,
     name: 'user_profile',
     id: { name: 'pk', type: String, isId: true, property: 'id' },
     processed: true,
@@ -95,12 +95,12 @@ it('profile', () => {
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -110,12 +110,12 @@ it('profile', () => {
     relations: {
       company: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
@@ -125,7 +125,7 @@ it('profile', () => {
 it('item', () => {
   const meta = getMeta(Item);
   expect(meta).toEqual({
-    type: Item,
+    entity: Item,
     name: 'Item',
     id: { name: 'id', type: String, isId: true, property: 'id' },
     processed: true,
@@ -134,12 +134,12 @@ it('item', () => {
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -152,22 +152,22 @@ it('item', () => {
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       taxId: {
         name: 'taxId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       measureUnitId: {
         name: 'measureUnitId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       buyPriceAverage: { name: 'buyPriceAverage', type: Number },
       salePrice: { name: 'salePrice', type: Number },
@@ -176,37 +176,37 @@ it('item', () => {
     relations: {
       company: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       buyLedgerAccount: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'buyLedgerAccountId', target: 'id' }],
       },
       saleLedgerAccount: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'saleLedgerAccountId', target: 'id' }],
       },
       tax: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'taxId', target: 'id' }],
       },
       measureUnit: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'measureUnitId', target: 'id' }],
       },
       tags: {
         cardinality: 'manyToMany',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         through: 'ItemTag',
         references: [
           { source: 'itemId', target: 'id' },
@@ -220,7 +220,7 @@ it('item', () => {
 it('taxCategory', () => {
   const meta = getMeta(TaxCategory);
   expect(meta).toEqual({
-    type: TaxCategory,
+    entity: TaxCategory,
     name: 'TaxCategory',
     id: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function), property: 'pk' },
     processed: true,
@@ -229,12 +229,12 @@ it('taxCategory', () => {
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -245,12 +245,12 @@ it('taxCategory', () => {
     relations: {
       company: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
@@ -260,7 +260,7 @@ it('taxCategory', () => {
 it('InventoryAdjustment', () => {
   const meta = getMeta(InventoryAdjustment);
   expect(meta).toEqual({
-    type: InventoryAdjustment,
+    entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
     id: { name: 'id', type: String, isId: true, property: 'id' },
     processed: true,
@@ -269,12 +269,12 @@ it('InventoryAdjustment', () => {
       companyId: {
         name: 'companyId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       userId: {
         name: 'userId',
         type: String,
-        reference: { type: expect.any(Function) },
+        reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -285,18 +285,18 @@ it('InventoryAdjustment', () => {
     relations: {
       itemAdjustments: {
         cardinality: 'oneToMany',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         mappedBy: 'inventoryAdjustmentId',
         references: [{ source: 'id', target: 'inventoryAdjustmentId' }],
       },
       company: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
         cardinality: 'manyToOne',
-        type: expect.any(Function),
+        entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },

@@ -5,46 +5,46 @@ import { getMeta } from '../entity/decorator';
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class BaseQuerier<ID = any> implements Querier<ID> {
-  abstract insert<T>(type: { new (): T }, body: T[], opts?: QueryOptions): Promise<ID[]>;
+  abstract insert<E>(entity: { new (): E }, body: E[], opts?: QueryOptions): Promise<ID[]>;
 
-  async insertOne<T>(type: { new (): T }, body: T, opts?: QueryOptions) {
-    const [id] = await this.insert(type, [body], opts);
-    const meta = getMeta(type);
-    await this.insertRelations(type, { ...body, [meta.id.property]: id });
+  async insertOne<E>(entity: { new (): E }, body: E, opts?: QueryOptions) {
+    const [id] = await this.insert(entity, [body], opts);
+    const meta = getMeta(entity);
+    await this.insertRelations(entity, { ...body, [meta.id.property]: id });
     return id;
   }
 
-  abstract update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T): Promise<number>;
+  abstract update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E): Promise<number>;
 
-  async updateOneById<T>(type: { new (): T }, id: ID, body: T) {
-    const meta = getMeta(type);
-    const affectedRows = await this.update(type, { [meta.id.property]: id }, body);
-    await this.updateRelations(type, { ...body, [meta.id.property]: id });
+  async updateOneById<E>(entity: { new (): E }, id: ID, body: E) {
+    const meta = getMeta(entity);
+    const affectedRows = await this.update(entity, { [meta.id.property]: id }, body);
+    await this.updateRelations(entity, { ...body, [meta.id.property]: id });
     return affectedRows;
   }
 
-  abstract find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): Promise<T[]>;
+  abstract find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
-  async findOne<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
+  async findOne<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
     qm.limit = 1;
-    const rows = await this.find(type, qm, opts);
+    const rows = await this.find(entity, qm, opts);
     return rows[0];
   }
 
-  findOneById<T>(type: { new (): T }, id: ID, qo: QueryOne<T> = {}, opts?: QueryOptions) {
+  findOneById<E>(type: { new (): E }, id: ID, qo: QueryOne<E> = {}, opts?: QueryOptions) {
     const meta = getMeta(type);
     const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
     return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
   }
 
-  abstract remove<T>(type: { new (): T }, filter: QueryFilter<T>): Promise<number>;
+  abstract remove<E>(entity: { new (): E }, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<T>(type: { new (): T }, id: ID) {
-    const meta = getMeta(type);
-    return this.remove(type, { [meta.id.name]: id });
+  removeOneById<E>(entity: { new (): E }, id: ID) {
+    const meta = getMeta(entity);
+    return this.remove(entity, { [meta.id.name]: id });
   }
 
-  abstract count<T>(type: { new (): T }, filter?: QueryFilter<T>): Promise<number>;
+  abstract count<E>(entity: { new (): E }, filter?: QueryFilter<E>): Promise<number>;
 
   abstract query(query: string): Promise<any>;
 
@@ -58,20 +58,20 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   abstract release(): Promise<void>;
 
-  protected async populateToManyRelations<T>(type: { new (): T }, bodies: T[], populate: QueryPopulate<T>) {
-    const meta = getMeta(type);
+  protected async populateToManyRelations<E>(entity: { new (): E }, bodies: E[], populate: QueryPopulate<E>) {
+    const meta = getMeta(entity);
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
-        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
       }
       const popVal = populate[popKey];
-      const relType = relOpts.type();
+      const relEntity = relOpts.entity();
       const relQuery = popVal as Query<any>;
       if (relOpts.cardinality === 'oneToMany') {
         const ids = bodies.map((body) => body[meta.id.property]);
         relQuery.filter = { [relOpts.mappedBy]: { $in: ids } };
-        const founds = await this.find(relType, relQuery);
+        const founds = await this.find(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
           const attr = it[relOpts.mappedBy];
           if (!acc[attr]) {
@@ -90,24 +90,24 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     }
   }
 
-  protected async insertRelations<T>(type: { new (): T }, body: T) {
-    const meta = getMeta(type);
+  protected async insertRelations<E>(entity: { new (): E }, body: E) {
+    const meta = getMeta(entity);
 
     const id = body[meta.id.property];
 
     const insertProms = filterIndependentRelations(meta, body).map((prop) => {
       const relOpts = meta.relations[prop];
-      const relType = relOpts.type();
+      const relEntity = relOpts.entity();
       if (relOpts.cardinality === 'oneToOne') {
-        const relBody: T = { ...body[prop], [relOpts.mappedBy]: id };
-        return this.insertOne(relType, relBody);
+        const relBody: E = { ...body[prop], [relOpts.mappedBy]: id };
+        return this.insertOne(relEntity, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
-        const relBodies: T[] = body[prop].map((it: T) => {
+        const relBodies: E[] = body[prop].map((it: E) => {
           it[relOpts.mappedBy] = id;
           return it;
         });
-        return this.insert(relType, relBodies);
+        return this.insert(relEntity, relBodies);
       }
       if (relOpts.cardinality === 'manyToMany') {
         // TODO manyToMany cardinality
@@ -118,29 +118,29 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     await Promise.all<any>(insertProms);
   }
 
-  protected async updateRelations<T>(type: { new (): T }, body: T) {
-    const meta = getMeta(type);
+  protected async updateRelations<E>(entity: { new (): E }, body: E) {
+    const meta = getMeta(entity);
 
     const id = body[meta.id.property];
 
     const removeProms = filterIndependentRelations(meta, body).map(async (prop) => {
       const relOpts = meta.relations[prop];
-      const relType = relOpts.type();
+      const relEntity = relOpts.entity();
       if (relOpts.cardinality === 'oneToOne') {
-        const relBody: T = body[prop];
+        const relBody: E = body[prop];
         if (relBody === null) {
-          return this.remove(relType, { [relOpts.mappedBy]: id });
+          return this.remove(relEntity, { [relOpts.mappedBy]: id });
         }
-        return this.update(relType, { [relOpts.mappedBy]: id }, relBody);
+        return this.update(relEntity, { [relOpts.mappedBy]: id }, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
-        const relBody: T[] = body[prop];
-        await this.remove(relType, { [relOpts.mappedBy]: id });
+        const relBody: E[] = body[prop];
+        await this.remove(relEntity, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
           for (const it of relBody) {
             it[relOpts.mappedBy] = id;
           }
-          return this.insert(relType, relBody);
+          return this.insert(relEntity, relBody);
         }
       }
       if (relOpts.cardinality === 'manyToMany') {
@@ -153,7 +153,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
   }
 }
 
-function filterIndependentRelations<T>(meta: EntityMeta<T>, body: T) {
+function filterIndependentRelations<E>(meta: EntityMeta<E>, body: E) {
   return Object.keys(body).filter((prop) => {
     const relOpts = meta.relations[prop];
     return relOpts && relOpts.cardinality !== 'manyToOne';

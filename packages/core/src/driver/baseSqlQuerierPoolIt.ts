@@ -25,15 +25,15 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
 
   async dropTables() {
     await Promise.all(
-      this.entities.map((type) => {
-        const meta = getMeta(type);
+      this.entities.map((entity) => {
+        const meta = getMeta(entity);
         return this.querier.query(`DROP TABLE IF EXISTS ${this.querier.dialect.escapeId(meta.name)}`);
       })
     );
   }
 
-  buildDdlForTable<T>(type: { new (): T }) {
-    const meta = getMeta(type);
+  buildDdlForTable<E>(entity: { new (): E }) {
+    const meta = getMeta(entity);
 
     let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
 
@@ -46,7 +46,7 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
       if (prop.isId) {
         propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
       } else if (prop.reference) {
-        const rel = prop.reference.type();
+        const rel = prop.reference.entity();
         const relMeta = getMeta(rel);
         const type = relMeta.id.onInsert
           ? defaultIdType

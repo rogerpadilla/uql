@@ -21,8 +21,8 @@ export abstract class BaseSqlDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  insert<T>(type: { new (): T }, payload: T | T[]): string {
-    const meta = getMeta(type);
+  insert<E>(entity: { new (): E }, payload: E | E[]): string {
+    const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
 
     const onInserts = Object.keys(meta.properties).filter((col) => meta.properties[col].onInsert);
@@ -35,7 +35,7 @@ export abstract class BaseSqlDialect {
       }
     }
 
-    const persistableKeys = filterPersistableProperties(type, payloads[0]);
+    const persistableKeys = filterPersistableProperties(entity, payloads[0]);
     const columns = persistableKeys.map((prop) => meta.properties[prop].name);
     const values = payloads
       .map((body) => persistableKeys.map((prop) => this.escape(body[prop])).join(', '))
@@ -44,8 +44,8 @@ export abstract class BaseSqlDialect {
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
-  update<T>(type: { new (): T }, filter: QueryFilter<T>, payload: T): string {
-    const meta = getMeta(type);
+  update<E>(entity: { new (): E }, filter: QueryFilter<E>, payload: E): string {
+    const meta = getMeta(entity);
 
     const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
@@ -55,39 +55,39 @@ export abstract class BaseSqlDialect {
       }
     }
 
-    const persistableKeys = filterPersistableProperties(type, payload);
+    const persistableKeys = filterPersistableProperties(entity, payload);
     const persistableData = persistableKeys.reduce((acc, key) => {
       acc[meta.properties[key].name] = payload[key];
       return acc;
-    }, {} as T);
+    }, {} as E);
     const values = this.objectToValues(persistableData);
-    const where = this.filter(type, filter);
+    const where = this.filter(entity, filter);
     return `UPDATE ${this.escapeId(meta.name)} SET ${values} WHERE ${where}`;
   }
 
-  remove<T>(type: { new (): T }, filter: QueryFilter<T>): string {
-    const meta = getMeta(type);
-    const where = this.filter(type, filter);
+  remove<E>(entity: { new (): E }, filter: QueryFilter<E>): string {
+    const meta = getMeta(entity);
+    const where = this.filter(entity, filter);
     return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}`;
   }
 
-  find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
-    const select = this.select<T>(type, qm, opts);
-    const where = this.filter<T>(type, qm.filter, { useClause: true });
-    const group = this.group<T>(qm.group);
-    const sort = this.sort<T>(qm.sort);
+  find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
+    const select = this.select<E>(entity, qm, opts);
+    const where = this.filter<E>(entity, qm.filter, { useClause: true });
+    const group = this.group<E>(qm.group);
+    const sort = this.sort<E>(qm.sort);
     const pager = this.pager(qm);
     return select + where + group + sort + pager;
   }
 
-  columns<T>(
-    type: { new (): T },
-    qm: Query<T>,
+  columns<E>(
+    entity: { new (): E },
+    qm: Query<E>,
     opts: { prefix?: string; usePrefixForAlias?: boolean } & QueryOptions
   ): string {
     let { project } = { ...qm };
 
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
     if (project) {
@@ -95,13 +95,13 @@ export abstract class BaseSqlDialect {
         const hasPositives = Object.keys(project).some((key) => project[key]);
         project = Object.keys(hasPositives ? project : meta.properties).filter(
           (it) => project[it] || project[it] === undefined
-        ) as (keyof T)[];
+        ) as (keyof E)[];
       }
       if (opts.isTrustedProject) {
         return project.join(', ');
       }
     } else {
-      project = Object.keys(meta.properties) as (keyof T)[];
+      project = Object.keys(meta.properties) as (keyof E)[];
     }
 
     return project
@@ -116,31 +116,31 @@ export abstract class BaseSqlDialect {
       .join(', ');
   }
 
-  select<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions): string {
-    const meta = getMeta(type);
-    const baseSelect = this.columns(type, qm, {
+  select<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
+    const meta = getMeta(entity);
+    const baseSelect = this.columns(entity, qm, {
       prefix: qm.populate && meta.name,
       ...opts,
     });
-    const { joinsSelect, joinsTables } = this.populate(type, qm.populate);
+    const { joinsSelect, joinsTables } = this.populate(entity, qm.populate);
     return `SELECT ${baseSelect}${joinsSelect} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
-  populate<T>(
-    type: { new (): T },
-    populate: QueryPopulate<T> = {},
+  populate<E>(
+    entity: { new (): E },
+    populate: QueryPopulate<E> = {},
     prefix?: string
   ): { joinsSelect: string; joinsTables: string } {
     let joinsSelect = '';
     let joinsTables = '';
 
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
 
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
 
       if (!relOpts) {
-        throw new TypeError(`'${type.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
       }
       if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
         // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
@@ -149,34 +149,34 @@ export abstract class BaseSqlDialect {
 
       const joinPrefix = prefix ? prefix + '.' + popKey : popKey;
       const joinPath = this.escapeId(joinPrefix, true);
-      const relType = relOpts.type();
+      const relEntity = relOpts.entity();
       const popVal = populate[popKey];
 
-      const relColumns = this.columns(relType, popVal, {
+      const relColumns = this.columns(relEntity, popVal, {
         prefix: joinPrefix,
         usePrefixForAlias: true,
       });
 
       joinsSelect += `, ${relColumns}`;
 
-      const relMeta = getMeta(relType);
-      const relTypeName = this.escapeId(relMeta.name);
+      const relMeta = getMeta(relEntity);
+      const relEntityName = this.escapeId(relMeta.name);
       const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
       const joinType = popVal.required ? 'INNER' : 'LEFT';
 
-      joinsTables += ` ${joinType} JOIN ${relTypeName} ${joinPath} ON `;
+      joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinPath} ON `;
 
       joinsTables += relOpts.references
         .map((it) => `${joinPath}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
         .join(' AND ');
 
       if (popVal.filter && Object.keys(popVal.filter).length) {
-        const where = this.filter(relType, popVal.filter, { prefix: popKey });
+        const where = this.filter(relEntity, popVal.filter, { prefix: popKey });
         joinsTables += ` AND ${where}`;
       }
 
       const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.populate(
-        relType,
+        relEntity,
         popVal.populate,
         joinPrefix
       );
@@ -188,9 +188,9 @@ export abstract class BaseSqlDialect {
     return { joinsSelect, joinsTables };
   }
 
-  filter<T>(
-    type: { new (): T },
-    filter: QueryFilter<T>,
+  filter<E>(
+    entity: { new (): E },
+    filter: QueryFilter<E>,
     opts: { logicalOperator?: QueryLogicalOperatorValue; prefix?: string; useClause?: boolean } = {}
   ): string {
     const filterKeys = filter && Object.keys(filter);
@@ -209,45 +209,45 @@ export abstract class BaseSqlDialect {
             whereOpts.logicalOperator = 'OR';
           }
           const hasPrecedence = filterKeys.length > 1 && Object.keys(val).length > 1;
-          const filterItCondition = this.filter(type, val, whereOpts);
+          const filterItCondition = this.filter(entity, val, whereOpts);
           return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
         }
-        return this.compare(type, key, val, { prefix: opts.prefix });
+        return this.compare(entity, key, val, { prefix: opts.prefix });
       })
       .join(` ${logicalOperator} `);
 
     return opts.useClause ? ` WHERE ${sql}` : sql;
   }
 
-  compare<T>(
-    type: { new (): T },
+  compare<E>(
+    entity: { new (): E },
     key: string,
     value: QueryScalarValue | object,
     opts: { prefix?: string } = {}
   ): string {
     switch (key) {
       case '$text':
-        const search = value as QueryTextSearchOptions<T>;
+        const search = value as QueryTextSearchOptions<E>;
         const fields = this.escapeId(search.fields);
         return `MATCH(${fields}) AGAINST(${this.escape(search.value)})`;
       default:
         const val = typeof value === 'object' && value !== null ? value : { $eq: value };
-        const operators = Object.keys(val) as (keyof QueryComparisonOperator<T>)[];
+        const operators = Object.keys(val) as (keyof QueryComparisonOperator<E>)[];
         const operations = operators
-          .map((operator) => this.compareProperty(type, key, operator, val[operator], opts))
+          .map((operator) => this.compareProperty(entity, key, operator, val[operator], opts))
           .join(' AND ');
         return operators.length > 1 ? `(${operations})` : operations;
     }
   }
 
-  compareProperty<T, K extends keyof QueryComparisonOperator<T>>(
-    type: { new (): T },
+  compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
+    entity: { new (): E },
     prop: string,
     operator: K,
-    val: QueryComparisonOperator<T>[K],
+    val: QueryComparisonOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
     const name = meta.properties[prop]?.name || prop;
     const col = prefix + this.escapeId(name);
@@ -277,14 +277,14 @@ export abstract class BaseSqlDialect {
     }
   }
 
-  group<T>(fields: (keyof T)[]): string {
+  group<E>(fields: (keyof E)[]): string {
     if (!fields?.length) {
       return '';
     }
     return ` GROUP BY ${this.escapeId(fields)}`;
   }
 
-  sort<T>(sort: QuerySort<T>): string {
+  sort<E>(sort: QuerySort<E>): string {
     if (!sort || Object.keys(sort).length === 0) {
       return '';
     }
@@ -308,7 +308,7 @@ export abstract class BaseSqlDialect {
     return sql;
   }
 
-  escapeId<T>(val: string | string[] | keyof T | (keyof T)[], forbidQualified?: boolean): string {
+  escapeId<E>(val: string | string[] | keyof E | (keyof E)[], forbidQualified?: boolean): string {
     if (Array.isArray(val)) {
       return (val as string[]).map((it) => this.escapeId(it, forbidQualified)).join(', ');
     }
@@ -332,7 +332,7 @@ export abstract class BaseSqlDialect {
     return escape(val);
   }
 
-  objectToValues<T>(object: T): string {
+  objectToValues<E>(object: E): string {
     return Object.keys(object)
       .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
       .join(', ');

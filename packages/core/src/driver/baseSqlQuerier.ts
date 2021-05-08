@@ -11,47 +11,47 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     super();
   }
 
-  async query<T>(query: string, ...args: any[]) {
+  async query<E>(query: string, ...args: any[]) {
     // console.debug(query);
     const res = await this.conn.query(query, args);
-    return this.processQueryResult<T>(res);
+    return this.processQueryResult<E>(res);
   }
 
-  protected processQueryResult<T>(result: any): T {
+  protected processQueryResult<E>(result: any): E {
     return result;
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]) {
-    const query = this.dialect.insert(type, bodies);
+  async insert<E>(entity: { new (): E }, bodies: E[]) {
+    const query = this.dialect.insert(entity, bodies);
     const res = await this.query<QueryUpdateResult>(query);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const query = this.dialect.update(type, filter, body);
+  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+    const query = this.dialect.update(entity, filter, body);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  async find<T>(type: { new (): T }, qm: Query<T>, opts?: QueryOptions) {
-    const query = this.dialect.find(type, qm, opts);
-    const res = await this.query<T[]>(query);
+  async find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
+    const query = this.dialect.find(entity, qm, opts);
+    const res = await this.query<E[]>(query);
     const founds = mapRows(res);
-    await this.populateToManyRelations(type, founds, qm.populate);
+    await this.populateToManyRelations(entity, founds, qm.populate);
     return founds;
   }
 
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const query = this.dialect.remove(type, filter);
+  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+    const query = this.dialect.remove(entity, filter);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  async count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
+  async count<E>(entity: { new (): E }, filter?: QueryFilter<E>) {
     const res: any = await this.find(
-      type,
-      { project: ({ 'COUNT(*) count': 1 } as any) as QueryProject<T>, filter },
+      entity,
+      { project: ({ 'COUNT(*) count': 1 } as any) as QueryProject<E>, filter },
       { isTrustedProject: true }
     );
     return Number(res[0].count);

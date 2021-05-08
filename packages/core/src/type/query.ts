@@ -1,31 +1,31 @@
 export type QueryScalarValue = string | number | boolean | null;
 
-export type QueryProject<T> =
-  | (keyof T)[]
+export type QueryProject<E> =
+  | (keyof E)[]
   | {
-      [P in keyof T]: boolean | 0 | 1;
+      [P in keyof E]: boolean | 0 | 1;
     };
 
-export type QueryPopulate<T> = {
-  readonly [P in keyof T]?: QueryPopulateValue<T[P]>;
+export type QueryPopulate<E> = {
+  readonly [P in keyof E]?: QueryPopulateValue<E[P]>;
 };
 
 export type QueryPopulateValue<P> = Query<P> & { required?: boolean };
 
-export type QueryFieldFilter<T> = {
-  readonly [P in keyof T]: T[P] | QueryComparisonOperator<T> | QueryScalarValue;
+export type QueryFieldFilter<E> = {
+  readonly [P in keyof E]: E[P] | QueryComparisonOperator<E> | QueryScalarValue;
 };
 
-export type QueryTextSearchOptions<T> = {
-  fields?: (keyof T)[];
+export type QueryTextSearchOptions<E> = {
+  fields?: (keyof E)[];
   value: string;
 };
 
-export type QueryTextSearch<T> = {
-  readonly $text?: QueryTextSearchOptions<T>;
+export type QueryTextSearch<E> = {
+  readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryComparisonOperator<T> = {
+export type QueryComparisonOperator<E> = {
   readonly $eq?: QueryScalarValue;
   readonly $ne?: QueryScalarValue;
   readonly $lt?: number;
@@ -47,14 +47,14 @@ export type QueryLogicalOperatorKey = keyof QueryLogicalOperatorMap;
 
 export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[QueryLogicalOperatorKey];
 
-export type QueryLogicalOperator<T> = {
-  [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<T> | QueryTextSearch<T>;
+export type QueryLogicalOperator<E> = {
+  [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<E> | QueryTextSearch<E>;
 };
 
-export type QueryFilter<T> = QueryLogicalOperator<T> | QueryTextSearch<T> | QueryFieldFilter<T>;
+export type QueryFilter<E> = QueryLogicalOperator<E> | QueryTextSearch<E> | QueryFieldFilter<E>;
 
-export type QuerySort<T> = {
-  readonly [P in keyof T]: -1 | 1;
+export type QuerySort<E> = {
+  readonly [P in keyof E]: -1 | 1;
 };
 
 export type QueryPager = {
@@ -62,15 +62,15 @@ export type QueryPager = {
   limit?: number;
 };
 
-export type QueryOne<T> = {
-  project?: QueryProject<T>;
-  populate?: QueryPopulate<T>;
-  group?: (keyof T)[];
-  sort?: QuerySort<T>;
+export type QueryOne<E> = {
+  project?: QueryProject<E>;
+  populate?: QueryPopulate<E>;
+  group?: (keyof E)[];
+  sort?: QuerySort<E>;
 } & QueryPager;
 
-export type Query<T> = QueryOne<T> & {
-  filter?: QueryFilter<T>;
+export type Query<E> = QueryOne<E> & {
+  filter?: QueryFilter<E>;
 };
 
 export type QueryStringified = {

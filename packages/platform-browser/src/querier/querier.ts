@@ -1,80 +1,80 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { Query, QueryFilter, QueryOne } from '@uql/core/type';
-import { formatKebabCase } from '@uql/core/util';
+import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, Querier } from '../type';
 import { get, post, put, remove } from '../http';
 import { stringifyQuery, stringifyQueryParameter } from './query.util';
 
 export const querier: Querier = {
-  insertOne<T>(type: { new (): T }, body: T, opts?: RequestOptions) {
-    const meta = getMeta(type);
+  insertOne<E>(entity: { new (): E }, body: E, opts?: RequestOptions) {
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
     return post(basePath, body, opts);
   },
 
-  updateOneById<T>(type: { new (): T }, id: any, body: T, opts?: RequestOptions) {
-    const meta = getMeta(type);
+  updateOneById<E>(entity: { new (): E }, id: any, body: E, opts?: RequestOptions) {
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
     return put<number>(`${basePath}/${id}`, body, opts);
   },
 
-  saveOne<T>(type: { new (): T }, body: T, opts?: RequestOptions) {
-    const meta = getMeta(type);
+  saveOne<E>(entity: { new (): E }, body: E, opts?: RequestOptions) {
+    const meta = getMeta(entity);
     const id = body[meta.id.property];
     if (id) {
-      return this.updateOneById(type, id, body, opts).then((res) => {
+      return this.updateOneById(entity, id, body, opts).then((res) => {
         return { data: id };
       });
     }
-    return this.insertOne(type, body, opts);
+    return this.insertOne(entity, body, opts);
   },
 
-  findOne<T>(type: { new (): T }, qm: Query<T>, opts?: RequestOptions) {
+  findOne<E>(entity: { new (): E }, qm: Query<E>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
-    return get<T>(`${basePath}/one${qs}`, opts);
+    return get<E>(`${basePath}/one${qs}`, opts);
   },
 
-  findOneById<T>(type: { new (): T }, id: any, qm: QueryOne<T>, opts?: RequestOptions) {
+  findOneById<E>(entity: { new (): E }, id: any, qm: QueryOne<E>, opts?: RequestOptions) {
     const qs = stringifyQuery(qm);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
-    return get<T>(`${basePath}/${id}${qs}`, opts);
+    return get<E>(`${basePath}/${id}${qs}`, opts);
   },
 
-  find<T>(type: { new (): T }, qm: Query<T>, opts?: RequestFindOptions) {
+  find<E>(entity: { new (): E }, qm: Query<E>, opts?: RequestFindOptions) {
     const data: typeof qm & Pick<typeof opts, 'count'> = { ...qm };
     if (opts?.count) {
       data.count = true;
     }
     const qs = stringifyQuery(data);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
-    return get<T[]>(`${basePath}${qs}`, opts);
+    return get<E[]>(`${basePath}${qs}`, opts);
   },
 
-  remove<T>(type: { new (): T }, filter: QueryFilter<T>, opts?: RequestOptions) {
+  remove<E>(entity: { new (): E }, filter: QueryFilter<E>, opts?: RequestOptions) {
     const qs = stringifyQueryParameter('filter', filter);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
     return remove<number>(`${basePath}${qs}`, opts);
   },
 
-  removeOneById<T>(type: { new (): T }, id: any, opts?: RequestOptions) {
-    const meta = getMeta(type);
+  removeOneById<E>(entity: { new (): E }, id: any, opts?: RequestOptions) {
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
     return remove<number>(`${basePath}/${id}`, opts);
   },
 
-  count<T>(type: { new (): T }, filter: QueryFilter<T>, opts?: RequestOptions) {
+  count<E>(entity: { new (): E }, filter: QueryFilter<E>, opts?: RequestOptions) {
     const qs = stringifyQueryParameter('filter', filter);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     const basePath = getBasePath(meta.name);
     return get<number>(`${basePath}/count${qs}`, opts);
   },
 };
 
 function getBasePath(name: string) {
-  return '/api/' + formatKebabCase(name);
+  return '/api/' + kebabCase(name);
 }

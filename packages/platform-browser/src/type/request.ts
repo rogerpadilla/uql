@@ -1,5 +1,5 @@
-export interface RequestSuccessResponse<T> {
-  data: T;
+export interface RequestSuccessResponse<E> {
+  data: E;
 }
 
 export interface RequestErrorResponse {

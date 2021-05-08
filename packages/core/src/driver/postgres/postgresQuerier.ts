@@ -8,25 +8,25 @@ export class PostgresQuerier extends BaseSqlQuerier {
     super(new PostgresDialect(), conn);
   }
 
-  processQueryResult<T>({ rows }: { rows: T }): T {
+  processQueryResult<E>({ rows }: { rows: E }): E {
     return rows;
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]) {
-    const query = this.dialect.insert(type, bodies);
+  async insert<E>(entity: { new (): E }, bodies: E[]) {
+    const query = this.dialect.insert(entity, bodies);
     const res = await this.query<{ insertid: number }[]>(query);
-    const meta = getMeta(type);
+    const meta = getMeta(entity);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res[index].insertid));
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const query = this.dialect.update(type, filter, body);
+  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+    const query = this.dialect.update(entity, filter, body);
     const res: { rowCount: number } = await this.conn.query(query);
     return res.rowCount;
   }
 
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const query = this.dialect.remove(type, filter);
+  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+    const query = this.dialect.remove(entity, filter);
     const res: { rowCount: number } = await this.conn.query(query);
     return res.rowCount;
   }

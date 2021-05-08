@@ -7,7 +7,7 @@ export class MySqlQuerier extends BaseSqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  processQueryResult<T>([rows]: [T]): T {
+  processQueryResult<E>([rows]: [E]): E {
     return rows;
   }
 }

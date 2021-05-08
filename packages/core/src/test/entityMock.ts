@@ -26,13 +26,13 @@ interface IUser extends IEntity {
 export abstract class BaseEntity implements IEntity {
   @Id()
   id?: string;
-  @Property({ reference: { type: () => Company } })
+  @Property({ reference: { entity: () => Company } })
   companyId?: string;
-  @ManyToOne({ type: () => Company })
+  @ManyToOne({ entity: () => Company })
   company?: ICompany;
-  @Property({ reference: { type: () => User } })
+  @Property({ reference: { entity: () => User } })
   userId?: string;
-  @ManyToOne({ type: () => User })
+  @ManyToOne({ entity: () => User })
   user?: IUser;
   @Property({ onInsert: () => Date.now() })
   createdAt?: number;
@@ -68,7 +68,7 @@ export class User extends BaseEntity implements IUser {
   password?: string;
   @OneToOne({ mappedBy: 'userId' })
   profile?: Profile;
-  @OneToMany({ type: () => User, mappedBy: 'userId' })
+  @OneToMany({ entity: () => User, mappedBy: 'userId' })
   users?: User[];
 }
 
@@ -78,7 +78,7 @@ export class LedgerAccount extends BaseEntity {
   name?: string;
   @Property()
   description?: string;
-  @Property({ reference: { type: () => LedgerAccount } })
+  @Property({ reference: { entity: () => LedgerAccount } })
   parentLedgerId?: string;
   @ManyToOne()
   parentLedger?: LedgerAccount;
@@ -100,7 +100,7 @@ export class Tax extends BaseEntity {
   name?: string;
   @Property()
   percentage?: number;
-  @Property({ reference: { type: () => TaxCategory } })
+  @Property({ reference: { entity: () => TaxCategory } })
   categoryId?: string;
   @ManyToOne()
   category?: TaxCategory;
@@ -118,7 +118,7 @@ export class MeasureUnitCategory extends BaseEntity {
 export class MeasureUnit extends BaseEntity {
   @Property()
   name?: string;
-  @Property({ reference: { type: () => MeasureUnitCategory } })
+  @Property({ reference: { entity: () => MeasureUnitCategory } })
   categoryId?: string;
   @ManyToOne()
   category?: MeasureUnitCategory;
@@ -138,7 +138,7 @@ export class Storehouse extends BaseEntity {
 export class Tag extends BaseEntity {
   @Property()
   name?: string;
-  @ManyToMany({ type: () => Item })
+  @ManyToMany({ entity: () => Item })
   items: Item[];
 }
 
@@ -154,19 +154,19 @@ export class Item extends BaseEntity {
   barcode?: string;
   @Property()
   image?: string;
-  @Property({ reference: { type: () => LedgerAccount } })
+  @Property({ reference: { entity: () => LedgerAccount } })
   buyLedgerAccountId?: string;
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
-  @Property({ reference: { type: () => LedgerAccount } })
+  @Property({ reference: { entity: () => LedgerAccount } })
   saleLedgerAccountId?: string;
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
-  @Property({ reference: { type: () => Tax } })
+  @Property({ reference: { entity: () => Tax } })
   taxId?: string;
   @ManyToOne()
   tax?: Tax;
-  @Property({ reference: { type: () => MeasureUnit } })
+  @Property({ reference: { entity: () => MeasureUnit } })
   measureUnitId?: string;
   @ManyToOne()
   measureUnit?: MeasureUnit;
@@ -176,13 +176,13 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Property()
   inventoryable?: boolean;
-  @ManyToMany({ type: () => Tag })
+  @ManyToMany({ entity: () => Tag })
   tags?: Tag[];
 }
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
-  @Property({ reference: { type: () => Item } })
+  @Property({ reference: { entity: () => Item } })
   itemId?: string;
   @ManyToOne()
   item?: Item;
@@ -190,17 +190,17 @@ export class ItemAdjustment extends BaseEntity {
   number?: number;
   @Property()
   buyPrice?: number;
-  @Property({ reference: { type: () => Storehouse } })
+  @Property({ reference: { entity: () => Storehouse } })
   storehouseId?: string;
   @ManyToOne()
   storehouse?: Storehouse;
-  @Property({ reference: { type: () => InventoryAdjustment } })
+  @Property({ reference: { entity: () => InventoryAdjustment } })
   inventoryAdjustmentId?: string;
 }
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({ type: () => ItemAdjustment, mappedBy: 'inventoryAdjustmentId' })
+  @OneToMany({ entity: () => ItemAdjustment, mappedBy: 'inventoryAdjustmentId' })
   itemAdjustments?: ItemAdjustment[];
   @Property()
   date?: number;

@@ -15,7 +15,7 @@ export interface QuerierPoolConnection {
   release(): void | Promise<void>;
 }
 
-export interface QuerierPool<T extends Querier = Querier> {
-  getQuerier(): Promise<T>;
+export interface QuerierPool<E extends Querier = Querier> {
+  getQuerier(): Promise<E>;
   end(): Promise<void>;
 }

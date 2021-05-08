@@ -3,16 +3,16 @@ import { PostgresDialect } from '../driver/postgres/postgresDialect';
 import { getMeta } from '../entity/decorator/definition';
 import { Query, QueryFilter, QueryOptions } from '../type/query';
 
-export function find<T>(dialect: BaseSqlDialect, type: { new (): T }, query: Query<T>, opts?: QueryOptions) {
-  const sql = dialect.find(type, query, opts);
+export function find<E>(dialect: BaseSqlDialect, entity: { new (): E }, query: Query<E>, opts?: QueryOptions) {
+  const sql = dialect.find(entity, query, opts);
   return reEscape(dialect, sql);
 }
 
-export function insert<T>(dialect: BaseSqlDialect, type: { new (): T }, payload: T | T[]) {
-  const sql = dialect.insert(type, payload);
+export function insert<E>(dialect: BaseSqlDialect, entity: { new (): E }, payload: E | E[]) {
+  const sql = dialect.insert(entity, payload);
   if (dialect instanceof PostgresDialect) {
     const reEscapedSql = reEscape(dialect, sql);
-    const idName = getMeta(type).id.name;
+    const idName = getMeta(entity).id.name;
     const returnId = ` RETURNING ${idName} insertId`;
     if (!reEscapedSql.endsWith(returnId)) {
       throw new Error();
@@ -22,13 +22,13 @@ export function insert<T>(dialect: BaseSqlDialect, type: { new (): T }, payload:
   return sql;
 }
 
-export function update<T>(dialect: BaseSqlDialect, type: { new (): T }, filter: QueryFilter<T>, payload: T) {
-  const sql = dialect.update(type, filter, payload);
+export function update<E>(dialect: BaseSqlDialect, entity: { new (): E }, filter: QueryFilter<E>, payload: E) {
+  const sql = dialect.update(entity, filter, payload);
   return reEscape(dialect, sql);
 }
 
-export function remove<T>(dialect: BaseSqlDialect, type: { new (): T }, filter: QueryFilter<T>) {
-  const sql = dialect.remove(type, filter);
+export function remove<E>(dialect: BaseSqlDialect, entity: { new (): E }, filter: QueryFilter<E>) {
+  const sql = dialect.remove(entity, filter);
   return reEscape(dialect, sql);
 }
 

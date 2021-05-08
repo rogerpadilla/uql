@@ -1,7 +1,7 @@
 import { Query, QueryStringified } from '@uql/core/type';
 
-export function parseQuery<T>(qmsSrc?: QueryStringified): Query<T> {
-  const qm: Query<T> = {};
+export function parseQuery<E>(qmsSrc?: QueryStringified): Query<E> {
+  const qm: Query<E> = {};
   if (qmsSrc) {
     if (qmsSrc.project) {
       qm.project = JSON.parse(qmsSrc.project);

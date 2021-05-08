@@ -1,9 +1,9 @@
 import { PropertyOptions } from '../../type';
 import { defineProperty } from './definition';
 
-export function Property<T>(opts?: PropertyOptions) {
+export function Property<E>(opts?: PropertyOptions) {
   return (target: object, prop: string): void => {
-    const type = target.constructor as { new (): T };
-    defineProperty(type, prop, opts);
+    const entity = target.constructor as { new (): E };
+    defineProperty(entity, prop, opts);
   };
 }

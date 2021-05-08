@@ -7,7 +7,7 @@ export class MariadbQuerier extends BaseSqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  processQueryResult<T>(res: any): T {
+  processQueryResult<E>(res: any): E {
     return Array.isArray(res) ? res.slice(0, res.length) : res;
   }
 }

@@ -1,15 +1,4 @@
-import {
-  describe,
-  fdescribe,
-  xdescribe,
-  it,
-  fit,
-  xit,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  afterAll,
-} from '@jest/globals';
+import { describe, it, beforeAll, beforeEach, afterEach, afterAll } from '@jest/globals';
 
 export function createSpec<T extends Spec>(spec: T) {
   const specKeysMap: { [k: string]: true } = {};

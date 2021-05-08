@@ -1,9 +1,9 @@
 import { PropertyOptions } from '../../type';
 import { defineId } from './definition';
 
-export function Id<T>(opts?: PropertyOptions) {
+export function Id<E>(opts?: PropertyOptions) {
   return (target: object, prop: string): void => {
-    const type = target.constructor as { new (): T };
-    defineId(type, prop, opts);
+    const E = target.constructor as { new (): E };
+    defineId(E, prop, opts);
   };
 }

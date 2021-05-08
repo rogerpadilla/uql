@@ -12,29 +12,29 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     super();
   }
 
-  async insert<T>(type: { new (): T }, bodies: T[]) {
-    const persistableKeys = filterPersistableProperties(type, bodies[0]);
+  async insert<E>(entity: { new (): E }, bodies: E[]) {
+    const persistableKeys = filterPersistableProperties(entity, bodies[0]);
     const persistables = bodies.map((body) =>
       persistableKeys.reduce((acc, key) => {
         acc[key] = body[key];
         return acc;
-      }, {} as OptionalId<T>)
+      }, {} as OptionalId<E>)
     );
 
-    const res = await this.collection(type).insertMany(persistables, { session: this.session });
+    const res = await this.collection(entity).insertMany(persistables, { session: this.session });
 
     return Object.values(res.insertedIds);
   }
 
-  async update<T>(type: { new (): T }, filter: QueryFilter<T>, body: T) {
-    const persistableProperties = filterPersistableProperties(type, body);
+  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+    const persistableProperties = filterPersistableProperties(entity, body);
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
       return acc;
-    }, {} as OptionalId<T>);
+    }, {} as OptionalId<E>);
 
-    const res = await this.collection(type).updateMany(
-      this.dialect.buildFilter(type, filter),
+    const res = await this.collection(entity).updateMany(
+      this.dialect.buildFilter(entity, filter),
       { $set: persistable },
       {
         session: this.session,
@@ -44,23 +44,23 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return res.modifiedCount;
   }
 
-  async find<T>(type: { new (): T }, qm: Query<T>) {
-    const meta = getMeta(type);
+  async find<E>(entity: { new (): E }, qm: Query<E>) {
+    const meta = getMeta(entity);
 
-    let documents: T[];
+    let documents: E[];
 
     if (qm.populate && Object.keys(qm.populate).length) {
-      const pipeline = this.dialect.buildAggregationPipeline(type, qm);
-      documents = await this.collection(type)
-        .aggregate<T>(pipeline, { session: this.session })
+      const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
+      documents = await this.collection(entity)
+        .aggregate<E>(pipeline, { session: this.session })
         .toArray();
       normalizeIds(documents, meta);
-      await this.populateToManyRelations(type, documents, qm.populate);
+      await this.populateToManyRelations(entity, documents, qm.populate);
     } else {
-      const cursor = this.collection(type).find<T>({}, { session: this.session });
+      const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
       if (qm.filter) {
-        const filter = this.dialect.buildFilter(type, qm.filter);
+        const filter = this.dialect.buildFilter(entity, qm.filter);
         cursor.filter(filter);
       }
       if (qm.project) {
@@ -83,20 +83,20 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return documents;
   }
 
-  findOneById<T>(type: { new (): T }, id: ObjectId, qo: QueryOne<T>, opts?: QueryOptions) {
-    const meta = getMeta(type);
-    return this.findOne(type, { ...qo, filter: { [meta.id.name]: id } }, opts);
+  findOneById<E>(entity: { new (): E }, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
+    const meta = getMeta(entity);
+    return this.findOne(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
-  async remove<T>(type: { new (): T }, filter: QueryFilter<T>) {
-    const res = await this.collection(type).deleteMany(this.dialect.buildFilter(type, filter), {
+  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
       session: this.session,
     });
     return res.deletedCount;
   }
 
-  count<T>(type: { new (): T }, filter?: QueryFilter<T>) {
-    return this.collection(type).countDocuments(this.dialect.buildFilter(type, filter), { session: this.session });
+  count<E>(entity: { new (): E }, filter?: QueryFilter<E>) {
+    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, filter), { session: this.session });
   }
 
   async query(query: string) {
@@ -107,8 +107,8 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return this.session?.inTransaction();
   }
 
-  collection<T>(type: { new (): T }) {
-    const meta = getMeta(type);
+  collection<E>(entity: { new (): E }) {
+    const meta = getMeta(entity);
     return this.conn.db().collection(meta.name);
   }
 
@@ -143,17 +143,17 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 }
 
-export function normalizeIds<T>(docs: T | T[], meta: EntityMeta<T>) {
+export function normalizeIds<E>(docs: E | E[], meta: EntityMeta<E>) {
   if (Array.isArray(docs)) {
     for (const doc of docs) {
-      normalizeId<T>(doc, meta);
+      normalizeId<E>(doc, meta);
     }
   } else {
-    normalizeId<T>(docs, meta);
+    normalizeId<E>(docs, meta);
   }
 }
 
-function normalizeId<T>(doc: T, meta: EntityMeta<T>) {
+function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   if (!doc) {
     return;
   }
@@ -163,9 +163,9 @@ function normalizeId<T>(doc: T, meta: EntityMeta<T>) {
     const relOpts = meta.relations[relProp];
     const relData = doc[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
-      const relMeta = getMeta(relOpts.type());
+      const relMeta = getMeta(relOpts.entity());
       normalizeIds(relData, relMeta);
     }
   }
-  return doc as T;
+  return doc as E;
 }

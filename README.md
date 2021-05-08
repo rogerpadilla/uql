@@ -79,10 +79,10 @@ export abstract class BaseEntity {
   /**
    * different relations between entities are supported
    */
-  @ManyToOne({ type: () => Company })
+  @ManyToOne({ entity: () => Company })
   company?: string | Company;
 
-  @ManyToOne({ type: () => User })
+  @ManyToOne({ entity: () => User })
   user?: string | User;
 
   /**
@@ -218,7 +218,7 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
   try {
     await querier.beginTransaction();
 
-    if (confirmation.type === 'register') {
+    if (confirmation.entity === 'register') {
       const newUser: User = {
         name: confirmation.name,
         email: confirmation.email,
