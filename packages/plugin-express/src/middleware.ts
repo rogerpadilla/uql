@@ -12,7 +12,7 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   const router = expressRouter();
   const options = getOptions();
 
-  let entities = opts.include || getEntities();
+  let entities = opts.include ?? getEntities();
   if (opts.exclude) {
     entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }

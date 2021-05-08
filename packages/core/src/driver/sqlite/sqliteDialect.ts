@@ -1,4 +1,4 @@
-import { QueryTextSearchOptions, QueryScalarValue } from '../../type';
+import { QueryTextSearchOptions, Scalar } from '../../type';
 import { getMeta } from '../../entity/decorator';
 import { BaseSqlDialect } from '../baseSqlDialect';
 
@@ -7,12 +7,7 @@ export class SqliteDialect extends BaseSqlDialect {
     super('BEGIN TRANSACTION', '`');
   }
 
-  compare<E>(
-    entity: { new (): E },
-    key: string,
-    value: object | QueryScalarValue,
-    opts: { prefix?: string } = {}
-  ): string {
+  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;

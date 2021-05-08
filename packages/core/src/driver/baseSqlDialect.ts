@@ -3,7 +3,7 @@ import { getMeta } from '../entity/decorator/definition';
 import {
   QueryFilter,
   Query,
-  QueryScalarValue,
+  Scalar,
   QueryComparisonOperator,
   QuerySort,
   QueryPager,
@@ -11,6 +11,8 @@ import {
   QueryLogicalOperatorValue,
   QueryTextSearchOptions,
   QueryPopulate,
+  Properties,
+  QueryProject,
 } from '../type';
 import { filterPersistableProperties } from './entity.util';
 
@@ -73,20 +75,18 @@ export abstract class BaseSqlDialect {
 
   find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
     const select = this.select<E>(entity, qm, opts);
-    const where = this.filter<E>(entity, qm.filter, { useClause: true });
-    const group = this.group<E>(qm.group);
-    const sort = this.sort<E>(qm.sort);
+    const filter = this.filter<E>(entity, qm.filter, { prependClause: true });
+    const group = this.group<E>(entity, qm.group);
+    const sort = this.sort<E>(entity, qm.sort);
     const pager = this.pager(qm);
-    return select + where + group + sort + pager;
+    return select + filter + group + sort + pager;
   }
 
-  columns<E>(
+  project<E>(
     entity: { new (): E },
-    qm: Query<E>,
+    project: QueryProject<E>,
     opts: { prefix?: string; usePrefixForAlias?: boolean } & QueryOptions
   ): string {
-    let { project } = { ...qm };
-
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
@@ -94,14 +94,14 @@ export abstract class BaseSqlDialect {
       if (!Array.isArray(project)) {
         const hasPositives = Object.keys(project).some((key) => project[key]);
         project = Object.keys(hasPositives ? project : meta.properties).filter(
-          (it) => project[it] || project[it] === undefined
-        ) as (keyof E)[];
+          (it) => project[it] ?? project[it] === undefined
+        ) as Properties<E>[];
       }
       if (opts.isTrustedProject) {
         return project.join(', ');
       }
     } else {
-      project = Object.keys(meta.properties) as (keyof E)[];
+      project = Object.keys(meta.properties) as Properties<E>[];
     }
 
     return project
@@ -118,20 +118,20 @@ export abstract class BaseSqlDialect {
 
   select<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
     const meta = getMeta(entity);
-    const baseSelect = this.columns(entity, qm, {
+    const baseColumns = this.project(entity, qm.project, {
       prefix: qm.populate && meta.name,
       ...opts,
     });
-    const { joinsSelect, joinsTables } = this.populate(entity, qm.populate);
-    return `SELECT ${baseSelect}${joinsSelect} FROM ${this.escapeId(meta.name)}${joinsTables}`;
+    const { joinsColumns, joinsTables } = this.populate(entity, qm.populate);
+    return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
   populate<E>(
     entity: { new (): E },
     populate: QueryPopulate<E> = {},
     prefix?: string
-  ): { joinsSelect: string; joinsTables: string } {
-    let joinsSelect = '';
+  ): { joinsColumns: string; joinsTables: string } {
+    let joinsColumns = '';
     let joinsTables = '';
 
     const meta = getMeta(entity);
@@ -152,12 +152,12 @@ export abstract class BaseSqlDialect {
       const relEntity = relOpts.entity();
       const popVal = populate[popKey];
 
-      const relColumns = this.columns(relEntity, popVal, {
+      const relColumns = this.project(relEntity, popVal.project, {
         prefix: joinPrefix,
         usePrefixForAlias: true,
       });
 
-      joinsSelect += `, ${relColumns}`;
+      joinsColumns += `, ${relColumns}`;
 
       const relMeta = getMeta(relEntity);
       const relEntityName = this.escapeId(relMeta.name);
@@ -175,30 +175,31 @@ export abstract class BaseSqlDialect {
         joinsTables += ` AND ${where}`;
       }
 
-      const { joinsSelect: subJoinSelect, joinsTables: subJoinTables } = this.populate(
+      const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.populate(
         relEntity,
         popVal.populate,
         joinPrefix
       );
 
-      joinsSelect += subJoinSelect;
-      joinsTables += subJoinTables;
+      joinsColumns += subJoinsColumns;
+      joinsTables += subJoinsTables;
     }
 
-    return { joinsSelect, joinsTables };
+    return { joinsColumns, joinsTables };
   }
 
   filter<E>(
     entity: { new (): E },
     filter: QueryFilter<E>,
-    opts: { logicalOperator?: QueryLogicalOperatorValue; prefix?: string; useClause?: boolean } = {}
+    opts: { logicalOperator?: QueryLogicalOperatorValue; prefix?: string; prependClause?: boolean } = {}
   ): string {
+    // TODO support entities in filter
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys?.length) {
       return '';
     }
 
-    const logicalOperator: QueryLogicalOperatorValue = opts.logicalOperator || 'AND';
+    const logicalOperator: QueryLogicalOperatorValue = opts.logicalOperator ?? 'AND';
 
     const sql = filterKeys
       .map((key) => {
@@ -216,15 +217,10 @@ export abstract class BaseSqlDialect {
       })
       .join(` ${logicalOperator} `);
 
-    return opts.useClause ? ` WHERE ${sql}` : sql;
+    return opts.prependClause ? ` WHERE ${sql}` : sql;
   }
 
-  compare<E>(
-    entity: { new (): E },
-    key: string,
-    value: QueryScalarValue | object,
-    opts: { prefix?: string } = {}
-  ): string {
+  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;
@@ -249,42 +245,45 @@ export abstract class BaseSqlDialect {
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
-    const name = meta.properties[prop]?.name || prop;
-    const col = prefix + this.escapeId(name);
+    const name = meta.properties[prop]?.name ?? prop;
+    const colPath = prefix + this.escapeId(name);
     switch (operator) {
       case '$eq':
-        return val === null ? `${col} IS NULL` : `${col} = ${this.escape(val)}`;
+        return val === null ? `${colPath} IS NULL` : `${colPath} = ${this.escape(val)}`;
       case '$ne':
-        return val === null ? `${col} IS NOT NULL` : `${col} <> ${this.escape(val)}`;
+        return val === null ? `${colPath} IS NOT NULL` : `${colPath} <> ${this.escape(val)}`;
       case '$gt':
-        return `${col} > ${this.escape(val)}`;
+        return `${colPath} > ${this.escape(val)}`;
       case '$gte':
-        return `${col} >= ${this.escape(val)}`;
+        return `${colPath} >= ${this.escape(val)}`;
       case '$lt':
-        return `${col} < ${this.escape(val)}`;
+        return `${colPath} < ${this.escape(val)}`;
       case '$lte':
-        return `${col} <= ${this.escape(val)}`;
+        return `${colPath} <= ${this.escape(val)}`;
       case '$startsWith':
-        return `LOWER(${col}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${colPath}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$in':
-        return `${col} IN (${this.escape(val)})`;
+        return `${colPath} IN (${this.escape(val)})`;
       case '$nin':
-        return `${col} NOT IN (${this.escape(val)})`;
+        return `${colPath} NOT IN (${this.escape(val)})`;
       case '$re':
-        return `${col} REGEXP ${this.escape(val)}`;
+        return `${colPath} REGEXP ${this.escape(val)}`;
       default:
         throw new TypeError(`unknown operator: ${operator}`);
     }
   }
 
-  group<E>(fields: (keyof E)[]): string {
-    if (!fields?.length) {
+  group<E>(entity: { new (): E }, properties: Properties<E>[]): string {
+    if (!properties?.length) {
       return '';
     }
-    return ` GROUP BY ${this.escapeId(fields)}`;
+    const meta = getMeta(entity);
+    const names = properties.map((prop) => meta.properties[prop as string].name);
+    return ` GROUP BY ${this.escapeId(names)}`;
   }
-
-  sort<E>(sort: QuerySort<E>): string {
+  sort<E>(entity: { new (): E }, sort: QuerySort<E>): string {
+    // TODO support entities in sort
+    // const meta = getMeta(entity);
     if (!sort || Object.keys(sort).length === 0) {
       return '';
     }
@@ -301,14 +300,14 @@ export abstract class BaseSqlDialect {
     let sql = '';
     if (opts.limit) {
       sql += ` LIMIT ${Number(opts.limit)}`;
-      if (opts.skip !== undefined) {
-        sql += ` OFFSET ${Number(opts.skip)}`;
-      }
+    }
+    if (opts.skip !== undefined) {
+      sql += ` OFFSET ${Number(opts.skip)}`;
     }
     return sql;
   }
 
-  escapeId<E>(val: string | string[] | keyof E | (keyof E)[], forbidQualified?: boolean): string {
+  escapeId(val: any, forbidQualified?: boolean): string {
     if (Array.isArray(val)) {
       return (val as string[]).map((it) => this.escapeId(it, forbidQualified)).join(', ');
     }
@@ -322,8 +321,8 @@ export abstract class BaseSqlDialect {
         .join('.');
     }
 
-    // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
     return (
+      // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
       this.escapeIdChar + str.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar
     );
   }

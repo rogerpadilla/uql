@@ -4,12 +4,12 @@ import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity';
-const metas: Map<{ new (): any }, EntityMeta<any>> = holder[metaKey] || new Map();
+const metas: Map<{ new (): any }, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
 export function defineProperty<E>(entity: { new (): E }, prop: string, opts: PropertyOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop) as { new (): E };
+  const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
   meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, type: inferredType, ...opts } };
   return meta;
 }
@@ -25,7 +25,7 @@ export function defineId<E>(entity: { new (): E }, prop: string, opts: PropertyO
 
 export function defineRelation<E>(entity: { new (): E }, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
-    const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop) as { new (): E };
+    const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
     const isScalar = isScalarType(inferredType);
     if (isScalar) {
       throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
@@ -44,7 +44,7 @@ export function define<E>(entity: { new (): E }, opts: EntityOptions = {}): Enti
     throw new TypeError(`'${entity.name}' must have properties`);
   }
 
-  meta.name = opts.name || entity.name;
+  meta.name = opts.name ?? entity.name;
   let parentProto: object = Object.getPrototypeOf(entity.prototype);
 
   while (parentProto.constructor !== Object) {

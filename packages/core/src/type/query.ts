@@ -1,18 +1,10 @@
-type Properties<E> = {
-  [K in keyof E]: E[K] extends QueryScalarValue ? K : never;
-}[keyof E];
+import { Properties, Scalar, Relations } from './entity';
 
-type Relations<E> = {
-  [K in keyof E]: E[K] extends QueryScalarValue ? never : K;
-}[keyof E];
+export type QueryPopulateValue<P> = Query<P> & { required?: boolean };
 
-type QueryPopulateValue<P> = Query<P> & { required?: boolean };
-
-type QueryFieldFilter<E> = {
-  readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | QueryScalarValue;
+export type QueryFieldFilter<E> = {
+  readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | Scalar;
 };
-
-export type QueryScalarValue = null | boolean | string | number | BigInt | Date;
 
 export type QueryProject<E> =
   | Properties<E>[]
@@ -34,15 +26,15 @@ export type QueryTextSearch<E> = {
 };
 
 export type QueryComparisonOperator<E> = {
-  readonly $eq?: QueryScalarValue;
-  readonly $ne?: QueryScalarValue;
+  readonly $eq?: Scalar;
+  readonly $ne?: Scalar;
   readonly $lt?: number;
   readonly $lte?: number;
   readonly $gt?: number;
   readonly $gte?: number;
   readonly $startsWith?: string;
-  readonly $in?: QueryScalarValue[];
-  readonly $nin?: QueryScalarValue[];
+  readonly $in?: Scalar[];
+  readonly $nin?: Scalar[];
   readonly $re?: string;
 };
 

@@ -1,3 +1,13 @@
+export type Scalar = boolean | Boolean | string | String | number | Number | BigInt | Date | Symbol;
+
+export type Properties<E> = {
+  [K in keyof E]: E[K] extends Scalar ? K : never;
+}[keyof E];
+
+export type Relations<E> = {
+  [K in keyof E]: E[K] extends Scalar ? never : K;
+}[keyof E];
+
 export type EntityOptions = {
   readonly name?: string;
 };
@@ -16,14 +26,14 @@ type IdPropertyOptions = { readonly property: string } & PropertyOptions;
 export type RelationOptions<E> = {
   entity?: () => { new (): any };
   readonly cardinality: RelationCardinality;
-  readonly mappedBy?: keyof E;
+  readonly mappedBy?: Properties<E>;
   through?: string;
   references?: { source: string; target: string }[];
 };
 
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationOneToOneOptions<E> = { entity?: () => { new (): E }; mappedBy?: keyof E };
-export type RelationOneToManyOptions<E> = { entity: () => { new (): E }; mappedBy?: keyof E };
+export type RelationOneToOneOptions<E> = { entity?: () => { new (): E }; mappedBy?: Properties<E> };
+export type RelationOneToManyOptions<E> = { entity: () => { new (): E }; mappedBy?: Properties<E> };
 export type RelationManyToOneOptions<E> = { entity?: () => { new (): E } };
 export type RelationManyToManyOptions<E> = { entity: () => { new (): E } };
 

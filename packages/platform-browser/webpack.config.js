@@ -7,7 +7,7 @@ const entryName = 'uql-platform-browser.min';
 const outDir = 'dist';
 
 module.exports = (env, argv) => {
-  const mode = argv.mode || 'development';
+  const mode = argv.mode ?? 'development';
   console.debug('*** Webpack mode', mode);
   const isDevMode = mode === 'development';
 

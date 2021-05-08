@@ -52,7 +52,7 @@ class MongoDialectSpec implements Spec {
 
     expect(() =>
       this.dialect.buildAggregationPipeline(User, {
-        populate: { status: {} },
+        populate: { status: {} } as any,
       })
     ).toThrow("'User.status' is not annotated as a relation");
 

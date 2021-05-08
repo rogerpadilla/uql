@@ -1,5 +1,5 @@
 import { getMeta } from '../../entity/decorator';
-import { QueryComparisonOperator, QueryTextSearchOptions, QueryScalarValue } from '../../type';
+import { QueryComparisonOperator, QueryTextSearchOptions, Scalar } from '../../type';
 import { BaseSqlDialect } from '../baseSqlDialect';
 
 export class PostgresDialect extends BaseSqlDialect {
@@ -13,12 +13,7 @@ export class PostgresDialect extends BaseSqlDialect {
     return `${sql} RETURNING ${meta.id.name} insertId`;
   }
 
-  compare<E>(
-    entity: { new (): E },
-    key: string,
-    value: object | QueryScalarValue,
-    opts: { prefix?: string } = {}
-  ): string {
+  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;
@@ -38,13 +33,13 @@ export class PostgresDialect extends BaseSqlDialect {
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
-    const name = meta.properties[prop]?.name || prop;
-    const col = prefix + this.escapeId(name);
+    const name = meta.properties[prop]?.name ?? prop;
+    const colPath = prefix + this.escapeId(name);
     switch (operator) {
       case '$startsWith':
-        return `${col} ILIKE ${this.escape(`${val}%`)}`;
+        return `${colPath} ILIKE ${this.escape(`${val}%`)}`;
       case '$re':
-        return `${col} ~ ${this.escape(val)}`;
+        return `${colPath} ~ ${this.escape(val)}`;
       default:
         return super.compareProperty(entity, prop, operator, val, opts);
     }
