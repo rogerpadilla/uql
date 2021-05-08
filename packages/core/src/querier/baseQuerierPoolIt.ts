@@ -298,8 +298,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
       userId: user.id,
       companyId: company.id,
       itemAdjustments: [
-        { buyPrice: 1000, item: firstItemId },
-        { buyPrice: 2000, item: secondItemId },
+        { buyPrice: 1000, itemId: firstItemId },
+        { buyPrice: 2000, itemId: secondItemId },
       ],
     });
 
@@ -310,8 +310,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(inventoryAdjustment).toMatchObject({
       description: 'some inventory adjustment',
       itemAdjustments: [
-        { buyPrice: 1000, item: firstItemId },
-        { buyPrice: 2000, item: secondItemId },
+        { buyPrice: 1000, itemId: firstItemId },
+        { buyPrice: 2000, itemId: secondItemId },
       ],
       user: {
         email: 'someemaila@example.com',

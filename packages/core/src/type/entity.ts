@@ -26,14 +26,15 @@ type IdPropertyOptions = { readonly property: string } & PropertyOptions;
 export type RelationOptions<E> = {
   entity?: () => { new (): any };
   readonly cardinality: RelationCardinality;
-  readonly mappedBy?: Properties<E>;
+  readonly mappedBy?: MappedBy<E>;
   through?: string;
   references?: { source: string; target: string }[];
 };
 
+export type MappedBy<E> = E extends object ? Properties<E> : string;
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationOneToOneOptions<E> = { entity?: () => { new (): E }; mappedBy?: Properties<E> };
-export type RelationOneToManyOptions<E> = { entity: () => { new (): E }; mappedBy?: Properties<E> };
+export type RelationOneToOneOptions<E> = { entity?: () => { new (): E }; mappedBy?: MappedBy<E> };
+export type RelationOneToManyOptions<E> = { entity: () => { new (): E }; mappedBy?: MappedBy<E> };
 export type RelationManyToOneOptions<E> = { entity?: () => { new (): E } };
 export type RelationManyToManyOptions<E> = { entity: () => { new (): E } };
 
