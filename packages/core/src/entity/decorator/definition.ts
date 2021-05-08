@@ -3,9 +3,9 @@ import 'reflect-metadata';
 import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../../type';
 
 const holder = globalThis;
-const key = '@uql/core/entity';
-const metas: Map<{ new (): any }, EntityMeta<any>> = holder[key] || new Map();
-holder[key] = metas;
+const metaKey = '@uql/core/entity';
+const metas: Map<{ new (): any }, EntityMeta<any>> = holder[metaKey] || new Map();
+holder[metaKey] = metas;
 
 export function defineProperty<E>(entity: { new (): E }, prop: string, opts: PropertyOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
@@ -16,7 +16,7 @@ export function defineProperty<E>(entity: { new (): E }, prop: string, opts: Pro
 
 export function defineId<E>(entity: { new (): E }, prop: string, opts: PropertyOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  const id = findId(meta);
+  const id = getId(meta);
   if (id) {
     throw new TypeError(`'${entity.name}' must have a single field decorated with @Id`);
   }
@@ -26,8 +26,8 @@ export function defineId<E>(entity: { new (): E }, prop: string, opts: PropertyO
 export function defineRelation<E>(entity: { new (): E }, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
     const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop) as { new (): E };
-    const isPrimitive = isScalarType(inferredType);
-    if (isPrimitive) {
+    const isScalar = isScalarType(inferredType);
+    if (isScalar) {
       throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
     }
     opts.entity = () => inferredType;
@@ -53,18 +53,18 @@ export function define<E>(entity: { new (): E }, opts: EntityOptions = {}): Enti
     parentProto = Object.getPrototypeOf(parentProto);
   }
 
-  const id = findId(meta);
+  const id = getId(meta);
   if (!id) {
     throw new TypeError(`'${entity.name}' must have one field decorated with @Id`);
   }
-  meta.id = id;
+  meta.id = { ...meta.properties[id], property: id };
 
   return meta;
 }
 
 export function getMeta<E>(entity: { new (): E }): EntityMeta<E> {
   const meta = metas.get(entity);
-  if (!meta?.id) {
+  if (!meta) {
     throw new TypeError(`'${entity.name}' is not an entity`);
   }
   if (meta.processed) {
@@ -122,20 +122,17 @@ function fillRelationReferences<E>(meta: EntityMeta<E>) {
   return meta;
 }
 
-function findId<E>(meta: EntityMeta<E>) {
-  const key = Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
-  if (key) {
-    return { ...meta.properties[key], property: key };
-  }
+function getId<E>(meta: EntityMeta<E>) {
+  return meta.id?.property ?? Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
   const sourceProperties = { ...source.properties };
-  const targetId = findId(target);
+  const targetId = getId(target);
   if (targetId) {
-    const sourceId = findId(source);
+    const sourceId = getId(source);
     if (sourceId) {
-      delete sourceProperties[sourceId.property];
+      delete sourceProperties[sourceId];
     }
   }
   target.properties = { ...sourceProperties, ...target.properties };

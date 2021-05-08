@@ -311,7 +311,6 @@ it('not an @Entity', () => {
   }).toThrow(`'SomeClass' is not an entity`);
 
   class AnotherClass {
-    @Id()
     id: string;
   }
 
