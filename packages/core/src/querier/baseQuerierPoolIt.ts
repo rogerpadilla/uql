@@ -1,5 +1,5 @@
 import { Company, InventoryAdjustment, Item, ItemAdjustment, Profile, Spec, Tax, TaxCategory, User } from '../test';
-import { Querier, QuerierPool, QuerySort } from '../type';
+import { Querier, QuerierPool } from '../type';
 
 export abstract class BaseQuerierPoolIt implements Spec {
   readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Profile, Company, User] as const;
@@ -65,7 +65,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
   async shouldInsertOneAndCascadeOneToOne() {
     const body: User = {
-      name: 'some name',
+      name: 'Some Name D',
       profile: { picture: 'abc', createdAt: 123 },
       createdAt: 123,
     };
@@ -79,6 +79,32 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(user).toMatchObject(body);
   }
 
+  async shouldInsertOneAndCascadeOneToMany() {
+    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+      itemAdjustments,
+    });
+
+    expect(inventoryAdjustmentId).toBeDefined();
+
+    const inventoryAdjustmentFound = await this.querier.find(InventoryAdjustment, {
+      populate: { itemAdjustments: {} },
+    });
+
+    expect(inventoryAdjustmentFound).toMatchObject([
+      {
+        description: 'some description',
+        itemAdjustments,
+      },
+    ]);
+
+    const itemAdjustmentsFound = await this.querier.find(ItemAdjustment, { filter: { inventoryAdjustmentId } });
+
+    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
   async shouldFind() {
     await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
 
@@ -87,7 +113,7 @@ export abstract class BaseQuerierPoolIt implements Spec {
       skip: 1,
       limit: 2,
       sort: {
-        id: 1,
+        name: 1,
       },
     });
 
