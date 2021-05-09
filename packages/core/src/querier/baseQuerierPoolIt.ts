@@ -9,11 +9,11 @@ export abstract class BaseQuerierPoolIt implements Spec {
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
-    await this.dropTables();
     await this.createTables();
   }
 
   async afterEach() {
+    await this.dropTables();
     await this.querier.release();
   }
 
@@ -54,17 +54,6 @@ export abstract class BaseQuerierPoolIt implements Spec {
     });
     expect(companyId).toBeDefined();
 
-    const affectedRows = await this.querier.update(
-      User,
-      {
-        id: userId,
-      },
-      {
-        companyId,
-      }
-    );
-    expect(affectedRows).toBe(1);
-
     const taxCategoryId = await this.querier.insertOne(TaxCategory, {
       name: 'Some Name C',
       description: 'Some Description Z',
@@ -88,10 +77,6 @@ export abstract class BaseQuerierPoolIt implements Spec {
     const user = await this.querier.findOneById(User, id, { populate: { profile: {} } });
 
     expect(user).toMatchObject(body);
-
-    const affectedRows = await this.querier.removeOneById(User, id);
-
-    expect(affectedRows).toBe(1);
   }
 
   async shouldFind() {
@@ -102,8 +87,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
       skip: 1,
       limit: 2,
       sort: {
-        'User.id': 1,
-      } as QuerySort<User>,
+        id: 1,
+      },
     });
 
     expect(users).toMatchObject([
@@ -145,69 +130,6 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(notFound).toBeUndefined();
   }
 
-  async shouldFindPopulate() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
-
-    const users = await this.querier.find(User, {
-      project: { name: 1, email: 1, password: 1 },
-      populate: {
-        company: {
-          project: {
-            name: 1,
-          },
-        },
-      },
-      sort: {
-        'User.id': 1,
-      } as QuerySort<User>,
-    });
-
-    expect(users).toMatchObject([
-      {
-        name: 'Some Name A',
-        email: 'someemaila@example.com',
-        password: '123456789a!',
-      },
-      {
-        name: 'Some Name B',
-        email: 'someemailb@example.com',
-        password: '123456789b!',
-      },
-      {
-        name: 'Some Name C',
-        email: 'someemailc@example.com',
-        company: {
-          name: 'Some Name C',
-        },
-      },
-    ]);
-
-    const foundOne = await this.querier.findOne(User, {
-      project: {
-        name: 1,
-        email: 1,
-      },
-      populate: {
-        company: {
-          project: {
-            name: 1,
-          },
-        },
-      },
-      filter: {
-        email: 'someemailc@example.com',
-      },
-    });
-
-    expect(foundOne).toMatchObject({
-      name: 'Some Name C',
-      email: 'someemailc@example.com',
-      company: {
-        name: 'Some Name C',
-      },
-    });
-  }
-
   async shouldCount() {
     await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
 
@@ -217,6 +139,8 @@ export abstract class BaseQuerierPoolIt implements Spec {
     expect(count2).toBe(3);
     const count3 = await this.querier.count(User, { status: 1 });
     expect(count3).toBe(0);
+    const count4 = await this.querier.count(User, { name: { $startsWith: 'Some Name ' } });
+    expect(count4).toBe(3);
   }
 
   async shouldUpdate() {

@@ -27,7 +27,7 @@ export abstract class BaseSqlQuerierPoolIt extends BaseQuerierPoolIt {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);
-        return this.querier.query(`DROP TABLE IF EXISTS ${this.querier.dialect.escapeId(meta.name)}`);
+        return this.querier.query(`DROP TABLE ${this.querier.dialect.escapeId(meta.name)}`);
       })
     );
   }
