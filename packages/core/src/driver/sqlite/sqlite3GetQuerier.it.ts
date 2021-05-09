@@ -20,5 +20,6 @@ describe('querierPool', () => {
     expect(querier1).toBeDefined();
     const querier2 = await getQuerier();
     expect(querier2).toBeDefined();
+    expect(querier1).toBe(querier2);
   });
 });
