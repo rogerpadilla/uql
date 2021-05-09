@@ -18,7 +18,7 @@ export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   }
 
   async end() {
-    await this.querier.conn.db.close();
+    await this.querier.conn.close();
     delete this.querier;
   }
 }
@@ -38,6 +38,10 @@ export class Sqlit3Connection implements QuerierPoolConnection {
 
   release() {
     // no-op
+  }
+
+  async close() {
+    await this.db.close();
   }
 }
 

@@ -18,12 +18,12 @@ describe('options', () => {
   it('getOptions datasource unset', () => {
     setOptions({
       datasource: {
-        driver: 'pg',
+        driver: 'sqlite3',
       },
     });
     const datasourceOptions = getDatasourceOptions();
     expect(datasourceOptions).toEqual({
-      driver: 'pg',
+      driver: 'sqlite3',
     });
   });
 

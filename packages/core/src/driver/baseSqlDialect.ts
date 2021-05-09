@@ -193,7 +193,6 @@ export abstract class BaseSqlDialect {
     filter: QueryFilter<E>,
     opts: { logicalOperator?: QueryLogicalOperatorValue; prefix?: string; prependClause?: boolean } = {}
   ): string {
-    // TODO support entities in filter
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys?.length) {
       return '';
@@ -282,8 +281,6 @@ export abstract class BaseSqlDialect {
     return ` GROUP BY ${this.escapeId(names)}`;
   }
   sort<E>(entity: { new (): E }, sort: QuerySort<E>): string {
-    // TODO support entities in sort
-    // const meta = getMeta(entity);
     if (!sort || Object.keys(sort).length === 0) {
       return '';
     }

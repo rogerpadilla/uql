@@ -12,11 +12,11 @@ export function createSpec<T extends Spec>(spec: T) {
         if (key === 'constructor' || specKeysMap[key]) {
           return;
         }
-        specKeysMap[key] = true;
         const callback = spec[key].bind(spec);
         if (hooks[key]) {
           hooks[key](callback);
         } else if (key.startsWith('should')) {
+          specKeysMap[key] = true;
           it(key, callback);
         }
       });

@@ -11,6 +11,10 @@ export class SqliteQuerier extends BaseSqlQuerier {
     super(new SqliteDialect(), conn);
   }
 
+  protected processQueryResult<E>(rows: E): E {
+    return rows;
+  }
+
   async insert<E>(entity: { new (): E }, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
     const res = await this.query<ISqlite.RunResult>(query);

@@ -5,11 +5,7 @@ describe('querierPool', () => {
   beforeEach(() => {
     setOptions({
       datasource: {
-        driver: 'pg',
-        host: '0.0.0.0',
-        port: 5432,
-        user: 'test',
-        password: 'test',
+        driver: 'sqlite3',
         database: 'test',
       },
     });

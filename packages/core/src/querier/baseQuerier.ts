@@ -104,7 +104,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       }
       if (relOpts.cardinality === 'oneToMany') {
         const relBodies: E[] = body[prop].map((it: E) => {
-          it[relOpts.mappedBy] = id;
+          it[relOpts.mappedBy as string] = id;
           return it;
         });
         return this.insert(relEntity, relBodies);
@@ -138,7 +138,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
         await this.remove(relEntity, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
           for (const it of relBody) {
-            it[relOpts.mappedBy] = id;
+            it[relOpts.mappedBy as string] = id;
           }
           return this.insert(relEntity, relBody);
         }

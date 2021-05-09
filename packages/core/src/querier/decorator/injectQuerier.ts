@@ -8,7 +8,7 @@ export function InjectQuerier() {
       proto[metadataKey] = new WeakMap();
     }
     if (proto[metadataKey].has(proto.constructor)) {
-      throw new Error(
+      throw new TypeError(
         `Decorator @InjectQuerier() is already used in '${proto.constructor.name}.${proto[metadataKey].get(
           proto.constructor
         )}'`
