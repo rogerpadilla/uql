@@ -13,7 +13,6 @@ import {
   Storehouse,
   Tag,
 } from '../../test';
-import { Id } from './id';
 import { getEntities, getMeta } from './definition';
 
 it('user', () => {
