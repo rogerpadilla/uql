@@ -216,6 +216,97 @@ it('item', () => {
   });
 });
 
+it('tag', () => {
+  const meta = getMeta(Tag);
+  expect(meta).toEqual({
+    entity: Tag,
+    id: {
+      isId: true,
+      name: 'id',
+      property: 'id',
+      type: String,
+    },
+    name: 'Tag',
+    processed: true,
+    properties: {
+      companyId: {
+        name: 'companyId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      createdAt: {
+        name: 'createdAt',
+        onInsert: expect.any(Function),
+        type: Number,
+      },
+      id: {
+        isId: true,
+        name: 'id',
+        type: String,
+      },
+      name: {
+        name: 'name',
+        type: String,
+      },
+      status: {
+        name: 'status',
+        type: Number,
+      },
+      updatedAt: {
+        name: 'updatedAt',
+        onUpdate: expect.any(Function),
+        type: Number,
+      },
+      userId: {
+        name: 'userId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+    },
+    relations: {
+      company: {
+        cardinality: 'manyToOne',
+        entity: expect.any(Function),
+        references: [
+          {
+            source: 'companyId',
+            target: 'id',
+          },
+        ],
+      },
+      items: {
+        cardinality: 'manyToMany',
+        entity: expect.any(Function),
+        references: [
+          {
+            source: 'tagId',
+            target: 'id',
+          },
+          {
+            source: 'itemId',
+            target: 'id',
+          },
+        ],
+        through: 'TagItem',
+      },
+      user: {
+        cardinality: 'manyToOne',
+        entity: expect.any(Function),
+        references: [
+          {
+            source: 'userId',
+            target: 'id',
+          },
+        ],
+      },
+    },
+  });
+});
+
 it('taxCategory', () => {
   const meta = getMeta(TaxCategory);
   expect(meta).toEqual({
