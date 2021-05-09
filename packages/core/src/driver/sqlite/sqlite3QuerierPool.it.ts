@@ -6,7 +6,7 @@ export class Sqlite3QuerierPoolIt extends BaseSqlQuerierPoolIt {
   readonly primaryKeyType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
 
   constructor() {
-    super(new Sqlite3QuerierPool(':memory:'));
+    super(new Sqlite3QuerierPool({ filename: ':memory:' }));
   }
 }
 

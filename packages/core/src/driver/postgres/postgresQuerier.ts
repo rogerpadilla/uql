@@ -8,7 +8,8 @@ export class PostgresQuerier extends BaseSqlQuerier {
     super(new PostgresDialect(), conn);
   }
 
-  processQueryResult<E>({ rows }: { rows: E }): E {
+  async query<E>(query: string): Promise<E> {
+    const { rows } = await this.conn.query(query);
     return rows;
   }
 

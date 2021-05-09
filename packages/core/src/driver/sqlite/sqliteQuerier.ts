@@ -11,13 +11,14 @@ export class SqliteQuerier extends BaseSqlQuerier {
     super(new SqliteDialect(), conn);
   }
 
-  protected processQueryResult<E>(rows: E): E {
-    return rows;
+  async query<E>(query: string): Promise<E> {
+    const res = await this.conn.query(query);
+    return (res as unknown) as E;
   }
 
   async insert<E>(entity: { new (): E }, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
-    const res = await this.query<ISqlite.RunResult>(query);
+    const res = await this.conn.run(query);
     const meta = getMeta(entity);
     return bodies.map((body, index) =>
       body[meta.id.property] ? body[meta.id.property] : res.lastID - res.changes + index + 1
@@ -26,13 +27,13 @@ export class SqliteQuerier extends BaseSqlQuerier {
 
   async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
-    const res = await this.query<ISqlite.RunResult>(query);
+    const res = await this.conn.run(query);
     return res.changes;
   }
 
   async find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
     const query = this.dialect.find(entity, qm, opts);
-    const res = await this.conn.all(query);
+    const res = await this.query<E[]>(query);
     const founds = mapRows(res);
     await this.populateToManyRelations(entity, founds, qm.populate);
     return founds;
@@ -40,7 +41,7 @@ export class SqliteQuerier extends BaseSqlQuerier {
 
   async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
     const query = this.dialect.remove(entity, filter);
-    const res = await this.query<ISqlite.RunResult>(query);
+    const res = await this.conn.run(query);
     return res.changes;
   }
 }

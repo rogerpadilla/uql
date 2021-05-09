@@ -7,7 +7,8 @@ export class MariadbQuerier extends BaseSqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  processQueryResult<E>(res: any): E {
+  async query<E>(query: string): Promise<E> {
+    const res = await this.conn.query(query);
     return Array.isArray(res) ? res.slice(0, res.length) : res;
   }
 }

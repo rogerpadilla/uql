@@ -3,7 +3,7 @@ import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
-export interface Querier<ID = any> {
+export type Querier<ID = any> = {
   insert<E>(entity: { new (): E }, body: E[]): Promise<ID[]>;
 
   insertOne<E>(entity: { new (): E }, body: E): Promise<ID>;
@@ -35,4 +35,4 @@ export interface Querier<ID = any> {
   rollbackTransaction(): Promise<void>;
 
   release(): Promise<void>;
-}
+};

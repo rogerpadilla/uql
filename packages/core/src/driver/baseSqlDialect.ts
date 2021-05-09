@@ -17,7 +17,7 @@ import {
 import { filterPersistableProperties } from './entity.util';
 
 export abstract class BaseSqlDialect {
-  protected readonly escapeIdRegex: RegExp;
+  readonly escapeIdRegex: RegExp;
 
   constructor(readonly beginTransactionCommand: string, readonly escapeIdChar: '`' | '"') {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');

@@ -1,16 +1,16 @@
 import { Database, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import { QuerierPool, QuerierPoolConnection } from '../../type';
+import { QuerierPool, QuerierPoolConnection, QuerierPoolSqlite3Options } from '../../type';
 import { SqliteQuerier } from './sqliteQuerier';
 
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   private querier: SqliteQuerier;
 
-  constructor(readonly filename: string) {}
+  constructor(private readonly opts: QuerierPoolSqlite3Options) {}
 
   async getQuerier() {
     if (!this.querier) {
-      const db = await open({ filename: this.filename, driver: Sqlite3Driver });
+      const db = await open({ filename: this.opts.filename, driver: Sqlite3Driver });
       const conn = new Sqlit3Connection(db);
       this.querier = new SqliteQuerier(conn);
     }
@@ -24,16 +24,16 @@ export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
 }
 
 export class Sqlit3Connection implements QuerierPoolConnection {
-  constructor(readonly db: Database) {}
+  constructor(private readonly db: Database) {}
 
   query(query: string) {
     // console.debug(query);
-    return this.db.run(query);
+    return this.db.all(query);
   }
 
-  all(query: string) {
+  run(query: string) {
     // console.debug(query);
-    return this.db.all(query);
+    return this.db.run(query);
   }
 
   release() {

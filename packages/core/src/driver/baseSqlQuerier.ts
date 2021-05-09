@@ -11,13 +11,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     super();
   }
 
-  async query<E>(query: string, ...args: any[]) {
-    // console.debug(query);
-    const res = await this.conn.query(query, args);
-    return this.processQueryResult<E>(res);
-  }
-
-  protected abstract processQueryResult<E>(result: any): E;
+  abstract query<E>(query: string): Promise<E>;
 
   async insert<E>(entity: { new (): E }, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);

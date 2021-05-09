@@ -1,13 +1,13 @@
-export interface RequestSuccessResponse<E> {
+export type RequestSuccessResponse<E> = {
   data: E;
-}
+};
 
-export interface RequestErrorResponse {
+export type RequestErrorResponse = {
   readonly error: {
     readonly message: string;
     readonly code: number;
   };
-}
+};
 
 export type RequestOptions = {
   silent?: boolean;

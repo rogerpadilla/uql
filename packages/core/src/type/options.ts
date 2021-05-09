@@ -1,10 +1,12 @@
-import { QuerierPoolOptions } from './querierPool';
+import { QuerierPoolOptions, QuerierPoolSqlite3Options } from './querierPool';
 
-export type DatasourceDriver = 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
+type DatasourceDriver = 'mysql2' | 'mariadb' | 'pg' | 'sqlite3' | 'mongodb';
 
-export type DatasourceOptions = { driver: DatasourceDriver } & QuerierPoolOptions;
+export type DatasourceOptions =
+  | ({ driver: Exclude<DatasourceDriver, 'sqlite3'> } & QuerierPoolOptions)
+  | ({ driver: Extract<DatasourceDriver, 'sqlite3'> } & QuerierPoolSqlite3Options);
 
-export type Logger = (message?: any, ...optionalParams: any[]) => any;
+export type Logger = (message: any, ...optionalParams: any[]) => any;
 
 export type UqlOptions = {
   datasource?: DatasourceOptions;

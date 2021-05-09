@@ -1,7 +1,7 @@
 import { describe, it, beforeAll, beforeEach, afterEach, afterAll } from '@jest/globals';
 
 export function createSpec<T extends Spec>(spec: T) {
-  const specKeysMap: { [k: string]: true } = {};
+  const processedMethodsMap: { [k: string]: true } = {};
   let proto: object = Object.getPrototypeOf(spec);
 
   const specName = proto.constructor.name;
@@ -9,14 +9,14 @@ export function createSpec<T extends Spec>(spec: T) {
   describe(specName, () => {
     while (proto.constructor !== Object) {
       Object.getOwnPropertyNames(proto).forEach((key) => {
-        if (key === 'constructor' || specKeysMap[key]) {
+        if (key === 'constructor' || processedMethodsMap[key]) {
           return;
         }
+        processedMethodsMap[key] = true;
         const callback = spec[key].bind(spec);
         if (hooks[key]) {
           hooks[key](callback);
         } else if (key.startsWith('should')) {
-          specKeysMap[key] = true;
           it(key, callback);
         }
       });

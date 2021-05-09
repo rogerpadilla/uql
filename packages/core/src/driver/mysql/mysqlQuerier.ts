@@ -7,7 +7,8 @@ export class MySqlQuerier extends BaseSqlQuerier {
     super(new MySqlDialect(), conn);
   }
 
-  processQueryResult<E>([rows]: [E]): E {
+  async query<E>(query: string): Promise<E> {
+    const [rows] = await this.conn.query(query);
     return rows;
   }
 }

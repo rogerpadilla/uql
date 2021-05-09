@@ -1,7 +1,7 @@
 import { QueryFilter, Query, QueryOne } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
-export interface Querier<ID = any> {
+export type Querier<ID = any> = {
   insertOne<E>(entity: { new (): E }, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
 
   updateOneById<E>(
@@ -37,4 +37,4 @@ export interface Querier<ID = any> {
     filter?: QueryFilter<E>,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
-}
+};
