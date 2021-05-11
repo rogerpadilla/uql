@@ -1,12 +1,33 @@
-import { describe, it, beforeAll, beforeEach, afterEach, afterAll } from '@jest/globals';
+import {
+  describe,
+  fdescribe,
+  xdescribe,
+  it,
+  fit,
+  xit,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from '@jest/globals';
 
 export function createSpec<T extends Spec>(spec: T) {
   const processedMethodsMap: { [k: string]: true } = {};
   let proto: object = Object.getPrototypeOf(spec);
 
+  let describeFn: typeof fdescribe;
+
   const specName = proto.constructor.name;
 
-  describe(specName, () => {
+  if (specName.startsWith('Fff')) {
+    describeFn = fdescribe;
+  } else if (specName.startsWith('Xxx')) {
+    describeFn = xdescribe;
+  } else {
+    describeFn = describe;
+  }
+
+  describeFn(specName, () => {
     while (proto.constructor !== Object) {
       Object.getOwnPropertyNames(proto).forEach((key) => {
         if (key === 'constructor' || processedMethodsMap[key]) {
@@ -18,6 +39,10 @@ export function createSpec<T extends Spec>(spec: T) {
           hooks[key](callback);
         } else if (key.startsWith('should')) {
           it(key, callback);
+        } else if (key.startsWith('fffshould')) {
+          fit(key, callback);
+        } else if (key.startsWith('xxxshould')) {
+          xit(key, callback);
         }
       });
       proto = Object.getPrototypeOf(proto);

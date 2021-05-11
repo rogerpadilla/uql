@@ -130,45 +130,46 @@ export abstract class BaseSqlDialectSpec implements Spec {
   }
 
   shouldFind$and() {
+    const sql = "SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'";
     const sql1 = this.find(User, {
       project: ['id'],
-      filter: { $and: { id: '123', name: 'abc' } },
+      filter: { $and: [{ id: '123', name: 'abc' }] },
     });
-    expect(sql1).toBe("SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'");
+    expect(sql1).toBe(sql);
     const sql2 = this.find(User, {
-      project: ['id'],
-      filter: { $and: { id: '123', name: 'abc' } },
-    });
-    expect(sql2).toBe("SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'");
-    const sql3 = this.find(User, {
       project: { id: 1 },
-      filter: { $and: { id: '123' }, name: 'abc' },
+      filter: { $and: [{ id: '123' }], name: 'abc' },
     });
-    expect(sql3).toBe("SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'");
+    expect(sql2).toBe(sql);
   }
 
   shouldFind$or() {
     const sql1 = this.find(User, {
       project: ['id'],
-      filter: { $or: { id: '123' } },
+      filter: { $or: [{ id: '123' }, { name: 'abc' }] },
     });
-    expect(sql1).toBe("SELECT `id` FROM `User` WHERE `id` = '123'");
+    expect(sql1).toBe("SELECT `id` FROM `User` WHERE `id` = '123' OR `name` = 'abc'");
     const sql2 = this.find(User, {
-      project: { id: 1 },
-      filter: { $or: { id: '123', name: 'abc' } },
+      project: ['id'],
+      filter: { $or: [{ id: '123' }] },
     });
-    expect(sql2).toBe("SELECT `id` FROM `User` WHERE `id` = '123' OR `name` = 'abc'");
+    expect(sql2).toBe("SELECT `id` FROM `User` WHERE `id` = '123'");
     const sql3 = this.find(User, {
       project: { id: 1 },
-      filter: { $or: { id: '123' }, name: 'abc' },
+      filter: { $or: [{ id: '123', name: 'abc' }] },
     });
     expect(sql3).toBe("SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'");
+    const sql4 = this.find(User, {
+      project: ['id'],
+      filter: { $or: [{ id: '123' }], name: 'abc' },
+    });
+    expect(sql4).toBe("SELECT `id` FROM `User` WHERE `id` = '123' AND `name` = 'abc'");
   }
 
   shouldFindLogicalOperators() {
     const sql1 = this.find(User, {
       project: ['id'],
-      filter: { userId: '1', $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' }, id: '1' },
+      filter: { userId: '1', $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }], id: '1' },
     });
     expect(sql1).toBe(
       "SELECT `id` FROM `User` WHERE `userId` = '1' AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = '1'"
@@ -177,7 +178,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
       project: ['id'],
       filter: {
         userId: '1',
-        $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
+        $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
         id: '1',
         email: 'e',
       },
@@ -190,7 +191,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
       project: ['id'],
       filter: {
         userId: '1',
-        $or: { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
+        $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
         id: '1',
         email: 'e',
       },
@@ -202,6 +203,27 @@ export abstract class BaseSqlDialectSpec implements Spec {
       "SELECT `id` FROM `User` WHERE `userId` = '1'" +
         " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com')" +
         " AND `id` = '1' AND `email` = 'e'" +
+        ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
+    );
+    const sql4 = this.find(User, {
+      project: ['id'],
+      filter: {
+        $or: [
+          {
+            userId: '1',
+            id: '1',
+            email: 'e',
+          },
+          { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
+        ],
+      },
+      sort: { name: 1, createdAt: -1 },
+      skip: 50,
+      limit: 10,
+    });
+    expect(sql4).toBe(
+      "SELECT `id` FROM `User` WHERE (`userId` = '1' AND `id` = '1' AND `email` = 'e')" +
+        " OR (`name` IN ('a', 'b', 'c') AND `email` = 'abc@example.com')" +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50'
     );
   }
@@ -218,11 +240,10 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindMultipleComparisonOperators() {
     const sql2 = this.find(User, {
       project: ['id'],
-      filter: { $or: { name: { $eq: 'other', $ne: 'other unwanted' }, status: 1 } },
-      limit: 10,
+      filter: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { status: 1 }] },
     });
     expect(sql2).toBe(
-      "SELECT `id` FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1 LIMIT 10"
+      "SELECT `id` FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `status` = 1"
     );
 
     const sql3 = this.find(User, {

@@ -19,11 +19,13 @@ describe('options', () => {
     setOptions({
       datasource: {
         driver: 'sqlite3',
+        filename: ':memory:',
       },
     });
     const datasourceOptions = getDatasourceOptions();
     expect(datasourceOptions).toEqual({
       driver: 'sqlite3',
+      filename: ':memory:',
     });
   });
 

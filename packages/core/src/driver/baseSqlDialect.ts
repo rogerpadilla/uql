@@ -8,7 +8,6 @@ import {
   QuerySort,
   QueryPager,
   QueryOptions,
-  QueryLogicalOperatorValue,
   QueryTextSearchOptions,
   QueryPopulate,
   Properties,
@@ -85,7 +84,7 @@ export abstract class BaseSqlDialect {
   project<E>(
     entity: { new (): E },
     project: QueryProject<E>,
-    opts: { prefix?: string; usePrefixForAlias?: boolean } & QueryOptions
+    opts: { prefix?: string; prependPrefixToAlias?: boolean } & QueryOptions
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
@@ -108,7 +107,7 @@ export abstract class BaseSqlDialect {
       .map((prop) => {
         const name = meta.properties[prop as string].name;
         const col = `${prefix}${this.escapeId(name)}`;
-        if (opts.usePrefixForAlias) {
+        if (opts.prependPrefixToAlias) {
           return `${col} ${this.escapeId(opts.prefix + '.' + prop, true)}`;
         }
         return name === prop ? col : `${col} ${this.escapeId(prop)}`;
@@ -154,7 +153,7 @@ export abstract class BaseSqlDialect {
 
       const relColumns = this.project(relEntity, popVal.project, {
         prefix: joinPrefix,
-        usePrefixForAlias: true,
+        prependPrefixToAlias: true,
       });
 
       joinsColumns += `, ${relColumns}`;
@@ -191,30 +190,37 @@ export abstract class BaseSqlDialect {
   filter<E>(
     entity: { new (): E },
     filter: QueryFilter<E>,
-    opts: { logicalOperator?: QueryLogicalOperatorValue; prefix?: string; prependClause?: boolean } = {}
+    opts: { prefix?: string; prependClause?: boolean; wrapWithParenthesis?: boolean } = {}
   ): string {
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys?.length) {
       return '';
     }
 
-    const logicalOperator: QueryLogicalOperatorValue = opts.logicalOperator ?? 'AND';
+    const hasMultiKeys = filterKeys.length > 1;
 
-    const sql = filterKeys
+    let sql = filterKeys
       .map((key) => {
-        const val = filter[key];
+        const entry = filter[key];
         if (key === '$and' || key === '$or') {
-          const whereOpts: typeof opts = { prefix: opts.prefix };
-          if (key === '$or') {
-            whereOpts.logicalOperator = 'OR';
-          }
-          const hasPrecedence = filterKeys.length > 1 && Object.keys(val).length > 1;
-          const filterItCondition = this.filter(entity, val, whereOpts);
-          return hasPrecedence ? `(${filterItCondition})` : filterItCondition;
+          const hasMultiItems = entry.length > 1;
+          const logicalComparison = entry
+            .map((filterIt: QueryFilter<E>) =>
+              this.filter(entity, filterIt, {
+                prefix: opts.prefix,
+                wrapWithParenthesis: hasMultiItems && Object.keys(filterIt).length > 1,
+              })
+            )
+            .join(key === '$or' ? ' OR ' : ' AND ');
+          return hasMultiKeys && hasMultiItems ? `(${logicalComparison})` : logicalComparison;
         }
-        return this.compare(entity, key, val, { prefix: opts.prefix });
+        return this.compare(entity, key, entry, { prefix: opts.prefix });
       })
-      .join(` ${logicalOperator} `);
+      .join(` AND `);
+
+    if (opts.wrapWithParenthesis) {
+      sql = `(${sql})`;
+    }
 
     return opts.prependClause ? ` WHERE ${sql}` : sql;
   }
@@ -280,6 +286,7 @@ export abstract class BaseSqlDialect {
     const names = properties.map((prop) => meta.properties[prop as string].name);
     return ` GROUP BY ${this.escapeId(names)}`;
   }
+
   sort<E>(entity: { new (): E }, sort: QuerySort<E>): string {
     if (!sort || Object.keys(sort).length === 0) {
       return '';

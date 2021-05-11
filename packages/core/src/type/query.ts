@@ -1,7 +1,5 @@
 import { Properties, Scalar, Relations } from './entity';
 
-export type QueryPopulateValue<P> = Query<P> & { required?: boolean };
-
 export type QueryFieldFilter<E> = {
   readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | Scalar;
 };
@@ -13,7 +11,7 @@ export type QueryProject<E> =
     };
 
 export type QueryPopulate<E> = {
-  readonly [P in Relations<E>]?: QueryPopulateValue<E[P]>;
+  readonly [P in Relations<E>]?: Query<P> & { required?: boolean };
 };
 
 export type QueryTextSearchOptions<E> = {
@@ -38,15 +36,10 @@ export type QueryComparisonOperator<E> = {
   readonly $re?: string;
 };
 
-export type QueryLogicalOperatorMap = {
-  readonly $and?: 'AND';
-  readonly $or?: 'OR';
-};
-
-export type QueryLogicalOperatorValue = QueryLogicalOperatorMap[keyof QueryLogicalOperatorMap];
+export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  [p in keyof QueryLogicalOperatorMap]: QueryFieldFilter<E> | QueryTextSearch<E>;
+  [p in QueryLogicalOperatorKey]?: (QueryFieldFilter<E> | QueryTextSearch<E>)[];
 };
 
 export type QueryFilter<E> = QueryLogicalOperator<E> | QueryTextSearch<E> | QueryFieldFilter<E>;
