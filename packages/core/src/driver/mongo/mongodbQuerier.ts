@@ -13,13 +13,13 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
   }
 
   async insert<E>(entity: { new (): E }, bodies: E[]) {
-    const persistableKeys = filterPersistableProperties(entity, bodies[0]);
-    const persistables = bodies.map((body) =>
-      persistableKeys.reduce((acc, key) => {
+    const persistables = bodies.map((body) => {
+      const persistableProperties = filterPersistableProperties(entity, body);
+      return persistableProperties.reduce((acc, key) => {
         acc[key] = body[key];
         return acc;
-      }, {} as OptionalId<E>)
-    );
+      }, {} as OptionalId<E>);
+    });
 
     const res = await this.collection(entity).insertMany(persistables, { session: this.session });
 
