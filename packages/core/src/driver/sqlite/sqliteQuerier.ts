@@ -1,4 +1,3 @@
-import { ISqlite } from 'sqlite';
 import { Query, QueryFilter, QueryOptions } from '../../type';
 import { getMeta } from '../../entity/decorator';
 import { mapRows } from '../sqlRowsMapper';
