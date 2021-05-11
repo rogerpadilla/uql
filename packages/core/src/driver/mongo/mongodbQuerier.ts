@@ -51,9 +51,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
 
     if (qm.populate && Object.keys(qm.populate).length) {
       const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
-      documents = await this.collection(entity)
-        .aggregate<E>(pipeline, { session: this.session })
-        .toArray();
+      documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
       await this.populateToManyRelations(entity, documents, qm.populate);
     } else {

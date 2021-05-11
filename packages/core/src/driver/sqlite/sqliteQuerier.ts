@@ -13,7 +13,7 @@ export class SqliteQuerier extends BaseSqlQuerier {
 
   async query<E>(query: string): Promise<E> {
     const res = await this.conn.query(query);
-    return (res as unknown) as E;
+    return res as unknown as E;
   }
 
   async insert<E>(entity: { new (): E }, bodies: E[]) {

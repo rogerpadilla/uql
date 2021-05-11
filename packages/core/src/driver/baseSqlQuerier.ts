@@ -43,7 +43,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
   async count<E>(entity: { new (): E }, filter?: QueryFilter<E>) {
     const res: any = await this.find(
       entity,
-      { project: ({ 'COUNT(*) count': 1 } as any) as QueryProject<E>, filter },
+      { project: { 'COUNT(*) count': 1 } as any as QueryProject<E>, filter },
       { isTrustedProject: true }
     );
     return Number(res[0].count);

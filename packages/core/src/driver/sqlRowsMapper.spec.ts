@@ -138,7 +138,7 @@ it('mapRows deep populate', () => {
           id: '1',
           name: 'Unidad',
         },
-        inventoryable: (1 as any) as boolean,
+        inventoryable: 1 as any as boolean,
       },
     },
     {
