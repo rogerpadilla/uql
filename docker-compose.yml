@@ -23,15 +23,6 @@ services:
     ports:
       - '3310:3306'
     container_name: 'uql-mariadb-10'
-  # postgres-9:
-  #   image: postgres:9.6.20
-  #   environment:
-  #     POSTGRES_USER: test
-  #     POSTGRES_PASSWORD: test
-  #     POSTGRES_DB: test
-  #   ports:
-  #     - '5432:5432'
-  #   container_name: uql-postgres-9
   postgres-12:
     image: postgres:12.5
     restart: always
