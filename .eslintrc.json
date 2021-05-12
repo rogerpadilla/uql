@@ -57,7 +57,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/browser/**/*"],
+      "files": ["packages/client/**"],
       "env": {
         "browser": true,
         "node": false
@@ -71,7 +71,7 @@
       }
     },
     {
-      "files": ["packages/**/*.{spec,it}.ts", "packages/**/*Spec.ts"],
+      "files": ["packages/**/*{.,-}{spec,it}.ts"],
       "env": {
         "jest": true
       },

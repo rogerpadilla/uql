@@ -14,8 +14,9 @@ export function getQuerier() {
 export function getQuerierPool(options: DatasourceOptions): QuerierPool {
   const { driver, ...opts } = options;
   const directory = DRIVER_DIRECTORY_MAP[driver];
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const querierPoolConstructor: QuerierPoolClass = require(`../driver/${directory}/${driver}QuerierPool`).default;
+  const querierPoolConstructor: QuerierPoolClass =
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require(`../../../${directory}/src/${driver}QuerierPool`).default;
   return new querierPoolConstructor(opts);
 }
 

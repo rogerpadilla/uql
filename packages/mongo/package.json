@@ -1,5 +1,5 @@
 {
-  "name": "@uql/core",
+  "name": "@uql/mongo",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.3.4",
@@ -7,23 +7,22 @@
   "types": "index.d.ts",
   "scripts": {
     "prepublishOnly": "yarn build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc",
+    "build": "yarn clean && tsc --build",
     "start": "yarn build -- --watch",
     "clean": "rimraf dist"
   },
-  "dependencies": {
-    "reflect-metadata": "^0.1.13",
-    "sqlstring": "^2.3.2",
-    "tslib": "^2.2.0"
+  "dependencies": {    
+    "mongodb": "^3.6.6"
+  },
+  "peerDependencies": {
+    "@uql/core": "^0.3.4"
   },
   "devDependencies": {
+    "@types/mongodb": "^3.6.12",
     "@types/node": "^15.0.2",
-    "@types/sqlstring": "^2.3.0",
-    "@types/uuid": "^8.3.0",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
-    "typescript": "^4.2.4",
-    "uuid": "^8.3.2"
+    "typescript": "^4.2.4"
   },
   "author": "Roger Padilla",
   "repository": {
@@ -39,11 +38,6 @@
     "orm",
     "mongo",
     "mongodb",
-    "mysql",
-    "mariadb",
-    "postgresql",
-    "sqlite",
-    "sqlite3",
     "ts",
     "typescript",
     "js",

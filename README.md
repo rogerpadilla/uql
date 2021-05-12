@@ -16,8 +16,8 @@ Given uql is just a library/parser, its queries can be written and sent from the
 4. [Configuration](#configuration)
 5. [Programmatic Transactions](#programmatic-transactions)
 6. [Declarative Transactions](#declarative-transactions)
-7. [Generate REST APIs from Express](#plugin-express)
-8. [Consume REST APIs from Frontend](#platform-browser)
+7. [Generate REST APIs from Express](#express)
+8. [Consume REST APIs from Frontend](#client)
 9. [FAQs](#faq)
 
 ## <a name="features"></a>:star2: Features
@@ -286,16 +286,16 @@ export const confirmationService = new ConfirmationService();
 await confirmationService.confirmAction(data);
 ```
 
-## <a name="plugin-express"></a>:zap: Generate REST APIs from Express
+## <a name="express"></a>:zap: Generate REST APIs from Express
 
 uql provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
 
-1. Install express plugin in your server project `npm install @uql/pluin-express --save` or `yarn add @uql/plugin-express`
+1. Install express plugin in your server project `npm install @uql/express --save` or `yarn add @uql/express`
 2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
 
 ```typescript
 import * as express from 'express';
-import { entitiesMiddleware } from '@uql/plugin-express';
+import { entitiesMiddleware } from '@uql/express';
 
 const app = express();
 
@@ -312,14 +312,14 @@ app
   );
 ```
 
-## <a name="platform-browser"></a>:globe_with_meridians: Consume REST APIs from Frontend
+## <a name="client"></a>:globe_with_meridians: Consume REST APIs from Frontend
 
-uql provides a browser plugin to consume the REST APIs.
+uql provides a client plugin to consume the REST APIs from the frontend.
 
-1. Install browser plugin in your frontend project `npm install @uql/platform-browser --save` or `yarn add @uql/platform-browser`
+1. Install client plugin in your frontend project `npm install @uql/client --save` or `yarn add @uql/client`
 
 ```typescript
-import { querier } from '@uql/platform-browser';
+import { querier } from '@uql/client';
 
 // 'Item' is an entity class
 const lastItems = await querier.find(Item, { sort: { createdAt: -1 }, limit: 100 });

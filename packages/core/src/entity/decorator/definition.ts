@@ -1,4 +1,4 @@
-import { startLowerCase, startUpperCase } from '@uql/core/util';
+import { startLowerCase, startUpperCase } from '../../util';
 import 'reflect-metadata';
 import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../../type';
 

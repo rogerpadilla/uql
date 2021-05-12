@@ -2,8 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src",
-    "composite": true
+    "target": "ES2015",
+    "lib": ["ESNext", "DOM"],
+    "importHelpers": false
   },
   "exclude": ["node_modules", "dist"]
 }
