@@ -12,6 +12,7 @@ services:
     ports:
       - '3306:3306'
     container_name: 'uql-mysql-8'
+    
   mariadb:
     image: 'mariadb:10.5.8'
     restart: always
@@ -23,6 +24,7 @@ services:
     ports:
       - '3310:3306'
     container_name: 'uql-mariadb-10'
+
   postgres-12:
     image: postgres:12.5
     restart: always
