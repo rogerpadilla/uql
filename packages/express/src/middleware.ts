@@ -2,7 +2,7 @@ import { Request, Response } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getOptions } from '@uql/core/options';
-import { Query } from '@uql/core/type';
+import { Query, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { getQuerier } from '@uql/core/querier';
@@ -33,7 +33,7 @@ export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
   return router;
 }
 
-export function buildCrudRouter<E>(entity: { new (): E }, opts: { extendQuery?: ExtendQuery }) {
+export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: ExtendQuery }) {
   const router = expressRouter();
 
   router.post('/', async (req, res) => {
@@ -161,7 +161,7 @@ export function buildCrudRouter<E>(entity: { new (): E }, opts: { extendQuery?: 
   return router;
 }
 
-function assembleQuery<E>(entity: { new (): E }, req: Request, extendQuery?: ExtendQuery) {
+function assembleQuery<E>(entity: Type<E>, req: Request, extendQuery?: ExtendQuery) {
   const qm = parseQuery<E>(req.query);
   return extendQuery ? extendQuery(entity, qm, req) : qm;
 }
@@ -178,9 +178,9 @@ function sendError(err: Error, res: Response) {
 }
 
 type MiddlewareOptions = {
-  include?: { new (): any }[];
-  exclude?: { new (): any }[];
+  include?: Type<any>[];
+  exclude?: Type<any>[];
   extendQuery?: ExtendQuery;
 };
 
-type ExtendQuery = <E>(entity: { new (): E }, qm: Query<E>, req: Request) => Query<E>;
+type ExtendQuery = <E>(entity: Type<E>, qm: Query<E>, req: Request) => Query<E>;

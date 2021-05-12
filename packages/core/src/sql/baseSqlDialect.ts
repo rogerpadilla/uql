@@ -12,6 +12,7 @@ import {
   QueryPopulate,
   Properties,
   QueryProject,
+  Type,
 } from '../type';
 import { filterPersistableProperties } from '../entity/util';
 
@@ -22,7 +23,7 @@ export abstract class BaseSqlDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  insert<E>(entity: { new (): E }, payload: E | E[]): string {
+  insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
 
@@ -45,7 +46,7 @@ export abstract class BaseSqlDialect {
     return `INSERT INTO ${this.escapeId(meta.name)} (${this.escapeId(columns)}) VALUES (${values})`;
   }
 
-  update<E>(entity: { new (): E }, filter: QueryFilter<E>, payload: E): string {
+  update<E>(entity: Type<E>, filter: QueryFilter<E>, payload: E): string {
     const meta = getMeta(entity);
 
     const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
@@ -66,13 +67,13 @@ export abstract class BaseSqlDialect {
     return `UPDATE ${this.escapeId(meta.name)} SET ${values} WHERE ${where}`;
   }
 
-  remove<E>(entity: { new (): E }, filter: QueryFilter<E>): string {
+  remove<E>(entity: Type<E>, filter: QueryFilter<E>): string {
     const meta = getMeta(entity);
     const where = this.filter(entity, filter);
     return `DELETE FROM ${this.escapeId(meta.name)} WHERE ${where}`;
   }
 
-  find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
+  find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const select = this.select<E>(entity, qm, opts);
     const filter = this.filter<E>(entity, qm.filter, { prependClause: true });
     const group = this.group<E>(entity, qm.group);
@@ -82,7 +83,7 @@ export abstract class BaseSqlDialect {
   }
 
   project<E>(
-    entity: { new (): E },
+    entity: Type<E>,
     project: QueryProject<E>,
     opts: { prefix?: string; prependPrefixToAlias?: boolean } & QueryOptions
   ): string {
@@ -115,7 +116,7 @@ export abstract class BaseSqlDialect {
       .join(', ');
   }
 
-  select<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): string {
+  select<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const meta = getMeta(entity);
     const baseColumns = this.project(entity, qm.project, {
       prefix: qm.populate && meta.name,
@@ -126,7 +127,7 @@ export abstract class BaseSqlDialect {
   }
 
   populate<E>(
-    entity: { new (): E },
+    entity: Type<E>,
     populate: QueryPopulate<E> = {},
     prefix?: string
   ): { joinsColumns: string; joinsTables: string } {
@@ -188,7 +189,7 @@ export abstract class BaseSqlDialect {
   }
 
   filter<E>(
-    entity: { new (): E },
+    entity: Type<E>,
     filter: QueryFilter<E>,
     opts: { prefix?: string; prependClause?: boolean; wrapWithParenthesis?: boolean } = {}
   ): string {
@@ -225,7 +226,7 @@ export abstract class BaseSqlDialect {
     return opts.prependClause ? ` WHERE ${sql}` : sql;
   }
 
-  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;
@@ -242,7 +243,7 @@ export abstract class BaseSqlDialect {
   }
 
   compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
-    entity: { new (): E },
+    entity: Type<E>,
     prop: string,
     operator: K,
     val: QueryComparisonOperator<E>[K],
@@ -278,7 +279,7 @@ export abstract class BaseSqlDialect {
     }
   }
 
-  group<E>(entity: { new (): E }, properties: Properties<E>[]): string {
+  group<E>(entity: Type<E>, properties: Properties<E>[]): string {
     if (!properties?.length) {
       return '';
     }
@@ -287,7 +288,7 @@ export abstract class BaseSqlDialect {
     return ` GROUP BY ${this.escapeId(names)}`;
   }
 
-  sort<E>(entity: { new (): E }, sort: QuerySort<E>): string {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>): string {
     if (!sort || Object.keys(sort).length === 0) {
       return '';
     }

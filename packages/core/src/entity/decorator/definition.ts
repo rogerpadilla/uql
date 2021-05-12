@@ -1,20 +1,20 @@
 import { startLowerCase, startUpperCase } from '../../util';
 import 'reflect-metadata';
-import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta } from '../../type';
+import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta, Type } from '../../type';
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity';
-const metas: Map<{ new (): any }, EntityMeta<any>> = holder[metaKey] ?? new Map();
+const metas: Map<Type<any>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
-export function defineProperty<E>(entity: { new (): E }, prop: string, opts: PropertyOptions): EntityMeta<E> {
+export function defineProperty<E>(entity: Type<E>, prop: string, opts: PropertyOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
   const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
   meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, type: inferredType, ...opts } };
   return meta;
 }
 
-export function defineId<E>(entity: { new (): E }, prop: string, opts: PropertyOptions): EntityMeta<E> {
+export function defineId<E>(entity: Type<E>, prop: string, opts: PropertyOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
   const id = getId(meta);
   if (id) {
@@ -23,7 +23,7 @@ export function defineId<E>(entity: { new (): E }, prop: string, opts: PropertyO
   return defineProperty(entity, prop, { ...opts, isId: true });
 }
 
-export function defineRelation<E>(entity: { new (): E }, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
+export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
     const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
     const isScalar = isScalarType(inferredType);
@@ -37,7 +37,7 @@ export function defineRelation<E>(entity: { new (): E }, prop: string, opts: Rel
   return meta;
 }
 
-export function define<E>(entity: { new (): E }, opts: EntityOptions = {}): EntityMeta<E> {
+export function define<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
 
   if (Object.keys(meta.properties).length === 0) {
@@ -48,7 +48,7 @@ export function define<E>(entity: { new (): E }, opts: EntityOptions = {}): Enti
   let parentProto: object = Object.getPrototypeOf(entity.prototype);
 
   while (parentProto.constructor !== Object) {
-    const parentMeta = ensureMeta(parentProto.constructor as { new (): any });
+    const parentMeta = ensureMeta(parentProto.constructor as Type<E>);
     extend(parentMeta, meta);
     parentProto = Object.getPrototypeOf(parentProto);
   }
@@ -62,7 +62,7 @@ export function define<E>(entity: { new (): E }, opts: EntityOptions = {}): Enti
   return meta;
 }
 
-export function getMeta<E>(entity: { new (): E }): EntityMeta<E> {
+export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
   const meta = metas.get(entity);
   if (!meta) {
     throw new TypeError(`'${entity.name}' is not an entity`);
@@ -83,7 +83,7 @@ export function getEntities() {
   }, []);
 }
 
-function ensureMeta<E>(entity: { new (): E }): EntityMeta<E> {
+function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   let meta = metas.get(entity);
   if (meta) {
     return meta;

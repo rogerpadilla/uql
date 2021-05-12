@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { QueryComparisonOperator, QueryTextSearchOptions, Scalar } from '@uql/core/type';
+import { QueryComparisonOperator, QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
 import { BaseSqlDialect } from '@uql/core/sql';
 
 export class PostgresDialect extends BaseSqlDialect {
@@ -7,13 +7,13 @@ export class PostgresDialect extends BaseSqlDialect {
     super('BEGIN', '"');
   }
 
-  insert<E>(entity: { new (): E }, body: E | E[]): string {
+  insert<E>(entity: Type<E>, body: E | E[]): string {
     const sql = super.insert(entity, body);
     const meta = getMeta(entity);
     return `${sql} RETURNING ${meta.id.name} insertId`;
   }
 
-  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;
@@ -25,7 +25,7 @@ export class PostgresDialect extends BaseSqlDialect {
   }
 
   compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
-    entity: { new (): E },
+    entity: Type<E>,
     prop: string,
     operator: K,
     val: QueryComparisonOperator<E>[K],

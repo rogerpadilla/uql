@@ -1,4 +1,4 @@
-import { Querier } from '../../type';
+import { Querier, Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 
@@ -23,12 +23,12 @@ export function getInjectedQuerierProperty(proto: object) {
   return Array.from(injectedPropertiesMap.values()).find(Boolean);
 }
 
-function getInjectedQuerierPropertiesMap(proto: object) {
-  const resp = new Map<{ new (): any }, string>();
+function getInjectedQuerierPropertiesMap<E>(proto: E) {
+  const resp = new Map<Type<E>, string>();
   let parentProto = proto;
   while (parentProto.constructor !== Object) {
     const prop = parentProto[metadataKey]?.get(parentProto.constructor);
-    resp.set(parentProto.constructor as { new (): any }, prop);
+    resp.set(parentProto.constructor as Type<E>, prop);
     parentProto = Object.getPrototypeOf(parentProto);
   }
   return resp;

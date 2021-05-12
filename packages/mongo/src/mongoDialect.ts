@@ -1,9 +1,9 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta } from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, Type } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 
 export class MongoDialect {
-  buildFilter<E>(entity: { new (): E }, filter: QueryFilter<E> = {}): FilterQuery<E> {
+  buildFilter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
     return Object.keys(filter).reduce((acc, prop) => {
@@ -17,7 +17,7 @@ export class MongoDialect {
     }, {});
   }
 
-  buildAggregationPipeline<E>(entity: { new (): E }, qm: Query<E>): object[] {
+  buildAggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {
     const meta = getMeta(entity);
 
     const pipeline: object[] = [];

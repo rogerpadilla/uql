@@ -1,6 +1,6 @@
 import { Querier } from './querier';
 
-export type QuerierPoolClass = { new (opts: QuerierPoolOptions | QuerierPoolSqlite3Options): QuerierPool };
+export type QuerierPoolClass = new (opts: QuerierPoolOptions | QuerierPoolSqlite3Options) => QuerierPool;
 
 export type QuerierPoolOptions = {
   host?: string;

@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions } from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions, Type } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
@@ -12,7 +12,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     super();
   }
 
-  async insert<E>(entity: { new (): E }, bodies: E[]) {
+  async insert<E>(entity: Type<E>, bodies: E[]) {
     const persistables = bodies.map((body) => {
       const persistableProperties = filterPersistableProperties(entity, body);
       return persistableProperties.reduce((acc, key) => {
@@ -26,7 +26,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return Object.values(res.insertedIds);
   }
 
-  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+  async update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const persistableProperties = filterPersistableProperties(entity, body);
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
@@ -44,7 +44,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return res.modifiedCount;
   }
 
-  async find<E>(entity: { new (): E }, qm: Query<E>) {
+  async find<E>(entity: Type<E>, qm: Query<E>) {
     const meta = getMeta(entity);
 
     let documents: E[];
@@ -81,19 +81,19 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return documents;
   }
 
-  findOneById<E>(entity: { new (): E }, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
+  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
     return this.findOne(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
-  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+  async remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
       session: this.session,
     });
     return res.deletedCount;
   }
 
-  count<E>(entity: { new (): E }, filter?: QueryFilter<E>) {
+  count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
     return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, filter), { session: this.session });
   }
 
@@ -105,7 +105,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return this.session?.inTransaction();
   }
 
-  collection<E>(entity: { new (): E }) {
+  collection<E>(entity: Type<E>) {
     const meta = getMeta(entity);
     return this.conn.db().collection(meta.name);
   }

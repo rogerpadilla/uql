@@ -4,12 +4,13 @@ import {
   RelationOneToManyOptions,
   RelationManyToOneOptions,
   RelationManyToManyOptions,
+  Type,
 } from '../../type';
 import { defineRelation } from './definition';
 
 function Relation<E>(opts: RelationOptions<E>) {
   return (target: object, prop: string) => {
-    const entity = target.constructor as { new (): E };
+    const entity = target.constructor as Type<E>;
     defineRelation(entity, prop, opts);
   };
 }

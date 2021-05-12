@@ -1,6 +1,6 @@
 import { mapRows, BaseSqlQuerier } from '@uql/core/sql';
 import { getMeta } from '@uql/core/entity/decorator';
-import { Query, QueryFilter, QueryOptions } from '@uql/core/type';
+import { Query, QueryFilter, QueryOptions, Type } from '@uql/core/type';
 import { Sqlit3Connection } from './sqlite3Connection';
 import { SqliteDialect } from './sqliteDialect';
 
@@ -14,7 +14,7 @@ export class SqliteQuerier extends BaseSqlQuerier {
     return res as unknown as E;
   }
 
-  async insert<E>(entity: { new (): E }, bodies: E[]) {
+  async insert<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
     const res = await this.conn.run(query);
     const meta = getMeta(entity);
@@ -23,13 +23,13 @@ export class SqliteQuerier extends BaseSqlQuerier {
     );
   }
 
-  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+  async update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
     const res = await this.conn.run(query);
     return res.changes;
   }
 
-  async find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
+  async find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     const query = this.dialect.find(entity, qm, opts);
     const res = await this.query<E[]>(query);
     const founds = mapRows(res);
@@ -37,7 +37,7 @@ export class SqliteQuerier extends BaseSqlQuerier {
     return founds;
   }
 
-  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+  async remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const query = this.dialect.remove(entity, filter);
     const res = await this.conn.run(query);
     return res.changes;

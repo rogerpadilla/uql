@@ -1,4 +1,12 @@
-import { Query, QueryFilter, QueryUpdateResult, QueryOptions, QueryProject, QuerierPoolConnection } from '../type';
+import {
+  Query,
+  QueryFilter,
+  QueryUpdateResult,
+  QueryOptions,
+  QueryProject,
+  QuerierPoolConnection,
+  Type,
+} from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
@@ -13,20 +21,20 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
 
   abstract query<E>(query: string): Promise<E>;
 
-  async insert<E>(entity: { new (): E }, bodies: E[]) {
+  async insert<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
     const res = await this.query<QueryUpdateResult>(query);
     const meta = getMeta(entity);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 
-  async update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E) {
+  async update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  async find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
+  async find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     const query = this.dialect.find(entity, qm, opts);
     const res = await this.query<E[]>(query);
     const founds = mapRows(res);
@@ -34,13 +42,13 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     return founds;
   }
 
-  async remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+  async remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const query = this.dialect.remove(entity, filter);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  async count<E>(entity: { new (): E }, filter?: QueryFilter<E>) {
+  async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
     const res: any = await this.find(
       entity,
       { project: { 'COUNT(*) count': 1 } as any as QueryProject<E>, filter },

@@ -11,6 +11,7 @@ module.exports = {
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],
   coverageDirectory: 'coverage',
+  coveragePathIgnorePatterns: ['node_modules', 'test'],
   moduleNameMapper: Object.keys(tsPathAliases).reduce((acc, key) => {
     const prop = '^' + key.replace('/*', '/(.*)$');
     acc[prop] = '<rootDir>/' + tsPathAliases[key][0].replace('/*', '/$1');

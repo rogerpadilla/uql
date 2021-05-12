@@ -1,19 +1,19 @@
 import { getMeta } from '../entity/decorator';
 import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entityMock';
 
-import { Query, QueryFilter, QueryOptions, QueryProject, QuerySort } from '../type';
+import { Query, QueryFilter, QueryOptions, QueryProject, QuerySort, Type } from '../type';
 import { Spec } from '../test/spec.util';
 import { BaseSqlDialect } from './baseSqlDialect';
 
 export abstract class BaseSqlDialectSpec implements Spec {
   constructor(readonly dialect: BaseSqlDialect) {}
 
-  private find<E>(entity: { new (): E }, query: Query<E>, opts?: QueryOptions) {
+  private find<E>(entity: Type<E>, query: Query<E>, opts?: QueryOptions) {
     const sql = this.dialect.find(entity, query, opts);
     return this.normalizeSql(sql);
   }
 
-  private insert<E>(entity: { new (): E }, payload: E | E[]) {
+  private insert<E>(entity: Type<E>, payload: E | E[]) {
     const sql = this.dialect.insert(entity, payload);
     if (this.isDefaultEscapeIdChar()) {
       return sql;
@@ -24,12 +24,12 @@ export abstract class BaseSqlDialectSpec implements Spec {
     return normalizedSql.slice(0, sql.length - returnId.length);
   }
 
-  private update<E>(entity: { new (): E }, filter: QueryFilter<E>, payload: E) {
+  private update<E>(entity: Type<E>, filter: QueryFilter<E>, payload: E) {
     const sql = this.dialect.update(entity, filter, payload);
     return this.normalizeSql(sql);
   }
 
-  private remove<E>(entity: { new (): E }, filter: QueryFilter<E>) {
+  private remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const sql = this.dialect.remove(entity, filter);
     return this.normalizeSql(sql);
   }

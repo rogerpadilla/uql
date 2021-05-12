@@ -1,50 +1,50 @@
-import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate } from '../type';
+import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate, Type } from '../type';
 import { getMeta } from '../entity/decorator';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class BaseQuerier<ID = any> implements Querier<ID> {
-  abstract insert<E>(entity: { new (): E }, body: E[], opts?: QueryOptions): Promise<ID[]>;
+  abstract insert<E>(entity: Type<E>, body: E[], opts?: QueryOptions): Promise<ID[]>;
 
-  async insertOne<E>(entity: { new (): E }, body: E, opts?: QueryOptions) {
+  async insertOne<E>(entity: Type<E>, body: E, opts?: QueryOptions) {
     const [id] = await this.insert(entity, [body], opts);
     const meta = getMeta(entity);
     await this.insertRelations(entity, { ...body, [meta.id.property]: id });
     return id;
   }
 
-  abstract update<E>(entity: { new (): E }, filter: QueryFilter<E>, body: E): Promise<number>;
+  abstract update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
 
-  async updateOneById<E>(entity: { new (): E }, id: ID, body: E) {
+  async updateOneById<E>(entity: Type<E>, id: ID, body: E) {
     const meta = getMeta(entity);
     const affectedRows = await this.update(entity, { [meta.id.property]: id }, body);
     await this.updateRelations(entity, { ...body, [meta.id.property]: id });
     return affectedRows;
   }
 
-  abstract find<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  abstract find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
-  async findOne<E>(entity: { new (): E }, qm: Query<E>, opts?: QueryOptions) {
+  async findOne<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     qm.limit = 1;
     const rows = await this.find(entity, qm, opts);
     return rows[0];
   }
 
-  findOneById<E>(type: { new (): E }, id: ID, qo: QueryOne<E> = {}, opts?: QueryOptions) {
+  findOneById<E>(type: Type<E>, id: ID, qo: QueryOne<E> = {}, opts?: QueryOptions) {
     const meta = getMeta(type);
     const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
     return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
   }
 
-  abstract remove<E>(entity: { new (): E }, filter: QueryFilter<E>): Promise<number>;
+  abstract remove<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<E>(entity: { new (): E }, id: ID) {
+  removeOneById<E>(entity: Type<E>, id: ID) {
     const meta = getMeta(entity);
     return this.remove(entity, { [meta.id.name]: id });
   }
 
-  abstract count<E>(entity: { new (): E }, filter?: QueryFilter<E>): Promise<number>;
+  abstract count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
 
   abstract query(query: string): Promise<any>;
 
@@ -58,7 +58,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   abstract release(): Promise<void>;
 
-  protected async populateToManyRelations<E>(entity: { new (): E }, bodies: E[], populate: QueryPopulate<E>) {
+  protected async populateToManyRelations<E>(entity: Type<E>, bodies: E[], populate: QueryPopulate<E>) {
     const meta = getMeta(entity);
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
@@ -90,7 +90,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     }
   }
 
-  protected async insertRelations<E>(entity: { new (): E }, body: E) {
+  protected async insertRelations<E>(entity: Type<E>, body: E) {
     const meta = getMeta(entity);
 
     const id = body[meta.id.property];
@@ -118,7 +118,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     await Promise.all<any>(insertProms);
   }
 
-  protected async updateRelations<E>(entity: { new (): E }, body: E) {
+  protected async updateRelations<E>(entity: Type<E>, body: E) {
     const meta = getMeta(entity);
 
     const id = body[meta.id.property];

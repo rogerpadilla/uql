@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { QueryTextSearchOptions, Scalar } from '@uql/core/type';
+import { QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
 import { BaseSqlDialect } from '@uql/core/sql';
 
 export class SqliteDialect extends BaseSqlDialect {
@@ -7,7 +7,7 @@ export class SqliteDialect extends BaseSqlDialect {
     super('BEGIN TRANSACTION', '`');
   }
 
-  compare<E>(entity: { new (): E }, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;

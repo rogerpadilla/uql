@@ -1,6 +1,6 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
-import { QuerierPool } from '../type';
+import { QuerierPool, Type } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
@@ -32,7 +32,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     );
   }
 
-  buildDdlForTable<E>(entity: { new (): E }) {
+  buildDdlForTable<E>(entity: Type<E>) {
     const meta = getMeta(entity);
 
     let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
