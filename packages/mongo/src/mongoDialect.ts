@@ -7,10 +7,11 @@ export class MongoDialect {
     const meta = getMeta(entity);
 
     return Object.keys(filter).reduce((acc, prop) => {
+      const entry = filter[prop];
       if (prop === '$and' || prop === '$or') {
-        acc[prop] = filter[prop].map((filterIt: QueryFilter<E>) => this.buildFilter(entity, filterIt));
+        acc[prop] = entry.map((filterIt: QueryFilter<E>) => this.buildFilter(entity, filterIt));
       } else {
-        const { key, val } = obtainFinalKeyValue(prop, filter[prop], meta);
+        const { key, val } = obtainFinalKeyValue(prop, entry, meta);
         acc[key] = val;
       }
       return acc;

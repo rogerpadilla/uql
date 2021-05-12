@@ -9,9 +9,9 @@
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn lint --fix",
     "test": "jest --clearCache && concurrently 'npm:lint.fix' 'jest'",
-    "test.watch": "jest --clearCache && concurrently 'npm:lint.fix' 'jest --watchAll'",
-    "test.watch.all": "yarn test.watch -- --testMatch '**/*.{it,spec}.ts'",
-    "test.watch.pattern": "yarn test.watch -- --testMatch '**/mongodbQuerierPool.it.ts'",
+    "test.watch": "jest --watchAll",
+    "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
+    "test.watch.pattern": "jest --watchAll --testMatch '**/mongo/**/*.it.ts'",
     "rs": "run-rs -v 4.2.10 -l ubuntu1804",
     "container": "concurrently 'npm:rs' 'docker-compose up'"
   },
