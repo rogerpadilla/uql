@@ -35,13 +35,11 @@ Given uql is just a library/parser, its queries can be written and sent from the
 
 ## <a name="installation"></a>:battery: Installation
 
-1. Install the npm package:
+1. Install the core package:
 
    `npm install @uql/core --save` or `yarn add @uql/core`
 
-2. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
-
-3. Install the database package according to your database:
+2. Install the database package according to your database:
 
    - for MySQL or MariaDB
 
@@ -58,6 +56,8 @@ Given uql is just a library/parser, its queries can be written and sent from the
    - for MongoDB
 
      `npm install @uql/mongo --save` or  or `yarn add @uql/mongo`
+
+3. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
 
 ## <a name="entities"></a>:egg: Entities
 
