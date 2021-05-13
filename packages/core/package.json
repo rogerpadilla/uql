@@ -2,11 +2,11 @@
   "name": "@uql/core",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.3.4",
+  "version": "0.3.5-alpha.36+11f5ab5",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
-    "prepublishOnly": "yarn build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "prepublishOnly": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "yarn clean && tsc",
     "start": "yarn build -- --watch",
     "clean": "rimraf dist"
@@ -55,5 +55,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "f1630ef58cc9f66b850bdf8a5980aa4d26e1ba67"
+  "gitHead": "11f5ab504e56e129bf02b32823ffc77d4f6ce308"
 }

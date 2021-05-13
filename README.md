@@ -39,25 +39,25 @@ Given uql is just a library/parser, its queries can be written and sent from the
 
    `npm install @uql/core --save` or `yarn add @uql/core`
 
-2. Make sure to enable the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
+2. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
 
-3. Install a database driver according to your database:
+3. Install the database package according to your database:
 
    - for MySQL or MariaDB
 
-     `npm install mysql2 --save` (alternatively, `mariadb` driver can be used)
+     `npm install @uql/mysql --save` or `yarn add @uql/mysql` (this also supports `mariadb`)
 
-   - for PostgreSQL or CockroachDB
+   - for PostgreSQL
 
-     `npm install pg --save`
+     `npm install @uql/postgres --save` or `yarn add @uql/postgres`
 
    - for SQLite
 
-     `npm install sqlite3 --save`
+     `npm install @uql/sqlite --save` or  or `yarn add @uql/sqlite`
 
    - for MongoDB
 
-     `npm install mongodb --save`
+     `npm install @uql/mongo --save` or  or `yarn add @uql/mongo`
 
 ## <a name="entities"></a>:egg: Entities
 
@@ -73,17 +73,8 @@ import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/
  * (so boilerplate code is reduced)
  */
 export abstract class BaseEntity {
-  @Id()
+  @Id({ onInsert: () => uuidv4() })
   id?: string;
-
-  /**
-   * different relations between entities are supported
-   */
-  @ManyToOne({ entity: () => Company })
-  company?: string | Company;
-
-  @ManyToOne({ entity: () => User })
-  user?: string | User;
 
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
