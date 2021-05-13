@@ -43,7 +43,7 @@ Given uql is just a library/parser, its queries can be written and sent from the
 
    - for MySQL or MariaDB
 
-     `npm install @uql/mysql --save` or `yarn add @uql/mysql` (this also supports `mariadb`)
+     `npm install @uql/mysql --save` or `yarn add @uql/mysql` (also for `mariadb`)
 
    - for PostgreSQL
 
@@ -313,7 +313,10 @@ uql provides a client plugin to consume the REST APIs from the frontend.
 import { querier } from '@uql/client';
 
 // 'Item' is an entity class
-const lastItems = await querier.find(Item, { sort: { createdAt: -1 }, limit: 100 });
+const lastItems = await querier.find(Item, {
+  sort: { createdAt: -1 },
+  limit: 100
+});
 ```
 
 ## <a name="faq"></a>:book: Frequently Asked Questions
