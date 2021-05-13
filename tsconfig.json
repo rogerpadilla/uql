@@ -21,5 +21,5 @@
       "@uql/core/*": ["packages/core/src/*"]
     }
   },
-  "exclude": ["node_modules", "coverage", "dist"]
+  "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]
 }

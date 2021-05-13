@@ -6,10 +6,10 @@
   "main": "uql-client.min.js",
   "types": "uql-client.min.d.ts",
   "scripts": {
-    "prepublishOnly": "yarn build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && webpack --progress --profile --bail --mode=production",
+    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "build": "yarn clean && webpack --progress --profile --bail --mode=production && yarn copyfiles",
     "start": "yarn clean && webpack --profile --bail --watch --info-verbosity verbose",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist *.tsbuildinfo"
   },
   "devDependencies": {
     "@uql/core": "^0.4.0-alpha.0",
@@ -54,5 +54,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "11f5ab504e56e129bf02b32823ffc77d4f6ce308"
+  "gitHead": "0a6380bb6e02e4a38e07f98876341ecb6f7a68e4"
 }

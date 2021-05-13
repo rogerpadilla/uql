@@ -6,10 +6,10 @@
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
-    "prepublishOnly": "yarn build && copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc --build",
-    "start": "yarn build -- --watch",
-    "clean": "rimraf dist"
+    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "build": "yarn clean && tsc --build tsconfig.build.json && yarn copyfiles",
+    "start": "tsc --watch",
+    "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
     "mongodb": "^3.6.6"
@@ -49,5 +49,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "11f5ab504e56e129bf02b32823ffc77d4f6ce308"
+  "gitHead": "0a6380bb6e02e4a38e07f98876341ecb6f7a68e4"
 }

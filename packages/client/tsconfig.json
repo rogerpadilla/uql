@@ -6,5 +6,6 @@
     "lib": ["ESNext", "DOM"],
     "importHelpers": false
   },
+  "references": [{ "path": "../core" }],
   "exclude": ["node_modules", "dist"]
 }
