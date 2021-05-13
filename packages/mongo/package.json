@@ -15,7 +15,7 @@
     "mongodb": "^3.6.6"
   },
   "peerDependencies": {
-    "@uql/core": "^0.3.4"
+    "@uql/core": "^0.4.0"
   },
   "devDependencies": {
     "@types/mongodb": "^3.6.12",
@@ -49,5 +49,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "a702a1bc6006662de0d04dd08597a882bfd6dab6"
+  "gitHead": "948f143c7b8b25f44a56ce3582ab7f2a7676b00c"
 }
