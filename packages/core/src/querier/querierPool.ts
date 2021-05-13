@@ -13,14 +13,14 @@ export function getQuerier() {
 
 export function getQuerierPool(options: DatasourceOptions): QuerierPool {
   const { driver, ...opts } = options;
-  const directory = DRIVER_DIRECTORY_MAP[driver];
+  const directory = DRIVER_MAP[driver];
   const querierPoolConstructor: QuerierPoolClass =
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    require(`../../../${directory}/src/${driver}QuerierPool`).default;
+    require(`@uql/${directory}/dist/${driver}QuerierPool`).default;
   return new querierPoolConstructor(opts);
 }
 
-const DRIVER_DIRECTORY_MAP = {
+const DRIVER_MAP = {
   mysql2: 'mysql',
   mariadb: 'mysql',
   pg: 'postgres',
