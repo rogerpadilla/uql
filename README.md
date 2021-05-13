@@ -51,11 +51,11 @@ Given uql is just a library/parser, its queries can be written and sent from the
 
    - for SQLite
 
-     `npm install @uql/sqlite --save` or  or `yarn add @uql/sqlite`
+     `npm install @uql/sqlite --save` or or `yarn add @uql/sqlite`
 
    - for MongoDB
 
-     `npm install @uql/mongo --save` or  or `yarn add @uql/mongo`
+     `npm install @uql/mongo --save` or or `yarn add @uql/mongo`
 
 3. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
 
@@ -240,7 +240,7 @@ uql supports both, _programmatic_ and _declarative_ transactions, with the forme
 (hence more responsibility), with the later you can describe the scope of your transactions.
 
 1. take any service class, annotate a property to inject the `querier` with `@InjectQuerier()`
-2. add `Transactional()` decorator on the function. Attribute `propagation` (defaults to `required`)
+2. add `Transactional()` decorator on the function. The optional attribute `propagation` (defaults to `required`)
    can be passed to customize its value, e.g. `@Transactional({ propagation: 'supported' })`.
 
 ```typescript
@@ -248,24 +248,22 @@ import { Querier } from '@uql/core/type';
 import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
-  @InjectQuerier()
-  querier: Querier;
 
   @Transactional()
-  async confirmAction(body: Confirmation): Promise<void> {
+  async confirmAction(body: Confirmation,. @InjectQuerier() querier?: Querier): Promise<void> {
     if (body.type === 'register') {
       const newUser: User = {
         name: body.name,
         email: body.email,
         password: body.password,
       };
-      await this.querier.insertOne(User, newUser);
+      await querier.insertOne(User, newUser);
     } else {
       const userId = body.user as string;
-      await this.querier.updateOneById(User, userId, { password: body.password });
+      await querier.updateOneById(User, userId, { password: body.password });
     }
 
-    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
   }
 }
 
@@ -315,7 +313,7 @@ import { querier } from '@uql/client';
 // 'Item' is an entity class
 const lastItems = await querier.find(Item, {
   sort: { createdAt: -1 },
-  limit: 100
+  limit: 100,
 });
 ```
 

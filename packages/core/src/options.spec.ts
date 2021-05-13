@@ -1,4 +1,4 @@
-import { clearOptions, getDatasourceOptions, getOptions, setOptions } from './options';
+import { clearOptions, getOptions, uql } from './options';
 import { UqlOptions } from './type';
 
 describe('options', () => {
@@ -10,30 +10,22 @@ describe('options', () => {
     expect(() => getOptions()).toThrow('options has to be set');
   });
 
-  it('getOptions datasource unset', () => {
-    setOptions({});
-    expect(() => getDatasourceOptions()).toThrow('datasource options has to be specified');
-  });
-
-  it('getOptions datasource unset', () => {
-    setOptions({
-      datasource: {
-        driver: 'sqlite3',
-        filename: ':memory:',
-      },
-    });
-    const datasourceOptions = getDatasourceOptions();
-    expect(datasourceOptions).toEqual({
-      driver: 'sqlite3',
-      filename: ':memory:',
-    });
-  });
-
   it('setOptions', () => {
-    const opts: UqlOptions = {
+    uql({
+      querierPool: undefined,
+      logger: console.info,
+    });
+    expect(getOptions()).toEqual({
+      querierPool: undefined,
+      logger: console.info,
+    });
+
+    uql({
+      querierPool: undefined,
+    });
+    expect(getOptions()).toEqual({
+      querierPool: undefined,
       logger: console.log,
-    };
-    setOptions(opts);
-    expect(getOptions()).toEqual(opts);
+    });
   });
 });

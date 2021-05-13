@@ -1,48 +1,54 @@
-import { Querier } from '../../type';
-import { getQuerier } from '../querierPool';
-import { getInjectedQuerierProperty, injectQuerier } from './injectQuerier';
+import { getOptions } from '@uql/core/options';
+import { Querier, QuerierPool, Type } from '../../type';
+import { getInjectedQuerierIndex } from './injectQuerier';
 
-export function Transactional(opts: { readonly propagation: 'supported' | 'required' } = { propagation: 'required' }) {
+type Props = {
+  readonly propagation?: 'supported' | 'required';
+  readonly querierPool?: QuerierPool;
+};
+
+export function Transactional(options: Props = {}) {
+  const { propagation, querierPool } = { propagation: 'required', ...options };
+
   return (target: object, prop: string, propDescriptor: PropertyDescriptor): void => {
+    const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
-    const injectedQuerierProperty = getInjectedQuerierProperty(target);
+    const injectIndex = getInjectedQuerierIndex(theClass, prop);
 
-    if (injectedQuerierProperty === undefined) {
-      throw new TypeError(
-        `missing decorator @InjectQuerier() in one of the properties of '${target.constructor.name}'`
-      );
+    if (injectIndex === undefined) {
+      throw new TypeError(`missing decorator @InjectQuerier() in the method '${prop}' of '${target.constructor.name}'`);
     }
 
-    propDescriptor.value = async function func(this: object, ...args: object[]) {
-      let isOwnAuto: boolean;
+    propDescriptor.value = async function func(this: object, ...args: any[]) {
+      let isOwnTransaction: boolean;
       let querier: Querier;
 
-      if (this[injectedQuerierProperty]) {
-        querier = this[injectedQuerierProperty];
+      if (args[injectIndex]) {
+        querier = args[injectIndex];
       } else {
-        querier = await getQuerier();
-        isOwnAuto = true;
-        injectQuerier(this, querier);
+        isOwnTransaction = true;
+        const pool = querierPool ?? getOptions().querierPool;
+        querier = await pool.getQuerier();
+        args[injectIndex] = querier;
       }
 
       try {
-        if (opts.propagation === 'required' && !querier.hasOpenTransaction) {
+        if (propagation === 'required' && !querier.hasOpenTransaction) {
           await querier.beginTransaction();
         }
         const resp = await originalMethod.apply(this, args);
-        if (querier.hasOpenTransaction && isOwnAuto) {
+        if (isOwnTransaction && querier.hasOpenTransaction) {
           await querier.commitTransaction();
         }
         return resp;
       } catch (err) {
-        if (querier.hasOpenTransaction && isOwnAuto) {
+        if (isOwnTransaction && querier.hasOpenTransaction) {
           await querier.rollbackTransaction();
         }
         throw err;
       } finally {
-        if (isOwnAuto) {
+        if (isOwnTransaction) {
           await querier.release();
-          injectQuerier(this, undefined);
         }
       }
     };

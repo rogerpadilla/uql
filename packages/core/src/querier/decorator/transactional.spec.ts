@@ -1,168 +1,181 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-import { Querier } from '../../type';
-import { injectQuerier, InjectQuerier } from './injectQuerier';
+import { getOptions, uql } from '@uql/core/options';
+import { Querier, QuerierPool } from '../../type';
+import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
-jest.mock('../querierPool', () => {
-  return {
-    getQuerier: async () => someMockedQuerier,
-  };
-});
-
-let someMockedQuerier: Partial<Querier>;
 
 describe('transactional', () => {
-  let anotherMockedQuerier: Partial<Querier>;
+  let anotherQuerier: Querier;
+  let anotherQuerierPool: QuerierPool;
 
   beforeEach(() => {
-    someMockedQuerier = {
-      beginTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        someMockedQuerier.hasOpenTransaction = true;
-      }),
-      commitTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        someMockedQuerier.hasOpenTransaction = undefined;
-      }),
-      rollbackTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        someMockedQuerier.hasOpenTransaction = undefined;
-      }),
-      release: jest.fn(async () => {}),
-    };
-    anotherMockedQuerier = {
-      beginTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        anotherMockedQuerier.hasOpenTransaction = true;
-      }),
-      commitTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        anotherMockedQuerier.hasOpenTransaction = undefined;
-      }),
-      rollbackTransaction: jest.fn(async () => {
-        // @ts-expect-error
-        anotherMockedQuerier.hasOpenTransaction = undefined;
-      }),
-      release: jest.fn(async () => {}),
+    const defaultQuerier = mockQuerier();
+    anotherQuerier = mockQuerier();
+
+    uql({
+      querierPool: {
+        getQuerier: async () => defaultQuerier,
+        end: async () => undefined,
+      },
+    });
+
+    anotherQuerierPool = {
+      getQuerier: async () => anotherQuerier,
+      end: async () => undefined,
     };
   });
 
   it('injectQuerier', async () => {
     class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-
       @Transactional()
-      async save() {}
+      async save(@InjectQuerier() querier?: Querier) {}
     }
 
     const serviceA = new ServiceA();
-    expect(serviceA.querier).toBe(undefined);
-
     await serviceA.save();
 
-    expect(serviceA.querier).toBe(undefined);
-    expect(someMockedQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.release).toBeCalledTimes(1);
-  });
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
 
-  it('injectQuerier - inheritance', async () => {
-    class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-    }
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.release).toBeCalledTimes(1);
 
-    class ServiceB extends ServiceA {
-      @Transactional()
-      async save() {}
-    }
-
-    const serviceB = new ServiceB();
-    await serviceB.save();
-
-    expect(someMockedQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.release).toBeCalledTimes(1);
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
   it('injectQuerier propagation: supported', async () => {
     class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-
       @Transactional({ propagation: 'supported' })
-      async find() {}
+      async find(@InjectQuerier() querier?: Querier) {}
     }
 
     const serviceA = new ServiceA();
-
     await serviceA.find();
 
-    expect(someMockedQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.release).toBeCalledTimes(1);
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
+
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.release).toBeCalledTimes(1);
+
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
-  it('injectQuerier existing', async () => {
+  it('injectQuerier another querierPool', async () => {
     class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-
-      @Transactional()
-      async save() {}
+      @Transactional({ querierPool: anotherQuerierPool })
+      async save(@InjectQuerier() querier?: Querier) {}
     }
 
     const serviceA = new ServiceA();
-    expect(serviceA.querier).toBe(undefined);
-    injectQuerier(serviceA, anotherMockedQuerier as Querier);
-    expect(serviceA.querier).toBe(anotherMockedQuerier);
-
     await serviceA.save();
 
-    expect(serviceA.querier).toBe(anotherMockedQuerier);
-    expect(anotherMockedQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(anotherMockedQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherMockedQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(1);
+
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
+
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.release).toBeCalledTimes(0);
+  });
+
+  it('injectQuerier and call super', async () => {
+    const removeStub = jest.fn((id: string, querier: Querier) => {});
+
+    class ServiceA {
+      @Transactional()
+      async remove(id: string, @InjectQuerier() querier?: Querier) {
+        removeStub(id, querier);
+      }
+    }
+
+    class ServiceB extends ServiceA {
+      @Transactional({ querierPool: anotherQuerierPool })
+      async remove(id: string, @InjectQuerier() querier?: Querier) {
+        return super.remove(id, querier);
+      }
+    }
+
+    const serviceB = new ServiceB();
+    await serviceB.remove('123');
+
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
+
+    expect(removeStub).toBeCalledTimes(1);
+    expect(removeStub).toHaveBeenCalledWith('123', anotherQuerier);
+
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(1);
+
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.release).toBeCalledTimes(0);
   });
 
   it('throw', async () => {
     class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-
       @Transactional({ propagation: 'supported' })
-      async save() {
+      async save(@InjectQuerier() querier?: Querier) {
         throw new Error('Some Error');
       }
     }
 
     const serviceA = new ServiceA();
+    const promise = serviceA.save();
 
-    await expect(serviceA.save()).rejects.toThrow('Some Error');
-    expect(someMockedQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.release).toBeCalledTimes(1);
+    await expect(promise).rejects.toThrow('Some Error');
+
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
+
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.release).toBeCalledTimes(1);
+
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
   it('throw inside transaction', async () => {
     class ServiceA {
-      @InjectQuerier()
-      querier: Querier;
-
       @Transactional()
-      async save() {
+      async save(@InjectQuerier() querier?: Querier) {
         throw new Error('Some Error');
       }
     }
 
     const serviceA = new ServiceA();
+    const promise = serviceA.save();
 
-    await expect(serviceA.save()).rejects.toThrow('Some Error');
-    expect(someMockedQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(someMockedQuerier.rollbackTransaction).toBeCalledTimes(1);
-    expect(someMockedQuerier.release).toBeCalledTimes(1);
+    await expect(promise).rejects.toThrow('Some Error');
+
+    const defaultQuerier = await getOptions().querierPool.getQuerier();
+
+    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
+    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(1);
+    expect(defaultQuerier.release).toBeCalledTimes(1);
+
+    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
+    expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
   it('missing injectQuerier', async () => {
@@ -171,6 +184,24 @@ describe('transactional', () => {
         @Transactional()
         async find() {}
       }
-    }).rejects.toThrow("missing decorator @InjectQuerier() in one of the properties of 'ServiceA'");
+    }).rejects.toThrow("missing decorator @InjectQuerier() in the method 'find' of 'ServiceA'");
   });
 });
+
+function mockQuerier(): Querier {
+  const querier = {
+    beginTransaction: jest.fn(async () => {
+      querier.hasOpenTransaction = true;
+    }),
+    commitTransaction: jest.fn(async () => {
+      querier.hasOpenTransaction = undefined;
+    }),
+    rollbackTransaction: jest.fn(async () => {
+      querier.hasOpenTransaction = undefined;
+    }),
+    release: jest.fn(async () => {}),
+  } as Partial<Querier> as Writable<Querier>;
+  return querier;
+}
+
+export type Writable<T> = { -readonly [P in keyof T]: T[P] };

@@ -1,7 +1,5 @@
 import { Querier } from './querier';
 
-export type QuerierPoolClass = new (opts: QuerierPoolOptions | QuerierPoolSqlite3Options) => QuerierPool;
-
 export type QuerierPoolOptions = {
   host?: string;
   user?: string;
@@ -17,7 +15,9 @@ export type QuerierPoolConnection = {
   release(): void | Promise<void>;
 };
 
+export type GetQuerier<E extends Querier = Querier> = () => Promise<E>;
+
 export type QuerierPool<E extends Querier = Querier> = {
-  getQuerier(): Promise<E>;
+  getQuerier: GetQuerier<E>;
   end(): Promise<void>;
 };

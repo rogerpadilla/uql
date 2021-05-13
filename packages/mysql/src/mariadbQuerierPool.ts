@@ -14,9 +14,7 @@ export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
     return new MariadbQuerier(conn);
   }
 
-  end() {
-    return this.pool.end();
+  async end() {
+    await this.pool.end();
   }
 }
-
-export default MariadbQuerierPool;

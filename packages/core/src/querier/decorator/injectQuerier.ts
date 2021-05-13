@@ -3,41 +3,41 @@ import { Querier, Type } from '../../type';
 const metadataKey = Symbol('InjectQuerier');
 
 export function InjectQuerier() {
-  return (proto: object, prop: string) => {
+  return (proto: object, key: string, index: number) => {
+    const { constructor } = proto;
+
     if (!proto[metadataKey]) {
       proto[metadataKey] = new WeakMap();
     }
-    if (proto[metadataKey].has(proto.constructor)) {
-      throw new TypeError(
-        `Decorator @InjectQuerier() is already used in '${proto.constructor.name}.${proto[metadataKey].get(
-          proto.constructor
-        )}'`
-      );
+    if (!proto[metadataKey].has(constructor)) {
+      proto[metadataKey].set(constructor, {});
     }
-    proto[metadataKey].set(proto.constructor, prop);
+    const meta = proto[metadataKey].get(constructor);
+    if (meta[key] !== undefined) {
+      throw new TypeError(`Decorator @InjectQuerier() can only appears once in '${constructor.name}.${key}'}`);
+    }
+    meta[key] = index;
   };
 }
 
-export function getInjectedQuerierProperty(proto: object) {
-  const injectedPropertiesMap = getInjectedQuerierPropertiesMap(proto);
-  return Array.from(injectedPropertiesMap.values()).find(Boolean);
-}
+export function getInjectedQuerierIndex<T>(type: Type<T>, key: keyof T) {
+  let proto = type.prototype;
 
-function getInjectedQuerierPropertiesMap<E>(proto: E) {
-  const resp = new Map<Type<E>, string>();
-  let parentProto = proto;
-  while (parentProto.constructor !== Object) {
-    const prop = parentProto[metadataKey]?.get(parentProto.constructor);
-    resp.set(parentProto.constructor as Type<E>, prop);
-    parentProto = Object.getPrototypeOf(parentProto);
-  }
-  return resp;
-}
+  while (proto.constructor !== Object) {
+    const meta = proto[metadataKey]?.get(proto.constructor);
+    const index = meta?.[key];
 
-export function injectQuerier(instance: object, querier: Querier) {
-  const proto = Object.getPrototypeOf(instance);
-  const injectedPropertiesMap = getInjectedQuerierPropertiesMap(proto);
-  for (const prop of Array.from(injectedPropertiesMap.values()).filter(Boolean)) {
-    instance[prop] = querier;
+    if (index !== undefined) {
+      return index;
+    }
+
+    const props = Object.getOwnPropertyNames(proto) as (keyof T)[];
+    const isOwnProperty = props.includes(key);
+
+    if (isOwnProperty) {
+      return;
+    }
+
+    proto = Object.getPrototypeOf(proto);
   }
 }

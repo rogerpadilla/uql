@@ -14,9 +14,7 @@ export class PgQuerierPool implements QuerierPool<PostgresQuerier> {
     return new PostgresQuerier(conn);
   }
 
-  end() {
-    return this.pool.end();
+  async end() {
+    await this.pool.end();
   }
 }
-
-export default PgQuerierPool;

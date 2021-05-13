@@ -14,9 +14,7 @@ export class MySql2QuerierPool implements QuerierPool<MySqlQuerier> {
     return new MySqlQuerier(conn);
   }
 
-  end() {
-    return this.pool.end();
+  async end() {
+    await this.pool.end();
   }
 }
-
-export default MySql2QuerierPool;

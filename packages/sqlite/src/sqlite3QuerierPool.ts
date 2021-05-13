@@ -23,5 +23,3 @@ export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
     delete this.querier;
   }
 }
-
-export default Sqlite3QuerierPool;
