@@ -2,7 +2,7 @@
   "name": "@uql/client",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.4.0-alpha.7+9d4ae06",
+  "version": "0.4.0-alpha.8+d5a9828",
   "main": "uql-client.min.js",
   "types": "uql-client.min.d.ts",
   "scripts": {
@@ -12,7 +12,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "devDependencies": {
-    "@uql/core": "^0.4.0-alpha.7+9d4ae06",
+    "@uql/core": "^0.4.0-alpha.8+d5a9828",
     "copyfiles": "^2.4.1",
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",
@@ -54,5 +54,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "9d4ae0686afe2a97cef8de427a70929a891d9e72"
+  "gitHead": "d5a98286a0a80cd158a6fffaa87c4a0c57f44f59"
 }
