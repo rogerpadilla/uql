@@ -15,9 +15,10 @@
     "pg": "^8.6.0"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.0"
+    "@uql/core": "^0.4.0-alpha.6"
   },
   "devDependencies": {
+    "@uql/core": "^0.4.0-alpha.6",
     "@types/node": "^15.3.0",
     "@types/pg": "^7.14.11",
     "copyfiles": "^2.4.1",
@@ -48,5 +49,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "de9d4b82cc0abc536d7e84caf0f42dcf6e76d74f"
+  "gitHead": "67da3fdf9b55b2d180b9954faac7d0a4dd1d2396"
 }

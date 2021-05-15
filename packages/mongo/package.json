@@ -18,6 +18,7 @@
     "@uql/core": "^0.4.0"
   },
   "devDependencies": {
+    "@uql/core": "^0.4.0-alpha.6",
     "@types/mongodb": "^3.6.12",
     "@types/node": "^15.3.0",
     "copyfiles": "^2.4.1",
@@ -49,5 +50,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "de9d4b82cc0abc536d7e84caf0f42dcf6e76d74f"
+  "gitHead": "67da3fdf9b55b2d180b9954faac7d0a4dd1d2396"
 }
