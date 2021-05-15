@@ -192,9 +192,9 @@ setOptions({
 uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
 (hence more responsibility), with the later you can describe the scope of your transactions.
 
-1. take any service class, annotate a property to inject the `querier` with `@InjectQuerier()`
-2. add `Transactional()` decorator on the function. The optional attribute `propagation` (defaults to `required`)
-   can be passed to customize its value, e.g. `@Transactional({ propagation: 'supported' })`.
+1. take any service class, annotate the wanted function with `Transactional()` decorator.
+   The optional attribute `propagation` (defaults to `required`) can be passed to customize its value, e.g. `@Transactional({ propagation: 'supported' })`.
+2. inject the querier instance by decorating one of the function's arguments with `@InjectQuerier()`.
 
 ```typescript
 import { Querier } from '@uql/core/type';
