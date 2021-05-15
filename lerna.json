@@ -9,11 +9,10 @@
     "publish": {
       "contents": "dist",
       "conventionalCommits": true,
-      "gitReset": false,
       "changelog": false,
       "yes": true,
-      "amend": true,
-      "forceGitTag": true
+      "forceGitTag": true,
+      "forcePublish": true
     },
     "version": {
       "yes": true,
