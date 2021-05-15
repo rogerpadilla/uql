@@ -1,7 +1,7 @@
 language: node_js
 node_js:
-  - 'lts'
-  - 'stable'
+  - 'lts/*'
+  - 'node'
 install:
   - yarn
 script: 'yarn test && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js'
