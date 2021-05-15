@@ -38,6 +38,7 @@
     "uql",
     "persistence",
     "orm",
+    "object relational mapper",
     "mysql",
     "mariadb",
     "ts",
@@ -45,8 +46,12 @@
     "js",
     "javascript",
     "entity",
-    "data-mapper",
-    "datamapper"
+    "dao",
+    "data access object",
+    "decorator",
+    "repository",
+    "service",
+    "transaction"
   ],
   "publishConfig": {
     "access": "public"

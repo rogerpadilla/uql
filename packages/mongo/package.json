@@ -37,6 +37,7 @@
     "uql",
     "persistence",
     "orm",
+    "object relational mapper",
     "mongo",
     "mongodb",
     "ts",
@@ -44,8 +45,12 @@
     "js",
     "javascript",
     "entity",
-    "data-mapper",
-    "datamapper"
+    "dao",
+    "data access object",
+    "decorator",
+    "repository",
+    "service",
+    "transaction"
   ],
   "publishConfig": {
     "access": "public"

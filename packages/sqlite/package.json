@@ -38,15 +38,19 @@
     "uql",
     "persistence",
     "orm",
+    "object relational mapper",
     "sqlite",
-    "sqlite3",
     "ts",
     "typescript",
     "js",
     "javascript",
     "entity",
-    "data-mapper",
-    "datamapper"
+    "dao",
+    "data access object",
+    "decorator",
+    "repository",
+    "service",
+    "transaction"
   ],
   "publishConfig": {
     "access": "public"
