@@ -4,21 +4,21 @@
 
 # `{*}` uql = Universal Query Language
 
-uql is a plug & play ORM, with a declarative `JSON` syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql will run efficient (and safe) SQL (or Mongo) queries.
+`uql` is a plug & play `ORM`, with a declarative `JSON` syntax to query/update multiple data-sources. Essentially, you just declare what you want from the datasource, and then `uql` will run efficient (and safe) `SQL` (or `Mongo`) queries.
 
-Given uql is just a library/parser, its queries can be written and sent from the web/mobile to the backend, or use directly in the backend, or even use in the mobile with an embedded database.
+Given `uql` is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend; or just use `uql` directly in the backend; or even use it in a mobile app with an embedded database.
+
 ## <a name="features"></a>:star2: Features
 
-- supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
-  and `pagination`.
-- programmatic and declarative `transactions`
-- generic and custom `repositories`
-- `relations` between entities
-- supports entities `inheritance` patterns
+- supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `sorting`, `pagination`, and more.
+- declarative and programmatic `transactions`
+- entity `repositories`
+- different `relations` between the entities
+- supports `inheritance` patterns between the entities
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite, MongoDB
-- code is readable, short, performant and flexible
-- plugins for frameworks: express, more soon...
+- supports Postgres, MySQL, MariaDB, SQLite, MongoDB (more coming)
+- code is performant, readable, and flexible
+- plugins for frameworks: express (more coming)
 
 ## Table of Contents
 
@@ -33,35 +33,81 @@ Given uql is just a library/parser, its queries can be written and sent from the
 
 ## <a name="installation"></a>:battery: Installation
 
-1. Install the core package:
+1.  Install the core package:
 
-   `npm install @uql/core --save` or `yarn add @uql/core`
+    ```sh
+    npm install @uql/core --save
+    ```
 
-2. Install the database package according to your database:
+    or
 
-   - for MySQL or MariaDB
+    ```sh
+    yarn add @uql/core
+    ```
 
-     `npm install @uql/mysql --save` or `yarn add @uql/mysql` (also for `mariadb`)
+2.  Install one of database packages according to your database:
 
-   - for PostgreSQL
+    - for MySQL (or MariaDB)
 
-     `npm install @uql/postgres --save` or `yarn add @uql/postgres`
+      ```sh
+      npm install @uql/mysql --save
+      ```
 
-   - for SQLite
+      or with _yarn_
 
-     `npm install @uql/sqlite --save` or or `yarn add @uql/sqlite`
+      ```sh
+      yarn add @uql/mysql
+      ```
 
-   - for MongoDB
+    - for PostgreSQL
 
-     `npm install @uql/mongo --save` or or `yarn add @uql/mongo`
+      ```sh
+      npm install @uql/postgres --save
+      ```
 
-3. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
+      or with _yarn_
+
+      ```sh
+      yarn add @uql/postgres
+      ```
+
+    - for SQLite
+
+      ```sh
+      npm install @uql/sqlite --save
+      ```
+
+      or with _yarn_
+
+      ```sh
+      yarn add @uql/sqlite
+      ```
+
+    - for MongoDB
+
+      ```sh
+      npm install @uql/mongo --save
+      ```
+
+      or with _yarn_
+
+      ```sh
+      yarn add @uql/mongo
+      ```
+
+3.  Your `tsconfig.json` needs the following flags:
+
+```json
+"target": "es6", // or a more recent ecmascript version
+"experimentalDecorators": true,
+"emitDecoratorMetadata": true
+```
 
 ## <a name="configuration"></a>:gear: Configuration
 
-uql's initialization should be done once (e.g. in a file imported from a bootstrap file of your app).
+`uql` initialization should be done once (e.g. in one of the bootstrap files of your app).
 
-```typescript
+```ts
 import { setOptions } from '@uql/core';
 import { PgQuerierPool } from '@uql/postgres';
 
@@ -79,10 +125,11 @@ setOptions({
 
 ## <a name="entities"></a>:egg: Entities
 
-Take any dump class (DTO) and annotate it with the decorators from package '@uql/core/entity/decorator'.
-Notice that the inheritance between entities is optional.
+Take any dump class (aka DTO) and annotate it with the decorators from '@uql/core/entity/decorator'.
 
-```typescript
+Note: inheritance between entities is optional.
+
+```ts
 import { v4 as uuidv4 } from 'uuid';
 import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/entity/decorator';
 
@@ -187,14 +234,12 @@ export class Tax extends BaseEntity {
 
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
 
-uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
-(hence more responsibility), with the later you can describe the scope of your transactions.
+`uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
-1. take any service class, annotate the wanted function with `Transactional()` decorator.
-   The optional attribute `propagation` (defaults to `required`) can be passed to customize its value, e.g. `@Transactional({ propagation: 'supported' })`.
+1. take any service class, annotate the wanted function with the `Transactional()` decorator.
 2. inject the querier instance by decorating one of the function's arguments with `@InjectQuerier()`.
 
-```typescript
+```ts
 import { Querier } from '@uql/core/type';
 import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
@@ -220,16 +265,15 @@ class ConfirmationService {
 
 export const confirmationService = new ConfirmationService();
 
-// then you can just import the constant `confirmationService` in another file,
-// and when you call `confirmationService.confirmAction` all the operations there
-// will automatically run inside a single transaction
+// then you could just import the constant `confirmationService` in another file,
+// and when you call `confirmAction` function, all the operations there
+// will (automatically) run inside a single transaction
 await confirmationService.confirmAction(data);
 ```
 
 ## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
 
-uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
-(hence more responsibility), with the later you can describe the scope of your transactions.
+`uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
 1. obtain the `querier` object with `await getQuerier()`
 2. open a `try/catch/finally` block
@@ -239,7 +283,7 @@ uql supports both, _programmatic_ and _declarative_ transactions, with the forme
 6. in the `catch` block, add `await querier.rollbackTransaction()`
 7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
 
-```typescript
+```ts
 import { getQuerier } from '@uql/core';
 
 async function confirmAction(confirmation: Confirmation): Promise<void> {
@@ -275,12 +319,24 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
 
 ## <a name="express"></a>:zap: Generate REST APIs from Express
 
-uql provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
+`uql` provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
 
-1. Install express plugin in your server project `npm install @uql/express --save` or `yarn add @uql/express`
-2. Initialize the express middleware in your server code to generate CRUD REST APIs for your entities
+1. Install express plugin in your server project:
 
-```typescript
+```sh
+npm install @uql/express --save
+
+```
+
+or with _yarn_
+
+```sh
+yarn add @uql/express
+```
+
+2. Initialize the `express` middleware in your server code to generate CRUD REST APIs for your entities
+
+```ts
 import * as express from 'express';
 import { entitiesMiddleware } from '@uql/express';
 
@@ -303,9 +359,21 @@ app
 
 uql provides a client plugin to consume the REST APIs from the frontend.
 
-1. Install client plugin in your frontend project `npm install @uql/client --save` or `yarn add @uql/client`
+1. Install client plugin in your frontend project:
 
-```typescript
+```sh
+npm install @uql/client --save
+```
+
+or with _yarn_
+
+```sh
+yarn add @uql/client
+```
+
+2. Use the client to call the `uql` CRUD API
+
+```ts
 import { querier } from '@uql/client';
 
 // 'Item' is an entity class
