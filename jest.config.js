@@ -11,7 +11,6 @@ module.exports = {
   verbose: true,
   preset: 'ts-jest',
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
-  roots: ['<rootDir>/packages'],
   testMatch: ['**/*.spec.ts'],
   testPathIgnorePatterns: ['node_modules', 'dist'],
   collectCoverage: true,
@@ -19,6 +18,5 @@ module.exports = {
   coverageDirectory: 'coverage',
   coveragePathIgnorePatterns: ['node_modules', 'test'],
   modulePathIgnorePatterns: ['dist'],
-  moduleDirectories: ['.', 'node_modules'],
   moduleNameMapper,
 };
