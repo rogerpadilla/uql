@@ -4,7 +4,7 @@
     "packages/*"
   ],  
   "scripts": {
-    "buildPublish": "yarn build && lerna publish --force-publish",
+    "buildPublish": "yarn build && lerna publish patch --force-publish",
     "build": "lerna run build --ignore=@uql/core && lerna run build --scope=@uql/core",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
