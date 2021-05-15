@@ -11,7 +11,7 @@ module.exports = {
   verbose: true,
   preset: 'ts-jest',
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
-  testMatch: ['**/*.spec.ts'],
+  testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
   testPathIgnorePatterns: ['node_modules', 'dist'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],

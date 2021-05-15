@@ -9,13 +9,11 @@
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn lint --fix",
-    "test": "jest --clearCache && concurrently 'npm:lint.fix' 'jest'",
+    "test": "jest --clearCache && concurrently 'yarn:lint.fix' 'jest'",
     "test.watch": "jest --watchAll",
-    "test.pattern": "jest --testMatch '**/**/*.spec.ts' '**/sqlite/**/*.it.ts'",
     "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "test.watch.pattern": "jest --watchAll --testMatch '**/**/*.spec.ts' '**/sqlite/**/*.it.ts'",
     "rs": "run-rs -v 4.2.10 -l ubuntu1804",
-    "container": "concurrently 'npm:rs' 'docker-compose up'"
+    "container": "concurrently 'yarn:rs' 'docker-compose up'"
   },
   "commitlint": {
     "extends": [

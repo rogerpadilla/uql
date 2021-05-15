@@ -7,19 +7,6 @@
 uql is a plug & play ORM, with a declarative `JSON` syntax to query/update different data-sources. Basically, just declare what you want from your datasource, and then uql will run efficient (and safe) SQL (or Mongo) queries.
 
 Given uql is just a library/parser, its queries can be written and sent from the web/mobile to the backend, or use directly in the backend, or even use in the mobile with an embedded database.
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Installation](#installation)
-3. [Entities](#entities)
-4. [Configuration](#configuration)
-5. [Declarative Transactions](#declarative-transactions)
-6. [Programmatic Transactions](#programmatic-transactions)
-7. [Generate REST APIs from Express](#express)
-8. [Consume REST APIs from Frontend](#client)
-9. [FAQs](#faq)
-
 ## <a name="features"></a>:star2: Features
 
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `grouping`,
@@ -32,6 +19,17 @@ Given uql is just a library/parser, its queries can be written and sent from the
 - supports Postgres, MySQL, MariaDB, SQLite, MongoDB
 - code is readable, short, performant and flexible
 - plugins for frameworks: express, more soon...
+
+## Table of Contents
+
+1. [Installation](#installation)
+2. [Configuration](#configuration)
+3. [Entities](#entities)
+4. [Declarative Transactions](#declarative-transactions)
+5. [Programmatic Transactions](#programmatic-transactions)
+6. [Generate REST APIs from Express](#express)
+7. [Consume REST APIs from Frontend](#client)
+8. [FAQs](#faq)
 
 ## <a name="installation"></a>:battery: Installation
 
@@ -58,6 +56,26 @@ Given uql is just a library/parser, its queries can be written and sent from the
      `npm install @uql/mongo --save` or or `yarn add @uql/mongo`
 
 3. Set as `true` the following properties in the `tsconfig.json` file: `experimentalDecorators` and `emitDecoratorMetadata`
+
+## <a name="configuration"></a>:gear: Configuration
+
+uql's initialization should be done once (e.g. in a file imported from a bootstrap file of your app).
+
+```typescript
+import { setOptions } from '@uql/core';
+import { PgQuerierPool } from '@uql/postgres';
+
+setOptions({
+  querierPool: new PgQuerierPool({
+    host: 'localhost',
+    user: 'theUser',
+    password: 'thePassword',
+    database: 'theDatabase',
+  }),
+  logger: console.log,
+  debug: true,
+});
+```
 
 ## <a name="entities"></a>:egg: Entities
 
@@ -165,26 +183,6 @@ export class Tax extends BaseEntity {
   @Property()
   description?: string;
 }
-```
-
-## <a name="configuration"></a>:gear: Configuration
-
-uql's initialization should be done once (e.g. in a file imported from a bootstrap file of your app).
-
-```typescript
-import { setOptions } from '@uql/core';
-import { PgQuerierPool } from '@uql/postgres';
-
-setOptions({
-  querierPool: new PgQuerierPool({
-    host: 'localhost',
-    user: 'theUser',
-    password: 'thePassword',
-    database: 'theDatabase',
-  }),
-  logger: console.log,
-  debug: true,
-});
 ```
 
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
