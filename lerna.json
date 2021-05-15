@@ -15,8 +15,7 @@
       "forcePublish": true
     },
     "version": {
-      "yes": true,
-      "amend": true
+      "yes": true
     }
   }
 }
