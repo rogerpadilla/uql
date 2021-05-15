@@ -2,11 +2,7 @@
   "name": "@uql/mysql",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-<<<<<<< HEAD
   "version": "0.4.0-alpha.11",
-=======
-  "version": "0.4.0-alpha.10+80679fa",
->>>>>>> 3e9d4719234b07be367bdc2693303e6930172b6e
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
@@ -25,11 +21,7 @@
   "devDependencies": {
     "@types/mysql": "^2.15.18",
     "@types/node": "^15.3.0",
-<<<<<<< HEAD
     "@uql/core": "^0.4.0-alpha.11",
-=======
-    "@uql/core": "^0.4.0-alpha.10+80679fa",
->>>>>>> 3e9d4719234b07be367bdc2693303e6930172b6e
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
     "typescript": "^4.2.4"
@@ -59,9 +51,5 @@
   "publishConfig": {
     "access": "public"
   },
-<<<<<<< HEAD
   "gitHead": "f1cac6421f3da780f794cace4072d7bef08286b7"
-=======
-  "gitHead": "80679fa0758477237427c209c866e890ae47d790"
->>>>>>> 3e9d4719234b07be367bdc2693303e6930172b6e
 }
