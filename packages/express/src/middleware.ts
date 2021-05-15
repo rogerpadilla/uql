@@ -1,11 +1,10 @@
 import { Request, Response } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
-import { getOptions } from '@uql/core/options';
+import { getOptions, getQuerier } from '@uql/core';
 import { Query, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
-import { getQuerier } from '@uql/core/querier';
 import { parseQuery } from './query.util';
 
 export function entitiesMiddleware(opts: MiddlewareOptions = {}) {
