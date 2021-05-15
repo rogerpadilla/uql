@@ -12,3 +12,4 @@ data
 .pnp.js
 .yarnrc.yml
 mongodb-*
+*.tsbuildinfo
