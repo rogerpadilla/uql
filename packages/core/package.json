@@ -2,7 +2,7 @@
   "name": "@uql/core",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.4.0-alpha.5+d4832b1",
+  "version": "0.4.0-alpha.6+a8dd8ca",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
@@ -55,5 +55,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "d4832b18ab25e320d00a1d399b6f152d76b88f51"
+  "gitHead": "a8dd8caa8ad440c98c5d5ac73e026b4242c9661d"
 }
