@@ -2,12 +2,8 @@ import { UqlOptions } from './type';
 
 let options: UqlOptions;
 
-export function uql(opts: UqlOptions) {
+export function setOptions(opts: UqlOptions) {
   options = { logger: console.log, ...opts };
-}
-
-export function clearOptions() {
-  options = undefined;
 }
 
 export function getOptions() {
@@ -15,4 +11,14 @@ export function getOptions() {
     throw new TypeError('options has to be set');
   }
   return { ...options };
+}
+
+export function getQuerierPool() {
+  const options = getOptions();
+  return options.querierPool;
+}
+
+export function getQuerier() {
+  const querierPool = getQuerierPool();
+  return querierPool.getQuerier();
 }

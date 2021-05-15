@@ -1,4 +1,4 @@
-import { getOptions, uql } from '@uql/core/options';
+import { getQuerier, setOptions } from '@uql/core/options';
 import { Querier, QuerierPool } from '../../type';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
@@ -11,7 +11,7 @@ describe('transactional', () => {
     const defaultQuerier = mockQuerier();
     anotherQuerier = mockQuerier();
 
-    uql({
+    setOptions({
       querierPool: {
         getQuerier: async () => defaultQuerier,
         end: async () => undefined,
@@ -33,7 +33,7 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.save();
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
@@ -55,7 +55,7 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.find();
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -82,7 +82,7 @@ describe('transactional', () => {
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.release).toBeCalledTimes(1);
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -110,7 +110,7 @@ describe('transactional', () => {
     const serviceB = new ServiceB();
     await serviceB.remove('123');
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(removeStub).toBeCalledTimes(1);
     expect(removeStub).toHaveBeenCalledWith('123', anotherQuerier);
@@ -139,7 +139,7 @@ describe('transactional', () => {
 
     await expect(promise).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -165,7 +165,7 @@ describe('transactional', () => {
 
     await expect(promise).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getOptions().querierPool.getQuerier();
+    const defaultQuerier = await getQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);

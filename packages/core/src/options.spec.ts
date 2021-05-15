@@ -1,9 +1,8 @@
-import { clearOptions, getOptions, uql } from './options';
-import { UqlOptions } from './type';
+import { getOptions, setOptions } from './options';
 
 describe('options', () => {
   afterEach(() => {
-    clearOptions();
+    setOptions(undefined);
   });
 
   it('getOptions unset', () => {
@@ -11,16 +10,18 @@ describe('options', () => {
   });
 
   it('setOptions', () => {
-    uql({
+    setOptions({
       querierPool: undefined,
       logger: console.info,
+      debug: true,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
       logger: console.info,
+      debug: true,
     });
 
-    uql({
+    setOptions({
       querierPool: undefined,
     });
     expect(getOptions()).toEqual({

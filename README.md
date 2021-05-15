@@ -14,8 +14,8 @@ Given uql is just a library/parser, its queries can be written and sent from the
 2. [Installation](#installation)
 3. [Entities](#entities)
 4. [Configuration](#configuration)
-5. [Programmatic Transactions](#programmatic-transactions)
-6. [Declarative Transactions](#declarative-transactions)
+5. [Declarative Transactions](#declarative-transactions)
+6. [Programmatic Transactions](#programmatic-transactions)
 7. [Generate REST APIs from Express](#express)
 8. [Consume REST APIs from Frontend](#client)
 9. [FAQs](#faq)
@@ -169,69 +169,22 @@ export class Tax extends BaseEntity {
 
 ## <a name="configuration"></a>:gear: Configuration
 
-uql's initialization should be done once in a bootstrap file of your code (typically called `server.js`).
+uql's initialization should be done once (e.g. in a file imported from a bootstrap file of your app).
 
 ```typescript
 import { setOptions } from '@uql/core';
+import { PgQuerierPool } from '@uql/postgres';
 
 setOptions({
-  datasource: {
-    driver: 'pg',
+  querierPool: new PgQuerierPool({
     host: 'localhost',
     user: 'theUser',
     password: 'thePassword',
     database: 'theDatabase',
-  },
+  }),
   logger: console.log,
   debug: true,
 });
-```
-
-## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
-
-uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
-(hence more responsibility), with the later you can describe the scope of your transactions.
-
-1. obtain the `querier` object with `await getQuerier()`
-2. open a `try/catch/finally` block
-3. start the transaction with `await querier.beginTransaction()`
-4. perform the different operations using the `querier`
-5. commit the transaction with `await querier.commitTransaction()`
-6. in the `catch` block, add `await querier.rollbackTransaction()`
-7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
-
-```typescript
-import { getQuerier } from '@uql/core/querier';
-
-async function confirmAction(confirmation: Confirmation): Promise<void> {
-  const querier = await getQuerier();
-
-  try {
-    await querier.beginTransaction();
-
-    if (confirmation.entity === 'register') {
-      const newUser: User = {
-        name: confirmation.name,
-        email: confirmation.email,
-        password: confirmation.password,
-      };
-      await querier.insertOne(User, newUser);
-    } else {
-      // confirm change password
-      const userId = confirmation.user as string;
-      await querier.updateOneById(User, userId, { password: confirmation.password });
-    }
-
-    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
-
-    await querier.commitTransaction();
-  } catch (error) {
-    await querier.rollbackTransaction();
-    throw error;
-  } finally {
-    await querier.release();
-  }
-}
 ```
 
 ## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
@@ -273,6 +226,53 @@ export const confirmationService = new ConfirmationService();
 // and when you call `confirmationService.confirmAction` all the operations there
 // will automatically run inside a single transaction
 await confirmationService.confirmAction(data);
+```
+
+## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
+
+uql supports both, _programmatic_ and _declarative_ transactions, with the former you have more flexibility
+(hence more responsibility), with the later you can describe the scope of your transactions.
+
+1. obtain the `querier` object with `await getQuerier()`
+2. open a `try/catch/finally` block
+3. start the transaction with `await querier.beginTransaction()`
+4. perform the different operations using the `querier`
+5. commit the transaction with `await querier.commitTransaction()`
+6. in the `catch` block, add `await querier.rollbackTransaction()`
+7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
+
+```typescript
+import { getQuerier } from '@uql/core';
+
+async function confirmAction(confirmation: Confirmation): Promise<void> {
+  const querier = await getQuerier();
+
+  try {
+    await querier.beginTransaction();
+
+    if (confirmation.entity === 'register') {
+      const newUser: User = {
+        name: confirmation.name,
+        email: confirmation.email,
+        password: confirmation.password,
+      };
+      await querier.insertOne(User, newUser);
+    } else {
+      // confirm change password
+      const userId = confirmation.user as string;
+      await querier.updateOneById(User, userId, { password: confirmation.password });
+    }
+
+    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
+
+    await querier.commitTransaction();
+  } catch (error) {
+    await querier.rollbackTransaction();
+    throw error;
+  } finally {
+    await querier.release();
+  }
+}
 ```
 
 ## <a name="express"></a>:zap: Generate REST APIs from Express

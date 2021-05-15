@@ -7,7 +7,7 @@ export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
 
   async getQuerier() {
     const uri = `mongodb://${this.opts.host}${this.opts.port ? `:${this.opts.port}` : ''}/${this.opts.database}`;
-    const conn = await mongodb.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true }).;
+    const conn = await mongodb.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true });
     return new MongodbQuerier(conn);
   }
 
