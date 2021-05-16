@@ -1,4 +1,4 @@
-import { getOptions, setOptions } from './options';
+import { getLogger, getOptions, setOptions } from './options';
 
 describe('options', () => {
   afterEach(() => {
@@ -6,7 +6,10 @@ describe('options', () => {
   });
 
   it('getOptions unset', () => {
-    expect(() => getOptions()).toThrow('options has to be set');
+    expect(getOptions()).toEqual({
+      logger: console.log,
+    });
+    expect(getLogger()).toBe(console.log);
   });
 
   it('setOptions', () => {
@@ -20,6 +23,7 @@ describe('options', () => {
       logger: console.info,
       debug: true,
     });
+    expect(getLogger()).toBe(console.info);
 
     setOptions({
       querierPool: undefined,

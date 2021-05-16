@@ -2,23 +2,19 @@ import { UqlOptions } from './type';
 
 let options: UqlOptions;
 
+const defaultOptions: Partial<UqlOptions> = { logger: console.log };
+
 export function setOptions(opts: UqlOptions) {
-  options = { logger: console.log, ...opts };
+  options = { ...defaultOptions, ...opts };
 }
 
 export function getOptions() {
   if (!options) {
-    throw new TypeError('options has to be set');
+    return { ...defaultOptions };
   }
   return { ...options };
 }
 
-export function getQuerierPool() {
-  const options = getOptions();
-  return options.querierPool;
-}
-
-export function getQuerier() {
-  const querierPool = getQuerierPool();
-  return querierPool.getQuerier();
+export function getLogger() {
+  return options?.logger ?? defaultOptions.logger;
 }

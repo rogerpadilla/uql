@@ -1,7 +1,8 @@
 import { Request, Response } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
-import { getOptions, getQuerier } from '@uql/core';
+import { getOptions } from '@uql/core/options';
+import { getQuerier } from '@uql/core/querier';
 import { Query, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';

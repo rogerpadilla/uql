@@ -1,5 +1,6 @@
-import { getQuerier, setOptions } from '@uql/core/options';
+import { setOptions } from '@uql/core/options';
 import { Querier, QuerierPool } from '../../type';
+import { getQuerier } from '../defaultQuerierPool';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
 

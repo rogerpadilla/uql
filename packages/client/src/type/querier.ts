@@ -1,7 +1,7 @@
-import { QueryFilter, Query, QueryOne, Type } from '@uql/core/type';
+import { QueryFilter, Query, QueryOne, Type, UniversalQuerier } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
-export type Querier<ID = any> = {
+export interface QuerierClient<ID = any> extends UniversalQuerier<ID> {
   insertOne<E>(entity: Type<E>, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
 
   updateOneById<E>(entity: Type<E>, id: ID, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
@@ -19,4 +19,4 @@ export type Querier<ID = any> = {
   removeOneById<E>(entity: Type<E>, id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
-};
+}

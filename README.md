@@ -244,9 +244,8 @@ import { Querier } from '@uql/core/type';
 import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
-
   @Transactional()
-  async confirmAction(body: Confirmation,. @InjectQuerier() querier?: Querier): Promise<void> {
+  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     if (body.type === 'register') {
       const newUser: User = {
         name: body.name,
@@ -267,7 +266,7 @@ export const confirmationService = new ConfirmationService();
 
 // then you could just import the constant `confirmationService` in another file,
 // and when you call `confirmAction` function, all the operations there
-// will (automatically) run inside a single transaction
+// will (automatically) be run inside a single transaction
 await confirmationService.confirmAction(data);
 ```
 
@@ -284,7 +283,7 @@ await confirmationService.confirmAction(data);
 7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
 
 ```ts
-import { getQuerier } from '@uql/core';
+import { getQuerier } from '@uql/core/querier';
 
 async function confirmAction(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
@@ -374,7 +373,9 @@ yarn add @uql/client
 2. Use the client to call the `uql` CRUD API
 
 ```ts
-import { querier } from '@uql/client';
+import { getQuerier } from '@uql/client';
+
+const querier = await getQuerier();
 
 // 'Item' is an entity class
 const lastItems = await querier.find(Item, {
