@@ -1,5 +1,7 @@
-import { Querier } from './querier';
+import { ClientQuerier } from '../type';
+import { HttpQuerier } from './httpQuerier';
 
-export function getQuerier(): Promise<Querier> {
-  return Promise.resolve(new Querier());
+export function getQuerier(): Promise<ClientQuerier> {
+  const querier = new HttpQuerier();
+  return Promise.resolve(querier);
 }

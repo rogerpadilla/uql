@@ -1,3 +1,3 @@
 export * from './defaultQuerierPool';
-export * from './querier';
+export * from './httpQuerier';
 export * from './query.util';
