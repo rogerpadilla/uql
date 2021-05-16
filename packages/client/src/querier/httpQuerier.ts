@@ -29,14 +29,14 @@ export class HttpQuerier<ID = any> implements ClientQuerier<ID> {
   }
 
   findOne<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions) {
-    const qs = stringifyQuery(qm);
     const basePath = getBasePath(entity);
+    const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/one${qs}`, opts);
   }
 
   findOneById<E>(entity: Type<E>, id: ID, qm: QueryOne<E>, opts?: RequestOptions) {
-    const qs = stringifyQuery(qm);
     const basePath = getBasePath(entity);
+    const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/${id}${qs}`, opts);
   }
 
@@ -45,14 +45,14 @@ export class HttpQuerier<ID = any> implements ClientQuerier<ID> {
     if (opts?.count) {
       data.count = true;
     }
-    const qs = stringifyQuery(data);
     const basePath = getBasePath(entity);
+    const qs = stringifyQuery(data);
     return get<E[]>(`${basePath}${qs}`, opts);
   }
 
   remove<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: RequestOptions) {
-    const qs = stringifyQueryParameter('filter', filter);
     const basePath = getBasePath(entity);
+    const qs = stringifyQueryParameter('filter', filter);
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
@@ -62,8 +62,8 @@ export class HttpQuerier<ID = any> implements ClientQuerier<ID> {
   }
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>, opts?: RequestOptions) {
-    const qs = stringifyQueryParameter('filter', filter);
     const basePath = getBasePath(entity);
+    const qs = stringifyQueryParameter('filter', filter);
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 }
