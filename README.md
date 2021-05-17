@@ -372,7 +372,7 @@ yarn add @uql/client
 import { getRepository } from '@uql/client';
 
 // 'Item' is an entity class
-const querier = await getRepository(Item);
+const itemRepository = getRepository(Item);
 
 const lastItems = await itemRepository.findMany({
   sort: { createdAt: -1 },

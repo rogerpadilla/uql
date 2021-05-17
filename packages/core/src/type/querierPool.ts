@@ -15,9 +15,7 @@ export type QuerierPoolConnection = {
   release(): void | Promise<void>;
 };
 
-export type GetQuerier<E extends Querier = Querier> = () => Promise<E>;
-
 export type QuerierPool<E extends Querier = Querier> = {
-  getQuerier: GetQuerier<E>;
+  getQuerier: () => Promise<E>;
   end(): Promise<void>;
 };

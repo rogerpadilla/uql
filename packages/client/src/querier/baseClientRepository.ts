@@ -2,7 +2,7 @@ import { Query, QueryFilter, QueryOne, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
 export class BaseClientRepository<E, ID = any> implements ClientRepository<E, ID> {
-  constructor(readonly querier: ClientQuerier<ID>, readonly entity: Type<E>) {}
+  constructor(readonly entity: Type<E>, readonly querier: ClientQuerier<ID>) {}
 
   insertOne(body: E, opts?: RequestOptions) {
     return this.querier.insertOne(this.entity, body, opts);

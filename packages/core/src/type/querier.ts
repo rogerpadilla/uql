@@ -1,10 +1,7 @@
 import { Type } from './utility';
 import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
-import { Repository, UniversalRepository } from './repository';
 
 export type UniversalQuerier<ID = any> = {
-  getRepository<E>(entity: Type<E>): UniversalRepository<E, ID>;
-
   insertMany?<E>(entity: Type<E>, body: E[]): Promise<any>;
 
   insertOne<E>(entity: Type<E>, body: E): Promise<any>;
@@ -27,8 +24,6 @@ export type UniversalQuerier<ID = any> = {
 };
 
 export interface Querier<ID = any> extends UniversalQuerier<ID> {
-  getRepository<E>(entity: Type<E>): Repository<E, ID>;
-
   insertMany<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
 
   insertOne<E>(entity: Type<E>, body: E): Promise<ID>;

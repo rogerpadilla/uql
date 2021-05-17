@@ -1,4 +1,4 @@
-import { getOptions } from '@uql/core/options';
+import { getQuerierPool, getRepository } from '@uql/core/options';
 import { Querier, QuerierPool, Type } from '../../type';
 import { getInjectedQuerierIndex } from './injectQuerier';
 import { getInjectedRepositoriesMap } from './injectRepository';
@@ -31,7 +31,7 @@ export function Transactional(options: Props = {}) {
         querier = args[injectedQuerierIndex];
       } else {
         isOwnTransaction = true;
-        const pool = querierPool ?? getOptions().querierPool;
+        const pool = querierPool ?? getQuerierPool();
         querier = await pool.getQuerier();
         args[injectedQuerierIndex] = querier;
       }
@@ -39,7 +39,7 @@ export function Transactional(options: Props = {}) {
       injectedRepositoriesMap &&
         Object.entries(injectedRepositoriesMap).forEach(([index, entity]: [string, Type<any>]) => {
           if (args[index] === undefined) {
-            args[index] = querier.getRepository(entity);
+            args[index] = getRepository(entity, querier);
           }
         });
 

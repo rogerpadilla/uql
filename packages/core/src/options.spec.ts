@@ -1,6 +1,6 @@
 import { getLogger, getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
 import { User } from './test';
-import { Querier, Repository, Type } from './type';
+import { Querier } from './type';
 
 describe('options', () => {
   afterEach(() => {
@@ -45,13 +45,7 @@ describe('options', () => {
   });
 
   it('getQuerier', async () => {
-    const repositoryMock = {} as Repository<User>;
-
-    const querierMock = {
-      getRepository<E>(entity: Type<E>) {
-        return repositoryMock;
-      },
-    } as Querier;
+    const querierMock = {} as Querier;
 
     setOptions({
       querierPool: {
@@ -66,9 +60,9 @@ describe('options', () => {
     const querier2 = await getQuerier();
     expect(querier2).toBe(querierMock);
 
-    const repository = await getRepository(User);
+    const repository = getRepository(User, querier1);
 
-    expect(repository).toBe(repositoryMock);
+    expect(repository).toBeDefined();
 
     expect(getQuerierPool()).toBe(getQuerierPool());
   });

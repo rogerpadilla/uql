@@ -7,22 +7,21 @@ import { InjectRepository } from './injectRepository';
 import { Transactional } from './transactional';
 
 describe('transactional', () => {
-  let anotherQuerier: Querier;
   let anotherQuerierPool: QuerierPool;
 
   beforeEach(() => {
-    const defaultQuerier = mockQuerier();
-    anotherQuerier = mockQuerier();
+    const defaultQuerierSingleton = buildQuerierMock();
+    const anotherQuerierSingleton = buildQuerierMock();
 
     setOptions({
       querierPool: {
-        getQuerier: async () => defaultQuerier,
+        getQuerier: async () => defaultQuerierSingleton,
         end: async () => undefined,
       },
     });
 
     anotherQuerierPool = {
-      getQuerier: async () => anotherQuerier,
+      getQuerier: async () => anotherQuerierSingleton,
       end: async () => undefined,
     };
   });
@@ -42,6 +41,8 @@ describe('transactional', () => {
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.release).toBeCalledTimes(1);
+
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
 
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
@@ -73,6 +74,8 @@ describe('transactional', () => {
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.release).toBeCalledTimes(1);
 
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
@@ -99,6 +102,8 @@ describe('transactional', () => {
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.release).toBeCalledTimes(1);
 
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
@@ -121,6 +126,8 @@ describe('transactional', () => {
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.release).toBeCalledTimes(1);
 
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
@@ -135,6 +142,8 @@ describe('transactional', () => {
 
     const serviceA = new ServiceA();
     await serviceA.save();
+
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
 
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);
@@ -172,6 +181,9 @@ describe('transactional', () => {
     const defaultQuerier = await getQuerier();
 
     expect(removeStub).toBeCalledTimes(1);
+
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(removeStub).toHaveBeenCalledWith('123', anotherQuerier);
 
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
@@ -205,6 +217,8 @@ describe('transactional', () => {
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.release).toBeCalledTimes(1);
 
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
@@ -231,6 +245,8 @@ describe('transactional', () => {
     expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.release).toBeCalledTimes(1);
 
+    const anotherQuerier = await anotherQuerierPool.getQuerier();
+
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
@@ -247,9 +263,8 @@ describe('transactional', () => {
   });
 });
 
-function mockQuerier(): Querier {
+function buildQuerierMock(): Querier {
   const querier = {
-    getRepository: jest.fn((entity) => new BaseRepository(querier, entity)),
     beginTransaction: jest.fn(async () => {
       querier.hasOpenTransaction = true;
     }),

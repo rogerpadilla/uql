@@ -1,7 +1,7 @@
 import { Querier, Query, QueryFilter, QueryOne, QueryOptions, Repository, Type } from '../type';
 
 export class BaseRepository<E, ID = any> implements Repository<E, ID> {
-  constructor(readonly querier: Querier<ID>, readonly entity: Type<E>) {}
+  constructor(readonly entity: Type<E>, readonly querier: Querier<ID>) {}
 
   insertMany(body: E[]) {
     return this.querier.insertMany(this.entity, body);

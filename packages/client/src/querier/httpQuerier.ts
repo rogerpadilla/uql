@@ -1,17 +1,12 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { Query, QueryFilter, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
-import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
+import { RequestOptions, RequestFindOptions, ClientQuerier } from '../type';
 import { get, post, patch, remove } from '../http';
 import { stringifyQuery, stringifyQueryParameter } from './query.util';
-import { BaseClientRepository } from './baseClientRepository';
 
 export class HttpQuerier<ID = any> implements ClientQuerier<ID> {
   constructor(readonly basePath: string) {}
-
-  getRepository<E>(entity: Type<E>): ClientRepository<E, ID> {
-    return new BaseClientRepository<E, ID>(this, entity);
-  }
 
   getBasePath<E>(entity: Type<E>) {
     return this.basePath + '/' + kebabCase(entity.name);

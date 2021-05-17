@@ -1,4 +1,4 @@
-import { Querier, Type } from '../../type';
+import { Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 

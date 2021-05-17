@@ -1,25 +1,10 @@
-import {
-  EntityMeta,
-  Querier,
-  Query,
-  QueryFilter,
-  QueryOne,
-  QueryOptions,
-  QueryPopulate,
-  Repository,
-  Type,
-} from '../type';
+import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate, Type } from '../type';
 import { getMeta } from '../entity/decorator';
-import { BaseRepository } from './baseRepository';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class BaseQuerier<ID = any> implements Querier<ID> {
-  getRepository<E>(entity: Type<E>): Repository<E, ID> {
-    return new BaseRepository<E, ID>(this, entity);
-  }
-
   abstract insertMany<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
 
   async insertOne<E>(entity: Type<E>, body: E) {

@@ -1,4 +1,5 @@
-import { Type, UqlOptions } from './type';
+import { BaseRepository } from './querier/baseRepository';
+import { Querier, Type, UqlOptions } from './type';
 
 let options: UqlOptions;
 
@@ -27,9 +28,8 @@ export function getQuerier() {
   return getQuerierPool().getQuerier();
 }
 
-export async function getRepository<E>(entity: Type<E>) {
-  const querier = await getQuerier();
-  return querier.getRepository(entity);
+export function getRepository<E>(entity: Type<E>, querier: Querier) {
+  return new BaseRepository(entity, querier);
 }
 
 export function getLogger() {

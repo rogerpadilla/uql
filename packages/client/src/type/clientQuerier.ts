@@ -1,10 +1,7 @@
 import { QueryFilter, Query, QueryOne, Type, UniversalQuerier } from '@uql/core/type';
-import { ClientRepository } from './clientRepository';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientQuerier<ID = any> extends UniversalQuerier<ID> {
-  getRepository<E>(entity: Type<E>): ClientRepository<E, ID>;
-
   insertMany?<E>(entity: Type<E>, bodies: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<ID[]>>;
 
   insertOne<E>(entity: Type<E>, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
