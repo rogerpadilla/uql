@@ -13,7 +13,7 @@ describe('injectQuerier', () => {
     expect(getInjectedQuerierIndex(ServiceA, 'hello')).toBe(undefined);
   });
 
-  it('inject', () => {
+  it('one', () => {
     class ServiceA {
       save(@InjectQuerier() someQuerier?: Querier) {}
 
@@ -24,7 +24,7 @@ describe('injectQuerier', () => {
     expect(getInjectedQuerierIndex(ServiceA, 'update')).toBe(1);
   });
 
-  it('inheritance - inherit', () => {
+  it('inheritance', () => {
     class ServiceA {
       save(@InjectQuerier() someQuerier?: Querier) {}
     }
@@ -63,11 +63,11 @@ describe('injectQuerier', () => {
     expect(getInjectedQuerierIndex(ServiceC, 'save')).toBe(0);
   });
 
-  it('prevent more than one injection', () => {
+  it('prevent duplicated injection', () => {
     expect(() => {
       class ServiceA {
         save(@InjectQuerier() someQuerier?: Querier, @InjectQuerier() anotherQuerier?: Querier) {}
       }
-    }).toThrow("Decorator @InjectQuerier() can only appears once in 'ServiceA.save'");
+    }).toThrow("@InjectQuerier() can only appears once in 'ServiceA.save'");
   });
 });

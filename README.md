@@ -245,19 +245,16 @@ import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
   @Transactional()
-  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
+  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier) {
     if (body.type === 'register') {
-      const newUser: User = {
+      await querier.insertOne(User, {
         name: body.name,
         email: body.email,
         password: body.password,
-      };
-      await querier.insertOne(User, newUser);
+      });
     } else {
-      const userId = body.user as string;
-      await querier.updateOneById(User, userId, { password: body.password });
+      await querier.updateOneById(User, body.userId, { password: body.password });
     }
-
     await querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
   }
 }
@@ -277,34 +274,33 @@ await confirmationService.confirmAction(data);
 1. obtain the `querier` object with `await getQuerier()`
 2. open a `try/catch/finally` block
 3. start the transaction with `await querier.beginTransaction()`
-4. perform the different operations using the `querier`
+4. perform the different operations using the `querier` or `repositories`
 5. commit the transaction with `await querier.commitTransaction()`
 6. in the `catch` block, add `await querier.rollbackTransaction()`
 7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
 
 ```ts
-import { getQuerier } from '@uql/core/querier';
+import { getQuerier } from '@uql/core';
 
-async function confirmAction(confirmation: Confirmation): Promise<void> {
+async function confirmAction(body: Confirmation) {
   const querier = await getQuerier();
 
   try {
     await querier.beginTransaction();
 
-    if (confirmation.entity === 'register') {
-      const newUser: User = {
-        name: confirmation.name,
-        email: confirmation.email,
-        password: confirmation.password,
-      };
-      await querier.insertOne(User, newUser);
+    if (body.action === 'signup') {
+      // signup
+      await querier.insertOne(User, {
+        name: body.name,
+        email: body.email,
+        password: body.password,
+      });
     } else {
-      // confirm change password
-      const userId = confirmation.user as string;
-      await querier.updateOneById(User, userId, { password: confirmation.password });
+      // change password
+      await querier.updateOneById(User, body.userId, { password: body.password });
     }
 
-    await this.querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
 
     await querier.commitTransaction();
   } catch (error) {
@@ -342,13 +338,13 @@ import { entitiesMiddleware } from '@uql/express';
 const app = express();
 
 app
-  // ...other routes may go before and/or after (as usual)
+  // ...
   .use(
     '/api',
     // this will generate CRUD REST APIs for the entities.
-    // all entities will be automatically exposed unless
-    // 'include' or 'exclude' options are provided
     entitiesMiddleware({
+      // all entities will be automatically exposed unless
+      // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
     })
   );
@@ -373,12 +369,12 @@ yarn add @uql/client
 2. Use the client to call the `uql` CRUD API
 
 ```ts
-import { getQuerier } from '@uql/client';
-
-const querier = await getQuerier();
+import { getRepository } from '@uql/client';
 
 // 'Item' is an entity class
-const lastItems = await querier.find(Item, {
+const querier = await getRepository(Item);
+
+const lastItems = await itemRepository.findMany({
   sort: { createdAt: -1 },
   limit: 100,
 });

@@ -12,7 +12,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     super();
   }
 
-  async insert<E>(entity: Type<E>, bodies: E[]) {
+  async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const persistables = bodies.map((body) => {
       const persistableProperties = filterPersistableProperties(entity, body);
       return persistableProperties.reduce((acc, key) => {
@@ -26,7 +26,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return Object.values(res.insertedIds);
   }
 
-  async update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
+  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const persistableProperties = filterPersistableProperties(entity, body);
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
@@ -44,7 +44,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return res.modifiedCount;
   }
 
-  async find<E>(entity: Type<E>, qm: Query<E>) {
+  async findMany<E>(entity: Type<E>, qm: Query<E>) {
     const meta = getMeta(entity);
 
     let documents: E[];
@@ -86,7 +86,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return this.findOne(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
-  async remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
+  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
       session: this.session,
     });

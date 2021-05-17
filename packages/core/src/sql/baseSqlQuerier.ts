@@ -21,20 +21,20 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
 
   abstract query<E>(query: string): Promise<E>;
 
-  async insert<E>(entity: Type<E>, bodies: E[]) {
+  async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
     const res = await this.query<QueryUpdateResult>(query);
     const meta = getMeta(entity);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 
-  async update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
+  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
-  async find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
+  async findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     const query = this.dialect.find(entity, qm, opts);
     const res = await this.query<E[]>(query);
     const founds = mapRows(res);
@@ -42,14 +42,14 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     return founds;
   }
 
-  async remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
+  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const query = this.dialect.remove(entity, filter);
     const res = await this.query<QueryUpdateResult>(query);
     return res.affectedRows;
   }
 
   async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    const res: any = await this.find(
+    const res: any = await this.findMany(
       entity,
       { project: { 'COUNT(*) count': 1 } as any as QueryProject<E>, filter },
       { isTrustedProject: true }

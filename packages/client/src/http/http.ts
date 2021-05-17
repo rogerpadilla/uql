@@ -1,25 +1,25 @@
 import { RequestOptions, RequestSuccessResponse, RequestErrorResponse } from '../type';
 import { notify } from './bus';
 
-export function get<T>(url: string, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function get<T>(url: string, opts?: RequestOptions) {
   return request<T>(url, { method: 'get' }, opts);
 }
 
-export function post<T>(url: string, body: Object, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function post<T>(url: string, body: Object, opts?: RequestOptions) {
   const stringifiedData = JSON.stringify(body);
   return request<T>(url, { method: 'post', body: stringifiedData }, opts);
 }
 
-export function put<T>(url: string, body: Object, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function patch<T>(url: string, body: Object, opts?: RequestOptions) {
   const stringifiedData = JSON.stringify(body);
-  return request<T>(url, { method: 'put', body: stringifiedData }, opts);
+  return request<T>(url, { method: 'patch', body: stringifiedData }, opts);
 }
 
-export function remove<T>(url: string, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+export function remove<T>(url: string, opts?: RequestOptions) {
   return request<T>(url, { method: 'delete' }, opts);
 }
 
-function request<T>(url: string, init: RequestInit, opts?: RequestOptions): Promise<RequestSuccessResponse<T>> {
+function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
   notify({ phase: 'start', opts });
 
   init.headers = {

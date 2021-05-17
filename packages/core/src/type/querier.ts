@@ -1,22 +1,25 @@
-import { Type } from './class';
+import { Type } from './utility';
 import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
+import { Repository, UniversalRepository } from './repository';
 
 export type UniversalQuerier<ID = any> = {
-  insert?<E>(entity: Type<E>, body: E[]): Promise<any>;
+  getRepository<E>(entity: Type<E>): UniversalRepository<E, ID>;
+
+  insertMany?<E>(entity: Type<E>, body: E[]): Promise<any>;
 
   insertOne<E>(entity: Type<E>, body: E): Promise<any>;
 
-  update?<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<any>;
+  updateMany?<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<any>;
 
   updateOneById<E>(entity: Type<E>, id: ID, body: E): Promise<any>;
 
-  find<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
+  findMany<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
   findOne<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
   findOneById<E>(entity: Type<E>, id: ID, qo?: QueryOne<E>): Promise<any>;
 
-  remove<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<any>;
+  removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<any>;
 
   removeOneById<E>(entity: Type<E>, id: ID): Promise<any>;
 
@@ -24,21 +27,23 @@ export type UniversalQuerier<ID = any> = {
 };
 
 export interface Querier<ID = any> extends UniversalQuerier<ID> {
-  insert<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
+  getRepository<E>(entity: Type<E>): Repository<E, ID>;
+
+  insertMany<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
 
   insertOne<E>(entity: Type<E>, body: E): Promise<ID>;
 
-  update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
+  updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
 
   updateOneById<E>(entity: Type<E>, id: ID, body: E): Promise<number>;
 
-  find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
   findOne<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E>;
 
   findOneById<E>(entity: Type<E>, id: ID, qo?: QueryOne<E>, opts?: QueryOptions): Promise<E>;
 
-  remove<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
+  removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
   removeOneById<E>(entity: Type<E>, id: ID): Promise<number>;
 

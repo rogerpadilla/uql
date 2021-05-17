@@ -1,2 +1,2 @@
 export * from './baseQuerier';
-export * from './defaultQuerierPool';
+export * from './baseRepository';
