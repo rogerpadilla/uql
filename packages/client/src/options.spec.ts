@@ -1,34 +1,53 @@
-import { getBasePathApi, getOptions, setOptions } from './options';
+import { User } from '@uql/core/test';
+import { getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
+import { ClientQuerier, UqlClientOptions } from './type';
 
 describe('options', () => {
   afterEach(() => {
     setOptions(undefined);
   });
 
-  it('getOptions unset', () => {
-    expect(getOptions()).toEqual({ baseApiPath: '/api' });
-    expect(getBasePathApi()).toBe('/api');
+  it('getOptions unset', async () => {
+    expect(getOptions()).toBeDefined();
+
+    const repository = await getRepository(User);
+    expect(repository).toBeDefined();
   });
 
   it('setOptions', () => {
-    setOptions({
-      baseApiPath: '/some-path',
-    });
-    expect(getOptions()).toEqual({
-      baseApiPath: '/some-path',
-    });
+    const opts: UqlClientOptions = {
+      querierPool: {
+        getQuerier: async () => undefined,
+      },
+    };
+
+    setOptions(opts);
+
+    expect(getOptions()).toEqual(opts);
 
     setOptions({
-      baseApiPath: '/another-path',
-    });
-    expect(getBasePathApi()).toEqual('/another-path');
-
-    setOptions({
-      baseApiPath: undefined,
+      querierPool: undefined,
     });
     expect(getOptions()).toEqual({
-      baseApiPath: undefined,
+      querierPool: undefined,
     });
-    expect(getBasePathApi()).toBe('/api');
+  });
+
+  it('getQuerier', async () => {
+    const querierMock = {} as ClientQuerier;
+
+    setOptions({
+      querierPool: {
+        getQuerier: async () => querierMock,
+      },
+    });
+
+    const querier1 = await getQuerierPool().getQuerier();
+    expect(querier1).toBe(querierMock);
+
+    const querier2 = await getQuerier();
+    expect(querier2).toBe(querierMock);
+
+    expect(getQuerierPool()).toBe(getQuerierPool());
   });
 });

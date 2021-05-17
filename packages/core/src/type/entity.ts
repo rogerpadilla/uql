@@ -1,4 +1,4 @@
-import { Type } from './class';
+import { Type } from './utility';
 
 export type Scalar = boolean | Boolean | string | String | number | Number | BigInt | Date | Symbol;
 

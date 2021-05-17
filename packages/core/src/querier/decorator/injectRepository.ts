@@ -1,39 +1,38 @@
-import { Type } from '../../type';
+import { Querier, Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 
-export function InjectQuerier() {
+type InjectionMap = { [k in number]: Type<any> };
+
+export function InjectRepository<E>(entity: Type<E>) {
   return (proto: object, key: string, index: number) => {
     const { constructor } = proto;
 
     if (!proto[metadataKey]) {
       proto[metadataKey] = new WeakMap();
     }
-
     if (!proto[metadataKey].has(constructor)) {
       proto[metadataKey].set(constructor, {});
     }
-
     const meta = proto[metadataKey].get(constructor);
-    const isAlreadyInjected = meta[key] !== undefined;
-
+    const injected: InjectionMap = meta[key];
+    const isAlreadyInjected = injected && Object.values(injected).some((val) => val === entity);
     if (isAlreadyInjected) {
-      throw new TypeError(`@InjectQuerier() can only appears once in '${constructor.name}.${key}'}`);
+      throw new TypeError(`@InjectRepository(${entity.name}) can only appears once in '${constructor.name}.${key}'}`);
     }
-
-    meta[key] = index;
+    meta[key] = { ...meta[key], [index]: entity };
   };
 }
 
-export function getInjectedQuerierIndex<S>(type: Type<S>, key: keyof S) {
+export function getInjectedRepositoriesMap<S>(type: Type<S>, key: keyof S): InjectionMap {
   let proto = type.prototype;
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);
-    const index = meta?.[key];
+    const map: InjectionMap = meta?.[key];
 
-    if (index !== undefined) {
-      return index;
+    if (map !== undefined) {
+      return map;
     }
 
     const props = Object.getOwnPropertyNames(proto) as (keyof S)[];

@@ -1,6 +1,7 @@
 import { getOptions } from '@uql/core/options';
 import { Querier, QuerierPool, Type } from '../../type';
 import { getInjectedQuerierIndex } from './injectQuerier';
+import { getInjectedRepositoriesMap } from './injectRepository';
 
 type Props = {
   readonly propagation?: 'supported' | 'required';
@@ -13,24 +14,34 @@ export function Transactional(options: Props = {}) {
   return (target: object, prop: string, propDescriptor: PropertyDescriptor): void => {
     const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
-    const injectIndex = getInjectedQuerierIndex(theClass, prop);
+    const injectedQuerierIndex = getInjectedQuerierIndex(theClass, prop);
+    const injectedRepositoriesMap = getInjectedRepositoriesMap(theClass, prop);
 
-    if (injectIndex === undefined) {
-      throw new TypeError(`missing decorator @InjectQuerier() in the method '${prop}' of '${target.constructor.name}'`);
+    if (injectedQuerierIndex === undefined && injectedRepositoriesMap === undefined) {
+      throw new TypeError(
+        `missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in '${target.constructor.name}.${prop}'`
+      );
     }
 
     propDescriptor.value = async function func(this: object, ...args: any[]) {
       let isOwnTransaction: boolean;
       let querier: Querier;
 
-      if (args[injectIndex]) {
-        querier = args[injectIndex];
+      if (args[injectedQuerierIndex]) {
+        querier = args[injectedQuerierIndex];
       } else {
         isOwnTransaction = true;
         const pool = querierPool ?? getOptions().querierPool;
         querier = await pool.getQuerier();
-        args[injectIndex] = querier;
+        args[injectedQuerierIndex] = querier;
       }
+
+      injectedRepositoriesMap &&
+        Object.entries(injectedRepositoriesMap).forEach(([index, entity]: [string, Type<any>]) => {
+          if (args[index] === undefined) {
+            args[index] = querier.getRepository(entity);
+          }
+        });
 
       try {
         if (propagation === 'required' && !querier.hasOpenTransaction) {

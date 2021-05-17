@@ -21,8 +21,8 @@ export abstract class BaseQuerierIt implements Spec {
     await this.pool.end();
   }
 
-  async shouldInsert() {
-    const ids = await this.querier.insert(User, [
+  async shouldInsertMany() {
+    const ids = await this.querier.insertMany(User, [
       {
         name: 'Some Name A',
         email: 'someemaila@example.com',
@@ -89,7 +89,7 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const inventoryAdjustmentFound = await this.querier.find(InventoryAdjustment, {
+    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
       populate: { itemAdjustments: {} },
     });
 
@@ -100,15 +100,15 @@ export abstract class BaseQuerierIt implements Spec {
       },
     ]);
 
-    const itemAdjustmentsFound = await this.querier.find(ItemAdjustment, { filter: { inventoryAdjustmentId } });
+    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
 
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
-  async shouldFind() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+  async shouldFindMany() {
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const users = await this.querier.find(User, {
+    const users = await this.querier.findMany(User, {
       project: { name: 1 },
       skip: 1,
       limit: 2,
@@ -128,7 +128,7 @@ export abstract class BaseQuerierIt implements Spec {
   }
 
   async shouldFindOne() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const found = await this.querier.findOne(User, {
       project: {
@@ -157,7 +157,7 @@ export abstract class BaseQuerierIt implements Spec {
   }
 
   async shouldCount() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const count1 = await this.querier.count(User);
     expect(count1).toBe(3);
@@ -169,14 +169,14 @@ export abstract class BaseQuerierIt implements Spec {
     expect(count4).toBe(3);
   }
 
-  async shouldUpdate() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+  async shouldUpdateMany() {
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const updatedRows1 = await this.querier.update(User, { status: 1 }, { status: null });
+    const updatedRows1 = await this.querier.updateMany(User, { status: 1 }, { status: null });
     expect(updatedRows1).toBe(0);
-    const updatedRows2 = await this.querier.update(User, { status: null }, { status: 1 });
+    const updatedRows2 = await this.querier.updateMany(User, { status: null }, { status: 1 });
     expect(updatedRows2).toBe(3);
-    const updatedRows3 = await this.querier.update(User, { status: 1 }, { status: null });
+    const updatedRows3 = await this.querier.updateMany(User, { status: 1 }, { status: null });
     expect(updatedRows3).toBe(3);
   }
 
@@ -186,25 +186,25 @@ export abstract class BaseQuerierIt implements Spec {
     }).rejects.toThrow('not a pending transaction');
   }
 
-  async shouldFindUnknownComparisonOperator() {
+  async shouldThrowIfUnknownComparisonOperator() {
     await expect(() =>
-      this.querier.find(User, {
+      this.querier.findMany(User, {
         filter: { name: { $someInvalidOperator: 'some' } as any },
       })
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
   async shouldRollback() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const count1 = await this.querier.count(User);
     expect(count1).toBe(3);
     await this.querier.beginTransaction();
     const count2 = await this.querier.count(User);
     expect(count2).toBe(count1);
-    const deletedRows1 = await this.querier.remove(User, { status: null });
+    const deletedRows1 = await this.querier.removeMany(User, { status: null });
     expect(deletedRows1).toBe(count1);
-    const deletedRows2 = await this.querier.remove(User, { status: null });
+    const deletedRows2 = await this.querier.removeMany(User, { status: null });
     expect(deletedRows2).toBe(0);
     const count3 = await this.querier.count(User);
     expect(count3).toBe(0);
@@ -223,14 +223,14 @@ export abstract class BaseQuerierIt implements Spec {
   }
 
   async shouldPopulateOneToMany() {
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const [user, company] = await Promise.all([
       this.querier.findOne(User, { project: { id: 1 } }),
       this.querier.findOne(Company, { project: { id: 1 } }),
     ]);
 
-    const [firstItemId, secondItemId] = await this.querier.insert(Item, [
+    const [firstItemId, secondItemId] = await this.querier.insertMany(Item, [
       {
         name: 'some item name a',
         userId: user.id,
@@ -271,12 +271,12 @@ export abstract class BaseQuerierIt implements Spec {
     });
   }
 
-  async shouldRemove() {
+  async shouldRemoveMany() {
     await this.querier.beginTransaction();
-    await Promise.all([this.shouldInsert(), this.shouldInsertOne()]);
-    const deletedRows1 = await this.querier.remove(User, { status: 1 });
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    const deletedRows1 = await this.querier.removeMany(User, { status: 1 });
     expect(deletedRows1).toBe(0);
-    const deletedRows2 = await this.querier.remove(User, { status: null });
+    const deletedRows2 = await this.querier.removeMany(User, { status: null });
     expect(deletedRows2).toBe(3);
     await this.querier.commitTransaction();
   }

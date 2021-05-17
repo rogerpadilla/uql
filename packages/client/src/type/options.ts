@@ -1,3 +1,5 @@
+import { ClientQuerierPool } from './clientQuerierPool';
+
 export type UqlClientOptions = {
-  baseApiPath?: string;
+  querierPool?: ClientQuerierPool;
 };

@@ -1,33 +1,48 @@
-import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate, Type } from '../type';
+import {
+  EntityMeta,
+  Querier,
+  Query,
+  QueryFilter,
+  QueryOne,
+  QueryOptions,
+  QueryPopulate,
+  Repository,
+  Type,
+} from '../type';
 import { getMeta } from '../entity/decorator';
+import { BaseRepository } from './baseRepository';
 
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class BaseQuerier<ID = any> implements Querier<ID> {
-  abstract insert<E>(entity: Type<E>, body: E[], opts?: QueryOptions): Promise<ID[]>;
+  getRepository<E>(entity: Type<E>): Repository<E, ID> {
+    return new BaseRepository<E, ID>(this, entity);
+  }
 
-  async insertOne<E>(entity: Type<E>, body: E, opts?: QueryOptions) {
-    const [id] = await this.insert(entity, [body], opts);
+  abstract insertMany<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
+
+  async insertOne<E>(entity: Type<E>, body: E) {
+    const [id] = await this.insertMany(entity, [body]);
     const meta = getMeta(entity);
     await this.insertRelations(entity, { ...body, [meta.id.property]: id });
     return id;
   }
 
-  abstract update<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
+  abstract updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
 
   async updateOneById<E>(entity: Type<E>, id: ID, body: E) {
     const meta = getMeta(entity);
-    const affectedRows = await this.update(entity, { [meta.id.property]: id }, body);
+    const affectedRows = await this.updateMany(entity, { [meta.id.property]: id }, body);
     await this.updateRelations(entity, { ...body, [meta.id.property]: id });
     return affectedRows;
   }
 
-  abstract find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  abstract findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
   async findOne<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     qm.limit = 1;
-    const rows = await this.find(entity, qm, opts);
+    const rows = await this.findMany(entity, qm, opts);
     return rows[0];
   }
 
@@ -37,11 +52,11 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
   }
 
-  abstract remove<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
+  abstract removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
   removeOneById<E>(entity: Type<E>, id: ID) {
     const meta = getMeta(entity);
-    return this.remove(entity, { [meta.id.name]: id });
+    return this.removeMany(entity, { [meta.id.name]: id });
   }
 
   abstract count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
@@ -71,7 +86,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       if (relOpts.cardinality === 'oneToMany') {
         const ids = bodies.map((body) => body[meta.id.property]);
         relQuery.filter = { [relOpts.mappedBy]: { $in: ids } };
-        const founds = await this.find(relEntity, relQuery);
+        const founds = await this.findMany(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
           const attr = it[relOpts.mappedBy];
           if (!acc[attr]) {
@@ -107,7 +122,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
           it[relOpts.mappedBy as string] = id;
           return it;
         });
-        return this.insert(relEntity, relBodies);
+        return this.insertMany(relEntity, relBodies);
       }
       if (relOpts.cardinality === 'manyToMany') {
         // TODO manyToMany cardinality
@@ -129,18 +144,18 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       if (relOpts.cardinality === 'oneToOne') {
         const relBody: E = body[prop];
         if (relBody === null) {
-          return this.remove(relEntity, { [relOpts.mappedBy]: id });
+          return this.removeMany(relEntity, { [relOpts.mappedBy]: id });
         }
-        return this.update(relEntity, { [relOpts.mappedBy]: id }, relBody);
+        return this.updateMany(relEntity, { [relOpts.mappedBy]: id }, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
         const relBody: E[] = body[prop];
-        await this.remove(relEntity, { [relOpts.mappedBy]: id });
+        await this.removeMany(relEntity, { [relOpts.mappedBy]: id });
         if (relBody !== null) {
           for (const it of relBody) {
             it[relOpts.mappedBy as string] = id;
           }
-          return this.insert(relEntity, relBody);
+          return this.insertMany(relEntity, relBody);
         }
       }
       if (relOpts.cardinality === 'manyToMany') {
