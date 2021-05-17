@@ -181,6 +181,9 @@ export class Profile extends BaseEntity {
 
   @Property({ name: 'image' })
   picture?: string;
+
+  @OneToOne()
+  user?: User;
 }
 
 @Entity()
