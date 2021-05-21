@@ -200,7 +200,10 @@ export class ItemAdjustment extends BaseEntity {
 
 @Entity()
 export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({ entity: () => ItemAdjustment, mappedBy: 'inventoryAdjustmentId' })
+  @OneToMany({
+    entity: () => ItemAdjustment,
+    mappedBy: (rel) => rel.inventoryAdjustmentId,
+  })
   itemAdjustments?: ItemAdjustment[];
   @Property()
   date?: number;

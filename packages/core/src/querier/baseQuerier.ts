@@ -70,7 +70,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       const relQuery = popVal as Query<any>;
       if (relOpts.cardinality === 'oneToMany') {
         const ids = bodies.map((body) => body[meta.id.property]);
-        relQuery.filter = { [relOpts.mappedBy]: { $in: ids } };
+        relQuery.filter = { [relOpts.mappedBy as string]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
           const attr = it[relOpts.mappedBy];
@@ -99,7 +99,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       const relOpts = meta.relations[prop];
       const relEntity = relOpts.entity();
       if (relOpts.cardinality === 'oneToOne') {
-        const relBody: E = { ...body[prop], [relOpts.mappedBy]: id };
+        const relBody: E = { ...body[prop], [relOpts.mappedBy as string]: id };
         return this.insertOne(relEntity, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
@@ -129,13 +129,13 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
       if (relOpts.cardinality === 'oneToOne') {
         const relBody: E = body[prop];
         if (relBody === null) {
-          return this.removeMany(relEntity, { [relOpts.mappedBy]: id });
+          return this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
         }
-        return this.updateMany(relEntity, { [relOpts.mappedBy]: id }, relBody);
+        return this.updateMany(relEntity, { [relOpts.mappedBy as string]: id }, relBody);
       }
       if (relOpts.cardinality === 'oneToMany') {
         const relBody: E[] = body[prop];
-        await this.removeMany(relEntity, { [relOpts.mappedBy]: id });
+        await this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
         if (relBody !== null) {
           for (const it of relBody) {
             it[relOpts.mappedBy as string] = id;

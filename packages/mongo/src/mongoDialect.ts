@@ -52,7 +52,7 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [relOpts.mappedBy]: qm.filter[meta.id.name] } }],
+            pipeline: [{ $match: { [relOpts.mappedBy as string]: qm.filter[meta.id.name] } }],
             as: popKey,
           },
         });

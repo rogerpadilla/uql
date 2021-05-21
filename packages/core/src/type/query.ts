@@ -1,4 +1,5 @@
-import { Properties, Scalar, Relations } from './entity';
+import { Properties, Relations } from './entity';
+import { Scalar } from './utility';
 
 export type QueryFieldFilter<E> = {
   readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | Scalar;

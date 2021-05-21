@@ -1,13 +1,11 @@
 import { Type } from './utility';
 
-export type Scalar = boolean | Boolean | string | String | number | Number | BigInt | Date | Symbol;
-
 export type Properties<E> = {
-  [K in keyof E]: E[K] extends Scalar ? K : never;
+  [K in keyof E]: E[K] extends object ? never : K;
 }[keyof E];
 
 export type Relations<E> = {
-  [K in keyof E]: E[K] extends Scalar ? never : K;
+  [K in keyof E]: E[K] extends object ? K : never;
 }[keyof E];
 
 export type EntityOptions = {
@@ -28,12 +26,14 @@ type IdPropertyOptions = { readonly property: string } & PropertyOptions;
 export type RelationOptions<E> = {
   entity?: () => Type<E>;
   readonly cardinality: RelationCardinality;
-  readonly mappedBy?: RelationMappedBy<E>;
+  mappedBy?: RelationMappedBy<E>;
   through?: string;
   references?: { source: string; target: string }[];
 };
 
-export type RelationMappedBy<E> = E extends object ? Properties<E> : string;
+export type PropertyNameMap<E> = { readonly [K in keyof E]: K };
+export type PropertyNameMapper<E> = (namesMap: PropertyNameMap<E>) => string;
+export type RelationMappedBy<E> = E extends object ? Properties<E> | PropertyNameMapper<E> : string;
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
 export type RelationOneToOneOptions<E> = { entity?: () => Type<E>; mappedBy?: RelationMappedBy<E> };
 export type RelationOneToManyOptions<E> = { entity: () => Type<E>; mappedBy?: RelationMappedBy<E> };

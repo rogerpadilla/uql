@@ -1,6 +1,15 @@
-import { startLowerCase, startUpperCase } from '../../util';
 import 'reflect-metadata';
-import { RelationOptions, PropertyOptions, EntityOptions, EntityMeta, Type } from '../../type';
+import { startLowerCase, startUpperCase } from '../../util';
+import {
+  RelationOptions,
+  PropertyOptions,
+  EntityOptions,
+  EntityMeta,
+  Type,
+  PropertyNameMap,
+  PropertyNameMapper,
+  RelationMappedBy,
+} from '../../type';
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity';
@@ -25,11 +34,7 @@ export function defineId<E>(entity: Type<E>, prop: string, opts: PropertyOptions
 
 export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
-    const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
-    const isScalar = isScalarType(inferredType);
-    if (isScalar) {
-      throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
-    }
+    const inferredType = inferRelationType(entity, prop);
     opts.entity = () => inferredType;
   }
   const meta = ensureMeta(entity);
@@ -71,11 +76,11 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
     return meta;
   }
   meta.processed = true;
-  return fillRelationReferences(meta);
+  return completeRelationMetas(meta);
 }
 
-export function getEntities() {
-  return Array.from(metas.entries()).reduce((acc, [key, val]) => {
+export function getEntities(): Type<any>[] {
+  return [...metas.entries()].reduce((acc, [key, val]) => {
     if (val.id) {
       acc.push(key);
     }
@@ -93,7 +98,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   return meta;
 }
 
-function fillRelationReferences<E>(meta: EntityMeta<E>) {
+function completeRelationMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
     const rel = meta.relations[relKey];
 
@@ -104,7 +109,14 @@ function fillRelationReferences<E>(meta: EntityMeta<E>) {
     const relEntity = rel.entity();
     const relMeta = ensureMeta(relEntity);
 
-    if (rel.cardinality === 'manyToMany') {
+    if (rel.mappedBy) {
+      if (typeof rel.mappedBy === 'function') {
+        const mappedBy = rel.mappedBy as PropertyNameMapper<E>;
+        const propertyNameMap = getPropertyNameMap(relMeta);
+        rel.mappedBy = mappedBy(propertyNameMap) as RelationMappedBy<E>;
+      }
+      rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
+    } else if (rel.cardinality === 'manyToMany') {
       rel.through = `${meta.name}${relMeta.name}`;
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
       const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
@@ -112,8 +124,6 @@ function fillRelationReferences<E>(meta: EntityMeta<E>) {
         { source, target: meta.id.name },
         { source: target, target: relMeta.id.name },
       ];
-    } else if (rel.mappedBy) {
-      rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
     } else {
       rel.references = [{ source: relKey + 'Id', target: relMeta.id.property }];
     }
@@ -122,7 +132,14 @@ function fillRelationReferences<E>(meta: EntityMeta<E>) {
   return meta;
 }
 
-function getId<E>(meta: EntityMeta<E>) {
+function getPropertyNameMap<E>(meta: EntityMeta<E>): PropertyNameMap<E> {
+  return Object.keys(meta.properties).reduce((acc, key) => {
+    acc[key] = key;
+    return acc;
+  }, {} as PropertyNameMap<E>);
+}
+
+function getId<E>(meta: EntityMeta<E>): string {
   return meta.id?.property ?? Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
@@ -139,15 +156,24 @@ function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
   target.relations = { ...source.relations, ...target.relations };
 }
 
-function isScalarType(type: any): boolean {
+function inferRelationType<E>(entity: Type<E>, prop: string): Type<any> {
+  const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
+  const isValidType = isValidEntityType(inferredType);
+  if (!isValidType) {
+    throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
+  }
+  return inferredType;
+}
+
+function isValidEntityType(type: any): type is Type<any> {
   return (
-    type === undefined ||
-    type === Boolean ||
-    type === String ||
-    type === Number ||
-    type === BigInt ||
-    type === Date ||
-    type === Symbol ||
-    type === Object
+    typeof type === 'function' &&
+    type !== Boolean &&
+    type !== String &&
+    type !== Number &&
+    type !== BigInt &&
+    type !== Date &&
+    type !== Symbol &&
+    type !== Object
   );
 }
