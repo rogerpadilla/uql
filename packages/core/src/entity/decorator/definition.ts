@@ -76,7 +76,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
     return meta;
   }
   meta.processed = true;
-  return completeRelationMetas(meta);
+  return completeRelationsMetas(meta);
 }
 
 export function getEntities(): Type<any>[] {
@@ -98,7 +98,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   return meta;
 }
 
-function completeRelationMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
+function completeRelationsMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
     const rel = meta.relations[relKey];
 
@@ -107,15 +107,24 @@ function completeRelationMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     const relEntity = rel.entity();
-    const relMeta = ensureMeta(relEntity);
+    const relMeta = getMeta(relEntity);
 
     if (rel.mappedBy) {
       if (typeof rel.mappedBy === 'function') {
-        const mappedBy = rel.mappedBy as PropertyNameMapper<E>;
-        const propertyNameMap = getPropertyNameMap(relMeta);
-        rel.mappedBy = mappedBy(propertyNameMap) as RelationMappedBy<E>;
+        const propertyNameMap = getKeyNameMap(relMeta);
+        const nameMapper = rel.mappedBy as PropertyNameMapper<E>;
+        const mappedByKey = nameMapper(propertyNameMap);
+        if (relMeta.relations[mappedByKey]) {
+          const references = relMeta.relations[mappedByKey].references.slice();
+          rel.mappedBy = references[0].source as RelationMappedBy<E>;
+          rel.references = references.map(({ source, target }) => ({ source: target, target: source }));
+        } else {
+          rel.mappedBy = mappedByKey as RelationMappedBy<E>;
+          rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
+        }
+      } else {
+        rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
       }
-      rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
     } else if (rel.cardinality === 'manyToMany') {
       rel.through = `${meta.name}${relMeta.name}`;
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
@@ -132,11 +141,13 @@ function completeRelationMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-function getPropertyNameMap<E>(meta: EntityMeta<E>): PropertyNameMap<E> {
-  return Object.keys(meta.properties).reduce((acc, key) => {
-    acc[key] = key;
-    return acc;
-  }, {} as PropertyNameMap<E>);
+function getKeyNameMap<E>(meta: EntityMeta<E>): PropertyNameMap<E> {
+  return Object.keys(meta.properties)
+    .concat(Object.keys(meta.relations))
+    .reduce((acc, key) => {
+      acc[key] = key;
+      return acc;
+    }, {} as PropertyNameMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): string {
