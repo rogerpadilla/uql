@@ -33,7 +33,7 @@ export type RelationOptions<E> = {
 
 export type PropertyNameMap<E> = { readonly [K in keyof E]: K };
 export type PropertyNameMapper<E> = (namesMap: PropertyNameMap<E>) => string;
-export type RelationMappedBy<E> = E extends object ? Properties<E> | PropertyNameMapper<E> : string;
+export type RelationMappedBy<E> = E extends object ? keyof E | PropertyNameMapper<E> : string;
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
 export type RelationOneToOneOptions<E> = { entity?: () => Type<E>; mappedBy?: RelationMappedBy<E> };
 export type RelationOneToManyOptions<E> = { entity: () => Type<E>; mappedBy?: RelationMappedBy<E> };
