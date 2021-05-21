@@ -197,7 +197,7 @@ export class User extends BaseEntity {
   @Property()
   password?: string;
 
-  @OneToOne({ mappedBy: 'user' })
+  @OneToOne({ mappedBy: (profile) => profile.user })
   profile?: Profile;
 }
 
