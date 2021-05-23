@@ -70,10 +70,11 @@ export abstract class BaseQuerier implements Querier {
       const relQuery = popVal as Query<any>;
       if (relOpts.cardinality === '1m') {
         const ids = bodies.map((body) => body[meta.id.property]);
-        relQuery.filter = { [relOpts.mappedBy as string]: { $in: ids } };
+        const mappedByKey = relOpts.mappedBy as string;
+        relQuery.filter = { [mappedByKey]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
-          const attr = it[relOpts.mappedBy];
+          const attr = it[mappedByKey];
           if (!acc[attr]) {
             acc[attr] = [];
           }
@@ -84,7 +85,7 @@ export abstract class BaseQuerier implements Querier {
           body[popKey] = foundsMap[body[meta.id.property]];
         }
       } else if (relOpts.cardinality === 'mm') {
-        // TODO manyToMany cardinality
+        // TODO mm cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     }
@@ -96,19 +97,20 @@ export abstract class BaseQuerier implements Querier {
     const insertProms = filterIndependentRelations(meta, body).map((prop) => {
       const relOpts = meta.relations[prop];
       const relEntity = relOpts.entity();
+      const mappedByKey = relOpts.mappedBy as string;
       if (relOpts.cardinality === '11') {
-        const relBody: E = { ...body[prop], [relOpts.mappedBy as string]: id };
+        const relBody: E = { ...body[prop], [mappedByKey]: id };
         return this.insertOne(relEntity, relBody);
       }
       if (relOpts.cardinality === '1m') {
         const relBodies: E[] = body[prop].map((it: E) => {
-          it[relOpts.mappedBy as string] = id;
+          it[mappedByKey] = id;
           return it;
         });
         return this.insertMany(relEntity, relBodies);
       }
       if (relOpts.cardinality === 'mm') {
-        // TODO manyToMany cardinality
+        // TODO mm cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     });
@@ -122,25 +124,26 @@ export abstract class BaseQuerier implements Querier {
     const removeProms = filterIndependentRelations(meta, body).map(async (prop) => {
       const relOpts = meta.relations[prop];
       const relEntity = relOpts.entity();
+      const mappedByKey = relOpts.mappedBy as string;
       if (relOpts.cardinality === '11') {
         const relBody: E = body[prop];
         if (relBody === null) {
-          return this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
+          return this.removeMany(relEntity, { [mappedByKey]: id });
         }
-        return this.updateMany(relEntity, { [relOpts.mappedBy as string]: id }, relBody);
+        return this.updateMany(relEntity, { [mappedByKey]: id }, relBody);
       }
       if (relOpts.cardinality === '1m') {
         const relBody: E[] = body[prop];
-        await this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
+        await this.removeMany(relEntity, { [mappedByKey]: id });
         if (relBody !== null) {
           for (const it of relBody) {
-            it[relOpts.mappedBy as string] = id;
+            it[mappedByKey] = id;
           }
           return this.insertMany(relEntity, relBody);
         }
       }
       if (relOpts.cardinality === 'mm') {
-        // TODO manyToMany cardinality
+        // TODO mm cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     });

@@ -56,6 +56,8 @@ export class Profile extends BaseEntity {
   id?: string;
   @Property({ name: 'image' })
   picture?: string;
+  @OneToOne({ entity: () => User })
+  user?: IUser;
 }
 
 @Entity()

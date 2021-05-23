@@ -142,8 +142,8 @@ export abstract class BaseSqlDialect {
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
       }
-      if (relOpts.cardinality !== 'm1' && relOpts.cardinality !== '11') {
-        // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
+      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+        // '1m' and 'mm' will need multiple queries (so they should be resolved in a higher layer)
         continue;
       }
 
@@ -165,6 +165,8 @@ export abstract class BaseSqlDialect {
       const joinType = popVal.required ? 'INNER' : 'LEFT';
 
       joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinPath} ON `;
+
+      // const opts = getRelationOptions(relOpts);
 
       joinsTables += relOpts.references
         .map((it) => `${joinPath}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
@@ -314,12 +316,12 @@ export abstract class BaseSqlDialect {
 
   escapeId(val: any, forbidQualified?: boolean): string {
     if (Array.isArray(val)) {
-      return (val as string[]).map((it) => this.escapeId(it, forbidQualified)).join(', ');
+      return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
     }
 
     const str = val as string;
 
-    if (!forbidQualified && str.includes('.')) {
+    if (!forbidQualified && val.includes('.')) {
       return str
         .split('.')
         .map((it) => this.escapeId(it))

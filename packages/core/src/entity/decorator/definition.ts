@@ -6,8 +6,9 @@ import {
   EntityOptions,
   EntityMeta,
   Type,
-  PropertyNameMap,
-  PropertyNameMapper,
+  KeyMapper,
+  RelationMappedBy,
+  KeyMap,
 } from '../../type';
 
 const holder = globalThis;
@@ -108,34 +109,19 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const relOpts = meta.relations[relKey];
 
     if (relOpts.references) {
-      // references were already (manually) specified
+      // references were manually specified
+      continue;
+    }
+
+    if (relOpts.mappedBy) {
+      fillMappedRelationOptions(relOpts);
       continue;
     }
 
     const relEntity = relOpts.entity();
     const relMeta = ensureMeta(relEntity);
 
-    if (relOpts.mappedBy) {
-      const mappedByKey =
-        typeof relOpts.mappedBy === 'function'
-          ? (relOpts.mappedBy as PropertyNameMapper<E>)(getKeyNameMap(relMeta))
-          : (relOpts.mappedBy as string);
-
-      if (relMeta.relations[mappedByKey]) {
-        const mappedByRelOpts = relMeta.relations[mappedByKey];
-        if (mappedByRelOpts.cardinality === 'mm') {
-          relOpts.through = `${relMeta.name}${meta.name}`;
-          relOpts.references = mappedByRelOpts.references.slice().reverse();
-        } else {
-          relOpts.references = mappedByRelOpts.references.map(({ source, target }) => ({
-            source: target,
-            target: source,
-          }));
-        }
-      } else {
-        relOpts.references = [{ source: mappedByKey, target: meta.id.property }];
-      }
-    } else if (relOpts.cardinality === 'mm') {
+    if (relOpts.cardinality === 'mm') {
       relOpts.through = `${meta.name}${relMeta.name}`;
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
       const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
@@ -151,11 +137,46 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-function getKeyNameMap<E>(meta: EntityMeta<E>): PropertyNameMap<E> {
+export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
+  const entity = opts.entity();
+  const meta = getMeta(entity);
+  const mappedByKey = getMappedByKey(opts);
+  opts.mappedBy = mappedByKey as RelationMappedBy<E>;
+
+  if (meta.relations[mappedByKey]) {
+    const mappedByRelOpts = meta.relations[mappedByKey];
+    if (mappedByRelOpts.through) {
+      opts.through = mappedByRelOpts.through;
+    }
+    if (mappedByRelOpts.cardinality === 'mm') {
+      opts.references = mappedByRelOpts.references.reverse().slice();
+    } else {
+      opts.references = mappedByRelOpts.references.map(({ source, target }) => ({
+        source: target,
+        target: source,
+      }));
+    }
+  } else {
+    opts.references = [{ source: mappedByKey, target: meta.id.property }];
+  }
+}
+
+function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
+  if (typeof relOpts.mappedBy === 'function') {
+    const entity = relOpts.entity();
+    const meta = ensureMeta(entity);
+    const keyMap = getKeyMap(meta);
+    const mapper = relOpts.mappedBy as KeyMapper<E>;
+    return mapper(keyMap);
+  }
+  return relOpts.mappedBy as string;
+}
+
+function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
   return Object.keys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
     acc[key] = key;
     return acc;
-  }, {} as PropertyNameMap<E>);
+  }, {} as KeyMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): string {

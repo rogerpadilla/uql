@@ -49,10 +49,11 @@ export class MongoDialect {
           },
         });
       } else {
+        const mappedByKey = relOpts.mappedBy as string;
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [relOpts.mappedBy as string]: qm.filter[meta.id.name] } }],
+            pipeline: [{ $match: { [mappedByKey]: qm.filter[meta.id.name] } }],
             as: popKey,
           },
         });

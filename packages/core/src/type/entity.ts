@@ -25,17 +25,18 @@ export type EntityGetter<E = any> = () => Type<E>;
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
 type IdOptions = PropertyOptions & { readonly property: string };
 
-export type RelationOptions<E> = {
+export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
-  readonly cardinality: RelationCardinality;
+  readonly cardinality?: RelationCardinality;
   mappedBy?: RelationMappedBy<E>;
   through?: string;
-  references?: { source: string; target: string }[];
+  references?: RelationReferences;
 };
 
-export type PropertyNameMap<E> = { readonly [K in keyof E]: K };
-export type PropertyNameMapper<E> = (namesMap: PropertyNameMap<E>) => string;
-export type RelationMappedBy<E> = E extends object ? keyof E | PropertyNameMapper<E> : string;
+export type KeyMap<E> = { readonly [K in keyof E]: K };
+export type KeyMapper<E> = (keyMap: KeyMap<E>) => string;
+export type RelationReferences = { source: string; target: string }[];
+export type RelationMappedBy<E> = E extends object ? keyof E | KeyMapper<E> : string;
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 export type RelationOneToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
 export type RelationOneToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
@@ -50,7 +51,7 @@ export type EntityMeta<E> = {
     [key: string]: PropertyOptions;
   };
   relations: {
-    [key: string]: RelationOptions<E>;
+    [key: string]: RelationOptions;
   };
   processed?: boolean;
 };

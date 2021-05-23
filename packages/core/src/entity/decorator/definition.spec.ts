@@ -74,8 +74,8 @@ it('User', () => {
       profile: {
         cardinality: '11',
         entity: expect.any(Function),
-        mappedBy: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        mappedBy: 'user',
+        references: [{ source: 'id', target: 'userId' }],
       },
     },
   };
@@ -114,7 +114,7 @@ it('Profile', () => {
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'm1',
+        cardinality: '11',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
@@ -279,7 +279,7 @@ it('Tag', () => {
       items: {
         cardinality: 'mm',
         entity: expect.any(Function),
-        mappedBy: expect.any(Function),
+        mappedBy: 'tags',
         through: 'ItemTag',
         references: [
           { source: 'tagId', target: 'id' },
@@ -322,6 +322,68 @@ it('TaxCategory', () => {
       description: { name: 'description', type: String },
     },
     relations: {
+      company: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'companyId', target: 'id' }],
+      },
+      user: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'userId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
+it('Tax', () => {
+  const meta = getMeta(Tax);
+  const expectedMeta: EntityMeta<Tax> = {
+    entity: Tax,
+    name: 'Tax',
+    id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
+    properties: {
+      id: { name: 'id', type: String, isId: true },
+      categoryId: {
+        name: 'categoryId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      percentage: {
+        name: 'percentage',
+        type: Number,
+      },
+      companyId: {
+        name: 'companyId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      userId: {
+        name: 'userId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      status: { name: 'status', type: Number },
+      name: { name: 'name', type: String },
+      description: { name: 'description', type: String },
+    },
+    relations: {
+      category: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [
+          {
+            source: 'categoryId',
+            target: 'pk',
+          },
+        ],
+      },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
@@ -444,7 +506,7 @@ it('InventoryAdjustment', () => {
       itemAdjustments: {
         cardinality: '1m',
         entity: expect.any(Function),
-        mappedBy: expect.any(Function),
+        mappedBy: 'inventoryAdjustmentId',
         references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
       },
       company: {
