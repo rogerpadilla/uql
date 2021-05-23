@@ -310,6 +310,18 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
+  shouldFindPopulateOneToOne() {
+    const sql1 = this.find(User, { populate: { profile: {} } });
+    expect(sql1).toBe(
+      'SELECT `User`.`id`, `User`.`companyId`, `User`.`userId`, `User`.`createdAt`, `User`.`updatedAt`, `User`.`status`' +
+        ', `User`.`name`, `User`.`email`, `User`.`password`, `profile`.`companyId` `profile.companyId`' +
+        ', `profile`.`userId` `profile.userId`, `profile`.`createdAt` `profile.createdAt`' +
+        ', `profile`.`updatedAt` `profile.updatedAt`, `profile`.`status` `profile.status`' +
+        ', `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture`' +
+        ' FROM `User` LEFT JOIN `user_profile` `profile` ON `profile`.`userId` = `User`.`id`'
+    );
+  }
+
   shouldFindPopulateWithProject() {
     const sql1 = this.find(Item, {
       project: ['id', 'name', 'code'],

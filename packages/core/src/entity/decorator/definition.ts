@@ -123,17 +123,19 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
 
       if (relMeta.relations[mappedByKey]) {
         const mappedByRelOpts = relMeta.relations[mappedByKey];
-        if (mappedByRelOpts.cardinality === 'manyToMany') {
+        if (mappedByRelOpts.cardinality === 'mm') {
           relOpts.through = `${relMeta.name}${meta.name}`;
           relOpts.references = mappedByRelOpts.references.slice().reverse();
         } else {
-          relOpts.references = mappedByRelOpts.references.slice();
+          relOpts.references = mappedByRelOpts.references.map(({ source, target }) => ({
+            source: target,
+            target: source,
+          }));
         }
       } else {
         relOpts.references = [{ source: mappedByKey, target: meta.id.property }];
       }
-      delete relOpts.mappedBy;
-    } else if (relOpts.cardinality === 'manyToMany') {
+    } else if (relOpts.cardinality === 'mm') {
       relOpts.through = `${meta.name}${relMeta.name}`;
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
       const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);

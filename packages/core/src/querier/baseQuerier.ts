@@ -9,8 +9,7 @@ export abstract class BaseQuerier implements Querier {
 
   async insertOne<E>(entity: Type<E>, body: E) {
     const [id] = await this.insertMany(entity, [body]);
-    const meta = getMeta(entity);
-    await this.insertRelations(entity, { ...body, [meta.id.property]: id });
+    await this.insertRelations(entity, id, body);
     return id;
   }
 
@@ -19,7 +18,7 @@ export abstract class BaseQuerier implements Querier {
   async updateOneById<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
     const affectedRows = await this.updateMany(entity, { [meta.id.property]: id }, body);
-    await this.updateRelations(entity, { ...body, [meta.id.property]: id });
+    await this.updateRelations(entity, id, body);
     return affectedRows;
   }
 
@@ -60,6 +59,7 @@ export abstract class BaseQuerier implements Querier {
 
   protected async populateToManyRelations<E>(entity: Type<E>, bodies: E[], populate: QueryPopulate<E>) {
     const meta = getMeta(entity);
+
     for (const popKey in populate) {
       const relOpts = meta.relations[popKey];
       if (!relOpts) {
@@ -68,7 +68,7 @@ export abstract class BaseQuerier implements Querier {
       const popVal = populate[popKey];
       const relEntity = relOpts.entity();
       const relQuery = popVal as Query<any>;
-      if (relOpts.cardinality === 'oneToMany') {
+      if (relOpts.cardinality === '1m') {
         const ids = bodies.map((body) => body[meta.id.property]);
         relQuery.filter = { [relOpts.mappedBy as string]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
@@ -83,33 +83,31 @@ export abstract class BaseQuerier implements Querier {
         for (const body of bodies) {
           body[popKey] = foundsMap[body[meta.id.property]];
         }
-      } else if (relOpts.cardinality === 'manyToMany') {
+      } else if (relOpts.cardinality === 'mm') {
         // TODO manyToMany cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
     }
   }
 
-  protected async insertRelations<E>(entity: Type<E>, body: E) {
+  protected async insertRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
-
-    const id = body[meta.id.property];
 
     const insertProms = filterIndependentRelations(meta, body).map((prop) => {
       const relOpts = meta.relations[prop];
       const relEntity = relOpts.entity();
-      if (relOpts.cardinality === 'oneToOne') {
+      if (relOpts.cardinality === '11') {
         const relBody: E = { ...body[prop], [relOpts.mappedBy as string]: id };
         return this.insertOne(relEntity, relBody);
       }
-      if (relOpts.cardinality === 'oneToMany') {
+      if (relOpts.cardinality === '1m') {
         const relBodies: E[] = body[prop].map((it: E) => {
           it[relOpts.mappedBy as string] = id;
           return it;
         });
         return this.insertMany(relEntity, relBodies);
       }
-      if (relOpts.cardinality === 'manyToMany') {
+      if (relOpts.cardinality === 'mm') {
         // TODO manyToMany cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
@@ -118,22 +116,20 @@ export abstract class BaseQuerier implements Querier {
     await Promise.all<any>(insertProms);
   }
 
-  protected async updateRelations<E>(entity: Type<E>, body: E) {
+  protected async updateRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
-
-    const id = body[meta.id.property];
 
     const removeProms = filterIndependentRelations(meta, body).map(async (prop) => {
       const relOpts = meta.relations[prop];
       const relEntity = relOpts.entity();
-      if (relOpts.cardinality === 'oneToOne') {
+      if (relOpts.cardinality === '11') {
         const relBody: E = body[prop];
         if (relBody === null) {
           return this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
         }
         return this.updateMany(relEntity, { [relOpts.mappedBy as string]: id }, relBody);
       }
-      if (relOpts.cardinality === 'oneToMany') {
+      if (relOpts.cardinality === '1m') {
         const relBody: E[] = body[prop];
         await this.removeMany(relEntity, { [relOpts.mappedBy as string]: id });
         if (relBody !== null) {
@@ -143,7 +139,7 @@ export abstract class BaseQuerier implements Querier {
           return this.insertMany(relEntity, relBody);
         }
       }
-      if (relOpts.cardinality === 'manyToMany') {
+      if (relOpts.cardinality === 'mm') {
         // TODO manyToMany cardinality
         throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
       }
@@ -156,6 +152,6 @@ export abstract class BaseQuerier implements Querier {
 function filterIndependentRelations<E>(meta: EntityMeta<E>, body: E) {
   return Object.keys(body).filter((prop) => {
     const relOpts = meta.relations[prop];
-    return relOpts && relOpts.cardinality !== 'manyToOne';
+    return relOpts && relOpts.cardinality !== 'm1';
   });
 }

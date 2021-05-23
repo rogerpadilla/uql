@@ -142,7 +142,7 @@ export abstract class BaseSqlDialect {
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
       }
-      if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
+      if (relOpts.cardinality !== 'm1' && relOpts.cardinality !== '11') {
         // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
         continue;
       }

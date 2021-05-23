@@ -56,23 +56,25 @@ it('User', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       users: {
-        cardinality: 'oneToMany',
+        cardinality: '1m',
         entity: expect.any(Function),
+        mappedBy: 'userId',
         references: [{ source: 'userId', target: 'id' }],
       },
       profile: {
-        cardinality: 'oneToOne',
+        cardinality: '11',
         entity: expect.any(Function),
+        mappedBy: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
@@ -107,12 +109,12 @@ it('Profile', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
@@ -174,37 +176,37 @@ it('Item', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       buyLedgerAccount: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'buyLedgerAccountId', target: 'id' }],
       },
       saleLedgerAccount: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'saleLedgerAccountId', target: 'id' }],
       },
       tax: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'taxId', target: 'id' }],
       },
       measureUnit: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'measureUnitId', target: 'id' }],
       },
       tags: {
-        cardinality: 'manyToMany',
+        cardinality: 'mm',
         entity: expect.any(Function),
         through: 'ItemTag',
         references: [
@@ -270,13 +272,14 @@ it('Tag', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       items: {
-        cardinality: 'manyToMany',
+        cardinality: 'mm',
         entity: expect.any(Function),
+        mappedBy: expect.any(Function),
         through: 'ItemTag',
         references: [
           { source: 'tagId', target: 'id' },
@@ -284,7 +287,7 @@ it('Tag', () => {
         ],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
@@ -320,12 +323,12 @@ it('TaxCategory', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
@@ -388,22 +391,22 @@ it('ItemAdjustment', () => {
     },
     relations: {
       storehouse: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'storehouseId', target: 'id' }],
       },
       item: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'itemId', target: 'id' }],
       },
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
@@ -439,17 +442,18 @@ it('InventoryAdjustment', () => {
     },
     relations: {
       itemAdjustments: {
-        cardinality: 'oneToMany',
+        cardinality: '1m',
         entity: expect.any(Function),
+        mappedBy: expect.any(Function),
         references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
       },
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
