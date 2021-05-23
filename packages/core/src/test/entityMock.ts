@@ -26,11 +26,11 @@ interface IUser extends IEntity {
 export abstract class BaseEntity implements IEntity {
   @Id()
   id?: string;
-  @Property({ reference: { entity: () => Company } })
+  @Property({ reference: () => Company })
   companyId?: string;
   @ManyToOne({ entity: () => Company })
   company?: ICompany;
-  @Property({ reference: { entity: () => User } })
+  @Property({ reference: () => User })
   userId?: string;
   @ManyToOne({ entity: () => User })
   user?: IUser;
@@ -78,7 +78,7 @@ export class LedgerAccount extends BaseEntity {
   name?: string;
   @Property()
   description?: string;
-  @Property({ reference: { entity: () => LedgerAccount } })
+  @Property({ reference: () => LedgerAccount })
   parentLedgerId?: string;
   @ManyToOne()
   parentLedger?: LedgerAccount;
@@ -100,7 +100,7 @@ export class Tax extends BaseEntity {
   name?: string;
   @Property()
   percentage?: number;
-  @Property({ reference: { entity: () => TaxCategory } })
+  @Property({ reference: () => TaxCategory })
   categoryId?: string;
   @ManyToOne()
   category?: TaxCategory;
@@ -118,7 +118,7 @@ export class MeasureUnitCategory extends BaseEntity {
 export class MeasureUnit extends BaseEntity {
   @Property()
   name?: string;
-  @Property({ reference: { entity: () => MeasureUnitCategory } })
+  @Property({ reference: () => MeasureUnitCategory })
   categoryId?: string;
   @ManyToOne()
   category?: MeasureUnitCategory;
@@ -138,7 +138,7 @@ export class Storehouse extends BaseEntity {
 export class Tag extends BaseEntity {
   @Property()
   name?: string;
-  @ManyToMany({ entity: () => Item })
+  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items: Item[];
 }
 
@@ -154,11 +154,11 @@ export class Item extends BaseEntity {
   barcode?: string;
   @Property()
   image?: string;
-  @Property({ reference: { entity: () => LedgerAccount } })
+  @Property({ reference: () => LedgerAccount })
   buyLedgerAccountId?: string;
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
-  @Property({ reference: { entity: () => LedgerAccount } })
+  @Property({ reference: () => LedgerAccount })
   saleLedgerAccountId?: string;
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
@@ -166,7 +166,7 @@ export class Item extends BaseEntity {
   taxId?: string;
   @ManyToOne()
   tax?: Tax;
-  @Property({ reference: { entity: () => MeasureUnit } })
+  @Property({ reference: () => MeasureUnit })
   measureUnitId?: string;
   @ManyToOne()
   measureUnit?: MeasureUnit;
@@ -182,7 +182,7 @@ export class Item extends BaseEntity {
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
-  @Property({ reference: { entity: () => Item } })
+  @Property({ reference: () => Item })
   itemId?: string;
   @ManyToOne()
   item?: Item;
@@ -190,11 +190,11 @@ export class ItemAdjustment extends BaseEntity {
   number?: number;
   @Property()
   buyPrice?: number;
-  @Property({ reference: { entity: () => Storehouse } })
+  @Property({ reference: () => Storehouse })
   storehouseId?: string;
   @ManyToOne()
   storehouse?: Storehouse;
-  @Property({ reference: { entity: () => InventoryAdjustment } })
+  @Property({ reference: () => InventoryAdjustment })
   inventoryAdjustmentId?: string;
 }
 

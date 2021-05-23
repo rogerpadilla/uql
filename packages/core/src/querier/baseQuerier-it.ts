@@ -105,6 +105,32 @@ export abstract class BaseQuerierIt implements Spec {
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
+  async xxxshouldInsertOneAndCascadeManyToMany() {
+    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+      itemAdjustments,
+    });
+
+    expect(inventoryAdjustmentId).toBeDefined();
+
+    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
+      populate: { itemAdjustments: {} },
+    });
+
+    expect(inventoryAdjustmentFound).toMatchObject([
+      {
+        description: 'some description',
+        itemAdjustments,
+      },
+    ]);
+
+    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
+
+    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
   async shouldFindMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 

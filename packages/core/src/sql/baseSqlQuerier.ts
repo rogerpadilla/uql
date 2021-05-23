@@ -12,7 +12,7 @@ import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
 
-export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
+export abstract class BaseSqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
 
   constructor(readonly dialect: BaseSqlDialect, readonly conn: QuerierPoolConnection) {

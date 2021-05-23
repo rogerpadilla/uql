@@ -4,8 +4,8 @@ import { getMeta } from '../entity/decorator';
 /**
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
-export abstract class BaseQuerier<ID = any> implements Querier<ID> {
-  abstract insertMany<E>(entity: Type<E>, body: E[]): Promise<ID[]>;
+export abstract class BaseQuerier implements Querier {
+  abstract insertMany<E>(entity: Type<E>, body: E[]): Promise<any[]>;
 
   async insertOne<E>(entity: Type<E>, body: E) {
     const [id] = await this.insertMany(entity, [body]);
@@ -16,7 +16,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   abstract updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
 
-  async updateOneById<E>(entity: Type<E>, id: ID, body: E) {
+  async updateOneById<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
     const affectedRows = await this.updateMany(entity, { [meta.id.property]: id }, body);
     await this.updateRelations(entity, { ...body, [meta.id.property]: id });
@@ -31,7 +31,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
     return rows[0];
   }
 
-  findOneById<E>(type: Type<E>, id: ID, qo: QueryOne<E> = {}, opts?: QueryOptions) {
+  findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}, opts?: QueryOptions) {
     const meta = getMeta(type);
     const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
     return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
@@ -39,7 +39,7 @@ export abstract class BaseQuerier<ID = any> implements Querier<ID> {
 
   abstract removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<E>(entity: Type<E>, id: ID) {
+  removeOneById<E>(entity: Type<E>, id: any) {
     const meta = getMeta(entity);
     return this.removeMany(entity, { [meta.id.name]: id });
   }

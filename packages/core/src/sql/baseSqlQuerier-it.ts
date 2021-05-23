@@ -1,6 +1,6 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
-import { QuerierPool, Type } from '../type';
+import { QuerierPool, ReferenceOptions, Type } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
@@ -46,7 +46,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
       if (prop.isId) {
         propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
       } else if (prop.reference) {
-        const rel = prop.reference.entity();
+        const rel = (prop.reference as ReferenceOptions).entity();
         const relMeta = getMeta(rel);
         const type = relMeta.id.onInsert
           ? defaultIdType

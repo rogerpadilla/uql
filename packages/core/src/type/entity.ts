@@ -16,15 +16,17 @@ export type PropertyOptions = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: any;
-  readonly reference?: { entity: () => Type<any> };
+  readonly reference?: EntityGetter | ReferenceOptions;
   readonly onInsert?: () => any;
   readonly onUpdate?: () => any;
 };
 
-type IdPropertyOptions = { readonly property: string } & PropertyOptions;
+export type EntityGetter<E = any> = () => Type<E>;
+export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
+type IdOptions = PropertyOptions & { readonly property: string };
 
 export type RelationOptions<E> = {
-  entity?: () => Type<E>;
+  entity?: EntityGetter<E>;
   readonly cardinality: RelationCardinality;
   mappedBy?: RelationMappedBy<E>;
   through?: string;
@@ -35,15 +37,15 @@ export type PropertyNameMap<E> = { readonly [K in keyof E]: K };
 export type PropertyNameMapper<E> = (namesMap: PropertyNameMap<E>) => string;
 export type RelationMappedBy<E> = E extends object ? keyof E | PropertyNameMapper<E> : string;
 export type RelationCardinality = 'oneToOne' | 'manyToOne' | 'oneToMany' | 'manyToMany';
-export type RelationOneToOneOptions<E> = { entity?: () => Type<E>; mappedBy?: RelationMappedBy<E> };
-export type RelationOneToManyOptions<E> = { entity: () => Type<E>; mappedBy?: RelationMappedBy<E> };
-export type RelationManyToOneOptions<E> = { entity?: () => Type<E> };
-export type RelationManyToManyOptions<E> = { entity: () => Type<E> };
+export type RelationOneToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationOneToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationManyToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationManyToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
-  id?: IdPropertyOptions;
+  id?: IdOptions;
   properties: {
     [key: string]: PropertyOptions;
   };

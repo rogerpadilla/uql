@@ -3,6 +3,7 @@ import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entity
 
 import { Query, QueryFilter, QueryOptions, QueryProject, QuerySort, Type } from '../type';
 import { Spec } from '../test/spec.util';
+import { isNormalEscapeIdChar, normalizeSql } from '../test';
 import { BaseSqlDialect } from './baseSqlDialect';
 
 export abstract class BaseSqlDialectSpec implements Spec {
@@ -10,15 +11,15 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   private find<E>(entity: Type<E>, query: Query<E>, opts?: QueryOptions) {
     const sql = this.dialect.find(entity, query, opts);
-    return this.normalizeSql(sql);
+    return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
   private insert<E>(entity: Type<E>, payload: E | E[]) {
     const sql = this.dialect.insert(entity, payload);
-    if (this.isDefaultEscapeIdChar()) {
+    if (isNormalEscapeIdChar(this.dialect.escapeIdChar)) {
       return sql;
     }
-    const normalizedSql = this.normalizeSql(sql);
+    const normalizedSql = normalizeSql(sql, this.dialect.escapeIdChar);
     const idName = getMeta(entity).id.name;
     const returnId = ` RETURNING ${idName} insertId`;
     return normalizedSql.slice(0, sql.length - returnId.length);
@@ -26,20 +27,12 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   private update<E>(entity: Type<E>, filter: QueryFilter<E>, payload: E) {
     const sql = this.dialect.update(entity, filter, payload);
-    return this.normalizeSql(sql);
+    return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
   private remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const sql = this.dialect.remove(entity, filter);
-    return this.normalizeSql(sql);
-  }
-
-  private normalizeSql(sql: string) {
-    return this.isDefaultEscapeIdChar() ? sql : sql.replace(RegExp(this.dialect.escapeIdChar, 'g'), '`');
-  }
-
-  private isDefaultEscapeIdChar(): boolean {
-    return this.dialect.escapeIdChar === '`';
+    return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
   shouldBeValidEscapeCharacter() {

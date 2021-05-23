@@ -5,7 +5,7 @@ import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
 import { MongoDialect } from './mongoDialect';
 
-export class MongodbQuerier extends BaseQuerier<ObjectId> {
+export class MongodbQuerier extends BaseQuerier {
   private session: ClientSession;
 
   constructor(readonly conn: MongoClient, readonly dialect = new MongoDialect()) {
@@ -83,7 +83,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
 
   findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    return this.findOne(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
+    return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
   }
 
   async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
