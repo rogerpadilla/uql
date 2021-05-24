@@ -138,13 +138,13 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
 }
 
 export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
-  const entity = opts.entity();
-  const meta = getMeta(entity);
+  const relEntity = opts.entity();
+  const relMeta = getMeta(relEntity);
   const mappedByKey = getMappedByKey(opts);
   opts.mappedBy = mappedByKey as RelationMappedBy<E>;
 
-  if (meta.relations[mappedByKey]) {
-    const mappedByRelOpts = meta.relations[mappedByKey];
+  if (relMeta.relations[mappedByKey]) {
+    const mappedByRelOpts = relMeta.relations[mappedByKey];
     if (mappedByRelOpts.through) {
       opts.through = mappedByRelOpts.through;
     }
@@ -157,15 +157,15 @@ export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
       }));
     }
   } else {
-    opts.references = [{ source: mappedByKey, target: meta.id.property }];
+    opts.references = [{ source: mappedByKey, target: relMeta.id.property }];
   }
 }
 
 function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
   if (typeof relOpts.mappedBy === 'function') {
-    const entity = relOpts.entity();
-    const meta = ensureMeta(entity);
-    const keyMap = getKeyMap(meta);
+    const relEntity = relOpts.entity();
+    const relMeta = ensureMeta(relEntity);
+    const keyMap = getKeyMap(relMeta);
     const mapper = relOpts.mappedBy as KeyMapper<E>;
     return mapper(keyMap);
   }
