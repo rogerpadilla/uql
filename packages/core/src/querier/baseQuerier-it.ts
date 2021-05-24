@@ -72,6 +72,10 @@ export abstract class BaseQuerierIt implements Spec {
 
     const id = await this.querier.insertOne(User, body);
 
+    const profiles = await this.querier.findMany(Profile, {});
+
+    console.log('***** profiles', profiles);
+
     expect(id).toBeDefined();
 
     const user = await this.querier.findOneById(User, id, { populate: { profile: {} } });

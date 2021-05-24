@@ -99,7 +99,8 @@ export abstract class BaseQuerier implements Querier {
       const relEntity = relOpts.entity();
       const mappedByKey = relOpts.mappedBy as string;
       if (relOpts.cardinality === '11') {
-        const relBody: E = { ...body[prop], [mappedByKey]: id };
+        const target = relOpts.references[0].target;
+        const relBody: E = { ...body[prop], [target]: id };
         return this.insertOne(relEntity, relBody);
       }
       if (relOpts.cardinality === '1m') {
