@@ -145,10 +145,8 @@ export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
 
   if (relMeta.relations[mappedByKey]) {
     const mappedByRelOpts = relMeta.relations[mappedByKey];
-    if (mappedByRelOpts.through) {
-      opts.through = mappedByRelOpts.through;
-    }
     if (mappedByRelOpts.cardinality === 'mm') {
+      opts.through = mappedByRelOpts.through;
       opts.references = mappedByRelOpts.references.reverse().slice();
     } else {
       opts.references = mappedByRelOpts.references.map(({ source, target }) => ({
