@@ -119,16 +119,14 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
+    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       populate: { itemAdjustments: {} },
     });
 
-    expect(inventoryAdjustmentFound).toMatchObject([
-      {
-        description: 'some description',
-        itemAdjustments,
-      },
-    ]);
+    expect(inventoryAdjustmentFound).toMatchObject({
+      description: 'some description',
+      itemAdjustments,
+    });
 
     const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
 
@@ -150,16 +148,14 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(affectedRows).toBe(1);
 
-    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
+    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       populate: { itemAdjustments: {} },
     });
 
-    expect(inventoryAdjustmentFound).toMatchObject([
-      {
-        description: 'some description',
-        itemAdjustments,
-      },
-    ]);
+    expect(inventoryAdjustmentFound).toMatchObject({
+      description: 'some description',
+      itemAdjustments,
+    });
 
     const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
 
