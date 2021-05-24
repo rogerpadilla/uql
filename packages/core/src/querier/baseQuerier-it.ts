@@ -109,7 +109,7 @@ export abstract class BaseQuerierIt implements Spec {
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
-  async xxxshouldInsertOneAndCascadeManyToMany() {
+  async shouldInsertOneAndCascadeManyToMany() {
     const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
 
     const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
@@ -118,6 +118,37 @@ export abstract class BaseQuerierIt implements Spec {
     });
 
     expect(inventoryAdjustmentId).toBeDefined();
+
+    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
+      populate: { itemAdjustments: {} },
+    });
+
+    expect(inventoryAdjustmentFound).toMatchObject([
+      {
+        description: 'some description',
+        itemAdjustments,
+      },
+    ]);
+
+    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
+
+    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
+  async shouldUpdateOneAndCascadeManyToMany() {
+    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+    });
+
+    expect(inventoryAdjustmentId).toBeDefined();
+
+    const affectedRows = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      itemAdjustments,
+    });
+
+    expect(affectedRows).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
       populate: { itemAdjustments: {} },
