@@ -72,10 +72,6 @@ export abstract class BaseQuerierIt implements Spec {
 
     const id = await this.querier.insertOne(User, body);
 
-    const profiles = await this.querier.findMany(Profile, {});
-
-    console.log('***** profiles', profiles);
-
     expect(id).toBeDefined();
 
     const user = await this.querier.findOneById(User, id, { populate: { profile: {} } });
@@ -93,16 +89,43 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const inventoryAdjustmentFound = await this.querier.findMany(InventoryAdjustment, {
+    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       populate: { itemAdjustments: {} },
     });
 
-    expect(inventoryAdjustmentFound).toMatchObject([
-      {
-        description: 'some description',
-        itemAdjustments,
-      },
-    ]);
+    expect(inventoryAdjustmentFound).toMatchObject({
+      description: 'some description',
+      itemAdjustments,
+    });
+
+    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
+
+    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
+  async shouldUpdateOneAndCascadeOneToMany() {
+    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+    });
+
+    expect(inventoryAdjustmentId).toBeDefined();
+
+    const affectedRows = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      itemAdjustments,
+    });
+
+    expect(affectedRows).toBe(1);
+
+    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      populate: { itemAdjustments: {} },
+    });
+
+    expect(inventoryAdjustmentFound).toMatchObject({
+      description: 'some description',
+      itemAdjustments,
+    });
 
     const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
 
