@@ -282,8 +282,8 @@ it('Tag', () => {
         mappedBy: 'tags',
         through: 'ItemTag',
         references: [
-          { source: 'tagId', target: 'id' },
           { source: 'itemId', target: 'id' },
+          { source: 'tagId', target: 'id' },
         ],
       },
       user: {

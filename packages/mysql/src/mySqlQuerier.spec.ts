@@ -5,7 +5,7 @@ import { MySqlQuerier } from './mysqlQuerier';
 class MySqlQuerierSpec extends BaseSqlQuerierSpec {
   constructor() {
     super(MySqlQuerier, {
-      query: () => Promise.resolve([{ insertId: 1, affectedRows: 1 }]),
+      query: () => Promise.resolve([{ insertId: 1 }]),
       release: () => Promise.resolve(),
     });
   }

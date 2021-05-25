@@ -6,7 +6,7 @@ class MySqlQuerierSpec extends BaseSqlQuerierSpec {
   constructor() {
     super(SqliteQuerier, {
       query: () => Promise.resolve([]),
-      run: () => Promise.resolve({ changes: 1, lastID: 1 }),
+      run: () => Promise.resolve({ lastID: 1 }),
       release: () => Promise.resolve(),
     });
   }

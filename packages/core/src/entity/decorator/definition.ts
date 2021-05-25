@@ -73,18 +73,6 @@ export function define<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta
   return meta;
 }
 
-export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
-  const meta = metas.get(entity);
-  if (!meta) {
-    throw new TypeError(`'${entity.name}' is not an entity`);
-  }
-  if (meta.processed) {
-    return meta;
-  }
-  meta.processed = true;
-  return fillRelationsOptions(meta);
-}
-
 export function getEntities(): Type<any>[] {
   return [...metas.entries()].reduce((acc, [key, val]) => {
     if (val.id) {
@@ -102,6 +90,18 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   meta = { entity: entity, name: entity.name, properties: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
+}
+
+export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const meta = metas.get(entity);
+  if (!meta) {
+    throw new TypeError(`'${entity.name}' is not an entity`);
+  }
+  if (meta.processed) {
+    return meta;
+  }
+  meta.processed = true;
+  return fillRelationsOptions(meta);
 }
 
 function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
@@ -137,7 +137,7 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
+function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
   const relEntity = opts.entity();
   const relMeta = getMeta(relEntity);
   const mappedByKey = getMappedByKey(opts);
@@ -147,7 +147,7 @@ export function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
     const mappedByRelOpts = relMeta.relations[mappedByKey];
     if (mappedByRelOpts.cardinality === 'mm') {
       opts.through = mappedByRelOpts.through;
-      opts.references = mappedByRelOpts.references.reverse().slice();
+      opts.references = mappedByRelOpts.references.slice();
     } else {
       opts.references = mappedByRelOpts.references.map(({ source, target }) => ({
         source: target,
