@@ -70,7 +70,7 @@ export class User extends BaseEntity implements IUser {
   password?: string;
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.user })
   profile?: Profile;
-  @OneToMany({ entity: () => User, mappedBy: 'userId' })
+  @OneToMany({ entity: () => User, mappedBy: 'user' })
   users?: User[];
 }
 

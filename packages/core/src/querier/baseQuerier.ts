@@ -60,21 +60,20 @@ export abstract class BaseQuerier implements Querier {
   protected async populateToManyRelations<E>(entity: Type<E>, bodies: E[], populate: QueryPopulate<E>) {
     const meta = getMeta(entity);
 
-    for (const popKey in populate) {
-      const relOpts = meta.relations[popKey];
+    for (const relKey in populate) {
+      const relOpts = meta.relations[relKey];
       if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
-      const popVal = populate[popKey];
       const relEntity = relOpts.entity();
-      const relQuery = popVal as Query<any>;
+      const relQuery = populate[relKey] as Query<typeof relEntity>;
       if (relOpts.cardinality === '1m') {
         const ids = bodies.map((body) => body[meta.id.property]);
-        const mappedByKey = relOpts.mappedBy as string;
-        relQuery.filter = { [mappedByKey]: { $in: ids } };
+        const prop = relOpts.references[0].source;
+        relQuery.filter = { [prop]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
-          const attr = it[mappedByKey];
+          const attr = it[prop];
           if (!acc[attr]) {
             acc[attr] = [];
           }
@@ -82,7 +81,7 @@ export abstract class BaseQuerier implements Querier {
           return acc;
         }, {});
         for (const body of bodies) {
-          body[popKey] = foundsMap[body[meta.id.property]];
+          body[relKey] = foundsMap[body[meta.id.property]];
         }
       } else if (relOpts.cardinality === 'mm') {
         // TODO mm cardinality
@@ -94,18 +93,18 @@ export abstract class BaseQuerier implements Querier {
   protected async insertRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
 
-    const insertProms = filterIndependentRelations(meta, body).map((prop) => {
-      const relOpts = meta.relations[prop];
+    const insertProms = filterIndependentRelations(meta, body).map((relKey) => {
+      const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const mappedByKey = relOpts.mappedBy as string;
       if (relOpts.cardinality === '11') {
-        const target = relOpts.references[0].target;
-        const relBody: E = { ...body[prop], [target]: id };
+        const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+        const relBody: E = { ...body[relKey], [prop]: id };
         return this.insertOne(relEntity, relBody);
       }
       if (relOpts.cardinality === '1m') {
-        const relBodies: E[] = body[prop].map((it: E) => {
-          it[mappedByKey] = id;
+        const prop = relOpts.references[0].source;
+        const relBodies: E[] = body[relKey].map((it: E) => {
+          it[prop] = id;
           return it;
         });
         return this.insertMany(relEntity, relBodies);
@@ -122,23 +121,24 @@ export abstract class BaseQuerier implements Querier {
   protected async updateRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
 
-    const removeProms = filterIndependentRelations(meta, body).map(async (prop) => {
-      const relOpts = meta.relations[prop];
+    const removeProms = filterIndependentRelations(meta, body).map(async (relKey) => {
+      const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const mappedByKey = relOpts.mappedBy as string;
       if (relOpts.cardinality === '11') {
-        const relBody: E = body[prop];
+        const relBody: E = body[relKey];
+        const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         if (relBody === null) {
-          return this.removeMany(relEntity, { [mappedByKey]: id });
+          return this.removeMany(relEntity, { [prop]: id });
         }
-        return this.updateMany(relEntity, { [mappedByKey]: id }, relBody);
+        return this.updateMany(relEntity, { [prop]: id }, relBody);
       }
       if (relOpts.cardinality === '1m') {
-        const relBody: E[] = body[prop];
-        await this.removeMany(relEntity, { [mappedByKey]: id });
+        const relBody: E[] = body[relKey];
+        const prop = relOpts.references[0].source;
+        await this.removeMany(relEntity, { [prop]: id });
         if (relBody !== null) {
           for (const it of relBody) {
-            it[mappedByKey] = id;
+            it[prop] = id;
           }
           return this.insertMany(relEntity, relBody);
         }

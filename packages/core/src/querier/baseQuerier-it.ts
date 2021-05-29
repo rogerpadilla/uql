@@ -325,12 +325,12 @@ export abstract class BaseQuerierIt implements Spec {
 
     const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some inventory adjustment',
-      userId: user.id,
-      companyId: company.id,
       itemAdjustments: [
         { buyPrice: 1000, itemId: firstItemId },
         { buyPrice: 2000, itemId: secondItemId },
       ],
+      userId: user.id,
+      companyId: company.id,
     });
 
     const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {

@@ -16,7 +16,10 @@ export class BaseSqlQuerierSpec implements Spec {
     jest.spyOn(this.querier, 'insertMany');
     jest.spyOn(this.querier, 'updateMany');
     jest.spyOn(this.querier, 'removeMany');
+    jest.spyOn(this.querier, 'removeOneById');
     jest.spyOn(this.querier, 'findMany');
+    jest.spyOn(this.querier, 'findOne');
+    jest.spyOn(this.querier, 'findOneById');
     jest.spyOn(this.querier, 'beginTransaction');
     jest.spyOn(this.querier, 'commitTransaction');
     jest.spyOn(this.querier, 'rollbackTransaction');
@@ -25,6 +28,13 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOneById() {
     await this.querier.findOneById(User, 1);
+    expect(this.querier.query).toBeCalledTimes(1);
+    expect(this.querier.query).nthCalledWith(
+      1,
+      'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
+        ' FROM User WHERE id = 1 LIMIT 1',
+      { isSelect: true }
+    );
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
@@ -33,13 +43,17 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOne() {
     await this.querier.findOne(User, { filter: { companyId: '123' }, project: { id: 1, name: 1 } });
+    expect(this.querier.query).toBeCalledTimes(1);
+    expect(this.querier.query).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 1", {
+      isSelect: true,
+    });
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
     expect(this.querier.release).toBeCalledTimes(0);
   }
 
-  async shouldFindOnePopulateOneToMany() {
+  async shouldFindOneAndPopulateOneToMany() {
     const mock: InventoryAdjustment[] = [
       { id: '123', description: 'something a', userId: '1' },
       { id: '456', description: 'something b', userId: '1' },
@@ -51,11 +65,25 @@ export class BaseSqlQuerierSpec implements Spec {
       filter: { userId: '1' },
       populate: { itemAdjustments: {} },
     });
+
+    expect(this.querier.query).nthCalledWith(
+      1,
+      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1' LIMIT 1",
+      { isSelect: true }
+    );
+    expect(this.querier.query).nthCalledWith(
+      2,
+      'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
+        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')",
+      { isSelect: true }
+    );
+    expect(this.querier.query).toBeCalledTimes(2);
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(2);
     expect(this.querier.updateMany).toBeCalledTimes(0);
     expect(this.querier.removeMany).toBeCalledTimes(0);
+    expect(this.querier.removeOneById).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.release).toBeCalledTimes(0);
@@ -74,6 +102,18 @@ export class BaseSqlQuerierSpec implements Spec {
       filter: { userId: '1' },
       populate: { itemAdjustments: {} },
     });
+
+    expect(this.querier.query).nthCalledWith(
+      1,
+      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1'",
+      { isSelect: true }
+    );
+    expect(this.querier.query).nthCalledWith(
+      2,
+      'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
+        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')",
+      { isSelect: true }
+    );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(2);
@@ -109,11 +149,10 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.release).toBeCalledTimes(0);
   }
 
-  async shouldInsertOneCascadeOneToOne() {
+  async shouldInsertOneAndCascadeOneToOne() {
     await this.querier.insertOne(User, {
       name: 'some name',
-      profile: { picture: 'abc', createdAt: 123 },
-      createdAt: 123,
+      profile: { picture: 'abc' },
     });
     expect(this.querier.insertOne).toBeCalledTimes(2);
     expect(this.querier.insertMany).toBeCalledTimes(2);
@@ -126,10 +165,14 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldInsertOneCascadeOneToMany() {
+  async shouldInsertOneAndCascadeOneToMany() {
     await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
-      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+      createdAt: 1,
+      itemAdjustments: [
+        { buyPrice: 50, createdAt: 1 },
+        { buyPrice: 300, createdAt: 1 },
+      ],
     });
     expect(this.querier.insertOne).toBeCalledTimes(1);
     expect(this.querier.insertMany).toBeCalledTimes(2);
@@ -162,7 +205,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldUpdateOneByIdCascadeOneToOne() {
+  async shouldUpdateOneByIdAndCascadeOneToOne() {
     await this.querier.updateOneById(User, 1, {
       name: 'something',
       profile: { picture: 'xyz' },
@@ -178,7 +221,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldUpdateOneByIdCascadeOneToOneNull() {
+  async shouldUpdateOneByIdAndCascadeOneToOneNull() {
     await this.querier.updateOneById(User, 1, {
       name: 'something',
       profile: null,
@@ -194,7 +237,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldUpdateOneByIdCascadeOneToMany() {
+  async shouldUpdateOneByIdAndCascadeOneToMany() {
     await this.querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
@@ -210,7 +253,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldUpdateOneByIdCascadeOneToManyNull() {
+  async shouldUpdateOneByIdAndCascadeOneToManyNull() {
     await this.querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
       itemAdjustments: null,

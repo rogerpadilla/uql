@@ -22,7 +22,9 @@ export type PropertyOptions = {
 };
 
 export type EntityGetter<E = any> = () => Type<E>;
+
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
+
 type IdOptions = PropertyOptions & { readonly property: string };
 
 export type RelationOptions<E = any> = {
@@ -34,13 +36,21 @@ export type RelationOptions<E = any> = {
 };
 
 export type KeyMap<E> = { readonly [K in keyof E]: K };
+
 export type KeyMapper<E> = (keyMap: KeyMap<E>) => string;
+
 export type RelationReferences = { source: string; target: string }[];
+
 export type RelationMappedBy<E> = E extends object ? keyof E | KeyMapper<E> : string;
+
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
+
 export type RelationOneToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+
 export type RelationOneToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+
 export type RelationManyToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+
 export type RelationManyToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
 
 export type EntityMeta<E> = {

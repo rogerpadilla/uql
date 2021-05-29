@@ -12,7 +12,7 @@ export class SqliteDialect extends BaseSqlDialect {
       case '$text':
         const search = value as QueryTextSearchOptions<E>;
         const meta = getMeta(entity);
-        return `${this.escapeId(meta.name)} MATCH ${this.escape(search.value)}`;
+        return `${meta.name} MATCH ${this.escape(search.value)}`;
       default:
         return super.compare(entity, key, value, opts);
     }

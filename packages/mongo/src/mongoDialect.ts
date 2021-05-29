@@ -27,10 +27,10 @@ export class MongoDialect {
       pipeline.push({ $match: this.buildFilter(entity, qm.filter) });
     }
 
-    for (const popKey in qm.populate) {
-      const relOpts = meta.relations[popKey];
+    for (const relKey in qm.populate) {
+      const relOpts = meta.relations[relKey];
       if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
       if (relOpts.cardinality !== 'm1' && relOpts.cardinality !== '11') {
         // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
@@ -43,9 +43,9 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            localField: popKey,
+            localField: relKey,
             foreignField: '_id',
-            as: popKey,
+            as: relKey,
           },
         });
       } else {
@@ -54,12 +54,12 @@ export class MongoDialect {
           $lookup: {
             from: relMeta.name,
             pipeline: [{ $match: { [mappedByKey]: qm.filter[meta.id.name] } }],
-            as: popKey,
+            as: relKey,
           },
         });
       }
 
-      pipeline.push({ $unwind: { path: `$${popKey}`, preserveNullAndEmptyArrays: true } });
+      pipeline.push({ $unwind: { path: `$${relKey}`, preserveNullAndEmptyArrays: true } });
     }
 
     return pipeline;

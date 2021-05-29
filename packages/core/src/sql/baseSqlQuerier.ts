@@ -11,6 +11,7 @@ import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
+import { literal } from './literal';
 
 export abstract class BaseSqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
@@ -19,7 +20,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     super();
   }
 
-  abstract query<E>(query: string): Promise<E>;
+  abstract query<E>(query: string, opts?: QueryOptions): Promise<E>;
 
   async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
@@ -36,7 +37,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
 
   async findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
     const query = this.dialect.find(entity, qm, opts);
-    const res = await this.query<E[]>(query);
+    const res = await this.query<E[]>(query, { isSelect: true });
     const founds = mapRows(res);
     await this.populateToManyRelations(entity, founds, qm.populate);
     return founds;
@@ -49,11 +50,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    const res: any = await this.findMany(
-      entity,
-      { project: { 'COUNT(*) count': 1 } as any as QueryProject<E>, filter },
-      { isTrustedProject: true }
-    );
+    const res: any = await this.findMany(entity, { project: [literal('COUNT(*) count')] as QueryProject<E>, filter });
     return Number(res[0].count);
   }
 

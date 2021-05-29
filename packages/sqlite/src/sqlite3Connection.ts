@@ -1,18 +1,16 @@
 import { Database } from 'sqlite';
-import { QuerierPoolConnection } from '@uql/core/type';
+import { QuerierPoolConnection, QueryOptions } from '@uql/core/type';
 
 export class Sqlit3Connection implements QuerierPoolConnection {
   constructor(readonly db: Database) {}
 
-  query(query: string) {
+  async query(query: string, opts: QueryOptions = {}) {
     // console.debug(query);
-    return this.db.all(query);
-  }
-
-  async run(query: string) {
-    // console.debug(query);
-    const { changes, lastID } = await this.db.run(query);
-    return { changes, lastID };
+    if (opts.isSelect) {
+      return this.db.all(query);
+    }
+    const { changes: affectedRows, lastID: insertId } = await this.db.run(query);
+    return { affectedRows, insertId };
   }
 
   release() {

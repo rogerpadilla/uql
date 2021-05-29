@@ -68,8 +68,8 @@ it('User', () => {
       users: {
         cardinality: '1m',
         entity: expect.any(Function),
-        mappedBy: 'userId',
-        references: [{ source: 'userId', target: 'id' }],
+        mappedBy: 'user',
+        references: [{ source: 'id', target: 'userId' }],
       },
       profile: {
         cardinality: '11',

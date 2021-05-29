@@ -74,4 +74,4 @@ export type QueryUpdateResult = {
   readonly insertId?: number;
 };
 
-export type QueryOptions = { isTrustedProject?: boolean };
+export type QueryOptions = { isSelect?: boolean };

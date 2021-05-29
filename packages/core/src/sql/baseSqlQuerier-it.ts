@@ -27,7 +27,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);
-        return this.querier.query(`DROP TABLE ${this.querier.dialect.escapeId(meta.name)}`);
+        return this.querier.query(`DROP TABLE ${meta.name}`);
       })
     );
   }
@@ -35,14 +35,14 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
   buildDdlForTable<E>(entity: Type<E>) {
     const meta = getMeta(entity);
 
-    let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
+    let sql = `CREATE TABLE ${meta.name} (\n\t`;
 
     const defaultIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
     const columns = Object.keys(meta.properties).map((key) => {
       const prop = meta.properties[key];
-      let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
+      let propSql = prop.name + ' ';
       if (prop.isId) {
         propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
       } else if (prop.reference) {

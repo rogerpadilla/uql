@@ -71,7 +71,7 @@
       }
     },
     {
-      "files": ["packages/**/*{.,-}{spec,it}.ts"],
+      "files": ["packages/**/*{.,-}{spec,it}.ts", "config/test-*.js"],
       "env": {
         "jest": true
       },
