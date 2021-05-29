@@ -22,13 +22,13 @@ export interface ClientQuerier extends UniversalQuerier {
 
   findOneById<E>(entity: Type<E>, id: any, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  removeMany<E>(
+  deleteMany<E>(
     entity: Type<E>,
     filter: QueryFilter<E>,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 
-  removeOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

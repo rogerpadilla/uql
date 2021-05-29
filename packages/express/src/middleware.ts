@@ -130,7 +130,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.removeOneById(entity, req.params.id);
+      const data = await querier.deleteOneById(entity, req.params.id);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -146,7 +146,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.removeMany(entity, qm.filter);
+      const data = await querier.deleteMany(entity, qm.filter);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {

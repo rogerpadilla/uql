@@ -33,8 +33,8 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return founds;
   }
 
-  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const query = this.dialect.remove(entity, filter);
+  async deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
+    const query = this.dialect.delete(entity, filter);
     const res = await this.conn.run(query);
     return res.changes;
   }

@@ -31,8 +31,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
     return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
-  private remove<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const sql = this.dialect.remove(entity, filter);
+  private delete<E>(entity: Type<E>, filter: QueryFilter<E>) {
+    const sql = this.dialect.delete(entity, filter);
     return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
@@ -158,7 +158,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("UPDATE User SET name = 'Some Name', updatedAt = 1 WHERE `something` = 'anything'");
 
     expect(
-      this.remove(User, {
+      this.delete(User, {
         something: 'anything',
       } as any)
     ).toBe("DELETE FROM User WHERE `something` = 'anything'");
@@ -642,8 +642,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldRemove() {
-    expect(this.remove(User, { id: '123' })).toBe("DELETE FROM User WHERE id = '123'");
+  shouldDelete() {
+    expect(this.delete(User, { id: '123' })).toBe("DELETE FROM User WHERE id = '123'");
   }
 
   shouldFind$startsWith() {

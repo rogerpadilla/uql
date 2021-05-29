@@ -15,9 +15,9 @@ export type UniversalRepository<E> = {
 
   findOneById(id: any, qo?: QueryOne<E>): Promise<any>;
 
-  removeMany(filter: QueryFilter<E>): Promise<any>;
+  deleteMany(filter: QueryFilter<E>): Promise<any>;
 
-  removeOneById(id: any): Promise<any>;
+  deleteOneById(id: any): Promise<any>;
 
   count(filter?: QueryFilter<E>): Promise<any>;
 };
@@ -37,9 +37,9 @@ export interface Repository<E> extends UniversalRepository<E> {
 
   findOneById(id: any, qo?: QueryOne<E>): Promise<E>;
 
-  removeMany(filter: QueryFilter<E>): Promise<number>;
+  deleteMany(filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById(id: any): Promise<number>;
+  deleteOneById(id: any): Promise<number>;
 
   count(filter?: QueryFilter<E>): Promise<number>;
 }

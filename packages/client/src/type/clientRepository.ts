@@ -16,9 +16,9 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
 
   findOneById(id: any, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  removeMany(filter: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteMany(filter: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  removeOneById(id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteOneById(id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   count(filter?: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

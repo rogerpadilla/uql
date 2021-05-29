@@ -86,7 +86,7 @@ export class MongodbQuerier extends BaseQuerier {
     return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } });
   }
 
-  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
+  async deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
       session: this.session,
     });

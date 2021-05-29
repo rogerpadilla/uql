@@ -55,13 +55,13 @@ export class HttpQuerier implements ClientQuerier {
     return get<E[]>(`${basePath}${qs}`, opts);
   }
 
-  removeMany<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: RequestOptions) {
+  deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQueryParameter('filter', filter);
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
-  removeOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions) {
+  deleteOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return remove<number>(`${basePath}/${id}`, opts);
   }

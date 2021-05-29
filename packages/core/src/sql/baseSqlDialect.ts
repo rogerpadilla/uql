@@ -67,7 +67,7 @@ export abstract class BaseSqlDialect {
     return `UPDATE ${meta.name} SET ${values} WHERE ${where}`;
   }
 
-  remove<E>(entity: Type<E>, filter: QueryFilter<E>): string {
+  delete<E>(entity: Type<E>, filter: QueryFilter<E>): string {
     const meta = getMeta(entity);
     const where = this.filter(entity, filter);
     return `DELETE FROM ${meta.name} WHERE ${where}`;

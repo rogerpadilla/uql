@@ -31,12 +31,12 @@ export class BaseRepository<E> implements Repository<E> {
     return this.querier.findOneById(this.entity, id, qo);
   }
 
-  removeMany(filter: QueryFilter<E>) {
-    return this.querier.removeMany(this.entity, filter);
+  deleteMany(filter: QueryFilter<E>) {
+    return this.querier.deleteMany(this.entity, filter);
   }
 
-  removeOneById(id: any) {
-    return this.querier.removeOneById(this.entity, id);
+  deleteOneById(id: any) {
+    return this.querier.deleteOneById(this.entity, id);
   }
 
   count(filter?: QueryFilter<E>) {

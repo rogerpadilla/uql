@@ -282,9 +282,9 @@ export abstract class BaseQuerierIt implements Spec {
     await this.querier.beginTransaction();
     const count2 = await this.querier.count(User);
     expect(count2).toBe(count1);
-    const deletedRows1 = await this.querier.removeMany(User, { status: null });
+    const deletedRows1 = await this.querier.deleteMany(User, { status: null });
     expect(deletedRows1).toBe(count1);
-    const deletedRows2 = await this.querier.removeMany(User, { status: null });
+    const deletedRows2 = await this.querier.deleteMany(User, { status: null });
     expect(deletedRows2).toBe(0);
     const count3 = await this.querier.count(User);
     expect(count3).toBe(0);
@@ -351,12 +351,12 @@ export abstract class BaseQuerierIt implements Spec {
     });
   }
 
-  async shouldRemoveMany() {
+  async shouldDeleteMany() {
     await this.querier.beginTransaction();
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-    const deletedRows1 = await this.querier.removeMany(User, { status: 1 });
+    const deletedRows1 = await this.querier.deleteMany(User, { status: 1 });
     expect(deletedRows1).toBe(0);
-    const deletedRows2 = await this.querier.removeMany(User, { status: null });
+    const deletedRows2 = await this.querier.deleteMany(User, { status: null });
     expect(deletedRows2).toBe(3);
     await this.querier.commitTransaction();
   }

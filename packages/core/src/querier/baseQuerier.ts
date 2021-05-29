@@ -36,11 +36,11 @@ export abstract class BaseQuerier implements Querier {
     return this.findOne(type, { ...qo, filter: { [key]: id } });
   }
 
-  abstract removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
+  abstract deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<E>(entity: Type<E>, id: any) {
+  deleteOneById<E>(entity: Type<E>, id: any) {
     const meta = getMeta(entity);
-    return this.removeMany(entity, { [meta.id.name]: id });
+    return this.deleteMany(entity, { [meta.id.name]: id });
   }
 
   abstract count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
@@ -119,21 +119,21 @@ export abstract class BaseQuerier implements Querier {
   protected async updateRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
 
-    const removeProms = filterIndependentRelations(meta, body).map(async (relKey) => {
+    const deletePromises = filterIndependentRelations(meta, body).map(async (relKey) => {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
       if (relOpts.cardinality === '11') {
         const relBody: E = body[relKey];
         const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         if (relBody === null) {
-          return this.removeMany(relEntity, { [prop]: id });
+          return this.deleteMany(relEntity, { [prop]: id });
         }
         return this.updateMany(relEntity, { [prop]: id }, relBody);
       }
       if (relOpts.cardinality === '1m') {
         const relBody: E[] = body[relKey];
         const prop = relOpts.references[0].source;
-        await this.removeMany(relEntity, { [prop]: id });
+        await this.deleteMany(relEntity, { [prop]: id });
         if (relBody !== null) {
           for (const it of relBody) {
             it[prop] = id;
@@ -147,7 +147,7 @@ export abstract class BaseQuerier implements Querier {
       }
     });
 
-    await Promise.all(removeProms);
+    await Promise.all(deletePromises);
   }
 }
 

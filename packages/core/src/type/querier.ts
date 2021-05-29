@@ -16,9 +16,9 @@ export type UniversalQuerier = {
 
   findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>): Promise<any>;
 
-  removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<any>;
+  deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<any>;
 
-  removeOneById<E>(entity: Type<E>, id: any): Promise<any>;
+  deleteOneById<E>(entity: Type<E>, id: any): Promise<any>;
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<any>;
 };
@@ -38,9 +38,9 @@ export interface Querier extends UniversalQuerier {
 
   findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>): Promise<E>;
 
-  removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
+  deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
-  removeOneById<E>(entity: Type<E>, id: any): Promise<number>;
+  deleteOneById<E>(entity: Type<E>, id: any): Promise<number>;
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
 
