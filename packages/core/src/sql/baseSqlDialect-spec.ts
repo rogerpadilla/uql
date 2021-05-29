@@ -1,7 +1,7 @@
 import { getMeta } from '../entity/decorator';
 import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entityMock';
 
-import { Query, QueryFilter, QueryOptions, QueryProject, QuerySort, Type } from '../type';
+import { Query, QueryFilter, QueryProject, QuerySort, Type } from '../type';
 import { Spec } from '../test/spec.util';
 import { isNormalEscapeIdChar, normalizeSql } from '../test';
 import { BaseSqlDialect } from './baseSqlDialect';
@@ -10,8 +10,8 @@ import { literal } from './literal';
 export abstract class BaseSqlDialectSpec implements Spec {
   constructor(readonly dialect: BaseSqlDialect) {}
 
-  private find<E>(entity: Type<E>, query: Query<E>, opts?: QueryOptions) {
-    const sql = this.dialect.find(entity, query, opts);
+  private find<E>(entity: Type<E>, query: Query<E>) {
+    const sql = this.dialect.find(entity, query);
     return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
@@ -115,6 +115,53 @@ export abstract class BaseSqlDialectSpec implements Spec {
         filter: { id: '123', picture: 'abc' },
       })
     ).toBe("SELECT pk id, image picture, status FROM user_profile WHERE pk = '123' AND image = 'abc'");
+  }
+
+  shouldPreventSqlInjection() {
+    expect(
+      this.find(User, {
+        project: ['id', 'something' as any],
+        filter: {
+          id: 1,
+          something: 1,
+        } as any,
+        sort: {
+          id: 1,
+          something: 1,
+        } as any,
+        group: ['id', 'something' as any],
+      })
+    ).toBe(
+      'SELECT id, `something` FROM User WHERE id = 1 AND `something` = 1 GROUP BY id, `something` ORDER BY id, `something`'
+    );
+
+    expect(
+      this.insert(User, {
+        name: 'Some Name',
+        something: 'anything',
+        createdAt: 1,
+      } as any)
+    ).toBe("INSERT INTO User (name, createdAt) VALUES ('Some Name', 1)");
+
+    expect(
+      this.update(
+        User,
+        {
+          something: 'anything',
+        } as any,
+        {
+          name: 'Some Name',
+          something: 'anything',
+          updatedAt: 1,
+        } as any
+      )
+    ).toBe("UPDATE User SET name = 'Some Name', updatedAt = 1 WHERE `something` = 'anything'");
+
+    expect(
+      this.remove(User, {
+        something: 'anything',
+      } as any)
+    ).toBe("DELETE FROM User WHERE `something` = 'anything'");
   }
 
   shouldFind$and() {
@@ -584,13 +631,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
       this.find(User, {
         project: [
           '*',
-          literal('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness'),
+          literal('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness'),
         ] as QueryProject<User>,
         filter: { name: 'something' },
       })
     ).toBe(
       'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
-        ', LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt AS hotness' +
+        ', LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness' +
         " FROM User WHERE name = 'something'"
     );
   }

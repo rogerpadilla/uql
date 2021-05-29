@@ -7,7 +7,6 @@ import {
   QueryComparisonOperator,
   QuerySort,
   QueryPager,
-  QueryOptions,
   QueryTextSearchOptions,
   QueryPopulate,
   Properties,
@@ -74,8 +73,8 @@ export abstract class BaseSqlDialect {
     return `DELETE FROM ${meta.name} WHERE ${where}`;
   }
 
-  find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
-    const select = this.select<E>(entity, qm, opts);
+  find<E>(entity: Type<E>, qm: Query<E>): string {
+    const select = this.select<E>(entity, qm);
     const filter = this.filter<E>(entity, qm.filter, { prependClause: true });
     const group = this.group<E>(entity, qm.group);
     const sort = this.sort<E>(entity, qm.sort);
@@ -86,7 +85,7 @@ export abstract class BaseSqlDialect {
   project<E>(
     entity: Type<E>,
     project: QueryProject<E>,
-    opts: { prefix?: string; prependPrefixToAlias?: boolean } & QueryOptions
+    opts: { prefix?: string; prependPrefixToAlias?: boolean }
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${opts.prefix}.` : '';
@@ -112,21 +111,21 @@ export abstract class BaseSqlDialect {
         if (key instanceof Literal) {
           return key.value;
         }
-        const name = meta.properties[key as string].name;
+        const property = meta.properties[key as string];
+        const name = property?.name ?? this.escapeId(key);
         const col = `${prefix}${name}`;
         if (opts.prependPrefixToAlias) {
           return `${col} ${this.escapeId(opts.prefix + '.' + key, true)}`;
         }
-        return name === key ? col : `${col} ${key}`;
+        return name === key || !property ? col : `${col} ${key}`;
       })
       .join(', ');
   }
 
-  select<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
+  select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
     const baseColumns = this.project(entity, qm.project, {
       prefix: qm.populate && meta.name,
-      ...opts,
     });
     const { joinsColumns, joinsTables } = this.populate(entity, qm.populate);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${meta.name}${joinsTables}`;

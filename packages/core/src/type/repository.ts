@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
+import { Query, QueryFilter, QueryOne } from './query';
 
 export type UniversalRepository<E> = {
   insertMany?(body: E[]): Promise<any>;
@@ -31,11 +31,11 @@ export interface Repository<E> extends UniversalRepository<E> {
 
   updateOneById(id: any, body: E): Promise<number>;
 
-  findMany(qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany(qm: Query<E>): Promise<E[]>;
 
-  findOne(qm: Query<E>, opts?: QueryOptions): Promise<E>;
+  findOne(qm: Query<E>): Promise<E>;
 
-  findOneById(id: any, qo?: QueryOne<E>, opts?: QueryOptions): Promise<E>;
+  findOneById(id: any, qo?: QueryOne<E>): Promise<E>;
 
   removeMany(filter: QueryFilter<E>): Promise<number>;
 

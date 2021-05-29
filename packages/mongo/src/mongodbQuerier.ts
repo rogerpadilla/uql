@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions, Type } from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, QueryOne, Type } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
@@ -81,9 +81,9 @@ export class MongodbQuerier extends BaseQuerier {
     return documents;
   }
 
-  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
+  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
     const meta = getMeta(entity);
-    return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
+    return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } });
   }
 
   async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
@@ -95,10 +95,6 @@ export class MongodbQuerier extends BaseQuerier {
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
     return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, filter), { session: this.session });
-  }
-
-  async query(query: string) {
-    throw new TypeError('method not implemented');
   }
 
   get hasOpenTransaction() {

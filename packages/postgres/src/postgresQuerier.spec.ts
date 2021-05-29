@@ -4,13 +4,7 @@ import { PostgresQuerier } from './postgresQuerier';
 
 class PostgrestQuerierSpec extends BaseSqlQuerierSpec {
   constructor() {
-    super(PostgresQuerier, {
-      query: () =>
-        Promise.resolve({
-          rows: [{ insertid: 1 }, { insertid: 2 }],
-        }),
-      release: () => Promise.resolve(),
-    });
+    super(PostgresQuerier);
   }
 }
 

@@ -1,12 +1,4 @@
-import {
-  Query,
-  QueryFilter,
-  QueryUpdateResult,
-  QueryOptions,
-  QueryProject,
-  QuerierPoolConnection,
-  Type,
-} from '../type';
+import { Query, QueryFilter, QueryProject, QuerierPoolConnection, Type } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
@@ -16,28 +8,26 @@ import { literal } from './literal';
 export abstract class BaseSqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
 
-  constructor(readonly dialect: BaseSqlDialect, readonly conn: QuerierPoolConnection) {
+  constructor(readonly conn: QuerierPoolConnection, readonly dialect: BaseSqlDialect) {
     super();
   }
 
-  abstract query<E>(query: string, opts?: QueryOptions): Promise<E>;
-
   async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
-    const res = await this.query<QueryUpdateResult>(query);
+    const res = await this.conn.run(query);
     const meta = getMeta(entity);
     return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
   }
 
   async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
-    const res = await this.query<QueryUpdateResult>(query);
-    return res.affectedRows;
+    const res = await this.conn.run(query);
+    return res.changes;
   }
 
-  async findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
-    const query = this.dialect.find(entity, qm, opts);
-    const res = await this.query<E[]>(query, { isSelect: true });
+  async findMany<E>(entity: Type<E>, qm: Query<E>) {
+    const query = this.dialect.find(entity, qm);
+    const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
     await this.populateToManyRelations(entity, founds, qm.populate);
     return founds;
@@ -45,8 +35,8 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
 
   async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
     const query = this.dialect.remove(entity, filter);
-    const res = await this.query<QueryUpdateResult>(query);
-    return res.affectedRows;
+    const res = await this.conn.run(query);
+    return res.changes;
   }
 
   async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
@@ -62,7 +52,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     if (this.hasPendingTransaction) {
       throw new TypeError('pending transaction');
     }
-    await this.query(this.dialect.beginTransactionCommand);
+    await this.conn.run(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
   }
 
@@ -70,7 +60,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
-    await this.query('COMMIT');
+    await this.conn.run('COMMIT');
     this.hasPendingTransaction = undefined;
   }
 
@@ -78,7 +68,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
-    await this.query('ROLLBACK');
+    await this.conn.run('ROLLBACK');
     this.hasPendingTransaction = undefined;
   }
 

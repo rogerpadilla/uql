@@ -1,5 +1,5 @@
 import { Querier } from './querier';
-import { QueryOptions } from './query';
+import { QueryUpdateResult } from './query';
 
 export type QuerierPoolOptions = {
   host?: string;
@@ -12,8 +12,10 @@ export type QuerierPoolOptions = {
 export type QuerierPoolSqlite3Options = { filename: string };
 
 export type QuerierPoolConnection = {
-  query(query: string, opts?: QueryOptions): Promise<any>;
-  release(): void | Promise<void>;
+  all<T>(query: string): Promise<T[]>;
+  run(query: string): Promise<QueryUpdateResult>;
+  release(): Promise<void>;
+  end(): Promise<void>;
 };
 
 export type QuerierPool<Q extends Querier = Querier> = {

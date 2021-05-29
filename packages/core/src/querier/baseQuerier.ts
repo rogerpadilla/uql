@@ -1,4 +1,4 @@
-import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryOptions, QueryPopulate, Type } from '../type';
+import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryPopulate, Type } from '../type';
 import { getMeta } from '../entity/decorator';
 
 /**
@@ -17,23 +17,23 @@ export abstract class BaseQuerier implements Querier {
 
   async updateOneById<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
-    const affectedRows = await this.updateMany(entity, { [meta.id.property]: id }, body);
+    const changes = await this.updateMany(entity, { [meta.id.property]: id }, body);
     await this.updateRelations(entity, id, body);
-    return affectedRows;
+    return changes;
   }
 
-  abstract findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 
-  async findOne<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
+  async findOne<E>(entity: Type<E>, qm: Query<E>) {
     qm.limit = 1;
-    const rows = await this.findMany(entity, qm, opts);
+    const rows = await this.findMany(entity, qm);
     return rows[0];
   }
 
-  findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}, opts?: QueryOptions) {
+  findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
     const meta = getMeta(type);
     const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
-    return this.findOne(type, { ...qo, filter: { [key]: id } }, opts);
+    return this.findOne(type, { ...qo, filter: { [key]: id } });
   }
 
   abstract removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
@@ -44,8 +44,6 @@ export abstract class BaseQuerier implements Querier {
   }
 
   abstract count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
-
-  abstract query(query: string): Promise<any>;
 
   abstract readonly hasOpenTransaction: boolean;
 

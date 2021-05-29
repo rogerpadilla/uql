@@ -17,7 +17,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
         return;
       }
       const ddl = this.buildDdlForTable(this.entities[index]);
-      await this.querier.query(ddl);
+      await this.querier.conn.run(ddl);
       await run(index + 1);
     };
     await run(0);
@@ -27,7 +27,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);
-        return this.querier.query(`DROP TABLE ${meta.name}`);
+        return this.querier.conn.run(`DROP TABLE ${meta.name}`);
       })
     );
   }

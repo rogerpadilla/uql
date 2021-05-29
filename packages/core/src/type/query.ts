@@ -70,8 +70,6 @@ export type QueryStringified = {
 };
 
 export type QueryUpdateResult = {
-  readonly affectedRows?: number;
+  readonly changes?: number;
   readonly insertId?: number;
 };
-
-export type QueryOptions = { isSelect?: boolean };

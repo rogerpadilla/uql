@@ -112,11 +112,11 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const affectedRows = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
+    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
       itemAdjustments,
     });
 
-    expect(affectedRows).toBe(1);
+    expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       populate: { itemAdjustments: {} },
@@ -165,11 +165,11 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const affectedRows = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
+    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
       itemAdjustments,
     });
 
-    expect(affectedRows).toBe(1);
+    expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       populate: { itemAdjustments: {} },

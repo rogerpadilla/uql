@@ -1,5 +1,5 @@
 import { Type } from './utility';
-import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
+import { Query, QueryFilter, QueryOne } from './query';
 
 export type UniversalQuerier = {
   insertMany?<E>(entity: Type<E>, body: E[]): Promise<any>;
@@ -32,19 +32,17 @@ export interface Querier extends UniversalQuerier {
 
   updateOneById<E>(entity: Type<E>, id: any, body: E): Promise<number>;
 
-  findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 
-  findOne<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): Promise<E>;
+  findOne<E>(entity: Type<E>, qm: Query<E>): Promise<E>;
 
-  findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>, opts?: QueryOptions): Promise<E>;
+  findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>): Promise<E>;
 
   removeMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
 
   removeOneById<E>(entity: Type<E>, id: any): Promise<number>;
 
   count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
-
-  query(query: string): Promise<any>;
 
   readonly hasOpenTransaction: boolean;
 

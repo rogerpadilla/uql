@@ -1,17 +1,21 @@
 import { User, InventoryAdjustment, Spec } from '../test';
+import { QuerierPoolConnection } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export class BaseSqlQuerierSpec implements Spec {
+  conn: QuerierPoolConnection;
   querier: BaseSqlQuerier;
 
-  constructor(
-    private readonly querierConstructor: new (conn: any) => BaseSqlQuerier,
-    private readonly connection: any
-  ) {}
+  constructor(private readonly querierConstructor: new (conn: QuerierPoolConnection) => BaseSqlQuerier) {}
 
   beforeEach() {
-    this.querier = new this.querierConstructor.prototype.constructor(Object.create(this.connection));
-    jest.spyOn(this.querier, 'query');
+    this.conn = {
+      all: jest.fn(() => Promise.resolve([])),
+      run: jest.fn(() => Promise.resolve({ insertId: 1, changes: 1 })),
+      release: jest.fn(() => Promise.resolve()),
+      end: jest.fn(() => Promise.resolve()),
+    };
+    this.querier = new this.querierConstructor(this.conn);
     jest.spyOn(this.querier, 'insertOne');
     jest.spyOn(this.querier, 'insertMany');
     jest.spyOn(this.querier, 'updateMany');
@@ -28,12 +32,11 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOneById() {
     await this.querier.findOneById(User, 1);
-    expect(this.querier.query).toBeCalledTimes(1);
-    expect(this.querier.query).nthCalledWith(
+    expect(this.conn.all).toBeCalledTimes(1);
+    expect(this.conn.all).nthCalledWith(
       1,
       'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
-        ' FROM User WHERE id = 1 LIMIT 1',
-      { isSelect: true }
+        ' FROM User WHERE id = 1 LIMIT 1'
     );
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -43,10 +46,8 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOne() {
     await this.querier.findOne(User, { filter: { companyId: '123' }, project: { id: 1, name: 1 } });
-    expect(this.querier.query).toBeCalledTimes(1);
-    expect(this.querier.query).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 1", {
-      isSelect: true,
-    });
+    expect(this.conn.all).toBeCalledTimes(1);
+    expect(this.conn.all).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 1");
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
@@ -58,7 +59,7 @@ export class BaseSqlQuerierSpec implements Spec {
       { id: '123', description: 'something a', userId: '1' },
       { id: '456', description: 'something b', userId: '1' },
     ];
-    jest.spyOn(this.querier, 'query').mockResolvedValue(mock);
+    jest.spyOn(this.conn, 'all').mockResolvedValue(mock);
 
     await this.querier.findOne(InventoryAdjustment, {
       project: { id: 1 },
@@ -66,18 +67,16 @@ export class BaseSqlQuerierSpec implements Spec {
       populate: { itemAdjustments: {} },
     });
 
-    expect(this.querier.query).nthCalledWith(
+    expect(this.conn.all).nthCalledWith(
       1,
-      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1' LIMIT 1",
-      { isSelect: true }
+      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1' LIMIT 1"
     );
-    expect(this.querier.query).nthCalledWith(
+    expect(this.conn.all).nthCalledWith(
       2,
       'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
-        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')",
-      { isSelect: true }
+        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
     );
-    expect(this.querier.query).toBeCalledTimes(2);
+    expect(this.conn.all).toBeCalledTimes(2);
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(2);
@@ -95,7 +94,7 @@ export class BaseSqlQuerierSpec implements Spec {
       { id: '123', description: 'something a', userId: '1' },
       { id: '456', description: 'something b', userId: '1' },
     ];
-    jest.spyOn(this.querier, 'query').mockResolvedValue(mock);
+    jest.spyOn(this.conn, 'all').mockResolvedValue(mock);
 
     await this.querier.findMany(InventoryAdjustment, {
       project: { id: 1 },
@@ -103,16 +102,11 @@ export class BaseSqlQuerierSpec implements Spec {
       populate: { itemAdjustments: {} },
     });
 
-    expect(this.querier.query).nthCalledWith(
-      1,
-      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1'",
-      { isSelect: true }
-    );
-    expect(this.querier.query).nthCalledWith(
+    expect(this.conn.all).nthCalledWith(1, "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1'");
+    expect(this.conn.all).nthCalledWith(
       2,
       'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
-        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')",
-      { isSelect: true }
+        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
     );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
@@ -154,6 +148,14 @@ export class BaseSqlQuerierSpec implements Spec {
       name: 'some name',
       profile: { picture: 'abc' },
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^INSERT INTO User \(name, createdAt\) VALUES \('some name', \d+\)/)
+    );
+    expect(this.conn.run).nthCalledWith(
+      2,
+      expect.toMatch(/^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('abc', 1, \d+\)/)
+    );
     expect(this.querier.insertOne).toBeCalledTimes(2);
     expect(this.querier.insertMany).toBeCalledTimes(2);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -174,6 +176,16 @@ export class BaseSqlQuerierSpec implements Spec {
         { buyPrice: 300, createdAt: 1 },
       ],
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^INSERT INTO InventoryAdjustment \(description, createdAt\) VALUES \('some description', 1\)/)
+    );
+    expect(this.conn.run).nthCalledWith(
+      2,
+      expect.toMatch(
+        /^INSERT INTO ItemAdjustment \(buyPrice, createdAt, inventoryAdjustmentId\) VALUES \(50, 1, 1\), \(300, 1, 1\)/
+      )
+    );
     expect(this.querier.insertOne).toBeCalledTimes(1);
     expect(this.querier.insertMany).toBeCalledTimes(2);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -210,6 +222,14 @@ export class BaseSqlQuerierSpec implements Spec {
       name: 'something',
       profile: { picture: 'xyz' },
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE User SET name = 'something', updatedAt = \d+ WHERE id = 1$/)
+    );
+    expect(this.conn.run).nthCalledWith(
+      2,
+      expect.toMatch(/^UPDATE user_profile SET image = 'xyz', updatedAt = \d+ WHERE userId = 1$/)
+    );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -226,6 +246,10 @@ export class BaseSqlQuerierSpec implements Spec {
       name: 'something',
       profile: null,
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE User SET name = 'something', updatedAt = \d+ WHERE id = 1$/)
+    );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -242,6 +266,17 @@ export class BaseSqlQuerierSpec implements Spec {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE id = 1$/)
+    );
+    expect(this.conn.run).nthCalledWith(2, 'DELETE FROM ItemAdjustment WHERE inventoryAdjustmentId = 1');
+    expect(this.conn.run).nthCalledWith(
+      3,
+      expect.toMatch(
+        /^INSERT INTO ItemAdjustment \(buyPrice, inventoryAdjustmentId, createdAt\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)/
+      )
+    );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(1);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -258,6 +293,10 @@ export class BaseSqlQuerierSpec implements Spec {
       description: 'some description',
       itemAdjustments: null,
     });
+    expect(this.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE id = 1$/)
+    );
     expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.insertMany).toBeCalledTimes(0);
     expect(this.querier.findMany).toBeCalledTimes(0);
@@ -319,7 +358,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldCount() {
-    jest.spyOn(this.querier, 'query').mockResolvedValue([{ count: 1 }]);
+    jest.spyOn(this.conn, 'all').mockResolvedValue([{ count: 1 }]);
 
     await this.querier.count(User, { companyId: '123' });
     expect(this.querier.findMany).toBeCalledTimes(1);
