@@ -137,25 +137,25 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-function fillMappedRelationOptions<E>(opts: RelationOptions<E>): void {
-  const relEntity = opts.entity();
+function fillMappedRelationOptions<E>(relOpts: RelationOptions<E>): void {
+  const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
-  const mappedByKey = getMappedByKey(opts);
-  opts.mappedBy = mappedByKey as RelationMappedBy<E>;
+  const mappedByKey = getMappedByKey(relOpts);
+  relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
 
   if (relMeta.relations[mappedByKey]) {
     const mappedByRelOpts = relMeta.relations[mappedByKey];
     if (mappedByRelOpts.cardinality === 'mm') {
-      opts.through = mappedByRelOpts.through;
-      opts.references = mappedByRelOpts.references.slice();
+      relOpts.through = mappedByRelOpts.through;
+      relOpts.references = mappedByRelOpts.references.slice().reverse();
     } else {
-      opts.references = mappedByRelOpts.references.map(({ source, target }) => ({
+      relOpts.references = mappedByRelOpts.references.map(({ source, target }) => ({
         source: target,
         target: source,
       }));
     }
   } else {
-    opts.references = [{ source: mappedByKey, target: relMeta.id.property }];
+    relOpts.references = [{ source: mappedByKey, target: relMeta.id.property }];
   }
 }
 
