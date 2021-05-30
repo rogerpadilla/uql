@@ -13,6 +13,7 @@ import {
   MeasureUnitCategory,
   Storehouse,
   Tag,
+  ItemTag,
 } from '../../test';
 import { getEntities, getMeta } from './definition';
 import { Entity } from './entity';
@@ -208,7 +209,7 @@ it('Item', () => {
       tags: {
         cardinality: 'mm',
         entity: expect.any(Function),
-        through: 'ItemTag',
+        through: expect.any(Function),
         references: [
           { source: 'itemId', target: 'id' },
           { source: 'tagId', target: 'id' },
@@ -280,7 +281,7 @@ it('Tag', () => {
         cardinality: 'mm',
         entity: expect.any(Function),
         mappedBy: 'tags',
-        through: 'ItemTag',
+        through: expect.any(Function),
         references: [
           { source: 'tagId', target: 'id' },
           { source: 'itemId', target: 'id' },
@@ -551,6 +552,7 @@ it('getEntities', () => {
     MeasureUnit,
     Storehouse,
     Tag,
+    ItemTag,
     Item,
     ItemAdjustment,
     InventoryAdjustment,

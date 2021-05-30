@@ -101,10 +101,10 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
     return meta;
   }
   meta.processed = true;
-  return fillRelationsOptions(meta);
+  return fillRelationsReferences(meta);
 }
 
-function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
+function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
     const relOpts = meta.relations[relKey];
 
@@ -114,7 +114,7 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     if (relOpts.mappedBy) {
-      fillMappedRelationOptions(relOpts);
+      fillMappedRelationReferences(relOpts);
       continue;
     }
 
@@ -122,7 +122,6 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const relMeta = ensureMeta(relEntity);
 
     if (relOpts.cardinality === 'mm') {
-      relOpts.through = `${meta.name}${relMeta.name}`;
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
       const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
       relOpts.references = [
@@ -137,7 +136,7 @@ function fillRelationsOptions<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-function fillMappedRelationOptions<E>(relOpts: RelationOptions<E>): void {
+function fillMappedRelationReferences<E>(relOpts: RelationOptions<E>): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
   const mappedByKey = getMappedByKey(relOpts);

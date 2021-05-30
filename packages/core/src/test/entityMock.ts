@@ -141,7 +141,17 @@ export class Tag extends BaseEntity {
   @Property()
   name?: string;
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
-  items: Item[];
+  items?: Item[];
+}
+
+@Entity()
+export class ItemTag {
+  @Id()
+  id?: string;
+  @Property()
+  itemId?: string;
+  @Property()
+  tagId?: string;
 }
 
 @Entity()
@@ -178,7 +188,7 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Property()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag })
   tags?: Tag[];
 }
 

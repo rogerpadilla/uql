@@ -91,7 +91,7 @@ export abstract class BaseQuerier implements Querier {
   protected async insertRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
 
-    const insertProms = filterIndependentRelations(meta, body).map((relKey) => {
+    const insertProms = getIndependentRelations(meta, body).map(async (relKey) => {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
       if (relOpts.cardinality === '11') {
@@ -108,8 +108,12 @@ export abstract class BaseQuerier implements Querier {
         return this.insertMany(relEntity, relBodies);
       }
       if (relOpts.cardinality === 'mm') {
-        // TODO mm cardinality
-        throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
+        const relIds = await this.insertMany(relEntity, body[relKey]);
+        const throughRecords = relIds.map((relId) => ({
+          [relOpts.references[0].source]: id,
+          [relOpts.references[1].source]: relId,
+        }));
+        return this.insertMany(relOpts.through(), throughRecords);
       }
     });
 
@@ -119,7 +123,7 @@ export abstract class BaseQuerier implements Querier {
   protected async updateRelations<E>(entity: Type<E>, id: any, body: E) {
     const meta = getMeta(entity);
 
-    const deletePromises = filterIndependentRelations(meta, body).map(async (relKey) => {
+    const deletePromises = getIndependentRelations(meta, body).map(async (relKey) => {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
       if (relOpts.cardinality === '11') {
@@ -151,7 +155,7 @@ export abstract class BaseQuerier implements Querier {
   }
 }
 
-function filterIndependentRelations<E>(meta: EntityMeta<E>, body: E) {
+function getIndependentRelations<E>(meta: EntityMeta<E>, body: E) {
   return Object.keys(body).filter((prop) => {
     const relOpts = meta.relations[prop];
     return relOpts && relOpts.cardinality !== 'm1';

@@ -31,7 +31,7 @@ export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   readonly cardinality?: RelationCardinality;
   mappedBy?: RelationMappedBy<E>;
-  through?: string;
+  through?: EntityGetter<any>;
   references?: RelationReferences;
 };
 
@@ -51,7 +51,14 @@ export type RelationOneToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: 
 
 export type RelationManyToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
 
-export type RelationManyToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationManyToManyOptions<E> = { entity: EntityGetter<E> } & (
+  | {
+      through: EntityGetter<any>;
+    }
+  | {
+      mappedBy: RelationMappedBy<E>;
+    }
+);
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
