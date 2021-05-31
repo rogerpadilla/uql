@@ -109,11 +109,6 @@ export abstract class BaseSqlDialect {
 
     return project
       .map((key) => {
-        if (key === '*') {
-          return Object.keys(meta.properties)
-            .map((prop) => meta.properties[prop].name)
-            .join(', ');
-        }
         if (key instanceof Literal) {
           return key.value;
         }

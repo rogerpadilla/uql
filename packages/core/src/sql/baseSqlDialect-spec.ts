@@ -631,14 +631,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.find(User, {
         $project: [
-          '*',
+          literal('*'),
           literal('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness'),
         ] as QueryProject<User>,
         $filter: { name: 'something' },
       })
     ).toBe(
-      'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
-        ', LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness' +
+      'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness' +
         " FROM User WHERE name = 'something'"
     );
   }
