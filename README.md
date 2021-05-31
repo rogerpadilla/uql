@@ -386,10 +386,11 @@ import { getRepository } from '@uql/client';
 // 'User' is an entity class
 const userRepository = getRepository(User);
 
-const lastItems = await userRepository.findMany({
-  filter: { name: { $startsWith: 'lorem' } },
-  sort: { createdAt: -1 },
-  limit: 100,
+const users = await userRepository.findMany({
+  $filter: { name: { $startsWith: 'lorem' } },
+  $populate: { profile: { $project: ['picture'] } },
+  $sort: { createdAt: -1 },
+  $limit: 100,
 });
 ```
 
