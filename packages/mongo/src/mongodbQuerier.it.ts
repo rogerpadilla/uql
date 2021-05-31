@@ -15,10 +15,6 @@ class MongodbQuerierIt extends BaseQuerierIt {
     );
   }
 
-  async shouldThrowIfQueryMongo() {
-    await expect(this.querier.query('something')).rejects.toThrow('method not implemented');
-  }
-
   async createTables() {
     const querier = this.querier as MongodbQuerier;
     await Promise.all(
