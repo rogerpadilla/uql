@@ -1,5 +1,5 @@
 import { Database } from 'sqlite';
-import { QuerierPoolConnection } from '@uql/core/type';
+import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 
 export class Sqlit3Connection implements QuerierPoolConnection {
   constructor(readonly db: Database) {}
@@ -11,8 +11,8 @@ export class Sqlit3Connection implements QuerierPoolConnection {
 
   async run(query: string) {
     // console.debug(query);
-    const { changes, lastID: insertId } = await this.db.run(query);
-    return { changes, insertId };
+    const { changes, lastID } = await this.db.run(query);
+    return { changes, lastId: lastID } as QueryUpdateResult;
   }
 
   async release() {

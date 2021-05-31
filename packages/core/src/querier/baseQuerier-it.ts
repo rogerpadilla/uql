@@ -1,8 +1,30 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, Profile, Spec, Tax, TaxCategory, User } from '../test';
+import { validate as uuidValidate } from 'uuid';
+import {
+  Company,
+  InventoryAdjustment,
+  Item,
+  ItemAdjustment,
+  LedgerAccount,
+  Profile,
+  Spec,
+  Tax,
+  TaxCategory,
+  User,
+} from '../test';
 import { Querier, QuerierPool } from '../type';
 
 export abstract class BaseQuerierIt implements Spec {
-  readonly entities = [InventoryAdjustment, ItemAdjustment, Item, Tax, TaxCategory, Profile, Company, User] as const;
+  readonly entities = [
+    InventoryAdjustment,
+    ItemAdjustment,
+    Item,
+    Tax,
+    TaxCategory,
+    LedgerAccount,
+    Profile,
+    Company,
+    User,
+  ] as const;
   querier: Querier;
 
   constructor(readonly pool: QuerierPool) {}
@@ -60,7 +82,60 @@ export abstract class BaseQuerierIt implements Spec {
       userId,
       companyId,
     });
-    expect(taxCategoryId).toBeDefined();
+    expect(uuidValidate(taxCategoryId)).toBe(true);
+  }
+
+  async shouldInsertOneWithOnInsertId() {
+    const id1 = await this.querier.insertOne(TaxCategory, {
+      name: 'Some Name',
+    });
+    const id2 = await this.querier.insertOne(TaxCategory, {
+      pk: '123',
+      name: 'Some Name',
+    });
+    expect(uuidValidate(id1)).toBe(true);
+    expect(id2).toBe('123');
+  }
+
+  async shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
+    const ids = await this.querier.insertMany(TaxCategory, [
+      {
+        name: 'Some Name A',
+      },
+      {
+        pk: '50',
+        name: 'Some Name B',
+      },
+      {
+        name: 'Some Name C',
+      },
+      {
+        pk: '70',
+        name: 'Some Name D',
+      },
+    ]);
+    expect(ids).toHaveLength(4);
+    expect(uuidValidate(ids[0])).toBe(true);
+    expect(ids[1]).toBe('50');
+    expect(uuidValidate(ids[2])).toBe(true);
+    expect(ids[3]).toBe('70');
+  }
+
+  async shouldInsertManyWithAutoIncrementIdAsDefault() {
+    const ids = await this.querier.insertMany(LedgerAccount, [
+      {
+        name: 'Some Name A',
+      },
+      {
+        name: 'Some Name B',
+      },
+      {
+        name: 'Some Name C',
+      },
+    ]);
+    expect(ids).toEqual([1, 2, 3]);
+    const founds = await this.querier.findMany(LedgerAccount, {});
+    expect(founds.map(({ id }) => id)).toEqual(ids);
   }
 
   async shouldInsertOneAndCascadeOneToOne() {

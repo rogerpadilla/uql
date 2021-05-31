@@ -1,6 +1,6 @@
 import { PoolClient } from 'pg';
 
-import { QuerierPoolConnection } from '@uql/core/type';
+import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 
 export class PgConnection implements QuerierPoolConnection {
   constructor(readonly conn: PoolClient) {}
@@ -13,8 +13,8 @@ export class PgConnection implements QuerierPoolConnection {
 
   async run(query: string) {
     // console.debug(query);
-    const res: { rowCount: number; insertId?: any } = await this.conn.query(query);
-    return { changes: res.rowCount, insertId: res.insertId };
+    const { rowCount: changes, id: lastId }: any = await this.conn.query(query);
+    return { changes, lastId } as QueryUpdateResult;
   }
 
   async release() {

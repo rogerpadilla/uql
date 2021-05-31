@@ -21,8 +21,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
       return sql;
     }
     const normalizedSql = normalizeSql(sql, this.dialect.escapeIdChar);
-    const idName = getMeta(entity).id.name;
-    const returnId = `RETURNING ${idName} insertId`;
+    const meta = getMeta(entity);
+    const returnId = `RETURNING ${meta.id.name} id`;
     return normalizedSql.slice(0, sql.length - returnId.length - 1);
   }
 

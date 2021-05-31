@@ -9,7 +9,6 @@ export abstract class BaseQuerier implements Querier {
 
   async insertOne<E>(entity: Type<E>, body: E) {
     const [id] = await this.insertMany(entity, [body]);
-    await this.insertRelations(entity, id, body);
     return id;
   }
 
@@ -88,8 +87,9 @@ export abstract class BaseQuerier implements Querier {
     }
   }
 
-  protected async insertRelations<E>(entity: Type<E>, id: any, body: E) {
+  protected async insertRelations<E>(entity: Type<E>, body: E) {
     const meta = getMeta(entity);
+    const id = body[meta.id.property];
 
     const insertProms = getIndependentRelations(meta, body).map(async (relKey) => {
       const relOpts = meta.relations[relKey];

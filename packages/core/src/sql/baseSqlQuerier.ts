@@ -14,9 +14,14 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
 
   async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
-    const res = await this.conn.run(query);
+    const { lastId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
+    const ids = bodies.map((body, index) => {
+      body[meta.id.property] ??= lastId - bodies.length + index + 1;
+      return body[meta.id.property];
+    });
+    await Promise.all(bodies.map((body) => this.insertRelations(entity, body)));
+    return ids;
   }
 
   async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {

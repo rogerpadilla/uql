@@ -11,7 +11,7 @@ export class BaseSqlQuerierSpec implements Spec {
   beforeEach() {
     this.conn = {
       all: jest.fn(() => Promise.resolve([])),
-      run: jest.fn(() => Promise.resolve({ insertId: 1, changes: 1 })),
+      run: jest.fn(() => Promise.resolve({ changes: 1, lastId: 1 })),
       release: jest.fn(() => Promise.resolve()),
       end: jest.fn(() => Promise.resolve()),
     };
@@ -159,12 +159,12 @@ export class BaseSqlQuerierSpec implements Spec {
     });
     expect(this.conn.run).nthCalledWith(
       1,
-      expect.toMatch(/^INSERT INTO User \(name, createdAt\) VALUES \('some name', \d+\)(?: RETURNING id insertId)?$/)
+      expect.toMatch(/^INSERT INTO User \(name, createdAt\) VALUES \('some name', \d+\)(?: RETURNING id id)?$/)
     );
     expect(this.conn.run).nthCalledWith(
       2,
       expect.toMatch(
-        /^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('abc', 1, \d+\)(?: RETURNING pk insertId)?$/
+        /^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('abc', 1, \d+\)(?: RETURNING pk id)?$/
       )
     );
     expect(this.conn.run).toBeCalledTimes(2);
@@ -192,13 +192,13 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.conn.run).nthCalledWith(
       1,
       expect.toMatch(
-        /^INSERT INTO InventoryAdjustment \(description, createdAt\) VALUES \('some description', 1\)(?: RETURNING id insertId)?$/
+        /^INSERT INTO InventoryAdjustment \(description, createdAt\) VALUES \('some description', 1\)(?: RETURNING id id)?$/
       )
     );
     expect(this.conn.run).nthCalledWith(
       2,
       expect.toMatch(
-        /^INSERT INTO ItemAdjustment \(buyPrice, createdAt, inventoryAdjustmentId\) VALUES \(50, 1, 1\), \(300, 1, 1\)(?: RETURNING id insertId)?$/
+        /^INSERT INTO ItemAdjustment \(buyPrice, createdAt, inventoryAdjustmentId\) VALUES \(50, 1, 1\), \(300, 1, 1\)(?: RETURNING id id)?$/
       )
     );
     expect(this.conn.run).toBeCalledTimes(2);
@@ -228,17 +228,17 @@ export class BaseSqlQuerierSpec implements Spec {
     });
     expect(this.conn.run).nthCalledWith(
       1,
-      expect.toMatch(/^INSERT INTO Item \(name, createdAt\) VALUES \('item one', \d+\)(?: RETURNING id insertId)?$/)
+      expect.toMatch(/^INSERT INTO Item \(name, createdAt\) VALUES \('item one', \d+\)(?: RETURNING id id)?$/)
     );
     expect(this.conn.run).nthCalledWith(
       2,
       expect.toMatch(
-        /^INSERT INTO Tag \(name, createdAt\) VALUES \('tag one', \d+\), \('tag two', \d+\)(?: RETURNING id insertId)?$/
+        /^INSERT INTO Tag \(name, createdAt\) VALUES \('tag one', \d+\), \('tag two', \d+\)(?: RETURNING id id)?$/
       )
     );
     expect(this.conn.run).nthCalledWith(
       3,
-      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \(1, 1\), \(1, 2\)(?: RETURNING id insertId)?$/)
+      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \(\d+, \d+\), \(\d+, \d+\)(?: RETURNING id id)?$/)
     );
     expect(this.conn.run).toBeCalledTimes(3);
     expect(this.conn.all).toBeCalledTimes(0);
@@ -343,7 +343,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.conn.run).nthCalledWith(
       3,
       expect.toMatch(
-        /^INSERT INTO ItemAdjustment \(buyPrice, inventoryAdjustmentId, createdAt\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)(?: RETURNING id insertId)?$/
+        /^INSERT INTO ItemAdjustment \(buyPrice, inventoryAdjustmentId, createdAt\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)(?: RETURNING id id)?$/
       )
     );
     expect(this.conn.run).toBeCalledTimes(3);

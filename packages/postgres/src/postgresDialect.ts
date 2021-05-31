@@ -10,7 +10,7 @@ export class PostgresDialect extends BaseSqlDialect {
   insert<E>(entity: Type<E>, body: E | E[]): string {
     const sql = super.insert(entity, body);
     const meta = getMeta(entity);
-    return `${sql} RETURNING ${meta.id.name} insertId`;
+    return `${sql} RETURNING ${meta.id.name} id`;
   }
 
   compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
