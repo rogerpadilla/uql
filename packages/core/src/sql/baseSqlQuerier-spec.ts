@@ -28,7 +28,7 @@ export class BaseSqlQuerierSpec implements Spec {
     jest.spyOn(this.querier, 'release');
   }
 
-  async afterEach() {
+  afterEach() {
     jest.clearAllMocks();
     jest.restoreAllMocks();
   }
