@@ -271,6 +271,7 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.updateOneById(User, 5, { companyId: '123' });
     expect(this.conn.run).toBeCalledTimes(1);
     expect(this.conn.all).toBeCalledTimes(0);
+    expect(this.querier.insertOne).toBeCalledTimes(0);
     expect(this.querier.updateMany).toBeCalledTimes(1);
     expect(this.querier.findMany).toBeCalledTimes(0);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -368,6 +369,7 @@ export class BaseSqlQuerierSpec implements Spec {
       1,
       expect.toMatch(/^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE id = 1$/)
     );
+    expect(this.conn.run).nthCalledWith(2, 'DELETE FROM ItemAdjustment WHERE inventoryAdjustmentId = 1');
     expect(this.conn.run).toBeCalledTimes(2);
     expect(this.conn.all).toBeCalledTimes(0);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -381,22 +383,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldUpdateOneByIdUnaffectedRecord() {
-    await expect(this.querier.updateOneById(User, 5, { companyId: '123' }));
-    expect(this.conn.run).toBeCalledTimes(1);
-    expect(this.conn.all).toBeCalledTimes(0);
-    expect(this.querier.insertOne).toBeCalledTimes(0);
-    expect(this.querier.updateMany).toBeCalledTimes(1);
-    expect(this.querier.findMany).toBeCalledTimes(0);
-    expect(this.querier.insertOne).toBeCalledTimes(0);
-    expect(this.querier.deleteMany).toBeCalledTimes(0);
-    expect(this.querier.beginTransaction).toBeCalledTimes(0);
-    expect(this.querier.commitTransaction).toBeCalledTimes(0);
-    expect(this.querier.release).toBeCalledTimes(0);
-    expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
-  }
-
-  async shoulddeleteOneById() {
+  async shouldDeleteOneById() {
     await this.querier.deleteOneById(User, 123);
     expect(this.querier.deleteMany).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -408,7 +395,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shoulddeleteOneByIdUnaffectedRecord() {
+  async shouldDeleteOneByIdUnaffectedRecord() {
     await expect(this.querier.deleteOneById(User, 5));
     expect(this.querier.deleteMany).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -420,7 +407,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shoulddeleteMany() {
+  async shouldDeleteMany() {
     await this.querier.deleteMany(User, { companyId: '123' });
     expect(this.querier.deleteMany).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
@@ -447,10 +434,12 @@ export class BaseSqlQuerierSpec implements Spec {
   async shouldUseTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
+    expect(this.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.updateMany(User, { id: '5' }, { name: 'Hola' });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
+    expect(this.conn.run).toBeCalledWith('COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.release();
     expect(this.querier.hasOpenTransaction).toBeFalsy();

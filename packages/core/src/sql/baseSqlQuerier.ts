@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryProject, QuerierPoolConnection, Type } from '../type';
+import { Query, QueryFilter, QueryProject, QuerierPoolConnection, Type, Properties } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
@@ -16,18 +16,26 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.insert(entity, bodies);
     const { lastId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    const ids = bodies.map((body, index) => {
-      body[meta.id.property] ??= lastId - bodies.length + index + 1;
-      return body[meta.id.property];
-    });
-    await Promise.all(bodies.map((body) => this.insertRelations(entity, body)));
+    const ids = bodies.map((body, index) => body[meta.id.property] ?? lastId - bodies.length + index + 1);
+    await Promise.all(bodies.map((body, index) => this.insertRelations(meta, ids[index], body)));
     return ids;
   }
 
   async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
     const query = this.dialect.update(entity, filter, body);
-    const res = await this.conn.run(query);
-    return res.changes;
+    const { changes } = await this.conn.run(query);
+
+    // if (changes) {
+    //   const meta = getMeta(entity);
+    //   const founds = await this.findMany(entity, {
+    //     project: [meta.id.property] as Properties<E>[],
+    //     filter,
+    //     limit: changes,
+    //   });
+    //   await Promise.all(founds.map((found) => this.updateRelations(meta, found[meta.id.property], body)));
+    // }
+
+    return changes;
   }
 
   async findMany<E>(entity: Type<E>, qm: Query<E>) {
