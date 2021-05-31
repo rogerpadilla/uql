@@ -12,6 +12,8 @@ import {
   Properties,
   QueryProject,
   Type,
+  QueryCriteria,
+  QueryPopulateValue,
 } from '../type';
 import { filterPersistableProperties } from '../entity/util';
 import { Literal } from './literal';
@@ -21,6 +23,19 @@ export abstract class BaseSqlDialect {
 
   constructor(readonly beginTransactionCommand: string, readonly escapeIdChar: '`' | '"') {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
+  }
+
+  criteria<E>(entity: Type<E>, qm: Query<E>): string {
+    const filter = this.where<E>(entity, qm.filter);
+    const group = this.group<E>(entity, qm.group);
+    const sort = this.sort<E>(entity, qm.sort);
+    const pager = this.pager(qm);
+    return filter + group + sort + pager;
+  }
+
+  find<E>(entity: Type<E>, qm: Query<E>): string {
+    const select = this.select<E>(entity, qm);
+    return select + this.criteria(entity, qm);
   }
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {
@@ -46,7 +61,13 @@ export abstract class BaseSqlDialect {
     return `INSERT INTO ${meta.name} (${columns.join(', ')}) VALUES (${values})`;
   }
 
-  update<E>(entity: Type<E>, filter: QueryFilter<E>, payload: E): string {
+  delete<E>(entity: Type<E>, qm: QueryCriteria<E>): string {
+    const meta = getMeta(entity);
+    const criteria = this.criteria(entity, qm);
+    return `DELETE FROM ${meta.name}${criteria}`;
+  }
+
+  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
 
     const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
@@ -63,23 +84,8 @@ export abstract class BaseSqlDialect {
       return acc;
     }, {} as E);
     const values = this.objectToValues(persistableData);
-    const where = this.filter(entity, filter);
-    return `UPDATE ${meta.name} SET ${values} WHERE ${where}`;
-  }
-
-  delete<E>(entity: Type<E>, filter: QueryFilter<E>): string {
-    const meta = getMeta(entity);
-    const where = this.filter(entity, filter);
-    return `DELETE FROM ${meta.name} WHERE ${where}`;
-  }
-
-  find<E>(entity: Type<E>, qm: Query<E>): string {
-    const select = this.select<E>(entity, qm);
-    const filter = this.filter<E>(entity, qm.filter, { prependClause: true });
-    const group = this.group<E>(entity, qm.group);
-    const sort = this.sort<E>(entity, qm.sort);
-    const pager = this.pager(qm);
-    return select + filter + group + sort + pager;
+    const criteria = this.criteria(entity, qm);
+    return `UPDATE ${meta.name} SET ${values}${criteria}`;
   }
 
   project<E>(
@@ -127,11 +133,11 @@ export abstract class BaseSqlDialect {
     const baseColumns = this.project(entity, qm.project, {
       prefix: qm.populate && meta.name,
     });
-    const { joinsColumns, joinsTables } = this.populate(entity, qm.populate);
+    const { joinsColumns, joinsTables } = this.join(entity, qm.populate);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${meta.name}${joinsTables}`;
   }
 
-  populate<E>(
+  join<E>(
     entity: Type<E>,
     populate: QueryPopulate<E> = {},
     prefix?: string
@@ -154,7 +160,7 @@ export abstract class BaseSqlDialect {
 
       const joinPath = prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
-      const popVal = populate[relKey];
+      const popVal = populate[relKey] as QueryPopulateValue<typeof relEntity>;
 
       const relColumns = this.project(relEntity, popVal.project, {
         prefix: joinPath,
@@ -169,17 +175,14 @@ export abstract class BaseSqlDialect {
       const joinType = popVal.required ? 'INNER' : 'LEFT';
 
       joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinPath} ON `;
-
-      // const opts = getRelationOptions(relOpts);
-
       joinsTables += relOpts.references.map((it) => `${joinPath}.${it.target} = ${relPath}.${it.source}`).join(' AND ');
 
       if (popVal.filter && Object.keys(popVal.filter).length) {
-        const where = this.filter(relEntity, popVal.filter, { prefix: relKey });
+        const where = this.where(relEntity, popVal.filter, { prefix: relKey, omitClause: true });
         joinsTables += ` AND ${where}`;
       }
 
-      const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.populate(
+      const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.join(
         relEntity,
         popVal.populate,
         joinPath
@@ -192,10 +195,10 @@ export abstract class BaseSqlDialect {
     return { joinsColumns, joinsTables };
   }
 
-  filter<E>(
+  where<E>(
     entity: Type<E>,
     filter: QueryFilter<E>,
-    opts: { prefix?: string; prependClause?: boolean; wrapWithParenthesis?: boolean } = {}
+    opts: { prefix?: string; omitClause?: boolean; wrapWithParenthesis?: boolean } = {}
   ): string {
     const filterKeys = filter && Object.keys(filter);
     if (!filterKeys?.length) {
@@ -211,9 +214,10 @@ export abstract class BaseSqlDialect {
           const hasMultiItems = entry.length > 1;
           const logicalComparison = entry
             .map((filterIt: QueryFilter<E>) =>
-              this.filter(entity, filterIt, {
+              this.where(entity, filterIt, {
                 prefix: opts.prefix,
                 wrapWithParenthesis: hasMultiItems && Object.keys(filterIt).length > 1,
+                omitClause: true,
               })
             )
             .join(key === '$or' ? ' OR ' : ' AND ');
@@ -227,7 +231,7 @@ export abstract class BaseSqlDialect {
       sql = `(${sql})`;
     }
 
-    return opts.prependClause ? ` WHERE ${sql}` : sql;
+    return opts.omitClause ? sql : ` WHERE ${sql}`;
   }
 
   compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {

@@ -12,8 +12,10 @@ export type QueryProject<E> =
     };
 
 export type QueryPopulate<E> = {
-  readonly [P in Relations<E>]?: Query<P> & { required?: boolean };
+  readonly [P in Relations<E>]?: QueryPopulateValue<P>;
 };
+
+export type QueryPopulateValue<E> = Query<E> & { required?: boolean };
 
 export type QueryTextSearchOptions<E> = {
   fields?: Properties<E>[];
@@ -54,16 +56,18 @@ export type QueryPager = {
   limit?: number;
 };
 
-export type QueryOne<E> = {
-  project?: QueryProject<E>;
-  populate?: QueryPopulate<E>;
-  group?: Properties<E>[];
+export type QueryCriteria<E> = {
+  filter?: QueryFilter<E>;
   sort?: QuerySort<E>;
 } & QueryPager;
 
-export type Query<E> = QueryOne<E> & {
-  filter?: QueryFilter<E>;
-};
+export type Query<E> = {
+  project?: QueryProject<E>;
+  populate?: QueryPopulate<E>;
+  group?: Properties<E>[];
+} & QueryCriteria<E>;
+
+export type QueryOne<E> = Query<E> & { limit?: 1 };
 
 export type QueryStringified = {
   readonly [P in keyof Query<any>]?: string;

@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryOne, Type } from '@uql/core/type';
+import { Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
 export class BaseClientRepository<E> implements ClientRepository<E> {
@@ -8,8 +8,8 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.insertOne(this.entity, body, opts);
   }
 
-  updateOneById(id: any, body: E, opts?: RequestOptions) {
-    return this.querier.updateOneById(this.entity, id, body, opts);
+  updateOneById(body: E, id: any, opts?: RequestOptions) {
+    return this.querier.updateOneById(this.entity, body, id, opts);
   }
 
   saveOne(body: E, opts?: RequestOptions) {
@@ -24,19 +24,19 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.findOne(this.entity, qm, opts);
   }
 
-  findOneById(id: any, qo?: QueryOne<E>, opts?: RequestOptions) {
-    return this.querier.findOneById(this.entity, id, qo, opts);
+  findOneById(id: any, qm?: QueryOne<E>, opts?: RequestOptions) {
+    return this.querier.findOneById(this.entity, id, qm, opts);
   }
 
-  deleteMany(filter: QueryFilter<E>) {
-    return this.querier.deleteMany(this.entity, filter);
+  deleteMany(qm: QueryCriteria<E>) {
+    return this.querier.deleteMany(this.entity, qm);
   }
 
   deleteOneById(id: any) {
     return this.querier.deleteOneById(this.entity, id);
   }
 
-  count(filter?: QueryFilter<E>) {
-    return this.querier.count(this.entity, filter);
+  count(qm: QueryCriteria<E>) {
+    return this.querier.count(this.entity, qm);
   }
 }

@@ -32,6 +32,18 @@ export abstract class BaseQuerierIt implements Spec {
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
     await this.createTables();
+    jest.spyOn(this.querier, 'insertOne');
+    jest.spyOn(this.querier, 'insertMany');
+    jest.spyOn(this.querier, 'updateMany');
+    jest.spyOn(this.querier, 'deleteMany');
+    jest.spyOn(this.querier, 'deleteOneById');
+    jest.spyOn(this.querier, 'findMany');
+    jest.spyOn(this.querier, 'findOne');
+    jest.spyOn(this.querier, 'findOneById');
+    jest.spyOn(this.querier, 'beginTransaction');
+    jest.spyOn(this.querier, 'commitTransaction');
+    jest.spyOn(this.querier, 'rollbackTransaction');
+    jest.spyOn(this.querier, 'release');
   }
 
   async afterEach() {
@@ -187,9 +199,13 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      itemAdjustments,
-    });
+    const changes = await this.querier.updateOneById(
+      InventoryAdjustment,
+      {
+        itemAdjustments,
+      },
+      inventoryAdjustmentId
+    );
 
     expect(changes).toBe(1);
 
@@ -205,6 +221,38 @@ export abstract class BaseQuerierIt implements Spec {
     const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { filter: { inventoryAdjustmentId } });
 
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
+  async shouldUpdateOneByIdAndCascadeOneToManyNull() {
+    const id = await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
+
+    await expect(await this.querier.count(ItemAdjustment)).toBe(2);
+
+    await this.querier.updateOneById(
+      InventoryAdjustment,
+      {
+        itemAdjustments: null,
+      },
+      id
+    );
+
+    await expect(await this.querier.count(ItemAdjustment)).toBe(0);
+  }
+
+  async shouldUpdateManyAndCascadeOneToManyNull() {
+    await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
+
+    await expect(await this.querier.count(ItemAdjustment)).toBe(2);
+
+    await this.querier.updateMany(
+      InventoryAdjustment,
+      {
+        itemAdjustments: null,
+      },
+      {}
+    );
+
+    await expect(await this.querier.count(ItemAdjustment)).toBe(0);
   }
 
   async shouldInsertOneAndCascadeManyToMany() {
@@ -240,9 +288,13 @@ export abstract class BaseQuerierIt implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      itemAdjustments,
-    });
+    const changes = await this.querier.updateOneById(
+      InventoryAdjustment,
+      {
+        itemAdjustments,
+      },
+      inventoryAdjustmentId
+    );
 
     expect(changes).toBe(1);
 
@@ -297,6 +349,7 @@ export abstract class BaseQuerierIt implements Spec {
         status: null,
       },
     });
+
     expect(found).toMatchObject({
       name: 'Some Name A',
       email: 'someemaila@example.com',
@@ -308,6 +361,7 @@ export abstract class BaseQuerierIt implements Spec {
         status: 999,
       },
     });
+
     expect(notFound).toBeUndefined();
   }
 
@@ -316,22 +370,22 @@ export abstract class BaseQuerierIt implements Spec {
 
     const count1 = await this.querier.count(User);
     expect(count1).toBe(3);
-    const count2 = await this.querier.count(User, { status: null });
+    const count2 = await this.querier.count(User, { filter: { status: null } });
     expect(count2).toBe(3);
-    const count3 = await this.querier.count(User, { status: 1 });
+    const count3 = await this.querier.count(User, { filter: { status: 1 } });
     expect(count3).toBe(0);
-    const count4 = await this.querier.count(User, { name: { $startsWith: 'Some Name ' } });
+    const count4 = await this.querier.count(User, { filter: { name: { $startsWith: 'Some Name ' } } });
     expect(count4).toBe(3);
   }
 
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const updatedRows1 = await this.querier.updateMany(User, { status: 1 }, { status: null });
+    const updatedRows1 = await this.querier.updateMany(User, { status: null }, { filter: { status: 1 } });
     expect(updatedRows1).toBe(0);
-    const updatedRows2 = await this.querier.updateMany(User, { status: null }, { status: 1 });
+    const updatedRows2 = await this.querier.updateMany(User, { status: 1 }, { filter: { status: null } });
     expect(updatedRows2).toBe(3);
-    const updatedRows3 = await this.querier.updateMany(User, { status: 1 }, { status: null });
+    const updatedRows3 = await this.querier.updateMany(User, { status: null }, { filter: { status: 1 } });
     expect(updatedRows3).toBe(3);
   }
 
@@ -357,9 +411,9 @@ export abstract class BaseQuerierIt implements Spec {
     await this.querier.beginTransaction();
     const count2 = await this.querier.count(User);
     expect(count2).toBe(count1);
-    const deletedRows1 = await this.querier.deleteMany(User, { status: null });
+    const deletedRows1 = await this.querier.deleteMany(User, { filter: { status: null } });
     expect(deletedRows1).toBe(count1);
-    const deletedRows2 = await this.querier.deleteMany(User, { status: null });
+    const deletedRows2 = await this.querier.deleteMany(User, { filter: { status: null } });
     expect(deletedRows2).toBe(0);
     const count3 = await this.querier.count(User);
     expect(count3).toBe(0);
@@ -429,9 +483,9 @@ export abstract class BaseQuerierIt implements Spec {
   async shouldDeleteMany() {
     await this.querier.beginTransaction();
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-    const deletedRows1 = await this.querier.deleteMany(User, { status: 1 });
+    const deletedRows1 = await this.querier.deleteMany(User, { filter: { status: 1 } });
     expect(deletedRows1).toBe(0);
-    const deletedRows2 = await this.querier.deleteMany(User, { status: null });
+    const deletedRows2 = await this.querier.deleteMany(User, { filter: { status: null } });
     expect(deletedRows2).toBe(3);
     await this.querier.commitTransaction();
   }

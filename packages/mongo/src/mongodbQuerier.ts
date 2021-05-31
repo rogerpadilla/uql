@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, QueryOne, Type } from '@uql/core/type';
+import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
@@ -26,7 +26,7 @@ export class MongodbQuerier extends BaseQuerier {
     return Object.values(res.insertedIds);
   }
 
-  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
+  async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, body: E) {
     const persistableProperties = filterPersistableProperties(entity, body);
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
@@ -34,7 +34,7 @@ export class MongodbQuerier extends BaseQuerier {
     }, {} as OptionalId<E>);
 
     const res = await this.collection(entity).updateMany(
-      this.dialect.buildFilter(entity, filter),
+      this.dialect.buildFilter(entity, qm.filter),
       { $set: persistable },
       {
         session: this.session,
@@ -86,15 +86,17 @@ export class MongodbQuerier extends BaseQuerier {
     return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } });
   }
 
-  async deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
+  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, qm.filter), {
       session: this.session,
     });
     return res.deletedCount;
   }
 
-  count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, filter), { session: this.session });
+  count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, qm.filter), {
+      session: this.session,
+    });
   }
 
   get hasOpenTransaction() {

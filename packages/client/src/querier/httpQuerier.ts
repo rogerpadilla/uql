@@ -1,9 +1,9 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { Query, QueryFilter, QueryOne, Type } from '@uql/core/type';
+import { Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier } from '../type';
 import { get, post, patch, remove } from '../http';
-import { stringifyQuery, stringifyQueryParameter } from './query.util';
+import { stringifyQuery } from './query.util';
 
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}
@@ -17,7 +17,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<any>(basePath, body, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, id: any, body: E, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, body: E, id: any, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, body, opts);
   }
@@ -26,14 +26,12 @@ export class HttpQuerier implements ClientQuerier {
     const meta = getMeta(entity);
     const id = body[meta.id.property];
     if (id) {
-      return this.updateOneById(entity, id, body, opts).then(() => {
-        return { data: id };
-      });
+      return this.updateOneById(entity, body, id, opts).then(() => ({ data: id }));
     }
     return this.insertOne(entity, body, opts);
   }
 
-  findOne<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions) {
+  findOne<E>(entity: Type<E>, qm: QueryOne<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/one${qs}`, opts);
@@ -55,9 +53,9 @@ export class HttpQuerier implements ClientQuerier {
     return get<E[]>(`${basePath}${qs}`, opts);
   }
 
-  deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: RequestOptions) {
+  deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQueryParameter('filter', filter);
+    const qs = stringifyQuery(qm);
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
@@ -66,9 +64,9 @@ export class HttpQuerier implements ClientQuerier {
     return remove<number>(`${basePath}/${id}`, opts);
   }
 
-  count<E>(entity: Type<E>, filter?: QueryFilter<E>, opts?: RequestOptions) {
+  count<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQueryParameter('filter', filter);
+    const qs = stringifyQuery(qm);
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 }

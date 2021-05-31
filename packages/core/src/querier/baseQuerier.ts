@@ -1,4 +1,15 @@
-import { EntityMeta, Querier, Query, QueryFilter, QueryOne, QueryPopulate, RelationOptions, Type } from '../type';
+import {
+  EntityMeta,
+  Properties,
+  Querier,
+  Query,
+  QueryCriteria,
+  QueryFilter,
+  QueryOne,
+  QueryPopulate,
+  RelationOptions,
+  Type,
+} from '../type';
 import { getMeta } from '../entity/decorator';
 
 /**
@@ -12,18 +23,16 @@ export abstract class BaseQuerier implements Querier {
     return id;
   }
 
-  abstract updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E): Promise<number>;
+  abstract updateMany<E>(entity: Type<E>, body: E, qm: QueryCriteria<E>): Promise<number>;
 
-  async updateOneById<E>(entity: Type<E>, id: any, body: E) {
+  updateOneById<E>(entity: Type<E>, body: E, id: any) {
     const meta = getMeta(entity);
-    const changes = await this.updateMany(entity, { [meta.id.property]: id }, body);
-    await this.updateRelations(meta, id, body);
-    return changes;
+    return this.updateMany(entity, body, { filter: { [meta.id.property]: id } });
   }
 
   abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 
-  async findOne<E>(entity: Type<E>, qm: Query<E>) {
+  async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
     qm.limit = 1;
     const rows = await this.findMany(entity, qm);
     return rows[0];
@@ -35,14 +44,14 @@ export abstract class BaseQuerier implements Querier {
     return this.findOne(type, { ...qo, filter: { [key]: id } });
   }
 
-  abstract deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>): Promise<number>;
+  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: any) {
     const meta = getMeta(entity);
     return this.deleteMany(entity, { [meta.id.name]: id });
   }
 
-  abstract count<E>(entity: Type<E>, filter?: QueryFilter<E>): Promise<number>;
+  abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
 
   abstract readonly hasOpenTransaction: boolean;
 
@@ -87,73 +96,112 @@ export abstract class BaseQuerier implements Querier {
     }
   }
 
-  protected async insertRelations<E>(meta: EntityMeta<E>, id: any, body: E) {
-    const relKeys = getIndependentRelations(meta, body);
-
+  protected async insertRelations<E>(entity: Type<E>, bodies: E[]) {
+    const meta = getMeta(entity);
     await Promise.all(
-      relKeys.map(async (relKey) => {
-        const relOpts = meta.relations[relKey];
-        this.insertRelation(id, body[relKey], relOpts);
+      bodies.map((body) => {
+        const relKeys = getIndependentRelations(meta, body);
+        if (!relKeys.length) {
+          return;
+        }
+        return Promise.all(
+          relKeys.map((relKey) => this.saveRelation(body[meta.id.property], body[relKey], meta.relations[relKey]))
+        );
       })
     );
   }
 
-  protected async insertRelation<E>(id: any, relBody: E | E[], relOpts: RelationOptions<E>) {
-    const relEntity = relOpts.entity();
-    if (relOpts.cardinality === '11') {
-      const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
-      return this.insertOne(relEntity, { ...relBody, [prop]: id });
-    }
-    if (relOpts.cardinality === '1m') {
-      const prop = relOpts.references[0].source;
-      const relBodies: E[] = (relBody as E[]).map((it: E) => {
-        it[prop] = id;
-        return it;
-      });
-      return this.insertMany(relEntity, relBodies);
-    }
-    if (relOpts.cardinality === 'mm') {
-      const relIds = await this.insertMany(relEntity, relBody as E[]);
-      const throughBodies = relIds.map((relId) => ({
-        [relOpts.references[0].source]: id,
-        [relOpts.references[1].source]: relId,
-      }));
-      return this.insertMany(relOpts.through(), throughBodies);
-    }
-  }
+  protected async updateRelations<E>(entity: Type<E>, body: E, criteria: QueryCriteria<E>) {
+    const meta = getMeta(entity);
 
-  protected async updateRelations<E>(meta: EntityMeta<E>, id: any, body: E) {
     const relKeys = getIndependentRelations(meta, body);
-    if (relKeys.length) {
-      await Promise.all(relKeys.map((relKey) => this.updateRelation(id, body[relKey], meta.relations[relKey])));
+    if (!relKeys.length) {
+      return;
     }
+
+    const founds = await this.findMany(entity, {
+      ...criteria,
+      project: [meta.id.property] as Properties<E>[],
+    });
+
+    const ids = founds.map((found) => found[meta.id.property]);
+
+    await Promise.all(
+      ids.map((id) =>
+        Promise.all(relKeys.map((relKey) => this.saveRelation(id, body[relKey], meta.relations[relKey], true)))
+      )
+    );
   }
 
-  protected async updateRelation<E>(id: any, relBody: E | E[], relOpts: RelationOptions<E>): Promise<void> {
+  protected async saveMany<E>(entity: Type<E>, bodies: E[]): Promise<void> {
+    const meta = getMeta(entity);
+
+    const news: E[] = [];
+    const olds: E[] = [];
+
+    for (const it of bodies) {
+      if (it[meta.id.property]) {
+        olds.push(it);
+      } else {
+        news.push(it);
+      }
+    }
+
+    await Promise.all([
+      this.insertMany(entity, news),
+      Promise.all(olds.map((old) => this.updateOneById(entity, old, old[meta.id.property]))),
+    ]);
+  }
+
+  protected async saveRelation<E>(
+    id: any,
+    relBody: E | E[],
+    relOpts: RelationOptions<E>,
+    isUpdate?: boolean
+  ): Promise<void> {
     const relEntity = relOpts.entity();
+
     if (relOpts.cardinality === '11') {
       const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
       if (relBody === null) {
-        await this.deleteMany(relEntity, { [prop]: id });
+        await this.deleteMany(relEntity, { filter: { [prop]: id } });
         return;
       }
-      await this.updateMany(relEntity, { [prop]: id }, relBody);
+      await this.saveMany(relEntity, [{ ...(relBody as E), [prop]: id }]);
       return;
     }
-    if (relOpts.cardinality === '1m') {
-      const prop = relOpts.references[0].source;
-      await this.deleteMany(relEntity, { [prop]: id });
-      if (Array.isArray(relBody)) {
-        for (const it of relBody) {
-          it[prop] = id;
-        }
-        await this.insertMany(relEntity, relBody);
-        return;
+
+    const relBodies = relBody as E[];
+    const prop = relOpts.references[0].source;
+
+    if (relBodies) {
+      for (const it of relBodies) {
+        it[prop] = id;
       }
     }
+
+    if (relOpts.cardinality === '1m') {
+      if (isUpdate) {
+        await this.deleteMany(relEntity, { filter: { [prop]: id } });
+      }
+      if (relBodies) {
+        this.saveMany(relEntity, relBodies);
+      }
+      return;
+    }
+
     if (relOpts.cardinality === 'mm') {
-      // TODO mm cardinality
-      throw new TypeError(`unsupported cardinality ${relOpts.cardinality}`);
+      if (relBodies) {
+        // TODO
+        const relIds = await this.insertMany(relEntity, relBodies);
+        const throughBodies = relIds.map((relId) => ({
+          [relOpts.references[0].source]: id,
+          [relOpts.references[1].source]: relId,
+        }));
+        await this.insertMany(relOpts.through(), throughBodies);
+      } else {
+        // TODO
+      }
     }
   }
 }

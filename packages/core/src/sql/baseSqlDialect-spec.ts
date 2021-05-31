@@ -1,7 +1,7 @@
 import { getMeta } from '../entity/decorator';
 import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entityMock';
 
-import { Query, QueryFilter, QueryProject, QuerySort, Type } from '../type';
+import { Query, QueryCriteria, QueryFilter, QueryProject, QuerySort, Type } from '../type';
 import { Spec } from '../test/spec.util';
 import { isNormalEscapeIdChar, normalizeSql } from '../test';
 import { BaseSqlDialect } from './baseSqlDialect';
@@ -26,13 +26,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
     return normalizedSql.slice(0, sql.length - returnId.length - 1);
   }
 
-  private update<E>(entity: Type<E>, filter: QueryFilter<E>, payload: E) {
-    const sql = this.dialect.update(entity, filter, payload);
+  private update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+    const sql = this.dialect.update(entity, payload, qm);
     return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
-  private delete<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const sql = this.dialect.delete(entity, filter);
+  private delete<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const sql = this.dialect.delete(entity, qm);
     return normalizeSql(sql, this.dialect.escapeIdChar);
   }
 
@@ -92,11 +92,11 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.update(
         User,
-        { name: 'some', userId: '123' },
         {
           name: 'Some Text',
           updatedAt: 321,
-        }
+        },
+        { filter: { name: 'some', userId: '123' } }
       )
     ).toBe("UPDATE User SET name = 'Some Text', updatedAt = 321 WHERE name = 'some' AND userId = '123'");
   }
@@ -147,20 +147,20 @@ export abstract class BaseSqlDialectSpec implements Spec {
       this.update(
         User,
         {
-          something: 'anything',
-        } as any,
-        {
           name: 'Some Name',
           something: 'anything',
           updatedAt: 1,
-        } as any
+        } as any,
+        {
+          filter: { something: 'anything' },
+        }
       )
     ).toBe("UPDATE User SET name = 'Some Name', updatedAt = 1 WHERE `something` = 'anything'");
 
     expect(
       this.delete(User, {
-        something: 'anything',
-      } as any)
+        filter: { something: 'anything' } as any,
+      })
     ).toBe("DELETE FROM User WHERE `something` = 'anything'");
   }
 
@@ -643,7 +643,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   }
 
   shouldDelete() {
-    expect(this.delete(User, { id: '123' })).toBe("DELETE FROM User WHERE id = '123'");
+    expect(this.delete(User, { filter: { id: '123' } })).toBe("DELETE FROM User WHERE id = '123'");
   }
 
   shouldFind$startsWith() {

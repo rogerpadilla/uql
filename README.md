@@ -10,6 +10,8 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 
 ## <a name="features"></a>:star2: Features
 
+- readable and yet powerful API
+- code is performant and secure
 - supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `sorting`, `pagination`, and more.
 - declarative and programmatic `transactions`
 - entity `repositories`
@@ -17,7 +19,6 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - supports `inheritance` patterns between the entities
 - connection pooling
 - supports Postgres, MySQL, MariaDB, SQLite, MongoDB (more coming)
-- code is performant, readable, and flexible
 - plugins for frameworks: express (more coming)
 
 ## Table of Contents
@@ -149,6 +150,12 @@ export abstract class BaseEntity {
   createdAt?: number;
 
   /**
+   * Foreign Keys are really simple to specify
+   */
+  @Property({ reference: () => User })
+  userId?: string;
+
+  /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when updating:
    */
@@ -182,6 +189,9 @@ export class Profile extends BaseEntity {
   @Property({ name: 'image' })
   picture?: string;
 
+  /**
+   * The owner side of the relation is that without the attribute `mappedBy`
+   */
   @OneToOne()
   user?: User;
 }
@@ -227,6 +237,9 @@ export class Tax extends BaseEntity {
   @Property()
   percentage?: number;
 
+  @Property({ reference: () => TaxCategory })
+  categoryId?: string;
+
   @ManyToOne()
   category?: TaxCategory;
 
@@ -248,25 +261,27 @@ import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
   @Transactional()
-  async confirmAction(body: Confirmation, @InjectQuerier() querier?: Querier) {
-    if (body.type === 'register') {
+  async confirmAction(payload: Confirmation, @InjectQuerier() querier?: Querier) {
+    if (payload.type === 'register') {
       await querier.insertOne(User, {
-        name: body.name,
-        email: body.email,
-        password: body.password,
+        name: payload.name,
+        email: payload.email,
+        password: payload.password,
       });
     } else {
-      await querier.updateOneById(User, body.userId, { password: body.password });
+      await querier.updateOneById(User, payload.userId, { password: payload.password });
     }
-    await querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, payload.id, { status: CONFIRM_STATUS_VERIFIED });
   }
 }
 
 export const confirmationService = new ConfirmationService();
 
-// then you could just import the constant `confirmationService` in another file,
-// and when you call `confirmAction` function, all the operations there
-// will (automatically) be run inside a single transaction
+/**
+ * then you could just import the constant `confirmationService` in another file,
+ * and when you call `confirmAction` function, all the operations there
+ * will (automatically) be run inside a single transaction
+ */
 await confirmationService.confirmAction(data);
 ```
 
@@ -285,26 +300,20 @@ await confirmationService.confirmAction(data);
 ```ts
 import { getQuerier } from '@uql/core';
 
-async function confirmAction(body: Confirmation) {
+async function confirmAction(payload: Confirmation) {
   const querier = await getQuerier();
-
   try {
     await querier.beginTransaction();
-
-    if (body.action === 'signup') {
-      // signup
+    if (payload.action === 'signup') {
       await querier.insertOne(User, {
-        name: body.name,
-        email: body.email,
-        password: body.password,
+        name: payload.name,
+        email: payload.email,
+        password: payload.password,
       });
     } else {
-      // change password
-      await querier.updateOneById(User, body.userId, { password: body.password });
+      await querier.updateOneById(User, payload.userId, { password: payload.password });
     }
-
-    await querier.updateOneById(Confirmation, body.id, { status: CONFIRM_STATUS_VERIFIED });
-
+    await querier.updateOneById(Confirmation, payload.id, { status: CONFIRM_STATUS_VERIFIED });
     await querier.commitTransaction();
   } catch (error) {
     await querier.rollbackTransaction();
@@ -374,10 +383,11 @@ yarn add @uql/client
 ```ts
 import { getRepository } from '@uql/client';
 
-// 'Item' is an entity class
-const itemRepository = getRepository(Item);
+// 'User' is an entity class
+const userRepository = getRepository(User);
 
-const lastItems = await itemRepository.findMany({
+const lastItems = await userRepository.findMany({
+  filter: { name: { $startsWith: 'lorem' } },
   sort: { createdAt: -1 },
   limit: 100,
 });

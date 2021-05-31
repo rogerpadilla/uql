@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryProject, QuerierPoolConnection, Type, Properties } from '../type';
+import { Query, QueryProject, QuerierPoolConnection, Type, Properties, QueryCriteria } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
@@ -16,25 +16,18 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.insert(entity, bodies);
     const { lastId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    const ids = bodies.map((body, index) => body[meta.id.property] ?? lastId - bodies.length + index + 1);
-    await Promise.all(bodies.map((body, index) => this.insertRelations(meta, ids[index], body)));
+    const ids = bodies.map((body, index) => {
+      body[meta.id.property] ??= lastId - bodies.length + index + 1;
+      return body[meta.id.property];
+    });
+    await this.insertRelations(entity, bodies);
     return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
-    const query = this.dialect.update(entity, filter, body);
+  async updateMany<E>(entity: Type<E>, body: E, qm: QueryCriteria<E>) {
+    const query = this.dialect.update(entity, body, qm);
     const { changes } = await this.conn.run(query);
-
-    // if (changes) {
-    //   const meta = getMeta(entity);
-    //   const founds = await this.findMany(entity, {
-    //     project: [meta.id.property] as Properties<E>[],
-    //     filter,
-    //     limit: changes,
-    //   });
-    //   await Promise.all(founds.map((found) => this.updateRelations(meta, found[meta.id.property], body)));
-    // }
-
+    await this.updateRelations(entity, body, qm);
     return changes;
   }
 
@@ -46,14 +39,14 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return founds;
   }
 
-  async deleteMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const query = this.dialect.delete(entity, filter);
+  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const query = this.dialect.delete(entity, qm);
     const res = await this.conn.run(query);
     return res.changes;
   }
 
-  async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    const res: any = await this.findMany(entity, { project: [literal('COUNT(*) count')] as QueryProject<E>, filter });
+  async count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const res: any = await this.findMany(entity, { ...qm, project: [literal('COUNT(*) count')] as QueryProject<E> });
     return Number(res[0].count);
   }
 

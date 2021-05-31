@@ -1,4 +1,4 @@
-import { Querier, Query, QueryFilter, QueryOne, Repository, Type } from '../type';
+import { Querier, Query, QueryCriteria, QueryOne, Repository, Type } from '../type';
 
 export class BaseRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}
@@ -11,35 +11,35 @@ export class BaseRepository<E> implements Repository<E> {
     return this.querier.insertOne(this.entity, body);
   }
 
-  updateMany(filter: QueryFilter<E>, body: E) {
-    return this.querier.updateMany(this.entity, filter, body);
+  updateMany(body: E, qm: QueryCriteria<E>) {
+    return this.querier.updateMany(this.entity, body, qm);
   }
 
-  updateOneById(id: any, body: E) {
-    return this.querier.updateOneById(this.entity, id, body);
+  updateOneById(body: E, id: any) {
+    return this.querier.updateOneById(this.entity, body, id);
   }
 
   findMany(qm: Query<E>) {
     return this.querier.findMany(this.entity, qm);
   }
 
-  findOne(qm: Query<E>) {
+  findOne(qm: QueryOne<E>) {
     return this.querier.findOne(this.entity, qm);
   }
 
-  findOneById(id: any, qo?: QueryOne<E>) {
-    return this.querier.findOneById(this.entity, id, qo);
+  findOneById(id: any, qm?: QueryOne<E>) {
+    return this.querier.findOneById(this.entity, id, qm);
   }
 
-  deleteMany(filter: QueryFilter<E>) {
-    return this.querier.deleteMany(this.entity, filter);
+  deleteMany(qm: QueryCriteria<E>) {
+    return this.querier.deleteMany(this.entity, qm);
   }
 
   deleteOneById(id: any) {
     return this.querier.deleteOneById(this.entity, id);
   }
 
-  count(filter?: QueryFilter<E>) {
-    return this.querier.count(this.entity, filter);
+  count(qm: QueryCriteria<E>) {
+    return this.querier.count(this.entity, qm);
   }
 }
