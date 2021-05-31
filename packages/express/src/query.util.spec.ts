@@ -11,25 +11,25 @@ it('parseQuery -- empty', () => {
 
 it('parseQuery stringified', () => {
   const qms: QueryStringified = {
-    project: '{ "id": 1, "name": 1 }',
-    filter: '{ "name": "Batman", "companyId": "40" }',
-    populate: '{ "measureUnit": {"project":{"id":1, "name":1}}, "tax": {"project":{"id":1, "name":1}} }',
-    group: '["companyId"]',
-    sort: '{ "name": -1, "companyId": 1 }',
-    skip: '200',
-    limit: '100',
+    $project: '{ "id": 1, "name": 1 }',
+    $populate: '{ "measureUnit": {"$project":{"id":1, "name":1}}, "tax": {"$project":{"id":1, "name":1}} }',
+    $filter: '{ "name": "lorem", "companyId": "40" }',
+    $group: '["companyId"]',
+    $sort: '{ "name": -1, "companyId": 1 }',
+    $skip: '200',
+    $limit: '100',
   };
   const expected: Query<Item> = {
-    project: { id: 1, name: 1 },
-    filter: { name: 'Batman', companyId: '40' },
-    populate: {
-      measureUnit: { project: { id: 1, name: 1 } },
-      tax: { project: { id: 1, name: 1 } },
+    $project: { id: 1, name: 1 },
+    $populate: {
+      measureUnit: { $project: { id: 1, name: 1 } },
+      tax: { $project: { id: 1, name: 1 } },
     },
-    group: ['companyId'],
-    sort: { name: -1, companyId: 1 },
-    skip: 200,
-    limit: 100,
+    $filter: { name: 'lorem', companyId: '40' },
+    $group: ['companyId'],
+    $sort: { name: -1, companyId: 1 },
+    $skip: 200,
+    $limit: 100,
   };
   const result = parseQuery(qms);
   expect(result).toEqual(expected);

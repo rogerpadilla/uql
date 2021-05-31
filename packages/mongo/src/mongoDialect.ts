@@ -23,11 +23,11 @@ export class MongoDialect {
 
     const pipeline: object[] = [];
 
-    if (qm.filter && Object.keys(qm.filter).length) {
-      pipeline.push({ $match: this.buildFilter(entity, qm.filter) });
+    if (qm.$filter && Object.keys(qm.$filter).length) {
+      pipeline.push({ $match: this.buildFilter(entity, qm.$filter) });
     }
 
-    for (const relKey in qm.populate) {
+    for (const relKey in qm.$populate) {
       const relOpts = meta.relations[relKey];
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
@@ -53,7 +53,7 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [mappedByKey]: qm.filter[meta.id.name] } }],
+            pipeline: [{ $match: { [mappedByKey]: qm.$filter[meta.id.name] } }],
             as: relKey,
           },
         });

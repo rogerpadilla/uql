@@ -96,7 +96,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
           name: 'Some Text',
           updatedAt: 321,
         },
-        { filter: { name: 'some', userId: '123' } }
+        { $filter: { name: 'some', userId: '123' } }
       )
     ).toBe("UPDATE User SET name = 'Some Text', updatedAt = 321 WHERE name = 'some' AND userId = '123'");
   }
@@ -104,15 +104,15 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { id: '123', name: 'abc' },
+        $project: ['id'],
+        $filter: { id: '123', name: 'abc' },
       })
     ).toBe("SELECT id FROM User WHERE id = '123' AND name = 'abc'");
 
     expect(
       this.find(Profile, {
-        project: ['id', 'picture', 'status'],
-        filter: { id: '123', picture: 'abc' },
+        $project: ['id', 'picture', 'status'],
+        $filter: { id: '123', picture: 'abc' },
       })
     ).toBe("SELECT pk id, image picture, status FROM user_profile WHERE pk = '123' AND image = 'abc'");
   }
@@ -120,16 +120,16 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldPreventSqlInjection() {
     expect(
       this.find(User, {
-        project: ['id', 'something' as any],
-        filter: {
+        $project: ['id', 'something' as any],
+        $filter: {
           id: 1,
           something: 1,
         } as any,
-        sort: {
+        $sort: {
           id: 1,
           something: 1,
         } as any,
-        group: ['id', 'something' as any],
+        $group: ['id', 'something' as any],
       })
     ).toBe(
       'SELECT id, `something` FROM User WHERE id = 1 AND `something` = 1 GROUP BY id, `something` ORDER BY id, `something`'
@@ -152,14 +152,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
           updatedAt: 1,
         } as any,
         {
-          filter: { something: 'anything' },
+          $filter: { something: 'anything' },
         }
       )
     ).toBe("UPDATE User SET name = 'Some Name', updatedAt = 1 WHERE `something` = 'anything'");
 
     expect(
       this.delete(User, {
-        filter: { something: 'anything' } as any,
+        $filter: { something: 'anything' } as any,
       })
     ).toBe("DELETE FROM User WHERE `something` = 'anything'");
   }
@@ -169,15 +169,15 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { $and: [{ id: '123', name: 'abc' }] },
+        $project: ['id'],
+        $filter: { $and: [{ id: '123', name: 'abc' }] },
       })
     ).toBe(sql);
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: { $and: [{ id: '123' }], name: 'abc' },
+        $project: { id: 1 },
+        $filter: { $and: [{ id: '123' }], name: 'abc' },
       })
     ).toBe(sql);
   }
@@ -185,29 +185,29 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$or() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { $or: [{ id: '123' }, { name: 'abc' }] },
+        $project: ['id'],
+        $filter: { $or: [{ id: '123' }, { name: 'abc' }] },
       })
     ).toBe("SELECT id FROM User WHERE id = '123' OR name = 'abc'");
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { $or: [{ id: '123' }] },
+        $project: ['id'],
+        $filter: { $or: [{ id: '123' }] },
       })
     ).toBe("SELECT id FROM User WHERE id = '123'");
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: { $or: [{ id: '123', name: 'abc' }] },
+        $project: { id: 1 },
+        $filter: { $or: [{ id: '123', name: 'abc' }] },
       })
     ).toBe("SELECT id FROM User WHERE id = '123' AND name = 'abc'");
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { $or: [{ id: '123' }], name: 'abc' },
+        $project: ['id'],
+        $filter: { $or: [{ id: '123' }], name: 'abc' },
       })
     ).toBe("SELECT id FROM User WHERE id = '123' AND name = 'abc'");
   }
@@ -215,8 +215,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindLogicalOperators() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { userId: '1', $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }], id: '1' },
+        $project: ['id'],
+        $filter: { userId: '1', $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }], id: '1' },
       })
     ).toBe(
       "SELECT id FROM User WHERE userId = '1' AND (name IN ('a', 'b', 'c') OR email = 'abc@example.com') AND id = '1'"
@@ -224,8 +224,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: {
+        $project: ['id'],
+        $filter: {
           userId: '1',
           $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
           id: '1',
@@ -239,16 +239,16 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: {
+        $project: ['id'],
+        $filter: {
           userId: '1',
           $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
           id: '1',
           email: 'e',
         },
-        sort: { name: 1, createdAt: -1 },
-        skip: 50,
-        limit: 10,
+        $sort: { name: 1, createdAt: -1 },
+        $skip: 50,
+        $limit: 10,
       })
     ).toBe(
       "SELECT id FROM User WHERE userId = '1'" +
@@ -259,8 +259,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: {
+        $project: ['id'],
+        $filter: {
           $or: [
             {
               userId: '1',
@@ -270,9 +270,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
             { name: { $in: ['a', 'b', 'c'] }, email: 'abc@example.com' },
           ],
         },
-        sort: { name: 1, createdAt: -1 },
-        skip: 50,
-        limit: 10,
+        $sort: { name: 1, createdAt: -1 },
+        $skip: 50,
+        $limit: 10,
       })
     ).toBe(
       "SELECT id FROM User WHERE (userId = '1' AND id = '1' AND email = 'e')" +
@@ -284,9 +284,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindSingleFilter() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: 'some' },
-        limit: 3,
+        $project: ['id'],
+        $filter: { name: 'some' },
+        $limit: 3,
       })
     ).toBe("SELECT id FROM User WHERE name = 'some' LIMIT 3");
   }
@@ -294,24 +294,24 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindMultipleComparisonOperators() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { status: 1 }] },
+        $project: ['id'],
+        $filter: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { status: 1 }] },
       })
     ).toBe("SELECT id FROM User WHERE (name = 'other' AND name <> 'other unwanted') OR status = 1");
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { createdAt: { $gte: 123, $lte: 999 } },
-        limit: 10,
+        $project: ['id'],
+        $filter: { createdAt: { $gte: 123, $lte: 999 } },
+        $limit: 10,
       })
     ).toBe('SELECT id FROM User WHERE (createdAt >= 123 AND createdAt <= 999) LIMIT 10');
 
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { createdAt: { $gt: 123, $lt: 999 } },
-        limit: 10,
+        $project: ['id'],
+        $filter: { createdAt: { $gt: 123, $lt: 999 } },
+        $limit: 10,
       })
     ).toBe('SELECT id FROM User WHERE (createdAt > 123 AND createdAt < 999) LIMIT 10');
   }
@@ -319,9 +319,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$ne() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: 'some', status: { $ne: 5 } },
-        limit: 20,
+        $project: ['id'],
+        $filter: { name: 'some', status: { $ne: 5 } },
+        $limit: 20,
       })
     ).toBe("SELECT id FROM User WHERE name = 'some' AND status <> 5 LIMIT 20");
   }
@@ -329,17 +329,17 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindIsNotNull() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { userId: '123', status: null },
-        limit: 5,
+        $project: ['id'],
+        $filter: { userId: '123', status: null },
+        $limit: 5,
       })
     ).toBe("SELECT id FROM User WHERE userId = '123' AND status IS NULL LIMIT 5");
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: { userId: '123', status: { $ne: null } },
-        limit: 5,
+        $project: { id: 1 },
+        $filter: { userId: '123', status: { $ne: null } },
+        $limit: 5,
       })
     ).toBe("SELECT id FROM User WHERE userId = '123' AND status IS NOT NULL LIMIT 5");
   }
@@ -347,9 +347,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$in() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: 'some', status: { $in: [1, 2, 3] } },
-        limit: 10,
+        $project: ['id'],
+        $filter: { name: 'some', status: { $in: [1, 2, 3] } },
+        $limit: 10,
       })
     ).toBe("SELECT id FROM User WHERE name = 'some' AND status IN (1, 2, 3) LIMIT 10");
   }
@@ -357,9 +357,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$nin() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: 'some', status: { $nin: [1, 2, 3] } },
-        limit: 10,
+        $project: ['id'],
+        $filter: { name: 'some', status: { $nin: [1, 2, 3] } },
+        $limit: 10,
       })
     ).toBe("SELECT id FROM User WHERE name = 'some' AND status NOT IN (1, 2, 3) LIMIT 10");
   }
@@ -367,9 +367,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulate() {
     expect(
       this.find(User, {
-        project: { id: true, name: true },
-        populate: {
-          profile: { project: { id: true, picture: true } },
+        $project: { id: true, name: true },
+        $populate: {
+          profile: { $project: { id: true, picture: true } },
         },
       })
     ).toBe(
@@ -379,7 +379,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   }
 
   shouldFindPopulateOneToOne() {
-    expect(this.find(User, { populate: { profile: {} } })).toBe(
+    expect(this.find(User, { $populate: { profile: {} } })).toBe(
       'SELECT User.id, User.companyId, User.userId, User.createdAt, User.updatedAt, User.status' +
         ', User.name, User.email, User.password, profile.companyId `profile.companyId`' +
         ', profile.userId `profile.userId`, profile.createdAt `profile.createdAt`' +
@@ -392,12 +392,12 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulateWithProject() {
     expect(
       this.find(Item, {
-        project: ['id', 'name', 'code'],
-        populate: {
-          tax: { project: ['id', 'name'], required: true },
-          measureUnit: { project: ['id', 'name', 'categoryId'] },
+        $project: ['id', 'name', 'code'],
+        $populate: {
+          tax: { $project: ['id', 'name'], $required: true },
+          measureUnit: { $project: ['id', 'name', 'categoryId'] },
         },
-        limit: 100,
+        $limit: 100,
       })
     ).toBe(
       'SELECT Item.id, Item.name, Item.code' +
@@ -409,7 +409,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ' LIMIT 100'
     );
 
-    expect(this.find(User, { project: { id: 1 }, populate: { company: {} } })).toBe(
+    expect(this.find(User, { $project: { id: 1 }, $populate: { company: {} } })).toBe(
       'SELECT User.id, company.id `company.id`, company.companyId `company.companyId`, company.userId `company.userId`' +
         ', company.createdAt `company.createdAt`, company.updatedAt `company.updatedAt`, company.status `company.status`' +
         ', company.name `company.name`, company.description `company.description` FROM User' +
@@ -420,13 +420,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
     expect(
       this.find(Item, {
-        project: ['id', 'name'],
-        populate: {
-          tax: { project: { id: true, name: true }, filter: { id: 2 }, required: true },
-          measureUnit: { project: { id: 1, name: 1 }, filter: { name: { $ne: 'unidad' } }, required: true },
+        $project: ['id', 'name'],
+        $populate: {
+          tax: { $project: { id: true, name: true }, $filter: { id: 2 }, $required: true },
+          measureUnit: { $project: { id: 1, name: 1 }, $filter: { name: { $ne: 'unidad' } }, $required: true },
         },
-        sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
-        limit: 100,
+        $sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
+        $limit: 100,
       })
     ).toBe(
       'SELECT Item.id, Item.name' +
@@ -440,14 +440,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(Item, {
-        project: { id: 1, name: 1 },
-        populate: {
-          tax: { project: { id: true, name: true } },
-          measureUnit: { project: { id: 1, name: 1 } },
+        $project: { id: 1, name: 1 },
+        $populate: {
+          tax: { $project: { id: true, name: true } },
+          measureUnit: { $project: { id: 1, name: 1 } },
         },
-        filter: { 'tax.id': 2, 'measureUnit.name': { $ne: 'unidad' } } as QueryFilter<Item>,
-        sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
-        limit: 100,
+        $filter: { 'tax.id': 2, 'measureUnit.name': { $ne: 'unidad' } } as QueryFilter<Item>,
+        $sort: { 'category.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
+        $limit: 100,
       })
     ).toBe(
       'SELECT Item.id, Item.name' +
@@ -464,14 +464,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindDeepPopulateWithProjectedFields() {
     expect(
       this.find(Item, {
-        project: ['id', 'name', 'code'],
-        populate: {
+        $project: ['id', 'name', 'code'],
+        $populate: {
           measureUnit: {
-            project: ['id', 'name', 'categoryId'],
-            populate: { category: { project: ['name'] } },
+            $project: ['id', 'name', 'categoryId'],
+            $populate: { category: { $project: ['name'] } },
           },
         },
-        limit: 100,
+        $limit: 100,
       })
     ).toBe(
       'SELECT Item.id, Item.name, Item.code, measureUnit.id `measureUnit.id`' +
@@ -484,14 +484,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(Item, {
-        project: { id: 1, name: 1, code: 1 },
-        populate: {
+        $project: { id: 1, name: 1, code: 1 },
+        $populate: {
           measureUnit: {
-            project: { id: 1, name: 1 },
-            populate: { category: { project: { id: 1, name: 1 } } },
+            $project: { id: 1, name: 1 },
+            $populate: { category: { $project: { id: 1, name: 1 } } },
           },
         },
-        limit: 100,
+        $limit: 100,
       })
     ).toBe(
       'SELECT Item.id, Item.name, Item.code, measureUnit.id `measureUnit.id`' +
@@ -504,19 +504,20 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(ItemAdjustment, {
-        project: ['id', 'buyPrice', 'number'],
-        populate: {
+        $project: ['id', 'buyPrice', 'number'],
+        $populate: {
           item: {
-            project: { id: 1, name: 1 },
-            populate: {
+            $project: { id: 1, name: 1 },
+            $populate: {
               measureUnit: {
-                project: { id: 1, name: 1 },
-                populate: { category: { project: { id: 1, name: 1 } } },
+                $project: { id: 1, name: 1 },
+                $populate: { category: { $project: { id: 1, name: 1 } } },
               },
             },
+            $required: true,
           },
         },
-        limit: 100,
+        $limit: 100,
       })
     ).toBe(
       'SELECT ItemAdjustment.id, ItemAdjustment.buyPrice, ItemAdjustment.number' +
@@ -524,7 +525,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', item.measureUnit.id `item.measureUnit.id`, item.measureUnit.name `item.measureUnit.name`' +
         ', item.measureUnit.category.id `item.measureUnit.category.id`, item.measureUnit.category.name `item.measureUnit.category.name`' +
         ' FROM ItemAdjustment' +
-        ' LEFT JOIN Item item ON item.id = ItemAdjustment.itemId' +
+        ' INNER JOIN Item item ON item.id = ItemAdjustment.itemId' +
         ' LEFT JOIN MeasureUnit item.measureUnit ON item.measureUnit.id = item.measureUnitId' +
         ' LEFT JOIN MeasureUnitCategory item.measureUnit.category ON item.measureUnit.category.id = item.measureUnit.categoryId' +
         ' LIMIT 100'
@@ -534,8 +535,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulatePropertiesWithNotFixedType() {
     expect(
       this.find(Item, {
-        project: ['id', 'name'],
-        populate: { user: { project: ['id', 'name'] }, company: { project: ['id', 'name'] } },
+        $project: ['id', 'name'],
+        $populate: { user: { $project: ['id', 'name'] }, company: { $project: ['id', 'name'] } },
       })
     ).toBe(
       'SELECT Item.id, Item.name' +
@@ -550,7 +551,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindGroup() {
     expect(
       this.find(User, {
-        group: ['companyId'],
+        $group: ['companyId'],
       })
     ).toBe(
       'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password FROM User GROUP BY companyId'
@@ -558,12 +559,12 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.find(User, {
-        project: ['id', 'name'],
-        filter: { status: 1 },
-        group: ['companyId'],
-        skip: 50,
-        limit: 100,
-        sort: { name: 1 },
+        $project: ['id', 'name'],
+        $filter: { status: 1 },
+        $group: ['companyId'],
+        $skip: 50,
+        $limit: 100,
+        $sort: { name: 1 },
       })
     ).toBe('SELECT id, name FROM User WHERE status = 1 GROUP BY companyId ORDER BY name LIMIT 100 OFFSET 50');
   }
@@ -571,33 +572,33 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindLimit() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { id: '9' },
-        limit: 1,
+        $project: ['id'],
+        $filter: { id: '9' },
+        $limit: 1,
       })
     ).toBe("SELECT id FROM User WHERE id = '9' LIMIT 1");
 
     expect(
       this.find(User, {
-        project: { id: 1, name: 1, userId: 1 },
-        filter: { id: '9' },
-        limit: 1,
+        $project: { id: 1, name: 1, userId: 1 },
+        $filter: { id: '9' },
+        $limit: 1,
       })
     ).toBe("SELECT id, name, userId FROM User WHERE id = '9' LIMIT 1");
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: { name: 'something', userId: '123' },
-        limit: 1,
+        $project: { id: 1 },
+        $filter: { name: 'something', userId: '123' },
+        $limit: 1,
       })
     ).toBe("SELECT id FROM User WHERE name = 'something' AND userId = '123' LIMIT 1");
 
     expect(
       this.find(User, {
-        project: { id: 1, name: 1, userId: 1 },
-        filter: { userId: '123' },
-        limit: 25,
+        $project: { id: 1, name: 1, userId: 1 },
+        $filter: { userId: '123' },
+        $limit: 25,
       })
     ).toBe("SELECT id, name, userId FROM User WHERE userId = '123' LIMIT 25");
   }
@@ -605,35 +606,35 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindProject() {
     expect(
       this.find(User, {
-        project: { password: false },
+        $project: { password: false },
       })
     ).toBe('SELECT id, companyId, userId, createdAt, updatedAt, status, name, email FROM User');
 
     expect(
       this.find(User, {
-        project: { name: 0, password: 0 },
+        $project: { name: 0, password: 0 },
       })
     ).toBe('SELECT id, companyId, userId, createdAt, updatedAt, status, email FROM User');
 
     expect(
       this.find(User, {
-        project: { id: 1, name: 1, password: 0 },
+        $project: { id: 1, name: 1, password: 0 },
       })
     ).toBe('SELECT id, name FROM User');
 
     expect(
       this.find(User, {
-        project: { id: 1, name: 0, password: 0 },
+        $project: { id: 1, name: 0, password: 0 },
       })
     ).toBe('SELECT id FROM User');
 
     expect(
       this.find(User, {
-        project: [
+        $project: [
           '*',
           literal('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness'),
         ] as QueryProject<User>,
-        filter: { name: 'something' },
+        $filter: { name: 'something' },
       })
     ).toBe(
       'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
@@ -643,27 +644,27 @@ export abstract class BaseSqlDialectSpec implements Spec {
   }
 
   shouldDelete() {
-    expect(this.delete(User, { filter: { id: '123' } })).toBe("DELETE FROM User WHERE id = '123'");
+    expect(this.delete(User, { $filter: { id: '123' } })).toBe("DELETE FROM User WHERE id = '123'");
   }
 
   shouldFind$startsWith() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: { $startsWith: 'Some' } },
-        sort: { name: 1, id: -1 },
-        skip: 0,
-        limit: 50,
+        $project: ['id'],
+        $filter: { name: { $startsWith: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
       })
     ).toBe("SELECT id FROM User WHERE LOWER(name) LIKE 'some%' ORDER BY name, id DESC LIMIT 50 OFFSET 0");
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: { name: { $startsWith: 'Some', $ne: 'Something' } },
-        sort: { name: 1, id: -1 },
-        skip: 0,
-        limit: 50,
+        $project: { id: 1 },
+        $filter: { name: { $startsWith: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
       })
     ).toBe(
       "SELECT id FROM User WHERE (LOWER(name) LIKE 'some%' AND name <> 'Something') ORDER BY name, id DESC LIMIT 50 OFFSET 0"
@@ -673,8 +674,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$re() {
     expect(
       this.find(User, {
-        project: ['id'],
-        filter: { name: { $re: '^some' } },
+        $project: ['id'],
+        $filter: { name: { $re: '^some' } },
       })
     ).toBe("SELECT id FROM User WHERE name REGEXP '^some'");
   }
@@ -682,21 +683,21 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$text() {
     expect(
       this.find(Item, {
-        project: { id: 1 },
-        filter: { $text: { fields: ['name', 'description'], value: 'some text' }, status: 1 },
-        limit: 30,
+        $project: { id: 1 },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, status: 1 },
+        $limit: 30,
       })
     ).toBe("SELECT id FROM Item WHERE MATCH(name, description) AGAINST('some text') AND status = 1 LIMIT 30");
 
     expect(
       this.find(User, {
-        project: { id: 1 },
-        filter: {
-          $text: { fields: ['name'], value: 'something' },
+        $project: { id: 1 },
+        $filter: {
+          $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
           status: 1,
         },
-        limit: 10,
+        $limit: 10,
       })
     ).toBe(
       "SELECT id FROM User WHERE MATCH(name) AGAINST('something') AND name <> 'other unwanted' AND status = 1 LIMIT 10"
@@ -706,7 +707,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFindPopulateNotAnnotatedField() {
     expect(() =>
       this.find(User, {
-        populate: { status: {} } as any,
+        $populate: { status: {} } as any,
       })
     ).toThrow("'User.status' is not annotated as a relation");
   }

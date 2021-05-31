@@ -26,9 +26,9 @@ export abstract class BaseSqlDialect {
   }
 
   criteria<E>(entity: Type<E>, qm: Query<E>): string {
-    const filter = this.where<E>(entity, qm.filter);
-    const group = this.group<E>(entity, qm.group);
-    const sort = this.sort<E>(entity, qm.sort);
+    const filter = this.where<E>(entity, qm.$filter);
+    const group = this.group<E>(entity, qm.$group);
+    const sort = this.sort<E>(entity, qm.$sort);
     const pager = this.pager(qm);
     return filter + group + sort + pager;
   }
@@ -130,10 +130,10 @@ export abstract class BaseSqlDialect {
 
   select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
-    const baseColumns = this.project(entity, qm.project, {
-      prefix: qm.populate && meta.name,
+    const baseColumns = this.project(entity, qm.$project, {
+      prefix: qm.$populate && meta.name,
     });
-    const { joinsColumns, joinsTables } = this.join(entity, qm.populate);
+    const { joinsColumns, joinsTables } = this.join(entity, qm.$populate);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${meta.name}${joinsTables}`;
   }
 
@@ -162,7 +162,7 @@ export abstract class BaseSqlDialect {
       const relEntity = relOpts.entity();
       const popVal = populate[relKey] as QueryPopulateValue<typeof relEntity>;
 
-      const relColumns = this.project(relEntity, popVal.project, {
+      const relColumns = this.project(relEntity, popVal.$project, {
         prefix: joinPath,
         prependPrefixToAlias: true,
       });
@@ -172,19 +172,19 @@ export abstract class BaseSqlDialect {
       const relMeta = getMeta(relEntity);
       const relEntityName = relMeta.name;
       const relPath = prefix ? prefix : meta.name;
-      const joinType = popVal.required ? 'INNER' : 'LEFT';
+      const joinType = popVal.$required ? 'INNER' : 'LEFT';
 
       joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinPath} ON `;
       joinsTables += relOpts.references.map((it) => `${joinPath}.${it.target} = ${relPath}.${it.source}`).join(' AND ');
 
-      if (popVal.filter && Object.keys(popVal.filter).length) {
-        const where = this.where(relEntity, popVal.filter, { prefix: relKey, omitClause: true });
+      if (popVal.$filter && Object.keys(popVal.$filter).length) {
+        const where = this.where(relEntity, popVal.$filter, { prefix: relKey, omitClause: true });
         joinsTables += ` AND ${where}`;
       }
 
       const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.join(
         relEntity,
-        popVal.populate,
+        popVal.$populate,
         joinPath
       );
 
@@ -239,7 +239,7 @@ export abstract class BaseSqlDialect {
       case '$text':
         const meta = getMeta(entity);
         const search = value as QueryTextSearchOptions<E>;
-        return `${meta.name} MATCH ${this.escape(search.value)}`;
+        return `${meta.name} MATCH ${this.escape(search.$value)}`;
       default:
         const val = typeof value === 'object' && value !== null ? value : { $eq: value };
         const operators = Object.keys(val) as (keyof QueryComparisonOperator<E>)[];
@@ -313,11 +313,11 @@ export abstract class BaseSqlDialect {
 
   pager(opts: QueryPager): string {
     let sql = '';
-    if (opts.limit) {
-      sql += ` LIMIT ${Number(opts.limit)}`;
+    if (opts.$limit) {
+      sql += ` LIMIT ${Number(opts.$limit)}`;
     }
-    if (opts.skip !== undefined) {
-      sql += ` OFFSET ${Number(opts.skip)}`;
+    if (opts.$skip !== undefined) {
+      sql += ` OFFSET ${Number(opts.$skip)}`;
     }
     return sql;
   }

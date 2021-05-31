@@ -15,11 +15,11 @@ export type QueryPopulate<E> = {
   readonly [P in Relations<E>]?: QueryPopulateValue<P>;
 };
 
-export type QueryPopulateValue<E> = Query<E> & { required?: boolean };
+export type QueryPopulateValue<E> = Query<E> & { $required?: boolean };
 
 export type QueryTextSearchOptions<E> = {
-  fields?: Properties<E>[];
-  value: string;
+  $fields?: Properties<E>[];
+  $value: string;
 };
 
 export type QueryTextSearch<E> = {
@@ -52,22 +52,22 @@ export type QuerySort<E> = {
 };
 
 export type QueryPager = {
-  skip?: number;
-  limit?: number;
+  $skip?: number;
+  $limit?: number;
 };
 
 export type QueryCriteria<E> = {
-  filter?: QueryFilter<E>;
-  sort?: QuerySort<E>;
+  $filter?: QueryFilter<E>;
+  $sort?: QuerySort<E>;
 } & QueryPager;
 
 export type Query<E> = {
-  project?: QueryProject<E>;
-  populate?: QueryPopulate<E>;
-  group?: Properties<E>[];
+  $project?: QueryProject<E>;
+  $populate?: QueryPopulate<E>;
+  $group?: Properties<E>[];
 } & QueryCriteria<E>;
 
-export type QueryOne<E> = Query<E> & { limit?: 1 };
+export type QueryOne<E> = Query<E> & { $limit?: 1 };
 
 export type QueryStringified = {
   readonly [P in keyof Query<any>]?: string;

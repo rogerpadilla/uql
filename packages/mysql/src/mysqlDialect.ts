@@ -12,8 +12,8 @@ export class MySqlDialect extends BaseSqlDialect {
       case '$text':
         const meta = getMeta(entity);
         const search = value as QueryTextSearchOptions<E>;
-        const fields = search.fields.map((field) => meta.properties[field as string]?.name ?? this.escapeId(field));
-        return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.value)})`;
+        const fields = search.$fields.map((field) => meta.properties[field as string]?.name ?? this.escapeId(field));
+        return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
       default:
         return super.compare(entity, key, value, opts);
     }

@@ -27,21 +27,21 @@ export abstract class BaseQuerier implements Querier {
 
   updateOneById<E>(entity: Type<E>, body: E, id: any) {
     const meta = getMeta(entity);
-    return this.updateMany(entity, body, { filter: { [meta.id.property]: id } });
+    return this.updateMany(entity, body, { $filter: { [meta.id.property]: id } });
   }
 
   abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 
   async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
-    qm.limit = 1;
+    qm.$limit = 1;
     const rows = await this.findMany(entity, qm);
     return rows[0];
   }
 
   findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
     const meta = getMeta(type);
-    const key = qo.populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
-    return this.findOne(type, { ...qo, filter: { [key]: id } });
+    const key = qo.$populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
+    return this.findOne(type, { ...qo, $filter: { [key]: id } });
   }
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
@@ -76,7 +76,7 @@ export abstract class BaseQuerier implements Querier {
       if (relOpts.cardinality === '1m') {
         const ids = bodies.map((body) => body[meta.id.property]);
         const prop = relOpts.references[0].source;
-        relQuery.filter = { [prop]: { $in: ids } };
+        relQuery.$filter = { [prop]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
         const foundsMap = founds.reduce((acc, it) => {
           const attr = it[prop];
@@ -121,7 +121,7 @@ export abstract class BaseQuerier implements Querier {
 
     const founds = await this.findMany(entity, {
       ...criteria,
-      project: [meta.id.property] as Properties<E>[],
+      $project: [meta.id.property] as Properties<E>[],
     });
 
     const ids = founds.map((found) => found[meta.id.property]);
@@ -164,7 +164,7 @@ export abstract class BaseQuerier implements Querier {
     if (relOpts.cardinality === '11') {
       const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
       if (relBody === null) {
-        await this.deleteMany(relEntity, { filter: { [prop]: id } });
+        await this.deleteMany(relEntity, { $filter: { [prop]: id } });
         return;
       }
       await this.saveMany(relEntity, [{ ...(relBody as E), [prop]: id }]);
@@ -182,7 +182,7 @@ export abstract class BaseQuerier implements Querier {
 
     if (relOpts.cardinality === '1m') {
       if (isUpdate) {
-        await this.deleteMany(relEntity, { filter: { [prop]: id } });
+        await this.deleteMany(relEntity, { $filter: { [prop]: id } });
       }
       if (relBodies) {
         this.saveMany(relEntity, relBodies);

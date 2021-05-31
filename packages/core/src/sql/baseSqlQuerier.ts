@@ -35,18 +35,18 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.find(entity, qm);
     const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
-    await this.populateToManyRelations(entity, founds, qm.populate);
+    await this.populateToManyRelations(entity, founds, qm.$populate);
     return founds;
   }
 
   async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
     const query = this.dialect.delete(entity, qm);
-    const res = await this.conn.run(query);
-    return res.changes;
+    const { changes } = await this.conn.run(query);
+    return changes;
   }
 
   async count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const res: any = await this.findMany(entity, { ...qm, project: [literal('COUNT(*) count')] as QueryProject<E> });
+    const res: any = await this.findMany(entity, { ...qm, $project: [literal('COUNT(*) count')] as QueryProject<E> });
     return Number(res[0].count);
   }
 

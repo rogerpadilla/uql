@@ -49,7 +49,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldFindOne() {
-    await this.querier.findOne(User, { filter: { companyId: '123' }, project: { id: 1, name: 1 } });
+    await this.querier.findOne(User, { $filter: { companyId: '123' }, $project: ['id', 'name'] });
     expect(this.querier.conn.all).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 1");
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
@@ -67,9 +67,9 @@ export class BaseSqlQuerierSpec implements Spec {
     jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
 
     await this.querier.findOne(InventoryAdjustment, {
-      project: { id: 1 },
-      filter: { userId: '1' },
-      populate: { itemAdjustments: {} },
+      $project: ['id'],
+      $filter: { userId: '1' },
+      $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
@@ -104,9 +104,9 @@ export class BaseSqlQuerierSpec implements Spec {
     jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
 
     await this.querier.findMany(InventoryAdjustment, {
-      project: { id: 1 },
-      filter: { userId: '1' },
-      populate: { itemAdjustments: {} },
+      $project: ['id'],
+      $filter: { userId: '1' },
+      $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
@@ -133,9 +133,9 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindMany() {
     await this.querier.findMany(User, {
-      filter: { companyId: '123' },
-      project: { id: 1, name: 1 },
-      limit: 100,
+      $filter: { companyId: '123' },
+      $project: { id: 1, name: 1 },
+      $limit: 100,
     });
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
@@ -263,7 +263,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateMany() {
-    await this.querier.updateMany(User, { name: 'Hola' }, { filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: '5' } });
     expect(this.querier.conn.run).toBeCalledTimes(1);
     expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.updateMany).toBeCalledTimes(1);
@@ -429,7 +429,7 @@ export class BaseSqlQuerierSpec implements Spec {
         description: 'some description',
         itemAdjustments: null,
       },
-      { filter: { companyId: 1 } }
+      { $filter: { companyId: 1 } }
     );
 
     expect(this.querier.conn.run).nthCalledWith(
@@ -478,7 +478,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldDeleteMany() {
-    await this.querier.deleteMany(User, { filter: { companyId: '123' } });
+    await this.querier.deleteMany(User, { $filter: { companyId: '123' } });
     expect(this.querier.deleteMany).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
@@ -492,7 +492,7 @@ export class BaseSqlQuerierSpec implements Spec {
   async shouldCount() {
     jest.spyOn(this.querier.conn, 'all').mockResolvedValue([{ count: 1 }]);
 
-    await this.querier.count(User, { filter: { companyId: '123' } });
+    await this.querier.count(User, { $filter: { companyId: '123' } });
     expect(this.querier.findMany).toBeCalledTimes(1);
     expect(this.querier.release).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
@@ -506,7 +506,7 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateMany(User, { name: 'Hola' }, { filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: '5' } });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
     expect(this.querier.conn.run).toBeCalledWith('COMMIT');
@@ -555,7 +555,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateMany(User, { name: 'some name' }, { filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'some name' }, { $filter: { id: '5' } });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);

@@ -56,20 +56,20 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregationPipeline() {
     expect(this.dialect.buildAggregationPipeline(Item, {})).toEqual([]);
 
-    expect(this.dialect.buildAggregationPipeline(Item, { filter: {} })).toEqual([]);
+    expect(this.dialect.buildAggregationPipeline(Item, { $filter: {} })).toEqual([]);
 
-    expect(this.dialect.buildAggregationPipeline(Item, { populate: {} })).toEqual([]);
+    expect(this.dialect.buildAggregationPipeline(Item, { $populate: {} })).toEqual([]);
 
     expect(() =>
       this.dialect.buildAggregationPipeline(User, {
-        populate: { status: {} } as any,
+        $populate: { status: {} } as any,
       })
     ).toThrow("'User.status' is not annotated as a relation");
 
     expect(
       this.dialect.buildAggregationPipeline(Item, {
-        filter: { code: '123' },
-        populate: { measureUnit: {}, tax: {} },
+        $filter: { code: '123' },
+        $populate: { measureUnit: {}, tax: {} },
       })
     ).toEqual([
       {

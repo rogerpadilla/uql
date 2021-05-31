@@ -34,7 +34,7 @@ export class MongodbQuerier extends BaseQuerier {
     }, {} as OptionalId<E>);
 
     const res = await this.collection(entity).updateMany(
-      this.dialect.buildFilter(entity, qm.filter),
+      this.dialect.buildFilter(entity, qm.$filter),
       { $set: persistable },
       {
         session: this.session,
@@ -49,29 +49,29 @@ export class MongodbQuerier extends BaseQuerier {
 
     let documents: E[];
 
-    if (qm.populate && Object.keys(qm.populate).length) {
+    if (qm.$populate && Object.keys(qm.$populate).length) {
       const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
-      await this.populateToManyRelations(entity, documents, qm.populate);
+      await this.populateToManyRelations(entity, documents, qm.$populate);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-      if (qm.filter) {
-        const filter = this.dialect.buildFilter(entity, qm.filter);
+      if (qm.$filter) {
+        const filter = this.dialect.buildFilter(entity, qm.$filter);
         cursor.filter(filter);
       }
-      if (qm.project) {
-        cursor.project(qm.project);
+      if (qm.$project) {
+        cursor.project(qm.$project);
       }
-      if (qm.sort) {
-        cursor.sort(qm.sort);
+      if (qm.$sort) {
+        cursor.sort(qm.$sort);
       }
-      if (qm.skip) {
-        cursor.skip(qm.skip);
+      if (qm.$skip) {
+        cursor.skip(qm.$skip);
       }
-      if (qm.limit) {
-        cursor.limit(qm.limit);
+      if (qm.$limit) {
+        cursor.limit(qm.$limit);
       }
 
       documents = await cursor.toArray();
@@ -83,18 +83,18 @@ export class MongodbQuerier extends BaseQuerier {
 
   findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
     const meta = getMeta(entity);
-    return this.findOne<E>(entity, { ...qo, filter: { [meta.id.name]: id } });
+    return this.findOne<E>(entity, { ...qo, $filter: { [meta.id.name]: id } });
   }
 
   async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, qm.filter), {
+    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, qm.$filter), {
       session: this.session,
     });
     return res.deletedCount;
   }
 
   count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, qm.filter), {
+    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, qm.$filter), {
       session: this.session,
     });
   }
