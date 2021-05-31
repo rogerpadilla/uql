@@ -9,7 +9,7 @@
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint --ext .ts .",
     "lint.fix": "yarn lint --fix",
-    "test": "jest --clearCache && concurrently 'yarn:lint.fix' 'jest'",
+    "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
     "test.watch": "jest --watchAll",
     "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "rs": "run-rs -v 4.2.10 -l ubuntu1804",
