@@ -341,7 +341,7 @@ or with _yarn_
 yarn add @uql/express
 ```
 
-2. Initialize the `express` middleware in your server code to generate CRUD REST APIs for your entities
+2. Initialize the `express` middleware in your server code to generate REST APIs for your entities
 
 ```ts
 import * as express from 'express';
