@@ -48,7 +48,7 @@ export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationO
   return meta;
 }
 
-export function define<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
+export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
 
   if (Object.keys(meta.properties).length === 0) {
@@ -177,7 +177,7 @@ function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
 }
 
 function getId<E>(meta: EntityMeta<E>): string {
-  return meta.id?.property ?? Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  return Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
