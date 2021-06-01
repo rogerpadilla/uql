@@ -1,2 +1,2 @@
-export * from './middleware';
+export * from './querierMiddleware';
 export * from './query.util';

@@ -345,7 +345,7 @@ yarn add @uql/express
 
 ```ts
 import * as express from 'express';
-import { entitiesMiddleware } from '@uql/express';
+import { querierMiddleware } from '@uql/express';
 
 const app = express();
 
@@ -353,8 +353,8 @@ app
   // ...
   .use(
     '/api',
-    // this will generate CRUD REST APIs for the entities.
-    entitiesMiddleware({
+    // this will generate REST APIs for the entities.
+    querierMiddleware({
       // all entities will be automatically exposed unless
       // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
