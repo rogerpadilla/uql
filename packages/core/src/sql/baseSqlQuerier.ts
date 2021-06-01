@@ -1,59 +1,52 @@
-import {
-  Query,
-  QueryFilter,
-  QueryUpdateResult,
-  QueryOptions,
-  QueryProject,
-  QuerierPoolConnection,
-  Type,
-} from '../type';
+import { Query, QueryProject, QuerierPoolConnection, Type, Properties, QueryCriteria } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
+import { literal } from './literal';
 
-export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
+export abstract class BaseSqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
 
-  constructor(readonly dialect: BaseSqlDialect, readonly conn: QuerierPoolConnection) {
+  constructor(readonly conn: QuerierPoolConnection, readonly dialect: BaseSqlDialect) {
     super();
   }
 
-  abstract query<E>(query: string): Promise<E>;
-
   async insertMany<E>(entity: Type<E>, bodies: E[]) {
     const query = this.dialect.insert(entity, bodies);
-    const res = await this.query<QueryUpdateResult>(query);
+    const { lastId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    return bodies.map((body, index) => (body[meta.id.property] ? body[meta.id.property] : res.insertId + index));
+    const ids = bodies.map((body, index) => {
+      body[meta.id.property] ??= lastId - bodies.length + index + 1;
+      return body[meta.id.property];
+    });
+    await this.insertRelations(entity, bodies);
+    return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
-    const query = this.dialect.update(entity, filter, body);
-    const res = await this.query<QueryUpdateResult>(query);
-    return res.affectedRows;
+  async updateMany<E>(entity: Type<E>, body: E, qm: QueryCriteria<E>) {
+    const query = this.dialect.update(entity, body, qm);
+    const { changes } = await this.conn.run(query);
+    await this.updateRelations(entity, body, qm);
+    return changes;
   }
 
-  async findMany<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions) {
-    const query = this.dialect.find(entity, qm, opts);
-    const res = await this.query<E[]>(query);
+  async findMany<E>(entity: Type<E>, qm: Query<E>) {
+    const query = this.dialect.find(entity, qm);
+    const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
-    await this.populateToManyRelations(entity, founds, qm.populate);
+    await this.populateToManyRelations(entity, founds, qm.$populate);
     return founds;
   }
 
-  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const query = this.dialect.remove(entity, filter);
-    const res = await this.query<QueryUpdateResult>(query);
-    return res.affectedRows;
+  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const query = this.dialect.delete(entity, qm);
+    const { changes } = await this.conn.run(query);
+    return changes;
   }
 
-  async count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    const res: any = await this.findMany(
-      entity,
-      { project: { 'COUNT(*) count': 1 } as any as QueryProject<E>, filter },
-      { isTrustedProject: true }
-    );
+  async count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const res: any = await this.findMany(entity, { ...qm, $project: [literal('COUNT(*) count')] as QueryProject<E> });
     return Number(res[0].count);
   }
 
@@ -65,7 +58,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     if (this.hasPendingTransaction) {
       throw new TypeError('pending transaction');
     }
-    await this.query(this.dialect.beginTransactionCommand);
+    await this.conn.run(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
   }
 
@@ -73,7 +66,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
-    await this.query('COMMIT');
+    await this.conn.run('COMMIT');
     this.hasPendingTransaction = undefined;
   }
 
@@ -81,7 +74,7 @@ export abstract class BaseSqlQuerier<ID = any> extends BaseQuerier<ID> {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
-    await this.query('ROLLBACK');
+    await this.conn.run('ROLLBACK');
     this.hasPendingTransaction = undefined;
   }
 

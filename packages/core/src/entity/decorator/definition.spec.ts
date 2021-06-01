@@ -1,3 +1,4 @@
+import { EntityMeta, ReferenceOptions } from '@uql/core/type';
 import {
   User,
   Item,
@@ -12,6 +13,7 @@ import {
   MeasureUnitCategory,
   Storehouse,
   Tag,
+  ItemTag,
 } from '../../test';
 import { getEntities, getMeta } from './definition';
 import { Entity } from './entity';
@@ -21,15 +23,15 @@ import { Property } from './property';
 it('User', () => {
   const meta = getMeta(User);
 
-  expect(meta.properties['companyId'].reference.entity()).toBe(Company);
+  expect((meta.properties['companyId'].reference as ReferenceOptions).entity()).toBe(Company);
   expect(meta.relations['company'].entity()).toBe(Company);
   expect(meta.relations['company'].references).toEqual([{ source: 'companyId', target: 'id' }]);
 
-  expect(meta.properties['userId'].reference.entity()).toBe(User);
+  expect((meta.properties['userId'].reference as ReferenceOptions).entity()).toBe(User);
   expect(meta.relations['user'].entity()).toBe(User);
   expect(meta.relations['user'].references).toEqual([{ source: 'userId', target: 'id' }]);
 
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<User> = {
     entity: User,
     name: 'User',
     id: { name: 'id', type: String, isId: true, property: 'id' },
@@ -55,39 +57,36 @@ it('User', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       users: {
-        cardinality: 'oneToMany',
+        cardinality: '1m',
         entity: expect.any(Function),
-        mappedBy: 'userId',
+        mappedBy: 'user',
         references: [{ source: 'id', target: 'userId' }],
       },
       profile: {
-        cardinality: 'oneToOne',
+        cardinality: '11',
         entity: expect.any(Function),
-        mappedBy: 'userId',
-        references: [
-          {
-            source: 'id',
-            target: 'userId',
-          },
-        ],
+        mappedBy: 'user',
+        references: [{ source: 'id', target: 'userId' }],
       },
     },
-  });
+  };
+
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('Profile', () => {
   const meta = getMeta(Profile);
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<Profile> = {
     entity: Profile,
     name: 'user_profile',
     id: { name: 'pk', type: String, isId: true, property: 'id' },
@@ -111,22 +110,23 @@ it('Profile', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: '11',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
-  });
+  };
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('Item', () => {
   const meta = getMeta(Item);
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<Item> = {
     entity: Item,
     name: 'Item',
     id: { name: 'id', type: String, isId: true, property: 'id' },
@@ -177,51 +177,52 @@ it('Item', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
       buyLedgerAccount: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'buyLedgerAccountId', target: 'id' }],
       },
       saleLedgerAccount: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'saleLedgerAccountId', target: 'id' }],
       },
       tax: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'taxId', target: 'id' }],
       },
       measureUnit: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'measureUnitId', target: 'id' }],
       },
       tags: {
-        cardinality: 'manyToMany',
+        cardinality: 'mm',
         entity: expect.any(Function),
-        through: 'ItemTag',
+        through: expect.any(Function),
         references: [
           { source: 'itemId', target: 'id' },
           { source: 'tagId', target: 'id' },
         ],
       },
     },
-  });
+  };
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('Tag', () => {
   const meta = getMeta(Tag);
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<Tag> = {
     entity: Tag,
     id: {
       isId: true,
@@ -272,47 +273,33 @@ it('Tag', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
-        references: [
-          {
-            source: 'companyId',
-            target: 'id',
-          },
-        ],
+        references: [{ source: 'companyId', target: 'id' }],
       },
       items: {
-        cardinality: 'manyToMany',
+        cardinality: 'mm',
         entity: expect.any(Function),
+        mappedBy: 'tags',
+        through: expect.any(Function),
         references: [
-          {
-            source: 'tagId',
-            target: 'id',
-          },
-          {
-            source: 'itemId',
-            target: 'id',
-          },
+          { source: 'tagId', target: 'id' },
+          { source: 'itemId', target: 'id' },
         ],
-        through: 'TagItem',
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
-        references: [
-          {
-            source: 'userId',
-            target: 'id',
-          },
-        ],
+        references: [{ source: 'userId', target: 'id' }],
       },
     },
-  });
+  };
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('TaxCategory', () => {
   const meta = getMeta(TaxCategory);
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<TaxCategory> = {
     entity: TaxCategory,
     name: 'TaxCategory',
     id: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function), property: 'pk' },
@@ -337,22 +324,163 @@ it('TaxCategory', () => {
     },
     relations: {
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
-  });
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
+it('Tax', () => {
+  const meta = getMeta(Tax);
+  const expectedMeta: EntityMeta<Tax> = {
+    entity: Tax,
+    name: 'Tax',
+    id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
+    properties: {
+      id: { name: 'id', type: String, isId: true },
+      categoryId: {
+        name: 'categoryId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      percentage: {
+        name: 'percentage',
+        type: Number,
+      },
+      companyId: {
+        name: 'companyId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      userId: {
+        name: 'userId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      status: { name: 'status', type: Number },
+      name: { name: 'name', type: String },
+      description: { name: 'description', type: String },
+    },
+    relations: {
+      category: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [
+          {
+            source: 'categoryId',
+            target: 'pk',
+          },
+        ],
+      },
+      company: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'companyId', target: 'id' }],
+      },
+      user: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'userId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
+it('ItemAdjustment', () => {
+  const meta = getMeta(ItemAdjustment);
+  const expectedMeta: EntityMeta<ItemAdjustment> = {
+    entity: ItemAdjustment,
+    name: 'ItemAdjustment',
+    id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
+    properties: {
+      id: { name: 'id', type: String, isId: true },
+      buyPrice: {
+        name: 'buyPrice',
+        type: Number,
+      },
+      inventoryAdjustmentId: {
+        name: 'inventoryAdjustmentId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      itemId: {
+        name: 'itemId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      number: {
+        name: 'number',
+        type: Number,
+      },
+      storehouseId: {
+        name: 'storehouseId',
+        reference: {
+          entity: expect.any(Function),
+        },
+        type: String,
+      },
+      companyId: {
+        name: 'companyId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      userId: {
+        name: 'userId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      status: { name: 'status', type: Number },
+    },
+    relations: {
+      storehouse: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'storehouseId', target: 'id' }],
+      },
+      item: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'itemId', target: 'id' }],
+      },
+      company: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'companyId', target: 'id' }],
+      },
+      user: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'userId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('InventoryAdjustment', () => {
   const meta = getMeta(InventoryAdjustment);
-  expect(meta).toEqual({
+  const expectedMeta: EntityMeta<InventoryAdjustment> = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
     id: { name: 'id', type: String, isId: true, property: 'id' },
@@ -377,23 +505,24 @@ it('InventoryAdjustment', () => {
     },
     relations: {
       itemAdjustments: {
-        cardinality: 'oneToMany',
+        cardinality: '1m',
         entity: expect.any(Function),
         mappedBy: 'inventoryAdjustmentId',
-        references: [{ source: 'id', target: 'inventoryAdjustmentId' }],
+        references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
       },
       company: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
       user: {
-        cardinality: 'manyToOne',
+        cardinality: 'm1',
         entity: expect.any(Function),
         references: [{ source: 'userId', target: 'id' }],
       },
     },
-  });
+  };
+  expect(meta).toEqual(expectedMeta);
 });
 
 it('not an @Entity', () => {
@@ -423,6 +552,7 @@ it('getEntities', () => {
     MeasureUnit,
     Storehouse,
     Tag,
+    ItemTag,
     Item,
     ItemAdjustment,
     InventoryAdjustment,

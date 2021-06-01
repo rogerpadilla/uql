@@ -1,16 +1,17 @@
-import { QueryFilter, Query, QueryOne, Type, UniversalQuerier } from '@uql/core/type';
+import { Query, QueryOne, Type, UniversalQuerier, QueryCriteria } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
-export interface ClientQuerier<ID = any> extends UniversalQuerier<ID> {
-  insertMany?<E>(entity: Type<E>, bodies: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<ID[]>>;
+export interface ClientQuerier extends UniversalQuerier {
+  insertMany?<E>(entity: Type<E>, bodies: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<any[]>>;
 
-  insertOne<E>(entity: Type<E>, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<ID>>;
+  insertOne<E>(entity: Type<E>, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<any>>;
 
-  updateOneById<E>(entity: Type<E>, id: ID, body: E, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  updateOneById<E>(entity: Type<E>, body: E, id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   updateMany?<E>(
     entity: Type<E>,
-    filter: QueryFilter<E>,
+    body: E,
+    qm: QueryCriteria<E>,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 
@@ -20,15 +21,11 @@ export interface ClientQuerier<ID = any> extends UniversalQuerier<ID> {
 
   findOne<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findOneById<E>(entity: Type<E>, id: ID, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById<E>(entity: Type<E>, id: any, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  removeMany<E>(
-    entity: Type<E>,
-    filter: QueryFilter<E>,
-    opts?: RequestOptions
-  ): Promise<RequestSuccessResponse<number>>;
+  deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  removeOneById<E>(entity: Type<E>, id: ID, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  count<E>(entity: Type<E>, filter?: QueryFilter<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  count<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

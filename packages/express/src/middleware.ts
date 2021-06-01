@@ -2,7 +2,7 @@ import { Request, Response } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getOptions, getQuerier } from '@uql/core/options';
-import { Query, Type } from '@uql/core/type';
+import { Query, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { parseQuery } from './query.util';
@@ -54,7 +54,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      await querier.updateOneById(entity, req.params.id, req.body);
+      await querier.updateOneById(entity, req.body, req.params.id);
       await querier.commitTransaction();
       res.json({ data: req.params.id });
     } catch (err) {
@@ -66,7 +66,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/one', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm);
@@ -82,7 +82,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const qm = assembleQuery<E>(entity, req, opts.extendQuery);
     const querier = await getQuerier();
     try {
-      const data = await querier.count(entity, qm.filter);
+      const data = await querier.count(entity, qm);
       res.json({ data });
     } catch (err) {
       sendError(err, res);
@@ -92,7 +92,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/:id', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
+    const qm = assembleQuery<E>(entity, req, opts.extendQuery) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOneById(entity, req.params.id, qm);
@@ -111,7 +111,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
       const json: { data?: E[]; count?: number } = {};
       const findManyPromise = querier.findMany(entity, qm);
       if (req.query.count) {
-        const countPromise = querier.count(entity, qm.filter);
+        const countPromise = querier.count(entity, qm);
         const [data, count] = await Promise.all([findManyPromise, countPromise]);
         json.data = data;
         json.count = count;
@@ -130,7 +130,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.removeOneById(entity, req.params.id);
+      const data = await querier.deleteOneById(entity, req.params.id);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -146,7 +146,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.removeMany(entity, qm.filter);
+      const data = await querier.deleteMany(entity, qm);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {

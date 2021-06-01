@@ -1,11 +1,11 @@
 import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, QueryOne, QueryOptions, Type } from '@uql/core/type';
+import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
 import { MongoDialect } from './mongoDialect';
 
-export class MongodbQuerier extends BaseQuerier<ObjectId> {
+export class MongodbQuerier extends BaseQuerier {
   private session: ClientSession;
 
   constructor(readonly conn: MongoClient, readonly dialect = new MongoDialect()) {
@@ -26,7 +26,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return Object.values(res.insertedIds);
   }
 
-  async updateMany<E>(entity: Type<E>, filter: QueryFilter<E>, body: E) {
+  async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, body: E) {
     const persistableProperties = filterPersistableProperties(entity, body);
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = body[key];
@@ -34,7 +34,7 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     }, {} as OptionalId<E>);
 
     const res = await this.collection(entity).updateMany(
-      this.dialect.buildFilter(entity, filter),
+      this.dialect.buildFilter(entity, qm.$filter),
       { $set: persistable },
       {
         session: this.session,
@@ -49,29 +49,29 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
 
     let documents: E[];
 
-    if (qm.populate && Object.keys(qm.populate).length) {
+    if (qm.$populate && Object.keys(qm.$populate).length) {
       const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
-      await this.populateToManyRelations(entity, documents, qm.populate);
+      await this.populateToManyRelations(entity, documents, qm.$populate);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-      if (qm.filter) {
-        const filter = this.dialect.buildFilter(entity, qm.filter);
+      if (qm.$filter) {
+        const filter = this.dialect.buildFilter(entity, qm.$filter);
         cursor.filter(filter);
       }
-      if (qm.project) {
-        cursor.project(qm.project);
+      if (qm.$project) {
+        cursor.project(qm.$project);
       }
-      if (qm.sort) {
-        cursor.sort(qm.sort);
+      if (qm.$sort) {
+        cursor.sort(qm.$sort);
       }
-      if (qm.skip) {
-        cursor.skip(qm.skip);
+      if (qm.$skip) {
+        cursor.skip(qm.$skip);
       }
-      if (qm.limit) {
-        cursor.limit(qm.limit);
+      if (qm.$limit) {
+        cursor.limit(qm.$limit);
       }
 
       documents = await cursor.toArray();
@@ -81,24 +81,22 @@ export class MongodbQuerier extends BaseQuerier<ObjectId> {
     return documents;
   }
 
-  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>, opts?: QueryOptions) {
+  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
     const meta = getMeta(entity);
-    return this.findOne(entity, { ...qo, filter: { [meta.id.name]: id } }, opts);
+    return this.findOne<E>(entity, { ...qo, $filter: { [meta.id.name]: id } });
   }
 
-  async removeMany<E>(entity: Type<E>, filter: QueryFilter<E>) {
-    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, filter), {
+  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, qm.$filter), {
       session: this.session,
     });
     return res.deletedCount;
   }
 
-  count<E>(entity: Type<E>, filter?: QueryFilter<E>) {
-    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, filter), { session: this.session });
-  }
-
-  async query(query: string) {
-    throw new TypeError('method not implemented');
+  count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, qm.$filter), {
+      session: this.session,
+    });
   }
 
   get hasOpenTransaction() {

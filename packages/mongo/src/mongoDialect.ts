@@ -23,42 +23,43 @@ export class MongoDialect {
 
     const pipeline: object[] = [];
 
-    if (qm.filter && Object.keys(qm.filter).length) {
-      pipeline.push({ $match: this.buildFilter(entity, qm.filter) });
+    if (qm.$filter && Object.keys(qm.$filter).length) {
+      pipeline.push({ $match: this.buildFilter(entity, qm.$filter) });
     }
 
-    for (const popKey in qm.populate) {
-      const relOpts = meta.relations[popKey];
+    for (const relKey in qm.$populate) {
+      const relOpts = meta.relations[relKey];
       if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${popKey}' is not annotated as a relation`);
+        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
-      if (relOpts.cardinality !== 'manyToOne' && relOpts.cardinality !== 'oneToOne') {
+      if (relOpts.cardinality !== 'm1' && relOpts.cardinality !== '11') {
         // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
         continue;
       }
       const relEntity = relOpts.entity();
       const relMeta = getMeta(relEntity);
 
-      if (relOpts.cardinality === 'manyToOne') {
+      if (relOpts.cardinality === 'm1') {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            localField: popKey,
+            localField: relKey,
             foreignField: '_id',
-            as: popKey,
+            as: relKey,
           },
         });
       } else {
+        const mappedByKey = relOpts.mappedBy as string;
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [relOpts.mappedBy as string]: qm.filter[meta.id.name] } }],
-            as: popKey,
+            pipeline: [{ $match: { [mappedByKey]: qm.$filter[meta.id.name] } }],
+            as: relKey,
           },
         });
       }
 
-      pipeline.push({ $unwind: { path: `$${popKey}`, preserveNullAndEmptyArrays: true } });
+      pipeline.push({ $unwind: { path: `$${relKey}`, preserveNullAndEmptyArrays: true } });
     }
 
     return pipeline;

@@ -16,17 +16,17 @@ function Relation<E>(opts: RelationOptions<E>) {
 }
 
 export function OneToOne<E>(opts?: RelationOneToOneOptions<E>): ReturnType<typeof Relation> {
-  return Relation({ cardinality: 'oneToOne', ...opts });
+  return Relation({ cardinality: '11', ...opts });
 }
 
 export function ManyToOne<E>(opts?: RelationManyToOneOptions<E>): ReturnType<typeof Relation> {
-  return Relation({ cardinality: 'manyToOne', ...opts });
+  return Relation({ cardinality: 'm1', ...opts });
 }
 
 export function OneToMany<E>(opts: RelationOneToManyOptions<E>): ReturnType<typeof Relation> {
-  return Relation({ cardinality: 'oneToMany', ...opts });
+  return Relation({ cardinality: '1m', ...opts });
 }
 
 export function ManyToMany<E>(opts: RelationManyToManyOptions<E>): ReturnType<typeof Relation> {
-  return Relation({ cardinality: 'manyToMany', ...opts });
+  return Relation({ cardinality: 'mm', ...opts });
 }

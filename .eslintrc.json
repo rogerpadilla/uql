@@ -1,5 +1,5 @@
 {
-  "ignorePatterns": ["coverage", "node_modules", "packages/*/dist"],
+  "ignorePatterns": ["coverage", "data", "**/node_modules", "**/dist"],
   "env": {
     "node": true,
     "es2020": true
@@ -71,14 +71,14 @@
       }
     },
     {
-      "files": ["packages/**/*{.,-}{spec,it}.ts"],
+      "files": ["packages/**/*{.,-}{spec,it}.ts", "config/test-*.js"],
       "env": {
         "jest": true
       },
       "rules": {
         "@typescript-eslint/unbound-method": 0,
         "@typescript-eslint/no-empty-function": 0,
-        "max-lines": ["error", 700]
+        "max-lines": ["error", 800]
       }
     }
   ]

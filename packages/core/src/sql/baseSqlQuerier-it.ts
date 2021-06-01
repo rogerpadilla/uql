@@ -1,6 +1,6 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
-import { QuerierPool, Type } from '../type';
+import { QuerierPool, ReferenceOptions, Type } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
@@ -17,7 +17,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
         return;
       }
       const ddl = this.buildDdlForTable(this.entities[index]);
-      await this.querier.query(ddl);
+      await this.querier.conn.run(ddl);
       await run(index + 1);
     };
     await run(0);
@@ -27,7 +27,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);
-        return this.querier.query(`DROP TABLE ${this.querier.dialect.escapeId(meta.name)}`);
+        return this.querier.conn.run(`DROP TABLE ${meta.name}`);
       })
     );
   }
@@ -35,18 +35,18 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
   buildDdlForTable<E>(entity: Type<E>) {
     const meta = getMeta(entity);
 
-    let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
+    let sql = `CREATE TABLE ${meta.name} (\n\t`;
 
     const defaultIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
     const columns = Object.keys(meta.properties).map((key) => {
       const prop = meta.properties[key];
-      let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
+      let propSql = prop.name + ' ';
       if (prop.isId) {
         propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
       } else if (prop.reference) {
-        const rel = prop.reference.entity();
+        const rel = (prop.reference as ReferenceOptions).entity();
         const relMeta = getMeta(rel);
         const type = relMeta.id.onInsert
           ? defaultIdType

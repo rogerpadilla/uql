@@ -6,9 +6,9 @@ import {
   EntityOptions,
   EntityMeta,
   Type,
-  PropertyNameMap,
-  PropertyNameMapper,
+  KeyMapper,
   RelationMappedBy,
+  KeyMap,
 } from '../../type';
 
 const holder = globalThis;
@@ -16,10 +16,16 @@ const metaKey = '@uql/core/entity';
 const metas: Map<Type<any>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
-export function defineProperty<E>(entity: Type<E>, prop: string, opts: PropertyOptions): EntityMeta<E> {
+export function defineProperty<E>(entity: Type<E>, prop: string, opts: PropertyOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
-  meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, type: inferredType, ...opts } };
+  if (!opts.type) {
+    const type = inferType(entity, prop);
+    opts = { ...opts, type };
+  }
+  if (typeof opts.reference === 'function') {
+    opts = { ...opts, reference: { entity: opts.reference } };
+  }
+  meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, ...opts } };
   return meta;
 }
 
@@ -34,7 +40,7 @@ export function defineId<E>(entity: Type<E>, prop: string, opts: PropertyOptions
 
 export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
-    const inferredType = inferRelationType(entity, prop);
+    const inferredType = inferEntityType(entity, prop);
     opts.entity = () => inferredType;
   }
   const meta = ensureMeta(entity);
@@ -42,7 +48,7 @@ export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationO
   return meta;
 }
 
-export function define<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
+export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
 
   if (Object.keys(meta.properties).length === 0) {
@@ -67,18 +73,6 @@ export function define<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta
   return meta;
 }
 
-export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
-  const meta = metas.get(entity);
-  if (!meta) {
-    throw new TypeError(`'${entity.name}' is not an entity`);
-  }
-  if (meta.processed) {
-    return meta;
-  }
-  meta.processed = true;
-  return completeRelationsMetas(meta);
-}
-
 export function getEntities(): Type<any>[] {
   return [...metas.entries()].reduce((acc, [key, val]) => {
     if (val.id) {
@@ -98,60 +92,92 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   return meta;
 }
 
-function completeRelationsMetas<E>(meta: EntityMeta<E>): EntityMeta<E> {
-  for (const relKey in meta.relations) {
-    const rel = meta.relations[relKey];
+export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const meta = metas.get(entity);
+  if (!meta) {
+    throw new TypeError(`'${entity.name}' is not an entity`);
+  }
+  if (meta.processed) {
+    return meta;
+  }
+  meta.processed = true;
+  return fillRelationsReferences(meta);
+}
 
-    if (rel.references) {
+function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
+  for (const relKey in meta.relations) {
+    const relOpts = meta.relations[relKey];
+
+    if (relOpts.references) {
+      // references were manually specified
       continue;
     }
 
-    const relEntity = rel.entity();
-    const relMeta = getMeta(relEntity);
+    if (relOpts.mappedBy) {
+      fillMappedRelationReferences(relOpts);
+      continue;
+    }
 
-    if (rel.mappedBy) {
-      if (typeof rel.mappedBy === 'function') {
-        const propertyNameMap = getKeyNameMap(relMeta);
-        const nameMapper = rel.mappedBy as PropertyNameMapper<E>;
-        const mappedByKey = nameMapper(propertyNameMap);
-        if (relMeta.relations[mappedByKey]) {
-          const references = relMeta.relations[mappedByKey].references.slice();
-          rel.mappedBy = references[0].source as RelationMappedBy<E>;
-          rel.references = references.map(({ source, target }) => ({ source: target, target: source }));
-        } else {
-          rel.mappedBy = mappedByKey as RelationMappedBy<E>;
-          rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
-        }
-      } else {
-        rel.references = [{ source: meta.id.property, target: rel.mappedBy as string }];
-      }
-    } else if (rel.cardinality === 'manyToMany') {
-      rel.through = `${meta.name}${relMeta.name}`;
+    const relEntity = relOpts.entity();
+    const relMeta = ensureMeta(relEntity);
+
+    if (relOpts.cardinality === 'mm') {
       const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
       const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
-      rel.references = [
+      relOpts.references = [
         { source, target: meta.id.name },
         { source: target, target: relMeta.id.name },
       ];
     } else {
-      rel.references = [{ source: relKey + 'Id', target: relMeta.id.property }];
+      relOpts.references = [{ source: relKey + 'Id', target: relMeta.id.property }];
     }
   }
 
   return meta;
 }
 
-function getKeyNameMap<E>(meta: EntityMeta<E>): PropertyNameMap<E> {
-  return Object.keys(meta.properties)
-    .concat(Object.keys(meta.relations))
-    .reduce((acc, key) => {
-      acc[key] = key;
-      return acc;
-    }, {} as PropertyNameMap<E>);
+function fillMappedRelationReferences<E>(relOpts: RelationOptions<E>): void {
+  const relEntity = relOpts.entity();
+  const relMeta = getMeta(relEntity);
+  const mappedByKey = getMappedByKey(relOpts);
+  relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
+
+  if (relMeta.relations[mappedByKey]) {
+    const mappedByRelOpts = relMeta.relations[mappedByKey];
+    if (mappedByRelOpts.cardinality === 'mm') {
+      relOpts.through = mappedByRelOpts.through;
+      relOpts.references = mappedByRelOpts.references.slice().reverse();
+    } else {
+      relOpts.references = mappedByRelOpts.references.map(({ source, target }) => ({
+        source: target,
+        target: source,
+      }));
+    }
+  } else {
+    relOpts.references = [{ source: mappedByKey, target: relMeta.id.property }];
+  }
+}
+
+function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
+  if (typeof relOpts.mappedBy === 'function') {
+    const relEntity = relOpts.entity();
+    const relMeta = ensureMeta(relEntity);
+    const keyMap = getKeyMap(relMeta);
+    const mapper = relOpts.mappedBy as KeyMapper<E>;
+    return mapper(keyMap);
+  }
+  return relOpts.mappedBy as string;
+}
+
+function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
+  return Object.keys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
+    acc[key] = key;
+    return acc;
+  }, {} as KeyMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): string {
-  return meta.id?.property ?? Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  return Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
@@ -167,8 +193,12 @@ function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
   target.relations = { ...source.relations, ...target.relations };
 }
 
-function inferRelationType<E>(entity: Type<E>, prop: string): Type<any> {
-  const inferredType = Reflect.getMetadata('design:type', entity.prototype, prop);
+function inferType<E>(entity: Type<E>, prop: string): any {
+  return Reflect.getMetadata('design:type', entity.prototype, prop);
+}
+
+function inferEntityType<E>(entity: Type<E>, prop: string): Type<any> {
+  const inferredType = inferType(entity, prop);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
     throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);

@@ -159,32 +159,32 @@ describe('transactional', () => {
   });
 
   it('injectQuerier and call super', async () => {
-    const removeStub = jest.fn((id: string, querier: Querier) => {});
+    const deleteStub = jest.fn((id: string, querier: Querier) => {});
 
     class ServiceA {
       @Transactional()
-      async remove(id: string, @InjectQuerier() querier?: Querier) {
-        removeStub(id, querier);
+      async delete(id: string, @InjectQuerier() querier?: Querier) {
+        deleteStub(id, querier);
       }
     }
 
     class ServiceB extends ServiceA {
       @Transactional({ querierPool: anotherQuerierPool })
-      async remove(id: string, @InjectQuerier() querier?: Querier) {
-        return super.remove(id, querier);
+      async delete(id: string, @InjectQuerier() querier?: Querier) {
+        return super.delete(id, querier);
       }
     }
 
     const serviceB = new ServiceB();
-    await serviceB.remove('123');
+    await serviceB.delete('123');
 
     const defaultQuerier = await getQuerier();
 
-    expect(removeStub).toBeCalledTimes(1);
+    expect(deleteStub).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(removeStub).toHaveBeenCalledWith('123', anotherQuerier);
+    expect(deleteStub).toHaveBeenCalledWith('123', anotherQuerier);
 
     expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
     expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);

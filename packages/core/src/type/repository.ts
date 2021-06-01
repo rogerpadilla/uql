@@ -1,45 +1,45 @@
-import { Query, QueryFilter, QueryOne, QueryOptions } from './query';
+import { Query, QueryCriteria, QueryOne } from './query';
 
-export type UniversalRepository<E, ID = any> = {
+export type UniversalRepository<E> = {
   insertMany?(body: E[]): Promise<any>;
 
   insertOne(body: E): Promise<any>;
 
-  updateMany?(filter: QueryFilter<E>, body: E): Promise<any>;
+  updateMany?(body: E, qm: QueryCriteria<E>): Promise<any>;
 
-  updateOneById(id: ID, body: E): Promise<any>;
+  updateOneById(body: E, id: any): Promise<any>;
 
   findMany(qm: Query<E>): Promise<any>;
 
-  findOne(qm: Query<E>): Promise<any>;
+  findOne(qm: QueryOne<E>): Promise<any>;
 
-  findOneById(id: ID, qo?: QueryOne<E>): Promise<any>;
+  findOneById(id: any, qo?: QueryOne<E>): Promise<any>;
 
-  removeMany(filter: QueryFilter<E>): Promise<any>;
+  deleteMany(qm: QueryCriteria<E>): Promise<any>;
 
-  removeOneById(id: ID): Promise<any>;
+  deleteOneById(id: any): Promise<any>;
 
-  count(filter?: QueryFilter<E>): Promise<any>;
+  count(qm: QueryCriteria<E>): Promise<any>;
 };
 
-export interface Repository<E, ID = any> extends UniversalRepository<E, ID> {
-  insertMany(body: E[]): Promise<ID[]>;
+export interface Repository<E> extends UniversalRepository<E> {
+  insertMany(body: E[]): Promise<any[]>;
 
-  insertOne(body: E): Promise<ID>;
+  insertOne(body: E): Promise<any>;
 
-  updateMany(filter: QueryFilter<E>, body: E): Promise<number>;
+  updateMany(body: E, qm: QueryCriteria<E>): Promise<number>;
 
-  updateOneById(id: ID, body: E): Promise<number>;
+  updateOneById(body: E, id: any): Promise<number>;
 
-  findMany(qm: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany(qm: Query<E>): Promise<E[]>;
 
-  findOne(qm: Query<E>, opts?: QueryOptions): Promise<E>;
+  findOne(qm: QueryOne<E>): Promise<E>;
 
-  findOneById(id: ID, qo?: QueryOne<E>, opts?: QueryOptions): Promise<E>;
+  findOneById(id: any, qm?: QueryOne<E>): Promise<E>;
 
-  removeMany(filter: QueryFilter<E>): Promise<number>;
+  deleteMany(qm: QueryCriteria<E>): Promise<number>;
 
-  removeOneById(id: ID): Promise<number>;
+  deleteOneById(id: any): Promise<number>;
 
-  count(filter?: QueryFilter<E>): Promise<number>;
+  count(qm: QueryCriteria<E>): Promise<number>;
 }
