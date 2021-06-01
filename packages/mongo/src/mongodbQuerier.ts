@@ -1,4 +1,5 @@
-import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
+import { MongoClient, ClientSession, OptionalId, ObjectId, UpdateQuery } from 'mongodb';
+import { isDebug, log } from '@uql/core';
 import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
@@ -21,6 +22,8 @@ export class MongodbQuerier extends BaseQuerier {
       }, {} as OptionalId<E>);
     });
 
+    log(persistables);
+
     const res = await this.collection(entity).insertMany(persistables, { session: this.session });
 
     return Object.values(res.insertedIds);
@@ -33,13 +36,14 @@ export class MongodbQuerier extends BaseQuerier {
       return acc;
     }, {} as OptionalId<E>);
 
-    const res = await this.collection(entity).updateMany(
-      this.dialect.buildFilter(entity, qm.$filter),
-      { $set: persistable },
-      {
-        session: this.session,
-      }
-    );
+    const filter = this.dialect.buildFilter(entity, qm.$filter);
+    const update = { $set: persistable };
+
+    log(filter, update);
+
+    const res = await this.collection(entity).updateMany(filter, update, {
+      session: this.session,
+    });
 
     return res.modifiedCount;
   }
@@ -51,6 +55,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     if (qm.$populate && Object.keys(qm.$populate).length) {
       const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
+      log(pipeline);
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
       await this.populateToManyRelations(entity, documents, qm.$populate);
@@ -74,6 +79,10 @@ export class MongodbQuerier extends BaseQuerier {
         cursor.limit(qm.$limit);
       }
 
+      if (isDebug()) {
+        cursor.explain((err, result) => log(err, result));
+      }
+
       documents = await cursor.toArray();
       normalizeIds(documents, meta);
     }
@@ -87,14 +96,18 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const res = await this.collection(entity).deleteMany(this.dialect.buildFilter(entity, qm.$filter), {
+    const filter = this.dialect.buildFilter(entity, qm.$filter);
+    log(filter);
+    const res = await this.collection(entity).deleteMany(filter, {
       session: this.session,
     });
     return res.deletedCount;
   }
 
   count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    return this.collection(entity).countDocuments(this.dialect.buildFilter(entity, qm.$filter), {
+    const filter = this.dialect.buildFilter(entity, qm.$filter);
+    log(filter);
+    return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
   }
@@ -112,6 +125,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }
+    log('startTransaction');
     this.session = this.conn.startSession();
     this.session.startTransaction();
   }
@@ -120,6 +134,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
+    log('commitTransaction');
     await this.session.commitTransaction();
     this.session.endSession();
   }
@@ -128,6 +143,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
+    log('abortTransaction');
     await this.session.abortTransaction();
   }
 

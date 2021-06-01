@@ -27,11 +27,6 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
     'content-type': 'application/json',
   };
 
-  if (init.method !== 'get' && init.method !== 'head' && init.method !== 'options') {
-    // TODO: send auth token to server
-    //   Init.headers['csrf-token'] = appState.csrfToken;
-  }
-
   return fetch(url, init)
     .then((rawResp) =>
       rawResp.json().then((resp: RequestSuccessResponse<T> | RequestErrorResponse) => {
@@ -53,9 +48,3 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
       notify({ phase: 'complete', opts });
     });
 }
-
-/*
- *   Export function trackPageView(path: string) {
- *     gtag('config', GA_MEASUREMENT_ID, { page_path: path });
- *   }
- */

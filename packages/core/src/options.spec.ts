@@ -1,17 +1,25 @@
-import { getLogger, getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
+import { getOptions, getQuerier, getQuerierPool, getRepository, isDebug, log, setOptions } from './options';
 import { User } from './test';
 import { Querier } from './type';
 
 describe('options', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'log');
+    jest.spyOn(console, 'info');
+  });
+
   afterEach(() => {
     setOptions(undefined);
+    jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('getOptions unset', () => {
     expect(getOptions()).toEqual({
-      logger: console.log,
+      logger: expect.any(Function),
     });
-    expect(getLogger()).toBe(console.log);
+
+    expect(isDebug()).toBeFalsy();
   });
 
   it('setOptions', () => {
@@ -25,14 +33,20 @@ describe('options', () => {
       logger: console.info,
       debug: true,
     });
-    expect(getLogger()).toBe(console.info);
+
+    expect(isDebug()).toBe(true);
+
+    log('hi', 'uql');
+    expect(console.info).toBeCalledWith('hi', 'uql');
+    expect(console.info).toBeCalledTimes(1);
+    expect(console.log).toBeCalledTimes(0);
 
     setOptions({
       querierPool: undefined,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
-      logger: console.log,
+      logger: expect.any(Function),
     });
   });
 

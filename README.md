@@ -28,8 +28,8 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 3. [Entities](#entities)
 4. [Declarative Transactions](#declarative-transactions)
 5. [Programmatic Transactions](#programmatic-transactions)
-6. [Generate REST APIs from Express](#express)
-7. [Consume REST APIs from Frontend](#client)
+6. [Generate REST APIs with Express](#express)
+7. [Consume REST APIs from the Frontend](#client)
 8. [FAQs](#faq)
 
 ## <a name="installation"></a>:battery: Installation
@@ -135,8 +135,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/entity/decorator';
 
 /**
- * an abstract class can optionally be used as a template for the entities
- * (so boilerplate code is reduced)
+ * an abstract class can (optionally) be used as a "template" for the entities
+ * (so the common attributes' declaration is reused)
  */
 export abstract class BaseEntity {
   @Id({ onInsert: () => uuidv4() })
@@ -150,7 +150,7 @@ export abstract class BaseEntity {
   createdAt?: number;
 
   /**
-   * Foreign Keys are really simple to specify
+   * foreign-keys are really simple to specify
    */
   @Property({ reference: () => User })
   userId?: string;
@@ -190,7 +190,7 @@ export class Profile extends BaseEntity {
   picture?: string;
 
   /**
-   * The owner side of the relation is that without the attribute `mappedBy`
+   * the owner side of the relation is that which doesn't specify the attribute `mappedBy`
    */
   @OneToOne()
   user?: User;
@@ -207,6 +207,9 @@ export class User extends BaseEntity {
   @Property()
   password?: string;
 
+  /**
+   * the non-owner side of the relation is that which specify the attribute `mappedBy`
+   */
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.user })
   profile?: Profile;
 }
@@ -214,7 +217,7 @@ export class User extends BaseEntity {
 @Entity()
 export class TaxCategory extends BaseEntity {
   /**
-   * Any entity can specify its own ID Property and still inherit the others
+   * an entity can specify its own ID Property and still inherit the others
    * columns/relations from its parent entity.
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
@@ -269,9 +272,9 @@ class ConfirmationService {
         password: payload.password,
       });
     } else {
-      await querier.updateOneById(User, payload.userId, { password: payload.password });
+      await querier.updateOneById(User, { password: payload.password }, payload.userId);
     }
-    await querier.updateOneById(Confirmation, payload.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, payload.id);
   }
 }
 
@@ -280,7 +283,7 @@ export const confirmationService = new ConfirmationService();
 /**
  * then you could just import the constant `confirmationService` in another file,
  * and when you call `confirmAction` function, all the operations there
- * will (automatically) be run inside a single transaction
+ * will (automatically) run inside a single transaction
  */
 await confirmationService.confirmAction(data);
 ```
@@ -311,9 +314,9 @@ async function confirmAction(payload: Confirmation) {
         password: payload.password,
       });
     } else {
-      await querier.updateOneById(User, payload.userId, { password: payload.password });
+      await querier.updateOneById(User, { password: payload.password }, payload.userId);
     }
-    await querier.updateOneById(Confirmation, payload.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, payload.id);
     await querier.commitTransaction();
   } catch (error) {
     await querier.rollbackTransaction();

@@ -1,17 +1,19 @@
-import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 import { PoolConnection } from 'mysql2/promise';
+
+import { log } from '@uql/core';
+import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 
 export class MySql2Connection implements QuerierPoolConnection {
   constructor(readonly conn: PoolConnection) {}
 
   async all<T>(query: string) {
-    // console.debug(query);
+    log(query);
     const res = await this.conn.query(query);
     return res[0] as T[];
   }
 
   async run(query: string) {
-    // console.debug(query);
+    log(query);
     const { affectedRows: changes, insertId: lastId }: any = await this.conn.query(query);
     return { changes, lastId } as QueryUpdateResult;
   }

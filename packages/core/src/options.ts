@@ -9,16 +9,13 @@ export function setOptions(opts: UqlOptions): void {
 }
 
 export function getOptions(): UqlOptions {
-  if (!options) {
-    return { ...defaultOptions };
-  }
-  return { ...options };
+  return options ?? defaultOptions;
 }
 
 export function getQuerierPool(): QuerierPool {
   const options = getOptions();
   if (!options.querierPool) {
-    throw new Error(`'querierPool' has to be passed via 'setOptions'`);
+    throw new TypeError(`'querierPool' has to be passed via 'setOptions'`);
   }
   return options.querierPool;
 }
@@ -31,6 +28,12 @@ export function getRepository<E>(entity: Type<E>, querier: Querier): Repository<
   return new BaseRepository(entity, querier);
 }
 
-export function getLogger(): Logger {
-  return getOptions().logger;
+export function log(message: any, ...args: any[]) {
+  if (options?.debug) {
+    options.logger(message, ...args);
+  }
+}
+
+export function isDebug(): boolean {
+  return options?.debug;
 }

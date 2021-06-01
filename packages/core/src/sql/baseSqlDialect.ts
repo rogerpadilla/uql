@@ -16,7 +16,7 @@ import {
   QueryPopulateValue,
 } from '../type';
 import { filterPersistableProperties } from '../entity/util';
-import { Literal } from './literal';
+import { Raw } from './raw';
 
 export abstract class BaseSqlDialect {
   readonly escapeIdRegex: RegExp;
@@ -109,7 +109,7 @@ export abstract class BaseSqlDialect {
 
     return project
       .map((key) => {
-        if (key instanceof Literal) {
+        if (key instanceof Raw) {
           return key.value;
         }
         const property = meta.properties[key as string];

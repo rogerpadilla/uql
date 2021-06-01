@@ -5,7 +5,7 @@ import { Query, QueryCriteria, QueryFilter, QueryProject, QuerySort, Type } from
 import { Spec } from '../test/spec.util';
 import { isNormalEscapeIdChar, normalizeSql } from '../test';
 import { BaseSqlDialect } from './baseSqlDialect';
-import { literal } from './literal';
+import { raw } from './raw';
 
 export abstract class BaseSqlDialectSpec implements Spec {
   constructor(readonly dialect: BaseSqlDialect) {}
@@ -631,8 +631,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.find(User, {
         $project: [
-          literal('*'),
-          literal('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness'),
+          raw('*'),
+          raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt hotness'),
         ] as QueryProject<User>,
         $filter: { name: 'something' },
       })
