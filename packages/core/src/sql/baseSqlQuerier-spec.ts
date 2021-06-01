@@ -313,6 +313,7 @@ export class BaseSqlQuerierSpec implements Spec {
         /^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('xyz', 1, \d+\)(?: RETURNING pk id)?$/
       )
     );
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM User WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(2);
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -342,6 +343,7 @@ export class BaseSqlQuerierSpec implements Spec {
       expect.toMatch(/^UPDATE User SET name = 'something', updatedAt = \d+ WHERE id = 1$/)
     );
     expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM user_profile WHERE userId = 1');
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM User WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(2);
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -377,6 +379,7 @@ export class BaseSqlQuerierSpec implements Spec {
         /^INSERT INTO ItemAdjustment \(buyPrice, inventoryAdjustmentId, createdAt\) VALUES \(50, 1, \d+\), \(300, 1, \d+\)(?: RETURNING id id)?$/
       )
     );
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM InventoryAdjustment WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(3);
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -407,6 +410,7 @@ export class BaseSqlQuerierSpec implements Spec {
       expect.toMatch(/^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE id = 1$/)
     );
     expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM ItemAdjustment WHERE inventoryAdjustmentId = 1');
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM InventoryAdjustment WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(2);
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.insertOne).toBeCalledTimes(0);
@@ -512,6 +516,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledWith('COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.release();
+    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     expect(this.querier.beginTransaction).toBeCalledTimes(1);
     expect(this.querier.commitTransaction).toBeCalledTimes(1);
@@ -525,6 +531,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
+    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(2);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
@@ -535,6 +543,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.commitTransaction()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(1);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
@@ -545,6 +555,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(1);
@@ -559,6 +571,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
+    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(1);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
