@@ -17,6 +17,7 @@
     "declaration": true,
     "baseUrl": ".",
     "importHelpers": true,
+    "skipLibCheck": true,
     "paths": {
       "@uql/core": ["packages/core/src"],
       "@uql/core/*": ["packages/core/src/*"]
