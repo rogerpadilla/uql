@@ -364,11 +364,11 @@ app
       // `extendQuery` callback allows to extend all then queries that are requested to the API,
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
       extendQuery<E>(type: Type<E>, qm: Query<E>, req: Request): Query<E> {
-        qm.limit = obtainValidLimit(qm.limit);
-        const prefix = qm.populate && Object.keys(qm.populate).length ? type.name + '.' : '';
-        qm.filter = {
-          ...qm.filter,
-          // ensure the user can only see the data belonging to his own company for security
+        qm.$limit = obtainValidLimit(qm.$limit);
+        const prefix = qm.populate && Object.keys(qm.$populate).length ? type.name + '.' : '';
+        qm.$filter = {
+          ...qm.$filter,
+          // ensure the user can only see the data belonging to his own company
           [`${prefix}companyId`]: req.identity.companyId,
         };
         return qm;
