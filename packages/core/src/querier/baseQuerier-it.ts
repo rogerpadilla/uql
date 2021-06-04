@@ -55,6 +55,11 @@ export abstract class BaseQuerierIt implements Spec {
     await this.pool.end();
   }
 
+  shouldGetRepository() {
+    const repository = this.querier.getRepository(User);
+    expect(repository).toBeDefined();
+  }
+
   async shouldInsertMany() {
     const ids = await this.querier.insertMany(User, [
       {
@@ -151,19 +156,19 @@ export abstract class BaseQuerierIt implements Spec {
   }
 
   async shouldInsertOneAndCascadeOneToOne() {
-    const body: User = {
+    const payload: User = {
       name: 'Some Name D',
       profile: { picture: 'abc', createdAt: 123 },
       createdAt: 123,
     };
 
-    const id = await this.querier.insertOne(User, body);
+    const id = await this.querier.insertOne(User, payload);
 
     expect(id).toBeDefined();
 
     const user = await this.querier.findOneById(User, id, { $populate: { profile: {} } });
 
-    expect(user).toMatchObject(body);
+    expect(user).toMatchObject(payload);
   }
 
   async shouldInsertOneAndCascadeOneToMany() {
@@ -178,6 +183,30 @@ export abstract class BaseQuerierIt implements Spec {
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
       $populate: { itemAdjustments: {} },
+    });
+
+    expect(inventoryAdjustmentFound).toMatchObject({
+      description: 'some description',
+      itemAdjustments,
+    });
+
+    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $filter: { inventoryAdjustmentId } });
+
+    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
+  async shouldInsertOneAndCascadeOneToManyWithSpecificFields() {
+    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+      itemAdjustments: itemAdjustments.slice(),
+    });
+
+    expect(inventoryAdjustmentId).toBeDefined();
+
+    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      $populate: { itemAdjustments: { $project: ['buyPrice'] } },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({

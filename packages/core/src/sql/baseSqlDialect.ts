@@ -54,9 +54,7 @@ export abstract class BaseSqlDialect {
 
     const persistableKeys = filterPersistableProperties(entity, payloads[0]);
     const columns = persistableKeys.map((prop) => meta.properties[prop].name);
-    const values = payloads
-      .map((body) => persistableKeys.map((prop) => this.escape(body[prop])).join(', '))
-      .join('), (');
+    const values = payloads.map((it) => persistableKeys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
 
     return `INSERT INTO ${meta.name} (${columns.join(', ')}) VALUES (${values})`;
   }
@@ -69,7 +67,6 @@ export abstract class BaseSqlDialect {
 
   update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
-
     const onUpdates = Object.keys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
     for (const key of onUpdates) {
@@ -98,8 +95,9 @@ export abstract class BaseSqlDialect {
 
     if (project) {
       if (!Array.isArray(project)) {
-        const hasPositives = Object.keys(project).some((key) => project[key]);
-        project = Object.keys(hasPositives ? project : meta.properties).filter(
+        const projectKeys = Object.keys(project);
+        const hasPositives = projectKeys.some((key) => project[key]);
+        project = (hasPositives ? projectKeys : Object.keys(meta.properties)).filter(
           (it) => project[it] ?? project[it] === undefined
         ) as Properties<E>[];
       }

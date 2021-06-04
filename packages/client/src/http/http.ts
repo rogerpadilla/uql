@@ -5,14 +5,14 @@ export function get<T>(url: string, opts?: RequestOptions) {
   return request<T>(url, { method: 'get' }, opts);
 }
 
-export function post<T>(url: string, body: Object, opts?: RequestOptions) {
-  const stringifiedData = JSON.stringify(body);
-  return request<T>(url, { method: 'post', body: stringifiedData }, opts);
+export function post<T>(url: string, payload: Object, opts?: RequestOptions) {
+  const body = JSON.stringify(payload);
+  return request<T>(url, { method: 'post', body }, opts);
 }
 
-export function patch<T>(url: string, body: Object, opts?: RequestOptions) {
-  const stringifiedData = JSON.stringify(body);
-  return request<T>(url, { method: 'patch', body: stringifiedData }, opts);
+export function patch<T>(url: string, payload: Object, opts?: RequestOptions) {
+  const body = JSON.stringify(payload);
+  return request<T>(url, { method: 'patch', body }, opts);
 }
 
 export function remove<T>(url: string, opts?: RequestOptions) {

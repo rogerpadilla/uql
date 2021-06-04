@@ -5,7 +5,6 @@ import { Querier } from './type';
 describe('options', () => {
   beforeEach(() => {
     jest.spyOn(console, 'log');
-    jest.spyOn(console, 'info');
   });
 
   afterEach(() => {
@@ -23,22 +22,24 @@ describe('options', () => {
   });
 
   it('setOptions', () => {
+    const logger = jest.fn();
+
     setOptions({
       querierPool: undefined,
-      logger: console.info,
+      logger,
       debug: true,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
-      logger: console.info,
+      logger,
       debug: true,
     });
 
     expect(isDebug()).toBe(true);
 
     log('hi', 'uql');
-    expect(console.info).toBeCalledWith('hi', 'uql');
-    expect(console.info).toBeCalledTimes(1);
+    expect(logger).toBeCalledWith('hi', 'uql');
+    expect(logger).toBeCalledTimes(1);
     expect(console.log).toBeCalledTimes(0);
 
     setOptions({

@@ -7,8 +7,8 @@ export class PostgresDialect extends BaseSqlDialect {
     super('BEGIN', '"');
   }
 
-  insert<E>(entity: Type<E>, body: E | E[]): string {
-    const sql = super.insert(entity, body);
+  insert<E>(entity: Type<E>, payload: E | E[]): string {
+    const sql = super.insert(entity, payload);
     const meta = getMeta(entity);
     return `${sql} RETURNING ${meta.id.name} id`;
   }

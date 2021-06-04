@@ -1,5 +1,5 @@
 import { BaseRepository } from './querier/baseRepository';
-import { Logger, Querier, QuerierPool, Repository, Type, UqlOptions } from './type';
+import { Querier, QuerierPool, Repository, Type, UqlOptions } from './type';
 
 let options: UqlOptions;
 const defaultOptions = { logger: console.log } as const as UqlOptions;

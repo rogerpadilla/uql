@@ -6,10 +6,10 @@ export function kebabCase(val: string): string {
   return resp;
 }
 
-export function startUpperCase(text: string): string {
+export function upperFirst(text: string): string {
   return text[0].toUpperCase() + text.slice(1);
 }
 
-export function startLowerCase(text: string): string {
+export function lowerFirst(text: string): string {
   return text[0].toLowerCase() + text.slice(1);
 }

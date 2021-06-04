@@ -1,13 +1,13 @@
 import { Query, QueryCriteria, QueryOne } from './query';
 
 export type UniversalRepository<E> = {
-  insertMany?(body: E[]): Promise<any>;
+  insertMany?(payload: E[]): Promise<any>;
 
-  insertOne(body: E): Promise<any>;
+  insertOne(payload: E): Promise<any>;
 
-  updateMany?(body: E, qm: QueryCriteria<E>): Promise<any>;
+  updateMany?(payload: E, qm: QueryCriteria<E>): Promise<any>;
 
-  updateOneById(body: E, id: any): Promise<any>;
+  updateOneById(payload: E, id: any): Promise<any>;
 
   findMany(qm: Query<E>): Promise<any>;
 
@@ -23,13 +23,13 @@ export type UniversalRepository<E> = {
 };
 
 export interface Repository<E> extends UniversalRepository<E> {
-  insertMany(body: E[]): Promise<any[]>;
+  insertMany(payload: E[]): Promise<any[]>;
 
-  insertOne(body: E): Promise<any>;
+  insertOne(payload: E): Promise<any>;
 
-  updateMany(body: E, qm: QueryCriteria<E>): Promise<number>;
+  updateMany(payload: E, qm: QueryCriteria<E>): Promise<number>;
 
-  updateOneById(body: E, id: any): Promise<number>;
+  updateOneById(payload: E, id: any): Promise<number>;
 
   findMany(qm: Query<E>): Promise<E[]>;
 

@@ -283,8 +283,8 @@ it('Tag', () => {
         mappedBy: 'tags',
         through: expect.any(Function),
         references: [
-          { source: 'tagId', target: 'id' },
           { source: 'itemId', target: 'id' },
+          { source: 'tagId', target: 'id' },
         ],
       },
       user: {
@@ -552,8 +552,8 @@ it('getEntities', () => {
     MeasureUnit,
     Storehouse,
     Tag,
-    ItemTag,
     Item,
+    ItemTag,
     ItemAdjustment,
     InventoryAdjustment,
   ]);

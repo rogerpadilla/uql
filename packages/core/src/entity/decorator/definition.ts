@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { startLowerCase, startUpperCase } from '../../util';
+import { lowerFirst, upperFirst } from '../../util';
 import {
   RelationOptions,
   PropertyOptions,
@@ -114,7 +114,7 @@ function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     if (relOpts.mappedBy) {
-      fillMappedRelationReferences(relOpts);
+      fillInverseSideRelationReferences(relOpts);
       continue;
     }
 
@@ -122,36 +122,38 @@ function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const relMeta = ensureMeta(relEntity);
 
     if (relOpts.cardinality === 'mm') {
-      const source = startLowerCase(meta.name) + startUpperCase(meta.id.name);
-      const target = startLowerCase(relMeta.name) + startUpperCase(relMeta.id.name);
+      const source = lowerFirst(meta.name) + upperFirst(meta.id.name);
+      const target = lowerFirst(relMeta.name) + upperFirst(relMeta.id.name);
       relOpts.references = [
         { source, target: meta.id.name },
         { source: target, target: relMeta.id.name },
       ];
     } else {
-      relOpts.references = [{ source: relKey + 'Id', target: relMeta.id.property }];
+      const idSuffix = upperFirst(meta.id.property);
+      relOpts.references = [{ source: relKey + idSuffix, target: relMeta.id.property }];
     }
   }
 
   return meta;
 }
 
-function fillMappedRelationReferences<E>(relOpts: RelationOptions<E>): void {
+function fillInverseSideRelationReferences<E>(relOpts: RelationOptions<E>): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
   const mappedByKey = getMappedByKey(relOpts);
   relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
 
   if (relMeta.relations[mappedByKey]) {
-    const mappedByRelOpts = relMeta.relations[mappedByKey];
-    if (mappedByRelOpts.cardinality === 'mm') {
-      relOpts.through = mappedByRelOpts.through;
-      relOpts.references = mappedByRelOpts.references.slice().reverse();
-    } else {
-      relOpts.references = mappedByRelOpts.references.map(({ source, target }) => ({
+    const { cardinality, references, through } = relMeta.relations[mappedByKey];
+    if (cardinality === '11' || cardinality === 'm1') {
+      // this trick makes the the SQL generation simpler (no need to check for `mappedBy` there if we reverse here)
+      relOpts.references = references.map(({ source, target }) => ({
         source: target,
         target: source,
       }));
+    } else {
+      relOpts.through = through;
+      relOpts.references = references;
     }
   } else {
     relOpts.references = [{ source: mappedByKey, target: relMeta.id.property }];

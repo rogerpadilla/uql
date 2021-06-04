@@ -4,16 +4,16 @@ import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 export class BaseClientRepository<E> implements ClientRepository<E> {
   constructor(readonly entity: Type<E>, readonly querier: ClientQuerier) {}
 
-  insertOne(body: E, opts?: RequestOptions) {
-    return this.querier.insertOne(this.entity, body, opts);
+  insertOne(payload: E, opts?: RequestOptions) {
+    return this.querier.insertOne(this.entity, payload, opts);
   }
 
-  updateOneById(body: E, id: any, opts?: RequestOptions) {
-    return this.querier.updateOneById(this.entity, body, id, opts);
+  updateOneById(payload: E, id: any, opts?: RequestOptions) {
+    return this.querier.updateOneById(this.entity, payload, id, opts);
   }
 
-  saveOne(body: E, opts?: RequestOptions) {
-    return this.querier.saveOne(this.entity, body, opts);
+  saveOne(payload: E, opts?: RequestOptions) {
+    return this.querier.saveOne(this.entity, payload, opts);
   }
 
   findMany(qm: Query<E>, opts?: RequestOptions) {

@@ -1,6 +1,7 @@
 import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
+import { cloneDeep } from '../util';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
 import { raw } from './raw';
@@ -12,22 +13,24 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     super();
   }
 
-  async insertMany<E>(entity: Type<E>, bodies: E[]) {
-    const query = this.dialect.insert(entity, bodies);
+  async insertMany<E>(entity: Type<E>, payload: E[]) {
+    payload = cloneDeep(payload);
+    const query = this.dialect.insert(entity, payload);
     const { lastId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    const ids = bodies.map((body, index) => {
-      body[meta.id.property] ??= lastId - bodies.length + index + 1;
-      return body[meta.id.property];
+    const ids: any[] = payload.map((it, index) => {
+      it[meta.id.property] ??= lastId - payload.length + index + 1;
+      return it[meta.id.property];
     });
-    await this.insertRelations(entity, bodies);
+    await this.insertRelations(entity, payload);
     return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, body: E, qm: QueryCriteria<E>) {
-    const query = this.dialect.update(entity, body, qm);
+  async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+    payload = cloneDeep(payload);
+    const query = this.dialect.update(entity, payload, qm);
     const { changes } = await this.conn.run(query);
-    await this.updateRelations(entity, body, qm);
+    await this.updateRelations(entity, payload, qm);
     return changes;
   }
 

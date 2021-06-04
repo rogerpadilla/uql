@@ -13,11 +13,11 @@ export class MongodbQuerier extends BaseQuerier {
     super();
   }
 
-  async insertMany<E>(entity: Type<E>, bodies: E[]) {
-    const persistables = bodies.map((body) => {
-      const persistableProperties = filterPersistableProperties(entity, body);
+  async insertMany<E>(entity: Type<E>, payload: E[]) {
+    const persistables = payload.map((it) => {
+      const persistableProperties = filterPersistableProperties(entity, it);
       return persistableProperties.reduce((acc, key) => {
-        acc[key] = body[key];
+        acc[key] = it[key];
         return acc;
       }, {} as OptionalId<E>);
     });
@@ -29,10 +29,10 @@ export class MongodbQuerier extends BaseQuerier {
     return Object.values(res.insertedIds);
   }
 
-  async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, body: E) {
-    const persistableProperties = filterPersistableProperties(entity, body);
+  async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
+    const persistableProperties = filterPersistableProperties(entity, payload);
     const persistable = persistableProperties.reduce((acc, key) => {
-      acc[key] = body[key];
+      acc[key] = payload[key];
       return acc;
     }, {} as OptionalId<E>);
 
@@ -169,15 +169,16 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   if (!doc) {
     return;
   }
-  doc[meta.id.property] = (doc as any)._id;
-  delete (doc as any)._id;
+  const res = doc as OptionalId<E>;
+  res[meta.id.property] = res._id;
+  delete res._id;
   for (const relProp of Object.keys(meta.relations)) {
     const relOpts = meta.relations[relProp];
-    const relData = doc[relProp];
+    const relData = res[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
       const relMeta = getMeta(relOpts.entity());
       normalizeIds(relData, relMeta);
     }
   }
-  return doc as E;
+  return res as E;
 }

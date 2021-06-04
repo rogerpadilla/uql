@@ -7,3 +7,11 @@ export interface Type<T> extends Function {
 }
 
 export type Writable<T> = { -readonly [P in keyof T]: T[P] };
+
+export type Unpacked<T> = T extends (infer U)[]
+  ? U
+  : T extends (...args: any[]) => infer U
+  ? U
+  : T extends Promise<infer U>
+  ? U
+  : T;

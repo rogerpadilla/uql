@@ -1,9 +1,10 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
-import { RequestOptions, RequestFindOptions, ClientQuerier } from '../type';
+import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
 import { stringifyQuery } from './query.util';
+import { BaseClientRepository } from './baseClientRepository';
 
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}
@@ -12,23 +13,23 @@ export class HttpQuerier implements ClientQuerier {
     return this.basePath + '/' + kebabCase(entity.name);
   }
 
-  insertOne<E>(entity: Type<E>, body: E, opts?: RequestOptions) {
+  insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return post<any>(basePath, body, opts);
+    return post<any>(basePath, payload, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, body: E, id: any, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, payload: E, id: any, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return patch<number>(`${basePath}/${id}`, body, opts);
+    return patch<number>(`${basePath}/${id}`, payload, opts);
   }
 
-  saveOne<E>(entity: Type<E>, body: E, opts?: RequestOptions) {
+  saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const meta = getMeta(entity);
-    const id = body[meta.id.property];
+    const id = payload[meta.id.property];
     if (id) {
-      return this.updateOneById(entity, body, id, opts).then(() => ({ data: id }));
+      return this.updateOneById(entity, payload, id, opts).then(() => ({ data: id }));
     }
-    return this.insertOne(entity, body, opts);
+    return this.insertOne(entity, payload, opts);
   }
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>, opts?: RequestOptions) {
@@ -68,5 +69,9 @@ export class HttpQuerier implements ClientQuerier {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<number>(`${basePath}/count${qs}`, opts);
+  }
+
+  getRepository<E>(entity: Type<E>): ClientRepository<E> {
+    return new BaseClientRepository(entity, this);
   }
 }

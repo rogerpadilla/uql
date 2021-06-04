@@ -145,16 +145,6 @@ export class Tag extends BaseEntity {
 }
 
 @Entity()
-export class ItemTag {
-  @Id()
-  id?: string;
-  @Property()
-  itemId?: string;
-  @Property()
-  tagId?: string;
-}
-
-@Entity()
 export class Item extends BaseEntity {
   @Property()
   name?: string;
@@ -190,6 +180,20 @@ export class Item extends BaseEntity {
   inventoryable?: boolean;
   @ManyToMany({ entity: () => Tag, through: () => ItemTag })
   tags?: Tag[];
+}
+
+@Entity()
+export class ItemTag {
+  @Id()
+  id?: string;
+  @Property({ reference: () => Item })
+  itemId?: string;
+  @OneToOne({ entity: () => Item })
+  item?: Item;
+  @Property({ reference: () => Tag })
+  tagId?: string;
+  @OneToOne({ entity: () => Tag })
+  tag?: Tag;
 }
 
 @Entity()

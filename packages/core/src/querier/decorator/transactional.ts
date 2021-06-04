@@ -24,22 +24,23 @@ export function Transactional(options: Props = {}) {
     }
 
     propDescriptor.value = async function func(this: object, ...args: any[]) {
+      const params = [...args];
       let isOwnTransaction: boolean;
       let querier: Querier;
 
-      if (args[injectedQuerierIndex]) {
-        querier = args[injectedQuerierIndex];
+      if (params[injectedQuerierIndex]) {
+        querier = params[injectedQuerierIndex];
       } else {
         isOwnTransaction = true;
         const pool = querierPool ?? getQuerierPool();
         querier = await pool.getQuerier();
-        args[injectedQuerierIndex] = querier;
+        params[injectedQuerierIndex] = querier;
       }
 
       injectedRepositoriesMap &&
         Object.entries(injectedRepositoriesMap).forEach(([index, entity]: [string, Type<any>]) => {
-          if (args[index] === undefined) {
-            args[index] = getRepository(entity, querier);
+          if (params[index] === undefined) {
+            params[index] = getRepository(entity, querier);
           }
         });
 
@@ -47,7 +48,7 @@ export function Transactional(options: Props = {}) {
         if (propagation === 'required' && !querier.hasOpenTransaction) {
           await querier.beginTransaction();
         }
-        const resp = await originalMethod.apply(this, args);
+        const resp = await originalMethod.apply(this, params);
         if (isOwnTransaction && querier.hasOpenTransaction) {
           await querier.commitTransaction();
         }

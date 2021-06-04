@@ -264,17 +264,17 @@ import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
   @Transactional()
-  async confirmAction(payload: Confirmation, @InjectQuerier() querier?: Querier) {
-    if (payload.type === 'register') {
+  async confirmAction(confirmation: Confirmation, @InjectQuerier() querier?: Querier) {
+    if (confirmation.type === 'register') {
       await querier.insertOne(User, {
-        name: payload.name,
-        email: payload.email,
-        password: payload.password,
+        name: confirmation.name,
+        email: confirmation.email,
+        password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, { password: payload.password }, payload.userId);
+      await querier.updateOneById(User, { password: confirmation.password }, confirmation.userId);
     }
-    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, payload.id);
+    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, confirmation.id);
   }
 }
 
@@ -303,20 +303,20 @@ await confirmationService.confirmAction(data);
 ```ts
 import { getQuerier } from '@uql/core';
 
-async function confirmAction(payload: Confirmation) {
+async function confirmAction(confirmation: Confirmation) {
   const querier = await getQuerier();
   try {
     await querier.beginTransaction();
-    if (payload.action === 'signup') {
+    if (confirmation.action === 'signup') {
       await querier.insertOne(User, {
-        name: payload.name,
-        email: payload.email,
-        password: payload.password,
+        name: confirmation.name,
+        email: confirmation.email,
+        password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, { password: payload.password }, payload.userId);
+      await querier.updateOneById(User, { password: confirmation.password }, confirmation.userId);
     }
-    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, payload.id);
+    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, confirmation.id);
     await querier.commitTransaction();
   } catch (error) {
     await querier.rollbackTransaction();
@@ -361,6 +361,18 @@ app
       // all entities will be automatically exposed unless
       // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
+      // `extendQuery` callback allows to extend all then queries that are requested to the API,
+      // so it is a good place to add additional filters to the queries (like for multi tenant apps)
+      extendQuery<E>(type: Type<E>, qm: Query<E>, req: Request): Query<E> {
+        qm.limit = obtainValidLimit(qm.limit);
+        const prefix = qm.populate && Object.keys(qm.populate).length ? type.name + '.' : '';
+        qm.filter = {
+          ...qm.filter,
+          // ensure the user can only see the data belonging to his own company for security
+          [`${prefix}companyId`]: req.identity.companyId,
+        };
+        return qm;
+      }
     })
   );
 ```

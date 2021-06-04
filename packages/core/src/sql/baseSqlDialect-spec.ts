@@ -507,11 +507,11 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $project: ['id', 'buyPrice', 'number'],
         $populate: {
           item: {
-            $project: { id: 1, name: 1 },
+            $project: ['id', 'name'],
             $populate: {
               measureUnit: {
-                $project: { id: 1, name: 1 },
-                $populate: { category: { $project: { id: 1, name: 1 } } },
+                $project: ['id', 'name'],
+                $populate: { category: { $project: ['id', 'name'] } },
               },
             },
             $required: true,

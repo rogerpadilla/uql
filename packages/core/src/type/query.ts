@@ -1,25 +1,25 @@
 import { Properties, Relations } from './entity';
-import { Scalar } from './utility';
+import { Scalar, Unpacked } from './utility';
 
 export type QueryFieldFilter<E> = {
   readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | Scalar;
 };
 
 export type QueryProject<E> =
-  | Properties<E>[]
+  | readonly Properties<E>[]
   | {
-      [P in Properties<E>]?: boolean | 0 | 1;
+      readonly [P in Properties<E>]?: boolean | 0 | 1;
     };
 
 export type QueryPopulate<E> = {
-  readonly [P in Relations<E>]?: QueryPopulateValue<P>;
+  readonly [P in Relations<E>]?: QueryPopulateValue<E[P]>;
 };
 
-export type QueryPopulateValue<E> = Query<E> & { $required?: boolean };
+export type QueryPopulateValue<E> = Query<Unpacked<E>> & { $required?: boolean };
 
 export type QueryTextSearchOptions<E> = {
-  $fields?: Properties<E>[];
-  $value: string;
+  readonly $fields?: Properties<E>[];
+  readonly $value: string;
 };
 
 export type QueryTextSearch<E> = {

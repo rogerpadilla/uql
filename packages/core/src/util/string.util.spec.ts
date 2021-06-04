@@ -1,4 +1,4 @@
-import { kebabCase, startLowerCase, startUpperCase } from './string.util';
+import { kebabCase, lowerFirst, upperFirst } from './string.util';
 
 it('kebabCase', () => {
   const res1 = kebabCase('SomeWordsAndMore');
@@ -7,20 +7,20 @@ it('kebabCase', () => {
   expect(res2).toBe('some-words-and-more');
 });
 
-it('startUpperCase', () => {
-  const res1 = startUpperCase('id');
+it('upperFirst', () => {
+  const res1 = upperFirst('id');
   expect(res1).toBe('Id');
-  const res2 = startUpperCase('Id');
+  const res2 = upperFirst('Id');
   expect(res2).toBe('Id');
-  const res3 = startUpperCase('idSomething');
+  const res3 = upperFirst('idSomething');
   expect(res3).toBe('IdSomething');
 });
 
-it('startLowerCase', () => {
-  const res1 = startLowerCase('id');
+it('lowerFirst', () => {
+  const res1 = lowerFirst('id');
   expect(res1).toBe('id');
-  const res2 = startLowerCase('Id');
+  const res2 = lowerFirst('Id');
   expect(res2).toBe('id');
-  const res3 = startLowerCase('IdSomething');
+  const res3 = lowerFirst('IdSomething');
   expect(res3).toBe('idSomething');
 });

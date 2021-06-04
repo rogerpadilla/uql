@@ -1,4 +1,4 @@
-import { User, InventoryAdjustment, Spec, Item } from '../test';
+import { User, InventoryAdjustment, Spec, Item, normalizeSql } from '../test';
 import { QuerierPoolConnection } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
@@ -95,6 +95,41 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
+  async shouldFindOneAndPopulateOneToManyWithSpecifiedFields() {
+    const mock: InventoryAdjustment[] = [
+      { id: '123', description: 'something a', userId: '1' },
+      { id: '456', description: 'something b', userId: '1' },
+    ];
+    jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
+
+    await this.querier.findOne(InventoryAdjustment, {
+      $project: ['id'],
+      $filter: { userId: '1' },
+      $populate: { itemAdjustments: { $project: ['buyPrice'] } },
+    });
+
+    expect(this.querier.conn.all).nthCalledWith(
+      1,
+      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE userId = '1' LIMIT 1"
+    );
+    expect(this.querier.conn.all).nthCalledWith(
+      2,
+      "SELECT buyPrice, inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
+    );
+    expect(this.querier.conn.all).toBeCalledTimes(2);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.insertOne).toBeCalledTimes(0);
+    expect(this.querier.insertMany).toBeCalledTimes(0);
+    expect(this.querier.findMany).toBeCalledTimes(2);
+    expect(this.querier.updateMany).toBeCalledTimes(0);
+    expect(this.querier.deleteMany).toBeCalledTimes(0);
+    expect(this.querier.deleteOneById).toBeCalledTimes(0);
+    expect(this.querier.beginTransaction).toBeCalledTimes(0);
+    expect(this.querier.commitTransaction).toBeCalledTimes(0);
+    expect(this.querier.release).toBeCalledTimes(0);
+    expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
+  }
+
   async shouldFindManyAndPopulateOneToMany() {
     const mock: InventoryAdjustment[] = [
       { id: '123', description: 'something a', userId: '1' },
@@ -125,6 +160,40 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.findMany).toBeCalledTimes(2);
     expect(this.querier.updateMany).toBeCalledTimes(0);
     expect(this.querier.deleteMany).toBeCalledTimes(0);
+    expect(this.querier.beginTransaction).toBeCalledTimes(0);
+    expect(this.querier.commitTransaction).toBeCalledTimes(0);
+    expect(this.querier.release).toBeCalledTimes(0);
+    expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
+  }
+
+  // TODO
+  async xxxshouldFindOneAndPopulateManyToMany() {
+    const mock: Item[] = [{ id: '123', name: 'something a' }];
+    jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
+
+    await this.querier.findOne(Item, {
+      $project: ['id', 'name'],
+      $populate: { tags: { $project: ['id'] } },
+    });
+
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT Item.id, Item.name FROM Item LIMIT 1');
+    expect(this.querier.conn.all).nthCalledWith(
+      2,
+      normalizeSql(
+        'SELECT ItemTag.id, ItemTag.itemId, ItemTag.tagId, tag.id `tag.id`' +
+          ' FROM ItemTag INNER JOIN Tag tag ON tag.id = ItemTag.tagId' +
+          " WHERE itemId IN ('123')",
+        this.querier.dialect.escapeIdChar
+      )
+    );
+    expect(this.querier.conn.all).toBeCalledTimes(2);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.insertOne).toBeCalledTimes(0);
+    expect(this.querier.insertMany).toBeCalledTimes(0);
+    expect(this.querier.findMany).toBeCalledTimes(2);
+    expect(this.querier.updateMany).toBeCalledTimes(0);
+    expect(this.querier.deleteMany).toBeCalledTimes(0);
+    expect(this.querier.deleteOneById).toBeCalledTimes(0);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.release).toBeCalledTimes(0);
@@ -223,7 +292,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
   }
 
-  async shouldInsertOneAndCascadeManyToMany() {
+  async shouldInsertOneAndCascadeManyToManyInserts() {
     await this.querier.insertOne(Item, {
       name: 'item one',
       tags: [
@@ -239,23 +308,114 @@ export class BaseSqlQuerierSpec implements Spec {
       1,
       expect.toMatch(/^INSERT INTO Item \(name, createdAt\) VALUES \('item one', \d+\)(?: RETURNING id id)?$/)
     );
+    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM ItemTag WHERE itemId = 1');
     expect(this.querier.conn.run).nthCalledWith(
-      2,
+      3,
       expect.toMatch(
         /^INSERT INTO Tag \(name, createdAt\) VALUES \('tag one', \d+\), \('tag two', \d+\)(?: RETURNING id id)?$/
       )
     );
     expect(this.querier.conn.run).nthCalledWith(
-      3,
+      4,
       expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \(\d+, \d+\), \(\d+, \d+\)(?: RETURNING id id)?$/)
     );
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.conn.run).toBeCalledTimes(4);
     expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.insertOne).toBeCalledTimes(1);
     expect(this.querier.insertMany).toBeCalledTimes(3);
     expect(this.querier.findMany).toBeCalledTimes(0);
     expect(this.querier.updateMany).toBeCalledTimes(0);
-    expect(this.querier.deleteMany).toBeCalledTimes(0);
+    expect(this.querier.deleteMany).toBeCalledTimes(1);
+    expect(this.querier.beginTransaction).toBeCalledTimes(0);
+    expect(this.querier.commitTransaction).toBeCalledTimes(0);
+    expect(this.querier.release).toBeCalledTimes(0);
+    expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
+  }
+
+  async shouldUpdateAndCascadeManyToManyInserts() {
+    const mock: Item[] = [{ id: '1' }];
+
+    jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
+
+    await this.querier.updateOneById(
+      Item,
+      {
+        name: 'item one',
+        tags: [
+          {
+            name: 'tag one',
+          },
+          {
+            name: 'tag two',
+          },
+        ],
+      },
+      '1'
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = '1'(?: RETURNING id id)?$/)
+    );
+    expect(this.querier.conn.run).nthCalledWith(2, "DELETE FROM ItemTag WHERE itemId = '1'");
+    expect(this.querier.conn.run).nthCalledWith(
+      3,
+      expect.toMatch(
+        /^INSERT INTO Tag \(name, createdAt\) VALUES \('tag one', \d+\), \('tag two', \d+\)(?: RETURNING id id)?$/
+      )
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      4,
+      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \('1', \d+\), \('1', \d+\)(?: RETURNING id id)?$/)
+    );
+    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.insertOne).toBeCalledTimes(0);
+    expect(this.querier.insertMany).toBeCalledTimes(2);
+    expect(this.querier.findMany).toBeCalledTimes(1);
+    expect(this.querier.updateMany).toBeCalledTimes(1);
+    expect(this.querier.deleteMany).toBeCalledTimes(1);
+    expect(this.querier.beginTransaction).toBeCalledTimes(0);
+    expect(this.querier.commitTransaction).toBeCalledTimes(0);
+    expect(this.querier.release).toBeCalledTimes(0);
+    expect(this.querier.rollbackTransaction).toBeCalledTimes(0);
+  }
+
+  async shouldUpdateAndCascadeManyToManyUpdates() {
+    const mock: Item[] = [{ id: '1' }];
+
+    jest.spyOn(this.querier.conn, 'all').mockResolvedValue(mock);
+
+    await this.querier.updateOneById(
+      Item,
+      {
+        name: 'item one',
+        tags: [
+          {
+            id: '22',
+          },
+          {
+            id: '33',
+          },
+        ],
+      },
+      '1'
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      1,
+      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = '1'(?: RETURNING id id)?$/)
+    );
+    expect(this.querier.conn.run).nthCalledWith(2, "DELETE FROM ItemTag WHERE itemId = '1'");
+    expect(this.querier.conn.run).nthCalledWith(
+      4,
+      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \('1', '22'\), \('1', '33'\)(?: RETURNING id id)?$/)
+    );
+    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.insertOne).toBeCalledTimes(0);
+    expect(this.querier.insertMany).toBeCalledTimes(2);
+    expect(this.querier.findMany).toBeCalledTimes(1);
+    expect(this.querier.updateMany).toBeCalledTimes(1);
+    expect(this.querier.deleteMany).toBeCalledTimes(1);
     expect(this.querier.beginTransaction).toBeCalledTimes(0);
     expect(this.querier.commitTransaction).toBeCalledTimes(0);
     expect(this.querier.release).toBeCalledTimes(0);
