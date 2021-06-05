@@ -27,30 +27,29 @@ it('User', () => {
   expect(meta.relations['company'].entity()).toBe(Company);
   expect(meta.relations['company'].references).toEqual([{ source: 'companyId', target: 'id' }]);
 
-  expect((meta.properties['userId'].reference as ReferenceOptions).entity()).toBe(User);
-  expect(meta.relations['user'].entity()).toBe(User);
-  expect(meta.relations['user'].references).toEqual([{ source: 'userId', target: 'id' }]);
+  expect((meta.properties['creatorId'].reference as ReferenceOptions).entity()).toBe(User);
+  expect(meta.relations['creator'].entity()).toBe(User);
+  expect(meta.relations['creator'].references).toEqual([{ source: 'creatorId', target: 'id' }]);
 
   const expectedMeta: EntityMeta<User> = {
     entity: User,
     name: 'User',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       name: { name: 'name', type: String },
       email: { name: 'email', type: String },
       password: { name: 'password', type: String },
@@ -61,22 +60,22 @@ it('User', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
       users: {
         cardinality: '1m',
         entity: expect.any(Function),
-        mappedBy: 'user',
-        references: [{ source: 'id', target: 'userId' }],
+        mappedBy: 'creator',
+        references: [{ source: 'id', target: 'creatorId' }],
       },
       profile: {
         cardinality: '11',
         entity: expect.any(Function),
-        mappedBy: 'user',
-        references: [{ source: 'id', target: 'userId' }],
+        mappedBy: 'creator',
+        references: [{ source: 'id', target: 'creatorId' }],
       },
     },
   };
@@ -89,23 +88,22 @@ it('Profile', () => {
   const expectedMeta: EntityMeta<Profile> = {
     entity: Profile,
     name: 'user_profile',
-    id: { name: 'pk', type: String, isId: true, property: 'id' },
+    id: { name: 'pk', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'pk', type: String, isId: true },
+      id: { name: 'pk', type: Number, isId: true },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       picture: { name: 'image', type: String },
     },
     relations: {
@@ -114,10 +112,10 @@ it('Profile', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: '11',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };
@@ -129,49 +127,45 @@ it('Item', () => {
   const expectedMeta: EntityMeta<Item> = {
     entity: Item,
     name: 'Item',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
       code: { name: 'code', type: String },
-      barcode: { name: 'barcode', type: String },
-      image: { name: 'image', type: String },
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       taxId: {
         name: 'taxId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       measureUnitId: {
         name: 'measureUnitId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      buyPriceAverage: { name: 'buyPriceAverage', type: Number },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
     },
@@ -181,10 +175,10 @@ it('Item', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
       buyLedgerAccount: {
         cardinality: 'm1',
@@ -228,47 +222,43 @@ it('Tag', () => {
       isId: true,
       name: 'id',
       property: 'id',
-      type: String,
+      type: Number,
     },
     name: 'Tag',
     processed: true,
     properties: {
+      id: {
+        isId: true,
+        name: 'id',
+        type: Number,
+      },
       companyId: {
         name: 'companyId',
         reference: {
           entity: expect.any(Function),
         },
-        type: String,
+        type: Number,
       },
       createdAt: {
         name: 'createdAt',
         onInsert: expect.any(Function),
         type: Number,
       },
-      id: {
-        isId: true,
-        name: 'id',
-        type: String,
-      },
       name: {
         name: 'name',
         type: String,
-      },
-      status: {
-        name: 'status',
-        type: Number,
       },
       updatedAt: {
         name: 'updatedAt',
         onUpdate: expect.any(Function),
         type: Number,
       },
-      userId: {
-        name: 'userId',
+      creatorId: {
+        name: 'creatorId',
         reference: {
           entity: expect.any(Function),
         },
-        type: String,
+        type: Number,
       },
     },
     relations: {
@@ -287,10 +277,10 @@ it('Tag', () => {
           { source: 'tagId', target: 'id' },
         ],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };
@@ -302,18 +292,18 @@ it('ItemTag', () => {
   const expectedMeta: EntityMeta<ItemTag> = {
     entity: ItemTag,
     name: 'ItemTag',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       itemId: {
         name: 'itemId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       tagId: {
         name: 'tagId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
     },
@@ -344,17 +334,16 @@ it('TaxCategory', () => {
       pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
@@ -364,10 +353,10 @@ it('TaxCategory', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };
@@ -379,10 +368,10 @@ it('Tax', () => {
   const expectedMeta: EntityMeta<Tax> = {
     entity: Tax,
     name: 'Tax',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       categoryId: {
         name: 'categoryId',
         reference: {
@@ -396,17 +385,16 @@ it('Tax', () => {
       },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
@@ -426,10 +414,10 @@ it('Tax', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };
@@ -441,10 +429,10 @@ it('ItemAdjustment', () => {
   const expectedMeta: EntityMeta<ItemAdjustment> = {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       buyPrice: {
         name: 'buyPrice',
         type: Number,
@@ -454,14 +442,14 @@ it('ItemAdjustment', () => {
         reference: {
           entity: expect.any(Function),
         },
-        type: String,
+        type: Number,
       },
       itemId: {
         name: 'itemId',
         reference: {
           entity: expect.any(Function),
         },
-        type: String,
+        type: Number,
       },
       number: {
         name: 'number',
@@ -472,21 +460,20 @@ it('ItemAdjustment', () => {
         reference: {
           entity: expect.any(Function),
         },
-        type: String,
+        type: Number,
       },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
     },
     relations: {
       storehouse: {
@@ -504,10 +491,10 @@ it('ItemAdjustment', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };
@@ -519,23 +506,22 @@ it('InventoryAdjustment', () => {
   const expectedMeta: EntityMeta<InventoryAdjustment> = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
-    id: { name: 'id', type: String, isId: true, property: 'id' },
+    id: { name: 'id', type: Number, isId: true, property: 'id' },
     processed: true,
     properties: {
-      id: { name: 'id', type: String, isId: true },
+      id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
-        type: String,
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
-      userId: {
-        name: 'userId',
-        type: String,
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
         reference: { entity: expect.any(Function) },
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      status: { name: 'status', type: Number },
       description: { name: 'description', type: String },
       date: { name: 'date', type: Number },
     },
@@ -551,10 +537,10 @@ it('InventoryAdjustment', () => {
         entity: expect.any(Function),
         references: [{ source: 'companyId', target: 'id' }],
       },
-      user: {
+      creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'userId', target: 'id' }],
+        references: [{ source: 'creatorId', target: 'id' }],
       },
     },
   };

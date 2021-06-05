@@ -13,7 +13,7 @@ it('parseQuery stringified', () => {
   const qms: QueryStringified = {
     $project: '{ "id": 1, "name": 1 }',
     $populate: '{ "measureUnit": {"$project":{"id":1, "name":1}}, "tax": {"$project":{"id":1, "name":1}} }',
-    $filter: '{ "name": "lorem", "companyId": "40" }',
+    $filter: '{ "name": "lorem", "companyId": 40 }',
     $group: '["companyId"]',
     $sort: '{ "name": -1, "companyId": 1 }',
     $skip: '200',
@@ -25,7 +25,7 @@ it('parseQuery stringified', () => {
       measureUnit: { $project: { id: 1, name: 1 } },
       tax: { $project: { id: 1, name: 1 } },
     },
-    $filter: { name: 'lorem', companyId: '40' },
+    $filter: { name: 'lorem', companyId: 40 },
     $group: ['companyId'],
     $sort: { name: -1, companyId: 1 },
     $skip: 200,

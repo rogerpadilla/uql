@@ -11,10 +11,10 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
     expect(
       this.dialect.find(Item, {
         $project: { id: 1 },
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, status: 1 },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, creatorId: 1 },
         $limit: 30,
       })
-    ).toBe("SELECT id FROM Item WHERE MATCH(name, description) AGAINST('some text') AND status = 1 LIMIT 30");
+    ).toBe("SELECT id FROM Item WHERE MATCH(name, description) AGAINST('some text') AND creatorId = 1 LIMIT 30");
 
     expect(
       this.dialect.find(User, {
@@ -22,12 +22,12 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          status: 1,
+          creatorId: 1,
         },
         $limit: 10,
       })
     ).toBe(
-      "SELECT id FROM User WHERE MATCH(name) AGAINST('something') AND name <> 'other unwanted' AND status = 1 LIMIT 10"
+      "SELECT id FROM User WHERE MATCH(name) AGAINST('something') AND name <> 'other unwanted' AND creatorId = 1 LIMIT 10"
     );
   }
 }

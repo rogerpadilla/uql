@@ -241,7 +241,7 @@ export abstract class BaseSqlDialect {
           : typeof value === 'object' && value !== null
           ? value
           : { $eq: value };
-        const operators = objectKeys(val) as (keyof QueryComparisonOperator)[];
+        const operators = objectKeys(val) as (keyof QueryComparisonOperator<E>)[];
         const operations = operators
           .map((operator) => this.compareProperty(entity, key, operator, val[operator], opts))
           .join(' AND ');
@@ -249,11 +249,11 @@ export abstract class BaseSqlDialect {
     }
   }
 
-  compareProperty<E, K extends keyof QueryComparisonOperator>(
+  compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
     entity: Type<E>,
     prop: string,
     operator: K,
-    val: QueryComparisonOperator[K],
+    val: QueryComparisonOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);

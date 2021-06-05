@@ -24,13 +24,13 @@ it('stringifyQuery', () => {
   const source: Query<Item> = {
     $project: { id: 1, name: 1 },
     $populate: { tax: {}, measureUnit: { $project: { id: 1, name: 1, categoryId: 1 } } },
-    $filter: { name: 'Batman', companyId: '38' },
+    $filter: { name: 'Batman', companyId: 38 },
     $group: ['companyId'],
     $sort: { companyId: 1, name: -1 },
     $limit: 5,
   };
   const result = stringifyQuery(source);
   const expected =
-    '?$project={"id":1,"name":1}&$populate={"tax":{},"measureUnit":{"$project":{"id":1,"name":1,"categoryId":1}}}&$filter={"name":"Batman","companyId":"38"}&$group=["companyId"]&$sort={"companyId":1,"name":-1}&$limit=5';
+    '?$project={"id":1,"name":1}&$populate={"tax":{},"measureUnit":{"$project":{"id":1,"name":1,"categoryId":1}}}&$filter={"name":"Batman","companyId":38}&$group=["companyId"]&$sort={"companyId":1,"name":-1}&$limit=5';
   expect(result).toBe(expected);
 });

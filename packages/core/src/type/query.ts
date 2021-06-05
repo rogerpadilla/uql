@@ -1,8 +1,8 @@
 import { Properties, Relations } from './entity';
-import { Scalar, Unpacked } from './utility';
+import { Unpacked } from './utility';
 
 export type QueryFieldFilter<E> = {
-  readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator;
+  readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
 };
 
 export type QueryProject<E> =
@@ -26,16 +26,16 @@ export type QueryTextSearch<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryComparisonOperator = {
-  readonly $eq?: Scalar;
-  readonly $ne?: Scalar;
+export type QueryComparisonOperator<T> = {
+  readonly $eq?: T;
+  readonly $ne?: T;
   readonly $lt?: number;
   readonly $lte?: number;
   readonly $gt?: number;
   readonly $gte?: number;
   readonly $startsWith?: string;
-  readonly $in?: Scalar[];
-  readonly $nin?: Scalar[];
+  readonly $in?: T[];
+  readonly $nin?: T[];
   readonly $re?: string;
 };
 

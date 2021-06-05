@@ -27,41 +27,40 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.findOneById(User, 1);
     expect(this.querier.conn.all).nthCalledWith(
       1,
-      'SELECT id, companyId, userId, createdAt, updatedAt, status, name, email, password' +
-        ' FROM User WHERE id = 1 LIMIT 1'
+      'SELECT id, companyId, creatorId, createdAt, updatedAt, name, email, password FROM User WHERE id = 1 LIMIT 1'
     );
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
   async shouldFindOne() {
-    await this.querier.findOne(User, { $filter: { companyId: '123' }, $project: ['id', 'name'] });
-    expect(this.querier.conn.all).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 1");
+    await this.querier.findOne(User, { $filter: { companyId: 123 }, $project: ['id', 'name'] });
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id, name FROM User WHERE companyId = 123 LIMIT 1');
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
   async shouldFindOneAndPopulateOneToMany() {
     const mock: InventoryAdjustment[] = [
-      { id: '123', description: 'something a', userId: '1' },
-      { id: '456', description: 'something b', userId: '1' },
+      { id: 123, description: 'something a', creatorId: 1 },
+      { id: 456, description: 'something b', creatorId: 1 },
     ];
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mock);
 
     await this.querier.findOne(InventoryAdjustment, {
       $project: ['id'],
-      $filter: { userId: '1' },
+      $filter: { creatorId: 1 },
       $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
       1,
-      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.userId = '1' LIMIT 1"
+      'SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.creatorId = 1 LIMIT 1'
     );
     expect(this.querier.conn.all).nthCalledWith(
       2,
-      'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
-        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
+      'SELECT id, companyId, creatorId, createdAt, updatedAt, itemId, number, buyPrice, storehouseId' +
+        ', inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN (123, 456)'
     );
     expect(this.querier.conn.all).toBeCalledTimes(2);
     expect(this.querier.conn.run).toBeCalledTimes(0);
@@ -69,24 +68,24 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOneAndPopulateOneToManyWithSpecifiedFields() {
     const mock: InventoryAdjustment[] = [
-      { id: '123', description: 'something a', userId: '1' },
-      { id: '456', description: 'something b', userId: '1' },
+      { id: 123, description: 'something a', creatorId: 1 },
+      { id: 456, description: 'something b', creatorId: 1 },
     ];
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mock);
 
     await this.querier.findOne(InventoryAdjustment, {
       $project: ['id'],
-      $filter: { userId: '1' },
+      $filter: { creatorId: 1 },
       $populate: { itemAdjustments: { $project: ['buyPrice'] } },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
       1,
-      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.userId = '1' LIMIT 1"
+      'SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.creatorId = 1 LIMIT 1'
     );
     expect(this.querier.conn.all).nthCalledWith(
       2,
-      "SELECT buyPrice, inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
+      'SELECT buyPrice, inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN (123, 456)'
     );
     expect(this.querier.conn.all).toBeCalledTimes(2);
     expect(this.querier.conn.run).toBeCalledTimes(0);
@@ -94,33 +93,33 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindManyAndPopulateOneToMany() {
     const mock: InventoryAdjustment[] = [
-      { id: '123', description: 'something a', userId: '1' },
-      { id: '456', description: 'something b', userId: '1' },
+      { id: 123, description: 'something a', creatorId: 1 },
+      { id: 456, description: 'something b', creatorId: 1 },
     ];
 
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mock);
 
     await this.querier.findMany(InventoryAdjustment, {
       $project: ['id'],
-      $filter: { userId: '1' },
+      $filter: { creatorId: 1 },
       $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
       1,
-      "SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.userId = '1'"
+      'SELECT InventoryAdjustment.id FROM InventoryAdjustment WHERE InventoryAdjustment.creatorId = 1'
     );
     expect(this.querier.conn.all).nthCalledWith(
       2,
-      'SELECT id, companyId, userId, createdAt, updatedAt, status, itemId, number, buyPrice, storehouseId' +
-        ", inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN ('123', '456')"
+      'SELECT id, companyId, creatorId, createdAt, updatedAt, itemId, number, buyPrice, storehouseId' +
+        ', inventoryAdjustmentId FROM ItemAdjustment WHERE inventoryAdjustmentId IN (123, 456)'
     );
     expect(this.querier.conn.all).toBeCalledTimes(2);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
   async shouldFindOneAndPopulateManyToMany() {
-    const mock: Item[] = [{ id: '123', name: 'something a' }];
+    const mock: Item[] = [{ id: 123, name: 'something a' }];
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mock);
 
     await this.querier.findOne(Item, {
@@ -134,7 +133,7 @@ export class BaseSqlQuerierSpec implements Spec {
       this.normalize(
         'SELECT ItemTag.itemId, tag.id `tag.id`' +
           ' FROM ItemTag INNER JOIN Tag tag ON tag.id = ItemTag.tagId' +
-          " WHERE ItemTag.itemId IN ('123')"
+          ' WHERE ItemTag.itemId IN (123)'
       )
     );
     expect(this.querier.conn.all).toBeCalledTimes(2);
@@ -144,19 +143,19 @@ export class BaseSqlQuerierSpec implements Spec {
   async shouldFindMany() {
     await this.querier.findMany(User, {
       $project: { id: 1, name: 1 },
-      $filter: { companyId: '123' },
+      $filter: { companyId: 123 },
       $limit: 100,
     });
-    expect(this.querier.conn.all).nthCalledWith(1, "SELECT id, name FROM User WHERE companyId = '123' LIMIT 100");
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id, name FROM User WHERE companyId = 123 LIMIT 100');
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
   async shouldInsertOne() {
-    await this.querier.insertOne(User, { companyId: '123', createdAt: 1 });
+    await this.querier.insertOne(User, { companyId: 123, createdAt: 1 });
     expect(this.querier.conn.run).nthCalledWith(
       1,
-      this.normalize("INSERT INTO User (companyId, createdAt) VALUES ('123', 1)")
+      this.normalize('INSERT INTO User (companyId, createdAt) VALUES (123, 1)')
     );
     expect(this.querier.conn.run).toBeCalledTimes(1);
     expect(this.querier.conn.all).toBeCalledTimes(0);
@@ -174,7 +173,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).nthCalledWith(
       2,
       expect.toMatch(
-        /^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('abc', 1, \d+\)(?: RETURNING pk id)?$/
+        /^INSERT INTO user_profile \(image, creatorId, createdAt\) VALUES \('abc', 1, \d+\)(?: RETURNING pk id)?$/
       )
     );
     expect(this.querier.conn.run).toBeCalledTimes(2);
@@ -207,14 +206,14 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateMany() {
-    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: 5 } });
     expect(this.querier.conn.run).toBeCalledTimes(1);
     expect(this.querier.conn.all).toBeCalledTimes(0);
   }
 
   async shouldUpdateOneById() {
-    await this.querier.updateOneById(User, { companyId: '123', updatedAt: 1 }, 5);
-    expect(this.querier.conn.run).nthCalledWith(1, `UPDATE User SET companyId = '123', updatedAt = 1 WHERE id = 5`);
+    await this.querier.updateOneById(User, { companyId: 123, updatedAt: 1 }, 5);
+    expect(this.querier.conn.run).nthCalledWith(1, `UPDATE User SET companyId = 123, updatedAt = 1 WHERE id = 5`);
     expect(this.querier.conn.run).toBeCalledTimes(1);
     expect(this.querier.conn.all).toBeCalledTimes(0);
   }
@@ -237,7 +236,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).nthCalledWith(
       2,
       expect.toMatch(
-        /^INSERT INTO user_profile \(image, userId, createdAt\) VALUES \('xyz', 1, \d+\)(?: RETURNING pk id)?$/
+        /^INSERT INTO user_profile \(image, creatorId, createdAt\) VALUES \('xyz', 1, \d+\)(?: RETURNING pk id)?$/
       )
     );
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM User WHERE id = 1');
@@ -260,7 +259,7 @@ export class BaseSqlQuerierSpec implements Spec {
       1,
       expect.toMatch(/^UPDATE User SET name = 'something', updatedAt = \d+ WHERE id = 1$/)
     );
-    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM user_profile WHERE userId = 1');
+    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM user_profile WHERE creatorId = 1');
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM User WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(2);
     expect(this.querier.conn.all).toBeCalledTimes(1);
@@ -316,7 +315,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
-    jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce([{ id: '1' }]);
+    jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce([{ id: 1 }]);
 
     await this.querier.updateMany(
       InventoryAdjustment,
@@ -324,17 +323,17 @@ export class BaseSqlQuerierSpec implements Spec {
         description: 'some description',
         itemAdjustments: null,
       },
-      { $filter: { companyId: '1' } }
+      { $filter: { companyId: 1 } }
     );
 
     expect(this.querier.conn.run).nthCalledWith(
       1,
       expect.toMatch(
-        /^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE companyId = '1'$/
+        /^UPDATE InventoryAdjustment SET description = 'some description', updatedAt = \d+ WHERE companyId = 1$/
       )
     );
-    expect(this.querier.conn.run).nthCalledWith(2, "DELETE FROM ItemAdjustment WHERE inventoryAdjustmentId = '1'");
-    expect(this.querier.conn.all).nthCalledWith(1, "SELECT id FROM InventoryAdjustment WHERE companyId = '1'");
+    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM ItemAdjustment WHERE inventoryAdjustmentId = 1');
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM InventoryAdjustment WHERE companyId = 1');
     expect(this.querier.conn.run).toBeCalledTimes(2);
     expect(this.querier.conn.all).toBeCalledTimes(1);
   }
@@ -371,7 +370,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateAndCascadeManyToManyInserts() {
-    const mock: Item[] = [{ id: '1' }];
+    const mock: Item[] = [{ id: 1 }];
 
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mock);
 
@@ -388,13 +387,13 @@ export class BaseSqlQuerierSpec implements Spec {
           },
         ],
       },
-      '1'
+      1
     );
     expect(this.querier.conn.run).nthCalledWith(
       1,
-      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = '1'(?: RETURNING id id)?$/)
+      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = 1(?: RETURNING id id)?$/)
     );
-    expect(this.querier.conn.run).nthCalledWith(2, "DELETE FROM ItemTag WHERE itemId = '1'");
+    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM ItemTag WHERE itemId = 1');
     expect(this.querier.conn.run).nthCalledWith(
       3,
       expect.toMatch(
@@ -403,15 +402,15 @@ export class BaseSqlQuerierSpec implements Spec {
     );
     expect(this.querier.conn.run).nthCalledWith(
       4,
-      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \('1', \d+\), \('1', \d+\)(?: RETURNING id id)?$/)
+      expect.toMatch(/^INSERT INTO ItemTag \(itemId, tagId\) VALUES \(1, \d+\), \(1, \d+\)(?: RETURNING id id)?$/)
     );
     expect(this.querier.conn.run).toBeCalledTimes(4);
     expect(this.querier.conn.all).toBeCalledTimes(1);
   }
 
   async shouldUpdateAndCascadeManyToManyLinks() {
-    const mockItem: Item[] = [{ id: '1' }];
-    const mockTags: Tag[] = [{ id: '22' }, { id: '33' }];
+    const mockItem: Item[] = [{ id: 1 }];
+    const mockTags: Tag[] = [{ id: 22 }, { id: 33 }];
 
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce(mockItem);
     jest
@@ -424,18 +423,18 @@ export class BaseSqlQuerierSpec implements Spec {
         name: 'item one',
         tags: mockTags,
       },
-      '1'
+      1
     );
     expect(this.querier.conn.run).nthCalledWith(
       1,
-      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = '1'(?: RETURNING id id)?$/)
+      expect.toMatch(/^UPDATE Item SET name = 'item one', updatedAt = \d+ WHERE id = 1(?: RETURNING id id)?$/)
     );
-    expect(this.querier.conn.run).nthCalledWith(2, "DELETE FROM ItemTag WHERE itemId = '1'");
+    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM ItemTag WHERE itemId = 1');
     expect(this.querier.conn.run).nthCalledWith(
       3,
-      this.normalize("INSERT INTO ItemTag (itemId, tagId) VALUES ('1', '22'), ('1', '33')")
+      this.normalize('INSERT INTO ItemTag (itemId, tagId) VALUES (1, 22), (1, 33)')
     );
-    expect(this.querier.conn.all).nthCalledWith(1, "SELECT id FROM Item WHERE id = '1'");
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT id FROM Item WHERE id = 1');
     expect(this.querier.conn.run).toBeCalledTimes(3);
     expect(this.querier.conn.all).toBeCalledTimes(1);
   }
@@ -448,16 +447,16 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldDeleteMany() {
-    await this.querier.deleteMany(User, { $filter: { companyId: '123' } });
-    expect(this.querier.conn.run).nthCalledWith(1, "DELETE FROM User WHERE companyId = '123'");
+    await this.querier.deleteMany(User, { $filter: { companyId: 123 } });
+    expect(this.querier.conn.run).nthCalledWith(1, 'DELETE FROM User WHERE companyId = 123');
     expect(this.querier.conn.run).toBeCalledTimes(1);
     expect(this.querier.conn.all).toBeCalledTimes(0);
   }
 
   async shouldCount() {
     jest.spyOn(this.querier.conn, 'all').mockResolvedValueOnce([{ count: 1 }]);
-    await this.querier.count(User, { $filter: { companyId: '123' } });
-    expect(this.querier.conn.all).nthCalledWith(1, "SELECT COUNT(*) count FROM User WHERE companyId = '123'");
+    await this.querier.count(User, { $filter: { companyId: 123 } });
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT COUNT(*) count FROM User WHERE companyId = 123');
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
@@ -467,7 +466,7 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'Hola' }, { $filter: { id: 5 } });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
     expect(this.querier.conn.run).toBeCalledWith('COMMIT');
@@ -508,7 +507,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateMany(User, { name: 'some name' }, { $filter: { id: '5' } });
+    await this.querier.updateMany(User, { name: 'some name' }, { $filter: { id: 5 } });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);

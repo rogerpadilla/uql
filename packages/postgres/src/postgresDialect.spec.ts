@@ -52,11 +52,11 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
     expect(
       this.dialect.find(Item, {
         $project: { id: 1 },
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, status: 1 },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
         $limit: 30,
       })
     ).toBe(
-      `SELECT id FROM Item WHERE to_tsvector(name || ' ' || description) @@ to_tsquery('some text') AND status = 1 LIMIT 30`
+      `SELECT id FROM Item WHERE to_tsvector(name || ' ' || description) @@ to_tsquery('some text') AND code = '1' LIMIT 30`
     );
 
     expect(
@@ -65,12 +65,12 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          status: 1,
+          creatorId: 1,
         },
         $limit: 10,
       })
     ).toBe(
-      `SELECT id FROM User WHERE to_tsvector(name) @@ to_tsquery('something') AND name <> 'other unwanted' AND status = 1 LIMIT 10`
+      `SELECT id FROM User WHERE to_tsvector(name) @@ to_tsquery('something') AND name <> 'other unwanted' AND creatorId = 1 LIMIT 10`
     );
   }
 }

@@ -21,27 +21,23 @@ class MongoDialectSpec implements Spec {
     });
 
     expect(
-      this.dialect.buildFilter(User, {
-        userId: '1',
-        $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
-        id: '507f191e810c19729de860ea',
+      this.dialect.buildFilter(TaxCategory, {
+        creatorId: 1,
+        $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
+        pk: '507f191e810c19729de860ea',
       })
     ).toEqual({
-      userId: '1',
-      $or: [{ name: { $in: ['a', 'b', 'c'] } }, { email: 'abc@example.com' }],
+      creatorId: 1,
+      $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.buildFilter(Item, { id: '507f191e810c19729de860ea' })).toEqual({
+    expect(this.dialect.buildFilter(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
     expect(this.dialect.buildFilter(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
-    });
-
-    expect(this.dialect.buildFilter(TaxCategory, { id: '507f191e810c19729de860ea' })).toEqual({
-      id: '507f191e810c19729de860ea',
     });
 
     expect(this.dialect.buildFilter(TaxCategory, { pk: '507f191e810c19729de860ea' })).toEqual({
@@ -62,9 +58,9 @@ class MongoDialectSpec implements Spec {
 
     expect(() =>
       this.dialect.buildAggregationPipeline(User, {
-        $populate: { status: {} } as any,
+        $populate: { creatorId: {} } as any,
       })
-    ).toThrow("'User.status' is not annotated as a relation");
+    ).toThrow("'User.creatorId' is not annotated as a relation");
 
     expect(
       this.dialect.buildAggregationPipeline(Item, {
