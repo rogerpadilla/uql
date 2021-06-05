@@ -1,3 +1,5 @@
+import { hasKeys, objectKeys } from '../util';
+
 export function mapRows<T>(rows: T[]): T[] {
   if (!Array.isArray(rows) || rows.length === 0) {
     return rows;
@@ -5,7 +7,7 @@ export function mapRows<T>(rows: T[]): T[] {
 
   const attrsPaths = obtainAttrsPaths(rows[0]);
 
-  if (Object.keys(attrsPaths).length === 0) {
+  if (!hasKeys(attrsPaths)) {
     return rows;
   }
 
@@ -35,7 +37,7 @@ export function mapRows<T>(rows: T[]): T[] {
 }
 
 function obtainAttrsPaths<T>(row: T) {
-  return Object.keys(row).reduce((acc, col) => {
+  return objectKeys(row).reduce((acc, col) => {
     if (col.includes('.')) {
       acc[col] = col.split('.');
     }

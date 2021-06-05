@@ -4,6 +4,7 @@ import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
+import { hasKeys, objectKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier {
@@ -53,7 +54,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     let documents: E[];
 
-    if (qm.$populate && Object.keys(qm.$populate).length) {
+    if (hasKeys(qm.$populate)) {
       const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
       log(pipeline);
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
@@ -172,7 +173,7 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   const res = doc as OptionalId<E>;
   res[meta.id.property] = res._id;
   delete res._id;
-  for (const relProp of Object.keys(meta.relations)) {
+  for (const relProp of objectKeys(meta.relations)) {
     const relOpts = meta.relations[relProp];
     const relData = res[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {

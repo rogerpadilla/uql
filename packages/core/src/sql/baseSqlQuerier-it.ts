@@ -1,6 +1,7 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
 import { QuerierPool, ReferenceOptions, Type } from '../type';
+import { objectKeys } from '../util';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
@@ -40,7 +41,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     const defaultIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
-    const columns = Object.keys(meta.properties).map((key) => {
+    const columns = objectKeys(meta.properties).map((key) => {
       const prop = meta.properties[key];
       let propSql = prop.name + ' ';
       if (prop.isId) {

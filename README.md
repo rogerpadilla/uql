@@ -132,7 +132,7 @@ Note: inheritance between entities is optional.
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
-import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/entity/decorator';
+import { Id, Property, OneToMany, OneToOne, ManyToOne, ManyToMany, Entity } from '@uql/core/entity/decorator';
 
 /**
  * an abstract class can (optionally) be used as a "template" for the entities
@@ -141,78 +141,44 @@ import { Id, Property, OneToMany, OneToOne, ManyToOne, Entity } from '@uql/core/
 export abstract class BaseEntity {
   @Id({ onInsert: () => uuidv4() })
   id?: string;
-
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when inserting:
    */
   @Property({ onInsert: () => Date.now() })
   createdAt?: number;
-
   /**
    * foreign-keys are really simple to specify
    */
   @Property({ reference: () => User })
-  userId?: string;
-
+  creatorId?: string;
+  /**
+   * foreign-keys are really simple to specify
+   */
+  @Property({ reference: () => Company })
+  companyId?: string;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a property when updating:
    */
   @Property({ onUpdate: () => Date.now() })
   updatedAt?: number;
-
-  @Property()
-  status?: number;
 }
 
 @Entity()
 export class Company extends BaseEntity {
   @Property()
   name?: string;
-
   @Property()
   description?: string;
-}
-
-/**
- * a custom name can be specified for the corresponding table/document
- */
-@Entity({ name: 'user_profile' })
-export class Profile extends BaseEntity {
-  /**
-   * a custom name can be optionally specified for every property (this also overrides parent's class ID declaration)
-   */
-  @Id({ name: 'pk' })
-  id?: string;
-
-  @Property({ name: 'image' })
-  picture?: string;
-
-  /**
-   * the owner side of the relation is that which doesn't specify the attribute `mappedBy`
-   */
-  @OneToOne()
-  user?: User;
 }
 
 @Entity()
 export class User extends BaseEntity {
   @Property()
   name?: string;
-
   @Property()
   email?: string;
-
-  @Property()
-  password?: string;
-
-  /**
-   * the non-owner side of the relation is that which specify the attribute `mappedBy`
-   */
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.user })
-  profile?: Profile;
-}
 
 @Entity()
 export class TaxCategory extends BaseEntity {
@@ -222,12 +188,10 @@ export class TaxCategory extends BaseEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
    */
-  @Id({ onInsert: () => uuidv4() })
-  pk?: string;
-
+  @Id()
+  pk?: number;
   @Property()
   name?: string;
-
   @Property()
   description?: string;
 }
@@ -236,18 +200,48 @@ export class TaxCategory extends BaseEntity {
 export class Tax extends BaseEntity {
   @Property()
   name?: string;
-
   @Property()
   percentage?: number;
-
   @Property({ reference: () => TaxCategory })
   categoryId?: string;
-
   @ManyToOne()
   category?: TaxCategory;
-
   @Property()
   description?: string;
+}
+
+@Entity()
+export class Item extends BaseEntity {
+  @Property()
+  name?: string;
+  @Property()
+  description?: string;
+  @Property()
+  code?: string;
+  @Property({ reference: { entity: () => Tax } })
+  taxId?: string;
+  @ManyToOne()
+  tax?: Tax;
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag })
+  tags?: Tag[];
+}
+
+@Entity()
+export class Tag extends BaseEntity {
+  @Property()
+  name?: string;
+  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
+  items?: Item[];
+}
+
+@Entity()
+export class ItemTag {
+  @Id()
+  id?: string;
+  @Property({ reference: () => Item })
+  itemId?: string;
+  @Property({ reference: () => Tag })
+  tagId?: string;
 }
 ```
 
@@ -348,6 +342,7 @@ yarn add @uql/express
 
 ```ts
 import * as express from 'express';
+import { hasKeys } from '@uql/core/util';
 import { querierMiddleware } from '@uql/express';
 
 const app = express();
@@ -365,7 +360,7 @@ app
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
       extendQuery<E>(type: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$limit = obtainValidLimit(qm.$limit);
-        const prefix = qm.populate && Object.keys(qm.$populate).length ? type.name + '.' : '';
+        const prefix = hasKeys(qm.$populate) ? type.name + '.' : '';
         qm.$filter = {
           ...qm.$filter,
           // ensure the user can only see the data belonging to his own company

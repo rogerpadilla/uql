@@ -2,7 +2,7 @@ import { Properties, Relations } from './entity';
 import { Scalar, Unpacked } from './utility';
 
 export type QueryFieldFilter<E> = {
-  readonly [P in Properties<E>]?: E[P] | QueryComparisonOperator<E> | Scalar;
+  readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator;
 };
 
 export type QueryProject<E> =
@@ -26,7 +26,7 @@ export type QueryTextSearch<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryComparisonOperator<E> = {
+export type QueryComparisonOperator = {
   readonly $eq?: Scalar;
   readonly $ne?: Scalar;
   readonly $lt?: number;

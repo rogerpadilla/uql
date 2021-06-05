@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { lowerFirst, upperFirst } from '../../util';
+import { hasKeys, lowerFirst, objectKeys, upperFirst } from '../../util';
 import {
   RelationOptions,
   PropertyOptions,
@@ -9,6 +9,7 @@ import {
   KeyMapper,
   RelationMappedBy,
   KeyMap,
+  ReferenceOptions,
 } from '../../type';
 
 const holder = globalThis;
@@ -51,7 +52,7 @@ export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationO
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
 
-  if (Object.keys(meta.properties).length === 0) {
+  if (!hasKeys(meta.properties)) {
     throw new TypeError(`'${entity.name}' must have properties`);
   }
 
@@ -101,10 +102,10 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
     return meta;
   }
   meta.processed = true;
-  return fillRelationsReferences(meta);
+  return fillRelations(meta);
 }
 
-function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
+function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
     const relOpts = meta.relations[relKey];
 
@@ -114,7 +115,7 @@ function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     if (relOpts.mappedBy) {
-      fillInverseSideRelationReferences(relOpts);
+      fillInverseSideRelations(relOpts);
       continue;
     }
 
@@ -132,12 +133,16 @@ function fillRelationsReferences<E>(meta: EntityMeta<E>): EntityMeta<E> {
       const idSuffix = upperFirst(meta.id.property);
       relOpts.references = [{ source: relKey + idSuffix, target: relMeta.id.property }];
     }
+
+    if (relOpts.through) {
+      fillThroughRelations(relOpts.through());
+    }
   }
 
   return meta;
 }
 
-function fillInverseSideRelationReferences<E>(relOpts: RelationOptions<E>): void {
+function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
   const mappedByKey = getMappedByKey(relOpts);
@@ -146,18 +151,38 @@ function fillInverseSideRelationReferences<E>(relOpts: RelationOptions<E>): void
   if (relMeta.relations[mappedByKey]) {
     const { cardinality, references, through } = relMeta.relations[mappedByKey];
     if (cardinality === '11' || cardinality === 'm1') {
-      // this trick makes the the SQL generation simpler (no need to check for `mappedBy` there if we reverse here)
+      // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
       relOpts.references = references.map(({ source, target }) => ({
         source: target,
         target: source,
       }));
     } else {
-      relOpts.through = through;
       relOpts.references = references;
+      relOpts.through = through;
     }
   } else {
     relOpts.references = [{ source: mappedByKey, target: relMeta.id.property }];
   }
+}
+
+function fillThroughRelations<E>(entity: Type<E>): void {
+  const meta = ensureMeta(entity);
+  meta.relations = objectKeys(meta.properties).reduce((relations, propKey) => {
+    const { reference } = meta.properties[propKey];
+    if (reference) {
+      const relEntityGetter = (reference as ReferenceOptions).entity;
+      const relEntity = relEntityGetter();
+      const relMeta = ensureMeta(relEntity);
+      const relKey = propKey.slice(0, -relMeta.id.property.length);
+      const relOpts: RelationOptions = {
+        cardinality: 'm1',
+        entity: relEntityGetter,
+        references: [{ source: propKey, target: relMeta.id.property }],
+      };
+      relations[relKey] = relOpts;
+    }
+    return relations;
+  }, {});
 }
 
 function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
@@ -172,14 +197,14 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
 }
 
 function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
-  return Object.keys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
+  return objectKeys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
     acc[key] = key;
     return acc;
   }, {} as KeyMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): string {
-  return Object.keys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  return objectKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {

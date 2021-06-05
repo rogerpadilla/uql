@@ -1,9 +1,13 @@
-const normalEscapeIdChar = '`';
+export function normalizeSql(sql: string, escapeIdChar: string, normalEscapeIdChar = '`'): string {
+  if (escapeIdChar === normalEscapeIdChar) {
+    return sql;
+  }
 
-export function normalizeSql(sql: string, escapeIdChar: string): string {
-  return isNormalEscapeIdChar(escapeIdChar) ? sql : sql.replace(RegExp(escapeIdChar, 'g'), normalEscapeIdChar);
-}
+  const normalizedSql = sql.replace(RegExp(normalEscapeIdChar, 'g'), escapeIdChar);
 
-export function isNormalEscapeIdChar(escapeIdChar: string): boolean {
-  return escapeIdChar === normalEscapeIdChar;
+  if (normalizedSql.startsWith('INSERT INTO ')) {
+    return normalizedSql + ' RETURNING id id';
+  }
+
+  return normalizedSql;
 }

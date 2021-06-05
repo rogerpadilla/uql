@@ -297,6 +297,42 @@ it('Tag', () => {
   expect(meta).toEqual(expectedMeta);
 });
 
+it('ItemTag', () => {
+  const meta = getMeta(ItemTag);
+  const expectedMeta: EntityMeta<ItemTag> = {
+    entity: ItemTag,
+    name: 'ItemTag',
+    id: { name: 'id', type: String, isId: true, property: 'id' },
+    processed: true,
+    properties: {
+      id: { name: 'id', type: String, isId: true },
+      itemId: {
+        name: 'itemId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+      tagId: {
+        name: 'tagId',
+        type: String,
+        reference: { entity: expect.any(Function) },
+      },
+    },
+    relations: {
+      item: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'itemId', target: 'id' }],
+      },
+      tag: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'tagId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
 it('TaxCategory', () => {
   const meta = getMeta(TaxCategory);
   const expectedMeta: EntityMeta<TaxCategory> = {
@@ -541,22 +577,24 @@ it('not an @Entity', () => {
 
 it('getEntities', () => {
   const entities = getEntities();
-  expect(entities).toEqual([
-    Company,
-    Profile,
-    User,
-    LedgerAccount,
-    TaxCategory,
-    Tax,
-    MeasureUnitCategory,
-    MeasureUnit,
-    Storehouse,
-    Tag,
-    Item,
-    ItemTag,
-    ItemAdjustment,
-    InventoryAdjustment,
-  ]);
+  expect(entities.sort()).toEqual(
+    [
+      Company,
+      Profile,
+      User,
+      LedgerAccount,
+      TaxCategory,
+      Tax,
+      MeasureUnitCategory,
+      MeasureUnit,
+      Storehouse,
+      Item,
+      Tag,
+      ItemTag,
+      ItemAdjustment,
+      InventoryAdjustment,
+    ].sort()
+  );
 });
 
 it('no @Id', () => {

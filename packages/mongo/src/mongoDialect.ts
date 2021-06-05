@@ -1,12 +1,13 @@
 import { FilterQuery, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta, Type } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
+import { hasKeys, objectKeys } from '@uql/core/util';
 
 export class MongoDialect {
   buildFilter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
-    return Object.keys(filter).reduce((acc, prop) => {
+    return objectKeys(filter).reduce((acc, prop) => {
       const entry = filter[prop];
       if (prop === '$and' || prop === '$or') {
         acc[prop] = entry.map((filterIt: QueryFilter<E>) => this.buildFilter(entity, filterIt));
@@ -23,7 +24,7 @@ export class MongoDialect {
 
     const pipeline: object[] = [];
 
-    if (qm.$filter && Object.keys(qm.$filter).length) {
+    if (hasKeys(qm.$filter)) {
       pipeline.push({ $match: this.buildFilter(entity, qm.$filter) });
     }
 

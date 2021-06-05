@@ -27,11 +27,11 @@ export class PostgresDialect extends BaseSqlDialect {
     }
   }
 
-  compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
+  compareProperty<E, K extends keyof QueryComparisonOperator>(
     entity: Type<E>,
     prop: string,
     operator: K,
-    val: QueryComparisonOperator<E>[K],
+    val: QueryComparisonOperator[K],
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);

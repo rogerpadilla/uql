@@ -6,13 +6,12 @@ import {
   QueryCriteria,
   QueryOne,
   QueryPopulate,
-  ReferenceOptions,
   RelationOptions,
   Repository,
   Type,
 } from '../type';
 import { getMeta } from '../entity/decorator';
-import { cloneDeep } from '../util';
+import { cloneDeep, objectKeys } from '../util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -43,15 +42,14 @@ export abstract class BaseQuerier implements Querier {
 
   findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
     const meta = getMeta(type);
-    const key = qo.$populate ? `${meta.name}.${meta.id.name}` : meta.id.name;
-    return this.findOne(type, { ...qo, $filter: { [key]: id } });
+    return this.findOne(type, { ...qo, $filter: { [meta.id.name]: id } });
   }
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: any) {
     const meta = getMeta(entity);
-    return this.deleteMany(entity, { [meta.id.name]: id });
+    return this.deleteMany(entity, { $filter: { [meta.id.name]: id } });
   }
 
   abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
@@ -77,52 +75,63 @@ export abstract class BaseQuerier implements Querier {
       }
 
       const relEntity = relOpts.entity();
-      const relMeta = getMeta(relEntity);
       const relQuery = cloneDeep(populate[relKey] as Query<typeof relEntity>);
-      const prop = relOpts.references[0].source;
+      const sourceProp = relOpts.references[0].source;
+      const ids = payload.map((it) => it[meta.id.property]);
 
-      if (relOpts.cardinality === '1m') {
+      if (relOpts.cardinality === 'mm') {
+        const throughEntity = relOpts.through();
+        const throughMeta = getMeta(throughEntity);
+        const targetRelKey = objectKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
+        const throughFounds = await this.findMany(throughEntity, {
+          $project: [sourceProp],
+          $filter: {
+            [sourceProp]: ids,
+          },
+          $populate: {
+            [targetRelKey]: {
+              ...relQuery,
+              $required: true,
+            },
+          },
+        });
+        const founds = throughFounds.map((it) => it[targetRelKey]);
+        this.putRelationsInParents(payload, founds, meta.id.property, sourceProp, relKey);
+      } else if (relOpts.cardinality === '1m') {
         if (relQuery.$project) {
           if (Array.isArray(relQuery.$project)) {
-            if (!relQuery.$project.includes(prop)) {
-              relQuery.$project.push(prop);
+            if (!relQuery.$project.includes(sourceProp)) {
+              relQuery.$project.push(sourceProp);
             }
-          } else if (!relQuery.$project[prop]) {
-            relQuery.$project[prop] = true;
+          } else if (!relQuery.$project[sourceProp]) {
+            relQuery.$project[sourceProp] = true;
           }
         }
-        const ids = payload.map((it) => it[meta.id.property]);
-        relQuery.$filter = { [prop]: { $in: ids } };
+        relQuery.$filter = { [sourceProp]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
-        const foundsMap = founds.reduce((acc, it) => {
-          const attr = it[prop];
-          if (!acc[attr]) {
-            acc[attr] = [];
-          }
-          acc[attr].push(it);
-          return acc;
-        }, {});
-        for (const it of payload) {
-          it[relKey] = foundsMap[it[meta.id.property]];
-        }
-      } else if (relOpts.cardinality === 'mm') {
-        throw new TypeError('Not Implemented yet');
-        // TODO
-        // console.log(relKey, relQuery, relOpts.references, relOpts.mappedBy);
-        // const throughEntity = relOpts.through();
-        // const ids = payload.map((it) => it[meta.id.property]);
-        // const targetEntity = (relMeta.properties[prop].reference as ReferenceOptions).entity();
-        // const targetName = getMeta(targetEntity).name;
-        // const throughData = await this.findMany(throughEntity, {
-        //   $filter: { [prop]: { $in: ids } },
-        //   $populate: {
-        //     [targetName]: {
-        //       ...relQuery,
-        //       $required: true,
-        //     },
-        //   },
-        // });
+        this.putRelationsInParents(payload, founds, meta.id.property, sourceProp, relKey);
       }
+    }
+  }
+
+  protected putRelationsInParents<E>(
+    parents: E[],
+    children: E[],
+    parentId: string,
+    parentSource: string,
+    relKey: string
+  ): void {
+    const childrenMap = children.reduce((acc, it) => {
+      const attr = it[parentSource];
+      if (!acc[attr]) {
+        acc[attr] = [];
+      }
+      acc[attr].push(it);
+      return acc;
+    }, {});
+
+    for (const it of parents) {
+      it[relKey] = childrenMap[it[parentId]];
     }
   }
 
@@ -163,22 +172,31 @@ export abstract class BaseQuerier implements Querier {
     );
   }
 
-  protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<void> {
+  protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
     const meta = getMeta(entity);
-    const news: E[] = [];
-    const olds: E[] = [];
+    const inserts: E[] = [];
+    const updates: E[] = [];
+    const links: any[] = [];
 
     for (const it of payload) {
       if (it[meta.id.property]) {
-        olds.push(it);
+        if (objectKeys(it).length === 1) {
+          links.push(it[meta.id.property]);
+        } else {
+          updates.push(it);
+        }
       } else {
-        news.push(it);
+        inserts.push(it);
       }
     }
 
-    await Promise.all([
-      this.insertMany(entity, news),
-      Promise.all(olds.map((it) => this.updateOneById(entity, it, it[meta.id.property]))),
+    return Promise.all([
+      ...links,
+      ...(inserts.length ? await this.insertMany(entity, inserts) : []),
+      ...updates.map(async (it) => {
+        await this.updateOneById(entity, it, it[meta.id.property]);
+        return it[meta.id.property];
+      }),
     ]);
   }
 
@@ -203,13 +221,26 @@ export abstract class BaseQuerier implements Querier {
     const relPayloads = relPayload as E[];
     const relProperty = references[0].source;
 
-    if (relPayloads) {
-      for (const it of relPayloads) {
-        it[relProperty] = id;
+    if (through) {
+      const throughEntity = through();
+      await this.deleteMany(throughEntity, { $filter: { [relProperty]: id } });
+      if (relPayloads) {
+        const savedIds = await this.saveMany(relEntity, relPayloads);
+        const throughBodies = savedIds.map((relId) => ({
+          [references[0].source]: id,
+          [references[1].source]: relId,
+        }));
+        await this.insertMany(throughEntity, throughBodies);
       }
+      return;
     }
 
     if (cardinality === '1m') {
+      if (relPayloads) {
+        for (const it of relPayloads) {
+          it[relProperty] = id;
+        }
+      }
       if (isUpdate) {
         await this.deleteMany(relEntity, { $filter: { [relProperty]: id } });
       }
@@ -217,20 +248,6 @@ export abstract class BaseQuerier implements Querier {
         await this.saveMany(relEntity, relPayloads);
       }
       return;
-    }
-
-    if (cardinality === 'mm') {
-      const throughEntity = through();
-      await this.deleteMany(throughEntity, { $filter: { [relProperty]: id } });
-      if (relPayloads) {
-        const relIds = await this.insertMany(relEntity, relPayloads);
-        const throughBodies = relIds.map((relId) => ({
-          [references[0].source]: id,
-          [references[1].source]: relId,
-        }));
-        await this.insertMany(throughEntity, throughBodies);
-        return;
-      }
     }
   }
 
@@ -240,8 +257,8 @@ export abstract class BaseQuerier implements Querier {
 }
 
 function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E) {
-  return Object.keys(payload).filter((prop) => {
-    const relOpts = meta.relations[prop];
+  return objectKeys(payload).filter((key) => {
+    const relOpts = meta.relations[key];
     return relOpts && relOpts.cardinality !== 'm1';
   });
 }

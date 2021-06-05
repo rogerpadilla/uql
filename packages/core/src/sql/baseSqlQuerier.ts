@@ -14,6 +14,9 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   async insertMany<E>(entity: Type<E>, payload: E[]) {
+    if (payload.length === 0) {
+      return;
+    }
     payload = cloneDeep(payload);
     const query = this.dialect.insert(entity, payload);
     const { lastId } = await this.conn.run(query);

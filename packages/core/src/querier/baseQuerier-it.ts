@@ -32,18 +32,6 @@ export abstract class BaseQuerierIt implements Spec {
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
     await this.createTables();
-    jest.spyOn(this.querier, 'insertOne');
-    jest.spyOn(this.querier, 'insertMany');
-    jest.spyOn(this.querier, 'updateMany');
-    jest.spyOn(this.querier, 'deleteMany');
-    jest.spyOn(this.querier, 'deleteOneById');
-    jest.spyOn(this.querier, 'findMany');
-    jest.spyOn(this.querier, 'findOne');
-    jest.spyOn(this.querier, 'findOneById');
-    jest.spyOn(this.querier, 'beginTransaction');
-    jest.spyOn(this.querier, 'commitTransaction');
-    jest.spyOn(this.querier, 'rollbackTransaction');
-    jest.spyOn(this.querier, 'release');
   }
 
   async afterEach() {

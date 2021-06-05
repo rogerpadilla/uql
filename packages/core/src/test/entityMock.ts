@@ -137,14 +137,6 @@ export class Storehouse extends BaseEntity {
 }
 
 @Entity()
-export class Tag extends BaseEntity {
-  @Property()
-  name?: string;
-  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
-  items?: Item[];
-}
-
-@Entity()
 export class Item extends BaseEntity {
   @Property()
   name?: string;
@@ -183,17 +175,21 @@ export class Item extends BaseEntity {
 }
 
 @Entity()
+export class Tag extends BaseEntity {
+  @Property()
+  name?: string;
+  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
+  items?: Item[];
+}
+
+@Entity()
 export class ItemTag {
   @Id()
   id?: string;
   @Property({ reference: () => Item })
   itemId?: string;
-  @OneToOne({ entity: () => Item })
-  item?: Item;
   @Property({ reference: () => Tag })
   tagId?: string;
-  @OneToOne({ entity: () => Tag })
-  tag?: Tag;
 }
 
 @Entity()
