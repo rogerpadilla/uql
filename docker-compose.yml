@@ -2,7 +2,7 @@ version: '3.4'
 
 services:
   mysql:
-    image: 'mysql:8.0.22'
+    image: 'mysql:8.0.25'
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'admin'
@@ -10,11 +10,11 @@ services:
       MYSQL_PASSWORD: 'test'
       MYSQL_DATABASE: 'test'
     ports:
-      - '3306:3306'
+      - '3307:3306'
     container_name: 'uql-mysql-8'
     
   mariadb:
-    image: 'mariadb:10.5.8'
+    image: 'mariadb:10.5.10'
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'admin'
@@ -25,8 +25,8 @@ services:
       - '3310:3306'
     container_name: 'uql-mariadb-10'
 
-  postgres-12:
-    image: postgres:12.5
+  postgres-13:
+    image: postgres:13.3
     restart: always
     environment:
       POSTGRES_USER: test
@@ -34,4 +34,4 @@ services:
       POSTGRES_DB: test
     ports:
       - '5432:5432'
-    container_name: uql-postgres-12
+    container_name: uql-postgres-13

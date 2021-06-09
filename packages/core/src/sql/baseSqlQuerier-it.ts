@@ -28,7 +28,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);
-        return this.querier.conn.run(`DROP TABLE ${meta.name}`);
+        return this.querier.conn.run(`DROP TABLE IF EXISTS ${this.querier.dialect.escapeId(meta.name)}`);
       })
     );
   }
@@ -36,25 +36,16 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
   buildDdlForTable<E>(entity: Type<E>) {
     const meta = getMeta(entity);
 
-    let sql = `CREATE TABLE ${meta.name} (\n\t`;
+    let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
 
     const defaultIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
     const columns = objectKeys(meta.properties).map((key) => {
       const prop = meta.properties[key];
-      let propSql = prop.name + ' ';
+      let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
       if (prop.isId) {
         propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
-      } else if (prop.reference) {
-        const rel = (prop.reference as ReferenceOptions).entity();
-        const relMeta = getMeta(rel);
-        const type = relMeta.id.onInsert
-          ? defaultIdType
-          : this.primaryKeyType.startsWith('INTEGER')
-          ? 'INTEGER'
-          : 'BIGINT';
-        propSql += `${type} REFERENCES ${relMeta.name}(${relMeta.id.name})`;
       } else {
         propSql += prop.type === Number ? 'BIGINT' : defaultType;
       }

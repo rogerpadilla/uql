@@ -54,16 +54,16 @@ export abstract class BaseSqlDialect {
     }
 
     const persistableKeys = filterPersistableProperties(entity, payloads[0]);
-    const columns = persistableKeys.map((prop) => meta.properties[prop].name);
+    const columns = persistableKeys.map((prop) => this.escapeId(meta.properties[prop].name));
     const values = payloads.map((it) => persistableKeys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
 
-    return `INSERT INTO ${meta.name} (${columns.join(', ')}) VALUES (${values})`;
+    return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
     const criteria = this.criteria(entity, qm);
-    return `DELETE FROM ${meta.name}${criteria}`;
+    return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
   }
 
   update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
@@ -83,7 +83,7 @@ export abstract class BaseSqlDialect {
     }, {} as E);
     const values = this.objectToValues(persistableData);
     const criteria = this.criteria(entity, qm);
-    return `UPDATE ${meta.name} SET ${values}${criteria}`;
+    return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
 
   project<E>(
@@ -92,7 +92,7 @@ export abstract class BaseSqlDialect {
     opts: { prefix?: string; prependPrefixToAlias?: boolean }
   ): string {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ? `${opts.prefix}.` : '';
+    const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
     if (project) {
       if (!Array.isArray(project)) {
@@ -109,15 +109,15 @@ export abstract class BaseSqlDialect {
     return project
       .map((key) => {
         if (key instanceof Raw) {
-          return key.value;
+          return key.alias ? `${key.value} ${this.escapeId(key.alias, true)}` : key.value;
         }
         const property = meta.properties[key as string];
-        const name = property?.name ?? this.escapeId(key);
-        const col = `${prefix}${name}`;
+        const name = property?.name ?? key;
+        const field = `${prefix}${this.escapeId(name)}`;
         if (opts.prependPrefixToAlias) {
-          return `${col} ${this.escapeId(opts.prefix + '.' + key, true)}`;
+          return `${field} ${this.escapeId(opts.prefix + '.' + key, true)}`;
         }
-        return name === key || !property ? col : `${col} ${key}`;
+        return name === key || !property ? field : `${field} ${this.escapeId(key)}`;
       })
       .join(', ');
   }
@@ -125,10 +125,10 @@ export abstract class BaseSqlDialect {
   select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
     const baseColumns = this.project(entity, qm.$project, {
-      prefix: qm.$populate && meta.name,
+      prefix: hasKeys(qm.$populate) ? meta.name : undefined,
     });
     const { joinsColumns, joinsTables } = this.join(entity, qm.$populate);
-    return `SELECT ${baseColumns}${joinsColumns} FROM ${meta.name}${joinsTables}`;
+    return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
   join<E>(
@@ -152,12 +152,12 @@ export abstract class BaseSqlDialect {
         continue;
       }
 
-      const joinPath = prefix ? prefix + '.' + relKey : relKey;
+      const joinRelAlias = prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
       const popVal = populate[relKey] as QueryPopulateValue<typeof relEntity>;
 
       const relColumns = this.project(relEntity, popVal.$project, {
-        prefix: joinPath,
+        prefix: joinRelAlias,
         prependPrefixToAlias: true,
       });
 
@@ -166,18 +166,21 @@ export abstract class BaseSqlDialect {
       const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.join(
         relEntity,
         popVal.$populate,
-        joinPath
+        joinRelAlias
       );
 
       joinsColumns += subJoinsColumns;
 
       const relMeta = getMeta(relEntity);
-      const relEntityName = relMeta.name;
-      const relPath = prefix ? prefix : meta.name;
+      const relEntityName = this.escapeId(relMeta.name);
+      const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
       const joinType = popVal.$required ? 'INNER' : 'LEFT';
+      const joinAlias = this.escapeId(joinRelAlias, true);
 
-      joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinPath} ON `;
-      joinsTables += relOpts.references.map((it) => `${joinPath}.${it.target} = ${relPath}.${it.source}`).join(' AND ');
+      joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
+      joinsTables += relOpts.references
+        .map((it) => `${joinAlias}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
+        .join(' AND ');
 
       if (hasKeys(popVal.$filter)) {
         const where = this.where(relEntity, popVal.$filter, { prefix: relKey, omitClause: true });
@@ -234,7 +237,7 @@ export abstract class BaseSqlDialect {
       case '$text':
         const meta = getMeta(entity);
         const search = value as QueryTextSearchOptions<E>;
-        return `${meta.name} MATCH ${this.escape(search.$value)}`;
+        return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
       default:
         const val = Array.isArray(value)
           ? { $in: value }
@@ -257,30 +260,30 @@ export abstract class BaseSqlDialect {
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ? `${opts.prefix}.` : '';
-    const name = meta.properties[prop]?.name ?? this.escapeId(prop);
-    const colPath = prefix + name;
+    const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
+    const field = this.escapeId(meta.properties[prop]?.name ?? prop);
+    const fieldPath = prefix + field;
     switch (operator) {
       case '$eq':
-        return val === null ? `${colPath} IS NULL` : `${colPath} = ${this.escape(val)}`;
+        return val === null ? `${fieldPath} IS NULL` : `${fieldPath} = ${this.escape(val)}`;
       case '$ne':
-        return val === null ? `${colPath} IS NOT NULL` : `${colPath} <> ${this.escape(val)}`;
+        return val === null ? `${fieldPath} IS NOT NULL` : `${fieldPath} <> ${this.escape(val)}`;
       case '$gt':
-        return `${colPath} > ${this.escape(val)}`;
+        return `${fieldPath} > ${this.escape(val)}`;
       case '$gte':
-        return `${colPath} >= ${this.escape(val)}`;
+        return `${fieldPath} >= ${this.escape(val)}`;
       case '$lt':
-        return `${colPath} < ${this.escape(val)}`;
+        return `${fieldPath} < ${this.escape(val)}`;
       case '$lte':
-        return `${colPath} <= ${this.escape(val)}`;
+        return `${fieldPath} <= ${this.escape(val)}`;
       case '$startsWith':
-        return `LOWER(${colPath}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${fieldPath}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$in':
-        return `${colPath} IN (${this.escape(val)})`;
+        return `${fieldPath} IN (${this.escape(val)})`;
       case '$nin':
-        return `${colPath} NOT IN (${this.escape(val)})`;
+        return `${fieldPath} NOT IN (${this.escape(val)})`;
       case '$re':
-        return `${colPath} REGEXP ${this.escape(val)}`;
+        return `${fieldPath} REGEXP ${this.escape(val)}`;
       default:
         throw new TypeError(`unknown operator: ${operator}`);
     }
@@ -291,7 +294,9 @@ export abstract class BaseSqlDialect {
       return '';
     }
     const meta = getMeta(entity);
-    const names = properties.map((prop) => meta.properties[prop as string]?.name ?? this.escapeId(prop)).join(', ');
+    const names = properties
+      .map((prop) => this.escapeId(meta.properties[prop as string]?.name ?? (prop as string)))
+      .join(', ');
     return ` GROUP BY ${names}`;
   }
 
@@ -303,9 +308,9 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
     const order = keys
       .map((prop) => {
-        const field = meta.properties[prop as string]?.name ?? this.escapeId(prop);
+        const field = meta.properties[prop as string]?.name ?? prop;
         const direction = sort[prop] === -1 ? ' DESC' : '';
-        return field + direction;
+        return this.escapeId(field) + direction;
       })
       .join(', ');
     return ` ORDER BY ${order}`;
@@ -322,11 +327,7 @@ export abstract class BaseSqlDialect {
     return sql;
   }
 
-  escapeId(val: any, forbidQualified?: boolean): string {
-    if (Array.isArray(val)) {
-      return val.map((it) => this.escapeId(it, forbidQualified)).join(', ');
-    }
-
+  escapeId(val: string, forbidQualified?: boolean): string {
     const str = val as string;
 
     if (!forbidQualified && val.includes('.')) {
@@ -348,7 +349,7 @@ export abstract class BaseSqlDialect {
 
   objectToValues<E>(object: E): string {
     return objectKeys(object)
-      .map((key) => `${key} = ${this.escape(object[key])}`)
+      .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
       .join(', ');
   }
 }

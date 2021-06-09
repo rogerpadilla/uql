@@ -10,7 +10,7 @@ export class PostgresDialect extends BaseSqlDialect {
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const sql = super.insert(entity, payload);
     const meta = getMeta(entity);
-    return `${sql} RETURNING ${meta.id.name} id`;
+    return `${sql} RETURNING ${this.escapeId(meta.id.name)} ${this.escapeId('id')}`;
   }
 
   compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
@@ -19,7 +19,7 @@ export class PostgresDialect extends BaseSqlDialect {
         const meta = getMeta(entity);
         const search = value as QueryTextSearchOptions<E>;
         const fields = search.$fields
-          .map((field) => meta.properties[field as string]?.name ?? this.escapeId(field))
+          .map((field) => this.escapeId(meta.properties[field as string]?.name ?? (field as string)))
           .join(` || ' ' || `);
         return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
       default:
@@ -36,7 +36,7 @@ export class PostgresDialect extends BaseSqlDialect {
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${opts.prefix}.` : '';
-    const name = meta.properties[prop]?.name ?? this.escapeId(prop);
+    const name = this.escapeId(meta.properties[prop]?.name ?? prop);
     const colPath = prefix + name;
     switch (operator) {
       case '$startsWith':

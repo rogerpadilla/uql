@@ -34,6 +34,10 @@ export function log(message: any, ...args: any[]) {
   }
 }
 
+export function setDebug(debug: boolean): void {
+  options = { ...defaultOptions, debug };
+}
+
 export function isDebug(): boolean {
   return options?.debug;
 }

@@ -22,7 +22,7 @@
     "complexity": ["error", 15],
     "curly": ["error", "all"],
     "no-restricted-syntax": ["error", "LabeledStatement", "WithStatement"],
-    "no-implicit-coercion": ["error"],
+    "no-implicit-coercion": ["error", { "boolean": false }],
     "no-new-wrappers": ["error"],
     "no-new-object": ["error"],
     "new-cap": ["error", { "newIsCap": false, "capIsNew": false }],

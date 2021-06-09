@@ -1,11 +1,9 @@
-import { User, Item, createSpec } from '@uql/core/test';
+import { User, Item, createSpec, TaxCategory } from '@uql/core/test';
 import { BaseSqlDialectSpec } from '@uql/core/sql/baseSqlDialect-spec';
 import { PostgresDialect } from './postgresDialect';
 
-class PostgresDialectSpec extends BaseSqlDialectSpec {
-  constructor() {
-    super(new PostgresDialect());
-  }
+class PostgresDialectSpec {
+  readonly dialect = new PostgresDialect();
 
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
@@ -13,6 +11,55 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
 
   shouldBeginTransaction() {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN');
+  }
+
+  shouldInsert() {
+    expect(
+      this.dialect.insert(User, [
+        {
+          name: 'Some name 1',
+          email: 'someemail1@example.com',
+          createdAt: 123,
+        },
+        {
+          name: 'Some name 2',
+          email: 'someemail2@example.com',
+          createdAt: 456,
+        },
+        {
+          name: 'Some name 3',
+          email: 'someemail3@example.com',
+          createdAt: 789,
+        },
+      ])
+    ).toBe(
+      'INSERT INTO "User" ("name", "email", "createdAt") VALUES' +
+        " ('Some name 1', 'someemail1@example.com', 123)" +
+        ", ('Some name 2', 'someemail2@example.com', 456)" +
+        ", ('Some name 3', 'someemail3@example.com', 789)" +
+        ' RETURNING "id" "id"'
+    );
+
+    expect(
+      this.dialect.insert(User, {
+        name: 'Some Name',
+        email: 'someemail@example.com',
+        createdAt: 123,
+      })
+    ).toBe(
+      `INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`
+    );
+  }
+
+  shouldInsertWithOnInsertId() {
+    expect(
+      this.dialect.insert(TaxCategory, {
+        name: 'Some Name',
+        createdAt: 123,
+      })
+    ).toMatch(
+      `^INSERT INTO "TaxCategory" \\("name", "createdAt", "pk"\\) VALUES \\('Some Name', 123, '.+'\\) RETURNING "pk" "id"$`
+    );
   }
 
   shouldFind$startsWith() {
@@ -24,7 +71,7 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $skip: 0,
         $limit: 50,
       })
-    ).toBe(`SELECT id FROM User WHERE name ILIKE 'Some%' ORDER BY name, id DESC LIMIT 50 OFFSET 0`);
+    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
       this.dialect.find(User, {
@@ -35,7 +82,7 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $limit: 50,
       })
     ).toBe(
-      `SELECT id FROM User WHERE (name ILIKE 'Some%' AND name <> 'Something') ORDER BY name, id DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
     );
   }
 
@@ -45,7 +92,7 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $project: { id: 1 },
         $filter: { name: { $re: '^some' } },
       })
-    ).toBe(`SELECT id FROM User WHERE name ~ '^some'`);
+    ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }
 
   shouldFind$text() {
@@ -56,7 +103,7 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $limit: 30,
       })
     ).toBe(
-      `SELECT id FROM Item WHERE to_tsvector(name || ' ' || description) @@ to_tsquery('some text') AND code = '1' LIMIT 30`
+      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`
     );
 
     expect(
@@ -70,7 +117,7 @@ class PostgresDialectSpec extends BaseSqlDialectSpec {
         $limit: 10,
       })
     ).toBe(
-      `SELECT id FROM User WHERE to_tsvector(name) @@ to_tsquery('something') AND name <> 'other unwanted' AND creatorId = 1 LIMIT 10`
+      `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`
     );
   }
 }

@@ -14,8 +14,8 @@ export class MySql2Connection implements QuerierPoolConnection {
 
   async run(query: string) {
     log(query);
-    const { affectedRows: changes, insertId: lastId }: any = await this.conn.query(query);
-    return { changes, lastId } as QueryUpdateResult;
+    const [res]: any = await this.conn.query(query);
+    return { changes: res.affectedRows, firstId: res.insertId } as QueryUpdateResult;
   }
 
   async release() {

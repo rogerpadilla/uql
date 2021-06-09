@@ -1,4 +1,4 @@
-import { getOptions, getQuerier, getQuerierPool, getRepository, isDebug, log, setOptions } from './options';
+import { getOptions, getQuerier, getQuerierPool, getRepository, isDebug, log, setDebug, setOptions } from './options';
 import { User } from './test';
 import { Querier } from './type';
 
@@ -9,8 +9,6 @@ describe('options', () => {
 
   afterEach(() => {
     setOptions(undefined);
-    jest.clearAllMocks();
-    jest.restoreAllMocks();
   });
 
   it('getOptions unset', () => {
@@ -49,6 +47,14 @@ describe('options', () => {
       querierPool: undefined,
       logger: expect.any(Function),
     });
+  });
+
+  it('debug', () => {
+    expect(isDebug()).toBeFalsy();
+    setDebug(true);
+    expect(isDebug()).toBe(true);
+    setDebug(false);
+    expect(isDebug()).toBe(false);
   });
 
   it('getQuerierPool unset', async () => {

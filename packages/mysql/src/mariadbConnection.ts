@@ -15,7 +15,7 @@ export class MariadbConnection implements QuerierPoolConnection {
   async run(query: string) {
     log(query);
     const res = await this.conn.query(query);
-    return res as QueryUpdateResult;
+    return { changes: res.affectedRows, firstId: res.insertId } as QueryUpdateResult;
   }
 
   async release() {

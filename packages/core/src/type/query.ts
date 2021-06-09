@@ -75,5 +75,5 @@ export type QueryStringified = {
 
 export type QueryUpdateResult = {
   readonly changes?: number;
-  readonly lastId?: number;
+  readonly firstId?: number;
 };

@@ -7,7 +7,7 @@ export class MySql2QuerierIt extends BaseSqlQuerierIt {
     super(
       new MySql2QuerierPool({
         host: '0.0.0.0',
-        port: 3306,
+        port: 3307,
         user: 'test',
         password: 'test',
         database: 'test',

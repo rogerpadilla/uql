@@ -14,8 +14,8 @@ export class PgConnection implements QuerierPoolConnection {
 
   async run(query: string) {
     log(query);
-    const { rowCount: changes, id: lastId }: any = await this.conn.query(query);
-    return { changes, lastId } as QueryUpdateResult;
+    const { rowCount: changes, rows }: any = await this.conn.query(query);
+    return { changes, firstId: rows[0]?.id } as QueryUpdateResult;
   }
 
   async release() {

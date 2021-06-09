@@ -19,10 +19,10 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     }
     payload = cloneDeep(payload);
     const query = this.dialect.insert(entity, payload);
-    const { lastId } = await this.conn.run(query);
+    const { firstId } = await this.conn.run(query);
     const meta = getMeta(entity);
     const ids: any[] = payload.map((it, index) => {
-      it[meta.id.property] ??= lastId - payload.length + index + 1;
+      it[meta.id.property] ??= firstId + index;
       return it[meta.id.property];
     });
     await this.insertRelations(entity, payload);
@@ -52,7 +52,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   async count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*) count')] as QueryProject<E> });
+    const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
     return Number(res[0].count);
   }
 

@@ -31,11 +31,11 @@ export abstract class BaseQuerierIt implements Spec {
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
+    await this.dropTables();
     await this.createTables();
   }
 
   async afterEach() {
-    await this.dropTables();
     await this.querier.release();
   }
 

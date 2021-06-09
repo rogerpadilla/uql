@@ -13,7 +13,8 @@ export class Sqlit3Connection implements QuerierPoolConnection {
   async run(query: string) {
     log(query);
     const { changes, lastID } = await this.db.run(query);
-    return { changes, lastId: lastID } as QueryUpdateResult;
+    const firstId = lastID ? lastID - (changes - 1) : undefined;
+    return { changes, firstId } as QueryUpdateResult;
   }
 
   async release() {

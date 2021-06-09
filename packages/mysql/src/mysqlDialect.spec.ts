@@ -7,6 +7,10 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
     super(new MySqlDialect());
   }
 
+  shouldBeginTransaction() {
+    expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
+  }
+
   shouldFind$text() {
     expect(
       this.dialect.find(Item, {
@@ -14,7 +18,9 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
         $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, creatorId: 1 },
         $limit: 30,
       })
-    ).toBe("SELECT id FROM Item WHERE MATCH(name, description) AGAINST('some text') AND creatorId = 1 LIMIT 30");
+    ).toBe(
+      "SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `creatorId` = 1 LIMIT 30"
+    );
 
     expect(
       this.dialect.find(User, {
@@ -27,7 +33,7 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
         $limit: 10,
       })
     ).toBe(
-      "SELECT id FROM User WHERE MATCH(name) AGAINST('something') AND name <> 'other unwanted' AND creatorId = 1 LIMIT 10"
+      "SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `creatorId` = 1 LIMIT 10"
     );
   }
 }
