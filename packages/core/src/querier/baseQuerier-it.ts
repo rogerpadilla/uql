@@ -13,7 +13,7 @@ import {
 } from '../test';
 import { Querier, QuerierPool } from '../type';
 
-export abstract class BaseQuerierIt implements Spec {
+export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   readonly entities = [
     InventoryAdjustment,
     ItemAdjustment,
@@ -25,12 +25,12 @@ export abstract class BaseQuerierIt implements Spec {
     Company,
     User,
   ] as const;
-  querier: Querier;
+  querier: Q;
 
   constructor(readonly pool: QuerierPool) {}
 
   async beforeEach() {
-    this.querier = await this.pool.getQuerier();
+    this.querier = (await this.pool.getQuerier()) as Q;
     await this.dropTables();
     await this.createTables();
   }

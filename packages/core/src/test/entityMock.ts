@@ -92,6 +92,9 @@ export class User extends BaseEntity implements IUser {
   email?: string;
   @Property()
   password?: string;
+  /**
+   * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring)
+   */
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator })
   profile?: Profile;
   @OneToMany({ entity: () => User, mappedBy: 'creator' })

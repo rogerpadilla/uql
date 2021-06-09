@@ -4,9 +4,8 @@ import { QuerierPool, ReferenceOptions, Type } from '../type';
 import { objectKeys } from '../util';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
-export abstract class BaseSqlQuerierIt extends BaseQuerierIt {
+export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
   readonly primaryKeyType: string = 'BIGINT PRIMARY KEY AUTO_INCREMENT';
-  querier: BaseSqlQuerier;
 
   constructor(pool: QuerierPool) {
     super(pool);
