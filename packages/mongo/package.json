@@ -2,7 +2,7 @@
   "name": "@uql/mongo",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.4.21",
+  "version": "0.4.22",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
@@ -20,7 +20,7 @@
   "devDependencies": {
     "@types/mongodb": "^3.6.17",
     "@types/node": "^15.12.2",
-    "@uql/core": "^0.4.21",
+    "@uql/core": "^0.4.22",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
     "typescript": "^4.3.2"
