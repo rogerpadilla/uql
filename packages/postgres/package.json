@@ -15,10 +15,10 @@
     "pg": "^8.6.0"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.16"
+    "@uql/core": "^0.4.20"
   },
   "devDependencies": {
-    "@types/node": "^15.12.0",
+    "@types/node": "^15.12.2",
     "@types/pg": "^8.6.0",
     "@uql/core": "^0.4.21",
     "copyfiles": "^2.4.1",

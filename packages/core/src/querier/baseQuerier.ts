@@ -11,7 +11,7 @@ import {
   Type,
 } from '../type';
 import { getMeta } from '../entity/decorator';
-import { cloneDeep, objectKeys } from '../util';
+import { clone, objectKeys } from '../util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -75,7 +75,7 @@ export abstract class BaseQuerier implements Querier {
       }
 
       const relEntity = relOpts.entity();
-      const relQuery = cloneDeep(populate[relKey] as Query<typeof relEntity>);
+      const relQuery = clone(populate[relKey] as Query<typeof relEntity>);
       const sourceProp = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id.property]);
 
@@ -130,9 +130,9 @@ export abstract class BaseQuerier implements Querier {
       return acc;
     }, {});
 
-    for (const it of parents) {
+    parents.forEach((it) => {
       it[relKey] = childrenMap[it[parentId]];
-    }
+    });
   }
 
   protected async insertRelations<E>(entity: Type<E>, payload: E[]) {
@@ -176,9 +176,9 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     const inserts: E[] = [];
     const updates: E[] = [];
-    const links: any[] = [];
+    const links: E[] = [];
 
-    for (const it of payload) {
+    payload.forEach((it) => {
       if (it[meta.id.property]) {
         if (objectKeys(it).length === 1) {
           links.push(it[meta.id.property]);
@@ -188,7 +188,7 @@ export abstract class BaseQuerier implements Querier {
       } else {
         inserts.push(it);
       }
-    }
+    });
 
     return Promise.all([
       ...links,
@@ -236,15 +236,13 @@ export abstract class BaseQuerier implements Querier {
     }
 
     if (cardinality === '1m') {
-      if (relPayloads) {
-        for (const it of relPayloads) {
-          it[relProperty] = id;
-        }
-      }
       if (isUpdate) {
         await this.deleteMany(relEntity, { $filter: { [relProperty]: id } });
       }
       if (relPayloads) {
+        relPayloads.forEach((it) => {
+          it[relProperty] = id;
+        });
         await this.saveMany(relEntity, relPayloads);
       }
       return;

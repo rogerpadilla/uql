@@ -86,11 +86,11 @@ class PostgresDialectSpec {
     );
   }
 
-  shouldFind$re() {
+  shouldFind$regex() {
     expect(
       this.dialect.find(User, {
         $project: { id: 1 },
-        $filter: { name: { $re: '^some' } },
+        $filter: { name: { $regex: '^some' } },
       })
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }

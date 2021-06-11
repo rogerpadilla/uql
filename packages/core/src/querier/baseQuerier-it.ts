@@ -1,4 +1,3 @@
-import { validate as uuidValidate } from 'uuid';
 import {
   Company,
   InventoryAdjustment,
@@ -25,14 +24,21 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     Company,
     User,
   ] as const;
+
   querier: Q;
 
   constructor(readonly pool: QuerierPool) {}
 
-  async beforeEach() {
+  async beforeAll() {
     this.querier = (await this.pool.getQuerier()) as Q;
     await this.dropTables();
     await this.createTables();
+    await this.querier.release();
+  }
+
+  async beforeEach() {
+    this.querier = (await this.pool.getQuerier()) as Q;
+    await this.cleanTables();
   }
 
   async afterEach() {
@@ -62,9 +68,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
     expect(ids).toHaveLength(2);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
+    ids.forEach((id) => expect(id).toBeDefined());
   }
 
   async shouldInsertOne() {
@@ -87,7 +91,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       creatorId,
       companyId,
     });
-    expect(uuidValidate(taxCategoryId)).toBe(true);
+    expect(taxCategoryId).toBeDefined();
   }
 
   async shouldInsertOneWithOnInsertId() {
@@ -98,8 +102,8 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       pk: '123',
       name: 'Some Name',
     });
-    expect(uuidValidate(id1)).toBe(true);
-    expect(id2).toBe('123');
+    expect(id1).toBeDefined();
+    expect(id2).toBeDefined();
   }
 
   async shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
@@ -120,10 +124,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
     expect(ids).toHaveLength(4);
-    expect(uuidValidate(ids[0])).toBe(true);
-    expect(ids[1]).toBe('50');
-    expect(uuidValidate(ids[2])).toBe(true);
-    expect(ids[3]).toBe('70');
+    ids.forEach((id) => expect(id).toBeDefined());
   }
 
   async shouldInsertManyWithAutoIncrementIdAsDefault() {
@@ -138,12 +139,14 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name C',
       },
     ]);
-    expect(ids).toEqual([1, 2, 3]);
+    expect(ids).toHaveLength(3);
+    ids.forEach((id) => expect(id).toBeDefined());
     const founds = await this.querier.findMany(LedgerAccount, {});
     expect(founds.map(({ id }) => id)).toEqual(ids);
   }
 
   async shouldInsertOneAndCascadeOneToOne() {
+    // setDebug(true);
     const payload: User = {
       name: 'Some Name D',
       profile: { picture: 'abc', createdAt: 123 },
@@ -243,7 +246,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   async shouldUpdateOneByIdAndCascadeOneToManyNull() {
     const id = await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
 
-    await expect(await this.querier.count(ItemAdjustment)).toBe(2);
+    await expect(this.querier.count(ItemAdjustment)).resolves.toBe(2);
 
     await this.querier.updateOneById(
       InventoryAdjustment,
@@ -253,13 +256,13 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       id
     );
 
-    await expect(await this.querier.count(ItemAdjustment)).toBe(0);
+    await expect(this.querier.count(ItemAdjustment)).resolves.toBe(0);
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
     await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
 
-    await expect(await this.querier.count(ItemAdjustment)).toBe(2);
+    await expect(this.querier.count(ItemAdjustment)).resolves.toBe(2);
 
     await this.querier.updateMany(
       InventoryAdjustment,
@@ -269,7 +272,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       {}
     );
 
-    await expect(await this.querier.count(ItemAdjustment)).toBe(0);
+    await expect(this.querier.count(ItemAdjustment)).resolves.toBe(0);
   }
 
   async shouldInsertOneAndCascadeManyToMany() {
@@ -382,37 +385,29 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldCount() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const count1 = await this.querier.count(User);
-    expect(count1).toBe(3);
-    const count2 = await this.querier.count(User, { $filter: { companyId: null } });
-    expect(count2).toBe(3);
-    const count3 = await this.querier.count(User, { $filter: { companyId: 1 } });
-    expect(count3).toBe(0);
-    const count4 = await this.querier.count(User, { $filter: { name: { $startsWith: 'Some Name ' } } });
-    expect(count4).toBe(3);
+    await expect(this.querier.count(User)).resolves.toBe(3);
+    await expect(this.querier.count(User, { $filter: { companyId: null } })).resolves.toBe(3);
+    await expect(this.querier.count(User, { $filter: { companyId: 1 } })).resolves.toBe(0);
   }
 
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const updatedRows1 = await this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } });
-    expect(updatedRows1).toBe(0);
-    const updatedRows2 = await this.querier.updateMany(User, { companyId: 1 }, { $filter: { companyId: null } });
-    expect(updatedRows2).toBe(3);
-    const updatedRows3 = await this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } });
-    expect(updatedRows3).toBe(3);
+    await expect(this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } })).resolves.toBe(0);
+    await expect(this.querier.updateMany(User, { companyId: 1 }, { $filter: { companyId: null } })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } })).resolves.toBe(3);
   }
 
   async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
-    await expect(async () => {
-      await this.querier.rollbackTransaction();
-    }).rejects.toThrow('not a pending transaction');
+    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
   }
 
   async shouldThrowIfUnknownComparisonOperator() {
-    await expect(() =>
+    await expect(
       this.querier.findMany(User, {
         $filter: { name: { $someInvalidOperator: 'some' } as any },
       })
@@ -423,19 +418,14 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const count1 = await this.querier.count(User);
-    expect(count1).toBe(3);
+    await expect(this.querier.count(User)).resolves.toBe(3);
+
     await this.querier.beginTransaction();
-    const count2 = await this.querier.count(User);
-    expect(count2).toBe(count1);
-    const deletedRows1 = await this.querier.deleteMany(User, { $filter: { companyId: null } });
-    expect(deletedRows1).toBe(count1);
-    const deletedRows2 = await this.querier.deleteMany(User, { $filter: { companyId: null } });
-    expect(deletedRows2).toBe(0);
-    const count3 = await this.querier.count(User);
-    expect(count3).toBe(0);
+    await expect(this.querier.count(User)).resolves.toBe(count1);
+    await expect(this.querier.deleteMany(User, { $filter: { companyId: null } })).resolves.toBe(count1);
+    await expect(this.querier.count(User)).resolves.toBe(0);
     await this.querier.rollbackTransaction();
-    const count4 = await this.querier.count(User);
-    expect(count4).toBe(count1);
+    await expect(this.querier.count(User)).resolves.toBe(count1);
   }
 
   async shouldThrowWhenBeginTransactionAfterBeginTransaction() {
@@ -497,17 +487,17 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldDeleteMany() {
-    await this.querier.beginTransaction();
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-    const deletedRows1 = await this.querier.deleteMany(User, { $filter: { companyId: 1 } });
-    expect(deletedRows1).toBe(0);
-    const deletedRows2 = await this.querier.deleteMany(User, { $filter: { companyId: null } });
-    expect(deletedRows2).toBe(3);
-    await this.querier.commitTransaction();
+    await expect(this.querier.deleteMany(User, { $filter: { companyId: 1 } })).resolves.toBe(0);
+    await expect(this.querier.deleteMany(User, { $filter: { companyId: null } })).resolves.toBe(3);
   }
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+  }
+
+  async cleanTables() {
+    await Promise.all(this.entities.map((entity) => this.querier.deleteMany(entity, {})));
   }
 
   abstract createTables(): Promise<void>;

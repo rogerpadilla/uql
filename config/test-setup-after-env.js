@@ -9,4 +9,4 @@ expect.extend({
   },
 });
 
-jest.setTimeout(3000);
+jest.setTimeout(5000);

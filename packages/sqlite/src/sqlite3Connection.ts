@@ -18,7 +18,7 @@ export class Sqlit3Connection implements QuerierPoolConnection {
   }
 
   async release() {
-    // no op
+    // no-op
   }
 
   async end() {

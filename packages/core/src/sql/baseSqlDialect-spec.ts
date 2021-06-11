@@ -629,11 +629,11 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFind$re() {
+  shouldFind$regex() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { name: { $re: '^some' } },
+        $filter: { name: { $regex: '^some' } },
       })
     ).toBe("SELECT `id` FROM `User` WHERE `name` REGEXP '^some'");
   }

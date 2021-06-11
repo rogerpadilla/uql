@@ -1,5 +1,7 @@
-export function cloneDeep<T>(payload: T): T {
-  return JSON.parse(JSON.stringify(payload));
+import { cloneDeep } from 'lodash';
+
+export function clone<T>(obj: T): T {
+  return cloneDeep(obj);
 }
 
 export function hasKeys<T>(obj: T): boolean {

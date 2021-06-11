@@ -45,13 +45,13 @@ export abstract class BaseSqlDialect {
     const payloads = Array.isArray(payload) ? payload : [payload];
     const onInserts = objectKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
 
-    for (const key of onInserts) {
-      for (const item of payloads) {
-        if (item[key] === undefined) {
-          item[key] = meta.properties[key].onInsert();
+    onInserts.forEach((key) => {
+      payloads.forEach((it) => {
+        if (it[key] === undefined) {
+          it[key] = meta.properties[key].onInsert();
         }
-      }
-    }
+      });
+    });
 
     const persistableKeys = filterPersistableProperties(entity, payloads[0]);
     const columns = persistableKeys.map((prop) => this.escapeId(meta.properties[prop].name));
@@ -70,11 +70,11 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
     const onUpdates = objectKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
-    for (const key of onUpdates) {
+    onUpdates.forEach((key) => {
       if (payload[key] === undefined) {
         payload[key] = meta.properties[key].onUpdate();
       }
-    }
+    });
 
     const persistableKeys = filterPersistableProperties(entity, payload);
     const persistableData = persistableKeys.reduce((acc, key) => {
@@ -282,7 +282,7 @@ export abstract class BaseSqlDialect {
         return `${fieldPath} IN (${this.escape(val)})`;
       case '$nin':
         return `${fieldPath} NOT IN (${this.escape(val)})`;
-      case '$re':
+      case '$regex':
         return `${fieldPath} REGEXP ${this.escape(val)}`;
       default:
         throw new TypeError(`unknown operator: ${operator}`);

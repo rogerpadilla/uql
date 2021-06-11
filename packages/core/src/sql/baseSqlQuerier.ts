@@ -1,7 +1,7 @@
 import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
-import { cloneDeep } from '../util';
+import { clone } from '../util';
 import { mapRows } from './sqlRowsMapper';
 import { BaseSqlDialect } from './baseSqlDialect';
 import { raw } from './raw';
@@ -17,7 +17,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     if (payload.length === 0) {
       return;
     }
-    payload = cloneDeep(payload);
+    payload = clone(payload);
     const query = this.dialect.insert(entity, payload);
     const { firstId } = await this.conn.run(query);
     const meta = getMeta(entity);
@@ -30,7 +30,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
-    payload = cloneDeep(payload);
+    payload = clone(payload);
     const query = this.dialect.update(entity, payload, qm);
     const { changes } = await this.conn.run(query);
     await this.updateRelations(entity, payload, qm);
@@ -51,7 +51,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return changes;
   }
 
-  async count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+  async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
     const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
     return Number(res[0].count);
   }

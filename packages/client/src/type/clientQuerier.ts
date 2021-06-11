@@ -33,7 +33,7 @@ export interface ClientQuerier extends UniversalQuerier {
 
   deleteOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  count<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  count<E>(entity: Type<E>, qm?: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   getRepository<E>(entity: Type<E>): ClientRepository<E>;
 }

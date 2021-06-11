@@ -17,7 +17,7 @@ module.exports = {
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
   testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
-  testPathIgnorePatterns: ['node_modules', 'dist', 'mongo'],
+  testPathIgnorePatterns: ['node_modules', 'dist'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],
   coverageDirectory: 'coverage',

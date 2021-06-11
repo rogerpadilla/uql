@@ -1,7 +1,8 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
-import { QuerierPool, ReferenceOptions, Type } from '../type';
+import { QuerierPool, Type } from '../type';
 import { objectKeys } from '../util';
+import { log } from '../options';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
@@ -54,7 +55,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
     sql += columns.join(',\n\t');
     sql += `\n);`;
 
-    // console.log('sql', sql);
+    log('sql', sql);
 
     return sql;
   }

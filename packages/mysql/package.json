@@ -16,11 +16,11 @@
     "mysql2": "^2.2.5"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.16"
+    "@uql/core": "^0.4.20"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.18",
-    "@types/node": "^15.12.0",
+    "@types/node": "^15.12.2",
     "@uql/core": "^0.4.21",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",

@@ -5,11 +5,11 @@ export type QueryFieldFilter<E> = {
   readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
 };
 
-export type QueryProject<E> =
-  | readonly Properties<E>[]
-  | {
-      readonly [P in Properties<E>]?: boolean | 0 | 1;
-    };
+export type QueryProject<E> = readonly Properties<E>[] | QueryProjectProperties<E>;
+
+export type QueryProjectProperties<E> = {
+  readonly [P in Properties<E>]?: boolean | 0 | 1;
+};
 
 export type QueryPopulate<E> = {
   readonly [P in Relations<E>]?: QueryPopulateValue<E[P]>;
@@ -36,7 +36,7 @@ export type QueryComparisonOperator<T> = {
   readonly $startsWith?: string;
   readonly $in?: T[];
   readonly $nin?: T[];
-  readonly $re?: string;
+  readonly $regex?: string;
 };
 
 export type QueryLogicalOperatorKey = '$and' | '$or';

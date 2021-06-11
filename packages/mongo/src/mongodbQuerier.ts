@@ -4,7 +4,7 @@ import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
-import { hasKeys, objectKeys } from '@uql/core/util';
+import { clone, hasKeys, objectKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier {
@@ -15,38 +15,79 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   async insertMany<E>(entity: Type<E>, payload: E[]) {
-    const persistables = payload.map((it) => {
-      const persistableProperties = filterPersistableProperties(entity, it);
-      return persistableProperties.reduce((acc, key) => {
-        acc[key] = it[key];
-        return acc;
-      }, {} as OptionalId<E>);
+    if (payload.length === 0) {
+      return;
+    }
+
+    payload = clone(payload);
+
+    const meta = getMeta(entity);
+    const payloads = Array.isArray(payload) ? payload : [payload];
+    const onInserts = objectKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
+
+    onInserts.forEach((key) => {
+      payloads.forEach((it) => {
+        if (it[key] === undefined) {
+          it[key] = meta.properties[key].onInsert();
+        }
+      });
     });
 
-    log(persistables);
+    const persistableProperties = filterPersistableProperties(entity, payloads[0]);
 
-    const res = await this.collection(entity).insertMany(persistables, { session: this.session });
+    const persistables = payloads.map((it) =>
+      persistableProperties.reduce((acc, key) => {
+        acc[key] = it[key];
+        return acc;
+      }, {} as OptionalId<E>)
+    );
 
-    return Object.values(res.insertedIds);
+    log('insertMany', entity.name, persistables);
+
+    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
+
+    const ids = Object.values(insertedIds);
+
+    payloads.forEach((it, index) => {
+      it[meta.id.property] = ids[index];
+    });
+
+    await this.insertRelations(entity, payloads);
+
+    return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
+  async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+    payload = clone(payload);
+
+    const meta = getMeta(entity);
+    const onUpdates = objectKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
+
+    onUpdates.forEach((key) => {
+      if (payload[key] === undefined) {
+        payload[key] = meta.properties[key].onUpdate();
+      }
+    });
+
     const persistableProperties = filterPersistableProperties(entity, payload);
+
     const persistable = persistableProperties.reduce((acc, key) => {
       acc[key] = payload[key];
       return acc;
     }, {} as OptionalId<E>);
 
-    const filter = this.dialect.buildFilter(entity, qm.$filter);
+    const filter = this.dialect.where(entity, qm.$filter);
     const update = { $set: persistable };
 
-    log(filter, update);
+    log('updateMany', entity.name, filter, update);
 
-    const res = await this.collection(entity).updateMany(filter, update, {
+    const { modifiedCount } = await this.collection(entity).updateMany(filter, update, {
       session: this.session,
     });
 
-    return res.modifiedCount;
+    await this.updateRelations(entity, payload, qm);
+
+    return modifiedCount;
   }
 
   async findMany<E>(entity: Type<E>, qm: Query<E>) {
@@ -55,8 +96,8 @@ export class MongodbQuerier extends BaseQuerier {
     let documents: E[];
 
     if (hasKeys(qm.$populate)) {
-      const pipeline = this.dialect.buildAggregationPipeline(entity, qm);
-      log(pipeline);
+      const pipeline = this.dialect.aggregationPipeline(entity, qm);
+      log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
       await this.populateToManyRelations(entity, documents, qm.$populate);
@@ -64,11 +105,11 @@ export class MongodbQuerier extends BaseQuerier {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
       if (qm.$filter) {
-        const filter = this.dialect.buildFilter(entity, qm.$filter);
+        const filter = this.dialect.where(entity, qm.$filter);
         cursor.filter(filter);
       }
       if (qm.$project) {
-        cursor.project(qm.$project);
+        cursor.project(this.dialect.project(qm.$project));
       }
       if (qm.$sort) {
         cursor.sort(qm.$sort);
@@ -80,9 +121,7 @@ export class MongodbQuerier extends BaseQuerier {
         cursor.limit(qm.$limit);
       }
 
-      if (isDebug()) {
-        cursor.explain((err, result) => log(err, result));
-      }
+      log('findMany', entity.name, qm);
 
       documents = await cursor.toArray();
       normalizeIds(documents, meta);
@@ -97,17 +136,17 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const filter = this.dialect.buildFilter(entity, qm.$filter);
-    log(filter);
+    const filter = this.dialect.where(entity, qm.$filter);
+    log('deleteMany', entity.name, filter);
     const res = await this.collection(entity).deleteMany(filter, {
       session: this.session,
     });
     return res.deletedCount;
   }
 
-  count<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const filter = this.dialect.buildFilter(entity, qm.$filter);
-    log(filter);
+  count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
+    const filter = this.dialect.where(entity, qm.$filter);
+    log('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
@@ -126,7 +165,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }
-    log('startTransaction');
+    log('beginTransaction');
     this.session = this.conn.startSession();
     this.session.startTransaction();
   }
@@ -144,7 +183,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
-    log('abortTransaction');
+    log('rollbackTransaction');
     await this.session.abortTransaction();
   }
 
@@ -158,9 +197,7 @@ export class MongodbQuerier extends BaseQuerier {
 
 export function normalizeIds<E>(docs: E | E[], meta: EntityMeta<E>) {
   if (Array.isArray(docs)) {
-    for (const doc of docs) {
-      normalizeId<E>(doc, meta);
-    }
+    docs.forEach((doc) => normalizeId(doc, meta));
   } else {
     normalizeId<E>(docs, meta);
   }
@@ -173,13 +210,13 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   const res = doc as OptionalId<E>;
   res[meta.id.property] = res._id;
   delete res._id;
-  for (const relProp of objectKeys(meta.relations)) {
+  objectKeys(meta.relations).forEach((relProp) => {
     const relOpts = meta.relations[relProp];
     const relData = res[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
       const relMeta = getMeta(relOpts.entity());
       normalizeIds(relData, relMeta);
     }
-  }
+  });
   return res as E;
 }

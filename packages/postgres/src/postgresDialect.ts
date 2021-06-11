@@ -41,7 +41,7 @@ export class PostgresDialect extends BaseSqlDialect {
     switch (operator) {
       case '$startsWith':
         return `${colPath} ILIKE ${this.escape(`${val}%`)}`;
-      case '$re':
+      case '$regex':
         return `${colPath} ~ ${this.escape(val)}`;
       default:
         return super.compareProperty(entity, prop, operator, val, opts);

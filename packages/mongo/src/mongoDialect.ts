@@ -1,31 +1,41 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type } from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectProperties } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, objectKeys } from '@uql/core/util';
 
 export class MongoDialect {
-  buildFilter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
     return objectKeys(filter).reduce((acc, prop) => {
-      const entry = filter[prop];
+      const value = filter[prop];
       if (prop === '$and' || prop === '$or') {
-        acc[prop] = entry.map((filterIt: QueryFilter<E>) => this.buildFilter(entity, filterIt));
+        acc[prop] = value.map((filterIt: QueryFilter<E>) => this.where(entity, filterIt));
       } else {
-        const { key, val } = obtainFinalKeyValue(prop, entry, meta);
+        const { key, val } = obtainFinalKeyValue(prop, value, meta);
         acc[key] = val;
       }
       return acc;
-    }, {});
+    }, {} as any);
   }
 
-  buildAggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {
+  project<E>(project: QueryProject<E>): QueryProjectProperties<E> {
+    if (Array.isArray(project)) {
+      return project.reduce((acc, it) => {
+        acc[it] = true;
+        return acc;
+      }, {} as QueryProjectProperties<E>);
+    }
+    return project as QueryProjectProperties<E>;
+  }
+
+  aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {
     const meta = getMeta(entity);
 
     const pipeline: object[] = [];
 
     if (hasKeys(qm.$filter)) {
-      pipeline.push({ $match: this.buildFilter(entity, qm.$filter) });
+      pipeline.push({ $match: this.where(entity, qm.$filter) });
     }
 
     for (const relKey in qm.$populate) {
@@ -44,17 +54,17 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            localField: relKey,
+            localField: relOpts.references[0].source,
             foreignField: '_id',
             as: relKey,
           },
         });
       } else {
-        const mappedByKey = relOpts.mappedBy as string;
+        const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [mappedByKey]: qm.$filter[meta.id.name] } }],
+            pipeline: [{ $match: { [prop]: qm.$filter[meta.id.property] } }],
             as: relKey,
           },
         });
@@ -67,7 +77,7 @@ export class MongoDialect {
   }
 }
 
-function obtainFinalKeyValue<E>(key: string, val: string | ObjectId, meta: EntityMeta<E>) {
+function obtainFinalKeyValue<E>(key: string, val: any, meta: EntityMeta<E>) {
   if (key === '_id' || key === meta.id.property) {
     const objectId = val instanceof ObjectId ? val : new ObjectId(val);
     return { key: '_id', val: objectId };
