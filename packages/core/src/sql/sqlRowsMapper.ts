@@ -1,4 +1,4 @@
-import { hasKeys, objectKeys } from '../util';
+import { hasKeys, getKeys } from '../util';
 
 export function mapRows<T>(rows: T[]): T[] {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -37,7 +37,7 @@ export function mapRows<T>(rows: T[]): T[] {
 }
 
 function obtainAttrsPaths<T>(row: T) {
-  return objectKeys(row).reduce((acc, col) => {
+  return getKeys(row).reduce((acc, col) => {
     if (col.includes('.')) {
       acc[col] = col.split('.');
     }

@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { hasKeys, lowerFirst, objectKeys, upperFirst } from '../../util';
+import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util';
 import {
   RelationOptions,
   PropertyOptions,
@@ -167,7 +167,7 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
 
 function fillThroughRelations<E>(entity: Type<E>): void {
   const meta = ensureMeta(entity);
-  meta.relations = objectKeys(meta.properties).reduce((relations, propKey) => {
+  meta.relations = getKeys(meta.properties).reduce((relations, propKey) => {
     const { reference } = meta.properties[propKey];
     if (reference) {
       const relEntityGetter = (reference as ReferenceOptions).entity;
@@ -197,14 +197,14 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
 }
 
 function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
-  return objectKeys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
+  return getKeys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
     acc[key] = key;
     return acc;
   }, {} as KeyMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): string {
-  return objectKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  return getKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {

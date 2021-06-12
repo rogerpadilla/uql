@@ -1,12 +1,12 @@
 import { BaseQuerierIt } from '../querier/baseQuerier-it';
 import { getMeta } from '../entity/decorator';
 import { QuerierPool, Type } from '../type';
-import { objectKeys } from '../util';
+import { getKeys } from '../util';
 import { log } from '../options';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
-  readonly primaryKeyType: string = 'BIGINT PRIMARY KEY AUTO_INCREMENT';
+  readonly primaryKeyType: string = 'INTEGER PRIMARY KEY';
 
   constructor(pool: QuerierPool) {
     super(pool);
@@ -38,14 +38,14 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
 
     let sql = `CREATE TABLE ${this.querier.dialect.escapeId(meta.name)} (\n\t`;
 
-    const defaultIdType = 'VARCHAR(36)';
+    const insertableIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
-    const columns = objectKeys(meta.properties).map((key) => {
+    const columns = getKeys(meta.properties).map((key) => {
       const prop = meta.properties[key];
       let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
       if (prop.isId) {
-        propSql += prop.onInsert ? `${defaultIdType} PRIMARY KEY` : this.primaryKeyType;
+        propSql += prop.onInsert ? `${insertableIdType} PRIMARY KEY` : this.primaryKeyType;
       } else {
         propSql += prop.type === Number ? 'BIGINT' : defaultType;
       }

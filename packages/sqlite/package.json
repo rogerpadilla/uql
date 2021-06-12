@@ -16,7 +16,7 @@
     "sqlite3": "^5.0.2"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.20"
+    "@uql/core": "^0.4.21"
   },
   "devDependencies": {
     "@types/node": "^15.12.2",

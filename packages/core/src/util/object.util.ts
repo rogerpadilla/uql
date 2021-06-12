@@ -1,13 +1,21 @@
-import { cloneDeep } from 'lodash';
-
 export function clone<T>(obj: T): T {
-  return cloneDeep(obj);
+  if (Array.isArray(obj)) {
+    return obj.map((it) => clone(it)) as unknown as T;
+  }
+  if (isPrimitive(obj)) {
+    return obj;
+  }
+  return { ...obj };
+}
+
+export function isPrimitive(val: any): boolean {
+  return val !== Object(val);
 }
 
 export function hasKeys<T>(obj: T): boolean {
-  return objectKeys(obj)?.length > 0;
+  return getKeys(obj)?.length > 0;
 }
 
-export function objectKeys<T>(obj: T): string[] {
+export function getKeys<T>(obj: T): string[] {
   return obj ? Object.keys(obj) : undefined;
 }

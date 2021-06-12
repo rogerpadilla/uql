@@ -1,17 +1,22 @@
-import * as mongodb from 'mongodb';
-import { QuerierPool, QuerierPoolOptions } from '@uql/core/type';
+import { connect, MongoClientOptions } from 'mongodb';
+import { QuerierPool } from '@uql/core/type';
 import { MongodbQuerier } from './mongodbQuerier';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
-  constructor(readonly opts: QuerierPoolOptions) {}
+  private querier: MongodbQuerier;
+
+  constructor(readonly uri: string, readonly options?: MongoClientOptions) {}
 
   async getQuerier() {
-    const uri = `mongodb://${this.opts.host}${this.opts.port ? `:${this.opts.port}` : ''}/${this.opts.database}`;
-    const conn = await mongodb.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-    return new MongodbQuerier(conn);
+    if (!this.querier || !this.querier.conn.isConnected()) {
+      const conn = await connect(this.uri, this.options);
+      this.querier = new MongodbQuerier(conn);
+    }
+    return this.querier;
   }
 
   async end() {
-    // noop
+    await this.querier.conn.close();
+    delete this.querier;
   }
 }

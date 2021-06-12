@@ -16,7 +16,7 @@ import {
   QueryPopulateValue,
 } from '../type';
 import { filterPersistableProperties } from '../entity/util';
-import { hasKeys, objectKeys } from '../util';
+import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
 export abstract class BaseSqlDialect {
@@ -43,7 +43,7 @@ export abstract class BaseSqlDialect {
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
-    const onInserts = objectKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
+    const onInserts = getKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
 
     onInserts.forEach((key) => {
       payloads.forEach((it) => {
@@ -68,7 +68,7 @@ export abstract class BaseSqlDialect {
 
   update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
-    const onUpdates = objectKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
+    const onUpdates = getKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
     onUpdates.forEach((key) => {
       if (payload[key] === undefined) {
@@ -96,14 +96,14 @@ export abstract class BaseSqlDialect {
 
     if (project) {
       if (!Array.isArray(project)) {
-        const projectKeys = objectKeys(project);
+        const projectKeys = getKeys(project);
         const hasPositives = projectKeys.some((key) => project[key]);
-        project = (hasPositives ? projectKeys : objectKeys(meta.properties)).filter(
+        project = (hasPositives ? projectKeys : getKeys(meta.properties)).filter(
           (it) => project[it] ?? project[it] === undefined
         ) as Properties<E>[];
       }
     } else {
-      project = objectKeys(meta.properties) as Properties<E>[];
+      project = getKeys(meta.properties) as Properties<E>[];
     }
 
     return project
@@ -198,7 +198,7 @@ export abstract class BaseSqlDialect {
     filter: QueryFilter<E>,
     opts: { prefix?: string; omitClause?: boolean; wrapWithParenthesis?: boolean } = {}
   ): string {
-    const filterKeys = objectKeys(filter);
+    const filterKeys = getKeys(filter);
     if (!filterKeys?.length) {
       return '';
     }
@@ -214,7 +214,7 @@ export abstract class BaseSqlDialect {
             .map((filterIt: QueryFilter<E>) =>
               this.where(entity, filterIt, {
                 prefix: opts.prefix,
-                wrapWithParenthesis: hasMultiItems && objectKeys(filterIt).length > 1,
+                wrapWithParenthesis: hasMultiItems && getKeys(filterIt).length > 1,
                 omitClause: true,
               })
             )
@@ -244,7 +244,7 @@ export abstract class BaseSqlDialect {
           : typeof value === 'object' && value !== null
           ? value
           : { $eq: value };
-        const operators = objectKeys(val) as (keyof QueryComparisonOperator<E>)[];
+        const operators = getKeys(val) as (keyof QueryComparisonOperator<E>)[];
         const operations = operators
           .map((operator) => this.compareProperty(entity, key, operator, val[operator], opts))
           .join(' AND ');
@@ -301,7 +301,7 @@ export abstract class BaseSqlDialect {
   }
 
   sort<E>(entity: Type<E>, sort: QuerySort<E>): string {
-    const keys = objectKeys(sort);
+    const keys = getKeys(sort);
     if (!keys?.length) {
       return '';
     }
@@ -348,7 +348,7 @@ export abstract class BaseSqlDialect {
   }
 
   objectToValues<E>(object: E): string {
-    return objectKeys(object)
+    return getKeys(object)
       .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
       .join(', ');
   }

@@ -3,6 +3,8 @@ import { BaseSqlQuerierIt } from '@uql/core/sql/baseSqlQuerier-it';
 import { MySql2QuerierPool } from './mysql2QuerierPool';
 
 export class MySql2QuerierIt extends BaseSqlQuerierIt {
+  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+
   constructor() {
     super(
       new MySql2QuerierPool({

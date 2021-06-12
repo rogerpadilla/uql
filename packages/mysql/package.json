@@ -16,7 +16,7 @@
     "mysql2": "^2.2.5"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.20"
+    "@uql/core": "^0.4.21"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.18",

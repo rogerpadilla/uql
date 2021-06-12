@@ -11,7 +11,7 @@ import {
   Type,
 } from '../type';
 import { getMeta } from '../entity/decorator';
-import { clone, objectKeys } from '../util';
+import { clone, getKeys } from '../util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -82,7 +82,7 @@ export abstract class BaseQuerier implements Querier {
       if (relOpts.cardinality === 'mm') {
         const throughEntity = relOpts.through();
         const throughMeta = getMeta(throughEntity);
-        const targetRelKey = objectKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
+        const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
         const throughFounds = await this.findMany(throughEntity, {
           $project: [sourceProp],
           $filter: {
@@ -180,7 +180,7 @@ export abstract class BaseQuerier implements Querier {
 
     payload.forEach((it) => {
       if (it[meta.id.property]) {
-        if (objectKeys(it).length === 1) {
+        if (getKeys(it).length === 1) {
           links.push(it[meta.id.property]);
         } else {
           updates.push(it);
@@ -255,7 +255,7 @@ export abstract class BaseQuerier implements Querier {
 }
 
 function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E) {
-  return objectKeys(payload).filter((key) => {
+  return getKeys(payload).filter((key) => {
     const relOpts = meta.relations[key];
     return relOpts && relOpts.cardinality !== 'm1';
   });

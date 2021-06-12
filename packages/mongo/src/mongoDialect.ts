@@ -1,22 +1,22 @@
 import { FilterQuery, ObjectId } from 'mongodb';
 import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectProperties } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
-import { hasKeys, objectKeys } from '@uql/core/util';
+import { hasKeys, getKeys } from '@uql/core/util';
 
 export class MongoDialect {
   where<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
-    return objectKeys(filter).reduce((acc, prop) => {
+    return getKeys(filter).reduce((acc, prop) => {
       const value = filter[prop];
       if (prop === '$and' || prop === '$or') {
         acc[prop] = value.map((filterIt: QueryFilter<E>) => this.where(entity, filterIt));
       } else {
         const { key, val } = obtainFinalKeyValue(prop, value, meta);
-        acc[key] = val;
+        acc[key as keyof FilterQuery<E>] = val;
       }
       return acc;
-    }, {} as any);
+    }, {} as FilterQuery<E>);
   }
 
   project<E>(project: QueryProject<E>): QueryProjectProperties<E> {

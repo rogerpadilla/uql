@@ -3,8 +3,6 @@ import { BaseSqlQuerierIt } from '@uql/core/sql/baseSqlQuerier-it';
 import { Sqlite3QuerierPool } from './sqlite3QuerierPool';
 
 export class Sqlite3QuerierIt extends BaseSqlQuerierIt {
-  readonly primaryKeyType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
-
   constructor() {
     super(new Sqlite3QuerierPool({ filename: ':memory:' }));
   }

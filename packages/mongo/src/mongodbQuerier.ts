@@ -1,10 +1,10 @@
-import { MongoClient, ClientSession, OptionalId, ObjectId, UpdateQuery } from 'mongodb';
-import { isDebug, log } from '@uql/core';
+import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
+import { log } from '@uql/core';
 import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { filterPersistableProperties } from '@uql/core/entity/util';
-import { clone, hasKeys, objectKeys } from '@uql/core/util';
+import { clone, hasKeys, getKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier {
@@ -23,7 +23,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
-    const onInserts = objectKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
+    const onInserts = getKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
 
     onInserts.forEach((key) => {
       payloads.forEach((it) => {
@@ -61,7 +61,7 @@ export class MongodbQuerier extends BaseQuerier {
     payload = clone(payload);
 
     const meta = getMeta(entity);
-    const onUpdates = objectKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
+    const onUpdates = getKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
 
     onUpdates.forEach((key) => {
       if (payload[key] === undefined) {
@@ -210,7 +210,7 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   const res = doc as OptionalId<E>;
   res[meta.id.property] = res._id;
   delete res._id;
-  objectKeys(meta.relations).forEach((relProp) => {
+  getKeys(meta.relations).forEach((relProp) => {
     const relOpts = meta.relations[relProp];
     const relData = res[relProp];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {

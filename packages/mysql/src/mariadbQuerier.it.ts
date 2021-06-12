@@ -3,6 +3,8 @@ import { BaseSqlQuerierIt } from '@uql/core/sql/baseSqlQuerier-it';
 import { MariadbQuerierPool } from './mariadbQuerierPool';
 
 export class MariadbQuerierIt extends BaseSqlQuerierIt {
+  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+
   constructor() {
     super(
       new MariadbQuerierPool({

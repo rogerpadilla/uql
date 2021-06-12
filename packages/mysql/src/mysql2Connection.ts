@@ -8,8 +8,8 @@ export class MySql2Connection implements QuerierPoolConnection {
 
   async all<T>(query: string) {
     log(query);
-    const res = await this.conn.query(query);
-    return res[0] as T[];
+    const [res] = await this.conn.query(query);
+    return res as T[];
   }
 
   async run(query: string) {

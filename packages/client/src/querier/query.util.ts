@@ -1,4 +1,4 @@
-import { objectKeys } from '@uql/core/util';
+import { getKeys } from '@uql/core/util';
 
 export function stringifyQueryParameter(key: string, value?: any, noPrefix?: boolean): string {
   const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
@@ -9,7 +9,7 @@ export function stringifyQuery(query: object): string {
   if (!query) {
     return '';
   }
-  const keys = objectKeys(query);
+  const keys = getKeys(query);
   if (keys.length === 0) {
     return '';
   }
