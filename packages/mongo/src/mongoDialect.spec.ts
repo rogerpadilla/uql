@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { Item, Spec, TaxCategory, User, createSpec } from '@uql/core/test';
+import { Item, Spec, TaxCategory, User, createSpec, InventoryAdjustment } from '@uql/core/test';
 import { MongoDialect } from './mongoDialect';
 
 class MongoDialectSpec implements Spec {
@@ -10,18 +10,18 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldBuildFilter() {
-    const output = this.dialect.where(Item, {});
+    const output = this.dialect.filter(Item, {});
 
     expect(output).toEqual({});
 
-    expect(this.dialect.where(Item, { code: '123' })).toEqual({ code: '123' });
+    expect(this.dialect.filter(Item, { code: '123' })).toEqual({ code: '123' });
 
-    expect(this.dialect.where(Item, { $and: [{ code: '123', name: 'abc' }] })).toEqual({
+    expect(this.dialect.filter(Item, { $and: [{ code: '123', name: 'abc' }] })).toEqual({
       $and: [{ code: '123', name: 'abc' }],
     });
 
     expect(
-      this.dialect.where(TaxCategory, {
+      this.dialect.filter(TaxCategory, {
         creatorId: 1,
         $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
         pk: '507f191e810c19729de860ea',
@@ -32,19 +32,19 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
+    expect(this.dialect.filter(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    expect(this.dialect.filter(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(TaxCategory, { pk: '507f191e810c19729de860ea' })).toEqual({
+    expect(this.dialect.filter(TaxCategory, { pk: '507f191e810c19729de860ea' })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    expect(this.dialect.filter(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
   }
@@ -61,6 +61,33 @@ class MongoDialectSpec implements Spec {
         $populate: { creatorId: {} } as any,
       })
     ).toThrow("'User.creatorId' is not annotated as a relation");
+
+    expect(
+      this.dialect.aggregationPipeline(TaxCategory, {
+        $filter: { pk: '507f1f77bcf86cd799439011' },
+        $populate: { creator: {} },
+      })
+    ).toEqual([
+      {
+        $match: {
+          _id: new ObjectId('507f1f77bcf86cd799439011'),
+        },
+      },
+      {
+        $lookup: {
+          from: 'User',
+          localField: 'creatorId',
+          foreignField: '_id',
+          as: 'creator',
+        },
+      },
+      {
+        $unwind: {
+          path: '$creator',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ]);
 
     expect(
       this.dialect.aggregationPipeline(Item, {

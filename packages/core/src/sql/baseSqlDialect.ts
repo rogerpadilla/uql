@@ -28,11 +28,12 @@ export abstract class BaseSqlDialect {
 
   criteria<E>(entity: Type<E>, qm: Query<E>): string {
     const prefix = hasKeys(qm.$populate) ? getMeta(entity).name : undefined;
-    const filter = this.where<E>(entity, qm.$filter, { prefix });
+    const filter = this.filter<E>(entity, qm.$filter, { prefix });
     const group = this.group<E>(entity, qm.$group);
+    const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort);
     const pager = this.pager(qm);
-    return filter + group + sort + pager;
+    return filter + group + having + sort + pager;
   }
 
   find<E>(entity: Type<E>, qm: Query<E>): string {
@@ -86,11 +87,7 @@ export abstract class BaseSqlDialect {
     return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
 
-  project<E>(
-    entity: Type<E>,
-    project: QueryProject<E>,
-    opts: { prefix?: string; prependPrefixToAlias?: boolean }
-  ): string {
+  project<E>(entity: Type<E>, project: QueryProject<E>, opts: { prefix?: string; usePrefixInAlias?: boolean }): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
@@ -114,7 +111,7 @@ export abstract class BaseSqlDialect {
         const property = meta.properties[key as string];
         const name = property?.name ?? key;
         const field = `${prefix}${this.escapeId(name)}`;
-        if (opts.prependPrefixToAlias) {
+        if (opts.usePrefixInAlias) {
           return `${field} ${this.escapeId(opts.prefix + '.' + key, true)}`;
         }
         return name === key || !property ? field : `${field} ${this.escapeId(key)}`;
@@ -158,7 +155,7 @@ export abstract class BaseSqlDialect {
 
       const relColumns = this.project(relEntity, popVal.$project, {
         prefix: joinRelAlias,
-        prependPrefixToAlias: true,
+        usePrefixInAlias: true,
       });
 
       joinsColumns += ', ' + relColumns;
@@ -183,8 +180,8 @@ export abstract class BaseSqlDialect {
         .join(' AND ');
 
       if (hasKeys(popVal.$filter)) {
-        const where = this.where(relEntity, popVal.$filter, { prefix: relKey, omitClause: true });
-        joinsTables += ` AND ${where}`;
+        const filter = this.filter(relEntity, popVal.$filter, { prefix: relKey, clause: false });
+        joinsTables += ` AND ${filter}`;
       }
 
       joinsTables += subJoinsTables;
@@ -193,11 +190,12 @@ export abstract class BaseSqlDialect {
     return { joinsColumns, joinsTables };
   }
 
-  where<E>(
+  filter<E>(
     entity: Type<E>,
     filter: QueryFilter<E>,
-    opts: { prefix?: string; omitClause?: boolean; wrapWithParenthesis?: boolean } = {}
+    opts: { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } = {}
   ): string {
+    const { prefix, wrapWithParenthesis, clause = 'WHERE' } = opts;
     const filterKeys = getKeys(filter);
     if (!filterKeys?.length) {
       return '';
@@ -209,27 +207,27 @@ export abstract class BaseSqlDialect {
       .map((key) => {
         const entry = filter[key];
         if (key === '$and' || key === '$or') {
-          const hasMultiItems = entry.length > 1;
+          const hasManyEntries = entry.length > 1;
           const logicalComparison = entry
             .map((filterIt: QueryFilter<E>) =>
-              this.where(entity, filterIt, {
-                prefix: opts.prefix,
-                wrapWithParenthesis: hasMultiItems && getKeys(filterIt).length > 1,
-                omitClause: true,
+              this.filter(entity, filterIt, {
+                prefix,
+                wrapWithParenthesis: hasManyEntries && getKeys(filterIt).length > 1,
+                clause: false,
               })
             )
             .join(key === '$or' ? ' OR ' : ' AND ');
-          return hasMultiKeys && hasMultiItems ? `(${logicalComparison})` : logicalComparison;
+          return hasManyEntries && hasMultiKeys ? `(${logicalComparison})` : logicalComparison;
         }
-        return this.compare(entity, key, entry, { prefix: opts.prefix });
+        return this.compare(entity, key, entry, { prefix });
       })
       .join(` AND `);
 
-    if (opts.wrapWithParenthesis) {
+    if (wrapWithParenthesis) {
       sql = `(${sql})`;
     }
 
-    return opts.omitClause ? sql : ` WHERE ${sql}`;
+    return clause ? ` ${clause} ${sql}` : sql;
   }
 
   compare<E>(entity: Type<E>, key: string, value: Scalar | object | Scalar[], opts: { prefix?: string } = {}): string {
@@ -246,13 +244,13 @@ export abstract class BaseSqlDialect {
           : { $eq: value };
         const operators = getKeys(val) as (keyof QueryComparisonOperator<E>)[];
         const operations = operators
-          .map((operator) => this.compareProperty(entity, key, operator, val[operator], opts))
+          .map((operator) => this.compareOperator(entity, key, operator, val[operator], opts))
           .join(' AND ');
         return operators.length > 1 ? `(${operations})` : operations;
     }
   }
 
-  compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
+  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
     entity: Type<E>,
     prop: string,
     operator: K,

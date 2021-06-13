@@ -27,7 +27,7 @@ export class PostgresDialect extends BaseSqlDialect {
     }
   }
 
-  compareProperty<E, K extends keyof QueryComparisonOperator<E>>(
+  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
     entity: Type<E>,
     prop: string,
     operator: K,
@@ -44,7 +44,7 @@ export class PostgresDialect extends BaseSqlDialect {
       case '$regex':
         return `${colPath} ~ ${this.escape(val)}`;
       default:
-        return super.compareProperty(entity, prop, operator, val, opts);
+        return super.compareOperator(entity, prop, operator, val, opts);
     }
   }
 }

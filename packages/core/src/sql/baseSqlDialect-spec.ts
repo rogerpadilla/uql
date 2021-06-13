@@ -1,6 +1,6 @@
 import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entityMock';
 
-import { QueryProject, QuerySort } from '../type';
+import { QueryFilter, QuerySort } from '../type';
 import { Spec } from '../test/spec.util';
 import { BaseSqlDialect } from './baseSqlDialect';
 import { raw } from './raw';
@@ -184,7 +184,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
   }
 
-  shouldFindLogicalOperators() {
+  shouldFind$orAnd$and() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
@@ -253,7 +253,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindSingleFilter() {
+  shouldFindSingle$filter() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
@@ -298,7 +298,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `User` WHERE `name` = 'some' AND `companyId` <> 5 LIMIT 20");
   }
 
-  shouldFindIsNotNull() {
+  shouldFindIsNull() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
@@ -344,7 +344,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `User` WHERE `name` = 'some' AND `companyId` NOT IN (1, 2, 3) LIMIT 10");
   }
 
-  shouldFindPopulate() {
+  shouldFind$populate() {
     expect(
       this.dialect.find(User, {
         $project: { id: true, name: true },
@@ -358,7 +358,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindPopulateOneToOne() {
+  shouldFind$populateOneToOne() {
     expect(this.dialect.find(User, { $populate: { profile: {} } })).toBe(
       'SELECT `User`.`id`, `User`.`companyId`, `User`.`creatorId`, `User`.`createdAt`, `User`.`updatedAt`' +
         ', `User`.`name`, `User`.`email`, `User`.`password`, `profile`.`companyId` `profile.companyId`' +
@@ -369,7 +369,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindPopulateWithProject() {
+  shouldFind$populateWith$project() {
     expect(
       this.dialect.find(Item, {
         $project: ['id', 'name', 'code'],
@@ -397,7 +397,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindPopulateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
+  shouldFind$populateWithAllFieldsAndSpecificFieldsAndFilterByPopulated() {
     expect(
       this.dialect.find(Item, {
         $project: ['id', 'name'],
@@ -419,7 +419,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindDeepPopulateWithProjectedFields() {
+  shouldFindDeep$populateWith$project() {
     expect(
       this.dialect.find(Item, {
         $project: ['id', 'name', 'code'],
@@ -490,23 +490,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindPopulatePropertiesWithNotFixedType() {
-    expect(
-      this.dialect.find(Item, {
-        $project: ['id', 'name'],
-        $populate: { creator: { $project: ['id', 'name'] }, company: { $project: ['id', 'name'] } },
-      })
-    ).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`' +
-        ', `creator`.`id` `creator.id`, `creator`.`name` `creator.name`' +
-        ', `company`.`id` `company.id`, `company`.`name` `company.name`' +
-        ' FROM `Item`' +
-        ' LEFT JOIN `User` `creator` ON `creator`.`id` = `Item`.`creatorId`' +
-        ' LEFT JOIN `Company` `company` ON `company`.`id` = `Item`.`companyId`'
-    );
-  }
-
-  shouldFindGroup() {
+  shouldFind$group() {
     expect(
       this.dialect.find(User, {
         $group: ['companyId'],
@@ -514,6 +498,18 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe(
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email`, `password` FROM `User` GROUP BY `companyId`'
     );
+
+    expect(
+      this.dialect.find(User, {
+        $project: ['companyId', raw('COUNT(*)', 'count')],
+        $group: ['companyId'],
+        $having: {
+          count: {
+            $gte: 10,
+          },
+        } as QueryFilter<User>,
+      })
+    ).toBe('SELECT `companyId`, COUNT(*) `count` FROM `User` GROUP BY `companyId` HAVING `count` >= 10');
 
     expect(
       this.dialect.find(User, {
@@ -529,7 +525,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFindLimit() {
+  shouldFind$limit() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
@@ -557,13 +553,21 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(User, {
         $project: { id: 1, name: 1, creatorId: 1 },
-        $filter: { creatorId: 123 },
         $limit: 25,
       })
-    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` WHERE `creatorId` = 123 LIMIT 25');
+    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` LIMIT 25');
   }
 
-  shouldFindProject() {
+  shouldFind$skip() {
+    expect(
+      this.dialect.find(User, {
+        $project: { id: 1, name: 1, creatorId: 1 },
+        $skip: 30,
+      })
+    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` OFFSET 30');
+  }
+
+  shouldFind$project() {
     expect(
       this.dialect.find(User, {
         $project: { password: false },
@@ -590,10 +594,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.dialect.find(User, {
-        $project: [
-          raw('*'),
-          raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness'),
-        ] as QueryProject<User>,
+        $project: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
         $filter: { name: 'something' },
       })
     ).toBe(

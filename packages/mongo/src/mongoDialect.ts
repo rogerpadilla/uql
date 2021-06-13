@@ -4,13 +4,13 @@ import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 
 export class MongoDialect {
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
+  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
     return getKeys(filter).reduce((acc, prop) => {
       const value = filter[prop];
       if (prop === '$and' || prop === '$or') {
-        acc[prop] = value.map((filterIt: QueryFilter<E>) => this.where(entity, filterIt));
+        acc[prop] = value.map((filterIt: QueryFilter<E>) => this.filter(entity, filterIt));
       } else {
         const { key, val } = obtainFinalKeyValue(prop, value, meta);
         acc[key as keyof FilterQuery<E>] = val;
@@ -35,7 +35,7 @@ export class MongoDialect {
     const pipeline: object[] = [];
 
     if (hasKeys(qm.$filter)) {
-      pipeline.push({ $match: this.where(entity, qm.$filter) });
+      pipeline.push({ $match: this.filter(entity, qm.$filter) });
     }
 
     for (const relKey in qm.$populate) {
