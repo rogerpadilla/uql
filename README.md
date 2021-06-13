@@ -483,6 +483,7 @@ yarn add @uql/express
 ```ts
 import * as express from 'express';
 import { hasKeys } from '@uql/core/util';
+import { getMeta } from '@uql/core/entity/decorator';
 import { querierMiddleware } from '@uql/express';
 
 const app = express();
@@ -500,7 +501,7 @@ app
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
       extendQuery<E>(type: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$limit = obtainValidLimit(qm.$limit);
-        const prefix = hasKeys(qm.$populate) ? type.name + '.' : '';
+        const prefix = hasKeys(qm.$populate) ? getMeta(type).name + '.' : '';
         qm.$filter = {
           ...qm.$filter,
           // ensure the user can only see the data belonging to his own company
@@ -537,8 +538,8 @@ import { getRepository } from '@uql/client';
 const userRepository = getRepository(User);
 
 const users = await userRepository.findMany({
-  $filter: { name: { $startsWith: 'lorem' } },
   $populate: { profile: { $project: ['picture'] } },
+  $filter: { name: { $startsWith: 'lorem' } },
   $sort: { createdAt: -1 },
   $limit: 100,
 });

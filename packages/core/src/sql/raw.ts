@@ -1,4 +1,6 @@
-export class Raw {
+import { QueryRaw } from '../type';
+
+export class Raw implements QueryRaw {
   constructor(readonly value: string, readonly alias?: string) {}
 }
 

@@ -1,4 +1,4 @@
-import { Query, QueryStringified } from '@uql/core/type';
+import { Query, QueryComparisonField, QueryFilter, QueryStringified } from '@uql/core/type';
 import { Item } from '@uql/core/test';
 import { parseQuery } from './query.util';
 
@@ -15,6 +15,7 @@ it('parseQuery stringified', () => {
     $populate: '{ "measureUnit": {"$project":{"id":1, "name":1}}, "tax": {"$project":{"id":1, "name":1}} }',
     $filter: '{ "name": "lorem", "companyId": 40 }',
     $group: '["companyId"]',
+    $having: '{ "count": {"$gte": 10} }',
     $sort: '{ "name": -1, "companyId": 1 }',
     $skip: '200',
     $limit: '100',
@@ -27,6 +28,7 @@ it('parseQuery stringified', () => {
     },
     $filter: { name: 'lorem', companyId: 40 },
     $group: ['companyId'],
+    $having: { count: { $gte: 10 } } as QueryFilter<Item>,
     $sort: { name: -1, companyId: 1 },
     $skip: 200,
     $limit: 100,

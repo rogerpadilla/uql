@@ -146,7 +146,6 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldInsertOneAndCascadeOneToOne() {
-    // setDebug(true);
     const payload: User = {
       name: 'Some Name D',
       profile: { picture: 'abc', createdAt: 123 },

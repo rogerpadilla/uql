@@ -15,6 +15,9 @@ export function parseQuery<E>(qmsSrc?: QueryStringified): Query<E> {
     if (qmsSrc.$group) {
       qm.$group = JSON.parse(qmsSrc.$group);
     }
+    if (qmsSrc.$having) {
+      qm.$having = JSON.parse(qmsSrc.$having);
+    }
     if (qmsSrc.$sort) {
       qm.$sort = JSON.parse(qmsSrc.$sort);
     }

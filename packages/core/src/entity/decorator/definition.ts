@@ -130,7 +130,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
         { source: target, target: relMeta.id.name },
       ];
     } else {
-      const idSuffix = upperFirst(meta.id.property);
+      const idSuffix = 'Id';
       relOpts.references = [{ source: relKey + idSuffix, target: relMeta.id.property }];
     }
 

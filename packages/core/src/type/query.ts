@@ -1,11 +1,12 @@
 import { Properties, Relations } from './entity';
 import { Unpacked } from './utility';
 
-export type QueryFieldFilter<E> = {
-  readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
+export type QueryRaw = {
+  readonly value: string;
+  readonly alias?: string;
 };
 
-export type QueryProject<E> = readonly Properties<E>[] | QueryProjectProperties<E>;
+export type QueryProject<E> = readonly (Properties<E> | QueryRaw)[] | QueryProjectProperties<E>;
 
 export type QueryProjectProperties<E> = {
   readonly [P in Properties<E>]?: boolean | 0 | 1;
@@ -18,11 +19,11 @@ export type QueryPopulate<E> = {
 export type QueryPopulateValue<E> = Query<Unpacked<E>> & { $required?: boolean };
 
 export type QueryTextSearchOptions<E> = {
-  readonly $fields?: Properties<E>[];
   readonly $value: string;
+  readonly $fields?: Properties<E>[];
 };
 
-export type QueryTextSearch<E> = {
+export type QueryComparison<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
@@ -39,13 +40,17 @@ export type QueryComparisonOperator<T> = {
   readonly $regex?: string;
 };
 
+export type QueryComparisonField<E> = {
+  readonly [P in Properties<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
+};
+
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  [p in QueryLogicalOperatorKey]?: (QueryFieldFilter<E> | QueryTextSearch<E>)[];
+  [p in QueryLogicalOperatorKey]?: (QueryComparisonField<E> | QueryComparison<E>)[];
 };
 
-export type QueryFilter<E> = QueryLogicalOperator<E> | QueryTextSearch<E> | QueryFieldFilter<E>;
+export type QueryFilter<E> = QueryLogicalOperator<E> | QueryComparison<E> | QueryComparisonField<E>;
 
 export type QuerySort<E> = {
   readonly [P in Properties<E>]?: -1 | 1;
@@ -58,13 +63,14 @@ export type QueryPager = {
 
 export type QueryCriteria<E> = {
   $filter?: QueryFilter<E>;
+  $group?: Properties<E>[];
+  $having?: QueryFilter<E>;
   $sort?: QuerySort<E>;
 } & QueryPager;
 
 export type Query<E> = {
   $project?: QueryProject<E>;
   $populate?: QueryPopulate<E>;
-  $group?: Properties<E>[];
 } & QueryCriteria<E>;
 
 export type QueryOne<E> = Query<E> & { $limit?: 1 };

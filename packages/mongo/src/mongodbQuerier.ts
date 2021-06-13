@@ -76,7 +76,7 @@ export class MongodbQuerier extends BaseQuerier {
       return acc;
     }, {} as OptionalId<E>);
 
-    const filter = this.dialect.where(entity, qm.$filter);
+    const filter = this.dialect.filter(entity, qm.$filter);
     const update = { $set: persistable };
 
     log('updateMany', entity.name, filter, update);
@@ -105,7 +105,7 @@ export class MongodbQuerier extends BaseQuerier {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
       if (qm.$filter) {
-        const filter = this.dialect.where(entity, qm.$filter);
+        const filter = this.dialect.filter(entity, qm.$filter);
         cursor.filter(filter);
       }
       if (qm.$project) {
@@ -136,7 +136,7 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    const filter = this.dialect.where(entity, qm.$filter);
+    const filter = this.dialect.filter(entity, qm.$filter);
     log('deleteMany', entity.name, filter);
     const res = await this.collection(entity).deleteMany(filter, {
       session: this.session,
@@ -145,7 +145,7 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
-    const filter = this.dialect.where(entity, qm.$filter);
+    const filter = this.dialect.filter(entity, qm.$filter);
     log('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
       session: this.session,
