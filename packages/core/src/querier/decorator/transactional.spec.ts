@@ -206,9 +206,8 @@ describe('transactional', () => {
     }
 
     const serviceA = new ServiceA();
-    const promise = serviceA.save();
 
-    await expect(promise).rejects.toThrow('Some Error');
+    await expect(serviceA.save()).rejects.toThrow('Some Error');
 
     const defaultQuerier = await getQuerier();
 
@@ -234,9 +233,8 @@ describe('transactional', () => {
     }
 
     const serviceA = new ServiceA();
-    const promise = serviceA.save();
 
-    await expect(promise).rejects.toThrow('Some Error');
+    await expect(serviceA.save()).rejects.toThrow('Some Error');
 
     const defaultQuerier = await getQuerier();
 
@@ -253,13 +251,13 @@ describe('transactional', () => {
     expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
-  it('missing injectQuerier', async () => {
-    await expect(async () => {
+  it('missing injectQuerier', () => {
+    expect(() => {
       class ServiceA {
         @Transactional()
         async find() {}
       }
-    }).rejects.toThrow("missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in 'ServiceA.find'");
+    }).toThrow("missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in 'ServiceA.find'");
   });
 });
 

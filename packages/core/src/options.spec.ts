@@ -57,12 +57,8 @@ describe('options', () => {
     expect(isDebug()).toBe(false);
   });
 
-  it('getQuerierPool unset', async () => {
-    await expect(async () => getQuerierPool()).rejects.toThrow(`'querierPool' has to be passed via 'setOptions'`);
-  });
-
-  it('getQuerier unset', async () => {
-    await expect(async () => getQuerier()).rejects.toThrow(`'querierPool' has to be passed via 'setOptions'`);
+  it('getQuerierPool unset', () => {
+    expect(() => getQuerierPool()).toThrow(`'querierPool' has to be passed via 'setOptions'`);
   });
 
   it('getQuerier', async () => {

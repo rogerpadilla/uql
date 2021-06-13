@@ -485,6 +485,14 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  async shouldFindPopulateNotAnnotatedField() {
+    await expect(
+      this.querier.findMany(User, {
+        $populate: { companyId: {} } as any,
+      })
+    ).rejects.toThrow("'User.companyId' is not annotated as a relation");
+  }
+
   async shouldDeleteMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
     await expect(this.querier.deleteMany(User, { $filter: { companyId: 1 } })).resolves.toBe(0);

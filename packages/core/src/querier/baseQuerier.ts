@@ -203,13 +203,13 @@ export abstract class BaseQuerier implements Querier {
   protected async saveRelation<E>(
     id: any,
     relPayload: E | E[],
-    { entity, mappedBy, cardinality, references, through }: RelationOptions<E>,
+    { entity, cardinality, references, through }: RelationOptions<E>,
     isUpdate?: boolean
   ): Promise<void> {
     const relEntity = entity();
 
     if (cardinality === '11') {
-      const relProperty = mappedBy ? references[0].target : references[0].source;
+      const relProperty = references[0].target;
       if (relPayload === null) {
         await this.deleteMany(relEntity, { $filter: { [relProperty]: id } });
         return;
