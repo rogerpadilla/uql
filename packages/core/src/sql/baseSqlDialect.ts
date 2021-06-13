@@ -14,9 +14,8 @@ import {
   Type,
   QueryCriteria,
   QueryPopulateValue,
-  EntityMeta,
 } from '../type';
-import { filterPersistableKeys } from '../entity/util';
+import { buildPersistable, fillOnCallbacks, filterPersistableKeys } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
@@ -44,43 +43,25 @@ export abstract class BaseSqlDialect {
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
-    const payloads = Array.isArray(payload) ? payload : [payload];
-    const onInserts = getKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
-
-    onInserts.forEach((key) => {
-      payloads.forEach((it) => {
-        if (it[key] === undefined) {
-          it[key] = meta.properties[key].onInsert();
-        }
-      });
-    });
-
-    const persistableKeys = filterPersistableKeys(meta, payloads[0]);
-    const columns = persistableKeys.map((prop) => this.escapeId(meta.properties[prop].name));
-    const values = payloads.map((it) => persistableKeys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
-
+    const payloads = fillOnCallbacks(meta, payload, 'onInsert');
+    const keys = filterPersistableKeys(meta, payloads[0]);
+    const columns = keys.map((prop) => this.escapeId(meta.properties[prop].name));
+    const values = payloads.map((it) => keys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
+  }
+
+  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
+    const meta = getMeta(entity);
+    payload = buildPersistable(meta, payload, 'onUpdate');
+    const values = this.objectToValues(payload);
+    const criteria = this.criteria(entity, qm);
+    return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
     const criteria = this.criteria(entity, qm);
     return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
-  }
-
-  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
-    const meta = getMeta(entity);
-    const onUpdates = getKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
-
-    onUpdates.forEach((key) => {
-      if (payload[key] === undefined) {
-        payload[key] = meta.properties[key].onUpdate();
-      }
-    });
-
-    const values = this.objectToValues(meta, payload);
-    const criteria = this.criteria(entity, qm);
-    return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
 
   project<E>(entity: Type<E>, project: QueryProject<E>, opts: { prefix?: string; usePrefixInAlias?: boolean }): string {
@@ -104,7 +85,7 @@ export abstract class BaseSqlDialect {
         if (key instanceof Raw) {
           return key.alias ? `${key.value} ${this.escapeId(key.alias, true)}` : key.value;
         }
-        const property = meta.properties[key as string];
+        const property = meta.properties[key];
         const name = property?.name ?? key;
         const field = `${prefix}${this.escapeId(name)}`;
         if (opts.usePrefixInAlias) {
@@ -302,7 +283,7 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
     const order = keys
       .map((prop) => {
-        const field = meta.properties[prop as string]?.name ?? prop;
+        const field = meta.properties[prop]?.name ?? prop;
         const direction = sort[prop] === -1 ? ' DESC' : '';
         return this.escapeId(field) + direction;
       })
@@ -322,10 +303,8 @@ export abstract class BaseSqlDialect {
   }
 
   escapeId(val: string, forbidQualified?: boolean): string {
-    const str = val as string;
-
     if (!forbidQualified && val.includes('.')) {
-      return str
+      return val
         .split('.')
         .map((it) => this.escapeId(it))
         .join('.');
@@ -333,7 +312,7 @@ export abstract class BaseSqlDialect {
 
     return (
       // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
-      this.escapeIdChar + str.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar
+      this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar
     );
   }
 
@@ -341,8 +320,9 @@ export abstract class BaseSqlDialect {
     return escape(val);
   }
 
-  objectToValues<E>(meta: EntityMeta<E>, payload: E): string {
-    const persistableKeys = filterPersistableKeys(meta, payload);
-    return persistableKeys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
+  objectToValues<E>(payload: E): string {
+    return getKeys(payload)
+      .map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`)
+      .join(', ');
   }
 }

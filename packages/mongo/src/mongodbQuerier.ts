@@ -3,7 +3,7 @@ import { log } from '@uql/core';
 import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { buildPersistablePayload, buildPersistablePayloads } from '@uql/core/entity/util';
+import { buildPersistable, buildPersistables } from '@uql/core/entity/util';
 import { clone, hasKeys, getKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
@@ -23,21 +23,11 @@ export class MongodbQuerier extends BaseQuerier {
 
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
-    const onInserts = getKeys(meta.properties).filter((col) => meta.properties[col].onInsert);
+    const persistables = buildPersistables(meta, payloads, 'onInsert');
 
-    onInserts.forEach((key) => {
-      payloads.forEach((it) => {
-        if (it[key] === undefined) {
-          it[key] = meta.properties[key].onInsert();
-        }
-      });
-    });
+    log('insertMany', entity.name, persistables);
 
-    const persistablePayloads = buildPersistablePayloads(meta, payloads);
-
-    log('insertMany', entity.name, persistablePayloads);
-
-    const { insertedIds } = await this.collection(entity).insertMany(persistablePayloads, { session: this.session });
+    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
 
     const ids = Object.values(insertedIds);
 
@@ -52,19 +42,10 @@ export class MongodbQuerier extends BaseQuerier {
 
   async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
     payload = clone(payload);
-
     const meta = getMeta(entity);
-    const onUpdates = getKeys(meta.properties).filter((col) => meta.properties[col].onUpdate);
-
-    onUpdates.forEach((key) => {
-      if (payload[key] === undefined) {
-        payload[key] = meta.properties[key].onUpdate();
-      }
-    });
-
-    const persistablePayload = buildPersistablePayload(meta, payload);
+    const persistable = buildPersistable(meta, payload, 'onUpdate');
     const filter = this.dialect.filter(entity, qm.$filter);
-    const update = { $set: persistablePayload };
+    const update = { $set: persistable };
 
     log('updateMany', entity.name, filter, update);
 
