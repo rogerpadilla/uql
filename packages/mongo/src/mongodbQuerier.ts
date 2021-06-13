@@ -3,7 +3,7 @@ import { log } from '@uql/core';
 import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { filterPersistableProperties } from '@uql/core/entity/util';
+import { buildPersistablePayload, buildPersistablePayloads } from '@uql/core/entity/util';
 import { clone, hasKeys, getKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
@@ -33,18 +33,11 @@ export class MongodbQuerier extends BaseQuerier {
       });
     });
 
-    const persistableProperties = filterPersistableProperties(entity, payloads[0]);
+    const persistablePayloads = buildPersistablePayloads(meta, payloads);
 
-    const persistables = payloads.map((it) =>
-      persistableProperties.reduce((acc, key) => {
-        acc[key] = it[key];
-        return acc;
-      }, {} as OptionalId<E>)
-    );
+    log('insertMany', entity.name, persistablePayloads);
 
-    log('insertMany', entity.name, persistables);
-
-    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
+    const { insertedIds } = await this.collection(entity).insertMany(persistablePayloads, { session: this.session });
 
     const ids = Object.values(insertedIds);
 
@@ -69,15 +62,9 @@ export class MongodbQuerier extends BaseQuerier {
       }
     });
 
-    const persistableProperties = filterPersistableProperties(entity, payload);
-
-    const persistable = persistableProperties.reduce((acc, key) => {
-      acc[key] = payload[key];
-      return acc;
-    }, {} as OptionalId<E>);
-
+    const persistablePayload = buildPersistablePayload(meta, payload);
     const filter = this.dialect.filter(entity, qm.$filter);
-    const update = { $set: persistable };
+    const update = { $set: persistablePayload };
 
     log('updateMany', entity.name, filter, update);
 

@@ -1,19 +1,18 @@
 import { clone, hasKeys, getKeys } from './object.util';
 
 it('clone', () => {
-  expect(clone(undefined)).toBe(undefined);
-  expect(clone(null)).toBe(null);
-  expect(clone(20)).toBe(20);
-  expect(clone('something')).toBe('something');
   expect(clone({})).toEqual({});
   expect(clone({ a: 1 })).toEqual({ a: 1 });
   expect(clone([])).toEqual([]);
   expect(clone([{ a: 1 }])).toEqual([{ a: 1 }]);
 
-  const obj = [{ a: 1 }];
-  const res = clone(obj);
-  expect(res).not.toBe(obj);
-  expect(res).toEqual(obj);
+  const source = [{ a: 1 }];
+  const cloned = clone(source);
+
+  expect(cloned[0]).not.toBe(source[0]);
+  expect(cloned).not.toBe(source);
+  expect(cloned[0]).toEqual(source[0]);
+  expect(cloned).toEqual(source);
 });
 
 it('hasKeys', () => {

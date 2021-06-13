@@ -14,8 +14,9 @@ import {
   Type,
   QueryCriteria,
   QueryPopulateValue,
+  EntityMeta,
 } from '../type';
-import { filterPersistableProperties } from '../entity/util';
+import { filterPersistableKeys } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
@@ -54,7 +55,7 @@ export abstract class BaseSqlDialect {
       });
     });
 
-    const persistableKeys = filterPersistableProperties(entity, payloads[0]);
+    const persistableKeys = filterPersistableKeys(meta, payloads[0]);
     const columns = persistableKeys.map((prop) => this.escapeId(meta.properties[prop].name));
     const values = payloads.map((it) => persistableKeys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
 
@@ -77,12 +78,7 @@ export abstract class BaseSqlDialect {
       }
     });
 
-    const persistableKeys = filterPersistableProperties(entity, payload);
-    const persistableData = persistableKeys.reduce((acc, key) => {
-      acc[meta.properties[key].name] = payload[key];
-      return acc;
-    }, {} as E);
-    const values = this.objectToValues(persistableData);
+    const values = this.objectToValues(meta, payload);
     const criteria = this.criteria(entity, qm);
     return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
@@ -345,9 +341,8 @@ export abstract class BaseSqlDialect {
     return escape(val);
   }
 
-  objectToValues<E>(object: E): string {
-    return getKeys(object)
-      .map((key) => `${this.escapeId(key)} = ${this.escape(object[key])}`)
-      .join(', ');
+  objectToValues<E>(meta: EntityMeta<E>, payload: E): string {
+    const persistableKeys = filterPersistableKeys(meta, payload);
+    return persistableKeys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
   }
 }
