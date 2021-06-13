@@ -1,5 +1,4 @@
 import {
-  EntityMeta,
   Properties,
   Querier,
   Query,
@@ -12,6 +11,7 @@ import {
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
+import { getIndependentRelations } from '../entity/util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -252,11 +252,4 @@ export abstract class BaseQuerier implements Querier {
   getRepository<E>(entity: Type<E>): Repository<E> {
     return new BaseRepository(entity, this);
   }
-}
-
-function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E) {
-  return getKeys(payload).filter((key) => {
-    const relOpts = meta.relations[key];
-    return relOpts && relOpts.cardinality !== 'm1';
-  });
 }

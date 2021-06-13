@@ -1,4 +1,4 @@
-import { EntityMeta, PropertyOptions } from '@uql/core/type';
+import { EntityMeta, PropertyOptions, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
 type CallbackKey = keyof Pick<PropertyOptions, 'onInsert' | 'onUpdate'>;
@@ -34,4 +34,24 @@ export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callba
     });
     return it;
   });
+}
+
+export function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E): string[] {
+  return getKeys(payload).filter((key) => {
+    const relOpts = meta.relations[key];
+    return relOpts && relOpts.cardinality !== 'm1';
+  });
+}
+
+export function isValidEntityType(type: any): type is Type<any> {
+  return (
+    typeof type === 'function' &&
+    type !== Boolean &&
+    type !== String &&
+    type !== Number &&
+    type !== BigInt &&
+    type !== Date &&
+    type !== Symbol &&
+    type !== Object
+  );
 }
