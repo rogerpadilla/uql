@@ -27,17 +27,17 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
   querier: Q;
 
-  constructor(readonly pool: QuerierPool) {}
+  constructor(readonly pool: QuerierPool<Q>) {}
 
   async beforeAll() {
-    this.querier = (await this.pool.getQuerier()) as Q;
+    this.querier = await this.pool.getQuerier();
     await this.dropTables();
     await this.createTables();
     await this.querier.release();
   }
 
   async beforeEach() {
-    this.querier = (await this.pool.getQuerier()) as Q;
+    this.querier = await this.pool.getQuerier();
     await this.cleanTables();
   }
 

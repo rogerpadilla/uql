@@ -155,11 +155,11 @@ export class MongodbQuerier extends BaseQuerier {
     await this.session.abortTransaction();
   }
 
-  async release() {
+  async release(force?: boolean) {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }
-    return this.conn.close();
+    await this.conn.close(force);
   }
 }
 

@@ -8,7 +8,7 @@ import { BaseSqlQuerier } from './baseSqlQuerier';
 export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
   readonly primaryKeyType: string = 'INTEGER PRIMARY KEY';
 
-  constructor(pool: QuerierPool) {
+  constructor(pool: QuerierPool<BaseSqlQuerier>) {
     super(pool);
   }
 

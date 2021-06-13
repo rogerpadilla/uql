@@ -25,7 +25,9 @@ export type EntityGetter<E = any> = () => Type<E>;
 
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
 
-type IdOptions = PropertyOptions & { readonly property: string };
+export type IdOptions = PropertyOptions & { readonly property: string };
+
+export type CascadeType = 'insert' | 'update' | 'delete' | 'softDelete' | 'recover';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
@@ -33,6 +35,7 @@ export type RelationOptions<E = any> = {
   mappedBy?: RelationMappedBy<E>;
   through?: EntityGetter<any>;
   references?: RelationReferences;
+  cascade?: boolean | CascadeType[];
 };
 
 export type KeyMap<E> = { readonly [K in keyof E]: K };
