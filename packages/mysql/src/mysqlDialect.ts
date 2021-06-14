@@ -7,7 +7,7 @@ export class MySqlDialect extends BaseSqlDialect {
     super('START TRANSACTION', '`');
   }
 
-  compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  override compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const meta = getMeta(entity);

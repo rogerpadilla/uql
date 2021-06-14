@@ -170,7 +170,7 @@ describe('transactional', () => {
 
     class ServiceB extends ServiceA {
       @Transactional({ querierPool: anotherQuerierPool })
-      async delete(id: string, @InjectQuerier() querier?: Querier) {
+      override async delete(id: string, @InjectQuerier() querier?: Querier) {
         return super.delete(id, querier);
       }
     }

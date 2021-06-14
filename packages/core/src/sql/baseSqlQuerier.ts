@@ -13,7 +13,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     super();
   }
 
-  async insertMany<E>(entity: Type<E>, payload: E[]) {
+  override async insertMany<E>(entity: Type<E>, payload: E[]) {
     if (payload.length === 0) {
       return;
     }
@@ -29,7 +29,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
     payload = clone(payload);
     const query = this.dialect.update(entity, payload, qm);
     const { changes } = await this.conn.run(query);
@@ -37,7 +37,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return changes;
   }
 
-  async findMany<E>(entity: Type<E>, qm: Query<E>) {
+  override async findMany<E>(entity: Type<E>, qm: Query<E>) {
     const query = this.dialect.find(entity, qm);
     const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
@@ -45,22 +45,22 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return founds;
   }
 
-  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
     const query = this.dialect.delete(entity, qm);
     const { changes } = await this.conn.run(query);
     return changes;
   }
 
-  async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
+  override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
     const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
     return Number(res[0].count);
   }
 
-  get hasOpenTransaction(): boolean {
+  override get hasOpenTransaction(): boolean {
     return this.hasPendingTransaction;
   }
 
-  async beginTransaction() {
+  override async beginTransaction() {
     if (this.hasPendingTransaction) {
       throw new TypeError('pending transaction');
     }
@@ -68,7 +68,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     this.hasPendingTransaction = true;
   }
 
-  async commitTransaction() {
+  override async commitTransaction() {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
@@ -76,7 +76,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     this.hasPendingTransaction = undefined;
   }
 
-  async rollbackTransaction() {
+  override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
       throw new TypeError('not a pending transaction');
     }
@@ -84,7 +84,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     this.hasPendingTransaction = undefined;
   }
 
-  async release() {
+  override async release() {
     if (this.hasPendingTransaction) {
       throw new TypeError('pending transaction');
     }

@@ -7,13 +7,13 @@ export class PostgresDialect extends BaseSqlDialect {
     super('BEGIN', '"');
   }
 
-  insert<E>(entity: Type<E>, payload: E | E[]): string {
+  override insert<E>(entity: Type<E>, payload: E | E[]): string {
     const sql = super.insert(entity, payload);
     const meta = getMeta(entity);
     return `${sql} RETURNING ${this.escapeId(meta.id.name)} ${this.escapeId('id')}`;
   }
 
-  compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  override compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
     switch (key) {
       case '$text':
         const meta = getMeta(entity);
@@ -27,7 +27,7 @@ export class PostgresDialect extends BaseSqlDialect {
     }
   }
 
-  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
+  override compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
     entity: Type<E>,
     prop: string,
     operator: K,

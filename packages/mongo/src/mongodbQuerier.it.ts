@@ -14,7 +14,7 @@ class MongodbQuerierIt extends BaseQuerierIt<MongodbQuerier> {
     );
   }
 
-  async createTables() {
+  override async createTables() {
     const querier = this.querier as MongodbQuerier;
     await Promise.all(
       this.entities.map((entity) => {
@@ -24,7 +24,7 @@ class MongodbQuerierIt extends BaseQuerierIt<MongodbQuerier> {
     );
   }
 
-  async dropTables() {
+  override async dropTables() {
     const querier = this.querier as MongodbQuerier;
     await querier.conn.db().dropDatabase();
   }

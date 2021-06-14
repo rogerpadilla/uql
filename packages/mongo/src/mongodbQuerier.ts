@@ -14,7 +14,7 @@ export class MongodbQuerier extends BaseQuerier {
     super();
   }
 
-  async insertMany<E>(entity: Type<E>, payload: E[]) {
+  override async insertMany<E>(entity: Type<E>, payload: E[]) {
     if (payload.length === 0) {
       return;
     }
@@ -40,7 +40,7 @@ export class MongodbQuerier extends BaseQuerier {
     return ids;
   }
 
-  async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = buildPersistable(meta, payload, 'onUpdate');
@@ -58,7 +58,7 @@ export class MongodbQuerier extends BaseQuerier {
     return modifiedCount;
   }
 
-  async findMany<E>(entity: Type<E>, qm: Query<E>) {
+  override async findMany<E>(entity: Type<E>, qm: Query<E>) {
     const meta = getMeta(entity);
 
     let documents: E[];
@@ -98,12 +98,12 @@ export class MongodbQuerier extends BaseQuerier {
     return documents;
   }
 
-  findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
+  override findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
     const meta = getMeta(entity);
     return this.findOne<E>(entity, { ...qo, $filter: { [meta.id.name]: id } });
   }
 
-  async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
     const filter = this.dialect.filter(entity, qm.$filter);
     log('deleteMany', entity.name, filter);
     const res = await this.collection(entity).deleteMany(filter, {
@@ -112,7 +112,7 @@ export class MongodbQuerier extends BaseQuerier {
     return res.deletedCount;
   }
 
-  count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
+  override count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
     log('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
@@ -120,7 +120,7 @@ export class MongodbQuerier extends BaseQuerier {
     });
   }
 
-  get hasOpenTransaction() {
+  override get hasOpenTransaction() {
     return this.session?.inTransaction();
   }
 
@@ -129,7 +129,7 @@ export class MongodbQuerier extends BaseQuerier {
     return this.conn.db().collection(meta.name);
   }
 
-  async beginTransaction() {
+  override async beginTransaction() {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }
@@ -138,7 +138,7 @@ export class MongodbQuerier extends BaseQuerier {
     this.session.startTransaction();
   }
 
-  async commitTransaction() {
+  override async commitTransaction() {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
@@ -147,7 +147,7 @@ export class MongodbQuerier extends BaseQuerier {
     this.session.endSession();
   }
 
-  async rollbackTransaction() {
+  override async rollbackTransaction() {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
@@ -155,7 +155,7 @@ export class MongodbQuerier extends BaseQuerier {
     await this.session.abortTransaction();
   }
 
-  async release(force?: boolean) {
+  override async release(force?: boolean) {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }

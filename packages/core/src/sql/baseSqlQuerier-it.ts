@@ -12,7 +12,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
     super(pool);
   }
 
-  async createTables() {
+  override async createTables() {
     const run = async (index: number) => {
       if (index >= this.entities.length) {
         return;
@@ -24,7 +24,7 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
     await run(0);
   }
 
-  async dropTables() {
+  override async dropTables() {
     await Promise.all(
       this.entities.map((entity) => {
         const meta = getMeta(entity);

@@ -51,11 +51,11 @@ describe('injectQuerier', () => {
       save(@InjectQuerier() someQuerier?: Querier) {}
     }
     class ServiceB extends ServiceA {
-      save(someQuerier?: Querier) {}
+      override save(someQuerier?: Querier) {}
     }
 
     class ServiceC extends ServiceA {
-      save(@InjectQuerier() someQuerier?: Querier) {}
+      override save(@InjectQuerier() someQuerier?: Querier) {}
     }
 
     expect(getInjectedQuerierIndex(ServiceA, 'save')).toBe(0);

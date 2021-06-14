@@ -66,11 +66,11 @@ describe('injectRepository', () => {
       save(@InjectRepository(User) userRepository?: Repository<User>) {}
     }
     class ServiceB extends ServiceA {
-      save(userRepository?: Repository<User>) {}
+      override save(userRepository?: Repository<User>) {}
     }
 
     class ServiceC extends ServiceA {
-      save(@InjectRepository(User) userRepository?: Repository<User>) {}
+      override save(@InjectRepository(User) userRepository?: Repository<User>) {}
     }
 
     expect(getInjectedRepositoriesMap(ServiceA, 'save')).toEqual({ 0: User });

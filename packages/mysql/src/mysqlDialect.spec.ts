@@ -7,11 +7,11 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
     super(new MySqlDialect());
   }
 
-  shouldBeginTransaction() {
+  override shouldBeginTransaction() {
     expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
   }
 
-  shouldFind$text() {
+  override shouldFind$text() {
     expect(
       this.dialect.find(Item, {
         $project: { id: 1 },
