@@ -29,9 +29,9 @@ export function createSpec<T extends Spec>(spec: T) {
 
   describeFn(specName, () => {
     while (proto.constructor !== Object) {
-      Object.getOwnPropertyNames(proto).forEach((key) => {
+      for (const key of Object.getOwnPropertyNames(proto)) {
         if (key === 'constructor' || processedMethodsMap[key]) {
-          return;
+          continue;
         }
         processedMethodsMap[key] = true;
         const callback = spec[key].bind(spec);
@@ -44,7 +44,7 @@ export function createSpec<T extends Spec>(spec: T) {
         } else if (key.startsWith('xxxshould')) {
           xit(key, callback);
         }
-      });
+      }
       proto = Object.getPrototypeOf(proto);
     }
   });

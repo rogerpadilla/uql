@@ -24,20 +24,21 @@ export function buildPersistables<E>(meta: EntityMeta<E>, payload: E | E[], call
 
 export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const callbackKeys = getKeys(meta.properties).filter((col) => meta.properties[col][callbackKey]);
+  const keys = getKeys(meta.properties).filter((col) => meta.properties[col][callbackKey]);
 
   return payloads.map((it) => {
-    callbackKeys.forEach((key) => {
+    for (const key of keys) {
       if (it[key] === undefined) {
         it[key] = meta.properties[key][callbackKey]();
       }
-    });
+    }
     return it;
   });
 }
 
-export function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E): string[] {
-  return getKeys(payload).filter((key) => {
+export function getIndependentRelations<E>(meta: EntityMeta<E>, payload?: E): string[] {
+  const keys = payload ? getKeys(payload) : getKeys(meta.relations);
+  return keys.filter((key) => {
     const relOpts = meta.relations[key];
     return (
       relOpts &&

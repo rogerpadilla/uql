@@ -35,10 +35,10 @@ export function getInjectedRepositoriesMap<S>(type: Type<S>, key: keyof S): Inje
       return map;
     }
 
-    const props = Object.getOwnPropertyNames(proto) as (keyof S)[];
-    const isOwnProperty = props.includes(key);
+    const keys = Object.getOwnPropertyNames(proto) as (keyof S)[];
+    const isOwnKey = keys.includes(key);
 
-    if (isOwnProperty) {
+    if (isOwnKey) {
       return;
     }
 

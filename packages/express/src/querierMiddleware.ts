@@ -23,11 +23,11 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
     extendQuery: opts.extendQuery,
   };
 
-  entities.forEach((entity) => {
+  for (const entity of entities) {
     const path = kebabCase(entity.name);
     const subRouter = buildCrudRouter(entity, crudRouterOpts);
     router.use('/' + path, subRouter);
-  });
+  }
 
   return router;
 }

@@ -68,7 +68,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
     expect(ids).toHaveLength(2);
-    ids.forEach((id) => expect(id).toBeDefined());
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
   }
 
   async shouldInsertOne() {
@@ -124,7 +126,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
     expect(ids).toHaveLength(4);
-    ids.forEach((id) => expect(id).toBeDefined());
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
   }
 
   async shouldInsertManyWithAutoIncrementIdAsDefault() {
@@ -140,7 +144,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
     expect(ids).toHaveLength(3);
-    ids.forEach((id) => expect(id).toBeDefined());
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
     const founds = await this.querier.findMany(LedgerAccount, {});
     expect(founds.map(({ id }) => id)).toEqual(ids);
   }

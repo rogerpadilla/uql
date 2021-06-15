@@ -86,9 +86,9 @@ export class MongodbQuerier extends BaseQuerier {
 
     const ids = Object.values(insertedIds);
 
-    payloads.forEach((it, index) => {
+    for (const [index, it] of payloads.entries()) {
       it[meta.id] = ids[index];
-    });
+    }
 
     await this.insertRelations(entity, payloads);
 
@@ -168,7 +168,9 @@ export class MongodbQuerier extends BaseQuerier {
 
 export function normalizeIds<E>(docs: E | E[], meta: EntityMeta<E>) {
   if (Array.isArray(docs)) {
-    docs.forEach((doc) => normalizeId(doc, meta));
+    for (const doc of docs) {
+      normalizeId(doc, meta);
+    }
   } else {
     normalizeId<E>(docs, meta);
   }
@@ -181,13 +183,13 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   const res = doc as E & { _id: any };
   res[meta.id] = res._id;
   delete res._id;
-  getKeys(meta.relations).forEach((relProp) => {
-    const relOpts = meta.relations[relProp];
-    const relData = res[relProp];
+  for (const relKey of getKeys(meta.relations)) {
+    const relOpts = meta.relations[relKey];
+    const relData = res[relKey];
     if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
       const relMeta = getMeta(relOpts.entity());
       normalizeIds(relData, relMeta);
     }
-  });
+  }
   return res as E;
 }

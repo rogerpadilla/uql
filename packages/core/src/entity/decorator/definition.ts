@@ -209,7 +209,7 @@ function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
 }
 
 function getId<E>(meta: EntityMeta<E>): Properties<E> {
-  const id = getKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  const id = getKeys(meta.properties).find((key) => meta.properties[key]?.isId);
   return id as Properties<E>;
 }
 

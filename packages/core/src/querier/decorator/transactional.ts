@@ -3,14 +3,13 @@ import { Querier, QuerierPool, Type } from '../../type';
 import { getInjectedQuerierIndex } from './injectQuerier';
 import { getInjectedRepositoriesMap } from './injectRepository';
 
-type Props = {
+export function Transactional({
+  propagation = 'required',
+  querierPool,
+}: {
   readonly propagation?: 'supported' | 'required';
   readonly querierPool?: QuerierPool;
-};
-
-export function Transactional(options: Props = {}) {
-  const { propagation, querierPool } = { propagation: 'required', ...options };
-
+} = {}) {
   return (target: object, prop: string, propDescriptor: PropertyDescriptor): void => {
     const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
@@ -37,12 +36,13 @@ export function Transactional(options: Props = {}) {
         params[injectedQuerierIndex] = querier;
       }
 
-      injectedRepositoriesMap &&
-        Object.entries(injectedRepositoriesMap).forEach(([index, entity]: [string, Type<any>]) => {
+      if (injectedRepositoriesMap) {
+        for (const [index, entity] of Object.entries(injectedRepositoriesMap)) {
           if (params[index] === undefined) {
             params[index] = getRepository(entity, querier);
           }
-        });
+        }
+      }
 
       try {
         if (propagation === 'required' && !querier.hasOpenTransaction) {

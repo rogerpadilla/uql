@@ -122,10 +122,10 @@ export abstract class BaseQuerier implements Querier {
       return acc;
     }, {});
 
-    parents.forEach((parent) => {
+    for (const parent of parents) {
       const parentId = parent[parentIdProperty];
       parent[relKey] = childrenByParentMap[parentId];
-    });
+    }
   }
 
   protected async insertRelations<E>(entity: Type<E>, payload: E[]) {
@@ -164,8 +164,24 @@ export abstract class BaseQuerier implements Querier {
   }
 
   protected async deleteRelations<E>(entity: Type<E>, criteria: QueryCriteria<E>): Promise<void> {
-    // TODO
-    await undefined;
+    const meta = getMeta(entity);
+    const relKeys = getIndependentRelations(meta);
+    if (!relKeys.length) {
+      return;
+    }
+
+    for (const key of relKeys) {
+      // TODO
+      // if (cardinality === '11') {
+      //   const relKey = references[0].target;
+      //   if (relPayload === null) {
+      //     await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
+      //     return;
+      //   }
+      //   await this.saveMany(relEntity, [{ ...(relPayload as E), [relKey]: id }]);
+      //   return;
+      // }
+    }
   }
 
   protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
@@ -174,7 +190,7 @@ export abstract class BaseQuerier implements Querier {
     const updates: E[] = [];
     const links: any[] = [];
 
-    payload.forEach((it) => {
+    for (const it of payload) {
       if (it[meta.id]) {
         if (getKeys(it).length === 1) {
           links.push(it[meta.id]);
@@ -184,7 +200,7 @@ export abstract class BaseQuerier implements Querier {
       } else {
         inserts.push(it);
       }
-    });
+    }
 
     return Promise.all([
       ...links,
@@ -205,21 +221,21 @@ export abstract class BaseQuerier implements Querier {
     const relEntity = entity();
 
     if (cardinality === '11') {
-      const relProperty = references[0].target;
+      const relKey = references[0].target;
       if (relPayload === null) {
-        await this.deleteMany(relEntity, { $filter: { [relProperty]: id } });
+        await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
         return;
       }
-      await this.saveMany(relEntity, [{ ...(relPayload as E), [relProperty]: id }]);
+      await this.saveMany(relEntity, [{ ...(relPayload as E), [relKey]: id }]);
       return;
     }
 
     const relPayloads = relPayload as E[];
-    const relProperty = references[0].source;
+    const relKey = references[0].source;
 
     if (through) {
       const throughEntity = through();
-      await this.deleteMany(throughEntity, { $filter: { [relProperty]: id } });
+      await this.deleteMany(throughEntity, { $filter: { [relKey]: id } });
       if (relPayloads) {
         const savedIds = await this.saveMany(relEntity, relPayloads);
         const throughBodies = savedIds.map((relId) => ({
@@ -233,12 +249,12 @@ export abstract class BaseQuerier implements Querier {
 
     if (cardinality === '1m') {
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $filter: { [relProperty]: id } });
+        await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
       }
       if (relPayloads) {
-        relPayloads.forEach((it) => {
-          it[relProperty] = id;
-        });
+        for (const it of relPayloads) {
+          it[relKey] = id;
+        }
         await this.saveMany(relEntity, relPayloads);
       }
       return;
