@@ -1,5 +1,5 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectProperties } from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectProperties, Relations } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 
@@ -39,7 +39,7 @@ export class MongoDialect {
     }
 
     for (const relKey in qm.$populate) {
-      const relOpts = meta.relations[relKey];
+      const relOpts = meta.relations[relKey as Relations<E>];
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
@@ -64,7 +64,7 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [prop]: qm.$filter[meta.id.property] } }],
+            pipeline: [{ $match: { [prop]: qm.$filter[meta.id as string] } }],
             as: relKey,
           },
         });
@@ -78,7 +78,7 @@ export class MongoDialect {
 }
 
 function obtainFinalKeyValue<E>(key: string, val: any, meta: EntityMeta<E>) {
-  if (key === '_id' || key === meta.id.property) {
+  if (key === '_id' || key === meta.id) {
     const objectId = val instanceof ObjectId ? val : new ObjectId(val);
     return { key: '_id', val: objectId };
   }

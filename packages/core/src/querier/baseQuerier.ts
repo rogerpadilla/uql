@@ -6,6 +6,7 @@ import {
   QueryOne,
   QueryPopulate,
   RelationOptions,
+  Relations,
   Repository,
   Type,
 } from '../type';
@@ -18,21 +19,13 @@ import { BaseRepository } from './baseRepository';
  * Use a class to be able to detect instances at runtime (via instanceof).
  */
 export abstract class BaseQuerier implements Querier {
-  abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
+  abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
 
-  async insertOne<E>(entity: Type<E>, payload: E) {
-    const [id] = await this.insertMany(entity, [payload]);
-    return id;
+  findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
+    const meta = getMeta(type);
+    const idName = meta.properties[meta.id].name;
+    return this.findOne(type, { ...qo, $filter: { [idName]: id } });
   }
-
-  abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
-
-  updateOneById<E>(entity: Type<E>, payload: E, id: any) {
-    const meta = getMeta(entity);
-    return this.updateMany(entity, payload, { $filter: { [meta.id.property]: id } });
-  }
-
-  abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 
   async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
     qm.$limit = 1;
@@ -40,35 +33,34 @@ export abstract class BaseQuerier implements Querier {
     return rows[0];
   }
 
-  findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
-    const meta = getMeta(type);
-    return this.findOne(type, { ...qo, $filter: { [meta.id.name]: id } });
+  abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
+
+  async insertOne<E>(entity: Type<E>, payload: E) {
+    const [id] = await this.insertMany(entity, [payload]);
+    return id;
   }
 
-  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
+  abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
+
+  updateOneById<E>(entity: Type<E>, payload: E, id: any) {
+    const meta = getMeta(entity);
+    return this.updateMany(entity, payload, { $filter: { [meta.id]: id } });
+  }
+
+  abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: any) {
     const meta = getMeta(entity);
-    return this.deleteMany(entity, { $filter: { [meta.id.name]: id } });
+    return this.deleteMany(entity, { $filter: { [meta.id]: id } });
   }
 
-  abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
-
-  abstract readonly hasOpenTransaction: boolean;
-
-  abstract beginTransaction(): Promise<void>;
-
-  abstract commitTransaction(): Promise<void>;
-
-  abstract rollbackTransaction(): Promise<void>;
-
-  abstract release(): Promise<void>;
+  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 
   protected async populateToManyRelations<E>(entity: Type<E>, payload: E[], populate: QueryPopulate<E>) {
     const meta = getMeta(entity);
 
     for (const relKey in populate) {
-      const relOpts = meta.relations[relKey];
+      const relOpts = meta.relations[relKey as Relations<E>];
 
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
@@ -76,17 +68,17 @@ export abstract class BaseQuerier implements Querier {
 
       const relEntity = relOpts.entity();
       const relQuery = clone(populate[relKey] as Query<typeof relEntity>);
-      const sourceProp = relOpts.references[0].source;
-      const ids = payload.map((it) => it[meta.id.property]);
+      const referenceProperty = relOpts.references[0].source;
+      const ids = payload.map((it) => it[meta.id]);
 
-      if (relOpts.cardinality === 'mm') {
+      if (relOpts.through) {
         const throughEntity = relOpts.through();
         const throughMeta = getMeta(throughEntity);
         const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
         const throughFounds = await this.findMany(throughEntity, {
-          $project: [sourceProp],
+          $project: [referenceProperty],
           $filter: {
-            [sourceProp]: ids,
+            [referenceProperty]: ids,
           },
           $populate: {
             [targetRelKey]: {
@@ -96,42 +88,43 @@ export abstract class BaseQuerier implements Querier {
           },
         });
         const founds = throughFounds.map((it) => it[targetRelKey]);
-        this.putRelationsInParents(payload, founds, meta.id.property, sourceProp, relKey);
+        this.putChildrenInParents(payload, founds, meta.id, referenceProperty, relKey);
       } else if (relOpts.cardinality === '1m') {
         if (relQuery.$project) {
           if (Array.isArray(relQuery.$project)) {
-            if (!relQuery.$project.includes(sourceProp)) {
-              relQuery.$project.push(sourceProp);
+            if (!relQuery.$project.includes(referenceProperty)) {
+              relQuery.$project.push(referenceProperty);
             }
-          } else if (!relQuery.$project[sourceProp]) {
-            relQuery.$project[sourceProp] = true;
+          } else if (!relQuery.$project[referenceProperty]) {
+            relQuery.$project[referenceProperty] = true;
           }
         }
-        relQuery.$filter = { [sourceProp]: { $in: ids } };
+        relQuery.$filter = { [referenceProperty]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
-        this.putRelationsInParents(payload, founds, meta.id.property, sourceProp, relKey);
+        this.putChildrenInParents(payload, founds, meta.id, referenceProperty, relKey);
       }
     }
   }
 
-  protected putRelationsInParents<E>(
+  protected putChildrenInParents<E>(
     parents: E[],
     children: E[],
-    parentId: string,
-    parentSource: string,
+    parentIdProperty: string,
+    referenceProperty: string,
     relKey: string
   ): void {
-    const childrenMap = children.reduce((acc, it) => {
-      const attr = it[parentSource];
-      if (!acc[attr]) {
-        acc[attr] = [];
+    const childrenByParentMap = children.reduce((acc, child) => {
+      const parenId = child[referenceProperty];
+      if (!acc[parenId]) {
+        acc[parenId] = [];
       }
-      acc[attr].push(it);
+      acc[parenId].push(child);
       return acc;
     }, {});
 
-    parents.forEach((it) => {
-      it[relKey] = childrenMap[it[parentId]];
+    parents.forEach((parent) => {
+      const parentId = parent[parentIdProperty];
+      parent[relKey] = childrenByParentMap[parentId];
     });
   }
 
@@ -143,9 +136,7 @@ export abstract class BaseQuerier implements Querier {
         if (!relKeys.length) {
           return;
         }
-        return Promise.all(
-          relKeys.map((relKey) => this.saveRelation(it[meta.id.property], it[relKey], meta.relations[relKey]))
-        );
+        return Promise.all(relKeys.map((relKey) => this.saveRelation(it[meta.id], it[relKey], meta.relations[relKey])));
       })
     );
   }
@@ -160,10 +151,10 @@ export abstract class BaseQuerier implements Querier {
 
     const founds = await this.findMany(entity, {
       ...criteria,
-      $project: [meta.id.property] as Properties<E>[],
+      $project: [meta.id] as Properties<E>[],
     });
 
-    const ids = founds.map((found) => found[meta.id.property]);
+    const ids = founds.map((found) => found[meta.id]);
 
     await Promise.all(
       ids.map((id) =>
@@ -172,16 +163,21 @@ export abstract class BaseQuerier implements Querier {
     );
   }
 
+  protected async deleteRelations<E>(entity: Type<E>, criteria: QueryCriteria<E>): Promise<void> {
+    // TODO
+    await undefined;
+  }
+
   protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
     const meta = getMeta(entity);
     const inserts: E[] = [];
     const updates: E[] = [];
-    const links: E[] = [];
+    const links: any[] = [];
 
     payload.forEach((it) => {
-      if (it[meta.id.property]) {
+      if (it[meta.id]) {
         if (getKeys(it).length === 1) {
-          links.push(it[meta.id.property]);
+          links.push(it[meta.id]);
         } else {
           updates.push(it);
         }
@@ -194,8 +190,8 @@ export abstract class BaseQuerier implements Querier {
       ...links,
       ...(inserts.length ? await this.insertMany(entity, inserts) : []),
       ...updates.map(async (it) => {
-        await this.updateOneById(entity, it, it[meta.id.property]);
-        return it[meta.id.property];
+        await this.updateOneById(entity, it, it[meta.id]);
+        return it[meta.id];
       }),
     ]);
   }
@@ -252,4 +248,14 @@ export abstract class BaseQuerier implements Querier {
   getRepository<E>(entity: Type<E>): Repository<E> {
     return new BaseRepository(entity, this);
   }
+
+  abstract readonly hasOpenTransaction: boolean;
+
+  abstract beginTransaction(): Promise<void>;
+
+  abstract commitTransaction(): Promise<void>;
+
+  abstract rollbackTransaction(): Promise<void>;
+
+  abstract release(): Promise<void>;
 }

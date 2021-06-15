@@ -1,5 +1,5 @@
-import { MongoClient, ClientSession, OptionalId, ObjectId } from 'mongodb';
-import { log } from '@uql/core';
+import { MongoClient, ClientSession, ObjectId } from 'mongodb';
+import { isDebug, log } from '@uql/core';
 import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
@@ -14,48 +14,12 @@ export class MongodbQuerier extends BaseQuerier {
     super();
   }
 
-  override async insertMany<E>(entity: Type<E>, payload: E[]) {
-    if (payload.length === 0) {
-      return;
-    }
-
-    payload = clone(payload);
-
-    const meta = getMeta(entity);
-    const payloads = Array.isArray(payload) ? payload : [payload];
-    const persistables = buildPersistables(meta, payloads, 'onInsert');
-
-    log('insertMany', entity.name, persistables);
-
-    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
-
-    const ids = Object.values(insertedIds);
-
-    payloads.forEach((it, index) => {
-      it[meta.id.property] = ids[index];
-    });
-
-    await this.insertRelations(entity, payloads);
-
-    return ids;
-  }
-
-  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
-    payload = clone(payload);
-    const meta = getMeta(entity);
-    const persistable = buildPersistable(meta, payload, 'onUpdate');
+  override count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
-    const update = { $set: persistable };
-
-    log('updateMany', entity.name, filter, update);
-
-    const { modifiedCount } = await this.collection(entity).updateMany(filter, update, {
+    log('count', entity.name, filter);
+    return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
-
-    await this.updateRelations(entity, payload, qm);
-
-    return modifiedCount;
   }
 
   override async findMany<E>(entity: Type<E>, qm: Query<E>) {
@@ -65,7 +29,9 @@ export class MongodbQuerier extends BaseQuerier {
 
     if (hasKeys(qm.$populate)) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
-      log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
+      if (isDebug()) {
+        log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
+      }
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       normalizeIds(documents, meta);
       await this.populateToManyRelations(entity, documents, qm.$populate);
@@ -100,7 +66,51 @@ export class MongodbQuerier extends BaseQuerier {
 
   override findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
     const meta = getMeta(entity);
-    return this.findOne<E>(entity, { ...qo, $filter: { [meta.id.name]: id } });
+    return this.findOne(entity, { ...qo, $filter: { [meta.id]: id } });
+  }
+
+  override async insertMany<E>(entity: Type<E>, payload: E[]) {
+    if (payload.length === 0) {
+      return;
+    }
+
+    payload = clone(payload);
+
+    const meta = getMeta(entity);
+    const payloads = Array.isArray(payload) ? payload : [payload];
+    const persistables = buildPersistables(meta, payloads, 'onInsert');
+
+    log('insertMany', entity.name, persistables);
+
+    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
+
+    const ids = Object.values(insertedIds);
+
+    payloads.forEach((it, index) => {
+      it[meta.id] = ids[index];
+    });
+
+    await this.insertRelations(entity, payloads);
+
+    return ids;
+  }
+
+  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+    payload = clone(payload);
+    const meta = getMeta(entity);
+    const persistable = buildPersistable(meta, payload, 'onUpdate');
+    const filter = this.dialect.filter(entity, qm.$filter);
+    const update = { $set: persistable };
+
+    log('updateMany', entity.name, filter, update);
+
+    const { modifiedCount } = await this.collection(entity).updateMany(filter, update, {
+      session: this.session,
+    });
+
+    await this.updateRelations(entity, payload, qm);
+
+    return modifiedCount;
   }
 
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
@@ -109,15 +119,8 @@ export class MongodbQuerier extends BaseQuerier {
     const res = await this.collection(entity).deleteMany(filter, {
       session: this.session,
     });
+    await this.deleteRelations(entity, qm);
     return res.deletedCount;
-  }
-
-  override count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
-    const filter = this.dialect.filter(entity, qm.$filter);
-    log('count', entity.name, filter);
-    return this.collection(entity).countDocuments(filter, {
-      session: this.session,
-    });
   }
 
   override get hasOpenTransaction() {
@@ -175,8 +178,8 @@ function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
   if (!doc) {
     return;
   }
-  const res = doc as OptionalId<E>;
-  res[meta.id.property] = res._id;
+  const res = doc as E & { _id: any };
+  res[meta.id] = res._id;
   delete res._id;
   getKeys(meta.relations).forEach((relProp) => {
     const relOpts = meta.relations[relProp];

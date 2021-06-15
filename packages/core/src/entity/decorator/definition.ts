@@ -10,6 +10,9 @@ import {
   RelationMappedBy,
   KeyMap,
   ReferenceOptions,
+  Relations,
+  Properties,
+  Keys,
 } from '../../type';
 import { isValidEntityType } from '../util';
 
@@ -70,7 +73,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
   if (!id) {
     throw new TypeError(`'${entity.name}' must have one field decorated with @Id`);
   }
-  meta.id = { ...meta.properties[id], property: id };
+  meta.id = id;
 
   return meta;
 }
@@ -108,7 +111,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
-    const relOpts = meta.relations[relKey];
+    const relOpts = meta.relations[relKey as Relations<E>];
 
     if (relOpts.references) {
       // references were manually specified
@@ -124,15 +127,16 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const relMeta = ensureMeta(relEntity);
 
     if (relOpts.cardinality === 'mm') {
-      const source = lowerFirst(meta.name) + upperFirst(meta.id.name);
-      const target = lowerFirst(relMeta.name) + upperFirst(relMeta.id.name);
+      const idName = meta.properties[meta.id].name;
+      const relIdName = relMeta.properties[relMeta.id].name;
+      const source = lowerFirst(meta.name) + upperFirst(idName);
+      const target = lowerFirst(relMeta.name) + upperFirst(relIdName);
       relOpts.references = [
-        { source, target: meta.id.name },
-        { source: target, target: relMeta.id.name },
+        { source, target: idName },
+        { source: target, target: relIdName },
       ];
     } else {
-      const idSuffix = 'Id';
-      relOpts.references = [{ source: relKey + idSuffix, target: relMeta.id.property }];
+      relOpts.references = [{ source: `${relKey}Id`, target: relMeta.id }];
     }
 
     if (relOpts.through) {
@@ -149,8 +153,8 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const mappedByKey = getMappedByKey(relOpts);
   relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
 
-  if (relMeta.relations[mappedByKey]) {
-    const { cardinality, references, through } = relMeta.relations[mappedByKey];
+  if (relMeta.relations[mappedByKey as Relations<E>]) {
+    const { cardinality, references, through } = relMeta.relations[mappedByKey as Relations<E>];
     if (cardinality === '11' || cardinality === 'm1') {
       // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
       relOpts.references = references.map(({ source, target }) => ({
@@ -162,7 +166,7 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
       relOpts.through = through;
     }
   } else {
-    relOpts.references = [{ source: mappedByKey, target: relMeta.id.property }];
+    relOpts.references = [{ source: mappedByKey, target: relMeta.id }];
   }
 }
 
@@ -174,11 +178,11 @@ function fillThroughRelations<E>(entity: Type<E>): void {
       const relEntityGetter = (reference as ReferenceOptions).entity;
       const relEntity = relEntityGetter();
       const relMeta = ensureMeta(relEntity);
-      const relKey = propKey.slice(0, -relMeta.id.property.length);
+      const relKey = propKey.slice(0, -relMeta.id.length);
       const relOpts: RelationOptions = {
         cardinality: 'm1',
         entity: relEntityGetter,
-        references: [{ source: propKey, target: relMeta.id.property }],
+        references: [{ source: propKey, target: relMeta.id }],
       };
       relations[relKey] = relOpts;
     }
@@ -186,7 +190,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
   }, {});
 }
 
-function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
+function getMappedByKey<E>(relOpts: RelationOptions<E>): Keys<E> {
   if (typeof relOpts.mappedBy === 'function') {
     const relEntity = relOpts.entity();
     const relMeta = ensureMeta(relEntity);
@@ -194,7 +198,7 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): string {
     const mapper = relOpts.mappedBy as KeyMapper<E>;
     return mapper(keyMap);
   }
-  return relOpts.mappedBy as string;
+  return relOpts.mappedBy as Keys<E>;
 }
 
 function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
@@ -204,11 +208,12 @@ function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
   }, {} as KeyMap<E>);
 }
 
-function getId<E>(meta: EntityMeta<E>): string {
-  return getKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+function getId<E>(meta: EntityMeta<E>): Properties<E> {
+  const id = getKeys(meta.properties).find((attribute) => meta.properties[attribute]?.isId);
+  return id as Properties<E>;
 }
 
-function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>) {
+function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>): void {
   const sourceProperties = { ...source.properties };
   const targetId = getId(target);
   if (targetId) {

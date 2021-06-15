@@ -23,18 +23,18 @@ import { Property } from './property';
 it('User', () => {
   const meta = getMeta(User);
 
-  expect((meta.properties['companyId'].reference as ReferenceOptions).entity()).toBe(Company);
-  expect(meta.relations['company'].entity()).toBe(Company);
-  expect(meta.relations['company'].references).toEqual([{ source: 'companyId', target: 'id' }]);
+  expect((meta.properties.companyId.reference as ReferenceOptions).entity()).toBe(Company);
+  expect(meta.relations.company.entity()).toBe(Company);
+  expect(meta.relations.company.references).toEqual([{ source: 'companyId', target: 'id' }]);
 
-  expect((meta.properties['creatorId'].reference as ReferenceOptions).entity()).toBe(User);
-  expect(meta.relations['creator'].entity()).toBe(User);
-  expect(meta.relations['creator'].references).toEqual([{ source: 'creatorId', target: 'id' }]);
+  expect((meta.properties.creatorId.reference as ReferenceOptions).entity()).toBe(User);
+  expect(meta.relations.creator.entity()).toBe(User);
+  expect(meta.relations.creator.references).toEqual([{ source: 'creatorId', target: 'id' }]);
 
   const expectedMeta: EntityMeta<User> = {
     entity: User,
     name: 'User',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -73,6 +73,7 @@ it('User', () => {
       },
       profile: {
         cardinality: '11',
+        cascade: true,
         entity: expect.any(Function),
         mappedBy: 'creator',
         references: [{ source: 'id', target: 'creatorId' }],
@@ -88,7 +89,7 @@ it('Profile', () => {
   const expectedMeta: EntityMeta<Profile> = {
     entity: Profile,
     name: 'user_profile',
-    id: { name: 'pk', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'pk', type: Number, isId: true },
@@ -127,7 +128,7 @@ it('Item', () => {
   const expectedMeta: EntityMeta<Item> = {
     entity: Item,
     name: 'Item',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -202,6 +203,7 @@ it('Item', () => {
       },
       tags: {
         cardinality: 'mm',
+        cascade: true,
         entity: expect.any(Function),
         through: expect.any(Function),
         references: [
@@ -218,12 +220,7 @@ it('Tag', () => {
   const meta = getMeta(Tag);
   const expectedMeta: EntityMeta<Tag> = {
     entity: Tag,
-    id: {
-      isId: true,
-      name: 'id',
-      property: 'id',
-      type: Number,
-    },
+    id: 'id',
     name: 'Tag',
     processed: true,
     properties: {
@@ -292,7 +289,7 @@ it('ItemTag', () => {
   const expectedMeta: EntityMeta<ItemTag> = {
     entity: ItemTag,
     name: 'ItemTag',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -328,7 +325,7 @@ it('TaxCategory', () => {
   const expectedMeta: EntityMeta<TaxCategory> = {
     entity: TaxCategory,
     name: 'TaxCategory',
-    id: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function), property: 'pk' },
+    id: 'pk',
     processed: true,
     properties: {
       pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
@@ -368,7 +365,7 @@ it('Tax', () => {
   const expectedMeta: EntityMeta<Tax> = {
     entity: Tax,
     name: 'Tax',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -429,7 +426,7 @@ it('ItemAdjustment', () => {
   const expectedMeta: EntityMeta<ItemAdjustment> = {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -506,7 +503,7 @@ it('InventoryAdjustment', () => {
   const expectedMeta: EntityMeta<InventoryAdjustment> = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
-    id: { name: 'id', type: Number, isId: true, property: 'id' },
+    id: 'id',
     processed: true,
     properties: {
       id: { name: 'id', type: Number, isId: true },
@@ -528,6 +525,7 @@ it('InventoryAdjustment', () => {
     relations: {
       itemAdjustments: {
         cardinality: '1m',
+        cascade: true,
         entity: expect.any(Function),
         mappedBy: 'inventoryAdjustmentId',
         references: [{ source: 'inventoryAdjustmentId', target: 'id' }],

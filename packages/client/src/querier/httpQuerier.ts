@@ -25,7 +25,7 @@ export class HttpQuerier implements ClientQuerier {
 
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const meta = getMeta(entity);
-    const id = payload[meta.id.property];
+    const id = payload[meta.id];
     if (id) {
       return this.updateOneById(entity, payload, id, opts).then(() => ({ data: id }));
     }

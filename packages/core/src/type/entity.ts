@@ -1,12 +1,16 @@
 import { Type } from './utility';
 
 export type Properties<E> = {
-  [K in keyof E]: E[K] extends object ? never : K;
-}[keyof E];
+  readonly [K in keyof E]: E[K] extends object ? never : K;
+}[keyof E & string];
 
 export type Relations<E> = {
-  [K in keyof E]: E[K] extends object ? K : never;
-}[keyof E];
+  readonly [K in keyof E]: E[K] extends object ? K : never;
+}[keyof E & string];
+
+export type Keys<E> = {
+  readonly [K in keyof E]: K;
+}[keyof E & string];
 
 export type EntityOptions = {
   readonly name?: string;
@@ -25,53 +29,51 @@ export type EntityGetter<E = any> = () => Type<E>;
 
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
 
-export type IdOptions = PropertyOptions & { readonly property: string };
-
 export type CascadeType = 'insert' | 'update' | 'delete' | 'softDelete' | 'recover';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   readonly cardinality?: RelationCardinality;
+  readonly cascade?: boolean | readonly CascadeType[];
   mappedBy?: RelationMappedBy<E>;
   through?: EntityGetter<any>;
   references?: RelationReferences;
-  cascade?: boolean | CascadeType[];
 };
 
-export type KeyMap<E> = { readonly [K in keyof E]: K };
+type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
+type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'mappedBy' | 'cascade'>;
+type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'through' | 'references' | 'cascade'>;
 
-export type KeyMapper<E> = (keyMap: KeyMap<E>) => string;
+export type KeyMap<E> = { readonly [K in Keys<E>]: Keys<E> };
+
+export type KeyMapper<E> = (keyMap: KeyMap<E>) => Keys<E>;
 
 export type RelationReferences = { source: string; target: string }[];
 
-export type RelationMappedBy<E> = E extends object ? keyof E | KeyMapper<E> : string;
+export type RelationMappedBy<E> = E extends object ? Keys<E> | KeyMapper<E> : Keys<E>;
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
-export type RelationOneToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationOneToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 
-export type RelationOneToManyOptions<E> = { entity: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationOneToManyOptions<E> =
+  | RelationOptionsOwner<E>
+  | RelationOptionsInverseSide<E>
+  | RelationOptionsThroughOwner<E>;
 
-export type RelationManyToOneOptions<E> = { entity?: EntityGetter<E>; mappedBy?: RelationMappedBy<E> };
+export type RelationManyToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 
-export type RelationManyToManyOptions<E> = { entity: EntityGetter<E> } & (
-  | {
-      through: EntityGetter<any>;
-    }
-  | {
-      mappedBy: RelationMappedBy<E>;
-    }
-);
+export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | RelationOptionsInverseSide<E>;
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
-  id?: IdOptions;
+  id?: Properties<E>;
   properties: {
-    [key: string]: PropertyOptions;
+    [P in Properties<E>]?: PropertyOptions;
   };
   relations: {
-    [key: string]: RelationOptions;
+    [R in Relations<E> & string]?: RelationOptions;
   };
   processed?: boolean;
 };

@@ -13,6 +13,19 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     super();
   }
 
+  override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
+    const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
+    return Number(res[0].count);
+  }
+
+  override async findMany<E>(entity: Type<E>, qm: Query<E>) {
+    const query = this.dialect.find(entity, qm);
+    const res = await this.conn.all<E>(query);
+    const founds = mapRows(res);
+    await this.populateToManyRelations(entity, founds, qm.$populate);
+    return founds;
+  }
+
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
     if (payload.length === 0) {
       return;
@@ -22,8 +35,8 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const { firstId } = await this.conn.run(query);
     const meta = getMeta(entity);
     const ids: any[] = payload.map((it, index) => {
-      it[meta.id.property] ??= firstId + index;
-      return it[meta.id.property];
+      it[meta.id as string] ??= firstId + index;
+      return it[meta.id];
     });
     await this.insertRelations(entity, payload);
     return ids;
@@ -37,23 +50,11 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return changes;
   }
 
-  override async findMany<E>(entity: Type<E>, qm: Query<E>) {
-    const query = this.dialect.find(entity, qm);
-    const res = await this.conn.all<E>(query);
-    const founds = mapRows(res);
-    await this.populateToManyRelations(entity, founds, qm.$populate);
-    return founds;
-  }
-
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
     const query = this.dialect.delete(entity, qm);
     const { changes } = await this.conn.run(query);
+    await this.deleteRelations(entity, qm);
     return changes;
-  }
-
-  override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
-    const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
-    return Number(res[0].count);
   }
 
   override get hasOpenTransaction(): boolean {

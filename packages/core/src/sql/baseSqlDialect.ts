@@ -14,6 +14,7 @@ import {
   Type,
   QueryCriteria,
   QueryPopulateValue,
+  Relations,
 } from '../type';
 import { buildPersistable, fillOnCallbacks, filterPersistableKeys } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
@@ -116,7 +117,7 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
 
     for (const relKey in populate) {
-      const relOpts = meta.relations[relKey];
+      const relOpts = meta.relations[relKey as Relations<E>];
 
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
@@ -269,9 +270,7 @@ export abstract class BaseSqlDialect {
       return '';
     }
     const meta = getMeta(entity);
-    const names = properties
-      .map((prop) => this.escapeId(meta.properties[prop as string]?.name ?? (prop as string)))
-      .join(', ');
+    const names = properties.map((prop) => this.escapeId(meta.properties[prop]?.name ?? prop)).join(', ');
     return ` GROUP BY ${names}`;
   }
 

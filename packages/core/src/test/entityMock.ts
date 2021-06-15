@@ -95,7 +95,7 @@ export class User extends BaseEntity implements IUser {
   /**
    * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring)
    */
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator })
+  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
   @OneToMany({ entity: () => User, mappedBy: 'creator' })
   users?: User[];
@@ -197,7 +197,7 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Property()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
 }
 
@@ -242,6 +242,7 @@ export class InventoryAdjustment extends BaseEntity {
   @OneToMany({
     entity: () => ItemAdjustment,
     mappedBy: (rel) => rel.inventoryAdjustmentId,
+    cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];
   @Property()

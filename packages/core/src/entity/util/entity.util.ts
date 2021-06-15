@@ -1,3 +1,4 @@
+import { User } from '@uql/core/test';
 import { EntityMeta, PropertyOptions, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
@@ -39,7 +40,12 @@ export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callba
 export function getIndependentRelations<E>(meta: EntityMeta<E>, payload: E): string[] {
   return getKeys(payload).filter((key) => {
     const relOpts = meta.relations[key];
-    return relOpts && relOpts.cardinality !== 'm1';
+    return (
+      relOpts &&
+      ((relOpts.cardinality === '11' && relOpts.mappedBy) ||
+        relOpts.cardinality === '1m' ||
+        relOpts.cardinality === 'mm')
+    );
   });
 }
 

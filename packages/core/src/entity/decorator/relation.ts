@@ -15,18 +15,20 @@ function Relation<E>(opts: RelationOptions<E>) {
   };
 }
 
-export function OneToOne<E>(opts?: RelationOneToOneOptions<E>): ReturnType<typeof Relation> {
+type RelationReturn = ReturnType<typeof Relation>;
+
+export function OneToOne<E>(opts?: RelationOneToOneOptions<E>): RelationReturn {
   return Relation({ cardinality: '11', ...opts });
 }
 
-export function ManyToOne<E>(opts?: RelationManyToOneOptions<E>): ReturnType<typeof Relation> {
+export function ManyToOne<E>(opts?: RelationManyToOneOptions<E>): RelationReturn {
   return Relation({ cardinality: 'm1', ...opts });
 }
 
-export function OneToMany<E>(opts: RelationOneToManyOptions<E>): ReturnType<typeof Relation> {
+export function OneToMany<E>(opts: RelationOneToManyOptions<E>): RelationReturn {
   return Relation({ cardinality: '1m', ...opts });
 }
 
-export function ManyToMany<E>(opts: RelationManyToManyOptions<E>): ReturnType<typeof Relation> {
+export function ManyToMany<E>(opts: RelationManyToManyOptions<E>): RelationReturn {
   return Relation({ cardinality: 'mm', ...opts });
 }
