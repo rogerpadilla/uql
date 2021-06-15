@@ -1,4 +1,3 @@
-import { User } from '@uql/core/test';
 import { EntityMeta, PropertyOptions, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
