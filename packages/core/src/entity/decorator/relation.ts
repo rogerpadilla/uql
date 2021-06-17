@@ -9,9 +9,9 @@ import {
 import { defineRelation } from './definition';
 
 function Relation<E>(opts: RelationOptions<E>) {
-  return (target: object, prop: string) => {
+  return (target: object, key: string) => {
     const entity = target.constructor as Type<E>;
-    defineRelation(entity, prop, opts);
+    defineRelation(entity, key, opts);
   };
 }
 

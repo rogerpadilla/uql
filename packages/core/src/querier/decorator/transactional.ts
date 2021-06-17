@@ -10,15 +10,15 @@ export function Transactional({
   readonly propagation?: 'supported' | 'required';
   readonly querierPool?: QuerierPool;
 } = {}) {
-  return (target: object, prop: string, propDescriptor: PropertyDescriptor): void => {
+  return (target: object, key: string, propDescriptor: PropertyDescriptor): void => {
     const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
-    const injectedQuerierIndex = getInjectedQuerierIndex(theClass, prop);
-    const injectedRepositoriesMap = getInjectedRepositoriesMap(theClass, prop);
+    const injectedQuerierIndex = getInjectedQuerierIndex(theClass, key);
+    const injectedRepositoriesMap = getInjectedRepositoriesMap(theClass, key);
 
     if (injectedQuerierIndex === undefined && injectedRepositoriesMap === undefined) {
       throw new TypeError(
-        `missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in '${target.constructor.name}.${prop}'`
+        `missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in '${target.constructor.name}.${key}'`
       );
     }
 

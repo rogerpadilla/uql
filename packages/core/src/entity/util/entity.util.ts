@@ -1,10 +1,10 @@
-import { EntityMeta, Properties, PropertyOptions, Relations, Type } from '@uql/core/type';
+import { EntityMeta, Fields, FieldOptions, Relations, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
-type CallbackKey = keyof Pick<PropertyOptions, 'onInsert' | 'onUpdate'>;
+type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
-export function filterProperties<E>(meta: EntityMeta<E>, payload: E): Properties<E>[] {
-  return getKeys(payload).filter((key) => meta.properties[key] && payload[key] !== undefined) as Properties<E>[];
+export function filterFields<E>(meta: EntityMeta<E>, payload: E): Fields<E>[] {
+  return getKeys(payload).filter((key) => meta.fields[key] && payload[key] !== undefined) as Fields<E>[];
 }
 
 export function filterRelations<E>(meta: EntityMeta<E>, payload: E): Relations<E>[] {
@@ -17,7 +17,7 @@ export function buildPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey
 
 export function buildPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = fillOnCallbacks(meta, payload, callbackKey);
-  const persistableKeys = filterProperties(meta, payloads[0]);
+  const persistableKeys = filterFields(meta, payloads[0]);
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
@@ -28,12 +28,12 @@ export function buildPersistables<E>(meta: EntityMeta<E>, payload: E | E[], call
 
 export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const keys = getKeys(meta.properties).filter((col) => meta.properties[col][callbackKey]);
+  const keys = getKeys(meta.fields).filter((col) => meta.fields[col][callbackKey]);
 
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
-        it[key] = meta.properties[key][callbackKey]();
+        it[key] = meta.fields[key][callbackKey]();
       }
     }
     return it;

@@ -62,5 +62,5 @@ type SpecHooks = {
 };
 
 export type Spec = {
-  [prop: string]: jest.Lifecycle | any;
+  [k: string]: jest.Lifecycle | any;
 } & SpecHooks;

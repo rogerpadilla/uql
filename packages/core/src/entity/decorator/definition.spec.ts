@@ -18,16 +18,16 @@ import {
 import { getEntities, getMeta } from './definition';
 import { Entity } from './entity';
 import { Id } from './id';
-import { Property } from './property';
+import { Field } from './field';
 
 it('User', () => {
   const meta = getMeta(User);
 
-  expect((meta.properties.companyId.reference as ReferenceOptions).entity()).toBe(Company);
+  expect((meta.fields.companyId.reference as ReferenceOptions).entity()).toBe(Company);
   expect(meta.relations.company.entity()).toBe(Company);
   expect(meta.relations.company.references).toEqual([{ source: 'companyId', target: 'id' }]);
 
-  expect((meta.properties.creatorId.reference as ReferenceOptions).entity()).toBe(User);
+  expect((meta.fields.creatorId.reference as ReferenceOptions).entity()).toBe(User);
   expect(meta.relations.creator.entity()).toBe(User);
   expect(meta.relations.creator.references).toEqual([{ source: 'creatorId', target: 'id' }]);
 
@@ -36,7 +36,7 @@ it('User', () => {
     name: 'User',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
@@ -91,7 +91,7 @@ it('Profile', () => {
     name: 'user_profile',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'pk', type: Number, isId: true },
       companyId: {
         name: 'companyId',
@@ -130,7 +130,7 @@ it('Item', () => {
     name: 'Item',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
@@ -223,7 +223,7 @@ it('Tag', () => {
     id: 'id',
     name: 'Tag',
     processed: true,
-    properties: {
+    fields: {
       id: {
         isId: true,
         name: 'id',
@@ -291,7 +291,7 @@ it('ItemTag', () => {
     name: 'ItemTag',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       itemId: {
         name: 'itemId',
@@ -327,7 +327,7 @@ it('TaxCategory', () => {
     name: 'TaxCategory',
     id: 'pk',
     processed: true,
-    properties: {
+    fields: {
       pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
       companyId: {
         name: 'companyId',
@@ -367,7 +367,7 @@ it('Tax', () => {
     name: 'Tax',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       categoryId: {
         name: 'categoryId',
@@ -428,7 +428,7 @@ it('ItemAdjustment', () => {
     name: 'ItemAdjustment',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       buyPrice: {
         name: 'buyPrice',
@@ -505,7 +505,7 @@ it('InventoryAdjustment', () => {
     name: 'InventoryAdjustment',
     id: 'id',
     processed: true,
-    properties: {
+    fields: {
       id: { name: 'id', type: Number, isId: true },
       companyId: {
         name: 'companyId',
@@ -585,7 +585,7 @@ it('no @Id', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
-      @Property()
+      @Field()
       id: string;
     }
   }).toThrow(`'SomeEntity' must have one field decorated with @Id`);
@@ -602,11 +602,11 @@ it('one @Id', () => {
   }).toThrow(`'SomeEntity' must have a single field decorated with @Id`);
 });
 
-it('no properties', () => {
+it('no fields', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
       id: string;
     }
-  }).toThrow(`'SomeEntity' must have properties`);
+  }).toThrow(`'SomeEntity' must have fields`);
 });

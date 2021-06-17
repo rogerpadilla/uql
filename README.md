@@ -133,7 +133,7 @@ Note: inheritance between entities is optional.
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
-import { Property, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity/decorator';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity/decorator';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities
@@ -169,33 +169,33 @@ export abstract class BaseEntity implements IEntity {
   /**
    * foreign-keys are really simple to specify
    */
-  @Property({ reference: () => Company })
+  @Field({ reference: () => Company })
   companyId?: number;
   @ManyToOne({ entity: () => Company })
   company?: ICompany;
-  @Property({ reference: () => User })
+  @Field({ reference: () => User })
   creatorId?: number;
   @ManyToOne({ entity: () => User })
   creator?: IUser;
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
-   * obtaining the value of a property when inserting:
+   * obtaining the value of a field when inserting:
    */
-  @Property({ onInsert: () => Date.now() })
+  @Field({ onInsert: () => Date.now() })
   createdAt?: number;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
-   * obtaining the value of a property when updating:
+   * obtaining the value of a field when updating:
    */
-  @Property({ onUpdate: () => Date.now() })
+  @Field({ onUpdate: () => Date.now() })
   updatedAt?: number;
 }
 
 @Entity()
 export class Company extends BaseEntity implements ICompany {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   description?: string;
 }
 
@@ -205,14 +205,14 @@ export class Company extends BaseEntity implements ICompany {
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
-   * an entity can specify its own ID Property and still inherit the others
+   * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
    */
   @Id({ name: 'pk' })
   id?: number;
-  @Property({ name: 'image' })
+  @Field({ name: 'image' })
   picture?: string;
   @OneToOne({ entity: () => User })
   creator?: IUser;
@@ -220,16 +220,16 @@ export class Profile extends BaseEntity {
 
 @Entity()
 export class User extends BaseEntity implements IUser {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   email?: string;
-  @Property()
+  @Field()
   password?: string;
   /**
    * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring)
    */
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator })
+  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
   @OneToMany({ entity: () => User, mappedBy: 'creator' })
   users?: User[];
@@ -237,11 +237,11 @@ export class User extends BaseEntity implements IUser {
 
 @Entity()
 export class LedgerAccount extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   description?: string;
-  @Property({ reference: () => LedgerAccount })
+  @Field({ reference: () => LedgerAccount })
   parentLedgerId?: number;
   @ManyToOne()
   parentLedger?: LedgerAccount;
@@ -250,44 +250,44 @@ export class LedgerAccount extends BaseEntity {
 @Entity()
 export class TaxCategory extends BaseEntity {
   /**
-   * an entity can specify its own ID Property and still inherit the others
+   * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting
    */
   @Id({ onInsert: () => uuidv4() })
   pk?: string;
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   description?: string;
 }
 
 @Entity()
 export class Tax extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   percentage?: number;
-  @Property({ reference: () => TaxCategory })
+  @Field({ reference: () => TaxCategory })
   categoryId?: string;
   @ManyToOne()
   category?: TaxCategory;
-  @Property()
+  @Field()
   description?: string;
 }
 
 @Entity()
 export class MeasureUnitCategory extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
 }
 
 @Entity()
 export class MeasureUnit extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
-  @Property({ reference: () => MeasureUnitCategory })
+  @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
   @ManyToOne()
   category?: MeasureUnitCategory;
@@ -295,49 +295,49 @@ export class MeasureUnit extends BaseEntity {
 
 @Entity()
 export class Storehouse extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   address?: string;
-  @Property()
+  @Field()
   description?: string;
 }
 
 @Entity()
 export class Item extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
-  @Property()
+  @Field()
   description?: string;
-  @Property()
+  @Field()
   code?: string;
-  @Property({ reference: () => LedgerAccount })
+  @Field({ reference: () => LedgerAccount })
   buyLedgerAccountId?: number;
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
-  @Property({ reference: () => LedgerAccount })
+  @Field({ reference: () => LedgerAccount })
   saleLedgerAccountId?: number;
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
-  @Property({ reference: { entity: () => Tax } })
+  @Field({ reference: { entity: () => Tax } })
   taxId?: number;
   @ManyToOne()
   tax?: Tax;
-  @Property({ reference: () => MeasureUnit })
+  @Field({ reference: () => MeasureUnit })
   measureUnitId?: number;
   @ManyToOne()
   measureUnit?: MeasureUnit;
-  @Property()
+  @Field()
   salePrice?: number;
-  @Property()
+  @Field()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
 }
 
 @Entity()
 export class Tag extends BaseEntity {
-  @Property()
+  @Field()
   name?: string;
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
@@ -347,27 +347,27 @@ export class Tag extends BaseEntity {
 export class ItemTag {
   @Id()
   id?: number;
-  @Property({ reference: () => Item })
+  @Field({ reference: () => Item })
   itemId?: number;
-  @Property({ reference: () => Tag })
+  @Field({ reference: () => Tag })
   tagId?: number;
 }
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
-  @Property({ reference: () => Item })
+  @Field({ reference: () => Item })
   itemId?: number;
   @ManyToOne()
   item?: Item;
-  @Property()
+  @Field()
   number?: number;
-  @Property()
+  @Field()
   buyPrice?: number;
-  @Property({ reference: () => Storehouse })
+  @Field({ reference: () => Storehouse })
   storehouseId?: number;
   @ManyToOne()
   storehouse?: Storehouse;
-  @Property({ reference: () => InventoryAdjustment })
+  @Field({ reference: () => InventoryAdjustment })
   inventoryAdjustmentId?: number;
 }
 
@@ -376,11 +376,12 @@ export class InventoryAdjustment extends BaseEntity {
   @OneToMany({
     entity: () => ItemAdjustment,
     mappedBy: (rel) => rel.inventoryAdjustmentId,
+    cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];
-  @Property()
+  @Field()
   date?: number;
-  @Property()
+  @Field()
   description?: string;
 }
 ```

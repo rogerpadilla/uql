@@ -9,14 +9,14 @@ import {
   QueryPager,
   QueryTextSearchOptions,
   QueryPopulate,
-  Properties,
+  Fields,
   QueryProject,
   Type,
   QueryCriteria,
   QueryPopulateValue,
   Relations,
 } from '../type';
-import { buildPersistable, fillOnCallbacks, filterProperties } from '../entity/util';
+import { buildPersistable, fillOnCallbacks, filterFields } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
@@ -45,9 +45,9 @@ export abstract class BaseSqlDialect {
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
     const payloads = fillOnCallbacks(meta, payload, 'onInsert');
-    const keys = filterProperties(meta, payloads[0]);
-    const columns = keys.map((prop) => this.escapeId(meta.properties[prop].name));
-    const values = payloads.map((it) => keys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
+    const keys = filterFields(meta, payloads[0]);
+    const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
+    const values = payloads.map((it) => keys.map((key) => this.escape(it[key])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
@@ -73,12 +73,12 @@ export abstract class BaseSqlDialect {
       if (!Array.isArray(project)) {
         const projectKeys = getKeys(project);
         const hasPositives = projectKeys.some((key) => project[key]);
-        project = (hasPositives ? projectKeys : getKeys(meta.properties)).filter(
+        project = (hasPositives ? projectKeys : getKeys(meta.fields)).filter(
           (it) => project[it] ?? project[it] === undefined
-        ) as Properties<E>[];
+        ) as Fields<E>[];
       }
     } else {
-      project = getKeys(meta.properties) as Properties<E>[];
+      project = getKeys(meta.fields) as Fields<E>[];
     }
 
     return project
@@ -86,13 +86,13 @@ export abstract class BaseSqlDialect {
         if (key instanceof Raw) {
           return key.alias ? `${key.value} ${this.escapeId(key.alias, true)}` : key.value;
         }
-        const property = meta.properties[key];
-        const name = property?.name ?? key;
-        const field = `${prefix}${this.escapeId(name)}`;
+        const field = meta.fields[key];
+        const name = field?.name ?? key;
+        const fieldPath = `${prefix}${this.escapeId(name)}`;
         if (opts.usePrefixInAlias) {
-          return `${field} ${this.escapeId(opts.prefix + '.' + key, true)}`;
+          return `${fieldPath} ${this.escapeId(opts.prefix + '.' + key, true)}`;
         }
-        return name === key || !property ? field : `${field} ${this.escapeId(key)}`;
+        return name === key || !field ? fieldPath : `${fieldPath} ${this.escapeId(key)}`;
       })
       .join(', ');
   }
@@ -230,14 +230,14 @@ export abstract class BaseSqlDialect {
 
   compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
     entity: Type<E>,
-    prop: string,
+    key: string,
     operator: K,
     val: QueryComparisonOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
-    const field = this.escapeId(meta.properties[prop]?.name ?? prop);
+    const field = this.escapeId(meta.fields[key]?.name ?? key);
     const fieldPath = prefix + field;
     switch (operator) {
       case '$eq':
@@ -265,12 +265,12 @@ export abstract class BaseSqlDialect {
     }
   }
 
-  group<E>(entity: Type<E>, properties: Properties<E>[]): string {
-    if (!properties?.length) {
+  group<E>(entity: Type<E>, fields: Fields<E>[]): string {
+    if (!fields?.length) {
       return '';
     }
     const meta = getMeta(entity);
-    const names = properties.map((prop) => this.escapeId(meta.properties[prop]?.name ?? prop)).join(', ');
+    const names = fields.map((key) => this.escapeId(meta.fields[key]?.name ?? key)).join(', ');
     return ` GROUP BY ${names}`;
   }
 
@@ -281,9 +281,9 @@ export abstract class BaseSqlDialect {
     }
     const meta = getMeta(entity);
     const order = keys
-      .map((prop) => {
-        const field = meta.properties[prop]?.name ?? prop;
-        const direction = sort[prop] === -1 ? ' DESC' : '';
+      .map((key) => {
+        const field = meta.fields[key]?.name ?? key;
+        const direction = sort[key] === -1 ? ' DESC' : '';
         return this.escapeId(field) + direction;
       })
       .join(', ');

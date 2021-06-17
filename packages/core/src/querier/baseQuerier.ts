@@ -1,14 +1,4 @@
-import {
-  Properties,
-  Querier,
-  Query,
-  QueryCriteria,
-  QueryOne,
-  QueryPopulate,
-  Relations,
-  Repository,
-  Type,
-} from '../type';
+import { Fields, Querier, Query, QueryCriteria, QueryOne, QueryPopulate, Relations, Repository, Type } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
 import { filterRelations } from '../entity/util';
@@ -22,7 +12,7 @@ export abstract class BaseQuerier implements Querier {
 
   findOneById<E>(type: Type<E>, id: any, qo: QueryOne<E> = {}) {
     const meta = getMeta(type);
-    const idName = meta.properties[meta.id].name;
+    const idName = meta.fields[meta.id].name;
     return this.findOne(type, { ...qo, $filter: { [idName]: id } });
   }
 
@@ -67,7 +57,7 @@ export abstract class BaseQuerier implements Querier {
 
       const relEntity = relOpts.entity();
       const relQuery = clone(populate[relKey] as Query<typeof relEntity>);
-      const referenceProperty = relOpts.references[0].source;
+      const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
@@ -75,9 +65,9 @@ export abstract class BaseQuerier implements Querier {
         const throughMeta = getMeta(throughEntity);
         const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
         const throughFounds = await this.findMany(throughEntity, {
-          $project: [referenceProperty],
+          $project: [referenceKey],
           $filter: {
-            [referenceProperty]: ids,
+            [referenceKey]: ids,
           },
           $populate: {
             [targetRelKey]: {
@@ -87,20 +77,20 @@ export abstract class BaseQuerier implements Querier {
           },
         });
         const founds = throughFounds.map((it) => it[targetRelKey]);
-        this.putChildrenInParents(payload, founds, meta.id, referenceProperty, relKey);
+        this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
       } else if (relOpts.cardinality === '1m') {
         if (relQuery.$project) {
           if (Array.isArray(relQuery.$project)) {
-            if (!relQuery.$project.includes(referenceProperty)) {
-              relQuery.$project.push(referenceProperty);
+            if (!relQuery.$project.includes(referenceKey)) {
+              relQuery.$project.push(referenceKey);
             }
-          } else if (!relQuery.$project[referenceProperty]) {
-            relQuery.$project[referenceProperty] = true;
+          } else if (!relQuery.$project[referenceKey]) {
+            relQuery.$project[referenceKey] = true;
           }
         }
-        relQuery.$filter = { [referenceProperty]: { $in: ids } };
+        relQuery.$filter = { [referenceKey]: { $in: ids } };
         const founds = await this.findMany(relEntity, relQuery);
-        this.putChildrenInParents(payload, founds, meta.id, referenceProperty, relKey);
+        this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
       }
     }
   }
@@ -108,12 +98,12 @@ export abstract class BaseQuerier implements Querier {
   protected putChildrenInParents<E>(
     parents: E[],
     children: E[],
-    parentIdProperty: string,
-    referenceProperty: string,
+    parentIdKey: string,
+    referenceKey: string,
     relKey: string
   ): void {
     const childrenByParentMap = children.reduce((acc, child) => {
-      const parenId = child[referenceProperty];
+      const parenId = child[referenceKey];
       if (!acc[parenId]) {
         acc[parenId] = [];
       }
@@ -122,7 +112,7 @@ export abstract class BaseQuerier implements Querier {
     }, {});
 
     for (const parent of parents) {
-      const parentId = parent[parentIdProperty];
+      const parentId = parent[parentIdKey];
       parent[relKey] = childrenByParentMap[parentId];
     }
   }
@@ -150,7 +140,7 @@ export abstract class BaseQuerier implements Querier {
 
     const founds = await this.findMany(entity, {
       ...criteria,
-      $project: [meta.id] as Properties<E>[],
+      $project: [meta.id] as Fields<E>[],
     });
 
     const ids = founds.map((found) => found[meta.id]);

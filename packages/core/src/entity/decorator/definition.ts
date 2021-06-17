@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util';
 import {
   RelationOptions,
-  PropertyOptions,
+  FieldOptions,
   EntityOptions,
   EntityMeta,
   Type,
@@ -11,7 +11,7 @@ import {
   KeyMap,
   ReferenceOptions,
   Relations,
-  Properties,
+  Fields,
   Keys,
 } from '../../type';
 import { isValidEntityType } from '../util';
@@ -21,43 +21,43 @@ const metaKey = '@uql/core/entity';
 const metas: Map<Type<any>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
-export function defineProperty<E>(entity: Type<E>, prop: string, opts: PropertyOptions = {}): EntityMeta<E> {
+export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
   if (!opts.type) {
-    const type = inferType(entity, prop);
+    const type = inferType(entity, key);
     opts = { ...opts, type };
   }
   if (typeof opts.reference === 'function') {
     opts = { ...opts, reference: { entity: opts.reference } };
   }
-  meta.properties[prop] = { ...meta.properties[prop], ...{ name: prop, ...opts } };
+  meta.fields[key] = { ...meta.fields[key], ...{ name: key, ...opts } };
   return meta;
 }
 
-export function defineId<E>(entity: Type<E>, prop: string, opts: PropertyOptions): EntityMeta<E> {
+export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
   const id = getId(meta);
   if (id) {
     throw new TypeError(`'${entity.name}' must have a single field decorated with @Id`);
   }
-  return defineProperty(entity, prop, { ...opts, isId: true });
+  return defineField(entity, key, { ...opts, isId: true });
 }
 
-export function defineRelation<E>(entity: Type<E>, prop: string, opts: RelationOptions<E>): EntityMeta<E> {
+export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOptions<E>): EntityMeta<E> {
   if (!opts.entity) {
-    const inferredType = inferEntityType(entity, prop);
+    const inferredType = inferEntityType(entity, key);
     opts.entity = () => inferredType;
   }
   const meta = ensureMeta(entity);
-  meta.relations[prop] = { ...meta.relations[prop], ...opts };
+  meta.relations[key] = { ...meta.relations[key], ...opts };
   return meta;
 }
 
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
 
-  if (!hasKeys(meta.properties)) {
-    throw new TypeError(`'${entity.name}' must have properties`);
+  if (!hasKeys(meta.fields)) {
+    throw new TypeError(`'${entity.name}' must have fields`);
   }
 
   meta.name = opts.name ?? entity.name;
@@ -92,7 +92,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity: entity, name: entity.name, properties: {}, relations: {} };
+  meta = { entity: entity, name: entity.name, fields: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
 }
@@ -127,8 +127,8 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const relMeta = ensureMeta(relEntity);
 
     if (relOpts.cardinality === 'mm') {
-      const idName = meta.properties[meta.id].name;
-      const relIdName = relMeta.properties[relMeta.id].name;
+      const idName = meta.fields[meta.id].name;
+      const relIdName = relMeta.fields[relMeta.id].name;
       const source = lowerFirst(meta.name) + upperFirst(idName);
       const target = lowerFirst(relMeta.name) + upperFirst(relIdName);
       relOpts.references = [
@@ -172,17 +172,17 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
 
 function fillThroughRelations<E>(entity: Type<E>): void {
   const meta = ensureMeta(entity);
-  meta.relations = getKeys(meta.properties).reduce((relations, propKey) => {
-    const { reference } = meta.properties[propKey];
+  meta.relations = getKeys(meta.fields).reduce((relations, key) => {
+    const { reference } = meta.fields[key];
     if (reference) {
       const relEntityGetter = (reference as ReferenceOptions).entity;
       const relEntity = relEntityGetter();
       const relMeta = ensureMeta(relEntity);
-      const relKey = propKey.slice(0, -relMeta.id.length);
+      const relKey = key.slice(0, -relMeta.id.length);
       const relOpts: RelationOptions = {
         cardinality: 'm1',
         entity: relEntityGetter,
-        references: [{ source: propKey, target: relMeta.id }],
+        references: [{ source: key, target: relMeta.id }],
       };
       relations[relKey] = relOpts;
     }
@@ -202,39 +202,39 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): Keys<E> {
 }
 
 function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
-  return getKeys({ ...meta.properties, ...meta.relations }).reduce((acc, key) => {
+  return getKeys({ ...meta.fields, ...meta.relations }).reduce((acc, key) => {
     acc[key] = key;
     return acc;
   }, {} as KeyMap<E>);
 }
 
-function getId<E>(meta: EntityMeta<E>): Properties<E> {
-  const id = getKeys(meta.properties).find((key) => meta.properties[key]?.isId);
-  return id as Properties<E>;
+function getId<E>(meta: EntityMeta<E>): Fields<E> {
+  const id = getKeys(meta.fields).find((key) => meta.fields[key]?.isId);
+  return id as Fields<E>;
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>): void {
-  const sourceProperties = { ...source.properties };
+  const sourceFields = { ...source.fields };
   const targetId = getId(target);
   if (targetId) {
     const sourceId = getId(source);
     if (sourceId) {
-      delete sourceProperties[sourceId];
+      delete sourceFields[sourceId];
     }
   }
-  target.properties = { ...sourceProperties, ...target.properties };
+  target.fields = { ...sourceFields, ...target.fields };
   target.relations = { ...source.relations, ...target.relations };
 }
 
-function inferType<E>(entity: Type<E>, prop: string): any {
-  return Reflect.getMetadata('design:type', entity.prototype, prop);
+function inferType<E>(entity: Type<E>, key: string): any {
+  return Reflect.getMetadata('design:type', entity.prototype, key);
 }
 
-function inferEntityType<E>(entity: Type<E>, prop: string): Type<any> {
-  const inferredType = inferType(entity, prop);
+function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
+  const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
-    throw new TypeError(`'${entity.name}.${prop}' type was auto-inferred with invalid type '${inferredType?.name}'`);
+    throw new TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
   }
   return inferredType;
 }

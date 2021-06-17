@@ -1,9 +1,9 @@
-import { PropertyOptions, Type } from '../../type';
+import { IdOptions, Type } from '../../type';
 import { defineId } from './definition';
 
-export function Id<E>(opts?: PropertyOptions) {
-  return (target: object, prop: string): void => {
+export function Id<E>(opts?: IdOptions) {
+  return (target: object, key: string): void => {
     const entity = target.constructor as Type<E>;
-    defineId(entity, prop, opts);
+    defineId(entity, key, opts);
   };
 }

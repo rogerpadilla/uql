@@ -1,6 +1,6 @@
 import { Type } from './utility';
 
-export type Properties<E> = {
+export type Fields<E> = {
   readonly [K in keyof E]: E[K] extends object ? never : K;
 }[keyof E & string];
 
@@ -16,7 +16,7 @@ export type EntityOptions = {
   readonly name?: string;
 };
 
-export type PropertyOptions = {
+export type FieldOptions = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: any;
@@ -24,6 +24,8 @@ export type PropertyOptions = {
   readonly onInsert?: () => any;
   readonly onUpdate?: () => any;
 };
+
+export type IdOptions = Omit<FieldOptions, 'isId' | 'reference'>;
 
 export type EntityGetter<E = any> = () => Type<E>;
 
@@ -68,9 +70,9 @@ export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | Rela
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
-  id?: Properties<E>;
-  properties: {
-    [P in Properties<E>]?: PropertyOptions;
+  id?: Fields<E>;
+  fields: {
+    [P in Fields<E>]?: FieldOptions;
   };
   relations: {
     [R in Relations<E> & string]?: RelationOptions;

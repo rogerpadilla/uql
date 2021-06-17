@@ -20,11 +20,11 @@ export function mapRows<T>(rows: T[]): T[] {
       }
       const attrPath = attrsPaths[col];
       if (attrPath) {
-        const target = attrPath.slice(0, -1).reduce((acc, prop) => {
-          if (typeof acc[prop] !== 'object') {
-            acc[prop] = {};
+        const target = attrPath.slice(0, -1).reduce((acc, key) => {
+          if (typeof acc[key] !== 'object') {
+            acc[key] = {};
           }
-          return acc[prop];
+          return acc[key];
         }, dto);
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
@@ -42,5 +42,5 @@ function obtainAttrsPaths<T>(row: T) {
       acc[col] = col.split('.');
     }
     return acc;
-  }, {} as { [prop: string]: string[] });
+  }, {} as { [k: string]: string[] });
 }

@@ -41,13 +41,13 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
     const insertableIdType = 'VARCHAR(36)';
     const defaultType = 'VARCHAR(50)';
 
-    const columns = getKeys(meta.properties).map((key) => {
-      const prop = meta.properties[key];
-      let propSql = this.querier.dialect.escapeId(prop.name) + ' ';
-      if (prop.isId) {
-        propSql += prop.onInsert ? `${insertableIdType} PRIMARY KEY` : this.primaryKeyType;
+    const columns = getKeys(meta.fields).map((key) => {
+      const field = meta.fields[key];
+      let propSql = this.querier.dialect.escapeId(field.name) + ' ';
+      if (field.isId) {
+        propSql += field.onInsert ? `${insertableIdType} PRIMARY KEY` : this.primaryKeyType;
       } else {
-        propSql += prop.type === Number ? 'BIGINT' : defaultType;
+        propSql += field.type === Number ? 'BIGINT' : defaultType;
       }
       return propSql;
     });
