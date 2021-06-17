@@ -4,6 +4,8 @@ import {
   Item,
   ItemAdjustment,
   LedgerAccount,
+  MeasureUnit,
+  MeasureUnitCategory,
   Profile,
   Spec,
   Tax,
@@ -20,6 +22,8 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     Tax,
     TaxCategory,
     LedgerAccount,
+    MeasureUnitCategory,
+    MeasureUnit,
     Profile,
     Company,
     User,
@@ -154,17 +158,29 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   async shouldInsertOneAndCascadeOneToOne() {
     const payload: User = {
       name: 'Some Name D',
-      profile: { picture: 'abc', createdAt: 123 },
       createdAt: 123,
+      profile: { picture: 'abc', createdAt: 123 },
+    };
+    const id = await this.querier.insertOne(User, payload);
+    expect(id).toBeDefined();
+    const found = await this.querier.findOneById(User, id, { $populate: { profile: {} } });
+    expect(found).toMatchObject(payload);
+  }
+
+  async shouldInsertOneAndCascadeManyToOne() {
+    const payload: MeasureUnit = {
+      name: 'Centimeter',
+      createdAt: 123,
+      category: { name: 'Metric', createdAt: 123 },
     };
 
-    const id = await this.querier.insertOne(User, payload);
+    const id = await this.querier.insertOne(MeasureUnit, payload);
 
     expect(id).toBeDefined();
 
-    const user = await this.querier.findOneById(User, id, { $populate: { profile: {} } });
+    const found = await this.querier.findOneById(MeasureUnit, id, { $populate: { category: {} } });
 
-    expect(user).toMatchObject(payload);
+    expect(found).toMatchObject(payload);
   }
 
   async shouldInsertOneAndCascadeOneToMany() {
@@ -465,12 +481,12 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
     const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some inventory adjustment',
+      creatorId: user.id,
+      companyId: company.id,
       itemAdjustments: [
         { buyPrice: 1000, itemId: firstItemId },
         { buyPrice: 2000, itemId: secondItemId },
       ],
-      creatorId: user.id,
-      companyId: company.id,
     });
 
     const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {

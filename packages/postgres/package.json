@@ -15,7 +15,7 @@
     "pg": "^8.6.0"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.23"
+    "@uql/core": "^0.4.24"
   },
   "devDependencies": {
     "@types/node": "^15.12.2",
@@ -23,7 +23,7 @@
     "@uql/core": "^0.4.25",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
-    "typescript": "^4.3.2"
+    "typescript": "^4.3.4"
   },
   "author": "Roger Padilla",
   "repository": {

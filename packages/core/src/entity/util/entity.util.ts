@@ -1,10 +1,14 @@
-import { EntityMeta, PropertyOptions, Type } from '@uql/core/type';
+import { EntityMeta, Properties, PropertyOptions, Relations, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
 type CallbackKey = keyof Pick<PropertyOptions, 'onInsert' | 'onUpdate'>;
 
-export function filterPersistableKeys<E>(meta: EntityMeta<E>, payload: E): string[] {
-  return getKeys(payload).filter((prop) => meta.properties[prop] && payload[prop] !== undefined);
+export function filterProperties<E>(meta: EntityMeta<E>, payload: E): Properties<E>[] {
+  return getKeys(payload).filter((key) => meta.properties[key] && payload[key] !== undefined) as Properties<E>[];
+}
+
+export function filterRelations<E>(meta: EntityMeta<E>, payload: E): Relations<E>[] {
+  return getKeys(payload).filter((key) => meta.relations[key] && payload[key] !== undefined) as Relations<E>[];
 }
 
 export function buildPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
@@ -13,7 +17,7 @@ export function buildPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey
 
 export function buildPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = fillOnCallbacks(meta, payload, callbackKey);
-  const persistableKeys = filterPersistableKeys(meta, payloads[0]);
+  const persistableKeys = filterProperties(meta, payloads[0]);
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
@@ -33,19 +37,6 @@ export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callba
       }
     }
     return it;
-  });
-}
-
-export function getIndependentRelations<E>(meta: EntityMeta<E>, payload?: E): string[] {
-  const keys = payload ? getKeys(payload) : getKeys(meta.relations);
-  return keys.filter((key) => {
-    const relOpts = meta.relations[key];
-    return (
-      relOpts &&
-      ((relOpts.cardinality === '11' && relOpts.mappedBy) ||
-        relOpts.cardinality === '1m' ||
-        relOpts.cardinality === 'mm')
-    );
   });
 }
 

@@ -13,7 +13,7 @@ class PostgresDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN');
   }
 
-  shouldInsert() {
+  shouldInsertMany() {
     expect(
       this.dialect.insert(User, [
         {
@@ -39,7 +39,9 @@ class PostgresDialectSpec {
         ", ('Some name 3', 'someemail3@example.com', 789)" +
         ' RETURNING "id" "id"'
     );
+  }
 
+  shouldInsertOne() {
     expect(
       this.dialect.insert(User, {
         name: 'Some Name',
@@ -58,7 +60,7 @@ class PostgresDialectSpec {
         createdAt: 123,
       })
     ).toMatch(
-      `^INSERT INTO "TaxCategory" \\("name", "createdAt", "pk"\\) VALUES \\('Some Name', 123, '.+'\\) RETURNING "pk" "id"$`
+      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/
     );
   }
 

@@ -5,14 +5,13 @@ import {
   QueryCriteria,
   QueryOne,
   QueryPopulate,
-  RelationOptions,
   Relations,
   Repository,
   Type,
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
-import { getIndependentRelations } from '../entity/util';
+import { filterRelations } from '../entity/util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -132,18 +131,18 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const relKeys = getIndependentRelations(meta, it);
+        const relKeys = filterRelations(meta, it);
         if (!relKeys.length) {
           return;
         }
-        return Promise.all(relKeys.map((relKey) => this.saveRelation(it[meta.id], it[relKey], meta.relations[relKey])));
+        return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
       })
     );
   }
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const relKeys = getIndependentRelations(meta, payload);
+    const relKeys = filterRelations(meta, payload);
 
     if (!relKeys.length) {
       return;
@@ -158,30 +157,22 @@ export abstract class BaseQuerier implements Querier {
 
     await Promise.all(
       ids.map((id) =>
-        Promise.all(relKeys.map((relKey) => this.saveRelation(id, payload[relKey], meta.relations[relKey], true)))
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
       )
     );
   }
 
   protected async deleteRelations<E>(entity: Type<E>, criteria: QueryCriteria<E>): Promise<void> {
     const meta = getMeta(entity);
-    const relKeys = getIndependentRelations(meta);
-    if (!relKeys.length) {
-      return;
-    }
 
-    for (const key of relKeys) {
-      // TODO
-      // if (cardinality === '11') {
-      //   const relKey = references[0].target;
-      //   if (relPayload === null) {
-      //     await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
-      //     return;
-      //   }
-      //   await this.saveMany(relEntity, [{ ...(relPayload as E), [relKey]: id }]);
-      //   return;
-      // }
-    }
+    // const relKeys = filterPersistableRelationKeys(meta);
+    // if (!relKeys.length) {
+    //   return;
+    // }
+
+    // TODO
+    // for (const key of relKeys) {
+    // }
   }
 
   protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
@@ -213,49 +204,63 @@ export abstract class BaseQuerier implements Querier {
   }
 
   protected async saveRelation<E>(
-    id: any,
-    relPayload: E | E[],
-    { entity, cardinality, references, through }: RelationOptions<E>,
+    entity: Type<E>,
+    payload: E,
+    relKey: Relations<E>,
     isUpdate?: boolean
   ): Promise<void> {
-    const relEntity = entity();
+    const meta = getMeta(entity);
+    const id = payload[meta.id];
+    const { entity: entityGetter, cardinality, references, through } = meta.relations[relKey];
+    const relEntity = entityGetter();
+    const relPayload = payload[relKey] as any;
 
-    if (cardinality === '11') {
-      const relKey = references[0].target;
-      if (relPayload === null) {
-        await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
+    if (cardinality === '1m' || cardinality === 'mm') {
+      const refKey = references[0].source;
+
+      if (through) {
+        const throughEntity = through();
+        await this.deleteMany(throughEntity, { $filter: { [refKey]: id } });
+        if (relPayload) {
+          const savedIds = await this.saveMany(relEntity, relPayload);
+          const throughBodies = savedIds.map((relId) => ({
+            [references[0].source]: id,
+            [references[1].source]: relId,
+          }));
+          await this.insertMany(throughEntity, throughBodies);
+        }
         return;
       }
-      await this.saveMany(relEntity, [{ ...(relPayload as E), [relKey]: id }]);
-      return;
-    }
-
-    const relPayloads = relPayload as E[];
-    const relKey = references[0].source;
-
-    if (through) {
-      const throughEntity = through();
-      await this.deleteMany(throughEntity, { $filter: { [relKey]: id } });
-      if (relPayloads) {
-        const savedIds = await this.saveMany(relEntity, relPayloads);
-        const throughBodies = savedIds.map((relId) => ({
-          [references[0].source]: id,
-          [references[1].source]: relId,
-        }));
-        await this.insertMany(throughEntity, throughBodies);
-      }
-      return;
-    }
-
-    if (cardinality === '1m') {
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $filter: { [relKey]: id } });
+        await this.deleteMany(relEntity, { $filter: { [refKey]: id } });
       }
-      if (relPayloads) {
-        for (const it of relPayloads) {
-          it[relKey] = id;
+      if (relPayload) {
+        for (const it of relPayload) {
+          it[refKey] = id;
         }
-        await this.saveMany(relEntity, relPayloads);
+        await this.saveMany(relEntity, relPayload);
+      }
+      return;
+    }
+
+    if (cardinality === '11') {
+      const refKey = references[0].target;
+      if (relPayload === null) {
+        await this.deleteMany(relEntity, { $filter: { [refKey]: id } });
+        return;
+      }
+      await this.saveMany(relEntity, [{ ...relPayload, [refKey]: id }]);
+      return;
+    }
+
+    if (cardinality === 'm1') {
+      const refKey = references[0].source;
+      if (payload[refKey]) {
+        return;
+      }
+      if (relPayload) {
+        const refId = await this.insertOne(relEntity, relPayload);
+        await this.updateOneById(entity, { [refKey]: refId }, id);
       }
       return;
     }

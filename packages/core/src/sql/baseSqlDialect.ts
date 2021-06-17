@@ -16,7 +16,7 @@ import {
   QueryPopulateValue,
   Relations,
 } from '../type';
-import { buildPersistable, fillOnCallbacks, filterPersistableKeys } from '../entity/util';
+import { buildPersistable, fillOnCallbacks, filterProperties } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
@@ -45,7 +45,7 @@ export abstract class BaseSqlDialect {
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
     const payloads = fillOnCallbacks(meta, payload, 'onInsert');
-    const keys = filterPersistableKeys(meta, payloads[0]);
+    const keys = filterProperties(meta, payloads[0]);
     const columns = keys.map((prop) => this.escapeId(meta.properties[prop].name));
     const values = payloads.map((it) => keys.map((prop) => this.escape(it[prop])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;

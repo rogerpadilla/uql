@@ -1,4 +1,4 @@
-import { User, InventoryAdjustment, Spec, Item, Tag } from '../test';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit } from '../test';
 import { QuerierPoolConnection, QueryUpdateResult } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
@@ -175,6 +175,29 @@ export class BaseSqlQuerierSpec implements Spec {
       "INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES ('abc', 1, 1)"
     );
     expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
+  }
+
+  async shouldInsertOneAndCascadeManyToOne() {
+    await this.querier.insertOne(MeasureUnit, {
+      name: 'Centimeter',
+      createdAt: 123,
+      category: { name: 'Metric', createdAt: 123 },
+    });
+
+    expect(this.querier.conn.run).nthCalledWith(
+      1,
+      "INSERT INTO `MeasureUnit` (`name`, `createdAt`) VALUES ('Centimeter', 123)"
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      2,
+      "INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`) VALUES ('Metric', 123)"
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      3,
+      expect.toMatch(/^UPDATE `MeasureUnit` SET `categoryId` = 1, `updatedAt` = \d+ WHERE `id` = 1$/)
+    );
+    expect(this.querier.conn.run).toBeCalledTimes(3);
     expect(this.querier.conn.all).toBeCalledTimes(0);
   }
 

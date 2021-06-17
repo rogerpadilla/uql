@@ -16,7 +16,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
-  shouldInsert() {
+  shouldInsertMany() {
     expect(
       this.dialect.insert(User, [
         {
@@ -41,7 +41,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ", ('Some name 2', 'someemail2@example.com', 456)" +
         ", ('Some name 3', 'someemail3@example.com', 789)"
     );
+  }
 
+  shouldInsertOne() {
     expect(
       this.dialect.insert(User, {
         name: 'Some Name',
@@ -57,7 +59,30 @@ export abstract class BaseSqlDialectSpec implements Spec {
         name: 'Some Name',
         createdAt: 123,
       })
-    ).toMatch("^INSERT INTO `TaxCategory` \\(`name`, `createdAt`, `pk`\\) VALUES \\('Some Name', 123, '.+'\\)$");
+    ).toMatch(/^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name', 123, '.+'\)$/);
+  }
+
+  shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
+    expect(
+      this.dialect.insert(TaxCategory, [
+        {
+          name: 'Some Name A',
+        },
+        {
+          pk: '50',
+          name: 'Some Name B',
+        },
+        {
+          name: 'Some Name C',
+        },
+        {
+          pk: '70',
+          name: 'Some Name D',
+        },
+      ])
+    ).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name A', \d+, '.+'\), \('Some Name B', \d+, '50'\), \('Some Name C', \d+, '.+'\), \('Some Name D', \d+, '70'\)$/
+    );
   }
 
   shouldUpdate() {
