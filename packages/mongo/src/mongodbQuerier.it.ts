@@ -1,4 +1,4 @@
-import { getMeta } from '@uql/core/entity/decorator';
+import { getEntities, getMeta } from '@uql/core/entity/decorator';
 import { BaseQuerierIt } from '@uql/core/querier/baseQuerier-it';
 import { createSpec } from '@uql/core/test';
 import { MongodbQuerierPool } from './mongodbQuerierPool';
@@ -15,18 +15,17 @@ class MongodbQuerierIt extends BaseQuerierIt<MongodbQuerier> {
   }
 
   override async createTables() {
-    const querier = this.querier as MongodbQuerier;
+    const entities = getEntities();
     await Promise.all(
-      this.entities.map((entity) => {
+      entities.map((entity) => {
         const meta = getMeta(entity);
-        return querier.conn.db().createCollection(meta.name);
+        return this.querier.conn.db().createCollection(meta.name);
       })
     );
   }
 
   override async dropTables() {
-    const querier = this.querier as MongodbQuerier;
-    await querier.conn.db().dropDatabase();
+    await this.querier.conn.db().dropDatabase();
   }
 }
 

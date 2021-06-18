@@ -1,3 +1,4 @@
+import { getEntities } from '../entity/decorator';
 import {
   Company,
   InventoryAdjustment,
@@ -5,30 +6,13 @@ import {
   ItemAdjustment,
   LedgerAccount,
   MeasureUnit,
-  MeasureUnitCategory,
-  Profile,
   Spec,
-  Tax,
   TaxCategory,
   User,
 } from '../test';
 import { Querier, QuerierPool } from '../type';
 
 export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
-  readonly entities = [
-    InventoryAdjustment,
-    ItemAdjustment,
-    Item,
-    Tax,
-    TaxCategory,
-    LedgerAccount,
-    MeasureUnitCategory,
-    MeasureUnit,
-    Profile,
-    Company,
-    User,
-  ] as const;
-
   querier: Q;
 
   constructor(readonly pool: QuerierPool<Q>) {}
@@ -530,7 +514,8 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   }
 
   async cleanTables() {
-    await Promise.all(this.entities.map((entity) => this.querier.deleteMany(entity, {})));
+    const entities = getEntities();
+    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {})));
   }
 
   abstract createTables(): Promise<void>;
