@@ -2,7 +2,7 @@ import { Request, Response } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getOptions, getQuerier } from '@uql/core/options';
-import { Query, QueryOne, Type } from '@uql/core/type';
+import { FieldValue, Query, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { parseQuery } from './query.util';
@@ -95,7 +95,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const qm = assembleQuery<E>(entity, req, opts.extendQuery) as QueryOne<E>;
     const querier = await getQuerier();
     try {
-      const data = await querier.findOneById(entity, req.params.id, qm);
+      const data = await querier.findOneById(entity, req.params.id as FieldValue<E>, qm);
       res.json({ data });
     } catch (err) {
       sendError(err, res);
@@ -130,7 +130,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.deleteOneById(entity, req.params.id);
+      const data = await querier.deleteOneById(entity, req.params.id as FieldValue<E>);
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
