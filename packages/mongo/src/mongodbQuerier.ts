@@ -147,7 +147,6 @@ export class MongodbQuerier extends BaseQuerier {
     }
     log('commitTransaction');
     await this.session.commitTransaction();
-    this.session.endSession();
   }
 
   override async rollbackTransaction() {

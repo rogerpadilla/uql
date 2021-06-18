@@ -435,18 +435,22 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
-  async shouldRollback() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-
-    const count1 = await this.querier.count(User);
-    await expect(this.querier.count(User)).resolves.toBe(3);
-
-    await this.querier.beginTransaction();
-    await expect(this.querier.count(User)).resolves.toBe(count1);
-    await expect(this.querier.deleteMany(User, { $filter: { companyId: null } })).resolves.toBe(count1);
+  async shouldCommit() {
     await expect(this.querier.count(User)).resolves.toBe(0);
+    await this.querier.beginTransaction();
+    await this.querier.insertOne(User, {});
+    await expect(this.querier.count(User)).resolves.toBe(1);
+    await this.querier.commitTransaction();
+    await expect(this.querier.count(User)).resolves.toBe(1);
+  }
+
+  async shouldRollback() {
+    await expect(this.querier.count(User)).resolves.toBe(0);
+    await this.querier.beginTransaction();
+    await this.querier.insertOne(User, {});
+    await expect(this.querier.count(User)).resolves.toBe(1);
     await this.querier.rollbackTransaction();
-    await expect(this.querier.count(User)).resolves.toBe(count1);
+    await expect(this.querier.count(User)).resolves.toBe(0);
   }
 
   async shouldThrowWhenBeginTransactionAfterBeginTransaction() {

@@ -155,7 +155,7 @@ export class MeasureUnit extends BaseEntity {
   name?: string;
   @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
-  @ManyToOne()
+  @ManyToOne({ cascade: true })
   category?: MeasureUnitCategory;
 }
 

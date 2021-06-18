@@ -2,7 +2,7 @@ import { Database } from 'sqlite';
 import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 import { log } from '@uql/core';
 
-export class Sqlit3Connection implements QuerierPoolConnection {
+export class SqliteConnection implements QuerierPoolConnection {
   constructor(readonly db: Database) {}
 
   async all<T>(query: string) {
