@@ -1,10 +1,10 @@
 import { BaseSqlQuerierSpec } from '@uql/core/sql/baseSqlQuerier-spec';
 import { createSpec } from '@uql/core/test';
-import { SqliteQuerier } from './sqliteQuerier';
+import { Sqlite3QuerierPool } from './sqlite3QuerierPool';
 
 class SqliteQuerierSpec extends BaseSqlQuerierSpec {
   constructor() {
-    super(SqliteQuerier);
+    super(new Sqlite3QuerierPool({ filename: ':memory:' }));
   }
 }
 

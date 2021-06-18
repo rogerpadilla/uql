@@ -1,4 +1,4 @@
-import { Type } from '../../type';
+import { Key, Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 
@@ -24,8 +24,8 @@ export function InjectRepository<E>(entity: Type<E>) {
   };
 }
 
-export function getInjectedRepositoriesMap<S>(type: Type<S>, key: keyof S): InjectionMap {
-  let proto: FunctionConstructor = type.prototype;
+export function getInjectedRepositoriesMap<S>(service: Type<S>, key: Key<S>): InjectionMap {
+  let proto: FunctionConstructor = service.prototype;
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);
@@ -35,7 +35,7 @@ export function getInjectedRepositoriesMap<S>(type: Type<S>, key: keyof S): Inje
       return map;
     }
 
-    const keys = Object.getOwnPropertyNames(proto) as (keyof S)[];
+    const keys = Object.getOwnPropertyNames(proto) as Key<S>[];
     const isOwnKey = keys.includes(key);
 
     if (isOwnKey) {

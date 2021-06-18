@@ -203,7 +203,7 @@ it('Item', () => {
       },
       tags: {
         cardinality: 'mm',
-        cascade: true,
+        cascade: ['persist'],
         entity: expect.any(Function),
         through: expect.any(Function),
         references: [

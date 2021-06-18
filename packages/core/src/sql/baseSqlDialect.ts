@@ -9,12 +9,12 @@ import {
   QueryPager,
   QueryTextSearchOptions,
   QueryPopulate,
-  Fields,
+  FieldKey,
   QueryProject,
   Type,
   QueryCriteria,
   QueryPopulateValue,
-  Relations,
+  RelationKey,
 } from '../type';
 import { buildPersistable, fillOnCallbacks, filterFields } from '../entity/util';
 import { hasKeys, getKeys } from '../util';
@@ -75,10 +75,10 @@ export abstract class BaseSqlDialect {
         const hasPositives = projectKeys.some((key) => project[key]);
         project = (hasPositives ? projectKeys : getKeys(meta.fields)).filter(
           (it) => project[it] ?? project[it] === undefined
-        ) as Fields<E>[];
+        ) as FieldKey<E>[];
       }
     } else {
-      project = getKeys(meta.fields) as Fields<E>[];
+      project = getKeys(meta.fields) as FieldKey<E>[];
     }
 
     return project
@@ -117,7 +117,7 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
 
     for (const relKey in populate) {
-      const relOpts = meta.relations[relKey as Relations<E>];
+      const relOpts = meta.relations[relKey as RelationKey<E>];
 
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
@@ -265,7 +265,7 @@ export abstract class BaseSqlDialect {
     }
   }
 
-  group<E>(entity: Type<E>, fields: Fields<E>[]): string {
+  group<E>(entity: Type<E>, fields: FieldKey<E>[]): string {
     if (!fields?.length) {
       return '';
     }

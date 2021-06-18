@@ -1,4 +1,4 @@
-import { Fields, Relations } from './entity';
+import { FieldKey, RelationKey } from './entity';
 import { Unpacked } from './utility';
 
 export type QueryRaw = {
@@ -6,21 +6,21 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
-export type QueryProject<E> = readonly (Fields<E> | QueryRaw)[] | QueryProjectFields<E>;
+export type QueryProject<E> = readonly (FieldKey<E> | QueryRaw)[] | QueryProjectFields<E>;
 
 export type QueryProjectFields<E> = {
-  readonly [P in Fields<E>]?: boolean | 0 | 1;
+  readonly [P in FieldKey<E>]?: boolean | 0 | 1;
 };
 
 export type QueryPopulate<E> = {
-  readonly [P in Relations<E>]?: QueryPopulateValue<E[P]>;
+  readonly [P in RelationKey<E>]?: QueryPopulateValue<E[P]>;
 };
 
 export type QueryPopulateValue<E> = Query<Unpacked<E>> & { $required?: boolean };
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
-  readonly $fields?: Fields<E>[];
+  readonly $fields?: FieldKey<E>[];
 };
 
 export type QueryComparison<E> = {
@@ -41,7 +41,7 @@ export type QueryComparisonOperator<T> = {
 };
 
 export type QueryComparisonField<E> = {
-  readonly [P in Fields<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
+  readonly [P in FieldKey<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
 };
 
 export type QueryLogicalOperatorKey = '$and' | '$or';
@@ -53,7 +53,7 @@ export type QueryLogicalOperator<E> = {
 export type QueryFilter<E> = QueryLogicalOperator<E> | QueryComparison<E> | QueryComparisonField<E>;
 
 export type QuerySort<E> = {
-  readonly [P in Fields<E>]?: -1 | 1;
+  readonly [P in FieldKey<E>]?: -1 | 1;
 };
 
 export type QueryPager = {
@@ -63,7 +63,7 @@ export type QueryPager = {
 
 export type QueryCriteria<E> = {
   $filter?: QueryFilter<E>;
-  $group?: Fields<E>[];
+  $group?: FieldKey<E>[];
   $having?: QueryFilter<E>;
   $sort?: QuerySort<E>;
 } & QueryPager;

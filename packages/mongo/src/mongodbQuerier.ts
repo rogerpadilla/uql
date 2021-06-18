@@ -1,10 +1,10 @@
 import { MongoClient, ClientSession, ObjectId } from 'mongodb';
 import { isDebug, log } from '@uql/core';
-import { Query, EntityMeta, QueryOne, Type, QueryCriteria } from '@uql/core/type';
+import { Query, QueryOne, Type, QueryCriteria, FieldValue } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { buildPersistable, buildPersistables } from '@uql/core/entity/util';
-import { clone, hasKeys, getKeys } from '@uql/core/util';
+import { clone, hasKeys } from '@uql/core/util';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier {
@@ -33,7 +33,7 @@ export class MongodbQuerier extends BaseQuerier {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       }
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
-      normalizeIds(documents, meta);
+      documents = this.dialect.normalizeIds(meta, documents);
       await this.populateToManyRelations(entity, documents, qm.$populate);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
@@ -58,13 +58,13 @@ export class MongodbQuerier extends BaseQuerier {
       log('findMany', entity.name, qm);
 
       documents = await cursor.toArray();
-      normalizeIds(documents, meta);
+      documents = this.dialect.normalizeIds(meta, documents);
     }
 
     return documents;
   }
 
-  override findOneById<E>(entity: Type<E>, id: ObjectId, qo: QueryOne<E>) {
+  override findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E>) {
     const meta = getMeta(entity);
     return this.findOne(entity, { ...qo, $filter: { [meta.id]: id } });
   }
@@ -114,13 +114,21 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
     log('deleteMany', entity.name, filter);
-    const res = await this.collection(entity).deleteMany(filter, {
+    const founds: E[] = await this.collection(entity)
+      .find(filter, {
+        projection: { _id: true },
+        session: this.session,
+      })
+      .toArray();
+    const ids = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
+    const { deletedCount } = await this.collection(entity).deleteMany(filter, {
       session: this.session,
     });
-    await this.deleteRelations(entity, qm);
-    return res.deletedCount;
+    await this.deleteRelations(entity, ids);
+    return deletedCount;
   }
 
   override get hasOpenTransaction() {
@@ -163,32 +171,4 @@ export class MongodbQuerier extends BaseQuerier {
     }
     await this.conn.close(force);
   }
-}
-
-export function normalizeIds<E>(docs: E | E[], meta: EntityMeta<E>) {
-  if (Array.isArray(docs)) {
-    for (const doc of docs) {
-      normalizeId(doc, meta);
-    }
-  } else {
-    normalizeId<E>(docs, meta);
-  }
-}
-
-function normalizeId<E>(doc: E, meta: EntityMeta<E>) {
-  if (!doc) {
-    return;
-  }
-  const res = doc as E & { _id: any };
-  res[meta.id] = res._id;
-  delete res._id;
-  for (const relKey of getKeys(meta.relations)) {
-    const relOpts = meta.relations[relKey];
-    const relData = res[relKey];
-    if (typeof relData === 'object' && !(relData instanceof ObjectId)) {
-      const relMeta = getMeta(relOpts.entity());
-      normalizeIds(relData, relMeta);
-    }
-  }
-  return res as E;
 }

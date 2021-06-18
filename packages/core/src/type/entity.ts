@@ -1,15 +1,19 @@
 import { Type } from './utility';
 
-export type Fields<E> = {
-  readonly [K in keyof E]: E[K] extends object ? never : K;
-}[keyof E & string];
+export type FieldValue<E> = E[FieldKey<E>];
 
-export type Relations<E> = {
-  readonly [K in keyof E]: E[K] extends object ? K : never;
-}[keyof E & string];
+export type FieldKey<E> = {
+  readonly [K in Key<E>]: E[K] extends object ? never : K;
+}[Key<E>];
 
-export type Keys<E> = {
-  readonly [K in keyof E]: K;
+export type RelationValue<E> = E[RelationKey<E>];
+
+export type RelationKey<E> = {
+  readonly [K in Key<E>]: E[K] extends object ? K : never;
+}[Key<E>];
+
+export type Key<E> = {
+  readonly [K in keyof E]: K & string;
 }[keyof E & string];
 
 export type EntityOptions = {
@@ -31,14 +35,14 @@ export type EntityGetter<E = any> = () => Type<E>;
 
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
 
-export type CascadeType = 'insert' | 'update' | 'delete' | 'softDelete' | 'recover';
+export type CascadeType = 'persist' | 'delete';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   readonly cardinality?: RelationCardinality;
   readonly cascade?: boolean | readonly CascadeType[];
   mappedBy?: RelationMappedBy<E>;
-  through?: EntityGetter<any>;
+  through?: EntityGetter<RelationValue<E>>;
   references?: RelationReferences;
 };
 
@@ -46,13 +50,13 @@ type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' 
 type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'mappedBy' | 'cascade'>;
 type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'through' | 'references' | 'cascade'>;
 
-export type KeyMap<E> = { readonly [K in Keys<E>]: Keys<E> };
+export type KeyMap<E> = { readonly [K in Key<E>]: Key<E> };
 
-export type KeyMapper<E> = (keyMap: KeyMap<E>) => Keys<E>;
+export type KeyMapper<E> = (keyMap: KeyMap<E>) => Key<E>;
 
 export type RelationReferences = { source: string; target: string }[];
 
-export type RelationMappedBy<E> = E extends object ? Keys<E> | KeyMapper<E> : Keys<E>;
+export type RelationMappedBy<E> = E extends object ? Key<E> | KeyMapper<E> : Key<E>;
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
@@ -70,12 +74,12 @@ export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | Rela
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
-  id?: Fields<E>;
+  id?: FieldKey<E>;
   fields: {
-    [P in Fields<E>]?: FieldOptions;
+    [K in FieldKey<E>]?: FieldOptions;
   };
   relations: {
-    [R in Relations<E> & string]?: RelationOptions;
+    [K in RelationKey<E>]?: RelationOptions;
   };
   processed?: boolean;
 };

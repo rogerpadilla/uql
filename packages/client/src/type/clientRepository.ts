@@ -1,4 +1,4 @@
-import { Query, QueryOne, UniversalRepository, QueryCriteria } from '@uql/core/type';
+import { Query, QueryOne, UniversalRepository, QueryCriteria, FieldValue } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {
@@ -14,11 +14,11 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
 
   findOne(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findOneById(id: any, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById(id: FieldValue<E>, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
   deleteMany(qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  deleteOneById(id: any, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteOneById(id: FieldValue<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   count(qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

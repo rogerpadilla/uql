@@ -289,7 +289,7 @@ export class MeasureUnit extends BaseEntity {
   name?: string;
   @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
-  @ManyToOne()
+  @ManyToOne({ cascade: true })
   category?: MeasureUnitCategory;
 }
 
@@ -331,7 +331,7 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Field()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: ['persist'] })
   tags?: Tag[];
 }
 
@@ -493,19 +493,23 @@ app
   // ...
   .use(
     '/api',
+    
     // this will generate REST APIs for the entities.
     querierMiddleware({
+      
       // all entities will be automatically exposed unless
       // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
+
       // `extendQuery` callback allows to extend all then queries that are requested to the API,
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
-      extendQuery<E>(type: Type<E>, qm: Query<E>, req: Request): Query<E> {
+      extendQuery<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$limit = obtainValidLimit(qm.$limit);
-        const prefix = hasKeys(qm.$populate) ? getMeta(type).name + '.' : '';
+        const prefix = hasKeys(qm.$populate) ? getMeta(entity).name + '.' : '';
         qm.$filter = {
           ...qm.$filter,
-          // ensure the user can only see the data belonging to his own company
+          
+          // ensure the user can only see the data that belongs to his company
           [`${prefix}companyId`]: req.identity.companyId,
         };
         return qm;
