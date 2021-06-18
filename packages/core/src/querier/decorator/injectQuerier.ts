@@ -1,4 +1,4 @@
-import { Type } from '../../type';
+import { Key, Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 
@@ -25,8 +25,8 @@ export function InjectQuerier() {
   };
 }
 
-export function getInjectedQuerierIndex<S>(type: Type<S>, key: keyof S) {
-  let proto: FunctionConstructor = type.prototype;
+export function getInjectedQuerierIndex<S>(service: Type<S>, key: Key<S>) {
+  let proto: FunctionConstructor = service.prototype;
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);
@@ -36,7 +36,7 @@ export function getInjectedQuerierIndex<S>(type: Type<S>, key: keyof S) {
       return index;
     }
 
-    const keys = Object.getOwnPropertyNames(proto) as (keyof S)[];
+    const keys = Object.getOwnPropertyNames(proto) as Key<S>[];
     const isOwnKey = keys.includes(key);
 
     if (isOwnKey) {

@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
+import { FieldValue, Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
@@ -18,7 +18,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<any>(basePath, payload, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: any, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, payload, opts);
   }
@@ -38,7 +38,7 @@ export class HttpQuerier implements ClientQuerier {
     return get<E>(`${basePath}/one${qs}`, opts);
   }
 
-  findOneById<E>(entity: Type<E>, id: any, qm: QueryOne<E>, opts?: RequestOptions) {
+  findOneById<E>(entity: Type<E>, id: FieldValue<E>, qm: QueryOne<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/${id}${qs}`, opts);
@@ -60,7 +60,7 @@ export class HttpQuerier implements ClientQuerier {
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
-  deleteOneById<E>(entity: Type<E>, id: any, opts?: RequestOptions) {
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return remove<number>(`${basePath}/${id}`, opts);
   }

@@ -1,14 +1,14 @@
-import { EntityMeta, Fields, FieldOptions, Relations, Type } from '@uql/core/type';
+import { EntityMeta, FieldKey, FieldOptions, RelationKey, Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
-export function filterFields<E>(meta: EntityMeta<E>, payload: E): Fields<E>[] {
-  return getKeys(payload).filter((key) => meta.fields[key] && payload[key] !== undefined) as Fields<E>[];
+export function filterFields<E>(meta: EntityMeta<E>, payload: E): FieldKey<E>[] {
+  return getKeys(payload).filter((key) => meta.fields[key] && payload[key] !== undefined) as FieldKey<E>[];
 }
 
-export function filterRelations<E>(meta: EntityMeta<E>, payload: E): Relations<E>[] {
-  return getKeys(payload).filter((key) => meta.relations[key] && payload[key] !== undefined) as Relations<E>[];
+export function filterRelations<E>(meta: EntityMeta<E>, payload: E): RelationKey<E>[] {
+  return getKeys(payload).filter((key) => meta.relations[key] && payload[key] !== undefined) as RelationKey<E>[];
 }
 
 export function buildPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {

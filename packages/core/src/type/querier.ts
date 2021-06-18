@@ -1,11 +1,12 @@
 import { Type } from './utility';
 import { Query, QueryCriteria, QueryOne } from './query';
 import { Repository, UniversalRepository } from './repository';
+import { FieldValue } from './entity';
 
 export type UniversalQuerier = {
   count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<any>;
 
-  findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>): Promise<any>;
+  findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo?: QueryOne<E>): Promise<any>;
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<any>;
 
@@ -15,11 +16,11 @@ export type UniversalQuerier = {
 
   insertMany?<E>(entity: Type<E>, payload: E[]): Promise<any>;
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: any): Promise<any>;
+  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>): Promise<any>;
 
   updateMany?<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<any>;
 
-  deleteOneById<E>(entity: Type<E>, id: any): Promise<any>;
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>): Promise<any>;
 
   deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<any>;
 
@@ -29,7 +30,7 @@ export type UniversalQuerier = {
 export interface Querier extends UniversalQuerier {
   count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
 
-  findOneById<E>(entity: Type<E>, id: any, qo?: QueryOne<E>): Promise<E>;
+  findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo?: QueryOne<E>): Promise<E>;
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<E>;
 
@@ -39,11 +40,11 @@ export interface Querier extends UniversalQuerier {
 
   insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: any): Promise<number>;
+  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>): Promise<number>;
 
   updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
 
-  deleteOneById<E>(entity: Type<E>, id: any): Promise<number>;
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>): Promise<number>;
 
   deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 

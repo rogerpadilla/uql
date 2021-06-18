@@ -10,9 +10,9 @@ import {
   RelationMappedBy,
   KeyMap,
   ReferenceOptions,
-  Relations,
-  Fields,
-  Keys,
+  RelationKey,
+  FieldKey,
+  Key,
 } from '../../type';
 import { isValidEntityType } from '../util';
 
@@ -111,7 +111,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
-    const relOpts = meta.relations[relKey as Relations<E>];
+    const relOpts = meta.relations[relKey as RelationKey<E>];
 
     if (relOpts.references) {
       // references were manually specified
@@ -153,8 +153,8 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const mappedByKey = getMappedByKey(relOpts);
   relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
 
-  if (relMeta.relations[mappedByKey as Relations<E>]) {
-    const { cardinality, references, through } = relMeta.relations[mappedByKey as Relations<E>];
+  if (relMeta.relations[mappedByKey as RelationKey<E>]) {
+    const { cardinality, references, through } = relMeta.relations[mappedByKey as RelationKey<E>];
     if (cardinality === '11' || cardinality === 'm1') {
       // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
       relOpts.references = references.map(({ source, target }) => ({
@@ -190,7 +190,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
   }, {});
 }
 
-function getMappedByKey<E>(relOpts: RelationOptions<E>): Keys<E> {
+function getMappedByKey<E>(relOpts: RelationOptions<E>): Key<E> {
   if (typeof relOpts.mappedBy === 'function') {
     const relEntity = relOpts.entity();
     const relMeta = ensureMeta(relEntity);
@@ -198,7 +198,7 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): Keys<E> {
     const mapper = relOpts.mappedBy as KeyMapper<E>;
     return mapper(keyMap);
   }
-  return relOpts.mappedBy as Keys<E>;
+  return relOpts.mappedBy as Key<E>;
 }
 
 function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
@@ -208,9 +208,9 @@ function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
   }, {} as KeyMap<E>);
 }
 
-function getId<E>(meta: EntityMeta<E>): Fields<E> {
+function getId<E>(meta: EntityMeta<E>): FieldKey<E> {
   const id = getKeys(meta.fields).find((key) => meta.fields[key]?.isId);
-  return id as Fields<E>;
+  return id as FieldKey<E>;
 }
 
 function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>): void {

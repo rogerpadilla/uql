@@ -1,5 +1,14 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectFields, Relations } from '@uql/core/type';
+import {
+  QueryFilter,
+  Query,
+  EntityMeta,
+  Type,
+  QueryProject,
+  QueryProjectFields,
+  RelationKey,
+  Key,
+} from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 
@@ -12,7 +21,7 @@ export class MongoDialect {
       if (prop === '$and' || prop === '$or') {
         acc[prop] = value.map((filterIt: QueryFilter<E>) => this.filter(entity, filterIt));
       } else {
-        const { key, val } = obtainFinalKeyValue(prop, value, meta);
+        const { key, val } = this.obtainFinalKeyValue(meta, prop as Key<E>, value);
         acc[key as keyof FilterQuery<E>] = val;
       }
       return acc;
@@ -39,7 +48,7 @@ export class MongoDialect {
     }
 
     for (const relKey in qm.$populate) {
-      const relOpts = meta.relations[relKey as Relations<E>];
+      const relOpts = meta.relations[relKey as RelationKey<E>];
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
@@ -75,12 +84,36 @@ export class MongoDialect {
 
     return pipeline;
   }
-}
 
-function obtainFinalKeyValue<E>(key: string, val: any, meta: EntityMeta<E>) {
-  if (key === '_id' || key === meta.id) {
-    const objectId = val instanceof ObjectId ? val : new ObjectId(val);
-    return { key: '_id', val: objectId };
+  normalizeIds<E>(meta: EntityMeta<E>, docs: E[]): E[] {
+    return docs?.map((doc) => this.normalizeId(meta, doc));
   }
-  return { key, val };
+
+  normalizeId<E>(meta: EntityMeta<E>, doc: E): E {
+    if (!doc) {
+      return;
+    }
+
+    const res = doc as E & { _id: any };
+    res[meta.id] = res._id;
+    delete res._id;
+
+    for (const relKey of getKeys(meta.relations)) {
+      const relOpts = meta.relations[relKey];
+      const relMeta = getMeta(relOpts.entity());
+      res[relKey] = Array.isArray(res[relKey])
+        ? this.normalizeIds(relMeta, res[relKey])
+        : this.normalizeId(relMeta, res[relKey]);
+    }
+
+    return res as E;
+  }
+
+  obtainFinalKeyValue<E>(meta: EntityMeta<E>, key: Key<E>, val: string | number | ObjectId) {
+    if (key === '_id' || key === meta.id) {
+      const objectId = val instanceof ObjectId ? val : new ObjectId(val);
+      return { key: '_id', val: objectId };
+    }
+    return { key, val };
+  }
 }

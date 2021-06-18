@@ -1,4 +1,4 @@
-import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria } from '../type';
+import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, FieldValue } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
@@ -34,7 +34,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.insert(entity, payload);
     const { firstId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    const ids: any[] = payload.map((it, index) => {
+    const ids = payload.map((it, index) => {
       it[meta.id as string] ??= firstId + index;
       return it[meta.id];
     });
@@ -51,17 +51,15 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
-    // TODO
-    // const meta = getMeta(entity);
-    // const founds = await this.findMany(entity, { ...qm, $project: [meta.id] });
-    // const foundIds = founds.map((it) => it[meta.id]);
-    // if (!foundIds.length) {
-    //   return 0;
-    // }
-    // const query = this.dialect.delete(entity, { [meta.id]: foundIds });
-    const query = this.dialect.delete(entity, qm);
+    const meta = getMeta(entity);
+    const founds = await this.findMany(entity, { ...qm, $project: [meta.id] });
+    const ids = founds.map((it) => it[meta.id]);
+    if (!ids.length) {
+      return 0;
+    }
+    const query = this.dialect.delete(entity, { $filter: { [meta.id]: ids } });
     const { changes } = await this.conn.run(query);
-    await this.deleteRelations(entity, qm);
+    await this.deleteRelations(entity, ids);
     return changes;
   }
 

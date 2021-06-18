@@ -1,4 +1,4 @@
-import { Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
+import { FieldValue, Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
 export class BaseClientRepository<E> implements ClientRepository<E> {
@@ -8,7 +8,7 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.insertOne(this.entity, payload, opts);
   }
 
-  updateOneById(payload: E, id: any, opts?: RequestOptions) {
+  updateOneById(payload: E, id: FieldValue<E>, opts?: RequestOptions) {
     return this.querier.updateOneById(this.entity, payload, id, opts);
   }
 
@@ -24,7 +24,7 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.findOne(this.entity, qm, opts);
   }
 
-  findOneById(id: any, qm?: QueryOne<E>, opts?: RequestOptions) {
+  findOneById(id: FieldValue<E>, qm?: QueryOne<E>, opts?: RequestOptions) {
     return this.querier.findOneById(this.entity, id, qm, opts);
   }
 
@@ -32,7 +32,7 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.deleteMany(this.entity, qm);
   }
 
-  deleteOneById(id: any) {
+  deleteOneById(id: FieldValue<E>) {
     return this.querier.deleteOneById(this.entity, id);
   }
 
