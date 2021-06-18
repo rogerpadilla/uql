@@ -513,13 +513,19 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldDeleteOneById() {
-    const id = await this.querier.insertOne(User, { createdAt: 123 });
+    const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
     await this.querier.deleteOneById(User, id);
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (123)');
+    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
+    expect(this.querier.conn.run).nthCalledWith(
+      2,
+      'INSERT INTO `user_profile` (`createdAt`, `creatorId`) VALUES (1, 1)'
+    );
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
-    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (1)');
-    expect(this.querier.conn.run).toBeCalledTimes(2);
-    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
+    expect(this.querier.conn.run).nthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (1)');
+    expect(this.querier.conn.run).nthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (1)');
+    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.conn.all).toBeCalledTimes(2);
   }
 
   async shouldDeleteMany() {
@@ -527,9 +533,10 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.deleteMany(User, { $filter: { createdAt: 123 } });
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (123)');
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = 123');
+    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
     expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (1)');
     expect(this.querier.conn.run).toBeCalledTimes(2);
-    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.all).toBeCalledTimes(2);
   }
 
   async shouldCount() {

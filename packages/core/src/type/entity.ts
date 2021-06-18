@@ -35,14 +35,14 @@ export type EntityGetter<E = any> = () => Type<E>;
 
 export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
 
-export type CascadeType = 'insert' | 'update' | 'delete' | 'softDelete' | 'recover';
+export type CascadeType = 'persist' | 'delete';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   readonly cardinality?: RelationCardinality;
   readonly cascade?: boolean | readonly CascadeType[];
   mappedBy?: RelationMappedBy<E>;
-  through?: EntityGetter<any>;
+  through?: EntityGetter<RelationValue<E>>;
   references?: RelationReferences;
 };
 

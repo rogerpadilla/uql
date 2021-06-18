@@ -289,7 +289,7 @@ export class MeasureUnit extends BaseEntity {
   name?: string;
   @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
-  @ManyToOne()
+  @ManyToOne({ cascade: true })
   category?: MeasureUnitCategory;
 }
 
@@ -331,7 +331,7 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Field()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: ['persist'] })
   tags?: Tag[];
 }
 

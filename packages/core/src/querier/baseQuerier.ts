@@ -133,20 +133,20 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const relKeys = filterRelations(meta, it);
-        if (!relKeys.length) {
+        const keys = filterRelations(meta, it, 'persist');
+        if (!keys.length) {
           return;
         }
-        return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
+        return Promise.all(keys.map((key) => this.saveRelation(entity, it, key)));
       })
     );
   }
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const relKeys = filterRelations(meta, payload);
+    const keys = filterRelations(meta, payload, 'persist');
 
-    if (!relKeys.length) {
+    if (!keys.length) {
       return;
     }
 
@@ -159,22 +159,27 @@ export abstract class BaseQuerier implements Querier {
 
     await Promise.all(
       ids.map((id) =>
-        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
+        Promise.all(keys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
       )
     );
   }
 
-  protected async deleteRelations<E>(entity: Type<E>, ids: E[FieldKey<E>][]): Promise<void> {
+  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[]): Promise<void> {
     const meta = getMeta(entity);
+    const keys = filterRelations(meta, meta.relations as E, 'delete');
 
-    // const relKeys = filterPersistableRelationKeys(meta);
-    // if (!relKeys.length) {
-    //   return;
-    // }
-
-    // TODO
-    // for (const key of relKeys) {
-    // }
+    for (const key of keys) {
+      const opts = meta.relations[key];
+      const relEntity = opts.entity();
+      if (opts.through) {
+        const throughEntity = opts.through();
+        const referenceKey = opts.mappedBy ? opts.references[1].source : opts.references[0].source;
+        await this.deleteMany(throughEntity, { [referenceKey]: ids });
+        return;
+      }
+      const referenceKey = opts.mappedBy ? opts.references[0].target : opts.references[0].source;
+      await this.deleteMany(relEntity, { [referenceKey]: ids });
+    }
   }
 
   protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
@@ -218,11 +223,11 @@ export abstract class BaseQuerier implements Querier {
     const relPayload = payload[relKey] as RelationValue<E>[];
 
     if (cardinality === '1m' || cardinality === 'mm') {
-      const refKey = references[0].source;
+      const referenceKey = references[0].source;
 
       if (through) {
         const throughEntity = through();
-        await this.deleteMany(throughEntity, { $filter: { [refKey]: id } });
+        await this.deleteMany(throughEntity, { $filter: { [referenceKey]: id } });
         if (relPayload) {
           const savedIds = await this.saveMany(relEntity, relPayload);
           const throughBodies = savedIds.map((relId) => ({
@@ -234,11 +239,11 @@ export abstract class BaseQuerier implements Querier {
         return;
       }
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $filter: { [refKey]: id } });
+        await this.deleteMany(relEntity, { $filter: { [referenceKey]: id } });
       }
       if (relPayload) {
         for (const it of relPayload) {
-          it[refKey] = id;
+          it[referenceKey] = id;
         }
         await this.saveMany(relEntity, relPayload);
       }
@@ -246,23 +251,23 @@ export abstract class BaseQuerier implements Querier {
     }
 
     if (cardinality === '11') {
-      const refKey = references[0].target;
+      const referenceKey = references[0].target;
       if (relPayload === null) {
-        await this.deleteMany(relEntity, { $filter: { [refKey]: id } });
+        await this.deleteMany(relEntity, { $filter: { [referenceKey]: id } });
         return;
       }
-      await this.saveMany(relEntity, [{ ...relPayload, [refKey]: id }]);
+      await this.saveMany(relEntity, [{ ...relPayload, [referenceKey]: id }]);
       return;
     }
 
     if (cardinality === 'm1') {
-      const refKey = references[0].source;
-      if (payload[refKey]) {
+      const referenceKey = references[0].source;
+      if (payload[referenceKey]) {
         return;
       }
       if (relPayload) {
-        const refId = await this.insertOne(relEntity, relPayload);
-        await this.updateOneById(entity, { [refKey]: refId }, id);
+        const referenceId = await this.insertOne(relEntity, relPayload);
+        await this.updateOneById(entity, { [referenceKey]: referenceId }, id);
       }
       return;
     }

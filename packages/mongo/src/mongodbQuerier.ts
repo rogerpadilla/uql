@@ -119,7 +119,7 @@ export class MongodbQuerier extends BaseQuerier {
     log('deleteMany', entity.name, filter);
     const founds: E[] = await this.collection(entity)
       .find(filter, {
-        fields: { _id: true },
+        projection: { _id: true },
         session: this.session,
       })
       .toArray();
