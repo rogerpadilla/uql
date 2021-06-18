@@ -17,7 +17,7 @@ import {
 import { isValidEntityType } from '../util';
 
 const holder = globalThis;
-const metaKey = '@uql/core/entity';
+const metaKey = '@uql/core/entity/decorator';
 const metas: Map<Type<any>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
