@@ -11,12 +11,11 @@ import {
   afterAll,
 } from '@jest/globals';
 
+import type { Global } from '@jest/types';
+
 export function createSpec<T extends Spec>(spec: T) {
-  const processedMethodsMap: { [k: string]: true } = {};
-  let proto: object = Object.getPrototypeOf(spec);
-
-  let describeFn: typeof fdescribe;
-
+  const proto: FunctionConstructor = Object.getPrototypeOf(spec);
+  let describeFn: Global.DescribeBase;
   const specName = proto.constructor.name;
 
   if (specName.startsWith('Fff')) {
@@ -27,27 +26,34 @@ export function createSpec<T extends Spec>(spec: T) {
     describeFn = describe;
   }
 
-  describeFn(specName, () => {
-    while (proto.constructor !== Object) {
-      for (const key of Object.getOwnPropertyNames(proto)) {
-        if (key === 'constructor' || processedMethodsMap[key]) {
-          continue;
-        }
-        processedMethodsMap[key] = true;
-        const callback = spec[key].bind(spec);
-        if (hooks[key]) {
-          hooks[key](callback);
-        } else if (key.startsWith('should')) {
-          it(key, callback);
-        } else if (key.startsWith('fffshould')) {
-          fit(key, callback);
-        } else if (key.startsWith('xxxshould')) {
-          xit(key, callback);
-        }
+  describeFn(specName, () => createTestCases(spec));
+}
+
+function createTestCases(spec: object) {
+  let proto: FunctionConstructor = Object.getPrototypeOf(spec);
+
+  const processedMethodsMap: { [k: string]: true } = {};
+
+  while (proto.constructor !== Object) {
+    for (const key of Object.getOwnPropertyNames(proto)) {
+      const isProcessed = processedMethodsMap[key];
+      processedMethodsMap[key] = true;
+      if (isProcessed || key === 'constructor' || typeof spec[key] !== 'function') {
+        continue;
       }
-      proto = Object.getPrototypeOf(proto);
+      const callback: Global.TestFn = spec[key].bind(spec);
+      if (hooks[key]) {
+        hooks[key](callback);
+      } else if (key.startsWith('should')) {
+        it(key, callback);
+      } else if (key.startsWith('fffshould')) {
+        fit(key, callback);
+      } else if (key.startsWith('xxxshould')) {
+        xit(key, callback);
+      }
     }
-  });
+    proto = Object.getPrototypeOf(proto);
+  }
 }
 
 const hooks = {
@@ -57,10 +63,8 @@ const hooks = {
   afterAll,
 } as const;
 
-type SpecHooks = {
-  readonly [k in keyof typeof hooks]?: jest.Lifecycle;
-};
+type SpecHooks = Partial<typeof hooks>;
 
-export type Spec = {
-  [k: string]: jest.Lifecycle | any;
-} & SpecHooks;
+export type Spec = SpecHooks & {
+  readonly [k: string]: Global.It | any;
+};

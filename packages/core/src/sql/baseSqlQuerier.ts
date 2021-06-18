@@ -51,6 +51,14 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+    // TODO
+    // const meta = getMeta(entity);
+    // const founds = await this.findMany(entity, { ...qm, $project: [meta.id] });
+    // const foundIds = founds.map((it) => it[meta.id]);
+    // if (!foundIds.length) {
+    //   return 0;
+    // }
+    // const query = this.dialect.delete(entity, { [meta.id]: foundIds });
     const query = this.dialect.delete(entity, qm);
     const { changes } = await this.conn.run(query);
     await this.deleteRelations(entity, qm);

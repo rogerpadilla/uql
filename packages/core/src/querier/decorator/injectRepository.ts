@@ -25,7 +25,7 @@ export function InjectRepository<E>(entity: Type<E>) {
 }
 
 export function getInjectedRepositoriesMap<S>(type: Type<S>, key: keyof S): InjectionMap {
-  let proto = type.prototype;
+  let proto: FunctionConstructor = type.prototype;
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);

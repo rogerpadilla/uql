@@ -61,12 +61,12 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
   }
 
   meta.name = opts.name ?? entity.name;
-  let parentProto: object = Object.getPrototypeOf(entity.prototype);
+  let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
-  while (parentProto.constructor !== Object) {
-    const parentMeta = ensureMeta(parentProto.constructor as Type<E>);
+  while (proto.constructor !== Object) {
+    const parentMeta = ensureMeta(proto.constructor as Type<E>);
     extend(parentMeta, meta);
-    parentProto = Object.getPrototypeOf(parentProto);
+    proto = Object.getPrototypeOf(proto);
   }
 
   const id = getId(meta);

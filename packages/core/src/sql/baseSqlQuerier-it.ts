@@ -13,15 +13,10 @@ export abstract class BaseSqlQuerierIt extends BaseQuerierIt<BaseSqlQuerier> {
   }
 
   override async createTables() {
-    const run = async (index: number) => {
-      if (index >= this.entities.length) {
-        return;
-      }
-      const ddl = this.buildDdlForTable(this.entities[index]);
+    for (const entity of this.entities) {
+      const ddl = this.buildDdlForTable(entity);
       await this.querier.conn.run(ddl);
-      await run(index + 1);
-    };
-    await run(0);
+    }
   }
 
   override async dropTables() {

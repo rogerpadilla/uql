@@ -26,7 +26,7 @@ export function InjectQuerier() {
 }
 
 export function getInjectedQuerierIndex<S>(type: Type<S>, key: keyof S) {
-  let proto = type.prototype;
+  let proto: FunctionConstructor = type.prototype;
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);
