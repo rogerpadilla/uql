@@ -28,7 +28,7 @@ export class MongoDialect {
     }, {} as FilterQuery<E>);
   }
 
-  project<E>(project: QueryProject<E>): QueryProjectFields<E> {
+  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectFields<E> {
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
         acc[it] = true;
@@ -49,13 +49,15 @@ export class MongoDialect {
 
     for (const relKey in qm.$populate) {
       const relOpts = meta.relations[relKey as RelationKey<E>];
+
       if (!relOpts) {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
-      if (relOpts.cardinality !== 'm1' && relOpts.cardinality !== '11') {
-        // 'manyToMany' and 'oneToMany' will need multiple queries (so they should be resolved in a higher layer)
+      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+        // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
+
       const relEntity = relOpts.entity();
       const relMeta = getMeta(relEntity);
 
@@ -95,15 +97,18 @@ export class MongoDialect {
     }
 
     const res = doc as E & { _id: any };
-    res[meta.id] = res._id;
-    delete res._id;
 
-    for (const relKey of getKeys(meta.relations)) {
-      const relOpts = meta.relations[relKey];
+    if (res._id) {
+      res[meta.id] = res._id;
+      delete res._id;
+    }
+
+    const keys = getKeys(meta.relations).filter((key) => doc[key]);
+
+    for (const key of keys) {
+      const relOpts = meta.relations[key];
       const relMeta = getMeta(relOpts.entity());
-      res[relKey] = Array.isArray(res[relKey])
-        ? this.normalizeIds(relMeta, res[relKey])
-        : this.normalizeId(relMeta, res[relKey]);
+      res[key] = Array.isArray(res[key]) ? this.normalizeIds(relMeta, res[key]) : this.normalizeId(relMeta, res[key]);
     }
 
     return res as E;

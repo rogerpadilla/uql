@@ -15,11 +15,11 @@
     "mongodb": "^3.6.9"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.24"
+    "@uql/core": "^0.4.26"
   },
   "devDependencies": {
     "@types/mongodb": "^3.6.18",
-    "@types/node": "^15.12.2",
+    "@types/node": "^15.12.4",
     "@uql/core": "^0.4.27",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",

@@ -123,7 +123,7 @@ export abstract class BaseSqlDialect {
         throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
       }
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
-        // '1m' and 'mm' will need multiple queries (so they should be resolved in a higher layer)
+        // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
 

@@ -43,7 +43,8 @@ export class MongodbQuerier extends BaseQuerier {
         cursor.filter(filter);
       }
       if (qm.$project) {
-        cursor.project(this.dialect.project(qm.$project));
+        const project = this.dialect.project(entity, qm.$project);
+        cursor.project(project);
       }
       if (qm.$sort) {
         cursor.sort(qm.$sort);

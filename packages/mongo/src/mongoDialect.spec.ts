@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb';
-import { Item, Spec, TaxCategory, User, createSpec, InventoryAdjustment } from '@uql/core/test';
+import { Item, Spec, TaxCategory, User, createSpec, InventoryAdjustment, Tax } from '@uql/core/test';
+import { getMeta } from '@uql/core/entity/decorator';
 import { MongoDialect } from './mongoDialect';
 
 class MongoDialectSpec implements Spec {
@@ -10,9 +11,9 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldBuildFilter() {
-    const output = this.dialect.filter(Item, {});
+    expect(this.dialect.filter(Item, undefined)).toEqual({});
 
-    expect(output).toEqual({});
+    expect(this.dialect.filter(Item, {})).toEqual({});
 
     expect(this.dialect.filter(Item, { code: '123' })).toEqual({ code: '123' });
 
@@ -49,12 +50,38 @@ class MongoDialectSpec implements Spec {
     });
   }
 
+  shouldProject() {
+    expect(this.dialect.project(Tax, { name: true })).toEqual({ name: true });
+    expect(this.dialect.project(Tax, ['id', 'name'])).toEqual({ id: true, name: true });
+  }
+
+  shouldNormalizeIds() {
+    const meta = getMeta(User);
+    expect(this.dialect.normalizeIds(meta, [{ _id: 'abc' } as User, { _id: 'def' } as User])).toEqual([
+      { id: 'abc' },
+      { id: 'def' },
+    ]);
+    expect(this.dialect.normalizeIds(meta, undefined)).toBe(undefined);
+    expect(this.dialect.normalizeId(meta, undefined)).toBe(undefined);
+    expect(this.dialect.normalizeId(meta, { _id: 'abc', company: {}, users: [] } as User)).toEqual({
+      id: 'abc',
+      company: {},
+      users: [],
+    });
+  }
+
   shouldBuildAggregationPipeline() {
     expect(this.dialect.aggregationPipeline(Item, {})).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, { $filter: {} })).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, { $populate: {} })).toEqual([]);
+
+    expect(
+      this.dialect.aggregationPipeline(User, {
+        $populate: { users: {} },
+      })
+    ).toEqual([]);
 
     expect(() =>
       this.dialect.aggregationPipeline(User, {
