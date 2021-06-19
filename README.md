@@ -507,8 +507,7 @@ app
         qm.$limit = obtainValidLimit(qm.$limit);
         const prefix = hasKeys(qm.$populate) ? getMeta(entity).name + '.' : '';
         qm.$filter = {
-          ...qm.$filter,
-          
+          ...qm.$filter,          
           // ensure the user can only see the data that belongs to his company
           [`${prefix}companyId`]: req.identity.companyId,
         };
