@@ -254,6 +254,8 @@ export abstract class BaseSqlDialect {
         return `${fieldPath} <= ${this.escape(val)}`;
       case '$startsWith':
         return `LOWER(${fieldPath}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+      case '$endsWith':
+        return `LOWER(${fieldPath}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
       case '$in':
         return `${fieldPath} IN (${this.escape(val)})`;
       case '$nin':

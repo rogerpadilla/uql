@@ -35,6 +35,7 @@ export type QueryComparisonOperator<T> = {
   readonly $gt?: number;
   readonly $gte?: number;
   readonly $startsWith?: string;
+  readonly $endsWith?: string;
   readonly $in?: T[];
   readonly $nin?: T[];
   readonly $regex?: string;

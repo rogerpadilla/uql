@@ -655,6 +655,30 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
+  shouldFind$endsWith() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $endsWith: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+
+    expect(
+      this.dialect.find(User, {
+        $project: { id: 1 },
+        $filter: { name: { $endsWith: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe(
+      "SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0"
+    );
+  }
+
   shouldFind$regex() {
     expect(
       this.dialect.find(User, {
