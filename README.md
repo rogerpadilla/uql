@@ -11,10 +11,9 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 ## <a name="features"></a>:star2: Features
 
 - serializable `JSON` syntax
-- use the power of TypeScript for types inference so your queries and models are easier to maintain and more reliable (type-safety)
+- use the power of TypeScript for type inference so the queries and models are easier to maintain and more reliable (type-safety)
 - generated queries are fast, safe, and human-readable
-- `projection` of relations and fields (at multiple levels)
-- `filtering` (at multiple levels), `sorting`, `pagination`, and more.
+- `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations.
 - declarative and programmatic `transactions`
 - entity `repositories`
 - different `relations` between the entities
