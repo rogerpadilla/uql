@@ -1,11 +1,10 @@
 import {
-  FieldKey,
   FieldValue,
   Querier,
   Query,
   QueryCriteria,
   QueryOne,
-  QueryPopulate,
+  QueryProject,
   RelationKey,
   RelationValue,
   Repository,
@@ -13,7 +12,7 @@ import {
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
-import { filterRelations } from '../entity/util';
+import { filterProjectRelations, filterRelations } from './util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -57,18 +56,15 @@ export abstract class BaseQuerier implements Querier {
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 
-  protected async populateToManyRelations<E>(entity: Type<E>, payload: E[], populate: QueryPopulate<E>) {
+  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
 
-    for (const relKey in populate) {
-      const relOpts = meta.relations[relKey as RelationKey<E>];
+    const relations = filterProjectRelations(meta, project);
 
-      if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
-      }
-
+    for (const relKey of relations) {
+      const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const relQuery = clone(populate[relKey] as Query<typeof relEntity>);
+      const relQuery = clone(project[relKey as string]);
       const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 
@@ -77,15 +73,15 @@ export abstract class BaseQuerier implements Querier {
         const throughMeta = getMeta(throughEntity);
         const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
         const throughFounds = await this.findMany(throughEntity, {
-          $project: [referenceKey],
-          $filter: {
-            [referenceKey]: ids,
-          },
-          $populate: {
+          $project: {
+            [referenceKey]: true,
             [targetRelKey]: {
               ...relQuery,
               $required: true,
             },
+          },
+          $filter: {
+            [referenceKey]: ids,
           },
         });
         const founds = throughFounds.map((it) => it[targetRelKey]);

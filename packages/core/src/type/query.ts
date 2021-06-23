@@ -1,22 +1,26 @@
-import { FieldKey, RelationKey } from './entity';
-import { Unpacked } from './utility';
+import { FieldKey, Key, RelationKey } from './entity';
+import { BooleanLike, Unpacked } from './utility';
 
 export type QueryRaw = {
   readonly value: string;
   readonly alias?: string;
 };
 
-export type QueryProject<E> = readonly (FieldKey<E> | QueryRaw)[] | QueryProjectFields<E>;
+export type QueryProject<E> = QueryProjectArray<E> | QueryProjectObject<E>;
 
-export type QueryProjectFields<E> = {
-  readonly [P in FieldKey<E>]?: boolean | 0 | 1;
+export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
+
+export type QueryProjectField<E> = {
+  [K in FieldKey<E>]?: BooleanLike;
 };
 
-export type QueryPopulate<E> = {
-  readonly [P in RelationKey<E>]?: QueryPopulateValue<E[P]>;
+export type QueryProjectRelation<E> = {
+  [K in RelationKey<E>]?: BooleanLike | QueryProjectRelationValue<E[K]>;
 };
 
-export type QueryPopulateValue<E> = Query<Unpacked<E>> & { $required?: boolean };
+export type QueryProjectRelationValue<E> = Query<Unpacked<E>> & { $required?: boolean };
+
+export type QueryProjectObject<E> = QueryProjectField<E> | QueryProjectRelation<E>;
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
@@ -42,19 +46,19 @@ export type QueryComparisonOperator<T> = {
 };
 
 export type QueryComparisonField<E> = {
-  readonly [P in FieldKey<E>]?: E[P] | E[P][] | QueryComparisonOperator<E[P]>;
+  readonly [K in FieldKey<E>]?: E[K] | E[K][] | QueryComparisonOperator<E[K]>;
 };
 
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  [p in QueryLogicalOperatorKey]?: (QueryComparisonField<E> | QueryComparison<E>)[];
+  [K in QueryLogicalOperatorKey]?: (QueryComparisonField<E> | QueryComparison<E>)[];
 };
 
 export type QueryFilter<E> = QueryLogicalOperator<E> | QueryComparison<E> | QueryComparisonField<E>;
 
 export type QuerySort<E> = {
-  readonly [P in FieldKey<E>]?: -1 | 1;
+  readonly [K in FieldKey<E>]?: -1 | 1;
 };
 
 export type QueryPager = {
@@ -71,13 +75,12 @@ export type QueryCriteria<E> = {
 
 export type Query<E> = {
   $project?: QueryProject<E>;
-  $populate?: QueryPopulate<E>;
 } & QueryCriteria<E>;
 
 export type QueryOne<E> = Query<E> & { $limit?: 1 };
 
 export type QueryStringified = {
-  readonly [P in keyof Query<any>]?: string;
+  readonly [K in keyof Query<any>]?: string;
 };
 
 export type QueryUpdateResult = {

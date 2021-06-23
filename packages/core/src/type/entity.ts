@@ -1,20 +1,20 @@
 import { Type } from './utility';
 
-export type FieldValue<E> = E[FieldKey<E>];
+export type Key<E> = {
+  readonly [K in keyof E]: K & string;
+}[keyof E & string];
 
 export type FieldKey<E> = {
   readonly [K in Key<E>]: E[K] extends object ? never : K;
 }[Key<E>];
 
-export type RelationValue<E> = E[RelationKey<E>];
+export type FieldValue<E> = E[FieldKey<E>];
 
 export type RelationKey<E> = {
   readonly [K in Key<E>]: E[K] extends object ? K : never;
 }[Key<E>];
 
-export type Key<E> = {
-  readonly [K in keyof E]: K & string;
-}[keyof E & string];
+export type RelationValue<E> = E[RelationKey<E>];
 
 export type EntityOptions = {
   readonly name?: string;

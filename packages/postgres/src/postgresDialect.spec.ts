@@ -1,5 +1,4 @@
 import { User, Item, createSpec, TaxCategory } from '@uql/core/test';
-import { BaseSqlDialectSpec } from '@uql/core/sql/baseSqlDialect-spec';
 import { PostgresDialect } from './postgresDialect';
 
 class PostgresDialectSpec {
@@ -67,7 +66,7 @@ class PostgresDialectSpec {
   shouldFind$startsWith() {
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: ['id'],
         $filter: { name: { $startsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -77,7 +76,7 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: { name: { $startsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -91,7 +90,7 @@ class PostgresDialectSpec {
   shouldFind$endsWith() {
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: ['id'],
         $filter: { name: { $endsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -101,7 +100,7 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: { name: { $endsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -115,7 +114,7 @@ class PostgresDialectSpec {
   shouldFind$regex() {
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: { name: { $regex: '^some' } },
       })
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
@@ -124,7 +123,7 @@ class PostgresDialectSpec {
   shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
         $limit: 30,
       })
@@ -134,7 +133,7 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },

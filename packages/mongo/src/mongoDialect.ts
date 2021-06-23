@@ -5,12 +5,13 @@ import {
   EntityMeta,
   Type,
   QueryProject,
-  QueryProjectFields,
+  QueryProjectObject,
   RelationKey,
   Key,
 } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
+import { filterProjectRelations, filterRelations } from '@uql/core/querier/util';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
@@ -28,14 +29,17 @@ export class MongoDialect {
     }, {} as FilterQuery<E>);
   }
 
-  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectFields<E> {
+  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectObject<E> {
+    // const meta = getMeta(entity);
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
-        acc[it] = true;
+        if (typeof it === 'string') {
+          acc[it as string] = true;
+        }
         return acc;
-      }, {} as QueryProjectFields<E>);
+      }, {} as QueryProjectObject<E>);
     }
-    return project as QueryProjectFields<E>;
+    return project as QueryProjectObject<E>;
   }
 
   aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {
@@ -47,12 +51,11 @@ export class MongoDialect {
       pipeline.push({ $match: this.filter(entity, qm.$filter) });
     }
 
-    for (const relKey in qm.$populate) {
+    const relations = filterProjectRelations(meta, qm.$project);
+
+    for (const relKey of relations) {
       const relOpts = meta.relations[relKey as RelationKey<E>];
 
-      if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
-      }
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
@@ -71,11 +74,11 @@ export class MongoDialect {
           },
         });
       } else {
-        const prop = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+        const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [prop]: qm.$filter[meta.id as string] } }],
+            pipeline: [{ $match: { [referenceKey]: qm.$filter[meta.id as string] } }],
             as: relKey,
           },
         });

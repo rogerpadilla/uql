@@ -13,7 +13,8 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - serializable `JSON` syntax
 - use the power of TypeScript for types inference so your queries and models are easier to maintain and more reliable (type-safety)
 - generated queries are fast, safe, and human-readable
-- supports on-demand `populate` (at multiple levels), `projection` of fields/columns (at multiple levels), complex `filtering` (at multiple levels), `sorting`, `pagination`, and more.
+- `projection` of relations and fields (at multiple levels)
+- `filtering` (at multiple levels), `sorting`, `pagination`, and more.
 - declarative and programmatic `transactions`
 - entity `repositories`
 - different `relations` between the entities
@@ -483,8 +484,6 @@ yarn add @uql/express
 
 ```ts
 import * as express from 'express';
-import { hasKeys } from '@uql/core/util';
-import { getMeta } from '@uql/core/entity/decorator';
 import { querierMiddleware } from '@uql/express';
 
 const app = express();
@@ -505,11 +504,10 @@ app
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
       extendQuery<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$limit = obtainValidLimit(qm.$limit);
-        const prefix = hasKeys(qm.$populate) ? getMeta(entity).name + '.' : '';
         qm.$filter = {
           ...qm.$filter,          
           // ensure the user can only see the data that belongs to his company
-          [`${prefix}companyId`]: req.identity.companyId,
+          companyId: req.identity.companyId,
         };
         return qm;
       },
@@ -542,8 +540,8 @@ import { getRepository } from '@uql/client';
 const userRepository = getRepository(User);
 
 const users = await userRepository.findMany({
-  $populate: { profile: { $project: ['picture'] } },
-  $filter: { name: { $startsWith: 'lorem' } },
+  $project: { email: true, profile: { $project: ['picture'] } },
+  $filter: { email: { $endsWith: '@domain.com' } },
   $sort: { createdAt: -1 },
   $limit: 100,
 });

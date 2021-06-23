@@ -57,7 +57,7 @@ it('mapRows', () => {
   expect(result).toEqual(expected);
 });
 
-it('mapRows deep populate', () => {
+it('mapRows deep project', () => {
   const source = [
     {
       id: 9,

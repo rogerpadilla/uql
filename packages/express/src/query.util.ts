@@ -6,9 +6,6 @@ export function parseQuery<E>(qmsSrc?: QueryStringified): Query<E> {
     if (qmsSrc.$project) {
       qm.$project = JSON.parse(qmsSrc.$project);
     }
-    if (qmsSrc.$populate) {
-      qm.$populate = JSON.parse(qmsSrc.$populate);
-    }
     if (qmsSrc.$filter) {
       qm.$filter = JSON.parse(qmsSrc.$filter);
     }

@@ -75,24 +75,18 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $filter: {} })).toEqual([]);
 
-    expect(this.dialect.aggregationPipeline(Item, { $populate: {} })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(Item, { $project: {} })).toEqual([]);
 
     expect(
       this.dialect.aggregationPipeline(User, {
-        $populate: { users: {} },
+        $project: { users: true },
       })
     ).toEqual([]);
 
-    expect(() =>
-      this.dialect.aggregationPipeline(User, {
-        $populate: { creatorId: {} } as any,
-      })
-    ).toThrow("'User.creatorId' is not annotated as a relation");
-
     expect(
       this.dialect.aggregationPipeline(TaxCategory, {
+        $project: { creator: true },
         $filter: { pk: '507f1f77bcf86cd799439011' },
-        $populate: { creator: {} },
       })
     ).toEqual([
       {
@@ -118,8 +112,8 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(Item, {
+        $project: { measureUnit: true, tax: true },
         $filter: { code: '123' },
-        $populate: { measureUnit: {}, tax: {} },
       })
     ).toEqual([
       {

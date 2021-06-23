@@ -8,15 +8,22 @@ import {
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
-  QueryPopulate,
   FieldKey,
   QueryProject,
   Type,
   QueryCriteria,
-  QueryPopulateValue,
   RelationKey,
+  QueryProjectRelationValue,
+  QueryProjectArray,
+  Key,
 } from '../type';
-import { buildPersistable, fillOnCallbacks, filterFields } from '../entity/util';
+import {
+  buildPersistable,
+  fillOnCallbacks,
+  filterFields,
+  filterProjectRelations,
+  hasProjectRelations,
+} from '../querier/util';
 import { hasKeys, getKeys } from '../util';
 import { Raw } from './raw';
 
@@ -28,7 +35,8 @@ export abstract class BaseSqlDialect {
   }
 
   criteria<E>(entity: Type<E>, qm: Query<E>): string {
-    const prefix = hasKeys(qm.$populate) ? getMeta(entity).name : undefined;
+    const meta = getMeta(entity);
+    const prefix = hasProjectRelations(meta, qm.$project) ? meta.name : undefined;
     const filter = this.filter<E>(entity, qm.$filter, { prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
@@ -69,30 +77,37 @@ export abstract class BaseSqlDialect {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
 
+    let projectArray: QueryProjectArray<E>;
+
     if (project) {
-      if (!Array.isArray(project)) {
+      if (Array.isArray(project)) {
+        projectArray = project;
+      } else {
         const projectKeys = getKeys(project);
         const hasPositives = projectKeys.some((key) => project[key]);
-        project = (hasPositives ? projectKeys : getKeys(meta.fields)).filter(
-          (it) => project[it] ?? project[it] === undefined
+        projectArray = (hasPositives ? projectKeys : getKeys(meta.fields)).filter(
+          (it) => project[it] ?? !(it in project)
         ) as FieldKey<E>[];
       }
-    } else {
-      project = getKeys(meta.fields) as FieldKey<E>[];
+      projectArray = projectArray.filter((key) => !((key as Key<E>) in meta.relations));
     }
 
-    return project
+    if (!projectArray?.length) {
+      projectArray = getKeys(meta.fields) as FieldKey<E>[];
+    }
+
+    return projectArray
       .map((key) => {
         if (key instanceof Raw) {
           return key.alias ? `${key.value} ${this.escapeId(key.alias, true)}` : key.value;
         }
-        const field = meta.fields[key];
-        const name = field?.name ?? key;
+        const field = meta.fields[key as FieldKey<E>];
+        const name = field?.name ?? (key as FieldKey<E>);
         const fieldPath = `${prefix}${this.escapeId(name)}`;
         if (opts.usePrefixInAlias) {
           return `${fieldPath} ${this.escapeId(opts.prefix + '.' + key, true)}`;
         }
-        return name === key || !field ? fieldPath : `${fieldPath} ${this.escapeId(key)}`;
+        return name === key || !field ? fieldPath : `${fieldPath} ${this.escapeId(key as FieldKey<E>)}`;
       })
       .join(', ');
   }
@@ -100,15 +115,15 @@ export abstract class BaseSqlDialect {
   select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
     const baseColumns = this.project(entity, qm.$project, {
-      prefix: hasKeys(qm.$populate) ? meta.name : undefined,
+      prefix: hasProjectRelations(meta, qm.$project) ? meta.name : undefined,
     });
-    const { joinsColumns, joinsTables } = this.join(entity, qm.$populate);
+    const { joinsColumns, joinsTables } = this.join(entity, qm.$project);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
   join<E>(
     entity: Type<E>,
-    populate: QueryPopulate<E> = {},
+    project: QueryProject<E> = {},
     prefix?: string
   ): { joinsColumns: string; joinsTables: string } {
     let joinsColumns = '';
@@ -116,12 +131,11 @@ export abstract class BaseSqlDialect {
 
     const meta = getMeta(entity);
 
-    for (const relKey in populate) {
+    const relations = filterProjectRelations(meta, project);
+
+    for (const relKey of relations) {
       const relOpts = meta.relations[relKey as RelationKey<E>];
 
-      if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
-      }
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
@@ -129,7 +143,9 @@ export abstract class BaseSqlDialect {
 
       const joinRelAlias = prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
-      const popVal = populate[relKey] as QueryPopulateValue<typeof relEntity>;
+      const popVal = project[relKey as keyof QueryProject<E>] as QueryProjectRelationValue<E[keyof E]>;
+
+      // if (typeof popVal)
 
       const relColumns = this.project(relEntity, popVal.$project, {
         prefix: joinRelAlias,
@@ -140,7 +156,7 @@ export abstract class BaseSqlDialect {
 
       const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.join(
         relEntity,
-        popVal.$populate,
+        popVal.$project,
         joinRelAlias
       );
 
@@ -175,7 +191,7 @@ export abstract class BaseSqlDialect {
   ): string {
     const { prefix, wrapWithParenthesis, clause = 'WHERE' } = opts;
     const filterKeys = getKeys(filter);
-    if (!filterKeys?.length) {
+    if (!filterKeys.length) {
       return '';
     }
 
@@ -278,7 +294,7 @@ export abstract class BaseSqlDialect {
 
   sort<E>(entity: Type<E>, sort: QuerySort<E>): string {
     const keys = getKeys(sort);
-    if (!keys?.length) {
+    if (!keys.length) {
       return '';
     }
     const meta = getMeta(entity);

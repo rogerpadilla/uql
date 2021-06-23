@@ -15,7 +15,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   if (opts.exclude) {
     entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }
-  if (entities.length === 0) {
+  if (!entities.length) {
     logger('no entities for the uql express middleware');
   }
 

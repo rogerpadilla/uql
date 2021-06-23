@@ -22,12 +22,12 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.find(entity, qm);
     const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
-    await this.populateToManyRelations(entity, founds, qm.$populate);
+    await this.fillToManyRelations(entity, founds, qm.$project);
     return founds;
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
-    if (payload.length === 0) {
+    if (!payload.length) {
       return;
     }
     payload = clone(payload);

@@ -1,7 +1,7 @@
 import { hasKeys, getKeys } from '../util';
 
 export function mapRows<T>(rows: T[]): T[] {
-  if (!Array.isArray(rows) || rows.length === 0) {
+  if (!Array.isArray(rows) || !rows.length) {
     return rows;
   }
 

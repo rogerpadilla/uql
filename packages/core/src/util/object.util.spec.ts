@@ -21,6 +21,8 @@ it('hasKeys', () => {
 });
 
 it('objectKeys', () => {
+  expect(getKeys(undefined)).toEqual([]);
+  expect(getKeys(null)).toEqual([]);
   expect(getKeys({})).toEqual([]);
   expect(getKeys({ a: 1 })).toEqual(['a']);
 });
