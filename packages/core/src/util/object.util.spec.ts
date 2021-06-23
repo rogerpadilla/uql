@@ -20,7 +20,7 @@ it('hasKeys', () => {
   expect(hasKeys({ a: 1 })).toBe(true);
 });
 
-it('objectKeys', () => {
+it('getKeys', () => {
   expect(getKeys(undefined)).toEqual([]);
   expect(getKeys(null)).toEqual([]);
   expect(getKeys({})).toEqual([]);

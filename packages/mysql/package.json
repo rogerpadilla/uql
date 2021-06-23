@@ -12,11 +12,11 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "mariadb": "^2.5.3",
+    "mariadb": "^2.5.4",
     "mysql2": "^2.2.5"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.26"
+    "@uql/core": "^0.4.27"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.18",

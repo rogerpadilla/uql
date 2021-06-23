@@ -14,7 +14,6 @@ import {
   FieldKey,
   Key,
 } from '../../type';
-import { isValidEntityType } from '../util';
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity/decorator';
@@ -237,4 +236,17 @@ function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
     throw new TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
   }
   return inferredType;
+}
+
+export function isValidEntityType(type: any): type is Type<any> {
+  return (
+    typeof type === 'function' &&
+    type !== Boolean &&
+    type !== String &&
+    type !== Number &&
+    type !== BigInt &&
+    type !== Date &&
+    type !== Symbol &&
+    type !== Object
+  );
 }

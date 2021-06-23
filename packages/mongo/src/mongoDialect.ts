@@ -11,7 +11,7 @@ import {
 } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
-import { filterProjectRelations, filterRelations } from '@uql/core/querier/util';
+import { getProjectRelations } from '@uql/core/querier';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
@@ -30,7 +30,6 @@ export class MongoDialect {
   }
 
   project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectObject<E> {
-    // const meta = getMeta(entity);
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
         if (typeof it === 'string') {
@@ -51,7 +50,7 @@ export class MongoDialect {
       pipeline.push({ $match: this.filter(entity, qm.$filter) });
     }
 
-    const relations = filterProjectRelations(meta, qm.$project);
+    const relations = getProjectRelations(meta, qm.$project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey as RelationKey<E>];

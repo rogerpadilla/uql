@@ -8,7 +8,6 @@ import {
   dropTables,
   createTables,
   cleanTables,
-  ItemAdjustment,
 } from '../test';
 import { QuerierPool } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';

@@ -1,5 +1,6 @@
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
+import { getFields, getPersistable, getProjectRelations, fillOnCallbacks, hasProjectRelations } from '../querier';
 import {
   QueryFilter,
   Query,
@@ -17,14 +18,8 @@ import {
   QueryProjectArray,
   Key,
 } from '../type';
-import {
-  buildPersistable,
-  fillOnCallbacks,
-  filterFields,
-  filterProjectRelations,
-  hasProjectRelations,
-} from '../querier/util';
 import { hasKeys, getKeys } from '../util';
+
 import { Raw } from './raw';
 
 export abstract class BaseSqlDialect {
@@ -53,7 +48,7 @@ export abstract class BaseSqlDialect {
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
     const payloads = fillOnCallbacks(meta, payload, 'onInsert');
-    const keys = filterFields(meta, payloads[0]);
+    const keys = getFields(meta, payloads[0]);
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
     const values = payloads.map((it) => keys.map((key) => this.escape(it[key])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
@@ -61,7 +56,7 @@ export abstract class BaseSqlDialect {
 
   update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string {
     const meta = getMeta(entity);
-    payload = buildPersistable(meta, payload, 'onUpdate');
+    payload = getPersistable(meta, payload, 'onUpdate');
     const values = this.objectToValues(payload);
     const criteria = this.criteria(entity, qm);
     return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
@@ -130,8 +125,7 @@ export abstract class BaseSqlDialect {
     let joinsTables = '';
 
     const meta = getMeta(entity);
-
-    const relations = filterProjectRelations(meta, project);
+    const relations = getProjectRelations(meta, project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey as RelationKey<E>];
@@ -190,14 +184,14 @@ export abstract class BaseSqlDialect {
     opts: { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } = {}
   ): string {
     const { prefix, wrapWithParenthesis, clause = 'WHERE' } = opts;
-    const filterKeys = getKeys(filter);
-    if (!filterKeys.length) {
+    const keys = getKeys(filter);
+    if (!keys.length) {
       return '';
     }
 
-    const hasMultiKeys = filterKeys.length > 1;
+    const hasMultiKeys = keys.length > 1;
 
-    let sql = filterKeys
+    let sql = keys
       .map((key) => {
         const entry = filter[key];
         if (key === '$and' || key === '$or') {
