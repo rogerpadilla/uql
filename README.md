@@ -16,7 +16,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations.
 - declarative and programmatic `transactions`
 - entity `repositories`
-- different `relations` between the entities
+- different kind of `relations` between the entities
 - supports `inheritance` patterns between the entities
 - connection pooling
 - supports Postgres, MySQL, MariaDB, SQLite, MongoDB (more coming)
