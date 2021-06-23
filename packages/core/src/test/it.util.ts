@@ -1,4 +1,3 @@
-import { log } from 'console';
 import { getEntities, getMeta } from '../entity/decorator';
 import { BaseSqlQuerier } from '../sql';
 import { Type } from '../type';
@@ -8,8 +7,8 @@ export async function createTables(querier: BaseSqlQuerier, primaryKeyType: stri
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
-      const ddl = buildDdlForTable(entity, querier, primaryKeyType);
-      return querier.conn.run(ddl);
+      const sql = getDdlForTable(entity, querier, primaryKeyType);
+      return querier.conn.run(sql);
     })
   );
 }
@@ -19,17 +18,23 @@ export async function dropTables(querier: BaseSqlQuerier) {
   await Promise.all(
     entities.map((entity) => {
       const meta = getMeta(entity);
-      return querier.conn.run(`DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name)}`);
+      const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name)}`;
+      return querier.conn.run(sql);
     })
   );
 }
 
 export async function cleanTables(querier: BaseSqlQuerier) {
   const entities = getEntities();
-  await Promise.all(entities.map((entity) => querier.deleteMany(entity, {})));
+  await Promise.all(
+    entities.map((entity) => {
+      const sql = querier.dialect.delete(entity, {});
+      return querier.conn.run(sql);
+    })
+  );
 }
 
-function buildDdlForTable<E>(entity: Type<E>, querier: BaseSqlQuerier, primaryKeyType: string) {
+function getDdlForTable<E>(entity: Type<E>, querier: BaseSqlQuerier, primaryKeyType: string) {
   const meta = getMeta(entity);
 
   let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name)} (\n\t`;

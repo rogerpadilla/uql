@@ -14,7 +14,7 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
   override shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: { id: 1 },
+        $project: ['id'],
         $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, creatorId: 1 },
         $limit: 30,
       })
@@ -24,7 +24,7 @@ export class MySqlDialectSpec extends BaseSqlDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },

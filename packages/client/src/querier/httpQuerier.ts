@@ -3,7 +3,7 @@ import { FieldValue, Query, QueryCriteria, QueryOne, Type } from '@uql/core/type
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
-import { stringifyQuery } from './query.util';
+import { stringifyQuery } from './querier.util';
 import { BaseClientRepository } from './baseClientRepository';
 
 export class HttpQuerier implements ClientQuerier {

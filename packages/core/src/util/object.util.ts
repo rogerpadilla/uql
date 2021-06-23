@@ -6,9 +6,9 @@ export function clone<T>(obj: T): T {
 }
 
 export function hasKeys<T>(obj: T): boolean {
-  return getKeys(obj)?.length > 0;
+  return getKeys(obj).length > 0;
 }
 
 export function getKeys<T>(obj: T): string[] {
-  return obj ? Object.keys(obj) : undefined;
+  return obj ? Object.keys(obj) : [];
 }

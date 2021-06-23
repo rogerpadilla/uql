@@ -1,11 +1,10 @@
 import {
-  FieldKey,
   FieldValue,
   Querier,
   Query,
   QueryCriteria,
   QueryOne,
-  QueryPopulate,
+  QueryProject,
   RelationKey,
   RelationValue,
   Repository,
@@ -13,7 +12,7 @@ import {
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
-import { filterRelations } from '../entity/util';
+import { getProjectRelations, getRelations } from './querier.util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -57,18 +56,14 @@ export abstract class BaseQuerier implements Querier {
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
 
-  protected async populateToManyRelations<E>(entity: Type<E>, payload: E[], populate: QueryPopulate<E>) {
+  protected async findToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
+    const relations = getProjectRelations(meta, project);
 
-    for (const relKey in populate) {
-      const relOpts = meta.relations[relKey as RelationKey<E>];
-
-      if (!relOpts) {
-        throw new TypeError(`'${entity.name}.${relKey}' is not annotated as a relation`);
-      }
-
+    for (const relKey of relations) {
+      const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const relQuery = clone(populate[relKey] as Query<typeof relEntity>);
+      const relQuery = clone(project[relKey as string]);
       const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 
@@ -77,15 +72,15 @@ export abstract class BaseQuerier implements Querier {
         const throughMeta = getMeta(throughEntity);
         const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
         const throughFounds = await this.findMany(throughEntity, {
-          $project: [referenceKey],
-          $filter: {
-            [referenceKey]: ids,
-          },
-          $populate: {
+          $project: {
+            [referenceKey]: true,
             [targetRelKey]: {
               ...relQuery,
               $required: true,
             },
+          },
+          $filter: {
+            [referenceKey]: ids,
           },
         });
         const founds = throughFounds.map((it) => it[targetRelKey]);
@@ -133,7 +128,7 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const keys = filterRelations(meta, it, 'persist');
+        const keys = getRelations(meta, it, 'persist');
         if (!keys.length) {
           return;
         }
@@ -144,7 +139,7 @@ export abstract class BaseQuerier implements Querier {
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const keys = filterRelations(meta, payload, 'persist');
+    const keys = getRelations(meta, payload, 'persist');
 
     if (!keys.length) {
       return;
@@ -166,7 +161,7 @@ export abstract class BaseQuerier implements Querier {
 
   protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[]): Promise<void> {
     const meta = getMeta(entity);
-    const keys = filterRelations(meta, meta.relations as E, 'delete');
+    const keys = getRelations(meta, meta.relations as E, 'delete');
 
     for (const key of keys) {
       const opts = meta.relations[key];

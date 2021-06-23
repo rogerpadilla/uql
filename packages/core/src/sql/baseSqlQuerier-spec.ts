@@ -8,7 +8,6 @@ import {
   dropTables,
   createTables,
   cleanTables,
-  ItemAdjustment,
 } from '../test';
 import { QuerierPool } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
@@ -59,7 +58,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
-  async shouldFindOneAndPopulateOneToMany() {
+  async shouldFindOneAndProjectOneToMany() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
         id: 123,
@@ -69,9 +68,8 @@ export class BaseSqlQuerierSpec implements Spec {
     ]);
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: ['id'],
+      $project: ['id', 'itemAdjustments'],
       $filter: { createdAt: 1 },
-      $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.run).nthCalledWith(
@@ -93,7 +91,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.all).toBeCalledTimes(2);
   }
 
-  async shouldFindOneAndPopulateOneToManyWithSpecifiedFields() {
+  async shouldFindOneAndProjectOneToManyWithSpecifiedFields() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
         createdAt: 1,
@@ -106,8 +104,7 @@ export class BaseSqlQuerierSpec implements Spec {
     ]);
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: ['id'],
-      $populate: { itemAdjustments: { $project: ['buyPrice'] } },
+      $project: { id: true, itemAdjustments: { $project: ['buyPrice'] } },
       $filter: { createdAt: 1 },
     });
 
@@ -133,16 +130,15 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledTimes(3);
   }
 
-  async shouldFindManyAndPopulateOneToMany() {
+  async shouldFindManyAndProjectOneToMany() {
     await this.querier.insertMany(InventoryAdjustment, [
       { id: 123, description: 'something a', createdAt: 1 },
       { id: 456, description: 'something b', createdAt: 1 },
     ]);
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: ['id'],
+      $project: { id: true, itemAdjustments: true },
       $filter: { createdAt: 1 },
-      $populate: { itemAdjustments: {} },
     });
 
     expect(this.querier.conn.all).nthCalledWith(
@@ -162,12 +158,11 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledTimes(1);
   }
 
-  async shouldFindOneAndPopulateManyToMany() {
+  async shouldFindOneAndProjectManyToMany() {
     await this.querier.insertOne(Item, { id: 123, createdAt: 1 });
 
     await this.querier.findOne(Item, {
-      $project: ['id', 'name'],
-      $populate: { tags: { $project: ['id'] } },
+      $project: { id: true, name: true, tags: { $project: ['id'] } },
     });
 
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`name` FROM `Item` LIMIT 1');
@@ -185,7 +180,7 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindMany() {
     await this.querier.findMany(User, {
-      $project: { id: 1, name: 1 },
+      $project: { id: true, name: true },
       $filter: { companyId: 123 },
       $limit: 100,
     });

@@ -1,6 +1,6 @@
 import { Query } from '@uql/core/type';
 import { Item, User } from '@uql/core/test';
-import { stringifyQuery, stringifyQueryParameter } from './query.util';
+import { stringifyQuery, stringifyQueryParameter } from './querier.util';
 
 it('stringifyQuery -- empty', () => {
   const source: Query<User> = {};
@@ -22,8 +22,7 @@ it('stringifyQuery', () => {
   expect(stringifyQuery({})).toBe('');
   expect(stringifyQuery({ project: undefined })).toBe('?project=undefined');
   const source: Query<Item> = {
-    $project: { id: 1, name: 1 },
-    $populate: { tax: {}, measureUnit: { $project: { id: 1, name: 1, categoryId: 1 } } },
+    $project: { id: 1, name: 1, tax: true, measureUnit: { $project: { id: 1, name: 1, categoryId: 1 } } },
     $filter: { name: 'Batman', companyId: 38 },
     $group: ['companyId'],
     $sort: { companyId: 1, name: -1 },
@@ -31,6 +30,6 @@ it('stringifyQuery', () => {
   };
   const result = stringifyQuery(source);
   const expected =
-    '?$project={"id":1,"name":1}&$populate={"tax":{},"measureUnit":{"$project":{"id":1,"name":1,"categoryId":1}}}&$filter={"name":"Batman","companyId":38}&$group=["companyId"]&$sort={"companyId":1,"name":-1}&$limit=5';
+    '?$project={"id":1,"name":1,"tax":true,"measureUnit":{"$project":{"id":1,"name":1,"categoryId":1}}}&$filter={"name":"Batman","companyId":38}&$group=["companyId"]&$sort={"companyId":1,"name":-1}&$limit=5';
   expect(result).toBe(expected);
 });

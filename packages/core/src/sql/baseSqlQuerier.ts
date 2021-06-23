@@ -2,7 +2,7 @@ import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, FieldV
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
-import { mapRows } from './sqlRowsMapper';
+import { mapRows } from './sql.util';
 import { BaseSqlDialect } from './baseSqlDialect';
 import { raw } from './raw';
 
@@ -22,12 +22,12 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.find(entity, qm);
     const res = await this.conn.all<E>(query);
     const founds = mapRows(res);
-    await this.populateToManyRelations(entity, founds, qm.$populate);
+    await this.findToManyRelations(entity, founds, qm.$project);
     return founds;
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
-    if (payload.length === 0) {
+    if (!payload.length) {
       return;
     }
     payload = clone(payload);

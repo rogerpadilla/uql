@@ -1,3 +1,3 @@
 export * from './httpQuerier';
 export * from './baseClientRepository';
-export * from './query.util';
+export * from './querier.util';

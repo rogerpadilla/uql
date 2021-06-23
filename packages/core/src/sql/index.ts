@@ -1,4 +1,4 @@
 export * from './baseSqlDialect';
 export * from './baseSqlQuerier';
-export * from './sqlRowsMapper';
+export * from './sql.util';
 export * from './raw';

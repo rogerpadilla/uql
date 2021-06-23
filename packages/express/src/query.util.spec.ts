@@ -11,8 +11,8 @@ it('parseQuery -- empty', () => {
 
 it('parseQuery stringified', () => {
   const qms: QueryStringified = {
-    $project: '{ "id": 1, "name": 1 }',
-    $populate: '{ "measureUnit": {"$project":{"id":1, "name":1}}, "tax": {"$project":{"id":1, "name":1}} }',
+    $project:
+      '{ "id": true, "name": true, "measureUnit": {"$project":{"id":true, "name":true}}, "tax": {"$project":{"id":true, "name":true}} }',
     $filter: '{ "name": "lorem", "companyId": 40 }',
     $group: '["companyId"]',
     $having: '{ "count": {"$gte": 10} }',
@@ -21,10 +21,11 @@ it('parseQuery stringified', () => {
     $limit: '100',
   };
   const expected: Query<Item> = {
-    $project: { id: 1, name: 1 },
-    $populate: {
-      measureUnit: { $project: { id: 1, name: 1 } },
-      tax: { $project: { id: 1, name: 1 } },
+    $project: {
+      id: true,
+      name: true,
+      measureUnit: { $project: { id: true, name: true } },
+      tax: { $project: { id: true, name: true } },
     },
     $filter: { name: 'lorem', companyId: 40 },
     $group: ['companyId'],

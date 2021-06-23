@@ -1,10 +1,10 @@
-import { MongoClient, ClientSession, ObjectId } from 'mongodb';
+import { MongoClient, ClientSession } from 'mongodb';
 import { isDebug, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, FieldValue } from '@uql/core/type';
-import { BaseQuerier } from '@uql/core/querier';
+import { BaseQuerier, getPersistable, getPersistables, hasProjectRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { buildPersistable, buildPersistables } from '@uql/core/entity/util';
-import { clone, hasKeys } from '@uql/core/util';
+import { clone } from '@uql/core/util';
+
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerier extends BaseQuerier {
@@ -27,14 +27,14 @@ export class MongodbQuerier extends BaseQuerier {
 
     let documents: E[];
 
-    if (hasKeys(qm.$populate)) {
+    if (hasProjectRelations(meta, qm.$project)) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
       if (isDebug()) {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       }
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       documents = this.dialect.normalizeIds(meta, documents);
-      await this.populateToManyRelations(entity, documents, qm.$populate);
+      await this.findToManyRelations(entity, documents, qm.$project);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
@@ -71,7 +71,7 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
-    if (payload.length === 0) {
+    if (!payload.length) {
       return;
     }
 
@@ -79,7 +79,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
-    const persistables = buildPersistables(meta, payloads, 'onInsert');
+    const persistables = getPersistables(meta, payloads, 'onInsert');
 
     log('insertMany', entity.name, persistables);
 
@@ -99,7 +99,7 @@ export class MongodbQuerier extends BaseQuerier {
   override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const persistable = buildPersistable(meta, payload, 'onUpdate');
+    const persistable = getPersistable(meta, payload, 'onUpdate');
     const filter = this.dialect.filter(entity, qm.$filter);
     const update = { $set: persistable };
 
