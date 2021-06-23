@@ -1,14 +1,5 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import {
-  QueryFilter,
-  Query,
-  EntityMeta,
-  Type,
-  QueryProject,
-  QueryProjectObject,
-  RelationKey,
-  Key,
-} from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, RelationKey, Key } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 import { getProjectRelations } from '@uql/core/querier';
@@ -29,16 +20,16 @@ export class MongoDialect {
     }, {} as FilterQuery<E>);
   }
 
-  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectObject<E> {
+  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
         if (typeof it === 'string') {
           acc[it as string] = true;
         }
         return acc;
-      }, {} as QueryProjectObject<E>);
+      }, {} as QueryProjectMap<E>);
     }
-    return project as QueryProjectObject<E>;
+    return project as QueryProjectMap<E>;
   }
 
   aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {

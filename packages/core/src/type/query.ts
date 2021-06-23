@@ -6,7 +6,7 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
-export type QueryProject<E> = QueryProjectArray<E> | QueryProjectObject<E>;
+export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
 
@@ -20,7 +20,7 @@ export type QueryProjectRelation<E> = {
 
 export type QueryProjectRelationValue<E> = Query<Unpacked<E>> & { $required?: boolean };
 
-export type QueryProjectObject<E> = QueryProjectField<E> | QueryProjectRelation<E>;
+export type QueryProjectMap<E> = QueryProjectField<E> | QueryProjectRelation<E>;
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
