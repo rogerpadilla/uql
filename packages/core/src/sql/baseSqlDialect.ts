@@ -78,11 +78,10 @@ export abstract class BaseSqlDialect {
       if (Array.isArray(project)) {
         projectArray = project;
       } else {
-        const projectKeys = getKeys(project);
-        const hasPositives = projectKeys.some((key) => project[key]);
-        projectArray = (hasPositives ? projectKeys : getKeys(meta.fields)).filter(
-          (it) => project[it] ?? !(it in project)
-        ) as FieldKey<E>[];
+        const positiveProjectKeys = getKeys(project).filter((key) => project[key]);
+        projectArray = positiveProjectKeys.length
+          ? (positiveProjectKeys as Key<E>[])
+          : (getKeys(meta.fields).filter((it) => !(it in project) || project[it]) as FieldKey<E>[]);
       }
       projectArray = projectArray.filter((key) => !((key as Key<E>) in meta.relations));
     }
