@@ -520,7 +520,7 @@ it('InventoryAdjustment', () => {
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       description: { name: 'description', type: String },
-      date: { name: 'date', type: Number },
+      date: { name: 'date', type: Date },
     },
     relations: {
       itemAdjustments: {

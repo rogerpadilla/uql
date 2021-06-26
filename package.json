@@ -34,7 +34,7 @@
     "eslint-plugin-import": "^2.23.4",
     "eslint-plugin-prettier": "^3.4.0",
     "jest": "^27.0.5",
-    "prettier": "^2.3.1",
+    "prettier": "^2.3.2",
     "rimraf": "^3.0.2",
     "run-rs": "^0.7.5",
     "semantic-release": "^17.4.4",

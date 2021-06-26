@@ -246,7 +246,7 @@ export class InventoryAdjustment extends BaseEntity {
   })
   itemAdjustments?: ItemAdjustment[];
   @Field()
-  date?: number;
+  date?: Date;
   @Field()
   description?: string;
 }
