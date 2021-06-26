@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb';
-import { Item, Spec, TaxCategory, User, createSpec, InventoryAdjustment, Tax } from '@uql/core/test';
+import { Item, Spec, TaxCategory, User, createSpec, Tax } from '@uql/core/test';
 import { getMeta } from '@uql/core/entity/decorator';
 import { MongoDialect } from './mongoDialect';
 

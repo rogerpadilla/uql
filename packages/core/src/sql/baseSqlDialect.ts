@@ -84,9 +84,10 @@ export abstract class BaseSqlDialect {
           : (getKeys(meta.fields).filter((it) => !(it in project) || project[it]) as FieldKey<E>[]);
       }
       projectArray = projectArray.filter((key) => !((key as Key<E>) in meta.relations));
-    }
-
-    if (!projectArray?.length) {
+      if (!projectArray.length) {
+        projectArray = [meta.id];
+      }
+    } else {
       projectArray = getKeys(meta.fields) as FieldKey<E>[];
     }
 

@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory, Profile } from '../test/entityMock';
+import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment } from '../test/entityMock';
 
 import { QueryFilter, QuerySort } from '../type';
 import { Spec } from '../test/spec.util';
@@ -51,6 +51,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
         createdAt: 123,
       })
     ).toBe("INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)");
+
+    expect(
+      this.dialect.insert(InventoryAdjustment, {
+        date: new Date(2021, 11, 31, 23, 59, 59, 999),
+        createdAt: 123,
+      })
+    ).toBe("INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES ('2021-12-31 23:59:59.999', 123)");
   }
 
   shouldInsertWithOnInsertId() {
@@ -389,8 +396,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
 
     expect(this.dialect.find(User, { $project: { profile: true } })).toBe(
-      'SELECT `User`.`id`, `User`.`companyId`, `User`.`creatorId`, `User`.`createdAt`, `User`.`updatedAt`' +
-        ', `User`.`name`, `User`.`email`, `User`.`password`, `profile`.`companyId` `profile.companyId`' +
+      'SELECT `User`.`id`, `profile`.`companyId` `profile.companyId`' +
         ', `profile`.`creatorId` `profile.creatorId`, `profile`.`createdAt` `profile.createdAt`' +
         ', `profile`.`updatedAt` `profile.updatedAt`' +
         ', `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture`' +
