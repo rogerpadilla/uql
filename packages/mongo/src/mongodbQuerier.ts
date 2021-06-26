@@ -79,7 +79,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     const meta = getMeta(entity);
     const payloads = Array.isArray(payload) ? payload : [payload];
-    const persistables = getPersistables(meta, payloads, 'onInsert');
+    const persistables = getPersistables(meta, payload, 'onInsert');
 
     log('insertMany', entity.name, persistables);
 

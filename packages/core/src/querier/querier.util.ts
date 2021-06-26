@@ -8,8 +8,8 @@ export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: 
 }
 
 export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
-  const payloads = fillOnCallbacks(meta, payload, callbackKey);
-  const persistableKeys = getFields(meta, payloads[0]);
+  const payloads = fillOnFields(meta, payload, callbackKey);
+  const persistableKeys = getPersitableFields(meta, payloads[0]);
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
@@ -18,7 +18,7 @@ export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callba
   );
 }
 
-export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((col) => meta.fields[col][callbackKey]);
   return payloads.map((it) => {
@@ -31,11 +31,11 @@ export function fillOnCallbacks<E>(meta: EntityMeta<E>, payload: E | E[], callba
   });
 }
 
-export function getFields<E>(meta: EntityMeta<E>, payload: E): FieldKey<E>[] {
+export function getPersitableFields<E>(meta: EntityMeta<E>, payload: E): FieldKey<E>[] {
   return getKeys(payload).filter((key) => meta.fields[key]) as FieldKey<E>[];
 }
 
-export function getRelations<E>(meta: EntityMeta<E>, payload: E, action: CascadeType): RelationKey<E>[] {
+export function getPersistableRelations<E>(meta: EntityMeta<E>, payload: E, action: CascadeType): RelationKey<E>[] {
   const keys = getKeys(payload);
   return keys.filter((key) => {
     const relOpts = meta.relations[key as RelationKey<E>];

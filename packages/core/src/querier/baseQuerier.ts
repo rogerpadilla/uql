@@ -12,7 +12,7 @@ import {
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
-import { getProjectRelations, getRelations } from './querier.util';
+import { getProjectRelations, getPersistableRelations } from './querier.util';
 import { BaseRepository } from './baseRepository';
 
 /**
@@ -128,7 +128,7 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const keys = getRelations(meta, it, 'persist');
+        const keys = getPersistableRelations(meta, it, 'persist');
         if (!keys.length) {
           return;
         }
@@ -139,7 +139,7 @@ export abstract class BaseQuerier implements Querier {
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const keys = getRelations(meta, payload, 'persist');
+    const keys = getPersistableRelations(meta, payload, 'persist');
 
     if (!keys.length) {
       return;
@@ -161,7 +161,7 @@ export abstract class BaseQuerier implements Querier {
 
   protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[]): Promise<void> {
     const meta = getMeta(entity);
-    const keys = getRelations(meta, meta.relations as E, 'delete');
+    const keys = getPersistableRelations(meta, meta.relations as E, 'delete');
 
     for (const key of keys) {
       const opts = meta.relations[key];

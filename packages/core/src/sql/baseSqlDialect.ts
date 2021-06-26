@@ -1,6 +1,6 @@
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
-import { getFields, getPersistable, getProjectRelations, fillOnCallbacks, hasProjectRelations } from '../querier';
+import { getPersistable, getProjectRelations, hasProjectRelations, getPersistables } from '../querier';
 import {
   QueryFilter,
   Query,
@@ -47,8 +47,8 @@ export abstract class BaseSqlDialect {
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
-    const payloads = fillOnCallbacks(meta, payload, 'onInsert');
-    const keys = getFields(meta, payloads[0]);
+    const payloads = getPersistables(meta, payload, 'onInsert');
+    const keys = getKeys(payloads[0]);
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
     const values = payloads.map((it) => keys.map((key) => this.escape(it[key])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
