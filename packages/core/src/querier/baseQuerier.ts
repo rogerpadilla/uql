@@ -129,20 +129,20 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const keys = getPersistableRelations(meta, it, 'persist');
-        if (!keys.length) {
+        const relKeys = getPersistableRelations(meta, it, 'persist');
+        if (!relKeys.length) {
           return;
         }
-        return Promise.all(keys.map((key) => this.saveRelation(entity, it, key)));
+        return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
       })
     );
   }
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const keys = getPersistableRelations(meta, payload, 'persist');
+    const relKeys = getPersistableRelations(meta, payload, 'persist');
 
-    if (!keys.length) {
+    if (!relKeys.length) {
       return;
     }
 
@@ -155,7 +155,7 @@ export abstract class BaseQuerier implements Querier {
 
     await Promise.all(
       ids.map((id) =>
-        Promise.all(keys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
       )
     );
   }

@@ -113,12 +113,14 @@ export class MongoDialect {
       delete res._id;
     }
 
-    const keys = getKeys(meta.relations).filter((key) => doc[key]);
+    const relKeys = getKeys(meta.relations).filter((key) => doc[key]);
 
-    for (const key of keys) {
-      const relOpts = meta.relations[key];
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
       const relMeta = getMeta(relOpts.entity());
-      res[key] = Array.isArray(res[key]) ? this.normalizeIds(relMeta, res[key]) : this.normalizeId(relMeta, res[key]);
+      res[relKey] = Array.isArray(res[relKey])
+        ? this.normalizeIds(relMeta, res[relKey])
+        : this.normalizeId(relMeta, res[relKey]);
     }
 
     return res as E;
