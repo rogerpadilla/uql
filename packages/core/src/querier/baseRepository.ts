@@ -1,4 +1,4 @@
-import { FieldValue, Querier, Query, QueryCriteria, QueryOne, Repository, Type } from '../type';
+import { FieldValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, Repository, Type } from '../type';
 
 export class BaseRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}
@@ -31,12 +31,12 @@ export class BaseRepository<E> implements Repository<E> {
     return this.querier.findOneById(this.entity, id, qm);
   }
 
-  deleteMany(qm: QueryCriteria<E>) {
-    return this.querier.deleteMany(this.entity, qm);
+  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions) {
+    return this.querier.deleteMany(this.entity, qm, opts);
   }
 
-  deleteOneById(id: FieldValue<E>) {
-    return this.querier.deleteOneById(this.entity, id);
+  deleteOneById(id: FieldValue<E>, opts?: QueryOptions) {
+    return this.querier.deleteOneById(this.entity, id, opts);
   }
 
   count(qm: QueryCriteria<E>) {

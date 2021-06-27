@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment } from '../test/entityMock';
+import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit } from '../test/entityMock';
 
 import { QueryFilter, QuerySort } from '../type';
 import { Spec } from '../test/spec.util';
@@ -119,6 +119,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $filter: { id: 123, picture: 'abc' },
       })
     ).toBe("SELECT `pk` `id`, `image` `picture`, `companyId` FROM `user_profile` WHERE `pk` = 123 AND `image` = 'abc'");
+
+    expect(
+      this.dialect.find(MeasureUnit, {
+        $project: ['id'],
+        $filter: { id: 123, name: 'abc' },
+      })
+    ).toBe("SELECT `id` FROM `MeasureUnit` WHERE `id` = 123 AND `name` = 'abc' AND `deletedAt` IS NULL");
   }
 
   shouldPreventSqlInjection() {
@@ -445,7 +452,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ' FROM `Item`' +
         ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId` AND `tax`.`id` = 2' +
-        " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad'" +
+        " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad' AND `measureUnit`.`deletedAt` IS NULL" +
         ' ORDER BY `tax`.`name`, `measureUnit`.`name` LIMIT 100'
     );
   }
@@ -639,6 +646,12 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   shouldDelete() {
     expect(this.dialect.delete(User, { $filter: { id: 123 } })).toBe('DELETE FROM `User` WHERE `id` = 123');
+    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } })).toMatch(
+      /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/
+    );
+    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: true })).toBe(
+      'DELETE FROM `MeasureUnit` WHERE `id` = 123'
+    );
   }
 
   shouldFind$startsWith() {

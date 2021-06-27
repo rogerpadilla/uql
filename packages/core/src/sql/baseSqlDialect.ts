@@ -17,6 +17,7 @@ import {
   QueryProjectRelationValue,
   QueryProjectArray,
   Key,
+  QueryOptions,
 } from '../type';
 import { hasKeys, getKeys } from '../util';
 
@@ -29,15 +30,15 @@ export abstract class BaseSqlDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  criteria<E>(entity: Type<E>, qm: Query<E>): string {
+  criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const meta = getMeta(entity);
     const prefix = hasProjectRelations(meta, qm.$project) ? meta.name : undefined;
-    const filter = this.filter<E>(entity, qm.$filter, { prefix });
+    const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort);
     const pager = this.pager(qm);
-    return filter + group + having + sort + pager;
+    return where + group + having + sort + pager;
   }
 
   find<E>(entity: Type<E>, qm: Query<E>): string {
@@ -62,9 +63,17 @@ export abstract class BaseSqlDialect {
     return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
   }
 
-  delete<E>(entity: Type<E>, qm: QueryCriteria<E>): string {
+  delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const criteria = this.criteria(entity, qm);
+
+    if (meta.paranoid && !opts.force) {
+      const criteria = this.criteria(entity, qm);
+      const value = meta.fields[meta.paranoidKey].onDelete();
+      return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.paranoidKey)} = ${value}${criteria}`;
+    }
+
+    const criteria = this.criteria(entity, qm, opts);
+
     return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
   }
 
@@ -181,9 +190,18 @@ export abstract class BaseSqlDialect {
   filter<E>(
     entity: Type<E>,
     filter: QueryFilter<E>,
-    opts: { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } = {}
+    opts: { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } & QueryOptions = {}
   ): string {
-    const { prefix, wrapWithParenthesis, clause = 'WHERE' } = opts;
+    const meta = getMeta(entity);
+    const { prefix, wrapWithParenthesis, clause = 'WHERE', force } = opts;
+
+    if (meta.paranoid && !force && clause !== 'HAVING' && (!filter || !(meta.paranoidKey in filter))) {
+      if (!filter) {
+        filter = {};
+      }
+      filter[meta.paranoidKey as string] = null;
+    }
+
     const keys = getKeys(filter);
     if (!keys.length) {
       return '';

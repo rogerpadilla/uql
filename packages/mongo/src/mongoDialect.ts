@@ -1,12 +1,29 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, RelationKey, Key } from '@uql/core/type';
+import {
+  QueryFilter,
+  Query,
+  EntityMeta,
+  Type,
+  QueryProject,
+  QueryProjectMap,
+  RelationKey,
+  Key,
+  QueryOptions,
+} from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 import { getProjectRelations } from '@uql/core/querier';
 
 export class MongoDialect {
-  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
+  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { force }: QueryOptions = {}): FilterQuery<E> {
     const meta = getMeta(entity);
+
+    if (meta.paranoid && !force && (!filter || !(meta.paranoidKey in filter))) {
+      if (!filter) {
+        filter = {};
+      }
+      filter[meta.paranoidKey as string] = null;
+    }
 
     return getKeys(filter).reduce((acc, prop) => {
       const value = filter[prop];

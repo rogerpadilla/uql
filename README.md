@@ -15,6 +15,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - generated queries are fast, safe, and human-readable
 - `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations and their fields.
 - declarative and programmatic `transactions`
+- soft-delete
 - entity `repositories`
 - different kind of `relations` between the entities
 - supports `inheritance` patterns between the entities
@@ -181,13 +182,13 @@ export abstract class BaseEntity implements IEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
    */
-  @Field({ onInsert: () => Date.now() })
+  @Field({ onInsert: Date.now })
   createdAt?: number;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
-  @Field({ onUpdate: () => Date.now() })
+  @Field({ onUpdate: Date.now })
   updatedAt?: number;
 }
 
@@ -277,13 +278,17 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
-@Entity()
+@Entity({ paranoid: true })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category, cascade: true })
+  measureUnits?: MeasureUnit[];
+  @Field({ onDelete: Date.now })
+  deletedAt?: number;
 }
 
-@Entity()
+@Entity({ paranoid: true })
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
@@ -291,6 +296,8 @@ export class MeasureUnit extends BaseEntity {
   categoryId?: number;
   @ManyToOne({ cascade: true })
   category?: MeasureUnitCategory;
+  @Field({ onDelete: Date.now })
+  deletedAt?: number;
 }
 
 @Entity()
@@ -380,7 +387,7 @@ export class InventoryAdjustment extends BaseEntity {
   })
   itemAdjustments?: ItemAdjustment[];
   @Field()
-  date?: number;
+  date?: Date;
   @Field()
   description?: string;
 }

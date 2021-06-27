@@ -4,6 +4,7 @@ import {
   Query,
   QueryCriteria,
   QueryOne,
+  QueryOptions,
   QueryProject,
   RelationKey,
   RelationValue,
@@ -49,12 +50,12 @@ export abstract class BaseQuerier implements Querier {
 
   abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
 
-  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>) {
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    return this.deleteMany(entity, { $filter: { [meta.id]: id } });
+    return this.deleteMany(entity, { $filter: { [meta.id]: id } }, opts);
   }
 
-  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
+  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
 
   protected async findToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
@@ -159,21 +160,21 @@ export abstract class BaseQuerier implements Querier {
     );
   }
 
-  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[]): Promise<void> {
+  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[], opts?: QueryOptions): Promise<void> {
     const meta = getMeta(entity);
-    const keys = getPersistableRelations(meta, meta.relations as E, 'delete');
+    const relKeys = getPersistableRelations(meta, meta.relations as E, 'delete');
 
-    for (const key of keys) {
-      const opts = meta.relations[key];
-      const relEntity = opts.entity();
-      if (opts.through) {
-        const throughEntity = opts.through();
-        const referenceKey = opts.mappedBy ? opts.references[1].source : opts.references[0].source;
-        await this.deleteMany(throughEntity, { [referenceKey]: ids });
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
+      const relEntity = relOpts.entity();
+      if (relOpts.through) {
+        const throughEntity = relOpts.through();
+        const referenceKey = relOpts.mappedBy ? relOpts.references[1].source : relOpts.references[0].source;
+        await this.deleteMany(throughEntity, { [referenceKey]: ids }, opts);
         return;
       }
-      const referenceKey = opts.mappedBy ? opts.references[0].target : opts.references[0].source;
-      await this.deleteMany(relEntity, { [referenceKey]: ids });
+      const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+      await this.deleteMany(relEntity, { [referenceKey]: ids }, opts);
     }
   }
 

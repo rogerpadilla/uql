@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { FieldValue, Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
+import { FieldValue, Query, QueryCriteria, QueryOne, QueryOptions, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
@@ -54,15 +54,16 @@ export class HttpQuerier implements ClientQuerier {
     return get<E[]>(`${basePath}${qs}`, opts);
   }
 
-  deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions) {
+  deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(qm);
+    const qs = stringifyQuery(opts.force ? { ...qm, force: opts.force } : qm);
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
-  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: RequestOptions) {
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
-    return remove<number>(`${basePath}/${id}`, opts);
+    const qs = opts.force ? stringifyQuery({ force: opts.force }) : '';
+    return remove<number>(`${basePath}/${id}${qs}`, opts);
   }
 
   count<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: RequestOptions) {

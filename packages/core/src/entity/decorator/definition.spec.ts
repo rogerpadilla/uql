@@ -545,6 +545,108 @@ it('InventoryAdjustment', () => {
   expect(meta).toEqual(expectedMeta);
 });
 
+it('MeasureUnitCategory', () => {
+  const meta = getMeta(MeasureUnitCategory);
+  const expectedMeta: EntityMeta<MeasureUnitCategory> = {
+    entity: MeasureUnitCategory,
+    name: 'MeasureUnitCategory',
+    id: 'id',
+    paranoid: true,
+    paranoidKey: 'deletedAt',
+    processed: true,
+    fields: {
+      id: { name: 'id', type: Number, isId: true },
+      name: { name: 'name', type: String },
+      companyId: {
+        name: 'companyId',
+        type: Number,
+        reference: { entity: expect.any(Function) },
+      },
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
+        reference: { entity: expect.any(Function) },
+      },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
+    },
+    relations: {
+      measureUnits: {
+        cardinality: '1m',
+        cascade: true,
+        entity: expect.any(Function),
+        mappedBy: 'category',
+        references: [{ source: 'id', target: 'categoryId' }],
+      },
+      company: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'companyId', target: 'id' }],
+      },
+      creator: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'creatorId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
+it('MeasureUnit', () => {
+  const meta = getMeta(MeasureUnit);
+  const expectedMeta: EntityMeta<MeasureUnit> = {
+    entity: MeasureUnit,
+    name: 'MeasureUnit',
+    id: 'id',
+    paranoid: true,
+    paranoidKey: 'deletedAt',
+    processed: true,
+    fields: {
+      id: { name: 'id', type: Number, isId: true },
+      name: { name: 'name', type: String },
+      categoryId: {
+        name: 'categoryId',
+        type: Number,
+        reference: { entity: expect.any(Function) },
+      },
+      companyId: {
+        name: 'companyId',
+        type: Number,
+        reference: { entity: expect.any(Function) },
+      },
+      creatorId: {
+        name: 'creatorId',
+        type: Number,
+        reference: { entity: expect.any(Function) },
+      },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
+    },
+    relations: {
+      category: {
+        cardinality: 'm1',
+        cascade: true,
+        entity: expect.any(Function),
+        references: [{ source: 'categoryId', target: 'id' }],
+      },
+      company: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'companyId', target: 'id' }],
+      },
+      creator: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [{ source: 'creatorId', target: 'id' }],
+      },
+    },
+  };
+  expect(meta).toEqual(expectedMeta);
+});
+
 it('not an @Entity', () => {
   class SomeClass {}
 
@@ -609,4 +711,26 @@ it('no fields', () => {
       id: string;
     }
   }).toThrow(`'SomeEntity' must have fields`);
+});
+
+it('paranoid no onDelete', () => {
+  expect(() => {
+    @Entity({ paranoid: true })
+    class SomeEntity {
+      @Field()
+      id: string;
+    }
+  }).toThrow(`'SomeEntity' must have one field with 'onDelete' to use 'paranoid' mode`);
+});
+
+it('max 1 onDelete', () => {
+  expect(() => {
+    @Entity({ paranoid: true })
+    class SomeEntity {
+      @Field({ onDelete: Date.now })
+      deletedAt: number;
+      @Field({ onDelete: () => true })
+      deleted: boolean;
+    }
+  }).toThrow(`'SomeEntity' must have one field with 'onDelete' as maximum`);
 });

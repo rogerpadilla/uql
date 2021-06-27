@@ -28,7 +28,7 @@ export async function cleanTables(querier: BaseSqlQuerier) {
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
-      const sql = querier.dialect.delete(entity, {});
+      const sql = querier.dialect.delete(entity, {}, { force: true });
       return querier.conn.run(sql);
     })
   );

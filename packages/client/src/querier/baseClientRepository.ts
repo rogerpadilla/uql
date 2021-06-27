@@ -1,4 +1,4 @@
-import { FieldValue, Query, QueryCriteria, QueryOne, Type } from '@uql/core/type';
+import { FieldValue, Query, QueryCriteria, QueryOne, QueryOptions, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
 export class BaseClientRepository<E> implements ClientRepository<E> {
@@ -28,12 +28,12 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.findOneById(this.entity, id, qm, opts);
   }
 
-  deleteMany(qm: QueryCriteria<E>) {
-    return this.querier.deleteMany(this.entity, qm);
+  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions) {
+    return this.querier.deleteMany(this.entity, qm, opts);
   }
 
-  deleteOneById(id: FieldValue<E>) {
-    return this.querier.deleteOneById(this.entity, id);
+  deleteOneById(id: FieldValue<E>, opts?: QueryOptions) {
+    return this.querier.deleteOneById(this.entity, id, opts);
   }
 
   count(qm: QueryCriteria<E>) {

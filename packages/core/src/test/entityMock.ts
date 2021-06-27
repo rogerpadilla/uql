@@ -47,13 +47,13 @@ export abstract class BaseEntity implements IEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
    */
-  @Field({ onInsert: () => Date.now() })
+  @Field({ onInsert: Date.now })
   createdAt?: number;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
-  @Field({ onUpdate: () => Date.now() })
+  @Field({ onUpdate: Date.now })
   updatedAt?: number;
 }
 
@@ -143,13 +143,17 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
-@Entity()
+@Entity({ paranoid: true })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category, cascade: true })
+  measureUnits?: MeasureUnit[];
+  @Field({ onDelete: Date.now })
+  deletedAt?: number;
 }
 
-@Entity()
+@Entity({ paranoid: true })
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
@@ -157,6 +161,8 @@ export class MeasureUnit extends BaseEntity {
   categoryId?: number;
   @ManyToOne({ cascade: true })
   category?: MeasureUnitCategory;
+  @Field({ onDelete: Date.now })
+  deletedAt?: number;
 }
 
 @Entity()
