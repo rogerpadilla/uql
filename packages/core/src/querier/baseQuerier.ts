@@ -4,6 +4,7 @@ import {
   Query,
   QueryCriteria,
   QueryOne,
+  QueryOptions,
   QueryProject,
   RelationKey,
   RelationValue,
@@ -49,12 +50,12 @@ export abstract class BaseQuerier implements Querier {
 
   abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
 
-  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>) {
+  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    return this.deleteMany(entity, { $filter: { [meta.id]: id } });
+    return this.deleteMany(entity, { $filter: { [meta.id]: id } }, opts);
   }
 
-  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>): Promise<number>;
+  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
 
   protected async findToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
@@ -128,20 +129,20 @@ export abstract class BaseQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const keys = getPersistableRelations(meta, it, 'persist');
-        if (!keys.length) {
+        const relKeys = getPersistableRelations(meta, it, 'persist');
+        if (!relKeys.length) {
           return;
         }
-        return Promise.all(keys.map((key) => this.saveRelation(entity, it, key)));
+        return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
       })
     );
   }
 
   protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
     const meta = getMeta(entity);
-    const keys = getPersistableRelations(meta, payload, 'persist');
+    const relKeys = getPersistableRelations(meta, payload, 'persist');
 
-    if (!keys.length) {
+    if (!relKeys.length) {
       return;
     }
 
@@ -154,26 +155,26 @@ export abstract class BaseQuerier implements Querier {
 
     await Promise.all(
       ids.map((id) =>
-        Promise.all(keys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
       )
     );
   }
 
-  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[]): Promise<void> {
+  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[], opts?: QueryOptions): Promise<void> {
     const meta = getMeta(entity);
-    const keys = getPersistableRelations(meta, meta.relations as E, 'delete');
+    const relKeys = getPersistableRelations(meta, meta.relations as E, 'delete');
 
-    for (const key of keys) {
-      const opts = meta.relations[key];
-      const relEntity = opts.entity();
-      if (opts.through) {
-        const throughEntity = opts.through();
-        const referenceKey = opts.mappedBy ? opts.references[1].source : opts.references[0].source;
-        await this.deleteMany(throughEntity, { [referenceKey]: ids });
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
+      const relEntity = relOpts.entity();
+      if (relOpts.through) {
+        const throughEntity = relOpts.through();
+        const referenceKey = relOpts.mappedBy ? relOpts.references[1].source : relOpts.references[0].source;
+        await this.deleteMany(throughEntity, { [referenceKey]: ids }, opts);
         return;
       }
-      const referenceKey = opts.mappedBy ? opts.references[0].target : opts.references[0].source;
-      await this.deleteMany(relEntity, { [referenceKey]: ids });
+      const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+      await this.deleteMany(relEntity, { [referenceKey]: ids }, opts);
     }
   }
 

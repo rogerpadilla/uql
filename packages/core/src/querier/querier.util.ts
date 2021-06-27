@@ -1,7 +1,7 @@
 import { EntityMeta, FieldKey, QueryProject, CascadeType, RelationKey, FieldOptions, Key } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
 
-type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
+type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
 export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
   return getPersistables(meta, payload, callbackKey)[0];
@@ -9,7 +9,7 @@ export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: 
 
 export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = fillOnFields(meta, payload, callbackKey);
-  const persistableKeys = getPersitableFields(meta, payloads[0]);
+  const persistableKeys = getKeys(payloads[0]).filter((key) => meta.fields[key]) as FieldKey<E>[];
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
@@ -29,10 +29,6 @@ function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: Cal
     }
     return it;
   });
-}
-
-export function getPersitableFields<E>(meta: EntityMeta<E>, payload: E): FieldKey<E>[] {
-  return getKeys(payload).filter((key) => meta.fields[key]) as FieldKey<E>[];
 }
 
 export function getPersistableRelations<E>(meta: EntityMeta<E>, payload: E, action: CascadeType): RelationKey<E>[] {

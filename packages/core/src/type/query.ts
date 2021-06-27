@@ -6,6 +6,8 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
+export type QueryOptions = { readonly force?: boolean };
+
 export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];

@@ -59,6 +59,20 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
     throw new TypeError(`'${entity.name}' must have fields`);
   }
 
+  const onDeletes = getKeys(meta.fields).filter((key) => meta.fields[key as FieldKey<E>].onDelete);
+
+  if (onDeletes.length > 1) {
+    throw new TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
+  }
+
+  if (opts.paranoid) {
+    if (!onDeletes.length) {
+      throw new TypeError(`'${entity.name}' must have one field with 'onDelete' to use 'paranoid' mode`);
+    }
+    meta.paranoidKey = onDeletes[0] as FieldKey<E>;
+    meta.paranoid = true;
+  }
+
   meta.name = opts.name ?? entity.name;
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
@@ -91,7 +105,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity: entity, name: entity.name, fields: {}, relations: {} };
+  meta = { entity, name: entity.name, fields: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
 }

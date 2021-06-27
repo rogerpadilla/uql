@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isDebug, log } from '@uql/core';
-import { Query, QueryOne, Type, QueryCriteria, FieldValue } from '@uql/core/type';
+import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
 import { BaseQuerier, getPersistable, getPersistables, hasProjectRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone } from '@uql/core/util';
@@ -105,31 +105,50 @@ export class MongodbQuerier extends BaseQuerier {
 
     log('updateMany', entity.name, filter, update);
 
-    const { modifiedCount } = await this.collection(entity).updateMany(filter, update, {
+    const { matchedCount } = await this.collection(entity).updateMany(filter, update, {
       session: this.session,
     });
 
     await this.updateRelations(entity, payload, qm);
 
-    return modifiedCount;
+    return matchedCount;
   }
 
-  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}) {
     const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
-    log('deleteMany', entity.name, filter);
+    log('deleteMany', entity.name, filter, opts);
     const founds: E[] = await this.collection(entity)
       .find(filter, {
         projection: { _id: true },
         session: this.session,
       })
       .toArray();
+    if (!founds.length) {
+      return 0;
+    }
     const ids = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
-    const { deletedCount } = await this.collection(entity).deleteMany(filter, {
-      session: this.session,
-    });
-    await this.deleteRelations(entity, ids);
-    return deletedCount;
+    let changes: number;
+    if (meta.paranoid && !opts.force) {
+      const updateResult = await this.collection(entity).updateMany(
+        { _id: { $in: ids } },
+        { $set: { [meta.paranoidKey]: meta.fields[meta.paranoidKey].onDelete() } },
+        {
+          session: this.session,
+        }
+      );
+      changes = updateResult.matchedCount;
+    } else {
+      const deleteResult = await this.collection(entity).deleteMany(
+        { _id: { $in: ids } },
+        {
+          session: this.session,
+        }
+      );
+      changes = deleteResult.deletedCount;
+    }
+    await this.deleteRelations(entity, ids, opts);
+    return changes;
   }
 
   override get hasOpenTransaction() {

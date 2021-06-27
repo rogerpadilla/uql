@@ -1,12 +1,29 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, RelationKey, Key } from '@uql/core/type';
+import {
+  QueryFilter,
+  Query,
+  EntityMeta,
+  Type,
+  QueryProject,
+  QueryProjectMap,
+  RelationKey,
+  Key,
+  QueryOptions,
+} from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { hasKeys, getKeys } from '@uql/core/util';
 import { getProjectRelations } from '@uql/core/querier';
 
 export class MongoDialect {
-  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}): FilterQuery<E> {
+  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { force }: QueryOptions = {}): FilterQuery<E> {
     const meta = getMeta(entity);
+
+    if (meta.paranoid && !force && (!filter || !(meta.paranoidKey in filter))) {
+      if (!filter) {
+        filter = {};
+      }
+      filter[meta.paranoidKey as string] = null;
+    }
 
     return getKeys(filter).reduce((acc, prop) => {
       const value = filter[prop];
@@ -96,12 +113,14 @@ export class MongoDialect {
       delete res._id;
     }
 
-    const keys = getKeys(meta.relations).filter((key) => doc[key]);
+    const relKeys = getKeys(meta.relations).filter((key) => doc[key]);
 
-    for (const key of keys) {
-      const relOpts = meta.relations[key];
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
       const relMeta = getMeta(relOpts.entity());
-      res[key] = Array.isArray(res[key]) ? this.normalizeIds(relMeta, res[key]) : this.normalizeId(relMeta, res[key]);
+      res[relKey] = Array.isArray(res[relKey])
+        ? this.normalizeIds(relMeta, res[relKey])
+        : this.normalizeId(relMeta, res[relKey]);
     }
 
     return res as E;

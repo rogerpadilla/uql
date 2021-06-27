@@ -1,4 +1,4 @@
-import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, FieldValue } from '../type';
+import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, FieldValue, QueryOptions } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
@@ -14,7 +14,8 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
-    const res: any = await this.findMany(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
+    const query = await this.dialect.find(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
+    const res: any = await this.conn.all<E>(query);
     return Number(res[0].count);
   }
 
@@ -50,16 +51,17 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return changes;
   }
 
-  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>) {
+  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const founds = await this.findMany(entity, { ...qm, $project: [meta.id] });
-    const ids = founds.map((it) => it[meta.id]);
-    if (!ids.length) {
+    const findQuery = await this.dialect.find(entity, { ...qm, $project: [meta.id] });
+    const founds = await this.conn.all<E>(findQuery);
+    if (!founds.length) {
       return 0;
     }
-    const query = this.dialect.delete(entity, { $filter: { [meta.id]: ids } });
+    const ids = founds.map((it) => it[meta.id]);
+    const query = this.dialect.delete(entity, { $filter: { [meta.id]: ids } }, opts);
     const { changes } = await this.conn.run(query);
-    await this.deleteRelations(entity, ids);
+    await this.deleteRelations(entity, ids, opts);
     return changes;
   }
 

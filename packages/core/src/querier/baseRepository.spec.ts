@@ -59,12 +59,18 @@ describe('repository', () => {
 
   it('deleteMany', async () => {
     await repository.deleteMany({});
-    expect(querier.deleteMany).toHaveBeenCalledWith(User, {});
+    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, undefined);
+
+    await repository.deleteMany({}, { force: true });
+    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { force: true });
   });
 
   it('deleteOneById', async () => {
     await repository.deleteOneById(1);
-    expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1);
+    expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, undefined);
+
+    await repository.deleteOneById(1, { force: true });
+    expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, { force: true });
   });
 
   it('count', async () => {
