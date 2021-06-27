@@ -190,7 +190,7 @@ export abstract class BaseSqlDialect {
   filter<E>(
     entity: Type<E>,
     filter: QueryFilter<E>,
-    opts: { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } & QueryOptions = {}
+    opts: QueryOptions & { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } = {}
   ): string {
     const meta = getMeta(entity);
     const { prefix, wrapWithParenthesis, clause = 'WHERE', force } = opts;
