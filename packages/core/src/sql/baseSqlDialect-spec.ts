@@ -646,7 +646,16 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   shouldDelete() {
     expect(this.dialect.delete(User, { $filter: { id: 123 } })).toBe('DELETE FROM `User` WHERE `id` = 123');
+    expect(this.dialect.delete(User, { $filter: { id: 123 } }, { force: true })).toBe(
+      'DELETE FROM `User` WHERE `id` = 123'
+    );
+    expect(this.dialect.delete(User, { $filter: { id: 123 } }, { force: false })).toBe(
+      'DELETE FROM `User` WHERE `id` = 123'
+    );
     expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } })).toMatch(
+      /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/
+    );
+    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: false })).toMatch(
       /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/
     );
     expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: true })).toBe(
