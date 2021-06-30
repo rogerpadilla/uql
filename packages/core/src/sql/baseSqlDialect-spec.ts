@@ -675,6 +675,24 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe('SELECT `companyId`, SUM(`salePrice`) `total` FROM `Item` GROUP BY `companyId`');
 
     expect(
+      this.dialect.find(ItemAdjustment, {
+        $project: {
+          item: {
+            $project: {
+              companyId: true,
+              total: raw((prefix, dialect) => `SUM(${prefix}${dialect.escapeId('salePrice')})`),
+            },
+            $required: true,
+          },
+        },
+        $group: ['companyId'],
+      })
+    ).toBe(
+      'SELECT `ItemAdjustment`.`id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
+        ' FROM `ItemAdjustment` INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId` GROUP BY `companyId`'
+    );
+
+    expect(
       this.dialect.find(User, {
         $project: ['companyId', raw('COUNT(*)', 'count')],
         $group: ['companyId'],
