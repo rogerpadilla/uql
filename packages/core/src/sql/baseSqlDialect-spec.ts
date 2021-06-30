@@ -665,6 +665,16 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
   shouldRaw() {
     expect(
+      this.dialect.find(Item, {
+        $project: {
+          companyId: true,
+          total: raw((prefix, dialect) => `SUM(${prefix}${dialect.escapeId('salePrice')})`),
+        },
+        $group: ['companyId'],
+      })
+    ).toBe('SELECT `companyId`, SUM(`salePrice`) `total` FROM `Item` GROUP BY `companyId`');
+
+    expect(
       this.dialect.find(User, {
         $project: ['companyId', raw('COUNT(*)', 'count')],
         $group: ['companyId'],
