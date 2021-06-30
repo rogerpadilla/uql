@@ -1,4 +1,13 @@
-import { getOptions, getQuerier, getQuerierPool, getRepository, isDebug, log, setDebug, setOptions } from './options';
+import {
+  getOptions,
+  getQuerier,
+  getQuerierPool,
+  getRepository,
+  isLogging,
+  log,
+  setLogging,
+  setOptions,
+} from './options';
 import { User } from './test';
 import { Querier } from './type';
 
@@ -16,7 +25,7 @@ describe('options', () => {
       logger: expect.any(Function),
     });
 
-    expect(isDebug()).toBeFalsy();
+    expect(isLogging()).toBeFalsy();
   });
 
   it('setOptions', () => {
@@ -24,16 +33,16 @@ describe('options', () => {
 
     setOptions({
       querierPool: undefined,
+      logging: true,
       logger,
-      debug: true,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
+      logging: true,
       logger,
-      debug: true,
     });
 
-    expect(isDebug()).toBe(true);
+    expect(isLogging()).toBe(true);
 
     log('hi', 'uql');
     expect(logger).toBeCalledWith('hi', 'uql');
@@ -49,12 +58,12 @@ describe('options', () => {
     });
   });
 
-  it('debug', () => {
-    expect(isDebug()).toBeFalsy();
-    setDebug(true);
-    expect(isDebug()).toBe(true);
-    setDebug(false);
-    expect(isDebug()).toBe(false);
+  it('logging', () => {
+    expect(isLogging()).toBeFalsy();
+    setLogging(true);
+    expect(isLogging()).toBe(true);
+    setLogging(false);
+    expect(isLogging()).toBe(false);
   });
 
   it('getQuerierPool unset', () => {

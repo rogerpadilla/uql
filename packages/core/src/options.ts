@@ -29,15 +29,15 @@ export function getRepository<E>(entity: Type<E>, querier: Querier): Repository<
 }
 
 export function log(message: any, ...args: any[]) {
-  if (options?.debug) {
+  if (options?.logging) {
     options.logger(message, ...args);
   }
 }
 
-export function setDebug(debug: boolean): void {
-  options = { ...defaultOptions, debug };
+export function setLogging(logging: boolean): void {
+  options = { ...defaultOptions, logging };
 }
 
-export function isDebug(): boolean {
-  return options?.debug;
+export function isLogging(): boolean {
+  return options?.logging;
 }

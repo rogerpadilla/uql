@@ -4,6 +4,6 @@ export type Logger = (message: any, ...args: any[]) => any;
 
 export type UqlOptions<T extends QuerierPool = QuerierPool> = {
   querierPool: T;
+  logging?: boolean;
   logger?: Logger;
-  debug?: boolean;
 };
