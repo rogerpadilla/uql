@@ -40,9 +40,7 @@ export class MongoDialect {
   project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
-        if (typeof it === 'string') {
-          acc[it as string] = true;
-        }
+        acc[it as string] = true;
         return acc;
       }, {} as QueryProjectMap<E>);
     }
@@ -61,7 +59,7 @@ export class MongoDialect {
     const relations = getProjectRelations(meta, qm.$project);
 
     for (const relKey of relations) {
-      const relOpts = meta.relations[relKey as RelationKey<E>];
+      const relOpts = meta.relations[relKey];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries

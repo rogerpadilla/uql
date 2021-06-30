@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { isDebug, log } from '@uql/core';
+import { isLogging, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
 import { BaseQuerier, getPersistable, getPersistables, hasProjectRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
@@ -29,7 +29,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     if (hasProjectRelations(meta, qm.$project)) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
-      if (isDebug()) {
+      if (isLogging()) {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       }
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();

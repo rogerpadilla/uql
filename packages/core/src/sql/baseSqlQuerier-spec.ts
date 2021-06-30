@@ -1,3 +1,5 @@
+import { setLogging } from '../options';
+import { raw } from '../querier';
 import {
   User,
   InventoryAdjustment,
@@ -9,7 +11,7 @@ import {
   createTables,
   cleanTables,
 } from '../test';
-import { QuerierPool } from '../type';
+import { QuerierPool, QueryFilter } from '../type';
 import { BaseSqlQuerier } from './baseSqlQuerier';
 
 export class BaseSqlQuerierSpec implements Spec {
@@ -86,6 +88,38 @@ export class BaseSqlQuerierSpec implements Spec {
         ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123, 456)'
     );
     expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.conn.all).toBeCalledTimes(2);
+  }
+
+  async shouldFindAndProjectRaw() {
+    await this.querier.findMany(InventoryAdjustment, {
+      $project: {
+        itemAdjustments: {
+          $project: {
+            item: {
+              $project: {
+                companyId: true,
+                total: raw((prefix, dialect) => `SUM(${prefix}${dialect.escapeId('salePrice')})`),
+              },
+              $group: ['companyId'],
+              $having: {
+                total: {
+                  $gte: 10,
+                },
+              } as QueryFilter<InventoryAdjustment>,
+            },
+          },
+        },
+      },
+    });
+
+    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment`');
+    expect(this.querier.conn.all).nthCalledWith(
+      2,
+      'SELECT `ItemAdjustment`.`inventoryAdjustmentId`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total` FROM `ItemAdjustment` LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId` WHERE `ItemAdjustment`.`inventoryAdjustmentId` IN ()'
+    );
+
+    expect(this.querier.conn.run).toBeCalledTimes(0);
     expect(this.querier.conn.all).toBeCalledTimes(2);
   }
 

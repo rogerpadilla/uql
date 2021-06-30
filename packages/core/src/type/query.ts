@@ -1,10 +1,5 @@
 import { FieldKey, Key, RelationKey } from './entity';
-import { BooleanLike, Unpacked } from './utility';
-
-export type QueryRaw = {
-  readonly value: string;
-  readonly alias?: string;
-};
+import { BooleanLike, Scalar, Type, Unpacked } from './utility';
 
 export type QueryOptions = { readonly force?: boolean };
 
@@ -12,17 +7,19 @@ export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
 
-export type QueryProjectField<E> = {
-  [K in FieldKey<E>]?: BooleanLike;
-};
+export type QueryProjectMap<E> = QueryProjectField<E> | QueryProjectRelation<E>;
+
+export type QueryProjectField<E> =
+  | {
+      [K in FieldKey<E>]?: BooleanLike;
+    }
+  | { [K: string]: QueryRaw };
 
 export type QueryProjectRelation<E> = {
   [K in RelationKey<E>]?: BooleanLike | QueryProjectRelationValue<E[K]>;
 };
 
 export type QueryProjectRelationValue<E> = Query<Unpacked<E>> & { $required?: boolean };
-
-export type QueryProjectMap<E> = QueryProjectField<E> | QueryProjectRelation<E>;
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
@@ -89,3 +86,56 @@ export type QueryUpdateResult = {
   readonly changes?: number;
   readonly firstId?: number;
 };
+
+export type QueryRawFn = (prefix: string, dialect: QueryDialect) => string;
+
+export type QueryRaw = {
+  readonly value: string | QueryRawFn;
+  readonly alias?: string;
+};
+
+export interface QueryDialect {
+  criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
+
+  find<E>(entity: Type<E>, qm: Query<E>): string;
+
+  insert<E>(entity: Type<E>, payload: E | E[]): string;
+
+  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string;
+
+  delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
+
+  project<E>(entity: Type<E>, project: QueryProject<E>, opts: { prefix?: string; usePrefixInAlias?: boolean }): string;
+
+  populate<E>(entity: Type<E>, prefix?: string): { joinsColumns: string; joinsTables: string };
+
+  select<E>(entity: Type<E>, qm: Query<E>): string;
+
+  filter<E>(
+    entity: Type<E>,
+    filter: QueryFilter<E>,
+    opts?: QueryOptions & { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false }
+  ): string;
+
+  compare<E>(entity: Type<E>, key: string, value: Scalar | object | Scalar[], opts?: { prefix?: string }): string;
+
+  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
+    entity: Type<E>,
+    key: string,
+    operator: K,
+    val: QueryComparisonOperator<E>[K],
+    opts?: { prefix?: string }
+  ): string;
+
+  group<E>(entity: Type<E>, fields: FieldKey<E>[]): string;
+
+  sort<E>(entity: Type<E>, sort: QuerySort<E>): string;
+
+  pager(opts: QueryPager): string;
+
+  escapeId(val: string, forbidQualified?: boolean): string;
+
+  escape(val: any): string;
+
+  objectToValues<E>(payload: E): string;
+}

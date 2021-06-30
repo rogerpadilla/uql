@@ -121,8 +121,8 @@ setOptions({
     password: 'thePassword',
     database: 'theDatabase',
   }),
+  logging: true,
   logger: console.log,
-  debug: true,
 });
 ```
 
@@ -133,9 +133,6 @@ Take any dump class (aka DTO) and annotate it with the decorators from '@uql/cor
 Note: inheritance between entities is optional.
 
 ```ts
-import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
-
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities
  */

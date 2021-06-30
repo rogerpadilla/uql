@@ -1,9 +1,9 @@
 import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit } from '../test/entityMock';
 
-import { QueryFilter, QuerySort } from '../type';
+import { FieldKey, QueryFilter, QuerySort } from '../type';
 import { Spec } from '../test/spec.util';
+import { raw } from '../querier';
 import { BaseSqlDialect } from './baseSqlDialect';
-import { raw } from './raw';
 
 export abstract class BaseSqlDialectSpec implements Spec {
   constructor(readonly dialect: BaseSqlDialect) {}
@@ -128,10 +128,10 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `MeasureUnit` WHERE `id` = 123 AND `name` = 'abc' AND `deletedAt` IS NULL");
   }
 
-  shouldPreventSqlInjection() {
+  shouldBeSecure() {
     expect(
       this.dialect.find(User, {
-        $project: ['id', 'something' as keyof User],
+        $project: ['id', 'something' as FieldKey<User>],
         $filter: {
           id: 1,
           something: 1,
@@ -143,7 +143,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $group: ['id', 'something' as any],
       })
     ).toBe(
-      'SELECT `id`, `something` FROM `User` WHERE `id` = 1 AND `something` = 1 GROUP BY `id`, `something` ORDER BY `id`, `something`'
+      'SELECT `id` FROM `User` WHERE `id` = 1 AND `something` = 1 GROUP BY `id`, `something` ORDER BY `id`, `something`'
     );
 
     expect(
@@ -660,6 +660,36 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
     expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: true })).toBe(
       'DELETE FROM `MeasureUnit` WHERE `id` = 123'
+    );
+  }
+
+  shouldRaw() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['companyId', raw('COUNT(*)', 'count')],
+        $group: ['companyId'],
+        $having: {
+          count: {
+            $gte: 10,
+          },
+        } as QueryFilter<User>,
+      })
+    ).toBe('SELECT `companyId`, COUNT(*) `count` FROM `User` GROUP BY `companyId` HAVING `count` >= 10');
+
+    expect(
+      this.dialect.find(User, {
+        $project: [raw(() => 'createdAt', 'hotness')],
+        $filter: { name: 'something' },
+      })
+    ).toBe("SELECT createdAt `hotness` FROM `User` WHERE `name` = 'something'");
+
+    expect(
+      this.dialect.find(User, {
+        $project: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
+        $filter: { name: 'something' },
+      })
+    ).toBe(
+      "SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = 'something'"
     );
   }
 

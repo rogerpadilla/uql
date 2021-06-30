@@ -1,10 +1,10 @@
-import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, FieldValue, QueryOptions } from '../type';
-import { BaseQuerier } from '../querier';
+import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, QueryOptions } from '../type';
+import { BaseQuerier, raw } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
+
 import { mapRows } from './sql.util';
 import { BaseSqlDialect } from './baseSqlDialect';
-import { raw } from './raw';
 
 export abstract class BaseSqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
@@ -14,7 +14,10 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
-    const query = await this.dialect.find(entity, { ...qm, $project: [raw('COUNT(*)', 'count')] as QueryProject<E> });
+    const query = await this.dialect.find(entity, {
+      ...qm,
+      $project: [raw('COUNT(*)', 'count')],
+    });
     const res: any = await this.conn.all<E>(query);
     return Number(res[0].count);
   }
