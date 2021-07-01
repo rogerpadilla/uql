@@ -1,7 +1,7 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isLogging, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
-import { BaseQuerier, getPersistable, getPersistables, hasProjectRelations } from '@uql/core/querier';
+import { BaseQuerier, getPersistable, getPersistables, hasProjectRelationKeys } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone } from '@uql/core/util';
 
@@ -27,7 +27,7 @@ export class MongodbQuerier extends BaseQuerier {
 
     let documents: E[];
 
-    if (hasProjectRelations(meta, qm.$project)) {
+    if (hasProjectRelationKeys(meta, qm.$project)) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
       if (isLogging()) {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
@@ -67,7 +67,7 @@ export class MongodbQuerier extends BaseQuerier {
 
   override findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E>) {
     const meta = getMeta(entity);
-    return this.findOne(entity, { ...qo, $filter: { [meta.id]: id } });
+    return this.findOne(entity, { ...qo, $filter: id });
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
@@ -129,10 +129,10 @@ export class MongodbQuerier extends BaseQuerier {
     }
     const ids = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
     let changes: number;
-    if (meta.paranoid && !opts.force) {
+    if (meta.softDeleteKey && !opts.softDelete) {
       const updateResult = await this.collection(entity).updateMany(
         { _id: { $in: ids } },
-        { $set: { [meta.paranoidKey]: meta.fields[meta.paranoidKey].onDelete() } },
+        { $set: { [meta.softDeleteKey]: meta.fields[meta.softDeleteKey].onDelete() } },
         {
           session: this.session,
         }

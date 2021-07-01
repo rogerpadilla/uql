@@ -551,8 +551,7 @@ it('MeasureUnitCategory', () => {
     entity: MeasureUnitCategory,
     name: 'MeasureUnitCategory',
     id: 'id',
-    paranoid: true,
-    paranoidKey: 'deletedAt',
+    softDeleteKey: 'deletedAt',
     processed: true,
     fields: {
       id: { name: 'id', type: Number, isId: true },
@@ -600,8 +599,7 @@ it('MeasureUnit', () => {
     entity: MeasureUnit,
     name: 'MeasureUnit',
     id: 'id',
-    paranoid: true,
-    paranoidKey: 'deletedAt',
+    softDeleteKey: 'deletedAt',
     processed: true,
     fields: {
       id: { name: 'id', type: Number, isId: true },
@@ -713,19 +711,19 @@ it('no fields', () => {
   }).toThrow(`'SomeEntity' must have fields`);
 });
 
-it('paranoid no onDelete', () => {
+it('softDelete onDelete', () => {
   expect(() => {
-    @Entity({ paranoid: true })
+    @Entity({ softDelete: true })
     class SomeEntity {
       @Field()
       id: string;
     }
-  }).toThrow(`'SomeEntity' must have one field with 'onDelete' to use 'paranoid' mode`);
+  }).toThrow(`'SomeEntity' must have one field with 'onDelete' to enable 'softDelete'`);
 });
 
 it('max 1 onDelete', () => {
   expect(() => {
-    @Entity({ paranoid: true })
+    @Entity({ softDelete: true })
     class SomeEntity {
       @Field({ onDelete: Date.now })
       deletedAt: number;

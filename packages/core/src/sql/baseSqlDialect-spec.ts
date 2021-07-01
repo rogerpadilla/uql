@@ -395,7 +395,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$projectOneToOne() {
     expect(
       this.dialect.find(User, {
-        $project: { id: true, name: true, profile: { $project: { id: true, picture: true } } },
+        $project: { id: true, name: true, profile: ['id', 'picture'] },
       })
     ).toBe(
       'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture` FROM `User`' +
@@ -440,8 +440,8 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $project: {
           id: true,
           name: true,
-          tax: { $project: { id: true, name: true }, $filter: { id: 2 }, $required: true },
-          measureUnit: { $project: { id: true, name: true }, $filter: { name: { $ne: 'unidad' } }, $required: true },
+          tax: { $project: ['id', 'name'], $filter: 2, $required: true },
+          measureUnit: { $project: ['id', 'name'], $filter: { name: { $ne: 'unidad' } }, $required: true },
         },
         $sort: { 'tax.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
         $limit: 100,
@@ -461,11 +461,11 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(Item, {
         $project: {
-          id: true,
-          name: true,
-          code: true,
+          id: 1,
+          name: 1,
+          code: 1,
           measureUnit: {
-            $project: { id: true, name: true, categoryId: true, category: { $project: ['name'] } },
+            $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
           },
         },
         $limit: 100,
@@ -511,7 +511,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
               id: true,
               name: true,
               measureUnit: {
-                $project: { id: true, name: true, category: { $project: ['id', 'name'] } },
+                $project: { id: true, name: true, category: ['id', 'name'] },
               },
             },
             $required: true,
@@ -571,7 +571,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { id: 9 },
+        $filter: 9,
         $limit: 1,
       })
     ).toBe('SELECT `id` FROM `User` WHERE `id` = 9 LIMIT 1');
@@ -579,14 +579,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(User, {
         $project: { id: 1, name: 1, creatorId: 1 },
-        $filter: { id: 9 },
+        $filter: 9,
         $limit: 1,
       })
     ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` WHERE `id` = 9 LIMIT 1');
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: ['id'],
         $filter: { name: 'something', creatorId: 123 },
         $limit: 1,
       })
@@ -594,7 +594,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1, name: 1, creatorId: 1 },
+        $project: ['id', 'name', 'creatorId'],
         $limit: 25,
       })
     ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` LIMIT 25');
@@ -645,20 +645,20 @@ export abstract class BaseSqlDialectSpec implements Spec {
   }
 
   shouldDelete() {
-    expect(this.dialect.delete(User, { $filter: { id: 123 } })).toBe('DELETE FROM `User` WHERE `id` = 123');
-    expect(this.dialect.delete(User, { $filter: { id: 123 } }, { force: true })).toBe(
+    expect(this.dialect.delete(User, { $filter: 123 })).toBe('DELETE FROM `User` WHERE `id` = 123');
+    expect(() => this.dialect.delete(User, { $filter: 123 }, { softDelete: true })).toThrow(
+      "'User' has not enabled 'softDelete'"
+    );
+    expect(this.dialect.delete(User, { $filter: 123 }, { softDelete: false })).toBe(
       'DELETE FROM `User` WHERE `id` = 123'
     );
-    expect(this.dialect.delete(User, { $filter: { id: 123 } }, { force: false })).toBe(
-      'DELETE FROM `User` WHERE `id` = 123'
-    );
-    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } })).toMatch(
+    expect(this.dialect.delete(MeasureUnit, { $filter: 123 })).toMatch(
       /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/
     );
-    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: false })).toMatch(
+    expect(this.dialect.delete(MeasureUnit, { $filter: 123 }, { softDelete: true })).toMatch(
       /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/
     );
-    expect(this.dialect.delete(MeasureUnit, { $filter: { id: 123 } }, { force: true })).toBe(
+    expect(this.dialect.delete(MeasureUnit, { $filter: 123 }, { softDelete: false })).toBe(
       'DELETE FROM `MeasureUnit` WHERE `id` = 123'
     );
   }

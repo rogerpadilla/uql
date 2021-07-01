@@ -1,7 +1,7 @@
-import { FieldKey, Key, RelationKey } from './entity';
+import { FieldKey, FieldValue, Key, RelationKey } from './entity';
 import { BooleanLike, Scalar, Type, Unpacked } from './utility';
 
-export type QueryOptions = { readonly force?: boolean };
+export type QueryOptions = { readonly softDelete?: boolean };
 
 export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 
@@ -16,7 +16,7 @@ export type QueryProjectField<E> =
   | { [K: string]: QueryRaw };
 
 export type QueryProjectRelation<E> = {
-  [K in RelationKey<E>]?: BooleanLike | QueryProjectRelationValue<E[K]>;
+  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | QueryProjectRelationValue<E[K]>;
 };
 
 export type QueryProjectRelationValue<E> = Query<Unpacked<E>> & { $required?: boolean };
@@ -26,11 +26,11 @@ export type QueryTextSearchOptions<E> = {
   readonly $fields?: FieldKey<E>[];
 };
 
-export type QueryComparison<E> = {
+export type QueryMultipleFieldOperator<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryComparisonOperator<T> = {
+export type QuerySingleFieldOperator<T> = {
   readonly $eq?: T;
   readonly $ne?: T;
   readonly $lt?: number;
@@ -44,17 +44,22 @@ export type QueryComparisonOperator<T> = {
   readonly $regex?: string;
 };
 
-export type QueryComparisonField<E> = {
-  readonly [K in FieldKey<E>]?: E[K] | E[K][] | QueryComparisonOperator<E[K]>;
+export type QuerySingleField<E> = {
+  readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
 };
 
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  [K in QueryLogicalOperatorKey]?: (QueryComparisonField<E> | QueryComparison<E>)[];
+  [K in QueryLogicalOperatorKey]?: (QuerySingleField<E> | QueryMultipleFieldOperator<E>)[];
 };
 
-export type QueryFilter<E> = QueryLogicalOperator<E> | QueryComparison<E> | QueryComparisonField<E>;
+export type QueryFilter<E> =
+  | FieldValue<E>
+  | FieldValue<E>[]
+  | QuerySingleField<E>
+  | QueryMultipleFieldOperator<E>
+  | QueryLogicalOperator<E>;
 
 export type QuerySort<E> = {
   readonly [K in FieldKey<E>]?: -1 | 1;
@@ -119,11 +124,11 @@ export interface QueryDialect {
 
   compare<E>(entity: Type<E>, key: string, value: Scalar | object | Scalar[], opts?: { prefix?: string }): string;
 
-  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
+  compareOperator<E, K extends keyof QuerySingleFieldOperator<E>>(
     entity: Type<E>,
     key: string,
     operator: K,
-    val: QueryComparisonOperator<E>[K],
+    val: QuerySingleFieldOperator<E>[K],
     opts?: { prefix?: string }
   ): string;
 

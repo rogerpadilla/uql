@@ -1,37 +1,46 @@
 import { FilterQuery, ObjectId } from 'mongodb';
-import {
-  QueryFilter,
-  Query,
-  EntityMeta,
-  Type,
-  QueryProject,
-  QueryProjectMap,
-  RelationKey,
-  Key,
-  QueryOptions,
-} from '@uql/core/type';
+import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, QueryOptions } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
-import { hasKeys, getKeys } from '@uql/core/util';
-import { getProjectRelations } from '@uql/core/querier';
+import { getKeys, hasKeys } from '@uql/core/util';
+import { getProjectRelationKeys } from '@uql/core/querier';
 
 export class MongoDialect {
-  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { force }: QueryOptions = {}): FilterQuery<E> {
+  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
-    if (meta.paranoid && !force && (!filter || !(meta.paranoidKey in filter))) {
+    if (
+      filter !== undefined &&
+      (typeof filter !== 'object' ||
+        Array.isArray(filter) ||
+        filter instanceof ObjectId ||
+        ObjectId.isValid(filter as string))
+    ) {
+      filter = {
+        [meta.id]: filter,
+      };
+    }
+
+    if (meta.softDeleteKey && !softDelete && (!filter || !(meta.softDeleteKey in filter))) {
       if (!filter) {
         filter = {};
       }
-      filter[meta.paranoidKey as string] = null;
+      filter[meta.softDeleteKey as string] = null;
     }
 
-    return getKeys(filter).reduce((acc, prop) => {
-      const value = filter[prop];
-      if (prop === '$and' || prop === '$or') {
-        acc[prop] = value.map((filterIt: QueryFilter<E>) => this.filter(entity, filterIt));
+    return getKeys(filter).reduce((acc, key) => {
+      let value = filter[key];
+      if (key === '$and' || key === '$or') {
+        acc[key] = value.map((filterIt: QueryFilter<E>) => this.filter(entity, filterIt));
       } else {
-        const { key, val } = this.obtainFinalKeyValue(meta, prop as Key<E>, value);
-        acc[key as keyof FilterQuery<E>] = val;
+        if (key === '_id' || key === meta.id) {
+          key = '_id';
+          value = this.getIdValue(value);
+        } else if (Array.isArray(value)) {
+          value = {
+            $in: value,
+          };
+        }
+        acc[key as keyof FilterQuery<E>] = value;
       }
       return acc;
     }, {} as FilterQuery<E>);
@@ -52,11 +61,13 @@ export class MongoDialect {
 
     const pipeline: object[] = [];
 
-    if (hasKeys(qm.$filter)) {
-      pipeline.push({ $match: this.filter(entity, qm.$filter) });
+    const filter = this.filter(entity, qm.$filter);
+
+    if (hasKeys(filter)) {
+      pipeline.push({ $match: filter });
     }
 
-    const relations = getProjectRelations(meta, qm.$project);
+    const relations = getProjectRelationKeys(meta, qm.$project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];
@@ -80,10 +91,11 @@ export class MongoDialect {
         });
       } else {
         const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+        const referenceFilter = this.filter(relEntity, qm.$filter);
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [referenceKey]: qm.$filter[meta.id as string] } }],
+            pipeline: [{ $match: { [referenceKey]: referenceFilter._id } }],
             as: relKey,
           },
         });
@@ -124,11 +136,13 @@ export class MongoDialect {
     return res as E;
   }
 
-  obtainFinalKeyValue<E>(meta: EntityMeta<E>, key: Key<E>, val: string | number | ObjectId) {
-    if (key === '_id' || key === meta.id) {
-      const objectId = val instanceof ObjectId ? val : new ObjectId(val);
-      return { key: '_id', val: objectId };
+  getIdValue<T extends string | string[] | ObjectId | ObjectId[]>(value: T): T {
+    if (value instanceof ObjectId) {
+      return value;
     }
-    return { key, val };
+    if (Array.isArray(value)) {
+      return value.map((it) => this.getIdValue(it)) as T;
+    }
+    return new ObjectId(value) as T;
   }
 }

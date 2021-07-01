@@ -61,16 +61,16 @@ describe('repository', () => {
     await repository.deleteMany({});
     expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, undefined);
 
-    await repository.deleteMany({}, { force: true });
-    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { force: true });
+    await repository.deleteMany({}, { softDelete: false });
+    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { softDelete: false });
   });
 
   it('deleteOneById', async () => {
     await repository.deleteOneById(1);
     expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, undefined);
 
-    await repository.deleteOneById(1, { force: true });
-    expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, { force: true });
+    await repository.deleteOneById(1, { softDelete: false });
+    expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, { softDelete: false });
   });
 
   it('count', async () => {

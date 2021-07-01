@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { QueryComparisonOperator, QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
+import { QuerySingleFieldOperator, QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
 import { BaseSqlDialect } from '@uql/core/sql';
 
 export class PostgresDialect extends BaseSqlDialect {
@@ -28,11 +28,11 @@ export class PostgresDialect extends BaseSqlDialect {
     }
   }
 
-  override compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
+  override compareOperator<E, K extends keyof QuerySingleFieldOperator<E>>(
     entity: Type<E>,
     key: string,
     operator: K,
-    val: QueryComparisonOperator<E>[K],
+    val: QuerySingleFieldOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);

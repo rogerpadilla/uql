@@ -56,13 +56,13 @@ export class HttpQuerier implements ClientQuerier {
 
   deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(opts.force ? { ...qm, force: opts.force } : qm);
+    const qs = stringifyQuery(opts.softDelete ? { ...qm, softDelete: opts.softDelete } : qm);
     return remove<number>(`${basePath}${qs}`, opts);
   }
 
   deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
-    const qs = opts.force ? stringifyQuery({ force: opts.force }) : '';
+    const qs = opts.softDelete ? stringifyQuery({ softDelete: opts.softDelete }) : '';
     return remove<number>(`${basePath}/${id}${qs}`, opts);
   }
 

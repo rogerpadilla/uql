@@ -147,7 +147,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     };
     const id = await this.querier.insertOne(User, payload);
     expect(id).toBeDefined();
-    const found = await this.querier.findOneById(User, id, { $project: { profile: true } });
+    const found = await this.querier.findOneById(User, id, { $project: ['profile'] });
     expect(found).toMatchObject({ id, profile: payload.profile });
   }
 
@@ -205,7 +205,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: { $project: ['buyPrice'] } },
+      $project: { itemAdjustments: ['buyPrice'] },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -238,7 +238,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: true },
+      $project: { itemAdjustments: ['buyPrice'] },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({

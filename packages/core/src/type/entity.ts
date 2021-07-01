@@ -18,7 +18,7 @@ export type RelationValue<E> = E[RelationKey<E>];
 
 export type EntityOptions = {
   readonly name?: string;
-  readonly paranoid?: boolean;
+  readonly softDelete?: boolean;
 };
 
 export type FieldOptions = {
@@ -77,8 +77,7 @@ export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
   id?: FieldKey<E>;
-  paranoid?: boolean;
-  paranoidKey?: FieldKey<E>;
+  softDeleteKey?: FieldKey<E>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;
   };

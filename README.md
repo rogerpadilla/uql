@@ -275,7 +275,7 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
-@Entity({ paranoid: true })
+@Entity({ softDelete: true })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
@@ -285,7 +285,7 @@ export class MeasureUnitCategory extends BaseEntity {
   deletedAt?: number;
 }
 
-@Entity({ paranoid: true })
+@Entity({ softDelete: true })
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
@@ -503,10 +503,9 @@ app
       // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
 
-      // `extendQuery` callback allows to extend all then queries that are requested to the API,
+      // `query` callback allows to extend all then queries that are requested to the API,
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
-      extendQuery<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
-        qm.$limit = obtainValidLimit(qm.$limit);
+      query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
           ...qm.$filter,          
           // ensure the user can only see the data that belongs to his company
@@ -543,7 +542,7 @@ import { getRepository } from '@uql/client';
 const userRepository = getRepository(User);
 
 const users = await userRepository.findMany({
-  $project: { email: true, profile: { $project: ['picture'] } },
+  $project: { email: true, profile: ['picture'] },
   $filter: { email: { $endsWith: '@domain.com' } },
   $sort: { createdAt: -1 },
   $limit: 100,

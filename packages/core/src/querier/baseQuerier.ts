@@ -13,19 +13,14 @@ import {
 } from '../type';
 import { getMeta } from '../entity/decorator';
 import { clone, getKeys } from '../util';
-import { getProjectRelations, getPersistableRelations } from './querier.util';
+import { getProjectRelationKeys, getPersistableRelations } from './querier.util';
 import { BaseRepository } from './baseRepository';
 
-/**
- * Use a class to be able to detect instances at runtime (via instanceof).
- */
 export abstract class BaseQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
 
   findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E> = {}) {
-    const meta = getMeta(entity);
-    const idName = meta.fields[meta.id].name;
-    return this.findOne(entity, { ...qo, $filter: { [idName]: id } });
+    return this.findOne(entity, { ...qo, $filter: id });
   }
 
   async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
@@ -44,27 +39,31 @@ export abstract class BaseQuerier implements Querier {
   abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
 
   updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>) {
-    const meta = getMeta(entity);
-    return this.updateMany(entity, payload, { $filter: { [meta.id]: id } });
+    return this.updateMany(entity, payload, { $filter: id });
   }
 
   abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions) {
-    const meta = getMeta(entity);
-    return this.deleteMany(entity, { $filter: { [meta.id]: id } }, opts);
+    return this.deleteMany(entity, { $filter: id }, opts);
   }
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
 
   protected async findToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
-    const relations = getProjectRelations(meta, project);
+    const relations = getProjectRelationKeys(meta, project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const relQuery = clone(project[relKey as string]);
+      const relProject = clone(project[relKey as string]);
+      const relQuery: Query<any> =
+        relProject === undefined || relProject === true
+          ? {}
+          : Array.isArray(relProject)
+          ? { $project: relProject }
+          : relProject;
       const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 
@@ -96,7 +95,7 @@ export abstract class BaseQuerier implements Querier {
             relQuery.$project[referenceKey] = true;
           }
         }
-        relQuery.$filter = { [referenceKey]: { $in: ids } };
+        relQuery.$filter = { [referenceKey]: ids };
         const founds = await this.findMany(relEntity, relQuery);
         this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
       }

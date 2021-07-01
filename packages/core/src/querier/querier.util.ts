@@ -46,12 +46,12 @@ export function isCascadable(action: CascadeType, configuration?: boolean | read
   return configuration?.includes(action);
 }
 
-export function getProjectRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
+export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
   const keys = getProjectKeys(project);
   return keys.filter((key) => meta.relations[key as RelationKey<E>]) as RelationKey<E>[];
 }
 
-export function hasProjectRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
+export function hasProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
   const keys = getProjectKeys(project);
   return keys.some((key) => meta.relations[key as RelationKey<E>]);
 }

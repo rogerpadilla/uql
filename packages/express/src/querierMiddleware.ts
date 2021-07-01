@@ -20,7 +20,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   }
 
   const crudRouterOpts = {
-    extendQuery: opts.extendQuery,
+    query: opts.query,
   };
 
   for (const entity of entities) {
@@ -32,7 +32,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   return router;
 }
 
-export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: ExtendQuery }) {
+export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallback }) {
   const router = expressRouter();
 
   router.post('/', async (req, res) => {
@@ -66,7 +66,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/one', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery) as QueryOne<E>;
+    const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm);
@@ -79,7 +79,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/count', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
+    const qm = augmentQuery<E>(entity, req, opts.query);
     const querier = await getQuerier();
     try {
       const data = await querier.count(entity, qm);
@@ -92,7 +92,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/:id', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery) as QueryOne<E>;
+    const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOneById(entity, req.params.id as FieldValue<E>, qm);
@@ -105,7 +105,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.get('/', async (req, res) => {
-    const qm = assembleQuery<E>(entity, req, opts.extendQuery);
+    const qm = augmentQuery<E>(entity, req, opts.query);
     const querier = await getQuerier();
     try {
       const json: { data?: E[]; count?: number } = {};
@@ -131,7 +131,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
     try {
       await querier.beginTransaction();
       const data = await querier.deleteOneById(entity, req.params.id as FieldValue<E>, {
-        force: req.params.force as unknown as boolean,
+        softDelete: req.params.softDelete as unknown as boolean,
       });
       await querier.commitTransaction();
       res.json({ data });
@@ -144,11 +144,11 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   });
 
   router.delete('/', async (req, res) => {
-    const qm = assembleQuery(entity, req, opts.extendQuery);
+    const qm = augmentQuery(entity, req, opts.query);
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.deleteMany(entity, qm, { force: req.params.force as unknown as boolean });
+      const data = await querier.deleteMany(entity, qm, { softDelete: req.params.softDelete as unknown as boolean });
       await querier.commitTransaction();
       res.json({ data });
     } catch (err) {
@@ -162,9 +162,9 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { extendQuery?: Extend
   return router;
 }
 
-function assembleQuery<E>(entity: Type<E>, req: Request, extendQuery?: ExtendQuery) {
+function augmentQuery<E>(entity: Type<E>, req: Request, query?: QueryCallback) {
   const qm = parseQuery<E>(req.query);
-  return extendQuery ? extendQuery(entity, qm, req) : qm;
+  return query ? query(entity, qm, req) : qm;
 }
 
 function sendError(err: Error, res: Response) {
@@ -181,7 +181,7 @@ function sendError(err: Error, res: Response) {
 type MiddlewareOptions = {
   include?: Type<any>[];
   exclude?: Type<any>[];
-  extendQuery?: ExtendQuery;
+  query?: QueryCallback;
 };
 
-type ExtendQuery = <E>(entity: Type<E>, qm: Query<E>, req: Request) => Query<E>;
+type QueryCallback = <E>(entity: Type<E>, qm: Query<E>, req: Request) => Query<E>;

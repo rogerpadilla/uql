@@ -59,18 +59,17 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
     throw new TypeError(`'${entity.name}' must have fields`);
   }
 
-  const onDeletes = getKeys(meta.fields).filter((key) => meta.fields[key].onDelete) as FieldKey<E>[];
+  const onDeleteKeys = getKeys(meta.fields).filter((key) => meta.fields[key].onDelete) as FieldKey<E>[];
 
-  if (onDeletes.length > 1) {
+  if (onDeleteKeys.length > 1) {
     throw new TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
   }
 
-  if (opts.paranoid) {
-    if (!onDeletes.length) {
-      throw new TypeError(`'${entity.name}' must have one field with 'onDelete' to use 'paranoid' mode`);
+  if (opts.softDelete) {
+    if (!onDeleteKeys.length) {
+      throw new TypeError(`'${entity.name}' must have one field with 'onDelete' to enable 'softDelete'`);
     }
-    meta.paranoidKey = onDeletes[0];
-    meta.paranoid = true;
+    meta.softDeleteKey = onDeleteKeys[0];
   }
 
   meta.name = opts.name ?? entity.name;

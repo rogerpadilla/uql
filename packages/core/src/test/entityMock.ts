@@ -143,7 +143,7 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
-@Entity({ paranoid: true })
+@Entity({ softDelete: true })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
@@ -153,7 +153,7 @@ export class MeasureUnitCategory extends BaseEntity {
   deletedAt?: number;
 }
 
-@Entity({ paranoid: true })
+@Entity({ softDelete: true })
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;

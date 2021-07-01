@@ -62,7 +62,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
       return 0;
     }
     const ids = founds.map((it) => it[meta.id]);
-    const query = this.dialect.delete(entity, { $filter: { [meta.id]: ids } }, opts);
+    const query = this.dialect.delete(entity, { $filter: ids }, opts);
     const { changes } = await this.conn.run(query);
     await this.deleteRelations(entity, ids, opts);
     return changes;

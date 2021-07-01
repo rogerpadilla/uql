@@ -1,11 +1,11 @@
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
-import { getPersistable, getProjectRelations, hasProjectRelations, getPersistables, Raw, raw } from '../querier';
+import { getPersistable, getProjectRelationKeys, hasProjectRelationKeys, getPersistables, Raw, raw } from '../querier';
 import {
   QueryFilter,
   Query,
   Scalar,
-  QueryComparisonOperator,
+  QuerySingleFieldOperator,
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
@@ -14,13 +14,12 @@ import {
   Type,
   QueryCriteria,
   RelationKey,
-  QueryProjectRelationValue,
   QueryProjectArray,
   Key,
   QueryOptions,
   QueryDialect,
 } from '../type';
-import { hasKeys, getKeys } from '../util';
+import { getKeys } from '../util';
 
 export abstract class BaseSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -31,7 +30,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const meta = getMeta(entity);
-    const prefix = hasProjectRelations(meta, qm.$project) ? meta.name : undefined;
+    const prefix = hasProjectRelationKeys(meta, qm.$project) ? meta.name : undefined;
     const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
@@ -65,10 +64,14 @@ export abstract class BaseSqlDialect implements QueryDialect {
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
 
-    if (meta.paranoid && !opts.force) {
-      const criteria = this.criteria(entity, qm);
-      const value = meta.fields[meta.paranoidKey].onDelete();
-      return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.paranoidKey)} = ${value}${criteria}`;
+    if (opts.softDelete === undefined || opts.softDelete) {
+      if (meta.softDeleteKey) {
+        const criteria = this.criteria(entity, qm);
+        const value = meta.fields[meta.softDeleteKey].onDelete();
+        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDeleteKey)} = ${value}${criteria}`;
+      } else if (opts.softDelete) {
+        throw new TypeError(`'${meta.name}' has not enabled 'softDelete'`);
+      }
     }
 
     const criteria = this.criteria(entity, qm, opts);
@@ -126,7 +129,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
   select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
     const baseColumns = this.project(entity, qm.$project, {
-      prefix: hasProjectRelations(meta, qm.$project) ? meta.name : undefined,
+      prefix: hasProjectRelationKeys(meta, qm.$project) ? meta.name : undefined,
     });
     const { joinsColumns, joinsTables } = this.populate(entity, qm.$project);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
@@ -141,7 +144,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
     let joinsTables = '';
 
     const meta = getMeta(entity);
-    const relations = getProjectRelations(meta, project);
+    const relations = getProjectRelationKeys(meta, project);
+    const isProjectArray = Array.isArray(project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey as RelationKey<E>];
@@ -153,11 +157,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
       const joinRelAlias = prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
-      const popVal = project[relKey as keyof QueryProject<E>] as QueryProjectRelationValue<E[keyof E]>;
+      const relProject = project[relKey as string];
+      const relQuery = isProjectArray ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
 
-      // if (typeof popVal)
-
-      const relColumns = this.project(relEntity, popVal.$project, {
+      const relColumns = this.project(relEntity, relQuery.$project, {
         prefix: joinRelAlias,
         usePrefixInAlias: true,
       });
@@ -166,7 +169,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
       const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.populate(
         relEntity,
-        popVal.$project,
+        relQuery.$project,
         joinRelAlias
       );
 
@@ -175,7 +178,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const relMeta = getMeta(relEntity);
       const relEntityName = this.escapeId(relMeta.name);
       const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
-      const joinType = popVal.$required ? 'INNER' : 'LEFT';
+      const joinType = relQuery.$required ? 'INNER' : 'LEFT';
       const joinAlias = this.escapeId(joinRelAlias, true);
 
       joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
@@ -183,8 +186,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
         .map((it) => `${joinAlias}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
         .join(' AND ');
 
-      if (hasKeys(popVal.$filter)) {
-        const filter = this.filter(relEntity, popVal.$filter, { prefix: relKey, clause: false });
+      if (relQuery.$filter) {
+        const filter = this.filter(relEntity, relQuery.$filter, { prefix: relKey, clause: false });
         joinsTables += ` AND ${filter}`;
       }
 
@@ -200,13 +203,24 @@ export abstract class BaseSqlDialect implements QueryDialect {
     opts: QueryOptions & { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false } = {}
   ): string {
     const meta = getMeta(entity);
-    const { prefix, wrapWithParenthesis, clause = 'WHERE', force } = opts;
+    const { prefix, wrapWithParenthesis, clause = 'WHERE', softDelete } = opts;
 
-    if (meta.paranoid && !force && clause !== 'HAVING' && (!filter || !(meta.paranoidKey in filter))) {
+    if (filter !== undefined && (typeof filter !== 'object' || Array.isArray(filter))) {
+      filter = {
+        [meta.id]: filter,
+      };
+    }
+
+    if (
+      meta.softDeleteKey &&
+      (softDelete === undefined || softDelete) &&
+      clause !== 'HAVING' &&
+      (!filter || !(meta.softDeleteKey in filter))
+    ) {
       if (!filter) {
         filter = {};
       }
-      filter[meta.paranoidKey as string] = null;
+      filter[meta.softDeleteKey as string] = null;
     }
 
     const keys = getKeys(filter);
@@ -218,10 +232,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
     let sql = keys
       .map((key) => {
-        const entry = filter[key];
+        const value = filter[key];
         if (key === '$and' || key === '$or') {
-          const hasManyEntries = entry.length > 1;
-          const logicalComparison = entry
+          const hasManyEntries = value.length > 1;
+          const logicalComparison = value
             .map((filterIt: QueryFilter<E>) =>
               this.filter(entity, filterIt, {
                 prefix,
@@ -232,7 +246,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
             .join(key === '$or' ? ' OR ' : ' AND ');
           return hasManyEntries && hasMultiKeys ? `(${logicalComparison})` : logicalComparison;
         }
-        return this.compare(entity, key, entry, { prefix });
+        return this.compare(entity, key, value, { prefix });
       })
       .join(` AND `);
 
@@ -255,7 +269,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
           : typeof value === 'object' && value !== null
           ? value
           : { $eq: value };
-        const operators = getKeys(val) as (keyof QueryComparisonOperator<E>)[];
+        const operators = getKeys(val) as (keyof QuerySingleFieldOperator<E>)[];
         const operations = operators
           .map((operator) => this.compareOperator(entity, key, operator, val[operator], opts))
           .join(' AND ');
@@ -263,11 +277,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
   }
 
-  compareOperator<E, K extends keyof QueryComparisonOperator<E>>(
+  compareOperator<E, K extends keyof QuerySingleFieldOperator<E>>(
     entity: Type<E>,
     key: string,
     operator: K,
-    val: QueryComparisonOperator<E>[K],
+    val: QuerySingleFieldOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
     const meta = getMeta(entity);
