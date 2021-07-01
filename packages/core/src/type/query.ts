@@ -3,11 +3,11 @@ import { BooleanLike, Scalar, Type, Unpacked } from './utility';
 
 export type QueryOptions = { readonly softDelete?: boolean };
 
-export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
-
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
 
 export type QueryProjectMap<E> = QueryProjectField<E> | QueryProjectRelation<E>;
+
+export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 
 export type QueryProjectField<E> =
   | {
@@ -35,7 +35,7 @@ export type QuerySingleFieldOperator<T> = {
   readonly $regex?: string;
 };
 
-export type QueryFieldMap<E> = {
+export type QuerySingleField<E> = {
   readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
 };
 
@@ -48,7 +48,7 @@ export type QueryMultipleFieldOperator<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryField<E> = QueryFieldMap<E> | QueryMultipleFieldOperator<E>;
+export type QueryField<E> = QuerySingleField<E> | QueryMultipleFieldOperator<E>;
 
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
