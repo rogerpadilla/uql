@@ -16,10 +16,11 @@ export type QueryProjectField<E> =
   | { [K: string]: QueryRaw };
 
 export type QueryProjectRelation<E> = {
-  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | QueryProjectRelationValue<E[K]>;
+  [K in RelationKey<E>]?:
+    | BooleanLike
+    | Key<Unpacked<E[K]>>[]
+    | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
-
-export type QueryProjectRelationValue<E> = Query<Unpacked<E>> & { $required?: boolean };
 
 export type QuerySingleFieldOperator<T> = {
   readonly $eq?: T;
@@ -35,10 +36,6 @@ export type QuerySingleFieldOperator<T> = {
   readonly $regex?: string;
 };
 
-export type QuerySingleField<E> = {
-  readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
-};
-
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
   readonly $fields?: FieldKey<E>[];
@@ -48,12 +45,16 @@ export type QueryMultipleFieldOperator<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryField<E> = QuerySingleField<E> | QueryMultipleFieldOperator<E>;
+export type QueryField<E> =
+  | {
+      readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
+    }
+  | QueryMultipleFieldOperator<E>;
 
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  [K in QueryLogicalOperatorKey]?: QueryField<E>[];
+  readonly [K in QueryLogicalOperatorKey]?: QueryField<E>[];
 };
 
 export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryField<E> | QueryLogicalOperator<E>;
