@@ -20,7 +20,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - different kind of `relations` between the entities
 - supports `inheritance` patterns between the entities
 - connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite, MongoDB (more coming)
+- supports Postgres, MySQL, MariaDB, SQLite, MongoDB (beta)
 - plugins for frameworks: express (more coming)
 
 ## Table of Contents

@@ -663,7 +663,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
-  shouldRaw() {
+  shouldFind$projectRaw() {
     expect(
       this.dialect.find(Item, {
         $project: {
@@ -719,6 +719,36 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe(
       "SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = 'something'"
     );
+  }
+
+  shouldFind$filterRaw() {
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $and: [raw('SUM(`salePrice`) > 500')] },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(`salePrice`) > 500');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $or: [1, raw('SUM(salePrice) > 500')] },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE `id` = 1 OR SUM(salePrice) > 500');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $and: [{ companyId: 1 }, 5, raw('SUM(salePrice) > 500')] },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 AND `id` = 5 AND SUM(salePrice) > 500');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $or: [raw('SUM(salePrice) > 500'), 1, { companyId: 1 }] },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = 1 OR `companyId` = 1');
   }
 
   shouldFind$startsWith() {

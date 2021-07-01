@@ -45,7 +45,7 @@ export type QueryMultipleFieldOperator<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryField<E> =
+export type QueryFieldMap<E> =
   | {
       readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
     }
@@ -54,10 +54,10 @@ export type QueryField<E> =
 export type QueryLogicalOperatorKey = '$and' | '$or';
 
 export type QueryLogicalOperator<E> = {
-  readonly [K in QueryLogicalOperatorKey]?: QueryField<E>[];
+  readonly [K in QueryLogicalOperatorKey]?: (FieldValue<E> | QueryFieldMap<E> | QueryRaw)[];
 };
 
-export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryField<E> | QueryLogicalOperator<E>;
+export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFieldMap<E> | QueryLogicalOperator<E>;
 
 export type QuerySort<E> = {
   readonly [K in FieldKey<E>]?: -1 | 1;

@@ -236,13 +236,16 @@ export abstract class BaseSqlDialect implements QueryDialect {
         if (key === '$and' || key === '$or') {
           const hasManyEntries = value.length > 1;
           const logicalComparison = value
-            .map((filterIt: QueryFilter<E>) =>
-              this.filter(entity, filterIt, {
+            .map((filterIt: QueryFilter<E>) => {
+              if (filterIt instanceof Raw) {
+                return filterIt.value;
+              }
+              return this.filter(entity, filterIt, {
                 prefix,
                 wrapWithParenthesis: hasManyEntries && getKeys(filterIt).length > 1,
                 clause: false,
-              })
-            )
+              });
+            })
             .join(key === '$or' ? ' OR ' : ' AND ');
           return hasManyEntries && hasMultiKeys ? `(${logicalComparison})` : logicalComparison;
         }
