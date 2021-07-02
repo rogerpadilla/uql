@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/decorator';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity';
 import { raw } from '../querier';
 
 /**
