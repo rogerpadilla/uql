@@ -26,8 +26,9 @@ export class MongodbQuerier extends BaseQuerier {
     const meta = getMeta(entity);
 
     let documents: E[];
+    const isProjectingRelations = hasProjectRelationKeys(meta, qm.$project);
 
-    if (hasProjectRelationKeys(meta, qm.$project)) {
+    if (isProjectingRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
       if (isLogging()) {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));

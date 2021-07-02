@@ -28,7 +28,7 @@
     "new-cap": ["error", { "newIsCap": false, "capIsNew": false }],
     "no-array-constructor": ["error"],
     "max-params": ["error", 5],
-    "max-lines": ["error", 400],
+    "max-lines": ["error", 500],
     "max-statements": ["error", 50],
     "one-var": ["error", "never"],
     "max-nested-callbacks": ["error", 3],

@@ -284,60 +284,62 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldInsertOneAndCascadeManyToMany() {
-    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+    const payload: Item = {
+      name: 'item one',
+      createdAt: 1,
+      tags: [
+        {
+          name: 'tag one',
+          createdAt: 1,
+        },
+        {
+          name: 'tag two',
+          createdAt: 1,
+        },
+      ],
+    };
 
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
-      description: 'some description',
-      itemAdjustments,
+    const id = await this.querier.insertOne(Item, payload);
+
+    expect(id).toBeDefined();
+
+    const found = await this.querier.findOneById(Item, id, {
+      $project: { name: true, createdAt: true, tags: true },
     });
 
-    expect(inventoryAdjustmentId).toBeDefined();
-
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: true },
+    expect(found).toMatchObject({
+      id,
+      ...payload,
     });
-
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
-      itemAdjustments,
-    });
-
-    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $filter: { inventoryAdjustmentId } });
-
-    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
   async shouldUpdateOneAndCascadeManyToMany() {
-    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+    const id = await this.querier.insertOne(Item, { createdAt: 1 });
+    const payload: Item = {
+      name: 'item one',
+      updatedAt: 1,
+      tags: [
+        {
+          name: 'tag one',
+          createdAt: 1,
+        },
+        {
+          name: 'tag two',
+          createdAt: 1,
+        },
+      ],
+    };
 
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
-      description: 'some description',
+    await this.querier.updateOneById(Item, payload, id);
+
+    const found = await this.querier.findOneById(Item, id, {
+      $project: { name: true, updatedAt: true, tags: true },
     });
 
-    expect(inventoryAdjustmentId).toBeDefined();
-
-    const changes = await this.querier.updateOneById(
-      InventoryAdjustment,
-      {
-        itemAdjustments,
-      },
-      inventoryAdjustmentId
-    );
-
-    expect(changes).toBe(1);
-
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: true },
+    expect(found).toMatchObject({
+      id,
+      ...payload,
     });
-
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
-      itemAdjustments,
-    });
-
-    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $filter: { inventoryAdjustmentId } });
-
-    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
   async shouldFindMany() {

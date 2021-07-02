@@ -1,4 +1,5 @@
 import { EntityMeta, ReferenceOptions } from '@uql/core/type';
+import { Raw } from '@uql/core/querier';
 import {
   User,
   Item,
@@ -169,6 +170,11 @@ it('Item', () => {
       },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
+      tagsCount: {
+        name: 'tagsCount',
+        type: Number,
+        virtual: expect.any(Raw),
+      },
     },
     relations: {
       company: {
@@ -203,7 +209,7 @@ it('Item', () => {
       },
       tags: {
         cardinality: 'mm',
-        cascade: ['persist'],
+        cascade: true,
         entity: expect.any(Function),
         through: expect.any(Function),
         references: [
