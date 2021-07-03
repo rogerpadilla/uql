@@ -16,6 +16,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations and their fields.
 - declarative and programmatic `transactions`
 - soft-delete
+- virtual fields
 - entity `repositories`
 - different kind of `relations` between the entities
 - supports `inheritance` patterns between the entities
@@ -133,6 +134,10 @@ Take any dump class (aka DTO) and annotate it with the decorators from '@uql/cor
 Note: inheritance between entities is optional.
 
 ```ts
+import { v4 as uuidv4 } from 'uuid';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
+import { raw } from '@uql/core/querier';
+
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities
  */
@@ -335,8 +340,15 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Field()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: ['persist'] })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
+  @Field({
+    virtual: raw(({ escapedPrefix: ep, dialect }) => {
+      const i = dialect.escapeId.bind(dialect);
+      return `(SELECT COUNT(*) FROM ${i('ItemTag')} ${i('it')} WHERE ${i('it')}.${i('itemId')} = ${ep}${i('id')})`;
+    }),
+  })
+  tagsCount?: number;
 }
 
 @Entity()
@@ -495,10 +507,9 @@ app
   // ...
   .use(
     '/api',
-    
+
     // this will generate REST APIs for the entities.
     querierMiddleware({
-      
       // all entities will be automatically exposed unless
       // 'include' or 'exclude' options are provided
       exclude: [Confirmation],
@@ -507,7 +518,7 @@ app
       // so it is a good place to add additional filters to the queries (like for multi tenant apps)
       query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
-          ...qm.$filter,          
+          ...qm.$filter,
           // ensure the user can only see the data that belongs to his company
           companyId: req.identity.companyId,
         };
@@ -548,4 +559,3 @@ const users = await userRepository.findMany({
   $limit: 100,
 });
 ```
-

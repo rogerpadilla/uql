@@ -83,7 +83,7 @@ export abstract class BaseQuerier implements Querier {
             [referenceKey]: ids,
           },
         });
-        const founds = throughFounds.map((it) => it[targetRelKey]);
+        const founds = throughFounds.map((it) => ({ ...it[targetRelKey], [referenceKey]: it[referenceKey] }));
         this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
       } else if (relOpts.cardinality === '1m') {
         if (relQuery.$project) {
@@ -169,7 +169,7 @@ export abstract class BaseQuerier implements Querier {
       if (relOpts.through) {
         const throughEntity = relOpts.through();
         const referenceKey = relOpts.mappedBy ? relOpts.references[1].source : relOpts.references[0].source;
-        await this.deleteMany(throughEntity, { [referenceKey]: ids }, opts);
+        await this.deleteMany(throughEntity, { $filter: { [referenceKey]: ids } }, opts);
         return;
       }
       const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
@@ -222,7 +222,9 @@ export abstract class BaseQuerier implements Querier {
 
       if (through) {
         const throughEntity = through();
-        await this.deleteMany(throughEntity, { $filter: { [referenceKey]: id } });
+        if (isUpdate) {
+          await this.deleteMany(throughEntity, { $filter: { [referenceKey]: id } });
+        }
         if (relPayload) {
           const savedIds = await this.saveMany(relEntity, relPayload);
           const throughBodies = savedIds.map((relId) => ({

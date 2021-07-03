@@ -51,7 +51,7 @@ export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryPro
   return keys.filter((key) => meta.relations[key as RelationKey<E>]) as RelationKey<E>[];
 }
 
-export function hasProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
+export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
   const keys = getProjectKeys(project);
   return keys.some((key) => meta.relations[key as RelationKey<E>]);
 }

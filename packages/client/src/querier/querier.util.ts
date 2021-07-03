@@ -1,8 +1,8 @@
 import { getKeys } from '@uql/core/util';
 
-export function stringifyQueryParameter(key: string, value?: any, noPrefix?: boolean): string {
+export function stringifyQueryParameter(key: string, value?: any, useQuestionMark?: boolean): string {
   const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;
-  return (noPrefix ? '' : '?') + `${key}=${valStr}`;
+  return (useQuestionMark ? '?' : '') + `${key}=${valStr}`;
 }
 
 export function stringifyQuery(query: object): string {
@@ -13,6 +13,6 @@ export function stringifyQuery(query: object): string {
   if (keys.length === 0) {
     return '';
   }
-  const qsArr = keys.map((key) => stringifyQueryParameter(key, query[key], true));
+  const qsArr = keys.map((key) => stringifyQueryParameter(key, query[key]));
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }

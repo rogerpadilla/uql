@@ -457,6 +457,42 @@ export abstract class BaseSqlDialectSpec implements Spec {
     );
   }
 
+  shouldVirtualField() {
+    expect(
+      this.dialect.find(Item, {
+        $project: {
+          id: 1,
+        },
+        $filter: {
+          tagsCount: { $gte: 10 },
+        },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) FROM `ItemTag` `it` WHERE `it`.`itemId` = `id`) >= 10');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: {
+          id: 1,
+          name: 1,
+          code: 1,
+          tagsCount: 1,
+          measureUnit: {
+            $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+          },
+        },
+        $limit: 100,
+      })
+    ).toBe(
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, (SELECT COUNT(*) FROM `ItemTag` `it` WHERE `it`.`itemId` = `Item`.`id`) `tagsCount`' +
+        ', `measureUnit`.`id` `measureUnit.id`' +
+        ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
+        ' LIMIT 100'
+    );
+  }
+
   shouldFind$projectDeep() {
     expect(
       this.dialect.find(Item, {
@@ -471,9 +507,10 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $limit: 100,
       })
     ).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit.id`' +
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
+        ', `measureUnit`.`id` `measureUnit.id`' +
         ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
-        ', `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100'
@@ -668,7 +705,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
       this.dialect.find(Item, {
         $project: {
           companyId: true,
-          total: raw((prefix, dialect) => `SUM(${prefix}${dialect.escapeId('salePrice')})`),
+          total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
         },
         $group: ['companyId'],
       })
@@ -680,7 +717,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
           item: {
             $project: {
               companyId: true,
-              total: raw((prefix, dialect) => `SUM(${prefix}${dialect.escapeId('salePrice')})`),
+              total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
             },
             $required: true,
           },
@@ -688,7 +725,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $group: ['companyId'],
       })
     ).toBe(
-      'SELECT `ItemAdjustment`.`id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
+      'SELECT `ItemAdjustment`.`id`, `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
         ' FROM `ItemAdjustment` INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId` GROUP BY `companyId`'
     );
 

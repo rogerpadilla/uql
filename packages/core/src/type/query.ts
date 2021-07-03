@@ -90,10 +90,16 @@ export type QueryUpdateResult = {
   readonly firstId?: number;
 };
 
-export type QueryRawFn = (prefix: string, dialect: QueryDialect) => string;
+export type QueryRawFnOptions = {
+  readonly escapedPrefix: string;
+  readonly prefix: string;
+  readonly dialect: QueryDialect;
+};
+
+export type QueryRawFn = (opts: QueryRawFnOptions) => Scalar;
 
 export type QueryRaw = {
-  readonly value: string | QueryRawFn;
+  readonly value: Scalar | QueryRawFn;
   readonly alias?: string;
 };
 

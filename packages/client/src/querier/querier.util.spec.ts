@@ -10,11 +10,11 @@ it('stringifyQuery -- empty', () => {
 });
 
 it('stringifyQueryParameter', () => {
-  expect(stringifyQueryParameter('project', undefined)).toBe('?project=undefined');
-  expect(stringifyQueryParameter('limit', 10)).toBe('?limit=10');
-  expect(stringifyQueryParameter('limit', 10, true)).toBe('limit=10');
-  expect(stringifyQueryParameter('limit', null)).toBe('?limit=null');
-  expect(stringifyQueryParameter('sort', { createdAt: -1 })).toBe('?sort={"createdAt":-1}');
+  expect(stringifyQueryParameter('project', undefined)).toBe('project=undefined');
+  expect(stringifyQueryParameter('limit', 10, true)).toBe('?limit=10');
+  expect(stringifyQueryParameter('limit', 10)).toBe('limit=10');
+  expect(stringifyQueryParameter('limit', null, true)).toBe('?limit=null');
+  expect(stringifyQueryParameter('sort', { createdAt: -1 })).toBe('sort={"createdAt":-1}');
 });
 
 it('stringifyQuery', () => {

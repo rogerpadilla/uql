@@ -1,3 +1,4 @@
+import { QueryRaw } from './query';
 import { Scalar, Type } from './utility';
 
 export type Key<E> = {
@@ -26,12 +27,11 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: any;
   readonly reference?: EntityGetter | ReferenceOptions;
+  readonly virtual?: Scalar | QueryRaw;
   readonly onInsert?: () => any;
   readonly onUpdate?: () => any;
   readonly onDelete?: () => any;
 };
-
-export type IdOptions = Omit<FieldOptions, 'isId' | 'reference'>;
 
 export type EntityGetter<E = any> = () => Type<E>;
 

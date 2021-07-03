@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/decorator';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity';
+import { raw } from '../querier';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities
@@ -203,8 +204,15 @@ export class Item extends BaseEntity {
   salePrice?: number;
   @Field()
   inventoryable?: boolean;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: ['persist'] })
+  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
+  @Field({
+    virtual: raw(({ escapedPrefix: ep, dialect }) => {
+      const i = dialect.escapeId.bind(dialect);
+      return `(SELECT COUNT(*) FROM ${i('ItemTag')} ${i('it')} WHERE ${i('it')}.${i('itemId')} = ${ep}${i('id')})`;
+    }),
+  })
+  tagsCount?: number;
 }
 
 @Entity()

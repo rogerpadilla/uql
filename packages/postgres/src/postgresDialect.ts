@@ -35,17 +35,14 @@ export class PostgresDialect extends BaseSqlDialect {
     val: QuerySingleFieldOperator<E>[K],
     opts: { prefix?: string } = {}
   ): string {
-    const meta = getMeta(entity);
-    const prefix = opts.prefix ? `${opts.prefix}.` : '';
-    const name = this.escapeId(meta.fields[key]?.name ?? key);
-    const colPath = prefix + name;
+    const value = this.getCompareKey(entity, key, opts);
     switch (operator) {
       case '$startsWith':
-        return `${colPath} ILIKE ${this.escape(`${val}%`)}`;
+        return `${value} ILIKE ${this.escape(`${val}%`)}`;
       case '$endsWith':
-        return `${colPath} ILIKE ${this.escape(`%${val}`)}`;
+        return `${value} ILIKE ${this.escape(`%${val}`)}`;
       case '$regex':
-        return `${colPath} ~ ${this.escape(val)}`;
+        return `${value} ~ ${this.escape(val)}`;
       default:
         return super.compareOperator(entity, key, operator, val, opts);
     }
