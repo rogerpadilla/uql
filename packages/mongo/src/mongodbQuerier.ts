@@ -1,7 +1,7 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isLogging, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
-import { BaseQuerier, getPersistable, getPersistables, hasProjectRelationKeys } from '@uql/core/querier';
+import { BaseQuerier, getPersistable, getPersistables, isProjectingRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone } from '@uql/core/util';
 
@@ -26,9 +26,9 @@ export class MongodbQuerier extends BaseQuerier {
     const meta = getMeta(entity);
 
     let documents: E[];
-    const isProjectingRelations = hasProjectRelationKeys(meta, qm.$project);
+    const hasProjectRelations = isProjectingRelations(meta, qm.$project);
 
-    if (isProjectingRelations) {
+    if (hasProjectRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
       if (isLogging()) {
         log('findMany', entity.name, JSON.stringify(pipeline, null, 2));

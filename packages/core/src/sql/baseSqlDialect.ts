@@ -1,6 +1,6 @@
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
-import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, hasProjectRelationKeys } from '../querier';
+import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, isProjectingRelations } from '../querier';
 import {
   QueryFilter,
   Query,
@@ -31,7 +31,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const meta = getMeta(entity);
-    const prefix = hasProjectRelationKeys(meta, qm.$project) ? meta.name : undefined;
+    const prefix = isProjectingRelations(meta, qm.$project) ? meta.name : undefined;
     const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
@@ -153,7 +153,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   select<E>(entity: Type<E>, qm: Query<E>): string {
     const meta = getMeta(entity);
-    const hasProjectRelations = hasProjectRelationKeys(meta, qm.$project);
+    const hasProjectRelations = isProjectingRelations(meta, qm.$project);
     const baseColumns = this.project(entity, qm.$project, {
       prefix: hasProjectRelations ? meta.name : undefined,
     });
