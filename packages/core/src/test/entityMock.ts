@@ -208,9 +208,18 @@ export class Item extends BaseEntity {
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
   @Field({
-    virtual: raw(({ escapedPrefix: ep, dialect }) => {
-      const i = dialect.escapeId.bind(dialect);
-      return `(SELECT COUNT(*) FROM ${i('ItemTag')} ${i('it')} WHERE ${i('it')}.${i('itemId')} = ${ep}${i('id')})`;
+    value: raw(({ escapedPrefix, dialect }) => {
+      const query = dialect.find(
+        ItemTag,
+        {
+          $project: [raw('COUNT(*)')],
+          $filter: {
+            itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
+          },
+        },
+        { usePrefix: true }
+      );
+      return `(${query})`;
     }),
   })
   tagsCount?: number;

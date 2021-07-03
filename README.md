@@ -15,11 +15,11 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 - generated queries are fast, safe, and human-readable
 - `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations and their fields.
 - declarative and programmatic `transactions`
-- soft-delete
-- virtual fields
+- `soft-delete`
+- `virtual fields`
 - entity `repositories`
-- different kind of `relations` between the entities
-- supports `inheritance` patterns between the entities
+- different kind of `relations` between entities
+- supports `inheritance` patterns between entities
 - connection pooling
 - supports Postgres, MySQL, MariaDB, SQLite, MongoDB (beta)
 - plugins for frameworks: express (more coming)
@@ -344,9 +344,18 @@ export class Item extends BaseEntity {
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
   @Field({
-    virtual: raw(({ escapedPrefix: ep, dialect }) => {
-      const i = dialect.escapeId.bind(dialect);
-      return `(SELECT COUNT(*) FROM ${i('ItemTag')} ${i('it')} WHERE ${i('it')}.${i('itemId')} = ${ep}${i('id')})`;
+    value: raw(({ escapedPrefix, dialect }) => {
+      const query = dialect.find(
+        ItemTag,
+        {
+          $project: [raw('COUNT(*)')],
+          $filter: {
+            itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
+          },
+        },
+        { usePrefix: true }
+      );
+      return `(${query})`;
     }),
   })
   tagsCount?: number;

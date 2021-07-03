@@ -467,7 +467,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
           tagsCount: { $gte: 10 },
         },
       })
-    ).toBe('SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) FROM `ItemTag` `it` WHERE `it`.`itemId` = `id`) >= 10');
+    ).toBe('SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= 10');
 
     expect(
       this.dialect.find(Item, {
@@ -483,7 +483,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $limit: 100,
       })
     ).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, (SELECT COUNT(*) FROM `ItemTag` `it` WHERE `it`.`itemId` = `Item`.`id`) `tagsCount`' +
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`' +
         ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
