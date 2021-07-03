@@ -1,13 +1,18 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { BaseSqlDialect } from '@uql/core/sql';
-import { QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
+import { FieldKey, QueryFieldValue, QueryOptions, QueryTextSearchOptions, Type } from '@uql/core/type';
 
 export class MySqlDialect extends BaseSqlDialect {
   constructor() {
     super('START TRANSACTION', '`');
   }
 
-  override compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  override compare<E, K extends FieldKey<E>>(
+    entity: Type<E>,
+    key: K,
+    value: QueryFieldValue<E[K]>,
+    opts?: QueryOptions
+  ): string {
     switch (key) {
       case '$text':
         const meta = getMeta(entity);

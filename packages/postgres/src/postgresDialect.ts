@@ -1,5 +1,12 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { QuerySingleFieldOperator, QueryTextSearchOptions, Scalar, Type } from '@uql/core/type';
+import {
+  FieldKey,
+  QueryFieldValue,
+  QueryOptions,
+  QuerySingleFieldOperator,
+  QueryTextSearchOptions,
+  Type,
+} from '@uql/core/type';
 import { BaseSqlDialect } from '@uql/core/sql';
 
 export class PostgresDialect extends BaseSqlDialect {
@@ -14,37 +21,42 @@ export class PostgresDialect extends BaseSqlDialect {
     return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  override compare<E>(entity: Type<E>, key: string, value: Scalar | object, opts: { prefix?: string } = {}): string {
+  override compare<E, K extends FieldKey<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFieldValue<E[K]>,
+    opts?: QueryOptions
+  ): string {
     switch (key) {
       case '$text':
         const meta = getMeta(entity);
-        const search = value as QueryTextSearchOptions<E>;
+        const search = val as QueryTextSearchOptions<E>;
         const fields = search.$fields
           .map((field) => this.escapeId(meta.fields[field]?.name ?? field))
           .join(` || ' ' || `);
         return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
       default:
-        return super.compare(entity, key, value, opts);
+        return super.compare(entity, key, val, opts);
     }
   }
 
-  override compareOperator<E, K extends keyof QuerySingleFieldOperator<E>>(
+  override compareOperator<E, K extends FieldKey<E>>(
     entity: Type<E>,
-    key: string,
-    operator: K,
-    val: QuerySingleFieldOperator<E>[K],
-    opts: { prefix?: string } = {}
+    key: K,
+    op: keyof QuerySingleFieldOperator<E>,
+    val: QueryFieldValue<E[K]>,
+    opts?: QueryOptions
   ): string {
-    const value = this.getCompareKey(entity, key, opts);
-    switch (operator) {
+    const expression = this.getCompareExpression(entity, key, opts);
+    switch (op) {
       case '$startsWith':
-        return `${value} ILIKE ${this.escape(`${val}%`)}`;
+        return `${expression} ILIKE ${this.escape(`${val}%`)}`;
       case '$endsWith':
-        return `${value} ILIKE ${this.escape(`%${val}`)}`;
+        return `${expression} ILIKE ${this.escape(`%${val}`)}`;
       case '$regex':
-        return `${value} ~ ${this.escape(val)}`;
+        return `${expression} ~ ${this.escape(val)}`;
       default:
-        return super.compareOperator(entity, key, operator, val, opts);
+        return super.compareOperator(entity, key, op, val, opts);
     }
   }
 }

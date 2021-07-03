@@ -1,7 +1,7 @@
 import { FieldKey, FieldValue, Key, RelationKey } from './entity';
 import { BooleanLike, Scalar, Type, Unpacked } from './utility';
 
-export type QueryOptions = { readonly softDelete?: boolean };
+export type QueryOptions = { readonly prefix?: string; readonly usePrefix?: boolean; readonly softDelete?: boolean };
 
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
 
@@ -45,9 +45,11 @@ export type QueryMultipleFieldOperator<E> = {
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
+export type QueryFieldValue<V> = V | V[] | QuerySingleFieldOperator<V> | QueryRaw;
+
 export type QueryFieldMap<E> =
   | {
-      readonly [K in FieldKey<E>]?: E[K] | E[K][] | QuerySingleFieldOperator<E[K]>;
+      readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
     }
   | QueryMultipleFieldOperator<E>;
 
@@ -91,9 +93,9 @@ export type QueryUpdateResult = {
 };
 
 export type QueryRawFnOptions = {
-  readonly escapedPrefix: string;
-  readonly prefix: string;
-  readonly dialect: QueryDialect;
+  readonly escapedPrefix?: string;
+  readonly prefix?: string;
+  readonly dialect?: QueryDialect;
 };
 
 export type QueryRawFn = (opts: QueryRawFnOptions) => Scalar;
@@ -103,48 +105,47 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
+export type QueryFilterOptions = QueryOptions & {
+  readonly usePrecedence?: boolean;
+  readonly clause?: 'WHERE' | 'HAVING' | false;
+};
+
 export interface QueryDialect {
   criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 
-  find<E>(entity: Type<E>, qm: Query<E>): string;
+  find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 
-  insert<E>(entity: Type<E>, payload: E | E[]): string;
+  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions): string;
 
-  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): string;
+  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>, opts?: QueryOptions): string;
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
 
-  project<E>(entity: Type<E>, project: QueryProject<E>, opts: { prefix?: string; usePrefixInAlias?: boolean }): string;
+  project<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions): string;
 
-  populate<E>(entity: Type<E>, prefix?: string): { joinsColumns: string; joinsTables: string };
+  populate<E>(entity: Type<E>, opts?: QueryOptions): { joinsColumns: string; joinsTables: string };
 
-  select<E>(entity: Type<E>, qm: Query<E>): string;
+  select<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 
-  filter<E>(
+  filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: QueryFilterOptions): string;
+
+  compare<E, K extends FieldKey<E>>(entity: Type<E>, key: K, val: QueryFieldValue<E[K]>, opts?: QueryOptions): string;
+
+  compareOperator<E, K extends FieldKey<E>>(
     entity: Type<E>,
-    filter: QueryFilter<E>,
-    opts?: QueryOptions & { prefix?: string; wrapWithParenthesis?: boolean; clause?: 'WHERE' | 'HAVING' | false }
+    key: K,
+    op: keyof QuerySingleFieldOperator<E>,
+    val: QueryFieldValue<E[K]>,
+    opts?: QueryOptions
   ): string;
 
-  compare<E>(entity: Type<E>, key: string, value: Scalar | object | Scalar[], opts?: { prefix?: string }): string;
+  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts?: QueryOptions): string;
 
-  compareOperator<E, K extends keyof QuerySingleFieldOperator<E>>(
-    entity: Type<E>,
-    key: string,
-    operator: K,
-    val: QuerySingleFieldOperator<E>[K],
-    opts?: { prefix?: string }
-  ): string;
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, opts?: QueryOptions): string;
 
-  group<E>(entity: Type<E>, fields: FieldKey<E>[]): string;
-
-  sort<E>(entity: Type<E>, sort: QuerySort<E>): string;
-
-  pager(opts: QueryPager): string;
+  pager(value: QueryPager): string;
 
   escapeId(val: string, forbidQualified?: boolean): string;
 
   escape(val: any): string;
-
-  objectToValues<E>(payload: E): string;
 }
