@@ -96,11 +96,11 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.update(
         User,
+        { $filter: { name: 'some', creatorId: 123 } },
         {
           name: 'Some Text',
           updatedAt: 321,
-        },
-        { $filter: { name: 'some', creatorId: 123 } }
+        }
       )
     ).toBe("UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `creatorId` = 123");
   }
@@ -158,13 +158,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
       this.dialect.update(
         User,
         {
+          $filter: { something: 'anything' },
+        },
+        {
           name: 'Some Name',
           something: 'anything',
           updatedAt: 1,
-        } as any,
-        {
-          $filter: { something: 'anything' },
-        }
+        } as any
       )
     ).toBe("UPDATE `User` SET `name` = 'Some Name', `updatedAt` = 1 WHERE `something` = 'anything'");
 

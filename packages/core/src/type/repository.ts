@@ -6,9 +6,9 @@ export type UniversalRepository<E> = {
 
   insertOne(payload: E): Promise<any>;
 
-  updateMany?(payload: E, qm: QueryCriteria<E>): Promise<any>;
+  updateMany?(qm: QueryCriteria<E>, payload: E): Promise<any>;
 
-  updateOneById(payload: E, id: FieldValue<E>): Promise<any>;
+  updateOneById(id: FieldValue<E>, payload: E): Promise<any>;
 
   findMany(qm: Query<E>): Promise<any>;
 
@@ -28,9 +28,9 @@ export interface Repository<E> extends UniversalRepository<E> {
 
   insertOne(payload: E): Promise<any>;
 
-  updateMany(payload: E, qm: QueryCriteria<E>): Promise<number>;
+  updateMany(qm: QueryCriteria<E>, payload: E): Promise<number>;
 
-  updateOneById(payload: E, id: FieldValue<E>): Promise<number>;
+  updateOneById(id: FieldValue<E>, payload: E): Promise<number>;
 
   findMany(qm: Query<E>): Promise<E[]>;
 

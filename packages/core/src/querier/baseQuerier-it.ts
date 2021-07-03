@@ -227,13 +227,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
     expect(inventoryAdjustmentId).toBeDefined();
 
-    const changes = await this.querier.updateOneById(
-      InventoryAdjustment,
-      {
-        itemAdjustments,
-      },
-      inventoryAdjustmentId
-    );
+    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
+      itemAdjustments,
+    });
 
     expect(changes).toBe(1);
 
@@ -256,13 +252,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
     await expect(this.querier.count(ItemAdjustment)).resolves.toBe(2);
 
-    await this.querier.updateOneById(
-      InventoryAdjustment,
-      {
-        itemAdjustments: null,
-      },
-      id
-    );
+    await this.querier.updateOneById(InventoryAdjustment, id, {
+      itemAdjustments: null,
+    });
 
     await expect(this.querier.count(ItemAdjustment)).resolves.toBe(0);
   }
@@ -274,10 +266,10 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
     await this.querier.updateMany(
       InventoryAdjustment,
+      { $filter: {} },
       {
         itemAdjustments: null,
-      },
-      {}
+      }
     );
 
     await expect(this.querier.count(ItemAdjustment)).resolves.toBe(0);
@@ -330,7 +322,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       ],
     };
 
-    await this.querier.updateOneById(Item, payload, id);
+    await this.querier.updateOneById(Item, id, payload);
 
     const found = await this.querier.findOneById(Item, id, {
       $project: { name: true, updatedAt: true, tags: true },
@@ -402,9 +394,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    await expect(this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } })).resolves.toBe(0);
-    await expect(this.querier.updateMany(User, { companyId: 1 }, { $filter: { companyId: null } })).resolves.toBe(3);
-    await expect(this.querier.updateMany(User, { companyId: null }, { $filter: { companyId: 1 } })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { $filter: { companyId: 1 } }, { companyId: null })).resolves.toBe(0);
+    await expect(this.querier.updateMany(User, { $filter: { companyId: null } }, { companyId: 1 })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { $filter: { companyId: 1 } }, { companyId: null })).resolves.toBe(3);
   }
 
   async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {

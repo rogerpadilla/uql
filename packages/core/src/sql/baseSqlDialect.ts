@@ -373,7 +373,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
-  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>, opts?: QueryOptions): string {
+  update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string {
     const meta = getMeta(entity);
     payload = getPersistable(meta, payload, 'onUpdate');
     const values = objectToValues(this, payload);

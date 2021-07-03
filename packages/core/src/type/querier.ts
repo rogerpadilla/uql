@@ -16,9 +16,9 @@ export type UniversalQuerier = {
 
   insertMany?<E>(entity: Type<E>, payload: E[]): Promise<any>;
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>): Promise<any>;
+  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E): Promise<any>;
 
-  updateMany?<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<any>;
+  updateMany?<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<any>;
 
   deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions): Promise<any>;
 
@@ -40,9 +40,9 @@ export interface Querier extends UniversalQuerier {
 
   insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>): Promise<number>;
+  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E): Promise<number>;
 
-  updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
+  updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions): Promise<number>;
 

@@ -38,11 +38,11 @@ export abstract class BaseQuerier implements Querier {
 
   abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>) {
-    return this.updateMany(entity, payload, { $filter: id });
+  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E) {
+    return this.updateMany(entity, { $filter: id }, payload);
   }
 
-  abstract updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>): Promise<number>;
+  abstract updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions) {
     return this.deleteMany(entity, { $filter: id }, opts);
@@ -137,7 +137,7 @@ export abstract class BaseQuerier implements Querier {
     );
   }
 
-  protected async updateRelations<E>(entity: Type<E>, payload: E, criteria: QueryCriteria<E>) {
+  protected async updateRelations<E>(entity: Type<E>, criteria: QueryCriteria<E>, payload: E) {
     const meta = getMeta(entity);
     const relKeys = getPersistableRelations(meta, payload, 'persist');
 
@@ -199,7 +199,7 @@ export abstract class BaseQuerier implements Querier {
       ...links,
       ...(inserts.length ? await this.insertMany(entity, inserts) : []),
       ...updates.map(async (it) => {
-        await this.updateOneById(entity, it, it[meta.id]);
+        await this.updateOneById(entity, it[meta.id], it);
         return it[meta.id];
       }),
     ]);
@@ -264,7 +264,7 @@ export abstract class BaseQuerier implements Querier {
       }
       if (relPayload) {
         const referenceId = await this.insertOne(relEntity, relPayload);
-        await this.updateOneById(entity, { [referenceKey]: referenceId }, id);
+        await this.updateOneById(entity, id, { [referenceKey]: referenceId });
       }
       return;
     }

@@ -8,8 +8,8 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.insertOne(this.entity, payload, opts);
   }
 
-  updateOneById(payload: E, id: FieldValue<E>, opts?: RequestOptions) {
-    return this.querier.updateOneById(this.entity, payload, id, opts);
+  updateOneById(id: FieldValue<E>, payload: E, opts?: RequestOptions) {
+    return this.querier.updateOneById(this.entity, id, payload, opts);
   }
 
   saveOne(payload: E, opts?: RequestOptions) {

@@ -38,8 +38,8 @@ describe('repository', () => {
   });
 
   it('updateMany', async () => {
-    await repository.updateOneById({}, 1);
-    expect(querier.updateOneById).toHaveBeenCalledWith(User, {}, 1);
+    await repository.updateOneById(1, {});
+    expect(querier.updateOneById).toHaveBeenCalledWith(User, 1, {});
   });
 
   it('findMany', async () => {

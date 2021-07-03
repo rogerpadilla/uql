@@ -54,7 +54,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      await querier.updateOneById(entity, req.body, req.params.id);
+      await querier.updateOneById(entity, req.params.id, req.body);
       await querier.commitTransaction();
       res.json({ data: req.params.id });
     } catch (err: any) {

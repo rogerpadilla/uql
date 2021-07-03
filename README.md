@@ -433,9 +433,9 @@ class ConfirmationService {
         password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, { password: confirmation.password }, confirmation.creatorId);
+      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
     }
-    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, confirmation.id);
+    await querier.updateOneById(Confirmation, confirmation.id, { status: CONFIRM_STATUS_VERIFIED });
   }
 }
 
@@ -475,9 +475,9 @@ async function confirmAction(confirmation: Confirmation) {
         password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, { password: confirmation.password }, confirmation.creatorId);
+      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
     }
-    await querier.updateOneById(Confirmation, { status: CONFIRM_STATUS_VERIFIED }, confirmation.id);
+    await querier.updateOneById(Confirmation, confirmation.id, { status: CONFIRM_STATUS_VERIFIED });
     await querier.commitTransaction();
   } catch (error) {
     await querier.rollbackTransaction();

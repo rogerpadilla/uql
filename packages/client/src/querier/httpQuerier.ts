@@ -18,7 +18,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<any>(basePath, payload, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, payload: E, id: FieldValue<E>, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, payload, opts);
   }
@@ -27,7 +27,7 @@ export class HttpQuerier implements ClientQuerier {
     const meta = getMeta(entity);
     const id = payload[meta.id];
     if (id) {
-      return this.updateOneById(entity, payload, id, opts).then(() => ({ data: id }));
+      return this.updateOneById(entity, id, payload, opts).then(() => ({ data: id }));
     }
     return this.insertOne(entity, payload, opts);
   }

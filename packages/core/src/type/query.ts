@@ -117,7 +117,7 @@ export interface QueryDialect {
 
   insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions): string;
 
-  update<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>, opts?: QueryOptions): string;
+  update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string;
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
 

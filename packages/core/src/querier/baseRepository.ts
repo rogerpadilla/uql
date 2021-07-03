@@ -11,12 +11,12 @@ export class BaseRepository<E> implements Repository<E> {
     return this.querier.insertOne(this.entity, payload);
   }
 
-  updateMany(payload: E, qm: QueryCriteria<E>) {
-    return this.querier.updateMany(this.entity, payload, qm);
+  updateMany(qm: QueryCriteria<E>, payload: E) {
+    return this.querier.updateMany(this.entity, qm, payload);
   }
 
-  updateOneById(payload: E, id: FieldValue<E>) {
-    return this.querier.updateOneById(this.entity, payload, id);
+  updateOneById(id: FieldValue<E>, payload: E) {
+    return this.querier.updateOneById(this.entity, id, payload);
   }
 
   findMany(qm: Query<E>) {

@@ -356,7 +356,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateMany() {
-    await this.querier.updateMany(User, { name: 'Hola', updatedAt: 1 }, { $filter: { companyId: 4 } });
+    await this.querier.updateMany(User, { $filter: { companyId: 4 } }, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.conn.run).nthCalledWith(
       1,
       "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `companyId` = 4"
@@ -366,7 +366,7 @@ export class BaseSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateOneById() {
-    await this.querier.updateOneById(User, { companyId: 123, updatedAt: 1 }, 5);
+    await this.querier.updateOneById(User, 5, { companyId: 123, updatedAt: 1 });
     expect(this.querier.conn.run).nthCalledWith(
       1,
       'UPDATE `User` SET `companyId` = 123, `updatedAt` = 1 WHERE `id` = 5'
@@ -380,15 +380,11 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      User,
-      {
-        name: 'something',
-        updatedAt: 1,
-        profile: { picture: 'xyz', createdAt: 1 },
-      },
-      1
-    );
+    await this.querier.updateOneById(User, 1, {
+      name: 'something',
+      updatedAt: 1,
+      profile: { picture: 'xyz', createdAt: 1 },
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -410,15 +406,11 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      User,
-      {
-        name: 'something',
-        updatedAt: 1,
-        profile: null,
-      },
-      1
-    );
+    await this.querier.updateOneById(User, 1, {
+      name: 'something',
+      updatedAt: 1,
+      profile: null,
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -436,18 +428,14 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      InventoryAdjustment,
-      {
-        description: 'some description',
-        updatedAt: 1,
-        itemAdjustments: [
-          { buyPrice: 50, createdAt: 1 },
-          { buyPrice: 300, createdAt: 1 },
-        ],
-      },
-      1
-    );
+    await this.querier.updateOneById(InventoryAdjustment, 1, {
+      description: 'some description',
+      updatedAt: 1,
+      itemAdjustments: [
+        { buyPrice: 50, createdAt: 1 },
+        { buyPrice: 300, createdAt: 1 },
+      ],
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -472,15 +460,11 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      InventoryAdjustment,
-      {
-        description: 'some description',
-        updatedAt: 1,
-        itemAdjustments: null,
-      },
-      1
-    );
+    await this.querier.updateOneById(InventoryAdjustment, 1, {
+      description: 'some description',
+      updatedAt: 1,
+      itemAdjustments: null,
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -506,12 +490,12 @@ export class BaseSqlQuerierSpec implements Spec {
 
     await this.querier.updateMany(
       InventoryAdjustment,
+      { $filter: { companyId: 1 } },
       {
         description: 'some description',
         updatedAt: 1,
         itemAdjustments: null,
-      },
-      { $filter: { companyId: 1 } }
+      }
     );
 
     expect(this.querier.conn.run).nthCalledWith(
@@ -559,24 +543,20 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      Item,
-      {
-        name: 'item one',
-        updatedAt: 1,
-        tags: [
-          {
-            name: 'tag one',
-            createdAt: 1,
-          },
-          {
-            name: 'tag two',
-            createdAt: 1,
-          },
-        ],
-      },
-      id
-    );
+    await this.querier.updateOneById(Item, id, {
+      name: 'item one',
+      updatedAt: 1,
+      tags: [
+        {
+          name: 'tag one',
+          createdAt: 1,
+        },
+        {
+          name: 'tag two',
+          createdAt: 1,
+        },
+      ],
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -600,15 +580,11 @@ export class BaseSqlQuerierSpec implements Spec {
 
     expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
 
-    await this.querier.updateOneById(
-      Item,
-      {
-        name: 'item one',
-        tags: [{ id: 22 }, { id: 33 }],
-        updatedAt: 1,
-      },
-      id
-    );
+    await this.querier.updateOneById(Item, id, {
+      name: 'item one',
+      tags: [{ id: 22 }, { id: 33 }],
+      updatedAt: 1,
+    });
 
     expect(this.querier.conn.run).nthCalledWith(
       2,
@@ -699,7 +675,7 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateOneById(User, { name: 'Hola' }, 5);
+    await this.querier.updateOneById(User, 5, { name: 'Hola' });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
     expect(this.querier.conn.run).toBeCalledWith('COMMIT');
@@ -741,7 +717,7 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateOneById(User, { name: 'some name' }, 5);
+    await this.querier.updateOneById(User, 5, { name: 'some name' });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);

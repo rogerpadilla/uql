@@ -46,11 +46,11 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     return ids;
   }
 
-  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+  override async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
     payload = clone(payload);
-    const query = this.dialect.update(entity, payload, qm);
+    const query = this.dialect.update(entity, qm, payload);
     const { changes } = await this.conn.run(query);
-    await this.updateRelations(entity, payload, qm);
+    await this.updateRelations(entity, qm, payload);
     return changes;
   }
 

@@ -22,15 +22,15 @@ export interface ClientQuerier extends UniversalQuerier {
 
   updateOneById<E>(
     entity: Type<E>,
-    payload: E,
     id: FieldValue<E>,
+    payload: E,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 
   updateMany?<E>(
     entity: Type<E>,
-    payload: E,
     qm: QueryCriteria<E>,
+    payload: E,
     opts?: RequestOptions
   ): Promise<RequestSuccessResponse<number>>;
 

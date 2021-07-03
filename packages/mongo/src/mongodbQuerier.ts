@@ -97,7 +97,7 @@ export class MongodbQuerier extends BaseQuerier {
     return ids;
   }
 
-  override async updateMany<E>(entity: Type<E>, payload: E, qm: QueryCriteria<E>) {
+  override async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = getPersistable(meta, payload, 'onUpdate');
@@ -110,7 +110,7 @@ export class MongodbQuerier extends BaseQuerier {
       session: this.session,
     });
 
-    await this.updateRelations(entity, payload, qm);
+    await this.updateRelations(entity, qm, payload);
 
     return matchedCount;
   }
