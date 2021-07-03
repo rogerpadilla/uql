@@ -150,6 +150,7 @@ export interface IEntity {
   createdAt?: number;
   updatedAt?: number;
 }
+
 interface ICompany extends IEntity {
   name?: string;
   description?: string;
