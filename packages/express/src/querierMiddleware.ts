@@ -42,7 +42,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       const data = await querier.insertOne(entity, req.body);
       await querier.commitTransaction();
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       await querier.rollbackTransaction();
       sendError(err, res);
     } finally {
@@ -57,7 +57,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       await querier.updateOneById(entity, req.body, req.params.id);
       await querier.commitTransaction();
       res.json({ data: req.params.id });
-    } catch (err) {
+    } catch (err: any) {
       await querier.rollbackTransaction();
       sendError(err, res);
     } finally {
@@ -71,7 +71,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
     try {
       const data = await querier.findOne(entity, qm);
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       sendError(err, res);
     } finally {
       await querier.release();
@@ -84,7 +84,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
     try {
       const data = await querier.count(entity, qm);
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       sendError(err, res);
     } finally {
       await querier.release();
@@ -97,7 +97,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
     try {
       const data = await querier.findOneById(entity, req.params.id as FieldValue<E>, qm);
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       sendError(err, res);
     } finally {
       await querier.release();
@@ -119,7 +119,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
         json.data = await findManyPromise;
       }
       res.json(json);
-    } catch (err) {
+    } catch (err: any) {
       sendError(err, res);
     } finally {
       await querier.release();
@@ -135,7 +135,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       });
       await querier.commitTransaction();
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       await querier.rollbackTransaction();
       sendError(err, res);
     } finally {
@@ -151,7 +151,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       const data = await querier.deleteMany(entity, qm, { softDelete: req.params.softDelete as unknown as boolean });
       await querier.commitTransaction();
       res.json({ data });
-    } catch (err) {
+    } catch (err: any) {
       await querier.rollbackTransaction();
       sendError(err, res);
     } finally {
