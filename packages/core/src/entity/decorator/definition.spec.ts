@@ -173,7 +173,7 @@ it('Item', () => {
       tagsCount: {
         name: 'tagsCount',
         type: Number,
-        value: expect.any(Raw),
+        virtual: expect.any(Raw),
       },
     },
     relations: {

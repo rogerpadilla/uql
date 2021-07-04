@@ -91,8 +91,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
         const field = meta.fields[key as FieldKey<E>];
 
-        if (field.value) {
-          const val = field.value;
+        if (field.virtual) {
+          const val = field.virtual;
           if (val instanceof Raw) {
             return getRawValue({
               value: val.value,
@@ -343,8 +343,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const escapedPrefix = prefix ? `${this.escapeId(prefix, true)}.` : '';
     const field = meta.fields[key];
 
-    if (field?.value) {
-      const val = field.value;
+    if (field?.virtual) {
+      const val = field.virtual;
       if (val instanceof Raw) {
         return getRawValue({
           value: val.value,

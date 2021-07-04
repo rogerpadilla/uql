@@ -27,7 +27,7 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: any;
   readonly reference?: EntityGetter | ReferenceOptions;
-  readonly value?: Scalar | QueryRaw;
+  readonly virtual?: Scalar | QueryRaw;
   readonly onInsert?: () => any;
   readonly onUpdate?: () => any;
   readonly onDelete?: () => any;

@@ -208,7 +208,7 @@ export class Item extends BaseEntity {
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
   @Field({
-    value: raw(({ escapedPrefix, dialect }) => {
+    virtual: raw(({ escapedPrefix, dialect }) => {
       const query = dialect.find(
         ItemTag,
         {
