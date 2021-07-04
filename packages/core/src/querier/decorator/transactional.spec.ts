@@ -1,9 +1,6 @@
 import { getQuerier, setOptions } from '@uql/core/options';
-import { Company, User } from '@uql/core/test';
-import { Querier, QuerierPool, Repository, Writable } from '../../type';
-import { BaseRepository } from '../baseRepository';
+import { Querier, QuerierPool, Writable } from '../../type';
 import { InjectQuerier } from './injectQuerier';
-import { InjectRepository } from './injectRepository';
 import { Transactional } from './transactional';
 
 describe('transactional', () => {
@@ -50,46 +47,10 @@ describe('transactional', () => {
     expect(anotherQuerier.release).toBeCalledTimes(0);
   });
 
-  it('injectQuerier - repository', async () => {
-    const saveStub = jest.fn((userRepository: Repository<User>) => {
-      expect(userRepository).toBeInstanceOf(BaseRepository);
-    });
-
-    class ServiceA {
-      @Transactional()
-      async save(@InjectRepository(User) userRepository?: Repository<User>) {
-        saveStub(userRepository);
-      }
-    }
-
-    const serviceA = new ServiceA();
-    await serviceA.save();
-
-    expect(saveStub).toBeCalledTimes(1);
-
-    const defaultQuerier = await getQuerier();
-
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
-
-    const anotherQuerier = await anotherQuerierPool.getQuerier();
-
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
-  });
-
   it('injectQuerier - querier and repositories', async () => {
     class ServiceA {
       @Transactional()
-      async save(
-        @InjectQuerier() querier?: Querier,
-        @InjectRepository(User) userRepository?: Repository<User>,
-        @InjectRepository(Company) companyRepository?: Repository<Company>
-      ) {}
+      async save(@InjectQuerier() querier?: Querier) {}
     }
 
     const serviceA = new ServiceA();
@@ -257,7 +218,7 @@ describe('transactional', () => {
         @Transactional()
         async find() {}
       }
-    }).toThrow("missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in 'ServiceA.find'");
+    }).toThrow("missing decorator @InjectQuerier() in 'ServiceA.find'");
   });
 });
 

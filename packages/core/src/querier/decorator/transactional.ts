@@ -1,7 +1,6 @@
-import { getQuerierPool, getRepository } from '@uql/core/options';
+import { getQuerierPool } from '@uql/core/options';
 import { Querier, QuerierPool, Type } from '../../type';
 import { getInjectedQuerierIndex } from './injectQuerier';
-import { getInjectedRepositoriesMap } from './injectRepository';
 
 export function Transactional({
   propagation = 'required',
@@ -14,12 +13,9 @@ export function Transactional({
     const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
     const injectedQuerierIndex = getInjectedQuerierIndex(theClass, key);
-    const injectedRepositoriesMap = getInjectedRepositoriesMap(theClass, key);
 
-    if (injectedQuerierIndex === undefined && injectedRepositoriesMap === undefined) {
-      throw new TypeError(
-        `missing decorator @InjectQuerier() or @InjectRepository(SomeEntity) in '${target.constructor.name}.${key}'`
-      );
+    if (injectedQuerierIndex === undefined) {
+      throw new TypeError(`missing decorator @InjectQuerier() in '${target.constructor.name}.${key}'`);
     }
 
     propDescriptor.value = async function func(this: object, ...args: any[]) {
@@ -34,14 +30,6 @@ export function Transactional({
         const pool = querierPool ?? getQuerierPool();
         querier = await pool.getQuerier();
         params[injectedQuerierIndex] = querier;
-      }
-
-      if (injectedRepositoriesMap) {
-        for (const [index, entity] of Object.entries(injectedRepositoriesMap)) {
-          if (params[index] === undefined) {
-            params[index] = getRepository(entity, querier);
-          }
-        }
       }
 
       try {
