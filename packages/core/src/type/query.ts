@@ -22,44 +22,48 @@ export type QueryProjectRelation<E> = {
     | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
 
-export type QuerySingleFieldOperator<T> = {
-  readonly $eq?: T;
-  readonly $ne?: T;
-  readonly $lt?: number;
-  readonly $lte?: number;
-  readonly $gt?: number;
-  readonly $gte?: number;
-  readonly $startsWith?: string;
-  readonly $endsWith?: string;
-  readonly $in?: T[];
-  readonly $nin?: T[];
-  readonly $regex?: string;
-};
+export type QueryLogicalEntry<E> = (FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw)[];
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
   readonly $fields?: FieldKey<E>[];
 };
 
-export type QueryMultipleFieldOperator<E> = {
+export type QueryFilterMultiFieldOperator<E> = {
+  readonly $and?: QueryLogicalEntry<E>;
+  readonly $or?: QueryLogicalEntry<E>;
+  readonly $not?: QueryLogicalEntry<E>;
+  readonly $nor?: QueryLogicalEntry<E>;
   readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QueryFieldValue<V> = V | V[] | QuerySingleFieldOperator<V> | QueryRaw;
-
-export type QueryFieldMap<E> =
-  | {
-      readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
-    }
-  | QueryMultipleFieldOperator<E>;
-
-export type QueryLogicalOperatorKey = '$and' | '$or';
-
-export type QueryLogicalOperator<E> = {
-  readonly [K in QueryLogicalOperatorKey]?: (FieldValue<E> | QueryFieldMap<E> | QueryRaw)[];
+export type QueryFilterSingleFieldOperator<V> = {
+  readonly $eq?: V;
+  readonly $ne?: V;
+  readonly $lt?: number;
+  readonly $lte?: number;
+  readonly $gt?: number;
+  readonly $gte?: number;
+  readonly $startsWith?: string;
+  readonly $istartsWith?: string;
+  readonly $endsWith?: string;
+  readonly $iendsWith?: string;
+  readonly $like?: string;
+  readonly $ilike?: string;
+  readonly $in?: V[];
+  readonly $nin?: V[];
+  readonly $regex?: string;
 };
 
-export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFieldMap<E> | QueryLogicalOperator<E>;
+export type QueryFieldValue<V> = V | V[] | QueryFilterSingleFieldOperator<V> | QueryRaw;
+
+export type QueryFilterFieldComparison<E> = {
+  readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
+};
+
+export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterMultiFieldOperator<E>;
+
+export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E>;
 
 export type QuerySort<E> = {
   readonly [K in FieldKey<E>]?: -1 | 1;
@@ -105,8 +109,11 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
-export type QueryFilterOptions = QueryOptions & {
+export type QueryComparisonOptions = QueryOptions & {
   readonly usePrecedence?: boolean;
+};
+
+export type QueryFilterOptions = QueryComparisonOptions & {
   readonly clause?: 'WHERE' | 'HAVING' | false;
 };
 
@@ -129,12 +136,17 @@ export interface QueryDialect {
 
   filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: QueryFilterOptions): string;
 
-  compare<E, K extends FieldKey<E>>(entity: Type<E>, key: K, val: QueryFieldValue<E[K]>, opts?: QueryOptions): string;
-
-  compareOperator<E, K extends FieldKey<E>>(
+  compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QuerySingleFieldOperator<E>,
+    val: QueryFieldValue<E[K]>,
+    opts?: QueryComparisonOptions
+  ): string;
+
+  compareOperator<E, K extends keyof QueryFilterComparison<E>>(
+    entity: Type<E>,
+    key: K,
+    op: keyof QueryFilterSingleFieldOperator<E>,
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string;
