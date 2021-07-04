@@ -1,5 +1,6 @@
 export type RequestSuccessResponse<E> = {
   data: E;
+  count?: number;
 };
 
 export type RequestErrorResponse = {

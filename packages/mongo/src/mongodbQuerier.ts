@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isLogging, log } from '@uql/core';
-import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
+import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions, QuerySearch } from '@uql/core/type';
 import { BaseQuerier, getPersistable, getPersistables, isProjectingRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone } from '@uql/core/util';
@@ -14,12 +14,16 @@ export class MongodbQuerier extends BaseQuerier {
     super();
   }
 
-  override count<E>(entity: Type<E>, qm: QueryCriteria<E> = {}) {
+  override count<E>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
     log('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
+  }
+
+  override findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E>) {
+    return this.findOne(entity, { ...qo, $filter: id });
   }
 
   override async findMany<E>(entity: Type<E>, qm: Query<E>) {
@@ -64,11 +68,6 @@ export class MongodbQuerier extends BaseQuerier {
     }
 
     return documents;
-  }
-
-  override findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E>) {
-    const meta = getMeta(entity);
-    return this.findOne(entity, { ...qo, $filter: id });
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {

@@ -1,14 +1,16 @@
 import { Type } from './utility';
-import { Query, QueryCriteria, QueryOne, QueryOptions } from './query';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch } from './query';
 import { Repository, UniversalRepository } from './repository';
 import { FieldValue } from './entity';
 
 export type UniversalQuerier = {
-  count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<any>;
+  count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<any>;
 
   findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo?: QueryOne<E>): Promise<any>;
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<any>;
+
+  findManyAndCount<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
   findMany<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
@@ -28,11 +30,13 @@ export type UniversalQuerier = {
 };
 
 export interface Querier extends UniversalQuerier {
-  count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
+  count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
   findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo?: QueryOne<E>): Promise<E>;
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<E>;
+
+  findManyAndCount<E>(entity: Type<E>, qm: Query<E>): Promise<[E[], number]>;
 
   findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
 

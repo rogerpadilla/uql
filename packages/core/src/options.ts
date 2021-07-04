@@ -9,7 +9,7 @@ export function setOptions(opts: UqlOptions): void {
 }
 
 export function getOptions(): UqlOptions {
-  return options ?? defaultOptions;
+  return options ?? { ...defaultOptions };
 }
 
 export function getQuerierPool(): QuerierPool {

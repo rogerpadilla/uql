@@ -6,6 +6,7 @@ import {
   QueryOne,
   QueryOptions,
   QueryProject,
+  QuerySearch,
   RelationKey,
   RelationValue,
   Repository,
@@ -17,7 +18,7 @@ import { getProjectRelationKeys, getPersistableRelations } from './querier.util'
 import { BaseRepository } from './baseRepository';
 
 export abstract class BaseQuerier implements Querier {
-  abstract count<E>(entity: Type<E>, qm?: QueryCriteria<E>): Promise<number>;
+  abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
   findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E> = {}) {
     return this.findOne(entity, { ...qo, $filter: id });
@@ -30,6 +31,10 @@ export abstract class BaseQuerier implements Querier {
   }
 
   abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
+
+  findManyAndCount<E>(entity: Type<E>, qm: Query<E>) {
+    return Promise.all([this.findMany(entity, qm), this.count(entity, qm)]);
+  }
 
   async insertOne<E>(entity: Type<E>, payload: E) {
     const [id] = await this.insertMany(entity, [payload]);

@@ -1,5 +1,5 @@
-import { Query, QueryProject, QuerierPoolConnection, Type, QueryCriteria, QueryOptions } from '../type';
-import { BaseQuerier, raw } from '../querier';
+import { Query, QuerierPoolConnection, Type, QueryCriteria, QueryOptions } from '../type';
+import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
 
@@ -14,10 +14,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   }
 
   override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
-    const query = await this.dialect.find(entity, {
-      ...qm,
-      $project: [raw('COUNT(*)', 'count')],
-    });
+    const query = await this.dialect.count(entity, qm);
     const res: any = await this.conn.all<E>(query);
     return Number(res[0].count);
   }

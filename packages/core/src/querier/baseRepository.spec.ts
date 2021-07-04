@@ -8,48 +8,24 @@ describe('repository', () => {
 
   beforeEach(() => {
     querier = {
-      insertMany: jest.fn(),
-      insertOne: jest.fn(),
-      updateMany: jest.fn(),
-      updateOneById: jest.fn(),
-      findMany: jest.fn(),
-      findOne: jest.fn(),
-      findOneById: jest.fn(),
-      deleteMany: jest.fn(),
-      deleteOneById: jest.fn(),
       count: jest.fn(),
+      findOneById: jest.fn(),
+      findOne: jest.fn(),
+      findMany: jest.fn(),
+      findManyAndCount: jest.fn(),
+      insertOne: jest.fn(),
+      insertMany: jest.fn(),
+      updateOneById: jest.fn(),
+      updateMany: jest.fn(),
+      deleteOneById: jest.fn(),
+      deleteMany: jest.fn(),
     };
     repository = new BaseRepository(User, querier as Querier);
   });
 
-  it('insertMany', async () => {
-    await repository.insertMany([{}]);
-    expect(querier.insertMany).toHaveBeenCalledWith(User, [{}]);
-  });
-
-  it('insertOne', async () => {
-    await repository.insertOne({});
-    expect(querier.insertOne).toHaveBeenCalledWith(User, {});
-  });
-
-  it('updateMany', async () => {
-    await repository.updateMany({}, {});
-    expect(querier.updateMany).toHaveBeenCalledWith(User, {}, {});
-  });
-
-  it('updateMany', async () => {
-    await repository.updateOneById(1, {});
-    expect(querier.updateOneById).toHaveBeenCalledWith(User, 1, {});
-  });
-
-  it('findMany', async () => {
-    await repository.findMany({});
-    expect(querier.findMany).toHaveBeenCalledWith(User, {});
-  });
-
-  it('findOne', async () => {
-    await repository.findOne({});
-    expect(querier.findOne).toHaveBeenCalledWith(User, {});
+  it('count', async () => {
+    await repository.count({});
+    expect(querier.count).toHaveBeenCalledWith(User, {});
   });
 
   it('findOneById', async () => {
@@ -57,12 +33,39 @@ describe('repository', () => {
     expect(querier.findOneById).toHaveBeenCalledWith(User, 1, undefined);
   });
 
-  it('deleteMany', async () => {
-    await repository.deleteMany({});
-    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, undefined);
+  it('findOne', async () => {
+    await repository.findOne({});
+    expect(querier.findOne).toHaveBeenCalledWith(User, {});
+  });
 
-    await repository.deleteMany({}, { softDelete: false });
-    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { softDelete: false });
+  it('findMany', async () => {
+    await repository.findMany({});
+    expect(querier.findMany).toHaveBeenCalledWith(User, {});
+  });
+
+  it('findManyAndCount', async () => {
+    await repository.findManyAndCount({});
+    expect(querier.findManyAndCount).toHaveBeenCalledWith(User, {});
+  });
+
+  it('insertOne', async () => {
+    await repository.insertOne({});
+    expect(querier.insertOne).toHaveBeenCalledWith(User, {});
+  });
+
+  it('insertMany', async () => {
+    await repository.insertMany([{}]);
+    expect(querier.insertMany).toHaveBeenCalledWith(User, [{}]);
+  });
+
+  it('updateMany', async () => {
+    await repository.updateMany({}, {});
+    expect(querier.updateMany).toHaveBeenCalledWith(User, {}, {});
+  });
+
+  it('updateOneById', async () => {
+    await repository.updateOneById(1, {});
+    expect(querier.updateOneById).toHaveBeenCalledWith(User, 1, {});
   });
 
   it('deleteOneById', async () => {
@@ -73,8 +76,11 @@ describe('repository', () => {
     expect(querier.deleteOneById).toHaveBeenCalledWith(User, 1, { softDelete: false });
   });
 
-  it('count', async () => {
-    await repository.count({});
-    expect(querier.count).toHaveBeenCalledWith(User, {});
+  it('deleteMany', async () => {
+    await repository.deleteMany({});
+    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, undefined);
+
+    await repository.deleteMany({}, { softDelete: false });
+    expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { softDelete: false });
   });
 });

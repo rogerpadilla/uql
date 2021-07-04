@@ -74,10 +74,13 @@ export type QueryPager = {
   $limit?: number;
 };
 
-export type QueryCriteria<E> = {
+export type QuerySearch<E> = {
   $filter?: QueryFilter<E>;
   $group?: FieldKey<E>[];
   $having?: QueryFilter<E>;
+};
+
+export type QueryCriteria<E> = QuerySearch<E> & {
   $sort?: QuerySort<E>;
 } & QueryPager;
 
@@ -119,6 +122,8 @@ export type QueryFilterOptions = QueryComparisonOptions & {
 
 export interface QueryDialect {
   criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
+
+  count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 

@@ -128,6 +128,51 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
+  async shouldVirtualField() {
+    await this.querier.findMany(Item, {
+      $project: {
+        id: 1,
+      },
+      $filter: {
+        tagsCount: { $gte: 10 },
+      },
+    });
+
+    expect(this.querier.conn.all).toBeCalledWith(
+      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= 10'
+    );
+
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+    jest.clearAllMocks();
+
+    await this.querier.findMany(Item, {
+      $project: {
+        id: 1,
+        name: 1,
+        code: 1,
+        tagsCount: 1,
+        measureUnit: {
+          $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+        },
+      },
+      $limit: 100,
+    });
+
+    expect(this.querier.conn.all).toBeCalledWith(
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
+        ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
+        ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
+        ' LIMIT 100'
+    );
+
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+  }
+
   async shouldFindOneAndProjectOneToManyOnly() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
@@ -284,6 +329,23 @@ export class BaseSqlQuerierSpec implements Spec {
     });
     expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 100');
     expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+  }
+
+  async shouldFindManyAndCount() {
+    await this.querier.findManyAndCount(User, {
+      $project: { id: true, name: true },
+      $filter: { companyId: 123 },
+      $sort: { createdAt: -1 },
+      $skip: 50,
+      $limit: 100,
+    });
+    expect(this.querier.conn.all).nthCalledWith(
+      1,
+      'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50'
+    );
+    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
+    expect(this.querier.conn.all).toBeCalledTimes(2);
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 

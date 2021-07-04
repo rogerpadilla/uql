@@ -16,10 +16,7 @@ export function setOptions(opts: UqlClientOptions) {
 }
 
 export function getOptions() {
-  if (!options) {
-    return { ...defaultOptions };
-  }
-  return { ...options };
+  return options ?? { ...defaultOptions };
 }
 
 export function getQuerierPool() {

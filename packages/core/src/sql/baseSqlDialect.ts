@@ -20,6 +20,7 @@ import {
   QueryFilterOptions,
   QueryComparisonOptions,
   QueryFilterComparison,
+  QuerySearch,
 } from '../type';
 import { getKeys } from '../util';
 import { getRawValue, objectToValues } from './sql.util';
@@ -34,7 +35,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
   criteria<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const usePrefix = opts.usePrefix || isProjectingRelations(meta, qm.$project);
-    const prefix = opts.prefix ?? usePrefix ? meta.name : undefined;
+    const prefix = usePrefix ? opts.prefix ?? meta.name : undefined;
     const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
@@ -379,6 +380,19 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
 
     return escapedPrefix + this.escapeId(field?.name ?? key);
+  }
+
+  count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string {
+    const search: Query<E> = {
+      ...qm,
+      $project: [raw('COUNT(*)', 'count')],
+    };
+
+    delete search.$sort;
+    delete search.$skip;
+    delete search.$limit;
+
+    return this.find(entity, search, opts);
   }
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {

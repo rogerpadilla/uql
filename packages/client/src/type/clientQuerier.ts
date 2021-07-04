@@ -1,9 +1,18 @@
-import { Query, QueryOne, Type, UniversalQuerier, QueryCriteria, FieldValue, QueryOptions } from '@uql/core/type';
+import {
+  Query,
+  QueryOne,
+  Type,
+  UniversalQuerier,
+  QueryCriteria,
+  FieldValue,
+  QueryOptions,
+  QuerySearch,
+} from '@uql/core/type';
 import { ClientRepository } from './clientRepository';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientQuerier extends UniversalQuerier {
-  count<E>(entity: Type<E>, qm?: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   findOneById<E>(
     entity: Type<E>,
@@ -15,6 +24,8 @@ export interface ClientQuerier extends UniversalQuerier {
   findOne<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
   findMany<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+
+  findManyAndCount<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
   insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<any>>;
 

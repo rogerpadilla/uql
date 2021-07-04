@@ -351,10 +351,9 @@ export class Item extends BaseEntity {
      * is replaced at runtime
      */
     virtual: raw(({ escapedPrefix, dialect }) => {
-      const query = dialect.find(
+      const query = dialect.count(
         ItemTag,
         {
-          $project: [raw('COUNT(*)')],
           $filter: {
             itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
           },
