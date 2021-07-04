@@ -40,7 +40,7 @@ export class PostgresDialect extends BaseSqlDialect {
     return super.compare(entity, key, val, opts);
   }
 
-  override compareOperator<E, K extends keyof QueryFilterComparison<E>>(
+  override compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     op: keyof QueryFilterSingleFieldOperator<E>,
@@ -58,7 +58,7 @@ export class PostgresDialect extends BaseSqlDialect {
       case '$regex':
         return `${expression} ~ ${this.escape(val)}`;
       default:
-        return super.compareOperator(entity, key, op, val, opts);
+        return super.compareSingleOperator(entity, key, op, val, opts);
     }
   }
 }

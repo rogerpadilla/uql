@@ -143,7 +143,7 @@ export interface QueryDialect {
     opts?: QueryComparisonOptions
   ): string;
 
-  compareOperator<E, K extends keyof QueryFilterComparison<E>>(
+  compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     op: keyof QueryFilterSingleFieldOperator<E>,

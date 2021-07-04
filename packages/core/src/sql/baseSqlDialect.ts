@@ -273,12 +273,14 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
     const operators = getKeys(value) as (keyof QueryFilterSingleFieldOperator<E>)[];
-    const comparisons = operators.map((op) => this.compareOperator(entity, key, op, value[op], opts)).join(' AND ');
+    const comparisons = operators
+      .map((op) => this.compareSingleOperator(entity, key, op, value[op], opts))
+      .join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
-  compareOperator<E, K extends keyof QueryFilterComparison<E>>(
+  compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     op: keyof QueryFilterSingleFieldOperator<E>,
