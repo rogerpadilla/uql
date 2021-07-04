@@ -1,4 +1,4 @@
-import { QueryRaw } from './query';
+import { QueryRaw, QueryRawFn, QueryRawFnOptions } from './query';
 import { Scalar, Type } from './utility';
 
 export type Key<E> = {
@@ -27,11 +27,15 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: any;
   readonly reference?: EntityGetter | ReferenceOptions;
-  readonly virtual?: Scalar | QueryRaw;
-  readonly onInsert?: () => any;
-  readonly onUpdate?: () => any;
-  readonly onDelete?: () => any;
+  readonly virtual?: VirtualValue;
+  readonly onInsert?: OnFieldCallback;
+  readonly onUpdate?: OnFieldCallback;
+  readonly onDelete?: OnFieldCallback;
 };
+
+export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar | QueryRaw;
+
+export type VirtualValue = Scalar | QueryRawFn | QueryRaw;
 
 export type EntityGetter<E = any> = () => Type<E>;
 

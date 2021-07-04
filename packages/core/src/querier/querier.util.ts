@@ -1,5 +1,17 @@
-import { EntityMeta, FieldKey, QueryProject, CascadeType, RelationKey, FieldOptions, Key } from '@uql/core/type';
+import {
+  EntityMeta,
+  FieldKey,
+  QueryProject,
+  CascadeType,
+  RelationKey,
+  FieldOptions,
+  Key,
+  VirtualValue,
+  QueryRawFnOptions,
+  Scalar,
+} from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
+import { Raw } from './raw';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
@@ -56,9 +68,37 @@ export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProj
   return keys.some((key) => meta.relations[key as RelationKey<E>]);
 }
 
-function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
+export function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
   if (Array.isArray(project)) {
     return project.filter((it) => typeof it !== 'function') as Key<E>[];
   }
   return getKeys(project).filter((key) => project[key]) as Key<E>[];
+}
+
+export function getRawValue(opts: QueryRawFnOptions & { value: Raw; usePrefix?: boolean; alias?: string }) {
+  const { prefix = '', dialect, usePrefix, value } = opts;
+  const val = typeof value.value === 'function' ? value.value(opts) : prefix + value.value;
+  const alias = opts.alias ?? value.alias;
+  if (alias) {
+    const fullAlias = usePrefix ? prefix + alias : alias;
+    const escapedFullAlias = dialect.escapeId(fullAlias, true);
+    return `${val} ${escapedFullAlias}`;
+  }
+  return val;
+}
+
+export function getVirtualValue(
+  opts: QueryRawFnOptions & { value: VirtualValue; usePrefix?: boolean; alias?: string }
+): Scalar {
+  const { value } = opts;
+
+  if (value instanceof Raw) {
+    return getRawValue({ ...opts, value });
+  }
+
+  if (typeof value === 'function') {
+    return value(opts);
+  }
+
+  return value as Scalar;
 }

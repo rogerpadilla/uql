@@ -1,4 +1,4 @@
-import { QueryDialect, QueryRaw, QueryRawFnOptions, Scalar } from '../type';
+import { QueryDialect } from '../type';
 import { hasKeys, getKeys } from '../util';
 
 export function mapRows<T>(rows: T[]): T[] {
@@ -35,23 +35,6 @@ export function mapRows<T>(rows: T[]): T[] {
 
     return dto;
   });
-}
-
-export function getRawValue({
-  prefix,
-  escapedPrefix,
-  dialect,
-  usePrefix,
-  value,
-  alias,
-}: QueryRawFnOptions & { usePrefix?: boolean } & QueryRaw): Scalar {
-  const val = typeof value === 'function' ? value({ prefix, escapedPrefix, dialect }) : prefix + value;
-  if (alias) {
-    const fullAlias = usePrefix ? prefix + alias : alias;
-    const escapedAlias = dialect.escapeId(fullAlias, true);
-    return `${val} ${escapedAlias}`;
-  }
-  return val;
 }
 
 export function objectToValues<E>(dialect: QueryDialect, payload: E): string {

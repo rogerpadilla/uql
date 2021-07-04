@@ -47,16 +47,16 @@ export class PostgresDialect extends BaseSqlDialect {
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
-    const expression = this.getCompareExpression(entity, key, opts);
+    const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {
       case '$ilike':
-        return `${expression} ILIKE ${this.escape(`${val}`)}`;
+        return `${comparisonKey} ILIKE ${this.escape(`${val}`)}`;
       case '$istartsWith':
-        return `${expression} ILIKE ${this.escape(`${val}%`)}`;
+        return `${comparisonKey} ILIKE ${this.escape(`${val}%`)}`;
       case '$iendsWith':
-        return `${expression} ILIKE ${this.escape(`%${val}`)}`;
+        return `${comparisonKey} ILIKE ${this.escape(`%${val}`)}`;
       case '$regex':
-        return `${expression} ~ ${this.escape(val)}`;
+        return `${comparisonKey} ~ ${this.escape(val)}`;
       default:
         return super.compareSingleOperator(entity, key, op, val, opts);
     }

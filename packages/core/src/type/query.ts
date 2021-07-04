@@ -100,12 +100,12 @@ export type QueryUpdateResult = {
 };
 
 export type QueryRawFnOptions = {
-  readonly escapedPrefix?: string;
+  readonly dialect: QueryDialect;
   readonly prefix?: string;
-  readonly dialect?: QueryDialect;
+  readonly escapedPrefix?: string;
 };
 
-export type QueryRawFn = (opts: QueryRawFnOptions) => Scalar;
+export type QueryRawFn = (opts?: QueryRawFnOptions) => Scalar;
 
 export type QueryRaw = {
   readonly value: Scalar | QueryRawFn;
@@ -164,5 +164,5 @@ export interface QueryDialect {
 
   escapeId(val: string, forbidQualified?: boolean): string;
 
-  escape(val: any): string;
+  escape(val: any): Scalar;
 }

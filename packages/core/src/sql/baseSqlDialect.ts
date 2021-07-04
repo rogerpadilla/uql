@@ -1,6 +1,15 @@
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
-import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, isProjectingRelations } from '../querier';
+import {
+  getPersistable,
+  getProjectRelationKeys,
+  getPersistables,
+  Raw,
+  raw,
+  isProjectingRelations,
+  getVirtualValue,
+  getRawValue,
+} from '../querier';
 import {
   QueryFilter,
   Query,
@@ -23,7 +32,7 @@ import {
   QuerySearch,
 } from '../type';
 import { getKeys } from '../util';
-import { getRawValue, objectToValues } from './sql.util';
+import { objectToValues } from './sql.util';
 
 export abstract class BaseSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -83,7 +92,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       .map((key) => {
         if (key instanceof Raw) {
           return getRawValue({
-            ...key,
+            value: key,
             dialect: this,
             prefix,
             escapedPrefix,
@@ -94,18 +103,14 @@ export abstract class BaseSqlDialect implements QueryDialect {
         const field = meta.fields[key as FieldKey<E>];
 
         if (field.virtual) {
-          const val = field.virtual;
-          if (val instanceof Raw) {
-            return getRawValue({
-              value: val.value,
-              alias: key as string,
-              dialect: this,
-              prefix,
-              escapedPrefix,
-              usePrefix: opts.usePrefix,
-            });
-          }
-          return val;
+          return getVirtualValue({
+            value: field.virtual,
+            alias: key as string,
+            dialect: this,
+            prefix,
+            escapedPrefix,
+            usePrefix: opts.usePrefix,
+          });
         }
 
         const name = field?.name ?? (key as FieldKey<E>);
@@ -243,7 +248,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const logicalComparison = values
         .map((filterIt: QueryFilter<E>) => {
           if (filterIt instanceof Raw) {
-            return filterIt.value;
+            return getRawValue({ value: filterIt, dialect: this });
           }
           return this.filter(entity, filterIt, {
             prefix: opts.prefix,
@@ -268,8 +273,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
 
     if (val instanceof Raw) {
-      const expression = this.getCompareExpression(entity, key, opts);
-      return `${expression} = ${val.value}`;
+      const comparisonKey = this.getComparisonKey(entity, key, opts);
+      return `${comparisonKey} = ${val.value}`;
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
@@ -288,38 +293,38 @@ export abstract class BaseSqlDialect implements QueryDialect {
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
-    const expression = this.getCompareExpression(entity, key, opts);
+    const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {
       case '$eq':
-        return val === null ? `${expression} IS NULL` : `${expression} = ${this.escape(val)}`;
+        return val === null ? `${comparisonKey} IS NULL` : `${comparisonKey} = ${this.escape(val)}`;
       case '$ne':
-        return val === null ? `${expression} IS NOT NULL` : `${expression} <> ${this.escape(val)}`;
+        return val === null ? `${comparisonKey} IS NOT NULL` : `${comparisonKey} <> ${this.escape(val)}`;
       case '$gt':
-        return `${expression} > ${this.escape(val)}`;
+        return `${comparisonKey} > ${this.escape(val)}`;
       case '$gte':
-        return `${expression} >= ${this.escape(val)}`;
+        return `${comparisonKey} >= ${this.escape(val)}`;
       case '$lt':
-        return `${expression} < ${this.escape(val)}`;
+        return `${comparisonKey} < ${this.escape(val)}`;
       case '$lte':
-        return `${expression} <= ${this.escape(val)}`;
+        return `${comparisonKey} <= ${this.escape(val)}`;
       case '$istartsWith':
-        return `LOWER(${expression}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$startsWith':
-        return `${expression} LIKE ${this.escape((val as string) + '%')}`;
+        return `${comparisonKey} LIKE ${this.escape((val as string) + '%')}`;
       case '$iendsWith':
-        return `LOWER(${expression}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
       case '$endsWith':
-        return `${expression} LIKE ${this.escape('%' + (val as string))}`;
+        return `${comparisonKey} LIKE ${this.escape('%' + (val as string))}`;
       case '$ilike':
-        return `LOWER(${expression}) LIKE ${this.escape((val as string).toLowerCase())}`;
+        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase())}`;
       case '$like':
-        return `${expression} LIKE ${this.escape(val as string)}`;
+        return `${comparisonKey} LIKE ${this.escape(val as string)}`;
       case '$in':
-        return `${expression} IN (${this.escape(val)})`;
+        return `${comparisonKey} IN (${this.escape(val)})`;
       case '$nin':
-        return `${expression} NOT IN (${this.escape(val)})`;
+        return `${comparisonKey} NOT IN (${this.escape(val)})`;
       case '$regex':
-        return `${expression} REGEXP ${this.escape(val)}`;
+        return `${comparisonKey} REGEXP ${this.escape(val)}`;
       default:
         throw new TypeError(`unknown operator: ${op}`);
     }
@@ -361,22 +366,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return sql;
   }
 
-  getCompareExpression<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
+  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
     const meta = getMeta(entity);
     const escapedPrefix = prefix ? `${this.escapeId(prefix, true)}.` : '';
     const field = meta.fields[key];
 
     if (field?.virtual) {
-      const val = field.virtual;
-      if (val instanceof Raw) {
-        return getRawValue({
-          value: val.value,
-          dialect: this,
-          prefix,
-          escapedPrefix,
-        });
-      }
-      return val as Scalar;
+      return getVirtualValue({
+        value: field.virtual,
+        dialect: this,
+        prefix,
+        escapedPrefix,
+      });
     }
 
     return escapedPrefix + this.escapeId(field?.name ?? key);
@@ -423,7 +424,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     if (opts.softDelete === undefined || opts.softDelete) {
       if (meta.softDeleteKey) {
         const criteria = this.criteria(entity, qm, opts);
-        const value = meta.fields[meta.softDeleteKey].onDelete();
+        const value = this.escape(meta.fields[meta.softDeleteKey].onDelete());
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDeleteKey)} = ${value}${criteria}`;
       } else if (opts.softDelete) {
         throw new TypeError(`'${meta.name}' has not enabled 'softDelete'`);
@@ -449,7 +450,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
     );
   }
 
-  escape(val: any): string {
-    return escape(val);
+  escape(value: any): Scalar {
+    if (value instanceof Raw) {
+      return getRawValue({ value, dialect: this });
+    }
+    return escape(value);
   }
 }
