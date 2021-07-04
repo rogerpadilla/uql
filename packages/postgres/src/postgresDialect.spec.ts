@@ -63,11 +63,11 @@ class PostgresDialectSpec {
     );
   }
 
-  shouldFind$startsWith() {
+  shouldFind$istartsWith() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { name: { $startsWith: 'Some' } },
+        $filter: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -77,7 +77,7 @@ class PostgresDialectSpec {
     expect(
       this.dialect.find(User, {
         $project: { id: true },
-        $filter: { name: { $startsWith: 'Some', $ne: 'Something' } },
+        $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -87,11 +87,11 @@ class PostgresDialectSpec {
     );
   }
 
-  shouldFind$endsWith() {
+  shouldFind$iendsWith() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { name: { $endsWith: 'Some' } },
+        $filter: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -101,13 +101,37 @@ class PostgresDialectSpec {
     expect(
       this.dialect.find(User, {
         $project: { id: true },
-        $filter: { name: { $endsWith: 'Some', $ne: 'Something' } },
+        $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       })
     ).toBe(
       `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+    );
+  }
+
+  shouldFind$ilike() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $ilike: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+
+    expect(
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe(
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
     );
   }
 

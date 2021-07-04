@@ -5,7 +5,7 @@ import {
   QueryFilter,
   Query,
   Scalar,
-  QuerySingleFieldOperator,
+  QueryFilterSingleFieldOperator,
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
@@ -13,12 +13,13 @@ import {
   QueryProject,
   Type,
   QueryCriteria,
-  RelationKey,
   QueryProjectArray,
   QueryOptions,
   QueryDialect,
   QueryFieldValue,
   QueryFilterOptions,
+  QueryComparisonOptions,
+  QueryFilterComparison,
 } from '../type';
 import { getKeys } from '../util';
 import { getRawValue, objectToValues } from './sql.util';
@@ -216,10 +217,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
       return '';
     }
 
-    const hasMultiKeys = keys.length > 1;
+    opts = { ...opts, usePrecedence: keys.length > 1 };
 
     let sql = keys
-      .map((key) => this.compare(entity, key as FieldKey<E>, filter[key], hasMultiKeys, opts))
+      .map((key) => this.compare(entity, key as keyof QueryFilterComparison<E>, filter[key], opts))
       .join(` AND `);
 
     if (usePrecedence) {
@@ -229,12 +230,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends FieldKey<E>>(
+  compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     val: QueryFieldValue<E[K]>,
-    hasMultiKeys: boolean,
-    opts?: QueryOptions
+    opts?: QueryComparisonOptions
   ): string {
     if (key === '$and' || key === '$or') {
       const values = val as E[K][];
@@ -251,7 +251,13 @@ export abstract class BaseSqlDialect implements QueryDialect {
           });
         })
         .join(key === '$or' ? ' OR ' : ' AND ');
-      return hasMultiKeys && hasManyItems ? `(${logicalComparison})` : logicalComparison;
+      return opts.usePrecedence && hasManyItems ? `(${logicalComparison})` : logicalComparison;
+    }
+
+    if (key === '$not' || key === '$nor') {
+      const op = (key === '$not' ? '$and' : '$or') as K;
+      const values = val as E[K][];
+      return `NOT ` + this.compare(entity, op, values, { ...opts, usePrecedence: values.length > 1 });
     }
 
     if (key === '$text') {
@@ -266,16 +272,16 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
-    const operators = getKeys(value) as (keyof QuerySingleFieldOperator<E>)[];
+    const operators = getKeys(value) as (keyof QueryFilterSingleFieldOperator<E>)[];
     const comparisons = operators.map((op) => this.compareOperator(entity, key, op, value[op], opts)).join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
-  compareOperator<E, K extends FieldKey<E>>(
+  compareOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QuerySingleFieldOperator<E>,
+    op: keyof QueryFilterSingleFieldOperator<E>,
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
@@ -293,10 +299,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
         return `${expression} < ${this.escape(val)}`;
       case '$lte':
         return `${expression} <= ${this.escape(val)}`;
-      case '$startsWith':
+      case '$istartsWith':
         return `LOWER(${expression}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
-      case '$endsWith':
+      case '$startsWith':
+        return `${expression} LIKE ${this.escape((val as string) + '%')}`;
+      case '$iendsWith':
         return `LOWER(${expression}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+      case '$endsWith':
+        return `${expression} LIKE ${this.escape('%' + (val as string))}`;
+      case '$ilike':
+        return `LOWER(${expression}) LIKE ${this.escape((val as string).toLowerCase())}`;
+      case '$like':
+        return `${expression} LIKE ${this.escape(val as string)}`;
       case '$in':
         return `${expression} IN (${this.escape(val)})`;
       case '$nin':

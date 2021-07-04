@@ -1,9 +1,10 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import {
-  FieldKey,
+  QueryComparisonOptions,
   QueryFieldValue,
+  QueryFilterComparison,
   QueryOptions,
-  QuerySingleFieldOperator,
+  QueryFilterSingleFieldOperator,
   QueryTextSearchOptions,
   Type,
 } from '@uql/core/type';
@@ -21,12 +22,11 @@ export class PostgresDialect extends BaseSqlDialect {
     return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  override compare<E, K extends FieldKey<E>>(
+  override compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     val: QueryFieldValue<E[K]>,
-    hasMultiKeys: boolean,
-    opts?: QueryOptions
+    opts?: QueryComparisonOptions
   ): string {
     if (key === '$text') {
       const meta = getMeta(entity);
@@ -37,21 +37,23 @@ export class PostgresDialect extends BaseSqlDialect {
       return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
     }
 
-    return super.compare(entity, key, val, hasMultiKeys, opts);
+    return super.compare(entity, key, val, opts);
   }
 
-  override compareOperator<E, K extends FieldKey<E>>(
+  override compareOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QuerySingleFieldOperator<E>,
+    op: keyof QueryFilterSingleFieldOperator<E>,
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
     const expression = this.getCompareExpression(entity, key, opts);
     switch (op) {
-      case '$startsWith':
+      case '$ilike':
+        return `${expression} ILIKE ${this.escape(`${val}`)}`;
+      case '$istartsWith':
         return `${expression} ILIKE ${this.escape(`${val}%`)}`;
-      case '$endsWith':
+      case '$iendsWith':
         return `${expression} ILIKE ${this.escape(`%${val}`)}`;
       case '$regex':
         return `${expression} ~ ${this.escape(val)}`;

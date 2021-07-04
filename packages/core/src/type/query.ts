@@ -22,60 +22,48 @@ export type QueryProjectRelation<E> = {
     | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
 
-export type QueryLogicalValue<T> = (FieldValue<T> | QueryFieldMap<T> | QueryRaw)[];
+export type QueryLogicalEntry<E> = (FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw)[];
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
   readonly $fields?: FieldKey<E>[];
 };
 
-export type QueryMultiFieldOperator<T> = {
-  readonly $and?: QueryLogicalValue<T>;
-  readonly $or?: QueryLogicalValue<T>;
-  readonly $text?: QueryTextSearchOptions<T>;
+export type QueryFilterMultiFieldOperator<E> = {
+  readonly $and?: QueryLogicalEntry<E>;
+  readonly $or?: QueryLogicalEntry<E>;
+  readonly $not?: QueryLogicalEntry<E>;
+  readonly $nor?: QueryLogicalEntry<E>;
+  readonly $text?: QueryTextSearchOptions<E>;
 };
 
-export type QuerySingleFieldOperator<T> = {
-  readonly $eq?: T;
-  readonly $ne?: T;
+export type QueryFilterSingleFieldOperator<V> = {
+  readonly $eq?: V;
+  readonly $ne?: V;
   readonly $lt?: number;
   readonly $lte?: number;
   readonly $gt?: number;
   readonly $gte?: number;
   readonly $startsWith?: string;
+  readonly $istartsWith?: string;
   readonly $endsWith?: string;
-  readonly $in?: T[];
-  readonly $nin?: T[];
+  readonly $iendsWith?: string;
+  readonly $like?: string;
+  readonly $ilike?: string;
+  readonly $in?: V[];
+  readonly $nin?: V[];
   readonly $regex?: string;
 };
 
-// export type OperatorMap<T> = {
-//   $and?: Query<T>[];
-//   $or?: Query<T>[];
-//   $eq?: ExpandScalar<T>;
-//   $ne?: ExpandScalar<T>;
-//   $in?: ExpandScalar<T>[];
-//   $nin?: ExpandScalar<T>[];
-//   $not?: Query<T>;
-//   $gt?: ExpandScalar<T>;
-//   $gte?: ExpandScalar<T>;
-//   $lt?: ExpandScalar<T>;
-//   $lte?: ExpandScalar<T>;
-//   $like?: string;
-//   $re?: string;
-//   $ilike?: string;
-//   $overlap?: string[];
-//   $contains?: string[];
-//   $contained?: string[];
-// };
+export type QueryFieldValue<V> = V | V[] | QueryFilterSingleFieldOperator<V> | QueryRaw;
 
-export type QueryFieldValue<V> = V | V[] | QuerySingleFieldOperator<V> | QueryRaw;
-
-export type QueryFieldMap<E> = {
+export type QueryFilterFieldComparison<E> = {
   readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
 };
 
-export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFieldMap<E> | QueryMultiFieldOperator<E>;
+export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterMultiFieldOperator<E>;
+
+export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E>;
 
 export type QuerySort<E> = {
   readonly [K in FieldKey<E>]?: -1 | 1;
@@ -121,11 +109,11 @@ export type QueryRaw = {
   readonly alias?: string;
 };
 
-export type QueryCompareOptions = QueryOptions & {
+export type QueryComparisonOptions = QueryOptions & {
   readonly usePrecedence?: boolean;
 };
 
-export type QueryFilterOptions = QueryCompareOptions & {
+export type QueryFilterOptions = QueryComparisonOptions & {
   readonly clause?: 'WHERE' | 'HAVING' | false;
 };
 
@@ -148,18 +136,17 @@ export interface QueryDialect {
 
   filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: QueryFilterOptions): string;
 
-  compare<E, K extends FieldKey<E>>(
+  compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
     val: QueryFieldValue<E[K]>,
-    hasMultiKeys: boolean,
-    opts?: QueryOptions
+    opts?: QueryComparisonOptions
   ): string;
 
-  compareOperator<E, K extends FieldKey<E>>(
+  compareOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QuerySingleFieldOperator<E>,
+    op: keyof QueryFilterSingleFieldOperator<E>,
     val: QueryFieldValue<E[K]>,
     opts?: QueryOptions
   ): string;

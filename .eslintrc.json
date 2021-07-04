@@ -78,7 +78,7 @@
       "rules": {
         "@typescript-eslint/unbound-method": 0,
         "@typescript-eslint/no-empty-function": 0,
-        "max-lines": ["error", 1000]
+        "max-lines": ["error", 1200]
       }
     }
   ]
