@@ -140,7 +140,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     let joinsTables = '';
 
     for (const relKey of relations) {
-      const relOpts = meta.relations[relKey as RelationKey<E>];
+      const relOpts = meta.relations[relKey];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
@@ -191,7 +191,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts: QueryFilterOptions = {}): string {
     const meta = getMeta(entity);
-    const { prefix, usePrecedence, clause = 'WHERE', softDelete } = opts;
+    const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
     if (filter !== undefined && (typeof filter !== 'object' || Array.isArray(filter))) {
       filter = {
@@ -219,26 +219,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const hasMultiKeys = keys.length > 1;
 
     let sql = keys
-      .map((key) => {
-        const value = filter[key];
-        if ((key === '$and' || key === '$or') && Array.isArray(value)) {
-          const hasManyItems = value.length > 1;
-          const logicalComparison = value
-            .map((filterIt: QueryFilter<E>) => {
-              if (filterIt instanceof Raw) {
-                return filterIt.value;
-              }
-              return this.filter(entity, filterIt, {
-                prefix,
-                usePrecedence: hasManyItems && getKeys(filterIt).length > 1,
-                clause: false,
-              });
-            })
-            .join(key === '$or' ? ' OR ' : ' AND ');
-          return hasMultiKeys && hasManyItems ? `(${logicalComparison})` : logicalComparison;
-        }
-        return this.compare(entity, key as FieldKey<E>, value, opts);
-      })
+      .map((key) => this.compare(entity, key as FieldKey<E>, filter[key], hasMultiKeys, opts))
       .join(` AND `);
 
     if (usePrecedence) {
@@ -248,22 +229,47 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends FieldKey<E>>(entity: Type<E>, key: K, val: QueryFieldValue<E[K]>, opts?: QueryOptions): string {
-    switch (key) {
-      case '$text':
-        const meta = getMeta(entity);
-        const search = val as QueryTextSearchOptions<E>;
-        return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
-      default:
-        if (val instanceof Raw) {
-          const expression = this.getCompareExpression(entity, key, opts);
-          return `${expression} = ${val.value}`;
-        }
-        const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
-        const operators = getKeys(value) as (keyof QuerySingleFieldOperator<E>)[];
-        const comparisons = operators.map((op) => this.compareOperator(entity, key, op, value[op], opts)).join(' AND ');
-        return operators.length > 1 ? `(${comparisons})` : comparisons;
+  compare<E, K extends FieldKey<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFieldValue<E[K]>,
+    hasMultiKeys: boolean,
+    opts?: QueryOptions
+  ): string {
+    if (key === '$and' || key === '$or') {
+      const values = val as E[K][];
+      const hasManyItems = values.length > 1;
+      const logicalComparison = values
+        .map((filterIt: QueryFilter<E>) => {
+          if (filterIt instanceof Raw) {
+            return filterIt.value;
+          }
+          return this.filter(entity, filterIt, {
+            prefix: opts.prefix,
+            usePrecedence: hasManyItems && getKeys(filterIt).length > 1,
+            clause: false,
+          });
+        })
+        .join(key === '$or' ? ' OR ' : ' AND ');
+      return hasMultiKeys && hasManyItems ? `(${logicalComparison})` : logicalComparison;
     }
+
+    if (key === '$text') {
+      const meta = getMeta(entity);
+      const search = val as QueryTextSearchOptions<E>;
+      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
+    }
+
+    if (val instanceof Raw) {
+      const expression = this.getCompareExpression(entity, key, opts);
+      return `${expression} = ${val.value}`;
+    }
+
+    const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
+    const operators = getKeys(value) as (keyof QuerySingleFieldOperator<E>)[];
+    const comparisons = operators.map((op) => this.compareOperator(entity, key, op, value[op], opts)).join(' AND ');
+
+    return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
   compareOperator<E, K extends FieldKey<E>>(
