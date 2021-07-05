@@ -193,7 +193,7 @@ export class BaseSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.conn.all).toBeCalledWith(
-      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
+      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
     expect(this.querier.conn.all).toBeCalledTimes(1);
@@ -206,12 +206,12 @@ export class BaseSqlQuerierSpec implements Spec {
         id: 1,
       },
       $filter: {
-        $nexists: raw(({ prefix, dialect }) =>
+        $nexists: raw(({ escapedPrefix, dialect }) =>
           dialect.find(
             User,
             {
               $project: ['id'],
-              $filter: { companyId: raw(dialect.escapeId(prefix, true, true) + dialect.escapeId(`companyId`)) },
+              $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
             { usePrefix: true }
           )
@@ -220,7 +220,7 @@ export class BaseSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.conn.all).toBeCalledWith(
-      'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
+      'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
     expect(this.querier.conn.all).toBeCalledTimes(1);

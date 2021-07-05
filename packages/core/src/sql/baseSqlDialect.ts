@@ -43,8 +43,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   criteria<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const usePrefix = opts.usePrefix || isProjectingRelations(meta, qm.$project);
-    const prefix = usePrefix ? opts.prefix ?? meta.name : undefined;
+    const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
     const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
     const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
@@ -125,11 +124,12 @@ export abstract class BaseSqlDialect implements QueryDialect {
       .join(', ');
   }
 
-  select<E>(entity: Type<E>, qm: Query<E>): string {
+  select<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const hasProjectRelations = isProjectingRelations(meta, qm.$project);
+    const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
     const baseColumns = this.project(entity, qm.$project, {
-      prefix: hasProjectRelations ? meta.name : undefined,
+      softDelete: opts.softDelete,
+      prefix,
     });
     const { joinsColumns, joinsTables } = this.populate(entity, qm.$project);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
@@ -410,11 +410,12 @@ export abstract class BaseSqlDialect implements QueryDialect {
     delete search.$skip;
     delete search.$limit;
 
-    return this.find(entity, search, opts);
+    const select = this.select<E>(entity, search);
+    return select + this.criteria(entity, search, opts);
   }
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
-    const select = this.select<E>(entity, qm);
+    const select = this.select<E>(entity, qm, opts);
     return select + this.criteria(entity, qm, opts);
   }
 
