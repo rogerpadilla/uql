@@ -135,7 +135,11 @@ export interface QueryDialect {
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
 
-  project<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions): string;
+  project<E>(
+    entity: Type<E>,
+    project: QueryProject<E>,
+    opts: QueryOptions
+  ): { baseColumns: string; joinsColumns: string; joinsTables: string };
 
   populate<E>(entity: Type<E>, opts?: QueryOptions): { joinsColumns: string; joinsTables: string };
 

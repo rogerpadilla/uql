@@ -52,7 +52,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return where + group + having + sort + pager;
   }
 
-  project<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
+  project<E>(
+    entity: Type<E>,
+    project: QueryProject<E>,
+    opts: QueryOptions = {}
+  ): { baseColumns: string; joinsColumns: string; joinsTables: string } {
     const meta = getMeta(entity);
     let projectArray: QueryProjectArray<E>;
 
@@ -79,7 +83,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
       projectArray = getKeys(meta.fields) as FieldKey<E>[];
     }
 
-    return this.projectArray(entity, projectArray, opts);
+    const baseColumns = this.projectArray(entity, projectArray, opts);
+    const { joinsColumns, joinsTables } = this.populate(entity, project);
+
+    return { baseColumns, joinsColumns, joinsTables };
   }
 
   projectArray<E>(entity: Type<E>, project: QueryProjectArray<E>, opts: QueryOptions = {}): string {
@@ -127,11 +134,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
   select<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
-    const baseColumns = this.project(entity, qm.$project, {
+    const { baseColumns, joinsColumns, joinsTables } = this.project(entity, qm.$project, {
       softDelete: opts.softDelete,
       prefix,
     });
-    const { joinsColumns, joinsTables } = this.populate(entity, qm.$project);
     return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
   }
 
@@ -159,7 +165,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const relProject = project[relKey as string];
       const relQuery = isProjectArray ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
 
-      const relColumns = this.project(relEntity, relQuery.$project, {
+      const { baseColumns: relColumns } = this.project(relEntity, relQuery.$project, {
         prefix: joinRelAlias,
         usePrefix: true,
       });
