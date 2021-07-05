@@ -35,6 +35,8 @@ export type QueryFilterMultiFieldOperator<E> = {
   readonly $not?: QueryLogicalEntry<E>;
   readonly $nor?: QueryLogicalEntry<E>;
   readonly $text?: QueryTextSearchOptions<E>;
+  readonly $exists?: QueryRaw;
+  readonly $nexists?: QueryRaw;
 };
 
 export type QueryFilterSingleFieldOperator<V> = {
@@ -63,7 +65,7 @@ export type QueryFilterFieldComparison<E> = {
 
 export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterMultiFieldOperator<E>;
 
-export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E>;
+export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 
 export type QuerySort<E> = {
   readonly [K in FieldKey<E>]?: -1 | 1;
@@ -162,7 +164,7 @@ export interface QueryDialect {
 
   pager(value: QueryPager): string;
 
-  escapeId(val: string, forbidQualified?: boolean): string;
+  escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string;
 
   escape(val: any): Scalar;
 }

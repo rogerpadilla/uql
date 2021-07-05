@@ -173,6 +173,60 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.conn.run).toBeCalledTimes(0);
   }
 
+  async shouldFind$exists() {
+    await this.querier.findMany(Item, {
+      $project: {
+        id: 1,
+      },
+      $filter: {
+        $exists: raw(({ escapedPrefix, dialect }) =>
+          dialect.find(
+            User,
+            {
+              $project: ['id'],
+              $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
+            },
+            { usePrefix: true }
+          )
+        ),
+      },
+    });
+
+    expect(this.querier.conn.all).toBeCalledWith(
+      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
+    );
+
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+  }
+
+  async shouldFind$nexists() {
+    await this.querier.findMany(Item, {
+      $project: {
+        id: 1,
+      },
+      $filter: {
+        $nexists: raw(({ prefix, dialect }) =>
+          dialect.find(
+            User,
+            {
+              $project: ['id'],
+              $filter: { companyId: raw(dialect.escapeId(prefix, true, true) + dialect.escapeId(`companyId`)) },
+            },
+            { usePrefix: true }
+          )
+        ),
+      },
+    });
+
+    expect(this.querier.conn.all).toBeCalledWith(
+      'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
+    );
+
+    expect(this.querier.conn.all).toBeCalledTimes(1);
+    expect(this.querier.conn.run).toBeCalledTimes(0);
+  }
+
   async shouldFindOneAndProjectOneToManyOnly() {
     await this.querier.insertMany(InventoryAdjustment, [
       {

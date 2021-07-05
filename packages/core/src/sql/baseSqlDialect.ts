@@ -86,7 +86,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
   projectArray<E>(entity: Type<E>, project: QueryProjectArray<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
-    const escapedPrefix = opts.prefix ? `${this.escapeId(opts.prefix, true)}.` : '';
+    const escapedPrefix = this.escapeId(opts.prefix, true, true);
 
     return project
       .map((key) => {
@@ -242,13 +242,20 @@ export abstract class BaseSqlDialect implements QueryDialect {
     val: QueryFieldValue<E[K]>,
     opts?: QueryComparisonOptions
   ): string {
+    const meta = getMeta(entity);
+
     if (key === '$and' || key === '$or') {
       const values = val as E[K][];
       const hasManyItems = values.length > 1;
       const logicalComparison = values
         .map((filterIt: QueryFilter<E>) => {
           if (filterIt instanceof Raw) {
-            return getRawValue({ value: filterIt, dialect: this });
+            return getRawValue({
+              value: filterIt,
+              dialect: this,
+              prefix: opts.prefix,
+              escapedPrefix: this.escapeId(opts.prefix, true, true),
+            });
           }
           return this.filter(entity, filterIt, {
             prefix: opts.prefix,
@@ -266,8 +273,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
       return `NOT ` + this.compare(entity, op, values, { ...opts, usePrecedence: values.length > 1 });
     }
 
+    if (key === '$exists' || key === '$nexists') {
+      const value = val as Raw;
+      const query = getRawValue({
+        value,
+        dialect: this,
+        prefix: meta.name,
+        escapedPrefix: this.escapeId(meta.name, false, true),
+      });
+      return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
+    }
+
     if (key === '$text') {
-      const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
       return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
     }
@@ -368,7 +385,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
   getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
     const meta = getMeta(entity);
-    const escapedPrefix = prefix ? `${this.escapeId(prefix, true)}.` : '';
+    const escapedPrefix = this.escapeId(prefix, true, true);
     const field = meta.fields[key];
 
     if (field?.virtual) {
@@ -436,7 +453,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
   }
 
-  escapeId(val: string, forbidQualified?: boolean): string {
+  escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {
+    if (!val) {
+      return '';
+    }
+
     if (!forbidQualified && val.includes('.')) {
       return val
         .split('.')
@@ -444,10 +465,13 @@ export abstract class BaseSqlDialect implements QueryDialect {
         .join('.');
     }
 
-    return (
-      // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
-      this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar
-    );
+    // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
+    const escaped =
+      this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar;
+
+    const suffix = addDot ? '.' : '';
+
+    return escaped + suffix;
   }
 
   escape(value: any): Scalar {

@@ -68,9 +68,9 @@ export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProj
   return keys.some((key) => meta.relations[key as RelationKey<E>]);
 }
 
-export function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
+function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
   if (Array.isArray(project)) {
-    return project.filter((it) => typeof it !== 'function') as Key<E>[];
+    return project as Key<E>[];
   }
   return getKeys(project).filter((key) => project[key]) as Key<E>[];
 }
