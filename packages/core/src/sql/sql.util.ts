@@ -1,4 +1,3 @@
-import { QueryDialect } from '../type';
 import { hasKeys, getKeys } from '../util';
 
 export function mapRows<T>(rows: T[]): T[] {
@@ -35,12 +34,6 @@ export function mapRows<T>(rows: T[]): T[] {
 
     return dto;
   });
-}
-
-export function objectToValues<E>(dialect: QueryDialect, payload: E): string {
-  return getKeys(payload)
-    .map((key) => `${dialect.escapeId(key)} = ${dialect.escape(payload[key])}`)
-    .join(', ');
 }
 
 function obtainAttrsPaths<T>(row: T) {

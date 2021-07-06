@@ -64,11 +64,7 @@ export abstract class BaseQuerier implements Querier {
       const relEntity = relOpts.entity();
       const relProject = clone(project[relKey as string]);
       const relQuery: Query<any> =
-        relProject === undefined || relProject === true
-          ? {}
-          : Array.isArray(relProject)
-          ? { $project: relProject }
-          : relProject;
+        relProject === undefined || relProject === true ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
       const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 
@@ -107,13 +103,7 @@ export abstract class BaseQuerier implements Querier {
     }
   }
 
-  protected putChildrenInParents<E>(
-    parents: E[],
-    children: E[],
-    parentIdKey: string,
-    referenceKey: string,
-    relKey: string
-  ): void {
+  protected putChildrenInParents<E>(parents: E[], children: E[], parentIdKey: string, referenceKey: string, relKey: string): void {
     const childrenByParentMap = children.reduce((acc, child) => {
       const parenId = child[referenceKey];
       if (!acc[parenId]) {
@@ -157,11 +147,7 @@ export abstract class BaseQuerier implements Querier {
 
     const ids = founds.map((found) => found[meta.id]);
 
-    await Promise.all(
-      ids.map((id) =>
-        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
-      )
-    );
+    await Promise.all(ids.map((id) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))));
   }
 
   protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[], opts?: QueryOptions): Promise<void> {
@@ -210,12 +196,7 @@ export abstract class BaseQuerier implements Querier {
     ]);
   }
 
-  protected async saveRelation<E>(
-    entity: Type<E>,
-    payload: E,
-    relKey: RelationKey<E>,
-    isUpdate?: boolean
-  ): Promise<void> {
+  protected async saveRelation<E>(entity: Type<E>, payload: E, relKey: RelationKey<E>, isUpdate?: boolean): Promise<void> {
     const meta = getMeta(entity);
     const id = payload[meta.id];
     const { entity: entityGetter, cardinality, references, through } = meta.relations[relKey];

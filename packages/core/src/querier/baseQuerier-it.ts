@@ -1,15 +1,5 @@
 import { getEntities } from '../entity/decorator';
-import {
-  Company,
-  InventoryAdjustment,
-  Item,
-  ItemAdjustment,
-  LedgerAccount,
-  MeasureUnit,
-  Spec,
-  TaxCategory,
-  User,
-} from '../test';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, TaxCategory, User } from '../test';
 import { Querier, QuerierPool } from '../type';
 
 export abstract class BaseQuerierIt<Q extends Querier> implements Spec {

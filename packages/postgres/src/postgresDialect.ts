@@ -31,9 +31,7 @@ export class PostgresDialect extends BaseSqlDialect {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields
-        .map((field) => this.escapeId(meta.fields[field]?.name ?? field))
-        .join(` || ' ' || `);
+      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field)).join(` || ' ' || `);
       return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
     }
 

@@ -10,10 +10,7 @@ export class MongoDialect {
 
     if (
       filter !== undefined &&
-      (typeof filter !== 'object' ||
-        Array.isArray(filter) ||
-        filter instanceof ObjectId ||
-        ObjectId.isValid(filter as string))
+      (typeof filter !== 'object' || Array.isArray(filter) || filter instanceof ObjectId || ObjectId.isValid(filter as string))
     ) {
       filter = {
         [meta.id]: filter,
@@ -128,9 +125,7 @@ export class MongoDialect {
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relMeta = getMeta(relOpts.entity());
-      res[relKey] = Array.isArray(res[relKey])
-        ? this.normalizeIds(relMeta, res[relKey])
-        : this.normalizeId(relMeta, res[relKey]);
+      res[relKey] = Array.isArray(res[relKey]) ? this.normalizeIds(relMeta, res[relKey]) : this.normalizeId(relMeta, res[relKey]);
     }
 
     return res as E;

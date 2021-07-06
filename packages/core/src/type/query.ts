@@ -1,7 +1,16 @@
 import { FieldKey, FieldValue, Key, RelationKey } from './entity';
 import { BooleanLike, Scalar, Type, Unpacked } from './utility';
 
-export type QueryOptions = { readonly prefix?: string; readonly usePrefix?: boolean; readonly softDelete?: boolean };
+export type QueryOptions = {
+  readonly softDelete?: boolean;
+  readonly prefix?: string;
+  readonly autoPrefix?: boolean;
+};
+
+export type QueryProjectOptions = {
+  readonly prefix?: string;
+  readonly autoPrefixAlias?: boolean;
+};
 
 export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
 
@@ -16,10 +25,7 @@ export type QueryProjectField<E> =
   | { [K: string]: QueryRaw };
 
 export type QueryProjectRelation<E> = {
-  [K in RelationKey<E>]?:
-    | BooleanLike
-    | Key<Unpacked<E[K]>>[]
-    | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
+  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
 
 export type QueryLogicalEntry<E> = (FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw)[];

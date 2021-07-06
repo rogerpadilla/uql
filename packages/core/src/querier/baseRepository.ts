@@ -1,14 +1,4 @@
-import {
-  FieldValue,
-  Querier,
-  Query,
-  QueryCriteria,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  Repository,
-  Type,
-} from '../type';
+import { FieldValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Repository, Type } from '../type';
 
 export class BaseRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}

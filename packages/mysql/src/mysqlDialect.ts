@@ -1,12 +1,6 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { BaseSqlDialect } from '@uql/core/sql';
-import {
-  QueryComparisonOptions,
-  QueryFieldValue,
-  QueryFilterComparison,
-  QueryTextSearchOptions,
-  Type,
-} from '@uql/core/type';
+import { QueryComparisonOptions, QueryFieldValue, QueryFilterComparison, QueryTextSearchOptions, Type } from '@uql/core/type';
 
 export class MySqlDialect extends BaseSqlDialect {
   constructor() {

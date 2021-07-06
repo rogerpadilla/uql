@@ -222,7 +222,7 @@ export class Item extends BaseEntity {
             itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
           },
         },
-        { usePrefix: true }
+        { autoPrefix: true }
       );
       return `(${query})`;
     }),

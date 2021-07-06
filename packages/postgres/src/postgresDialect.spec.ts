@@ -47,9 +47,7 @@ class PostgresDialectSpec {
         email: 'someemail@example.com',
         createdAt: 123,
       })
-    ).toBe(
-      `INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`
-    );
+    ).toBe(`INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`);
   }
 
   shouldInsertWithOnInsertId() {
@@ -58,9 +56,7 @@ class PostgresDialectSpec {
         name: 'Some Name',
         createdAt: 123,
       })
-    ).toMatch(
-      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/
-    );
+    ).toMatch(/^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/);
   }
 
   shouldFind$istartsWith() {
@@ -82,9 +78,7 @@ class PostgresDialectSpec {
         $skip: 0,
         $limit: 50,
       })
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
-    );
+    ).toBe(`SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
   }
 
   shouldFind$iendsWith() {
@@ -106,9 +100,7 @@ class PostgresDialectSpec {
         $skip: 0,
         $limit: 50,
       })
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
-    );
+    ).toBe(`SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
   }
 
   shouldFind$ilike() {
@@ -130,9 +122,7 @@ class PostgresDialectSpec {
         $skip: 0,
         $limit: 50,
       })
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
-    );
+    ).toBe(`SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
   }
 
   shouldFind$regex() {
@@ -151,9 +141,7 @@ class PostgresDialectSpec {
         $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
         $limit: 30,
       })
-    ).toBe(
-      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`
-    );
+    ).toBe(`SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`);
 
     expect(
       this.dialect.find(User, {

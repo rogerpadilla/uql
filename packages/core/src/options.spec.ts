@@ -1,13 +1,4 @@
-import {
-  getOptions,
-  getQuerier,
-  getQuerierPool,
-  getRepository,
-  isLogging,
-  log,
-  setLogging,
-  setOptions,
-} from './options';
+import { getOptions, getQuerier, getQuerierPool, getRepository, isLogging, log, setLogging, setOptions } from './options';
 import { User } from './test';
 import { Querier } from './type';
 

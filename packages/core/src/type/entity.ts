@@ -68,10 +68,7 @@ export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
 export type RelationOneToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 
-export type RelationOneToManyOptions<E> =
-  | RelationOptionsOwner<E>
-  | RelationOptionsInverseSide<E>
-  | RelationOptionsThroughOwner<E>;
+export type RelationOneToManyOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E> | RelationOptionsThroughOwner<E>;
 
 export type RelationManyToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 

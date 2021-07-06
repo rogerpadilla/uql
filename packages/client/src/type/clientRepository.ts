@@ -1,12 +1,4 @@
-import {
-  Query,
-  QueryOne,
-  UniversalRepository,
-  QueryCriteria,
-  FieldValue,
-  QueryOptions,
-  QuerySearch,
-} from '@uql/core/type';
+import { Query, QueryOne, UniversalRepository, QueryCriteria, FieldValue, QueryOptions, QuerySearch } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {

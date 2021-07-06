@@ -75,21 +75,19 @@ function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
   return getKeys(project).filter((key) => project[key]) as Key<E>[];
 }
 
-export function getRawValue(opts: QueryRawFnOptions & { value: Raw; usePrefix?: boolean; alias?: string }) {
-  const { prefix = '', dialect, usePrefix, value } = opts;
+export function getRawValue(opts: QueryRawFnOptions & { value: Raw; alias?: string; autoPrefixAlias?: boolean }) {
+  const { value, prefix = '', dialect, autoPrefixAlias } = opts;
   const val = typeof value.value === 'function' ? value.value(opts) : prefix + value.value;
   const alias = opts.alias ?? value.alias;
   if (alias) {
-    const fullAlias = usePrefix ? prefix + alias : alias;
+    const fullAlias = autoPrefixAlias ? prefix + alias : alias;
     const escapedFullAlias = dialect.escapeId(fullAlias, true);
     return `${val} ${escapedFullAlias}`;
   }
   return val;
 }
 
-export function getVirtualValue(
-  opts: QueryRawFnOptions & { value: VirtualValue; usePrefix?: boolean; alias?: string }
-): Scalar {
+export function getVirtualValue(opts: QueryRawFnOptions & { value: VirtualValue; alias?: string; autoPrefixAlias?: boolean }): Scalar {
   const { value } = opts;
 
   if (value instanceof Raw) {
