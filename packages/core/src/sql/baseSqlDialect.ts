@@ -44,28 +44,27 @@ export abstract class BaseSqlDialect implements QueryDialect {
   criteria<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
-    const where = this.filter<E>(entity, qm.$filter, { ...opts, prefix });
+    const where = this.where<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group);
-    const having = this.filter<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
+    const having = this.where<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort);
     const pager = this.pager(qm);
     return where + group + having + sort + pager;
   }
 
-  project<E>(
-    entity: Type<E>,
-    project: QueryProject<E>,
-    opts: QueryOptions = {}
-  ): { baseColumns: string; joinsColumns: string; joinsTables: string } {
+  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    let projectArray: QueryProjectArray<E>;
+    const prefix = opts.prefix ? opts.prefix + '.' : '';
+    const escapedPrefix = this.escapeId(opts.prefix, true, true);
+
+    let fields: QueryProjectArray<E>;
 
     if (project) {
       if (Array.isArray(project)) {
-        projectArray = project;
+        fields = project;
       } else {
         const positiveProjectKeys = getKeys(project).filter((key) => project[key]);
-        projectArray = positiveProjectKeys.length
+        fields = positiveProjectKeys.length
           ? positiveProjectKeys.map((key) => {
               const val = project[key];
               if (val instanceof Raw) {
@@ -75,26 +74,15 @@ export abstract class BaseSqlDialect implements QueryDialect {
             })
           : (getKeys(meta.fields).filter((it) => !(it in project) || project[it]) as FieldKey<E>[]);
       }
-      projectArray = projectArray.filter((key) => key instanceof Raw || meta.fields[key as FieldKey<E>]);
-      if (!projectArray.length || (opts.prefix && !projectArray.includes(meta.id))) {
-        projectArray.unshift(meta.id);
+      fields = fields.filter((key) => key instanceof Raw || meta.fields[key as FieldKey<E>]);
+      if (!fields.length || (opts.prefix && !fields.includes(meta.id))) {
+        fields.unshift(meta.id);
       }
     } else {
-      projectArray = getKeys(meta.fields) as FieldKey<E>[];
+      fields = getKeys(meta.fields) as FieldKey<E>[];
     }
 
-    const baseColumns = this.projectArray(entity, projectArray, opts);
-    const { joinsColumns, joinsTables } = this.populate(entity, project);
-
-    return { baseColumns, joinsColumns, joinsTables };
-  }
-
-  projectArray<E>(entity: Type<E>, project: QueryProjectArray<E>, opts: QueryOptions = {}): string {
-    const meta = getMeta(entity);
-    const prefix = opts.prefix ? opts.prefix + '.' : '';
-    const escapedPrefix = this.escapeId(opts.prefix, true, true);
-
-    return project
+    return fields
       .map((key) => {
         if (key instanceof Raw) {
           return getRawValue({
@@ -131,54 +119,42 @@ export abstract class BaseSqlDialect implements QueryDialect {
       .join(', ');
   }
 
-  select<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
-    const meta = getMeta(entity);
-    const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
-    const { baseColumns, joinsColumns, joinsTables } = this.project(entity, qm.$project, {
-      softDelete: opts.softDelete,
-      prefix,
-    });
-    return `SELECT ${baseColumns}${joinsColumns} FROM ${this.escapeId(meta.name)}${joinsTables}`;
-  }
-
-  populate<E>(
+  projectRelations<E>(
     entity: Type<E>,
     project: QueryProject<E> = {},
     opts: QueryOptions = {}
-  ): { joinsColumns: string; joinsTables: string } {
+  ): { fields: string; tables: string } {
     const meta = getMeta(entity);
     const relations = getProjectRelationKeys(meta, project);
     const isProjectArray = Array.isArray(project);
-    let joinsColumns = '';
-    let joinsTables = '';
+    let fields = '';
+    let tables = '';
 
-    for (const relKey of relations) {
-      const relOpts = meta.relations[relKey];
+    for (const key of relations) {
+      const relOpts = meta.relations[key];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
 
-      const joinRelAlias = opts.prefix ? opts.prefix + '.' + relKey : relKey;
+      const joinRelAlias = opts.prefix ? opts.prefix + '.' + key : key;
       const relEntity = relOpts.entity();
-      const relProject = project[relKey as string];
+      const relProject = project[key as string];
       const relQuery = isProjectArray ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
 
-      const { baseColumns: relColumns } = this.project(relEntity, relQuery.$project, {
+      const relColumns = this.projectFields(relEntity, relQuery.$project, {
         prefix: joinRelAlias,
         usePrefix: true,
       });
 
-      joinsColumns += ', ' + relColumns;
+      fields += ', ' + relColumns;
 
-      const { joinsColumns: subJoinsColumns, joinsTables: subJoinsTables } = this.populate(
-        relEntity,
-        relQuery.$project,
-        { prefix: joinRelAlias }
-      );
+      const { fields: subColumns, tables: subTables } = this.projectRelations(relEntity, relQuery.$project, {
+        prefix: joinRelAlias,
+      });
 
-      joinsColumns += subJoinsColumns;
+      fields += subColumns;
 
       const relMeta = getMeta(relEntity);
       const relEntityName = this.escapeId(relMeta.name);
@@ -186,23 +162,33 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const joinType = relQuery.$required ? 'INNER' : 'LEFT';
       const joinAlias = this.escapeId(joinRelAlias, true);
 
-      joinsTables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
-      joinsTables += relOpts.references
+      tables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
+      tables += relOpts.references
         .map((it) => `${joinAlias}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`)
         .join(' AND ');
 
       if (relQuery.$filter) {
-        const filter = this.filter(relEntity, relQuery.$filter, { prefix: relKey, clause: false });
-        joinsTables += ` AND ${filter}`;
+        const filter = this.where(relEntity, relQuery.$filter, { prefix: key, clause: false });
+        tables += ` AND ${filter}`;
       }
 
-      joinsTables += subJoinsTables;
+      tables += subTables;
     }
 
-    return { joinsColumns, joinsTables };
+    return { fields, tables };
   }
 
-  filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts: QueryFilterOptions = {}): string {
+  select<E>(entity: Type<E>, qm: Query<E>, opts: QueryOptions = {}): string {
+    const meta = getMeta(entity);
+    const prefix = opts.prefix ?? (opts.usePrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
+
+    const fields = this.projectFields(entity, qm.$project, { prefix });
+    const { fields: relationFields, tables } = this.projectRelations(entity, qm.$project);
+
+    return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
+  }
+
+  where<E>(entity: Type<E>, filter: QueryFilter<E>, opts: QueryFilterOptions = {}): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -254,18 +240,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const values = val as E[K][];
       const hasManyItems = values.length > 1;
       const logicalComparison = values
-        .map((filterIt: QueryFilter<E>) => {
-          if (filterIt instanceof Raw) {
+        .map((filterEntry: QueryFilter<E>) => {
+          if (filterEntry instanceof Raw) {
             return getRawValue({
-              value: filterIt,
+              value: filterEntry,
               dialect: this,
               prefix: opts.prefix,
               escapedPrefix: this.escapeId(opts.prefix, true, true),
             });
           }
-          return this.filter(entity, filterIt, {
+          return this.where(entity, filterEntry, {
             prefix: opts.prefix,
-            usePrecedence: hasManyItems && getKeys(filterIt).length > 1,
+            usePrecedence: hasManyItems && getKeys(filterEntry).length > 1,
             clause: false,
           });
         })
@@ -353,6 +339,23 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
   }
 
+  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
+    const meta = getMeta(entity);
+    const escapedPrefix = this.escapeId(prefix, true, true);
+    const field = meta.fields[key];
+
+    if (field?.virtual) {
+      return getVirtualValue({
+        value: field.virtual,
+        dialect: this,
+        prefix,
+        escapedPrefix,
+      });
+    }
+
+    return escapedPrefix + this.escapeId(field?.name ?? key);
+  }
+
   group<E>(entity: Type<E>, fields: readonly FieldKey<E>[]): string {
     if (!fields?.length) {
       return '';
@@ -389,23 +392,6 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return sql;
   }
 
-  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
-    const meta = getMeta(entity);
-    const escapedPrefix = this.escapeId(prefix, true, true);
-    const field = meta.fields[key];
-
-    if (field?.virtual) {
-      return getVirtualValue({
-        value: field.virtual,
-        dialect: this,
-        prefix,
-        escapedPrefix,
-      });
-    }
-
-    return escapedPrefix + this.escapeId(field?.name ?? key);
-  }
-
   count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string {
     const search: Query<E> = {
       ...qm,
@@ -417,12 +403,15 @@ export abstract class BaseSqlDialect implements QueryDialect {
     delete search.$limit;
 
     const select = this.select<E>(entity, search);
-    return select + this.criteria(entity, search, opts);
+    const criteria = this.criteria(entity, search, opts);
+
+    return select + criteria;
   }
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string {
     const select = this.select<E>(entity, qm, opts);
-    return select + this.criteria(entity, qm, opts);
+    const criteria = this.criteria(entity, qm, opts);
+    return select + criteria;
   }
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {

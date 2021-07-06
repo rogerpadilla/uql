@@ -123,8 +123,6 @@ export type QueryFilterOptions = QueryComparisonOptions & {
 };
 
 export interface QueryDialect {
-  criteria<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
-
   count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
@@ -134,39 +132,6 @@ export interface QueryDialect {
   update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string;
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
-
-  project<E>(
-    entity: Type<E>,
-    project: QueryProject<E>,
-    opts: QueryOptions
-  ): { baseColumns: string; joinsColumns: string; joinsTables: string };
-
-  populate<E>(entity: Type<E>, opts?: QueryOptions): { joinsColumns: string; joinsTables: string };
-
-  select<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
-
-  filter<E>(entity: Type<E>, filter: QueryFilter<E>, opts?: QueryFilterOptions): string;
-
-  compare<E, K extends keyof QueryFilterComparison<E>>(
-    entity: Type<E>,
-    key: K,
-    val: QueryFieldValue<E[K]>,
-    opts?: QueryComparisonOptions
-  ): string;
-
-  compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
-    entity: Type<E>,
-    key: K,
-    op: keyof QueryFilterSingleFieldOperator<E>,
-    val: QueryFieldValue<E[K]>,
-    opts?: QueryOptions
-  ): string;
-
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts?: QueryOptions): string;
-
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, opts?: QueryOptions): string;
-
-  pager(value: QueryPager): string;
 
   escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string;
 
