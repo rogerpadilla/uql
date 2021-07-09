@@ -341,7 +341,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const order = keys
       .map((key) => {
         const field = meta.fields[key]?.name ?? key;
-        const direction = sort[key] === -1 ? ' DESC' : '';
+        const direction = sort[key] === -1 || sort[key] === 'desc' ? ' DESC' : '';
         return this.escapeId(field) + direction;
       })
       .join(', ');

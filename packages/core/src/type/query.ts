@@ -74,7 +74,7 @@ export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilt
 export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 
 export type QuerySort<E> = {
-  readonly [K in FieldKey<E>]?: -1 | 1;
+  readonly [K in FieldKey<E>]?: -1 | 1 | 'asc' | 'desc';
 };
 
 export type QueryPager = {

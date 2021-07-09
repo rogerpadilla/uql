@@ -637,9 +637,9 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $group: ['companyId'],
         $skip: 50,
         $limit: 100,
-        $sort: { name: 1 },
+        $sort: { name: 'desc' },
       })
-    ).toBe('SELECT `id`, `name` FROM `User` WHERE `companyId` = 1 GROUP BY `companyId` ORDER BY `name` LIMIT 100 OFFSET 50');
+    ).toBe('SELECT `id`, `name` FROM `User` WHERE `companyId` = 1 GROUP BY `companyId` ORDER BY `name` DESC LIMIT 100 OFFSET 50');
   }
 
   shouldFind$limit() {
