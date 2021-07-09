@@ -12,14 +12,14 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "mongodb": "^3.6.9"
+    "mongodb": "^3.6.10"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.41"
+    "@uql/core": "^0.4.44"
   },
   "devDependencies": {
-    "@types/mongodb": "^3.6.19",
-    "@types/node": "^16.0.0",
+    "@types/mongodb": "^3.6.20",
+    "@types/node": "^16.0.2",
     "@uql/core": "^0.4.45",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",

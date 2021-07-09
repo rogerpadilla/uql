@@ -25,17 +25,17 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
 
   for (const entity of entities) {
     const path = kebabCase(entity.name);
-    const subRouter = buildCrudRouter(entity, crudRouterOpts);
+    const subRouter = buildQuerierRouter(entity, crudRouterOpts);
     router.use('/' + path, subRouter);
   }
 
   return router;
 }
 
-export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallback }) {
+export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCallback }) {
   const router = expressRouter();
 
-  router.post('/', async (req, res) => {
+  router.post('/', async (req, res, next) => {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
@@ -44,13 +44,13 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       res.json({ data });
     } catch (err: any) {
       await querier.rollbackTransaction();
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.patch('/:id', async (req, res) => {
+  router.patch('/:id', async (req, res, next) => {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
@@ -59,52 +59,52 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       res.json({ data: req.params.id });
     } catch (err: any) {
       await querier.rollbackTransaction();
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.get('/one', async (req, res) => {
+  router.get('/one', async (req, res, next) => {
     const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm);
       res.json({ data });
     } catch (err: any) {
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.get('/count', async (req, res) => {
+  router.get('/count', async (req, res, next) => {
     const qm = augmentQuery<E>(entity, req, opts.query);
     const querier = await getQuerier();
     try {
       const data = await querier.count(entity, qm);
       res.json({ data });
     } catch (err: any) {
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.get('/:id', async (req, res) => {
+  router.get('/:id', async (req, res, next) => {
     const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOneById(entity, req.params.id as FieldValue<E>, qm);
       res.json({ data });
     } catch (err: any) {
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.get('/', async (req, res) => {
+  router.get('/', async (req, res, next) => {
     const qm = augmentQuery<E>(entity, req, opts.query);
     const querier = await getQuerier();
     try {
@@ -120,13 +120,13 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       }
       res.json(json);
     } catch (err: any) {
-      sendError(err, res);
+      next(err);
     } finally {
       await querier.release();
     }
   });
 
-  router.delete('/:id', async (req, res) => {
+  router.delete('/:id', async (req, res, next) => {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
@@ -137,13 +137,13 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       res.json({ data });
     } catch (err: any) {
       await querier.rollbackTransaction();
-      sendError(err, res);
+      next(err);
     } finally {
       querier.release();
     }
   });
 
-  router.delete('/', async (req, res) => {
+  router.delete('/', async (req, res, next) => {
     const qm = augmentQuery(entity, req, opts.query);
     const querier = await getQuerier();
     try {
@@ -153,7 +153,7 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
       res.json({ data });
     } catch (err: any) {
       await querier.rollbackTransaction();
-      sendError(err, res);
+      next(err);
     } finally {
       querier.release();
     }
@@ -165,17 +165,6 @@ export function buildCrudRouter<E>(entity: Type<E>, opts: { query?: QueryCallbac
 function augmentQuery<E>(entity: Type<E>, req: Request, query?: QueryCallback) {
   const qm = parseQuery<E>(req.query);
   return query ? query(entity, qm, req) : qm;
-}
-
-function sendError(err: Error, res: Response) {
-  // TODO proper error codes
-  const code = 500;
-  res.sendStatus(code).json({
-    error: {
-      message: err.message,
-      code,
-    },
-  });
 }
 
 type MiddlewareOptions = {
