@@ -251,6 +251,14 @@ it('Tag', () => {
         name: 'name',
         type: String,
       },
+      itemsCount: {
+        name: 'itemsCount',
+        type: Number,
+        virtual: {
+          alias: undefined,
+          value: expect.any(Function),
+        },
+      },
       updatedAt: {
         name: 'updatedAt',
         onUpdate: expect.any(Function),

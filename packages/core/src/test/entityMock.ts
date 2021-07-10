@@ -236,6 +236,14 @@ export class Tag extends BaseEntity {
   name?: string;
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
+  @Field({
+    virtual: raw(({ escapedPrefix, dialect }) => {
+      const table = dialect.escapeId('ItemTag');
+      const column = dialect.escapeId('tagId');
+      return `(SELECT COUNT(*) FROM ${table} it WHERE it.${column} = ${escapedPrefix}id)`;
+    }),
+  })
+  itemsCount?: number;
 }
 
 @Entity()
