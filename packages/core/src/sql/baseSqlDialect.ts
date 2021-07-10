@@ -1,3 +1,4 @@
+import { access } from 'fs';
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
 import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, isProjectingRelations, getVirtualValue, getRawValue } from '../querier';
@@ -22,6 +23,7 @@ import {
   QueryFilterComparison,
   QuerySearch,
   QueryProjectOptions,
+  QuerySortArray,
 } from '../type';
 import { getKeys } from '../util';
 
@@ -333,16 +335,17 @@ export abstract class BaseSqlDialect implements QueryDialect {
   }
 
   sort<E>(entity: Type<E>, sort: QuerySort<E>): string {
-    const keys = getKeys(sort);
-    if (!keys.length) {
+    const sortArray: QuerySortArray<E> = Array.isArray(sort) ? sort : getKeys(sort).map((key) => ({ field: key as FieldKey<E>, sort: sort[key] }));
+    if (!sortArray.length) {
       return '';
     }
     const meta = getMeta(entity);
-    const order = keys
-      .map((key) => {
-        const field = meta.fields[key]?.name ?? key;
-        const direction = sort[key] === -1 || sort[key] === 'desc' ? ' DESC' : '';
-        return this.escapeId(field) + direction;
+    const directionMap = { 1: '', asc: '', '-1': ' DESC', desc: ' DESC' } as const;
+    const order = sortArray
+      .map(({ field, sort }) => {
+        const name = meta.fields[field]?.name ?? field;
+        const direction = directionMap[sort];
+        return this.escapeId(name) + direction;
       })
       .join(', ');
     return ` ORDER BY ${order}`;

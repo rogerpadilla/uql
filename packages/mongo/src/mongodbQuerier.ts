@@ -3,7 +3,7 @@ import { isLogging, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions, QuerySearch } from '@uql/core/type';
 import { BaseQuerier, getPersistable, getPersistables, isProjectingRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { clone } from '@uql/core/util';
+import { clone, hasKeys } from '@uql/core/util';
 
 import { MongoDialect } from './mongoDialect';
 
@@ -43,16 +43,17 @@ export class MongodbQuerier extends BaseQuerier {
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-      if (qm.$filter) {
-        const filter = this.dialect.filter(entity, qm.$filter);
+      const filter = this.dialect.filter(entity, qm.$filter);
+      if (hasKeys(filter)) {
         cursor.filter(filter);
       }
-      if (qm.$project) {
-        const project = this.dialect.project(entity, qm.$project);
+      const project = this.dialect.project(entity, qm.$project);
+      if (hasKeys(project)) {
         cursor.project(project);
       }
-      if (qm.$sort) {
-        cursor.sort(qm.$sort);
+      const sort = this.dialect.sort(entity, qm.$sort);
+      if (hasKeys(sort)) {
+        cursor.sort(sort);
       }
       if (qm.$skip) {
         cursor.skip(qm.$skip);

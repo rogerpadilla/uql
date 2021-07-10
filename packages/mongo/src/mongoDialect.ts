@@ -1,5 +1,17 @@
-import { FilterQuery, ObjectId } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, QueryOptions } from '@uql/core/type';
+import { FilterQuery, ObjectId, SortOptionObject } from 'mongodb';
+import {
+  QueryFilter,
+  Query,
+  EntityMeta,
+  Type,
+  QueryProject,
+  QueryProjectMap,
+  QueryOptions,
+  QuerySort,
+  FieldValue,
+  RelationKey,
+  QuerySortArray,
+} from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
 import { getKeys, hasKeys } from '@uql/core/util';
 import { getProjectRelationKeys } from '@uql/core/querier';
@@ -53,15 +65,42 @@ export class MongoDialect {
     return project as QueryProjectMap<E>;
   }
 
-  aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): object[] {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>): MongoSort<E> {
+    if (!hasKeys(sort)) {
+      return;
+    }
+    const directionMap = { asc: 1, desc: -1 } as const;
+    if (Array.isArray(sort)) {
+      return (sort as QuerySortArray<E>).reduce((acc, it) => {
+        acc[it.field] = directionMap[it.sort] ?? it.sort;
+        return acc;
+      }, {} as SortOptionObject<E>);
+    }
+    return getKeys(sort).reduce((acc, key) => {
+      const direction = sort[key];
+      acc[key] = directionMap[direction] ?? direction;
+      return acc;
+    }, {} as SortOptionObject<E>);
+  }
+
+  aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
-    const pipeline: object[] = [];
-
     const filter = this.filter(entity, qm.$filter);
+    const sort = this.sort(entity, qm.$sort);
+    const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
     if (hasKeys(filter)) {
-      pipeline.push({ $match: filter });
+      firstPipelineEntry.$match = filter;
+    }
+    if (hasKeys(sort)) {
+      firstPipelineEntry.$sort = sort;
+    }
+
+    const pipeline: MongoAggregationPipelineEntry<E>[] = [];
+
+    if (hasKeys(firstPipelineEntry)) {
+      pipeline.push(firstPipelineEntry);
     }
 
     const relations = getProjectRelationKeys(meta, qm.$project);
@@ -89,10 +128,15 @@ export class MongoDialect {
       } else {
         const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         const referenceFilter = this.filter(relEntity, qm.$filter);
+        const referenceSort = this.sort(relEntity, qm.$sort);
+        const referencePipelineEntry: MongoAggregationPipelineEntry<E[FieldValue<E>]> = { $match: { [referenceKey]: referenceFilter._id } };
+        if (hasKeys(referenceSort)) {
+          referencePipelineEntry.$sort = referenceSort;
+        }
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            pipeline: [{ $match: { [referenceKey]: referenceFilter._id } }],
+            pipeline: [referencePipelineEntry],
             as: relKey,
           },
         });
@@ -141,3 +185,25 @@ export class MongoDialect {
     return new ObjectId(value) as T;
   }
 }
+
+type MongoAggregationPipelineEntry<E> = {
+  readonly $lookup?: MongoAggregationLookup<E>;
+  $match?: FilterQuery<E> | Record<string, any>;
+  $sort?: MongoSort<E>;
+  readonly $unwind?: MongoAggregationUnwind<E>;
+};
+
+type MongoAggregationLookup<E> = {
+  readonly from?: string;
+  readonly foreignField?: string;
+  readonly localField?: string;
+  readonly pipeline?: MongoAggregationPipelineEntry<E[FieldValue<E>]>[];
+  readonly as?: RelationKey<E>;
+};
+
+type MongoAggregationUnwind<E> = {
+  readonly path?: string;
+  readonly preserveNullAndEmptyArrays?: boolean;
+};
+
+type MongoSort<E> = [string, number][] | SortOptionObject<E>;

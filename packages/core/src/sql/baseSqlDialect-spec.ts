@@ -323,7 +323,10 @@ export abstract class BaseSqlDialectSpec implements Spec {
             { name: ['a', 'b', 'c'], email: 'abc@example.com' },
           ],
         },
-        $sort: { name: 1, createdAt: -1 },
+        $sort: [
+          { field: 'name', sort: 'asc' },
+          { field: 'createdAt', sort: 'desc' },
+        ],
         $skip: 50,
         $limit: 10,
       })
@@ -843,11 +846,14 @@ export abstract class BaseSqlDialectSpec implements Spec {
       this.dialect.find(User, {
         $project: ['id'],
         $filter: { name: { $startsWith: 'Some' } },
-        $sort: { name: 1, id: -1 },
+        $sort: [
+          { field: 'name', sort: 'asc' },
+          { field: 'createdAt', sort: 'desc' },
+        ],
         $skip: 0,
         $limit: 50,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE 'Some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE 'Some%' ORDER BY `name`, `createdAt` DESC LIMIT 50 OFFSET 0");
 
     expect(
       this.dialect.find(User, {

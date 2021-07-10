@@ -73,9 +73,15 @@ export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilt
 
 export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 
-export type QuerySort<E> = {
-  readonly [K in FieldKey<E>]?: -1 | 1 | 'asc' | 'desc';
+export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
+
+export type QuerySortArray<E> = readonly { readonly field: FieldKey<E>; readonly sort: QuerySortDirection }[];
+
+export type QuerySortMap<E> = {
+  readonly [K in FieldKey<E>]?: QuerySortDirection;
 };
+
+export type QuerySort<E> = QuerySortMap<E> | QuerySortArray<E>;
 
 export type QueryPager = {
   $skip?: number;

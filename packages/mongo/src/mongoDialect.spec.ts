@@ -55,6 +55,16 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.project(Tax, ['id', 'name'])).toEqual({ id: true, name: true });
   }
 
+  shouldBuildSort() {
+    expect(this.dialect.sort(Item, {})).toEqual(undefined);
+    expect(this.dialect.sort(Item, { code: 1 })).toEqual({ code: 1 });
+    expect(this.dialect.sort(Item, { code: -1 })).toEqual({ code: -1 });
+    expect(this.dialect.sort(Item, { code: 'asc' })).toEqual({ code: 1 });
+    expect(this.dialect.sort(Item, { code: 'desc' })).toEqual({ code: -1 });
+    expect(this.dialect.sort(Item, { name: 'asc', createdAt: 'desc' })).toEqual({ name: 1, createdAt: -1 });
+    expect(this.dialect.sort(Item, { name: -1, createdAt: -1 })).toEqual({ name: -1, createdAt: -1 });
+  }
+
   shouldNormalizeIds() {
     const meta = getMeta(User);
     expect(this.dialect.normalizeIds(meta, [{ _id: 'abc' } as User, { _id: 'def' } as User])).toEqual([{ id: 'abc' }, { id: 'def' }]);
