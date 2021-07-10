@@ -35,7 +35,7 @@ export type FieldOptions = {
 
 export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar | QueryRaw;
 
-export type VirtualValue = Scalar | QueryRawFn | QueryRaw;
+export type VirtualValue = Scalar | QueryRaw;
 
 export type EntityGetter<E = any> = () => Type<E>;
 

@@ -94,9 +94,5 @@ export function getVirtualValue(opts: QueryRawFnOptions & { value: VirtualValue;
     return getRawValue({ ...opts, value });
   }
 
-  if (typeof value === 'function') {
-    return value(opts);
-  }
-
   return value as Scalar;
 }
