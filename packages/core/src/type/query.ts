@@ -56,11 +56,13 @@ export type QueryFilterSingleFieldOperator<V> = {
   readonly $istartsWith?: string;
   readonly $endsWith?: string;
   readonly $iendsWith?: string;
+  readonly $includes?: string;
+  readonly $iincludes?: string;
   readonly $like?: string;
   readonly $ilike?: string;
+  readonly $regex?: string;
   readonly $in?: V[];
   readonly $nin?: V[];
-  readonly $regex?: string;
 };
 
 export type QueryFieldValue<V> = V | V[] | QueryFilterSingleFieldOperator<V> | QueryRaw;

@@ -819,28 +819,6 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = 1 OR `companyId` = 1');
   }
 
-  shouldFind$istartsWith() {
-    expect(
-      this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $istartsWith: 'Some' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      })
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
-
-    expect(
-      this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      })
-    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
-  }
-
   shouldFind$startsWith() {
     expect(
       this.dialect.find(User, {
@@ -866,26 +844,26 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `User` WHERE (`name` LIKE 'Some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
   }
 
-  shouldFind$iendsWith() {
+  shouldFind$istartsWith() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { name: { $iendsWith: 'Some' } },
+        $filter: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
 
     expect(
       this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
+        $project: { id: true },
+        $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
   }
 
   shouldFind$endsWith() {
@@ -910,26 +888,70 @@ export abstract class BaseSqlDialectSpec implements Spec {
     ).toBe("SELECT `id` FROM `User` WHERE (`name` LIKE '%Some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
   }
 
-  shouldFind$ilike() {
+  shouldFind$iendsWith() {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { name: { $ilike: 'Some' } },
+        $filter: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
+        $project: ['id'],
+        $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+  }
+
+  shouldFind$includes() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $includes: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE '%Some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $includes: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE (`name` LIKE '%Some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+  }
+
+  shouldFind$iincludes() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $iincludes: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $iincludes: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
   }
 
   shouldFind$like() {
@@ -952,6 +974,28 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $limit: 50,
       })
     ).toBe("SELECT `id` FROM `User` WHERE (`name` LIKE 'Some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+  }
+
+  shouldFind$ilike() {
+    expect(
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $ilike: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+
+    expect(
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
   }
 
   shouldFind$regex() {

@@ -285,14 +285,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
         return `${comparisonKey} < ${this.escape(val)}`;
       case '$lte':
         return `${comparisonKey} <= ${this.escape(val)}`;
-      case '$istartsWith':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$startsWith':
         return `${comparisonKey} LIKE ${this.escape((val as string) + '%')}`;
-      case '$iendsWith':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+      case '$istartsWith':
+        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$endsWith':
         return `${comparisonKey} LIKE ${this.escape('%' + (val as string))}`;
+      case '$iendsWith':
+        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+      case '$includes':
+        return `${comparisonKey} LIKE ${this.escape('%' + (val as string) + '%')}`;
+      case '$iincludes':
+        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase() + '%')}`;
       case '$ilike':
         return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase())}`;
       case '$like':

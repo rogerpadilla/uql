@@ -12,7 +12,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.48",
+    "@uql/core": "^0.4.49",
     "express": "^4.17.1"
   },
   "devDependencies": {

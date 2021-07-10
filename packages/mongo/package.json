@@ -15,7 +15,7 @@
     "mongodb": "^3.6.10"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.48"
+    "@uql/core": "^0.4.49"
   },
   "devDependencies": {
     "@types/mongodb": "^3.6.20",
