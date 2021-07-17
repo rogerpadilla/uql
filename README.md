@@ -2,27 +2,27 @@
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
-# `{*}` uql = Universal Query Language
+# :sun_with_face: Getting Started
 
-`uql` is a plug & play `ORM`, with a declarative `JSON` syntax to query/update multiple data-sources. Essentially, you just declare what you want from the datasource, and then `uql` will run efficient (and safe) `SQL` (or `Mongo`) queries.
+`uql` is a plug & play `ORM`, with a declarative `JSON` syntax to query/update multiple data-sources. Essentially, just declare what you want from the datasource, and then `uql` will run efficient (and safe) `SQL` (or `Mongo`) queries.
 
-Given `uql` is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend; or just use `uql` directly in the backend; or even use it in a mobile app with an embedded database.
+Given it is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend; or just use `uql` directly in the backend; or even use it in a mobile app with an embedded database.
 
-## <a name="features"></a>:star2: Features
+## <a name="features"></a> Features
 
-- uses the power of `TypeScript`, smart type inference everywhere so the queries and models are easier to maintain and more reliable
-- `JSON` (serializable) syntax for all the queries
-- generated queries are fast, safe, and human-readable
+- `JSON` (serializable) syntax for all the queries.
+- uses the power of `TypeScript`, smart type inference everywhere so the queries and models are easier to maintain and more reliable.
+- generated queries are fast, safe, and human-readable.
 - `project`, `filter`, `sort`, and `pager` at multiple levels. Including deep relations and their fields.
-- declarative and programmatic `transactions`
-- `soft-delete`
-- `virtual fields`
-- entity `repositories`
-- different kind of `relations` between entities
-- supports `inheritance` patterns between entities
-- connection pooling
-- supports Postgres, MySQL, MariaDB, SQLite, MongoDB (beta)
-- plugins for frameworks: express (more coming)
+- declarative and programmatic `transactions`.
+- `soft-delete`.
+- `virtual fields`.
+- entity `repositories`.
+- different kind of `relations` between entities.
+- supports `inheritance` patterns between entities.
+- connection pooling.
+- supports Postgres, MySQL, MariaDB, SQLite, MongoDB (beta).
+- plugins for frameworks: express (more coming).
 
 ## Table of Contents
 
@@ -51,7 +51,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 
 2.  Install one of database packages according to your database:
 
-    - for MySQL (or MariaDB)
+    - for `MySQL` (or `MariaDB`)
 
       ```sh
       npm install @uql/mysql --save
@@ -63,7 +63,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
       yarn add @uql/mysql
       ```
 
-    - for PostgreSQL
+    - for `PostgreSQL`
 
       ```sh
       npm install @uql/postgres --save
@@ -75,7 +75,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
       yarn add @uql/postgres
       ```
 
-    - for SQLite
+    - for `SQLite`
 
       ```sh
       npm install @uql/sqlite --save
@@ -87,7 +87,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
       yarn add @uql/sqlite
       ```
 
-    - for MongoDB
+    - for `MongoDB`
 
       ```sh
       npm install @uql/mongo --save
@@ -99,7 +99,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
       yarn add @uql/mongo
       ```
 
-3.  Your `tsconfig.json` needs the following flags:
+3.  Additionally, your `tsconfig.json` needs the following flags:
 
 ```json
 "target": "es6", // or a more recent ecmascript version
@@ -109,7 +109,7 @@ Given `uql` is just a small library with serializable `JSON` syntax, the queries
 
 ## <a name="configuration"></a>:gear: Configuration
 
-`uql` initialization should be done once (e.g. in one of the bootstrap files of your app).
+Initialization should be done once (e.g. in one of the bootstrap files of your app).
 
 ```ts
 import { setOptions } from '@uql/core';
@@ -129,9 +129,7 @@ setOptions({
 
 ## <a name="entities"></a>:egg: Entities
 
-Take any dump class (aka DTO) and annotate it with the decorators from '@uql/core/entity'.
-
-Note: inheritance between entities is optional.
+Take any dump class (aka DTO) and annotate it with the decorators from `'@uql/core/entity'`.
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
@@ -425,9 +423,11 @@ export class InventoryAdjustment extends BaseEntity {
 }
 ```
 
-## <a name="declarative-transactions"></a>:speaking_head: Declarative Transactions
+## <a name="declarative-transactions"></a>:speech_balloon: Declarative Transactions
 
-`uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
+Both, _declarative_ and _programmatic_ transactions are supported, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
+
+To use Declarative Transactions (using the `@Transactional()` decorator):
 
 1. take any service class, annotate the wanted function with the `Transactional()` decorator.
 2. inject the querier instance by decorating one of the function's arguments with `@InjectQuerier()`.
@@ -462,16 +462,18 @@ export const confirmationService = new ConfirmationService();
 await confirmationService.confirmAction(data);
 ```
 
-## <a name="programmatic-transactions"></a>:hammer_and_wrench: Programmatic Transactions
+## <a name="programmatic-transactions"></a>:open_hands: Programmatic Transactions
 
 `uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
-1. obtain the `querier` object with `await getQuerier()`
-2. open a `try/catch/finally` block
-3. start the transaction with `await querier.beginTransaction()`
-4. perform the different operations using the `querier` or `repositories`
-5. commit the transaction with `await querier.commitTransaction()`
-6. in the `catch` block, add `await querier.rollbackTransaction()`
+To use Programmatic Transactions:
+
+1. obtain the `querier` object with `await getQuerier()`.
+2. open a `try/catch/finally` block.
+3. start the transaction with `await querier.beginTransaction()`.
+4. perform the different operations using the `querier` or `repositories`.
+5. commit the transaction with `await querier.commitTransaction()`.
+6. in the `catch` block, add `await querier.rollbackTransaction()`.
 7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
 
 ```ts
@@ -501,15 +503,14 @@ async function confirmAction(confirmation: Confirmation) {
 }
 ```
 
-## <a name="express"></a>:zap: Generate REST APIs from Express
+## <a name="express"></a>:zap: Autogenerate REST APIs with Express
 
-`uql` provides a [express](https://expressjs.com/) plugin to automatically generate REST APIs for your entities.
+A `express` plugin is provided to automatically generate REST APIs for your entities.
 
 1. Install express plugin in your server project:
 
 ```sh
 npm install @uql/express --save
-
 ```
 
 or with _yarn_
@@ -551,9 +552,9 @@ app
   );
 ```
 
-## <a name="client"></a>:globe_with_meridians: Consume REST APIs from Frontend
+## <a name="client"></a>:cloud: Easily call the generated REST APIs from the Client
 
-uql provides a client plugin to consume the REST APIs from the frontend.
+A client plugin (for browser/mobile) is provided to easily consume the REST APIs from the frontend.
 
 1. Install client plugin in your frontend project:
 
