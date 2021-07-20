@@ -46,7 +46,7 @@ export type CascadeType = 'persist' | 'delete';
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   readonly cardinality?: RelationCardinality;
-  readonly cascade?: boolean | readonly CascadeType[];
+  readonly cascade?: boolean | CascadeType;
   mappedBy?: RelationMappedBy<E>;
   through?: EntityGetter<RelationValue<E>>;
   references?: RelationReferences;

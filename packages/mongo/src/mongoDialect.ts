@@ -10,29 +10,22 @@ import {
   QuerySort,
   FieldValue,
   RelationKey,
-  QuerySortArray,
 } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
-import { getKeys, hasKeys } from '@uql/core/util';
+import { getKeys, hasKeys, buildSortMap } from '@uql/core/util';
 import { getProjectRelationKeys } from '@uql/core/querier';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
-    if (
-      filter !== undefined &&
-      (typeof filter !== 'object' || Array.isArray(filter) || filter instanceof ObjectId || ObjectId.isValid(filter as string))
-    ) {
+    if (typeof filter !== 'object' || Array.isArray(filter) || filter instanceof ObjectId || ObjectId.isValid(filter as string)) {
       filter = {
         [meta.id]: filter,
       };
     }
 
-    if (meta.softDeleteKey && !softDelete && (!filter || !(meta.softDeleteKey in filter))) {
-      if (!filter) {
-        filter = {};
-      }
+    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && !(meta.softDeleteKey in filter)) {
       filter[meta.softDeleteKey as string] = null;
     }
 
@@ -66,21 +59,7 @@ export class MongoDialect {
   }
 
   sort<E>(entity: Type<E>, sort: QuerySort<E>): MongoSort<E> {
-    if (!hasKeys(sort)) {
-      return;
-    }
-    const directionMap = { asc: 1, desc: -1 } as const;
-    if (Array.isArray(sort)) {
-      return (sort as QuerySortArray<E>).reduce((acc, it) => {
-        acc[it.field] = directionMap[it.sort] ?? it.sort;
-        return acc;
-      }, {} as SortOptionObject<E>);
-    }
-    return getKeys(sort).reduce((acc, key) => {
-      const direction = sort[key];
-      acc[key] = directionMap[direction] ?? direction;
-      return acc;
-    }, {} as SortOptionObject<E>);
+    return buildSortMap(sort) as MongoSort<E>;
   }
 
   aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): MongoAggregationPipelineEntry<E>[] {

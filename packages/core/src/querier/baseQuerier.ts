@@ -64,7 +64,7 @@ export abstract class BaseQuerier implements Querier {
       const relEntity = relOpts.entity();
       const relProject = clone(project[relKey as string]);
       const relQuery: Query<any> =
-        relProject === undefined || relProject === true ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
+        relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
       const referenceKey = relOpts.references[0].source;
       const ids = payload.map((it) => it[meta.id]);
 

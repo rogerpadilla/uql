@@ -15,7 +15,7 @@ export function InjectQuerier() {
     }
 
     const meta = proto[metadataKey].get(constructor);
-    const isAlreadyInjected = meta[key] !== undefined;
+    const isAlreadyInjected = key in meta;
 
     if (isAlreadyInjected) {
       throw new TypeError(`@InjectQuerier() can only appears once in '${constructor.name}.${key}'}`);
@@ -30,10 +30,9 @@ export function getInjectedQuerierIndex<S>(service: Type<S>, key: Key<S>) {
 
   while (proto.constructor !== Object) {
     const meta = proto[metadataKey]?.get(proto.constructor);
-    const index = meta?.[key];
 
-    if (index !== undefined) {
-      return index;
+    if (meta && key in meta) {
+      return meta[key];
     }
 
     const keys = Object.getOwnPropertyNames(proto) as Key<S>[];

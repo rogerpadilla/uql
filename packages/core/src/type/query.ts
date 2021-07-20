@@ -12,7 +12,7 @@ export type QueryProjectOptions = {
   readonly autoPrefixAlias?: boolean;
 };
 
-export type QueryProjectArray<E> = (Key<E> | QueryRaw)[];
+export type QueryProjectArray<E> = readonly (Key<E> | QueryRaw)[];
 
 export type QueryProjectMap<E> = QueryProjectField<E> | QueryProjectRelation<E>;
 
@@ -25,14 +25,14 @@ export type QueryProjectField<E> =
   | { [K: string]: QueryRaw };
 
 export type QueryProjectRelation<E> = {
-  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
+  [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
 
-export type QueryLogicalEntry<E> = (FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw)[];
+export type QueryLogicalEntry<E> = readonly (FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw)[];
 
 export type QueryTextSearchOptions<E> = {
   readonly $value: string;
-  readonly $fields?: FieldKey<E>[];
+  readonly $fields?: readonly FieldKey<E>[];
 };
 
 export type QueryFilterMultiFieldOperator<E> = {
@@ -61,29 +61,41 @@ export type QueryFilterSingleFieldOperator<V> = {
   readonly $like?: string;
   readonly $ilike?: string;
   readonly $regex?: string;
-  readonly $in?: V[];
-  readonly $nin?: V[];
+  readonly $in?: readonly V[];
+  readonly $nin?: readonly V[];
 };
 
-export type QueryFieldValue<V> = V | V[] | QueryFilterSingleFieldOperator<V> | QueryRaw;
+export type QueryFieldValue<V> = V | readonly V[] | QueryFilterSingleFieldOperator<V> | QueryRaw;
 
 export type QueryFilterFieldComparison<E> = {
   readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
 };
 
-export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterMultiFieldOperator<E>;
+export type QueryFilterRelationComparison<E> = {
+  readonly [K in RelationKey<E>]?: QueryFilterComparison<Unpacked<E[K]>>;
+};
 
-export type QueryFilter<E> = FieldValue<E> | FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
+export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterRelationComparison<E> | QueryFilterMultiFieldOperator<E>;
+
+export type QueryFilter<E> = FieldValue<E> | readonly FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 
-export type QuerySortArray<E> = readonly { readonly field: FieldKey<E>; readonly sort: QuerySortDirection }[];
+export type QuerySortArrays<E> = readonly [FieldKey<E>, QuerySortDirection][];
 
-export type QuerySortMap<E> = {
-  readonly [K in FieldKey<E>]?: QuerySortDirection;
+export type QuerySortObjects<E> = readonly { readonly field: FieldKey<E>; readonly sort: QuerySortDirection }[];
+
+export type QuerySortField<E> = {
+  [K in FieldKey<E>]?: QuerySortDirection;
 };
 
-export type QuerySort<E> = QuerySortMap<E> | QuerySortArray<E>;
+export type QuerySortRelation<E> = {
+  [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
+};
+
+export type QuerySortMap<E> = QuerySortField<E> | QuerySortRelation<E>;
+
+export type QuerySort<E> = QuerySortMap<E> | QuerySortArrays<E> | QuerySortObjects<E>;
 
 export type QueryPager = {
   $skip?: number;
@@ -92,7 +104,7 @@ export type QueryPager = {
 
 export type QuerySearch<E> = {
   $filter?: QueryFilter<E>;
-  $group?: FieldKey<E>[];
+  $group?: readonly FieldKey<E>[];
   $having?: QueryFilter<E>;
 };
 
@@ -141,7 +153,7 @@ export interface QueryDialect {
 
   find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 
-  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions): string;
+  insert<E>(entity: Type<E>, payload: E | readonly E[], opts?: QueryOptions): string;
 
   update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string;
 

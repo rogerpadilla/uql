@@ -35,7 +35,7 @@ function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: Cal
   const keys = getKeys(meta.fields).filter((col) => meta.fields[col][callbackKey]);
   return payloads.map((it) => {
     for (const key of keys) {
-      if (it[key] === undefined) {
+      if (!(key in it)) {
         it[key] = meta.fields[key][callbackKey]();
       }
     }
@@ -51,11 +51,11 @@ export function getPersistableRelations<E>(meta: EntityMeta<E>, payload: E, acti
   }) as RelationKey<E>[];
 }
 
-export function isCascadable(action: CascadeType, configuration?: boolean | readonly CascadeType[]): boolean {
+export function isCascadable(action: CascadeType, configuration?: boolean | CascadeType): boolean {
   if (typeof configuration === 'boolean') {
     return configuration;
   }
-  return configuration?.includes(action);
+  return configuration === action;
 }
 
 export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
