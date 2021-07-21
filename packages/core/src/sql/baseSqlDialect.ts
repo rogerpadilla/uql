@@ -1,4 +1,3 @@
-import { access } from 'fs';
 import { escape } from 'sqlstring';
 import { getMeta } from '../entity/decorator/definition';
 import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, isProjectingRelations, getVirtualValue, getRawValue } from '../querier';
@@ -23,9 +22,11 @@ import {
   QueryFilterComparison,
   QuerySearch,
   QueryProjectOptions,
-  QuerySortArray,
+  QuerySortDirection,
 } from '../type';
-import { getKeys } from '../util';
+import { getKeys, hasKeys, buildSortMap } from '../util';
+
+import { flatObject } from './sql.util';
 
 export abstract class BaseSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -38,9 +39,9 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
     const where = this.where<E>(entity, qm.$filter, { ...opts, prefix });
-    const group = this.group<E>(entity, qm.$group);
-    const having = this.where<E>(entity, qm.$having, { prefix, clause: 'HAVING' });
-    const sort = this.sort<E>(entity, qm.$sort);
+    const group = this.group<E>(entity, qm.$group, { ...opts, prefix });
+    const having = this.where<E>(entity, qm.$having, { ...opts, prefix, clause: 'HAVING' });
+    const sort = this.sort<E>(entity, qm.$sort, { ...opts, prefix });
     const pager = this.pager(qm);
     return where + group + having + sort + pager;
   }
@@ -69,7 +70,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       }
       fields = fields.filter((key) => key instanceof Raw || meta.fields[key as FieldKey<E>]);
       if (!fields.length || (opts.prefix && !fields.includes(meta.id))) {
-        fields.unshift(meta.id);
+        fields = [meta.id, ...fields];
       }
     } else {
       fields = getKeys(meta.fields) as FieldKey<E>[];
@@ -171,31 +172,29 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E>, opts: QueryFilterOptions = {}): string {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions = {}): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    if (filter !== undefined && (typeof filter !== 'object' || Array.isArray(filter))) {
+    if (typeof filter !== 'object' || Array.isArray(filter)) {
       filter = {
         [meta.id]: filter,
       };
     }
 
-    if (meta.softDeleteKey && (softDelete === undefined || softDelete) && clause !== 'HAVING' && (!filter || !(meta.softDeleteKey in filter))) {
-      if (!filter) {
-        filter = {};
-      }
+    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && clause !== 'HAVING' && !(meta.softDeleteKey in filter)) {
       filter[meta.softDeleteKey as string] = null;
     }
 
-    const keys = getKeys(filter);
-    if (!keys.length) {
+    const entries = Object.entries(filter);
+
+    if (!entries.length) {
       return '';
     }
 
-    opts = { ...opts, usePrecedence: keys.length > 1 };
+    const options = { ...opts, usePrecedence: entries.length > 1 };
 
-    let sql = keys.map((key) => this.compare(entity, key as keyof QueryFilterComparison<E>, filter[key], opts)).join(` AND `);
+    let sql = entries.map(([key, val]) => this.compare(entity, key as keyof QueryFilterComparison<E>, val, options)).join(` AND `);
 
     if (usePrecedence) {
       sql = `(${sql})`;
@@ -233,7 +232,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     if (key === '$not' || key === '$nor') {
       const op = (key === '$not' ? '$and' : '$or') as K;
       const values = val as E[K][];
-      return `NOT ` + this.compare(entity, op, values, { ...opts, usePrecedence: values.length > 1 });
+      return `NOT ` + this.compare(entity, op, values, { usePrecedence: values.length > 1 });
     }
 
     if (key === '$exists' || key === '$nexists') {
@@ -329,7 +328,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return escapedPrefix + this.escapeId(field?.name ?? key);
   }
 
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[]): string {
+  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts: QueryOptions = {}): string {
     if (!fields?.length) {
       return '';
     }
@@ -338,17 +337,18 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return ` GROUP BY ${names}`;
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>): string {
-    const sortArray: QuerySortArray<E> = Array.isArray(sort) ? sort : getKeys(sort).map((key) => ({ field: key as FieldKey<E>, sort: sort[key] }));
-    if (!sortArray.length) {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions = {}): string {
+    const sortMap = buildSortMap(sort);
+    if (!hasKeys(sortMap)) {
       return '';
     }
     const meta = getMeta(entity);
+    const flattenedSort = flatObject(sortMap, prefix);
     const directionMap = { 1: '', asc: '', '-1': ' DESC', desc: ' DESC' } as const;
-    const order = sortArray
-      .map(({ field, sort }) => {
-        const name = meta.fields[field]?.name ?? field;
-        const direction = directionMap[sort];
+    const order = Object.entries(flattenedSort)
+      .map(([key, sort]) => {
+        const name = meta.fields[key]?.name ?? key;
+        const direction = directionMap[sort as QuerySortDirection];
         return this.escapeId(name) + direction;
       })
       .join(', ');
@@ -410,7 +410,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
 
-    if (opts.softDelete === undefined || opts.softDelete) {
+    if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDeleteKey) {
         const criteria = this.criteria(entity, qm, opts);
         const value = meta.fields[meta.softDeleteKey].onDelete();

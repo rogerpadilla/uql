@@ -59,6 +59,9 @@ export abstract class BaseEntity implements IEntity {
   updatedAt?: number;
 }
 
+/**
+ * `Company` will inherit all the fields (including the `Id`) declared in `BaseEntity`
+ */
 @Entity()
 export class Company extends BaseEntity implements ICompany {
   @Field()
@@ -145,12 +148,18 @@ export class Tax extends BaseEntity {
   description?: string;
 }
 
+/**
+ * `softDelete` will make the entity "soft deletable"
+ */
 @Entity({ softDelete: true })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
-  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category, cascade: true })
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category })
   measureUnits?: MeasureUnit[];
+  /**
+   * `onDelete` callback allows to specify which field will be used when deleting/querying this entity
+   */
   @Field({ onDelete: Date.now })
   deletedAt?: number;
 }
@@ -161,7 +170,7 @@ export class MeasureUnit extends BaseEntity {
   name?: string;
   @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
-  @ManyToOne({ cascade: true })
+  @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
   @Field({ onDelete: Date.now })
   deletedAt?: number;

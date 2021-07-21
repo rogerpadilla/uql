@@ -587,7 +587,6 @@ it('MeasureUnitCategory', () => {
     relations: {
       measureUnits: {
         cardinality: '1m',
-        cascade: true,
         entity: expect.any(Function),
         mappedBy: 'category',
         references: [{ source: 'id', target: 'categoryId' }],
@@ -640,7 +639,7 @@ it('MeasureUnit', () => {
     relations: {
       category: {
         cardinality: 'm1',
-        cascade: true,
+        cascade: 'persist',
         entity: expect.any(Function),
         references: [{ source: 'categoryId', target: 'id' }],
       },

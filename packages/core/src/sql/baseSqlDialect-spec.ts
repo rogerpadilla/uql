@@ -485,20 +485,22 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $project: {
           id: true,
           name: true,
-          tax: { $project: ['id', 'name'], $filter: 2, $required: true },
           measureUnit: { $project: ['id', 'name'], $filter: { name: { $ne: 'unidad' } }, $required: true },
+          tax: ['id', 'name'],
         },
-        $sort: { 'tax.name': 1, 'measureUnit.name': 1 } as QuerySort<Item>,
+        $filter: { salePrice: { $gte: 1000 }, name: { $istartsWith: 'A' } },
+        $sort: { tax: { name: 1 }, measureUnit: { name: 1 }, createdAt: -1 },
         $limit: 100,
       })
     ).toBe(
       'SELECT `Item`.`id`, `Item`.`name`' +
-        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
+        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ' FROM `Item`' +
-        ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId` AND `tax`.`id` = 2' +
         " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad' AND `measureUnit`.`deletedAt` IS NULL" +
-        ' ORDER BY `tax`.`name`, `measureUnit`.`name` LIMIT 100'
+        ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
+        " WHERE `Item`.`salePrice` >= 1000 AND LOWER(`Item`.`name`) LIKE 'a%'" +
+        ' ORDER BY `tax`.`name`, `measureUnit`.`name`, `Item`.`createdAt` DESC LIMIT 100'
     );
   }
 
