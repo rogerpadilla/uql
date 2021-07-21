@@ -488,7 +488,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
           measureUnit: { $project: ['id', 'name'], $filter: { name: { $ne: 'unidad' } }, $required: true },
           tax: ['id', 'name'],
         },
-        $filter: { name: { $istartsWith: 'A' }, tax: { percentage: { $gte: 50 } } },
+        $filter: { salePrice: { $gte: 1000 }, name: { $istartsWith: 'A' } },
         $sort: { tax: { name: 1 }, measureUnit: { name: 1 }, createdAt: -1 },
         $limit: 100,
       })
@@ -499,7 +499,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
         ' FROM `Item`' +
         " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad' AND `measureUnit`.`deletedAt` IS NULL" +
         ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
-        " WHERE LOWER(`Item`.`name`) LIKE 'a%' AND `tax`.`percentage` >= 50" +
+        " WHERE `Item`.`salePrice` >= 1000 AND LOWER(`Item`.`name`) LIKE 'a%'" +
         ' ORDER BY `tax`.`name`, `measureUnit`.`name`, `Item`.`createdAt` DESC LIMIT 100'
     );
   }

@@ -1,5 +1,15 @@
-import { Item, Storehouse, ItemAdjustment } from '../test';
-import { mapRows } from './sql.util';
+import { getMeta } from '../entity';
+import { Item, Storehouse, ItemAdjustment, User } from '../test';
+import { QuerySortMap } from '../type';
+import { flatObject, mapRows } from './sql.util';
+
+it('flatObject', () => {
+  expect(flatObject(undefined)).toEqual({});
+  expect(flatObject(null)).toEqual({});
+  expect(flatObject({})).toEqual({});
+  const sort: QuerySortMap<Item> = { name: 1, measureUnit: { name: -1, category: { creator: { profile: { picture: 1 } } } } };
+  expect(flatObject(sort)).toEqual({ name: 1, 'measureUnit.name': -1, 'measureUnit.category.creator.profile.picture': 1 });
+});
 
 it('map rows - empty', () => {
   const res1 = mapRows(undefined);

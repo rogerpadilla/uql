@@ -71,11 +71,7 @@ export type QueryFilterFieldComparison<E> = {
   readonly [K in FieldKey<E>]?: QueryFieldValue<E[K]>;
 };
 
-export type QueryFilterRelationComparison<E> = {
-  readonly [K in RelationKey<E>]?: QueryFilterComparison<Unpacked<E[K]>>;
-};
-
-export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterRelationComparison<E> | QueryFilterMultiFieldOperator<E>;
+export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterMultiFieldOperator<E>;
 
 export type QueryFilter<E> = FieldValue<E> | readonly FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 

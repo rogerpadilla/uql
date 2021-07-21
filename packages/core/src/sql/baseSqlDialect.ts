@@ -26,7 +26,7 @@ import {
 } from '../type';
 import { getKeys, hasKeys, buildSortMap } from '../util';
 
-import { flatMap } from './sql.util';
+import { flatObject } from './sql.util';
 
 export abstract class BaseSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -186,14 +186,13 @@ export abstract class BaseSqlDialect implements QueryDialect {
       filter[meta.softDeleteKey as string] = null;
     }
 
-    const flattenedFilter = flatMap(meta, filter, opts.prefix);
-    const entries = Object.entries(flattenedFilter);
+    const entries = Object.entries(filter);
 
     if (!entries.length) {
       return '';
     }
 
-    const options = { usePrecedence: entries.length > 1 };
+    const options = { ...opts, usePrecedence: entries.length > 1 };
 
     let sql = entries.map(([key, val]) => this.compare(entity, key as keyof QueryFilterComparison<E>, val, options)).join(` AND `);
 
@@ -344,7 +343,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       return '';
     }
     const meta = getMeta(entity);
-    const flattenedSort = flatMap(meta, sortMap, prefix);
+    const flattenedSort = flatObject(sortMap, prefix);
     const directionMap = { 1: '', asc: '', '-1': ' DESC', desc: ' DESC' } as const;
     const order = Object.entries(flattenedSort)
       .map(([key, sort]) => {

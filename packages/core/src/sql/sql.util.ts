@@ -1,14 +1,14 @@
-import { EntityMeta, QueryFilter, QuerySort } from '../type';
 import { hasKeys, getKeys } from '../util';
 
-export function flatMap<E>(meta: EntityMeta<E>, map: QueryFilter<E> | QuerySort<E>, pre?: string): E {
-  return getKeys(map).reduce((acc, key) => flatMapEntry(meta, acc, key, map[key], pre), {} as E);
+export function flatObject<E>(obj: E, pre?: string): E {
+  return getKeys(obj).reduce((acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre), {} as E);
 }
 
-function flatMapEntry<E>(meta: EntityMeta<E>, map: E, key: string, val: any, pre?: string): E {
-  const isRel = meta.relations[key];
-  const prefix = isRel || !pre ? key : `${pre}.${key}`;
-  return isRel ? Object.keys(val).reduce((acc, prop) => flatMapEntry(meta, acc, prop, val[prop], prefix), map) : { ...map, [prefix]: val };
+function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
+  const prefix = pre ? `${pre}.${key}` : key;
+  return typeof val === 'object'
+    ? Object.keys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)
+    : { ...map, [prefix]: val };
 }
 
 export function mapRows<T>(rows: T[]): T[] {
