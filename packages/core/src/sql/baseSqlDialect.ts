@@ -5,7 +5,7 @@ import {
   QueryFilter,
   Query,
   Scalar,
-  QueryFilterSingleFieldOperator,
+  QueryFilterFieldOperator,
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
@@ -16,7 +16,7 @@ import {
   QueryProjectArray,
   QueryOptions,
   QueryDialect,
-  QueryFieldValue,
+  QueryFilterFieldValue,
   QueryFilterOptions,
   QueryComparisonOptions,
   QueryFilterComparison,
@@ -203,7 +203,12 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends keyof QueryFilterComparison<E>>(entity: Type<E>, key: K, val: QueryFieldValue<E[K]>, opts?: QueryComparisonOptions): string {
+  compare<E, K extends keyof QueryFilterComparison<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFilterFieldValue<E[K]>,
+    opts?: QueryComparisonOptions
+  ): string {
     const meta = getMeta(entity);
 
     if (key === '$and' || key === '$or') {
@@ -235,6 +240,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
       return `NOT ` + this.compare(entity, op, values, { usePrecedence: values.length > 1 });
     }
 
+    if (key === '$text') {
+      const search = val as QueryTextSearchOptions<E>;
+      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
+    }
+
     if (key === '$exists' || key === '$nexists') {
       const value = val as Raw;
       const query = getRawValue({
@@ -246,28 +256,23 @@ export abstract class BaseSqlDialect implements QueryDialect {
       return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
     }
 
-    if (key === '$text') {
-      const search = val as QueryTextSearchOptions<E>;
-      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
-    }
-
     if (val instanceof Raw) {
       const comparisonKey = this.getComparisonKey(entity, key, opts);
       return `${comparisonKey} = ${val.value}`;
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
-    const operators = getKeys(value) as (keyof QueryFilterSingleFieldOperator<E>)[];
-    const comparisons = operators.map((op) => this.compareSingleOperator(entity, key, op, value[op], opts)).join(' AND ');
+    const operators = getKeys(value) as (keyof QueryFilterFieldOperator<E>)[];
+    const comparisons = operators.map((op) => this.compareFieldOperator(entity, key, op, value[op], opts)).join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
-  compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
+  compareFieldOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QueryFilterSingleFieldOperator<E>,
-    val: QueryFieldValue<E[K]>,
+    op: keyof QueryFilterFieldOperator<E[K]>,
+    val: QueryFilterFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
@@ -276,6 +281,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
         return val === null ? `${comparisonKey} IS NULL` : `${comparisonKey} = ${this.escape(val)}`;
       case '$ne':
         return val === null ? `${comparisonKey} IS NOT NULL` : `${comparisonKey} <> ${this.escape(val)}`;
+      case '$not':
+        return 'NOT ' + this.compare(entity, key, val, opts);
       case '$gt':
         return `${comparisonKey} > ${this.escape(val)}`;
       case '$gte':

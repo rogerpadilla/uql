@@ -1,6 +1,6 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { BaseSqlDialect } from '@uql/core/sql';
-import { QueryComparisonOptions, QueryFieldValue, QueryFilterComparison, QueryTextSearchOptions, Type } from '@uql/core/type';
+import { QueryComparisonOptions, QueryFilterFieldValue, QueryFilterComparison, QueryTextSearchOptions, Type } from '@uql/core/type';
 
 export class MySqlDialect extends BaseSqlDialect {
   constructor() {
@@ -10,7 +10,7 @@ export class MySqlDialect extends BaseSqlDialect {
   override compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    val: QueryFieldValue<E[K]>,
+    val: QueryFilterFieldValue<E[K]>,
     opts?: QueryComparisonOptions
   ): string {
     if (key === '$text') {

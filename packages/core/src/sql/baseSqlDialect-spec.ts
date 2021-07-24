@@ -1,6 +1,6 @@
-import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit } from '../test/entityMock';
+import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company } from '../test/entityMock';
 
-import { FieldKey, QueryFilter, QuerySort } from '../type';
+import { FieldKey, QueryFilter } from '../type';
 import { Spec } from '../test/spec.util';
 import { raw } from '../querier';
 import { BaseSqlDialect } from './baseSqlDialect';
@@ -228,6 +228,34 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $filter: { $not: [{ name: 'Some' }] },
       })
     ).toBe("SELECT `id` FROM `User` WHERE NOT `name` = 'Some'");
+
+    expect(
+      this.dialect.find(Company, {
+        $project: ['id'],
+        $filter: { id: { $not: 123 } },
+      })
+    ).toBe('SELECT `id` FROM `Company` WHERE NOT `id` = 123');
+
+    expect(
+      this.dialect.find(Company, {
+        $project: ['id'],
+        $filter: { id: { $not: [123, 456] } },
+      })
+    ).toBe('SELECT `id` FROM `Company` WHERE NOT `id` IN (123, 456)');
+
+    expect(
+      this.dialect.find(Company, {
+        $project: ['id'],
+        $filter: { id: 123, name: { $not: { $startsWith: 'a' } } },
+      })
+    ).toBe("SELECT `id` FROM `Company` WHERE `id` = 123 AND NOT `name` LIKE 'a%'");
+
+    expect(
+      this.dialect.find(Company, {
+        $project: ['id'],
+        $filter: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
+      })
+    ).toBe("SELECT `id` FROM `Company` WHERE NOT (`name` LIKE 'a%' AND `name` LIKE '%z')");
 
     expect(
       this.dialect.find(User, {
