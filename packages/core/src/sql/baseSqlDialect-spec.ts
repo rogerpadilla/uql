@@ -830,9 +830,25 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(Item, {
         $project: ['id'],
-        $filter: { $and: [raw('SUM(`salePrice`) > 500')] },
+        $filter: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
+        $group: ['creatorId'],
       })
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(`salePrice`) > 500');
+    ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 AND SUM(salePrice) > 500 GROUP BY `creatorId`');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $or: [{ companyId: 1 }, 5, raw('SUM(salePrice) > 500')] },
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 OR `id` = 5 OR SUM(salePrice) > 500');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: raw('SUM(`salePrice`) > 500'),
+        $group: ['companyId'],
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(`salePrice`) > 500 GROUP BY `companyId`');
 
     expect(
       this.dialect.find(Item, {
@@ -840,13 +856,6 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $filter: { $or: [1, raw('SUM(salePrice) > 500')] },
       })
     ).toBe('SELECT `id` FROM `Item` WHERE `id` = 1 OR SUM(salePrice) > 500');
-
-    expect(
-      this.dialect.find(Item, {
-        $project: ['id'],
-        $filter: { $and: [{ companyId: 1 }, 5, raw('SUM(salePrice) > 500')] },
-      })
-    ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 AND `id` = 5 AND SUM(salePrice) > 500');
 
     expect(
       this.dialect.find(Item, {
