@@ -1,4 +1,4 @@
-import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company } from '../test/entityMock';
+import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company, Tax } from '../test/entityMock';
 
 import { FieldKey, QueryFilter } from '../type';
 import { Spec } from '../test/spec.util';
@@ -270,6 +270,13 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $filter: { $not: [{ name: 'abc' }, { creatorId: 1 }] },
       })
     ).toBe("SELECT `id` FROM `User` WHERE NOT (`name` = 'abc' AND `creatorId` = 1)");
+
+    expect(
+      this.dialect.find(Tax, {
+        $project: ['id'],
+        $filter: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
+      })
+    ).toBe("SELECT `id` FROM `Tax` WHERE `companyId` = 1 AND NOT `name` LIKE 'a%'");
   }
 
   shouldFind$nor() {

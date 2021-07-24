@@ -292,21 +292,21 @@ export abstract class BaseSqlDialect implements QueryDialect {
       case '$lte':
         return `${comparisonKey} <= ${this.escape(val)}`;
       case '$startsWith':
-        return `${comparisonKey} LIKE ${this.escape((val as string) + '%')}`;
+        return `${comparisonKey} LIKE ${this.escape(`${val}%`)}`;
       case '$istartsWith':
         return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$endsWith':
-        return `${comparisonKey} LIKE ${this.escape('%' + (val as string))}`;
+        return `${comparisonKey} LIKE ${this.escape(`%${val}`)}`;
       case '$iendsWith':
         return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
       case '$includes':
-        return `${comparisonKey} LIKE ${this.escape('%' + (val as string) + '%')}`;
+        return `${comparisonKey} LIKE ${this.escape(`%${val}%`)}`;
       case '$iincludes':
         return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase() + '%')}`;
       case '$ilike':
         return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase())}`;
       case '$like':
-        return `${comparisonKey} LIKE ${this.escape(val as string)}`;
+        return `${comparisonKey} LIKE ${this.escape(val)}`;
       case '$in':
         return `${comparisonKey} IN (${this.escape(val)})`;
       case '$nin':
