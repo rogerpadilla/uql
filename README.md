@@ -102,7 +102,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 3.  Additionally, your `tsconfig.json` needs the following flags:
 
 ```json
-"target": "es6", // or a more recent ecmascript version
+"target": "es6", // or a more recent ecmascript version.
 "experimentalDecorators": true,
 "emitDecoratorMetadata": true
 ```
@@ -144,7 +144,7 @@ export class Profile {
   @Field()
   picture?: string;
   /**
-   * foreign-keys are really simple to specify
+   * foreign-keys are really simple to specify.
    */
   @Field({ reference: () => User })
   creatorId?: number;
@@ -161,7 +161,7 @@ export class User {
   @Field()
   password?: string;
   /**
-   * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring)
+   * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring).
    */
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creatorId, cascade: true })
   profile?: Profile;
@@ -258,7 +258,7 @@ export const confirmationService = new ConfirmationService();
 /**
  * then you could just import the constant `confirmationService` in another file,
  * and when you call `confirmAction` function, all the operations there
- * will (automatically) run inside a single transaction
+ * will (automatically) run inside a single transaction.
  */
 await confirmationService.confirmAction(data);
 ```
@@ -336,15 +336,15 @@ app
     // this will generate REST APIs for the entities.
     querierMiddleware({
       // all entities will be automatically exposed unless
-      // 'include' or 'exclude' options are provided
+      // 'include' or 'exclude' options are provided.
       exclude: [Confirmation],
 
       // `query` callback allows to extend all then queries that are requested to the API,
-      // so it is a good place to add additional filters to the queries (like for multi tenant apps)
+      // so it is a good place to add additional filters to the queries (like for multi tenant apps).
       query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
           ...qm.$filter,
-          // ensure the user can only see the data that belongs to his company
+          // ensure the user can only see the data that belongs to his company.
           companyId: req.identity.companyId,
         };
         return qm;
@@ -374,7 +374,7 @@ yarn add @uql/client
 ```ts
 import { getRepository } from '@uql/client';
 
-// 'User' is an entity class
+// 'User' is an entity class.
 const userRepository = getRepository(User);
 
 const users = await userRepository.findMany({
