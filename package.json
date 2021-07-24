@@ -21,8 +21,8 @@
     ]
   },
   "devDependencies": {
-    "@commitlint/cli": "^12.1.4",
-    "@commitlint/config-conventional": "^12.1.4",
+    "@commitlint/cli": "^13.1.0",
+    "@commitlint/config-conventional": "^13.1.0",
     "@types/jest": "^26.0.24",
     "@typescript-eslint/eslint-plugin": "^4.28.4",
     "@typescript-eslint/parser": "^4.28.4",
@@ -38,7 +38,7 @@
     "rimraf": "^3.0.2",
     "run-rs": "^0.7.5",
     "semantic-release": "^17.4.4",
-    "ts-jest": "^27.0.3",
+    "ts-jest": "^27.0.4",
     "ts-node": "^10.1.0",
     "ts-node-dev": "^1.1.8",
     "typescript": "^4.4.0-beta"

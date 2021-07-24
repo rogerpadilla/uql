@@ -1,10 +1,10 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import {
   QueryComparisonOptions,
-  QueryFieldValue,
+  QueryFilterFieldValue,
   QueryFilterComparison,
   QueryOptions,
-  QueryFilterSingleFieldOperator,
+  QueryFilterFieldOperator,
   QueryTextSearchOptions,
   Type,
 } from '@uql/core/type';
@@ -25,7 +25,7 @@ export class PostgresDialect extends BaseSqlDialect {
   override compare<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    val: QueryFieldValue<E[K]>,
+    val: QueryFilterFieldValue<E[K]>,
     opts?: QueryComparisonOptions
   ): string {
     if (key === '$text') {
@@ -38,11 +38,11 @@ export class PostgresDialect extends BaseSqlDialect {
     return super.compare(entity, key, val, opts);
   }
 
-  override compareSingleOperator<E, K extends keyof QueryFilterComparison<E>>(
+  override compareFieldOperator<E, K extends keyof QueryFilterComparison<E>>(
     entity: Type<E>,
     key: K,
-    op: keyof QueryFilterSingleFieldOperator<E>,
-    val: QueryFieldValue<E[K]>,
+    op: keyof QueryFilterFieldOperator<E[K]>,
+    val: QueryFilterFieldValue<E[K]>,
     opts?: QueryOptions
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
@@ -58,7 +58,7 @@ export class PostgresDialect extends BaseSqlDialect {
       case '$regex':
         return `${comparisonKey} ~ ${this.escape(val)}`;
       default:
-        return super.compareSingleOperator(entity, key, op, val, opts);
+        return super.compareFieldOperator(entity, key, op, val, opts);
     }
   }
 }

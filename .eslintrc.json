@@ -19,7 +19,7 @@
   ],
   "rules": {
     "semi": ["warn", "always"],
-    "complexity": ["error", 20],
+    "complexity": ["error", 25],
     "curly": ["error", "all"],
     "no-restricted-syntax": ["error", "LabeledStatement", "WithStatement"],
     "no-implicit-coercion": ["error", { "boolean": false }],
