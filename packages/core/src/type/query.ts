@@ -50,6 +50,7 @@ export type QueryFilterComplexOperator<E> = {
 export type QueryFilterFieldOperator<V> = {
   readonly $eq?: V;
   readonly $ne?: V;
+  readonly $not?: QueryFilterFieldValue<V>;
   readonly $lt?: number;
   readonly $lte?: number;
   readonly $gt?: number;
@@ -65,7 +66,6 @@ export type QueryFilterFieldOperator<V> = {
   readonly $regex?: string;
   readonly $in?: readonly V[];
   readonly $nin?: readonly V[];
-  readonly $not?: QueryFilterFieldValue<V>;
 };
 
 export type QueryFilterFieldValue<V> = V | readonly V[] | QueryFilterFieldOperator<V> | QueryRaw;
@@ -76,7 +76,7 @@ export type QueryFilterFieldComparison<E> = {
 
 export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterComplexOperator<E>;
 
-export type QueryFilter<E> = FieldValue<E> | readonly FieldValue<E>[] | QueryFilterComparison<E>;
+export type QueryFilter<E> = FieldValue<E> | readonly FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
 
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 

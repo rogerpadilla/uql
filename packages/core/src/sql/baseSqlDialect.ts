@@ -176,7 +176,11 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    if (typeof filter !== 'object' || Array.isArray(filter)) {
+    if (filter instanceof Raw) {
+      filter = {
+        $and: [filter],
+      };
+    } else if (typeof filter !== 'object' || Array.isArray(filter)) {
       filter = {
         [meta.id]: filter,
       };

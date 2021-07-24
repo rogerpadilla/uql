@@ -186,7 +186,7 @@ export class BaseSqlQuerierSpec implements Spec {
               $project: ['id'],
               $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
-            { prefix: User.name }
+            { autoPrefix: true }
           )
         ),
       },
@@ -213,7 +213,7 @@ export class BaseSqlQuerierSpec implements Spec {
               $project: ['id'],
               $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
-            { prefix: User.name }
+            { autoPrefix: true }
           )
         ),
       },
