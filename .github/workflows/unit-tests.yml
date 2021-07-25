@@ -24,3 +24,5 @@ jobs:
 
       - name: Run Unit Tests
         run: yarn test
+      - name: Submit coverage
+        run: cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js
