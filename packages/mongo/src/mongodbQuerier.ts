@@ -1,6 +1,6 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isLogging, log } from '@uql/core';
-import { Query, QueryOne, Type, QueryCriteria, FieldValue, QueryOptions, QuerySearch } from '@uql/core/type';
+import { Query, QueryOne, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue } from '@uql/core/type';
 import { BaseQuerier, getPersistable, getPersistables, isProjectingRelations } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone, hasKeys } from '@uql/core/util';
@@ -22,7 +22,7 @@ export class MongodbQuerier extends BaseQuerier {
     });
   }
 
-  override findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E>) {
+  override findOneById<E>(entity: Type<E>, id: IdValue<E>, qo: QueryOne<E>) {
     return this.findOne(entity, { ...qo, $filter: id });
   }
 
@@ -86,10 +86,10 @@ export class MongodbQuerier extends BaseQuerier {
 
     const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
 
-    const ids = Object.values(insertedIds);
+    const ids: IdValue<E>[] = Object.values(insertedIds);
 
     for (const [index, it] of payloads.entries()) {
-      it[meta.id] = ids[index];
+      it[meta.id] = ids[index] as FieldValue<E>;
     }
 
     await this.insertRelations(entity, payloads);
@@ -128,7 +128,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!founds.length) {
       return 0;
     }
-    const ids = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
+    const ids: IdValue<E>[] = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
     let changes: number;
     if (meta.softDeleteKey && !opts.softDelete) {
       const updateResult = await this.collection(entity).updateMany(

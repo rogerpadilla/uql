@@ -845,7 +845,7 @@ export abstract class BaseSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(Item, {
         $project: ['id'],
-        $filter: raw('SUM(`salePrice`) > 500'),
+        $filter: { $and: [raw('SUM(`salePrice`) > 500')] },
         $group: ['companyId'],
       })
     ).toBe('SELECT `id` FROM `Item` WHERE SUM(`salePrice`) > 500 GROUP BY `companyId`');

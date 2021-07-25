@@ -1,8 +1,8 @@
-import { Request, Response } from 'express-serve-static-core';
+import { Request } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getOptions, getQuerier } from '@uql/core/options';
-import { FieldValue, Query, QueryOne, Type } from '@uql/core/type';
+import { IdValue, Query, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { parseQuery } from './query.util';
@@ -95,7 +95,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
     const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
     const querier = await getQuerier();
     try {
-      const data = await querier.findOneById(entity, req.params.id as FieldValue<E>, qm);
+      const data = await querier.findOneById(entity, req.params.id as IdValue<E>, qm);
       res.json({ data });
     } catch (err: any) {
       next(err);
@@ -130,7 +130,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.deleteOneById(entity, req.params.id as FieldValue<E>, {
+      const data = await querier.deleteOneById(entity, req.params.id as IdValue<E>, {
         softDelete: req.params.softDelete as unknown as boolean,
       });
       await querier.commitTransaction();

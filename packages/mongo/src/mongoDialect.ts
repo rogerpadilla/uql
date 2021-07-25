@@ -25,7 +25,7 @@ export class MongoDialect {
       };
     }
 
-    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && !(meta.softDeleteKey in filter)) {
+    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && !filter[meta.softDeleteKey as string]) {
       filter[meta.softDeleteKey as string] = null;
     }
 
@@ -108,7 +108,7 @@ export class MongoDialect {
         const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
         const referenceFilter = this.filter(relEntity, qm.$filter);
         const referenceSort = this.sort(relEntity, qm.$sort);
-        const referencePipelineEntry: MongoAggregationPipelineEntry<E[FieldValue<E>]> = { $match: { [referenceKey]: referenceFilter._id } };
+        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = { $match: { [referenceKey]: referenceFilter._id } };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
         }
@@ -169,18 +169,18 @@ type MongoAggregationPipelineEntry<E> = {
   readonly $lookup?: MongoAggregationLookup<E>;
   $match?: FilterQuery<E> | Record<string, any>;
   $sort?: MongoSort<E>;
-  readonly $unwind?: MongoAggregationUnwind<E>;
+  readonly $unwind?: MongoAggregationUnwind;
 };
 
 type MongoAggregationLookup<E> = {
   readonly from?: string;
   readonly foreignField?: string;
   readonly localField?: string;
-  readonly pipeline?: MongoAggregationPipelineEntry<E[FieldValue<E>]>[];
+  readonly pipeline?: MongoAggregationPipelineEntry<FieldValue<E>>[];
   readonly as?: RelationKey<E>;
 };
 
-type MongoAggregationUnwind<E> = {
+type MongoAggregationUnwind = {
   readonly path?: string;
   readonly preserveNullAndEmptyArrays?: boolean;
 };

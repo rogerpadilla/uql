@@ -1,5 +1,5 @@
 import {
-  FieldValue,
+  IdValue,
   Querier,
   Query,
   QueryCriteria,
@@ -20,7 +20,7 @@ import { BaseRepository } from './baseRepository';
 export abstract class BaseQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
-  findOneById<E>(entity: Type<E>, id: FieldValue<E>, qo: QueryOne<E> = {}) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qo: QueryOne<E> = {}) {
     return this.findOne(entity, { ...qo, $filter: id });
   }
 
@@ -41,19 +41,52 @@ export abstract class BaseQuerier implements Querier {
     return id;
   }
 
-  abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<any[]>;
+  abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E) {
+  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E) {
     return this.updateMany(entity, { $filter: id }, payload);
   }
 
   abstract updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<number>;
 
-  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts?: QueryOptions) {
+  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
     return this.deleteMany(entity, { $filter: id }, opts);
   }
 
   abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
+
+  async saveOne<E>(entity: Type<E>, payload: E) {
+    const [id] = await this.saveMany(entity, [payload]);
+    return id;
+  }
+
+  async saveMany<E>(entity: Type<E>, payload: E[]) {
+    const meta = getMeta(entity);
+    const ids: IdValue<E>[] = [];
+    const updates: E[] = [];
+    const inserts: E[] = [];
+
+    for (const it of payload) {
+      if (it[meta.id]) {
+        if (getKeys(it).length === 1) {
+          ids.push(it[meta.id]);
+        } else {
+          updates.push(it);
+        }
+      } else {
+        inserts.push(it);
+      }
+    }
+
+    return Promise.all([
+      ...ids,
+      ...(inserts.length ? await this.insertMany(entity, inserts) : []),
+      ...updates.map(async (it) => {
+        await this.updateOneById(entity, it[meta.id], it);
+        return it[meta.id];
+      }),
+    ]);
+  }
 
   protected async findToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
     const meta = getMeta(entity);
@@ -66,7 +99,7 @@ export abstract class BaseQuerier implements Querier {
       const relQuery: Query<any> =
         relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
       const referenceKey = relOpts.references[0].source;
-      const ids = payload.map((it) => it[meta.id]);
+      const ids: IdValue<E>[] = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
         const throughEntity = relOpts.through();
@@ -145,12 +178,12 @@ export abstract class BaseQuerier implements Querier {
       $project: [meta.id],
     });
 
-    const ids = founds.map((found) => found[meta.id]);
+    const ids: IdValue<E>[] = founds.map((found) => found[meta.id]);
 
     await Promise.all(ids.map((id) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))));
   }
 
-  protected async deleteRelations<E>(entity: Type<E>, ids: FieldValue<E>[], opts?: QueryOptions): Promise<void> {
+  protected async deleteRelations<E>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
     const relKeys = getPersistableRelations(meta, meta.relations as E, 'delete');
 
@@ -168,35 +201,7 @@ export abstract class BaseQuerier implements Querier {
     }
   }
 
-  protected async saveMany<E>(entity: Type<E>, payload: E[]): Promise<any[]> {
-    const meta = getMeta(entity);
-    const inserts: E[] = [];
-    const updates: E[] = [];
-    const links: any[] = [];
-
-    for (const it of payload) {
-      if (it[meta.id]) {
-        if (getKeys(it).length === 1) {
-          links.push(it[meta.id]);
-        } else {
-          updates.push(it);
-        }
-      } else {
-        inserts.push(it);
-      }
-    }
-
-    return Promise.all([
-      ...links,
-      ...(inserts.length ? await this.insertMany(entity, inserts) : []),
-      ...updates.map(async (it) => {
-        await this.updateOneById(entity, it[meta.id], it);
-        return it[meta.id];
-      }),
-    ]);
-  }
-
-  protected async saveRelation<E>(entity: Type<E>, payload: E, relKey: RelationKey<E>, isUpdate?: boolean): Promise<void> {
+  protected async saveRelation<E>(entity: Type<E>, payload: E, relKey: RelationKey<E>, isUpdate?: boolean) {
     const meta = getMeta(entity);
     const id = payload[meta.id];
     const { entity: entityGetter, cardinality, references, through } = meta.relations[relKey];
@@ -239,7 +244,7 @@ export abstract class BaseQuerier implements Querier {
         await this.deleteMany(relEntity, { $filter: { [referenceKey]: id } });
         return;
       }
-      await this.saveMany(relEntity, [{ ...relPayload, [referenceKey]: id }]);
+      await this.saveOne(relEntity, { ...relPayload, [referenceKey]: id });
       return;
     }
 

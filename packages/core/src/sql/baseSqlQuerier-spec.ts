@@ -167,7 +167,9 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.conn.all).toBeCalledWith('SELECT `id`, (SELECT COUNT(*) FROM `ItemTag` it WHERE it.`tagId` = id) `itemsCount` FROM `Tag`');
+    expect(this.querier.conn.all).toBeCalledWith(
+      'SELECT `id`, (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`'
+    );
 
     expect(this.querier.conn.all).toBeCalledTimes(1);
     expect(this.querier.conn.run).toBeCalledTimes(0);

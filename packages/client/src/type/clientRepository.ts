@@ -1,10 +1,10 @@
-import { Query, QueryOne, UniversalRepository, QueryCriteria, FieldValue, QueryOptions, QuerySearch } from '@uql/core/type';
+import { Query, QueryOne, UniversalRepository, QueryCriteria, QueryOptions, QuerySearch, IdValue } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {
   count(qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  findOneById(id: FieldValue<E>, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById(id: IdValue<E>, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
   findOne(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
@@ -12,15 +12,17 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
 
   findManyAndCount(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  insertOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<any>>;
+  insertOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  insertMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<any[]>>;
+  insertMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
   updateMany?(payload: E, qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  saveOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  saveOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  deleteOneById(id: FieldValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
+  saveMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+
+  deleteOneById(id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

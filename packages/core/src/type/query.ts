@@ -1,5 +1,5 @@
-import { FieldKey, FieldValue, Key, RelationKey } from './entity';
-import { BooleanLike, Scalar, Type, Unpacked } from './utility';
+import { FieldKey, IdValue, Key, RelationKey } from './entity';
+import { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility';
 
 export type QueryOptions = {
   readonly softDelete?: boolean;
@@ -28,7 +28,7 @@ export type QueryProjectRelation<E> = {
   [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | (Query<Unpacked<E[K]>> & { readonly $required?: boolean });
 };
 
-export type QueryFilterLogicalEntry<E> = FieldValue<E> | QueryFilterFieldComparison<E> | QueryRaw;
+export type QueryFilterLogicalEntry<E> = IdValue<E> | QueryFilterFieldComparison<E> | QueryRaw;
 
 export type QueryFilterLogical<E> = readonly QueryFilterLogicalEntry<E>[];
 
@@ -47,14 +47,14 @@ export type QueryFilterComplexOperator<E> = {
   readonly $nexists?: QueryRaw;
 };
 
-export type QueryFilterFieldOperator<V> = {
-  readonly $eq?: V;
-  readonly $ne?: V;
-  readonly $not?: QueryFilterFieldValue<V>;
-  readonly $lt?: number;
-  readonly $lte?: number;
-  readonly $gt?: number;
-  readonly $gte?: number;
+export type QueryFilterFieldOperator<T> = {
+  readonly $eq?: ExpandScalar<T>;
+  readonly $ne?: ExpandScalar<T>;
+  readonly $not?: QueryFilterFieldValue<T>;
+  readonly $lt?: ExpandScalar<T>;
+  readonly $lte?: ExpandScalar<T>;
+  readonly $gt?: ExpandScalar<T>;
+  readonly $gte?: ExpandScalar<T>;
   readonly $startsWith?: string;
   readonly $istartsWith?: string;
   readonly $endsWith?: string;
@@ -64,11 +64,11 @@ export type QueryFilterFieldOperator<V> = {
   readonly $like?: string;
   readonly $ilike?: string;
   readonly $regex?: string;
-  readonly $in?: readonly V[];
-  readonly $nin?: readonly V[];
+  readonly $in?: readonly ExpandScalar<T>[];
+  readonly $nin?: readonly ExpandScalar<T>[];
 };
 
-export type QueryFilterFieldValue<V> = V | readonly V[] | QueryFilterFieldOperator<V> | QueryRaw;
+export type QueryFilterFieldValue<T> = T | readonly T[] | QueryFilterFieldOperator<T> | QueryRaw;
 
 export type QueryFilterFieldComparison<E> = {
   readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]>;
@@ -76,7 +76,7 @@ export type QueryFilterFieldComparison<E> = {
 
 export type QueryFilterComparison<E> = QueryFilterFieldComparison<E> | QueryFilterComplexOperator<E>;
 
-export type QueryFilter<E> = FieldValue<E> | readonly FieldValue<E>[] | QueryFilterComparison<E> | QueryRaw;
+export type QueryFilter<E> = IdValue<E> | readonly IdValue<E>[] | QueryFilterComparison<E>;
 
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 

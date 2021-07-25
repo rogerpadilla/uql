@@ -1,4 +1,4 @@
-import { Query, QuerierPoolConnection, Type, QueryCriteria, QueryOptions } from '../type';
+import { Query, QuerierPoolConnection, Type, QueryCriteria, QueryOptions, IdValue } from '../type';
 import { BaseQuerier } from '../querier';
 import { getMeta } from '../entity/decorator';
 import { clone } from '../util';
@@ -35,7 +35,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     const query = this.dialect.insert(entity, payload);
     const { firstId } = await this.conn.run(query);
     const meta = getMeta(entity);
-    const ids = payload.map((it, index) => {
+    const ids: IdValue<E>[] = payload.map((it, index) => {
       it[meta.id as string] ??= firstId + index;
       return it[meta.id];
     });
@@ -58,14 +58,14 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
     if (!founds.length) {
       return 0;
     }
-    const ids = founds.map((it) => it[meta.id]);
+    const ids: IdValue<E>[] = founds.map((it) => it[meta.id]);
     const query = this.dialect.delete(entity, { $filter: ids }, opts);
     const { changes } = await this.conn.run(query);
     await this.deleteRelations(entity, ids, opts);
     return changes;
   }
 
-  override get hasOpenTransaction(): boolean {
+  override get hasOpenTransaction() {
     return this.hasPendingTransaction;
   }
 

@@ -17,6 +17,8 @@ describe('repository', () => {
       insertMany: jest.fn(),
       updateOneById: jest.fn(),
       updateMany: jest.fn(),
+      saveOne: jest.fn(),
+      saveMany: jest.fn(),
       deleteOneById: jest.fn(),
       deleteMany: jest.fn(),
     };
@@ -66,6 +68,16 @@ describe('repository', () => {
   it('updateOneById', async () => {
     await repository.updateOneById(1, {});
     expect(querier.updateOneById).toHaveBeenCalledWith(User, 1, {});
+  });
+
+  it('saveOne', async () => {
+    await repository.saveOne({});
+    expect(querier.saveOne).toHaveBeenCalledWith(User, {});
+  });
+
+  it('insertMany', async () => {
+    await repository.saveMany([{}]);
+    expect(querier.saveMany).toHaveBeenCalledWith(User, [{}]);
   });
 
   it('deleteOneById', async () => {

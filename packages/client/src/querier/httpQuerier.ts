@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { FieldValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Type } from '@uql/core/type';
+import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
@@ -15,7 +15,7 @@ export class HttpQuerier implements ClientQuerier {
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 
-  findOneById<E>(entity: Type<E>, id: FieldValue<E>, qm: QueryOne<E>, opts?: RequestOptions) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryOne<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/${id}${qs}`, opts);
@@ -46,7 +46,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<any>(basePath, payload, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, id: FieldValue<E>, payload: E, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, payload, opts);
   }
@@ -60,7 +60,7 @@ export class HttpQuerier implements ClientQuerier {
     return this.insertOne(entity, payload, opts);
   }
 
-  deleteOneById<E>(entity: Type<E>, id: FieldValue<E>, opts: QueryOptions & RequestOptions = {}) {
+  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = opts.softDelete ? stringifyQuery({ softDelete: opts.softDelete }) : '';
     return remove<number>(`${basePath}/${id}${qs}`, opts);

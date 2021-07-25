@@ -1,4 +1,4 @@
-import { QueryRaw, QueryRawFn, QueryRawFnOptions } from './query';
+import { QueryRaw, QueryRawFnOptions } from './query';
 import { Scalar, Type } from './utility';
 
 export type Key<E> = {
@@ -10,6 +10,16 @@ export type FieldKey<E> = {
 }[Key<E>];
 
 export type FieldValue<E> = E[FieldKey<E>];
+
+export const idKey = Symbol('idKey');
+
+export type IdValue<E> = E extends { [idKey]?: infer U }
+  ? U
+  : E extends { id?: infer U }
+  ? U
+  : E extends { _id?: infer U }
+  ? U & string
+  : FieldValue<E>;
 
 export type RelationKey<E> = {
   readonly [K in Key<E>]: E[K] extends Scalar ? never : K;

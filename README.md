@@ -2,7 +2,7 @@
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
-# :sun_with_face: Getting Started
+# Getting Started
 
 `uql` is a plug & play `ORM`, with declarative `JSON` syntax to query/update multiple data sources. Just declare what you want from the data source, and then `uql` will run fast and safe `SQL` (or `Mongo`) queries.
 
@@ -35,7 +35,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 7. [Consume REST APIs from the Frontend](#client)
 8. [FAQs](#faq)
 
-## <a name="installation"></a>:battery: Installation
+## <a name="installation"></a> Installation
 
 1.  Install the core package:
 
@@ -107,7 +107,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 "emitDecoratorMetadata": true
 ```
 
-## <a name="configuration"></a>:gear: Configuration
+## <a name="configuration"></a> Configuration
 
 Initialization should be done once (e.g. in one of the bootstrap files of your app).
 
@@ -127,7 +127,7 @@ setOptions({
 });
 ```
 
-## <a name="entities"></a>:egg: Entities
+## <a name="entities"></a> Entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `'@uql/core/entity'`.
 
@@ -224,7 +224,7 @@ export class ItemTag {
 }
 ```
 
-## <a name="declarative-transactions"></a>:speech_balloon: Declarative Transactions
+## <a name="declarative-transactions"></a> Declarative Transactions
 
 Both, _declarative_ and _programmatic_ transactions are supported, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
@@ -239,7 +239,7 @@ import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
 
 class ConfirmationService {
   @Transactional()
-  async confirmAction(confirmation: Confirmation, @InjectQuerier() querier?: Querier) {
+  async confirmAction(confirmation: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     if (confirmation.type === 'register') {
       await querier.insertOne(User, {
         name: confirmation.name,
@@ -249,7 +249,7 @@ class ConfirmationService {
     } else {
       await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
     }
-    await querier.updateOneById(Confirmation, confirmation.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
   }
 }
 
@@ -263,7 +263,7 @@ export const confirmationService = new ConfirmationService();
 await confirmationService.confirmAction(data);
 ```
 
-## <a name="programmatic-transactions"></a>:open_hands: Programmatic Transactions
+## <a name="programmatic-transactions"></a> Programmatic Transactions
 
 `uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
@@ -280,7 +280,7 @@ To use Programmatic Transactions:
 ```ts
 import { getQuerier } from '@uql/core';
 
-async function confirmAction(confirmation: Confirmation) {
+async function confirmAction(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
   try {
     await querier.beginTransaction();
@@ -293,7 +293,7 @@ async function confirmAction(confirmation: Confirmation) {
     } else {
       await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
     }
-    await querier.updateOneById(Confirmation, confirmation.id, { status: CONFIRM_STATUS_VERIFIED });
+    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
     await querier.commitTransaction();
   } catch (error) {
     await querier.rollbackTransaction();
@@ -304,7 +304,7 @@ async function confirmAction(confirmation: Confirmation) {
 }
 ```
 
-## <a name="express"></a>:zap: Autogenerate REST APIs with Express
+## <a name="express"></a> Autogenerate REST APIs with Express
 
 A `express` plugin is provided to automatically generate REST APIs for your entities.
 
@@ -353,7 +353,7 @@ app
   );
 ```
 
-## <a name="client"></a>:cloud: Easily call the generated REST APIs from the Client
+## <a name="client"></a> Easily call the generated REST APIs from the Client
 
 A client plugin (for browser/mobile) is provided to easily consume the REST APIs from the frontend.
 
