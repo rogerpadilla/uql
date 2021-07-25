@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/impensables/uql.svg?branch=master)](https://travis-ci.com/impensables/uql)
+![Build status](https://github.com/impensables/uql/actions/workflows/unit-tests/badge.svg)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
