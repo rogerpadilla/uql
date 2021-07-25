@@ -1,4 +1,4 @@
-![Unit tests](https://github.com/impensables/uql/actions/workflows/unit-tests.yml/badge.svg)
+![tests](https://github.com/impensables/uql/actions/workflows/tests.yml/badge.svg)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
