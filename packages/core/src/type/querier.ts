@@ -6,14 +6,14 @@ import { IdValue } from './entity';
 export interface UniversalQuerier {
   /**
    * Counts the number of records matching the given search parameters.
-   * @param entity the entity to search on
+   * @param entity the target entity
    * @param qm the search options
    */
   count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<any>;
 
   /**
    * Obtains the record with the given primary key.
-   * @param entity the entity to search on
+   * @param entity the target entity
    * @param id the primary key value
    * @param qo the criteria options
    */
@@ -21,14 +21,14 @@ export interface UniversalQuerier {
 
   /**
    * Obtains the first record matching the given search parameters.
-   * @param entity the entity to search on
+   * @param entity the target entity
    * @param qm the criteria options
    */
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<any>;
 
   /**
    * Obtains the records matching the given search parameters.
-   * @param entity the entity to search on
+   * @param entity the target entity
    * @param qm the criteria options
    */
   findMany<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
@@ -36,7 +36,7 @@ export interface UniversalQuerier {
   /**
    * Obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
-   * @param entity the entity to search on
+   * @param entity the target entity
    * @param qm the criteria options
    */
   findManyAndCount<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
