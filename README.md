@@ -1,5 +1,4 @@
-# [uql](https://uql.io) &middot;
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/impensables/uql/blob/master/LICENSE) 
+# [uql](https://uql.io) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/impensables/uql/blob/master/LICENSE) 
 [![tests](https://github.com/impensables/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/impensables/uql)
 [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=master)](https://coveralls.io/r/impensables/uql?branch=master)
 [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
