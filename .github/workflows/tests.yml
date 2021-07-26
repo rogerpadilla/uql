@@ -22,7 +22,7 @@ jobs:
       - name: Install
         run: yarn install
 
-      - name: Run Unit Tests
+      - name: Run Tests
         run: yarn test
       - name: Submit coverage
         run: cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js
