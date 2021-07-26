@@ -1,5 +1,6 @@
 {
   "name": "@uql/mysql",
+  "homepage": "https://uql.io",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
   "version": "0.4.57",
