@@ -1,4 +1,4 @@
-import { Key, Type } from '../../type';
+import { Key, Type } from '@uql/core/type';
 
 const metadataKey = Symbol('InjectQuerier');
 

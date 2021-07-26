@@ -1,5 +1,5 @@
 import { createSpec, Item, User } from '@uql/core/test';
-import { BaseSqlDialectSpec } from '@uql/core/sql/baseSqlDialect-spec';
+import { BaseSqlDialectSpec } from './baseSqlDialect-spec';
 import { MySqlDialect } from './mysqlDialect';
 
 export class MySqlDialectSpec extends BaseSqlDialectSpec {

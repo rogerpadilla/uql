@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { Item, Spec, TaxCategory, User, createSpec, Tax } from '@uql/core/test';
-import { getMeta } from '@uql/core/entity/decorator';
+import { getMeta } from '@uql/core/entity';
 import { MongoDialect } from './mongoDialect';
 
 class MongoDialectSpec implements Spec {

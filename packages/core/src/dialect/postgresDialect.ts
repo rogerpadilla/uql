@@ -1,4 +1,4 @@
-import { getMeta } from '@uql/core/entity/decorator';
+import { getMeta } from '@uql/core/entity';
 import {
   QueryComparisonOptions,
   QueryFilterFieldValue,
@@ -8,7 +8,7 @@ import {
   QueryTextSearchOptions,
   Type,
 } from '@uql/core/type';
-import { BaseSqlDialect } from '@uql/core/sql';
+import { BaseSqlDialect } from './baseSqlDialect';
 
 export class PostgresDialect extends BaseSqlDialect {
   constructor() {

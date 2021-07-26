@@ -1,12 +1,11 @@
-import { Query, QuerierPoolConnection, Type, QueryCriteria, QueryOptions, IdValue } from '../type';
-import { BaseQuerier } from '../querier';
-import { getMeta } from '../entity/decorator';
-import { clone } from '../util';
+import { getMeta } from '@uql/core/entity';
+import { Query, QuerierPoolConnection, Type, QueryCriteria, QueryOptions, IdValue } from '@uql/core/type';
+import { unflatObjects, clone } from '@uql/core/util';
+import { BaseSqlDialect } from '@uql/core/dialect';
 
-import { mapRows } from './sql.util';
-import { BaseSqlDialect } from './baseSqlDialect';
+import { BaseQuerier } from './baseQuerier';
 
-export abstract class BaseSqlQuerier extends BaseQuerier {
+export class SqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
 
   constructor(readonly conn: QuerierPoolConnection, readonly dialect: BaseSqlDialect) {
@@ -22,7 +21,7 @@ export abstract class BaseSqlQuerier extends BaseQuerier {
   override async findMany<E>(entity: Type<E>, qm: Query<E>) {
     const query = this.dialect.find(entity, qm);
     const res = await this.conn.all<E>(query);
-    const founds = mapRows(res);
+    const founds = unflatObjects(res);
     await this.findToManyRelations(entity, founds, qm.$project);
     return founds;
   }

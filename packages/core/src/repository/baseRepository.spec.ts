@@ -1,5 +1,5 @@
-import { User } from '../test';
-import { Querier, Repository } from '../type';
+import { User } from '@uql/core/test';
+import { Querier, Repository } from '@uql/core/type';
 import { BaseRepository } from './baseRepository';
 
 describe('repository', () => {

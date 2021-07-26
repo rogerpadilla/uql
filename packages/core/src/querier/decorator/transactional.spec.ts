@@ -1,5 +1,5 @@
 import { getQuerier, setOptions } from '@uql/core/options';
-import { Querier, QuerierPool, Writable } from '../../type';
+import { Querier, QuerierPool, Writable } from '@uql/core/type';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
 

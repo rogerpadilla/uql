@@ -1,9 +1,9 @@
 import { MongoClient, ClientSession } from 'mongodb';
 import { isLogging, log } from '@uql/core';
 import { Query, QueryOne, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue } from '@uql/core/type';
-import { BaseQuerier, getPersistable, getPersistables, isProjectingRelations } from '@uql/core/querier';
+import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { clone, hasKeys } from '@uql/core/util';
+import { clone, getPersistable, getPersistables, hasKeys, isProjectingRelations } from '@uql/core/util';
 
 import { MongoDialect } from './mongoDialect';
 

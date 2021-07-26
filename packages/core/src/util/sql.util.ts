@@ -1,4 +1,4 @@
-import { hasKeys, getKeys } from '../util';
+import { hasKeys, getKeys } from './object.util';
 
 export function flatObject<E>(obj: E, pre?: string): E {
   return getKeys(obj).reduce((acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre), {} as E);
@@ -11,18 +11,18 @@ function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
     : { ...map, [prefix]: val };
 }
 
-export function mapRows<T>(rows: T[]): T[] {
-  if (!Array.isArray(rows) || !rows.length) {
-    return rows;
+export function unflatObjects<T>(objects: T[]): T[] {
+  if (!Array.isArray(objects) || !objects.length) {
+    return objects;
   }
 
-  const attrsPaths = obtainAttrsPaths(rows[0]);
+  const attrsPaths = obtainAttrsPaths(objects[0]);
 
   if (!hasKeys(attrsPaths)) {
-    return rows;
+    return objects;
   }
 
-  return rows.map((row) => {
+  return objects.map((row) => {
     const dto = {} as T;
 
     for (const col in row) {

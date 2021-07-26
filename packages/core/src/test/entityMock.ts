@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity';
-import { raw } from '../querier';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
+import { raw } from '@uql/core/util';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.

@@ -1,9 +1,10 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
 import { QuerierPool } from '@uql/core/type';
-import { MariadbQuerier } from './mariadbQuerier';
+import { SqlQuerier } from '@uql/core/querier';
+import { MySqlDialect } from '@uql/core/dialect';
 import { MariadbConnection } from './mariadbConnection';
 
-export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
+export class MariadbQuerierPool implements QuerierPool<SqlQuerier> {
   readonly pool: Pool;
 
   constructor(opts: PoolConfig) {
@@ -12,7 +13,7 @@ export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
 
   async getQuerier() {
     const conn = await this.pool.getConnection();
-    return new MariadbQuerier(new MariadbConnection(conn));
+    return new SqlQuerier(new MariadbConnection(conn), new MySqlDialect());
   }
 
   async end() {

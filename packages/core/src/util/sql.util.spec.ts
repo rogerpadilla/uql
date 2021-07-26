@@ -1,7 +1,6 @@
-import { getMeta } from '../entity';
-import { Item, Storehouse, ItemAdjustment, User } from '../test';
-import { QuerySortMap } from '../type';
-import { flatObject, mapRows } from './sql.util';
+import { Item, Storehouse, ItemAdjustment } from '@uql/core/test';
+import { QuerySortMap } from '@uql/core/type';
+import { flatObject, unflatObjects } from './sql.util';
 
 it('flatObject', () => {
   expect(flatObject(undefined)).toEqual({});
@@ -11,14 +10,14 @@ it('flatObject', () => {
   expect(flatObject(sort)).toEqual({ name: 1, 'measureUnit.name': -1, 'measureUnit.category.creator.profile.picture': 1 });
 });
 
-it('map rows - empty', () => {
-  const res1 = mapRows(undefined);
+it('unflatObjects - empty', () => {
+  const res1 = unflatObjects(undefined);
   expect(res1).toBe(undefined);
-  const res2 = mapRows([]);
+  const res2 = unflatObjects([]);
   expect(res2).toEqual([]);
 });
 
-it('mapRows', () => {
+it('unflatObjects', () => {
   const source: Storehouse[] = [
     {
       id: 1,
@@ -41,7 +40,7 @@ it('mapRows', () => {
       companyId: 1,
     },
   ];
-  const result = mapRows(source);
+  const result = unflatObjects(source);
   const expected: Storehouse[] = [
     {
       id: 1,
@@ -67,7 +66,7 @@ it('mapRows', () => {
   expect(result).toEqual(expected);
 });
 
-it('mapRows deep project', () => {
+it('unflatObjects deep', () => {
   const source = [
     {
       id: 9,
@@ -111,7 +110,7 @@ it('mapRows deep project', () => {
       'item.creator.name': 'Roshi Master',
     },
   ];
-  const result = mapRows(source as Item[]);
+  const result = unflatObjects(source as Item[]);
   const expected: ItemAdjustment[] = [
     {
       id: 9,

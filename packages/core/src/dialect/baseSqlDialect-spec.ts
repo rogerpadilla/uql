@@ -1,8 +1,7 @@
-import { User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company, Tax } from '../test/entityMock';
+import { Spec, User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company, Tax } from '@uql/core/test';
 
-import { FieldKey, QueryFilter } from '../type';
-import { Spec } from '../test/spec.util';
-import { raw } from '../querier';
+import { FieldKey, QueryFilter } from '@uql/core/type';
+import { raw } from '@uql/core/util';
 import { BaseSqlDialect } from './baseSqlDialect';
 
 export abstract class BaseSqlDialectSpec implements Spec {

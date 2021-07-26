@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util';
+import { hasKeys, lowerFirst, getKeys, upperFirst } from '@uql/core/util';
 import {
   RelationOptions,
   FieldOptions,
@@ -13,7 +13,7 @@ import {
   RelationKey,
   FieldKey,
   Key,
-} from '../../type';
+} from '@uql/core/type';
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity/decorator';

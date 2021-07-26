@@ -1,4 +1,4 @@
-import { BaseSqlQuerierSpec } from '@uql/core/sql/baseSqlQuerier-spec';
+import { BaseSqlQuerierSpec } from '@uql/core/querier/sqlQuerier-spec';
 import { createSpec } from '@uql/core/test';
 import { Sqlite3QuerierPool } from './sqlite3QuerierPool';
 

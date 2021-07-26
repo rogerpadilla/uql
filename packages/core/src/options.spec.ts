@@ -1,6 +1,6 @@
+import { User } from '@uql/core/test';
+import { Querier } from '@uql/core/type';
 import { getOptions, getQuerier, getQuerierPool, getRepository, isLogging, log, setLogging, setOptions } from './options';
-import { User } from './test';
-import { Querier } from './type';
 
 describe('options', () => {
   beforeEach(() => {

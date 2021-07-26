@@ -1,13 +1,13 @@
-import { raw } from '../querier';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, cleanTables, ItemAdjustment } from '../test';
-import { QuerierPool, QueryFilter } from '../type';
-import { BaseSqlQuerier } from './baseSqlQuerier';
+import { raw } from '@uql/core/util/raw';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, cleanTables, ItemAdjustment } from '@uql/core/test';
+import { QuerierPool, QueryFilter } from '@uql/core/type';
+import { SqlQuerier } from './sqlQuerier';
 
 export class BaseSqlQuerierSpec implements Spec {
   readonly primaryKeyType: string = 'INTEGER PRIMARY KEY';
-  querier: BaseSqlQuerier;
+  querier: SqlQuerier;
 
-  constructor(readonly pool: QuerierPool<BaseSqlQuerier>) {}
+  constructor(readonly pool: QuerierPool<SqlQuerier>) {}
 
   async beforeAll() {
     this.querier = await this.pool.getQuerier();

@@ -1,4 +1,4 @@
-import { BaseSqlDialect } from '@uql/core/sql';
+import { BaseSqlDialect } from './baseSqlDialect';
 
 export class SqliteDialect extends BaseSqlDialect {
   constructor() {

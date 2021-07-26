@@ -1,5 +1,5 @@
 import { EntityMeta, ReferenceOptions } from '@uql/core/type';
-import { Raw } from '@uql/core/querier';
+import { Raw } from '@uql/core/util';
 import {
   User,
   Item,
@@ -15,7 +15,7 @@ import {
   Storehouse,
   Tag,
   ItemTag,
-} from '../../test';
+} from '@uql/core/test';
 import { getEntities, getMeta } from './definition';
 import { Entity } from './entity';
 import { Id } from './id';

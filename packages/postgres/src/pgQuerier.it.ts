@@ -1,6 +1,6 @@
 import { types } from 'pg';
 import { createSpec } from '@uql/core/test';
-import { BaseSqlQuerierIt } from '@uql/core/sql/baseSqlQuerier-it';
+import { BaseSqlQuerierIt } from '@uql/core/querier/sqlQuerier-it';
 import { PgQuerierPool } from './pgQuerierPool';
 
 types.setTypeParser(types.builtins.INT8, (value: string) => parseInt(value));

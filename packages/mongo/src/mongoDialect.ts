@@ -12,8 +12,7 @@ import {
   RelationKey,
 } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
-import { getKeys, hasKeys, buildSortMap } from '@uql/core/util';
-import { getProjectRelationKeys } from '@uql/core/querier';
+import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys } from '@uql/core/util';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): FilterQuery<E> {

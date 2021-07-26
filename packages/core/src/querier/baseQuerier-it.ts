@@ -1,6 +1,6 @@
-import { getEntities } from '../entity/decorator';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, TaxCategory, User } from '../test';
-import { Querier, QuerierPool } from '../type';
+import { Querier, QuerierPool } from '@uql/core/type';
+import { getEntities } from '@uql/core/entity';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, TaxCategory, User } from '@uql/core/test';
 
 export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   querier: Q;

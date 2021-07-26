@@ -1,4 +1,4 @@
-import { FieldOptions, Type } from '../../type';
+import { FieldOptions, Type } from '@uql/core/type';
 import { defineId } from './definition';
 
 export function Id<E>(opts?: Omit<FieldOptions, 'isId'>) {

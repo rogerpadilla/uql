@@ -235,7 +235,7 @@ To use Declarative Transactions (using the `@Transactional` decorator):
 
 ```ts
 import { Querier } from '@uql/core/type';
-import { Transactional, InjectQuerier } from '@uql/core/querier/decorator';
+import { Transactional, InjectQuerier } from '@uql/core/querier';
 
 class ConfirmationService {
   @Transactional()

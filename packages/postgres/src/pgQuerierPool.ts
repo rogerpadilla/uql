@@ -1,9 +1,10 @@
 import { Pool, PoolConfig } from 'pg';
 import { QuerierPool } from '@uql/core/type';
-import { PostgresQuerier } from './postgresQuerier';
+import { SqlQuerier } from '@uql/core/querier';
+import { PostgresDialect } from '@uql/core/dialect';
 import { PgConnection } from './pgConnection';
 
-export class PgQuerierPool implements QuerierPool<PostgresQuerier> {
+export class PgQuerierPool implements QuerierPool<SqlQuerier> {
   readonly pool: Pool;
 
   constructor(opts: PoolConfig) {
@@ -12,7 +13,7 @@ export class PgQuerierPool implements QuerierPool<PostgresQuerier> {
 
   async getQuerier() {
     const conn = await this.pool.connect();
-    return new PostgresQuerier(new PgConnection(conn));
+    return new SqlQuerier(new PgConnection(conn), new PostgresDialect());
   }
 
   async end() {

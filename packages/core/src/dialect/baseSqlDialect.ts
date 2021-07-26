@@ -1,6 +1,20 @@
 import { escape } from 'sqlstring';
-import { getMeta } from '../entity/decorator/definition';
-import { getPersistable, getProjectRelationKeys, getPersistables, Raw, raw, isProjectingRelations, getVirtualValue, getRawValue } from '../querier';
+import { getMeta } from '@uql/core/entity';
+import {
+  getPersistable,
+  getProjectRelationKeys,
+  getPersistables,
+  isProjectingRelations,
+  getKeys,
+  hasKeys,
+  buildSortMap,
+  flatObject,
+  getRawValue,
+  getVirtualValue,
+  raw,
+  Raw,
+} from '@uql/core/util';
+
 import {
   QueryFilter,
   Query,
@@ -23,10 +37,7 @@ import {
   QuerySearch,
   QueryProjectOptions,
   QuerySortDirection,
-} from '../type';
-import { getKeys, hasKeys, buildSortMap } from '../util';
-
-import { flatObject } from './sql.util';
+} from '@uql/core/type';
 
 export abstract class BaseSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;

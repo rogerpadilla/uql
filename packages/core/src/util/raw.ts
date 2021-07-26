@@ -1,4 +1,4 @@
-import { QueryRaw, QueryRawFn, Scalar } from '../type';
+import { QueryRaw, QueryRawFn, Scalar } from '@uql/core/type';
 
 export class Raw implements QueryRaw {
   constructor(readonly value: Scalar | QueryRawFn, readonly alias?: string) {}

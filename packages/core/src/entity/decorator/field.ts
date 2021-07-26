@@ -1,4 +1,4 @@
-import { FieldOptions, Type } from '../../type';
+import { FieldOptions, Type } from '@uql/core/type';
 import { defineField } from './definition';
 
 export function Field<E>(opts?: FieldOptions) {

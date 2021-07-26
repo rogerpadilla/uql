@@ -1,3 +1,6 @@
+import { BaseRepository } from '@uql/core/repository';
+import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from '@uql/core/util';
+import { getMeta } from '@uql/core/entity';
 import {
   IdValue,
   Querier,
@@ -11,11 +14,7 @@ import {
   RelationValue,
   Repository,
   Type,
-} from '../type';
-import { getMeta } from '../entity/decorator';
-import { clone, getKeys } from '../util';
-import { getProjectRelationKeys, getPersistableRelations } from './querier.util';
-import { BaseRepository } from './baseRepository';
+} from '@uql/core/type';
 
 export abstract class BaseQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;

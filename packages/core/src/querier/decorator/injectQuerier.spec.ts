@@ -1,4 +1,4 @@
-import { Querier } from '../../type';
+import { Querier } from '@uql/core/type';
 import { getInjectedQuerierIndex, InjectQuerier } from './injectQuerier';
 
 describe('injectQuerier', () => {
