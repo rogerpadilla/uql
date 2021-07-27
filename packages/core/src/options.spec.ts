@@ -1,6 +1,6 @@
 import { User } from '@uql/core/test';
 import { Querier } from '@uql/core/type';
-import { getOptions, getQuerier, getQuerierPool, getRepository, isLogging, log, setLogging, setOptions } from './options';
+import { getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
 
 describe('options', () => {
   beforeEach(() => {
@@ -12,11 +12,7 @@ describe('options', () => {
   });
 
   it('getOptions unset', () => {
-    expect(getOptions()).toEqual({
-      logger: expect.any(Function),
-    });
-
-    expect(isLogging()).toBeFalsy();
+    expect(getOptions()).toEqual({});
   });
 
   it('setOptions', () => {
@@ -24,37 +20,17 @@ describe('options', () => {
 
     setOptions({
       querierPool: undefined,
-      logging: true,
-      logger,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
-      logging: true,
-      logger,
     });
-
-    expect(isLogging()).toBe(true);
-
-    log('hi', 'uql');
-    expect(logger).toBeCalledWith('hi', 'uql');
-    expect(logger).toBeCalledTimes(1);
-    expect(console.log).toBeCalledTimes(0);
 
     setOptions({
       querierPool: undefined,
     });
     expect(getOptions()).toEqual({
       querierPool: undefined,
-      logger: expect.any(Function),
     });
-  });
-
-  it('logging', () => {
-    expect(isLogging()).toBeFalsy();
-    setLogging(true);
-    expect(isLogging()).toBe(true);
-    setLogging(false);
-    expect(isLogging()).toBe(false);
   });
 
   it('getQuerierPool unset', () => {

@@ -8,7 +8,7 @@ import { BaseQuerier } from './baseQuerier';
 export class SqlQuerier extends BaseQuerier {
   private hasPendingTransaction?: boolean;
 
-  constructor(readonly conn: QuerierPoolConnection, readonly dialect: BaseSqlDialect) {
+  constructor(readonly dialect: BaseSqlDialect, readonly conn: QuerierPoolConnection) {
     super();
   }
 

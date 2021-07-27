@@ -113,14 +113,15 @@ import { setOptions } from '@uql/core';
 import { PgQuerierPool } from '@uql/postgres';
 
 setOptions({
-  querierPool: new PgQuerierPool({
-    host: 'localhost',
-    user: 'theUser',
-    password: 'thePassword',
-    database: 'theDatabase',
-  }),
-  logging: true,
-  logger: console.log,
+  querierPool: new PgQuerierPool(
+    {
+      host: 'localhost',
+      user: 'theUser',
+      password: 'thePassword',
+      database: 'theDatabase',
+    },
+    console.log
+  ),
 });
 ```
 

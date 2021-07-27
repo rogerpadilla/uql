@@ -1,3 +1,4 @@
+import { Logger } from './options';
 import { Querier } from './querier';
 import { QueryUpdateResult } from './query';
 
@@ -9,6 +10,7 @@ export type QuerierPoolConnection = {
 };
 
 export type QuerierPool<Q extends Querier = Querier> = {
+  logger?: Logger;
   getQuerier: () => Promise<Q>;
   end(): Promise<void>;
 };

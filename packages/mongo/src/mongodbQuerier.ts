@@ -1,6 +1,5 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { isLogging, log } from '@uql/core';
-import { Query, QueryOne, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue } from '@uql/core/type';
+import { Query, QueryOne, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue, Logger } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone, getPersistable, getPersistables, hasKeys, isProjectingRelations } from '@uql/core/util';
@@ -10,13 +9,13 @@ import { MongoDialect } from './mongoDialect';
 export class MongodbQuerier extends BaseQuerier {
   private session: ClientSession;
 
-  constructor(readonly conn: MongoClient, readonly dialect = new MongoDialect()) {
+  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly logger?: Logger) {
     super();
   }
 
   override count<E>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
-    log('count', entity.name, filter);
+    this.logger?.('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
@@ -34,8 +33,8 @@ export class MongodbQuerier extends BaseQuerier {
 
     if (hasProjectRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
-      if (isLogging()) {
-        log('findMany', entity.name, JSON.stringify(pipeline, null, 2));
+      if (this.logger) {
+        this.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       }
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       documents = this.dialect.normalizeIds(meta, documents);
@@ -62,7 +61,7 @@ export class MongodbQuerier extends BaseQuerier {
         cursor.limit(qm.$limit);
       }
 
-      log('findMany', entity.name, qm);
+      this.logger?.('findMany', entity.name, qm);
 
       documents = await cursor.toArray();
       documents = this.dialect.normalizeIds(meta, documents);
@@ -82,7 +81,7 @@ export class MongodbQuerier extends BaseQuerier {
     const payloads = Array.isArray(payload) ? payload : [payload];
     const persistables = getPersistables(meta, payload, 'onInsert');
 
-    log('insertMany', entity.name, persistables);
+    this.logger?.('insertMany', entity.name, persistables);
 
     const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
 
@@ -104,7 +103,7 @@ export class MongodbQuerier extends BaseQuerier {
     const filter = this.dialect.filter(entity, qm.$filter);
     const update = { $set: persistable };
 
-    log('updateMany', entity.name, filter, update);
+    this.logger?.('updateMany', entity.name, filter, update);
 
     const { matchedCount } = await this.collection(entity).updateMany(filter, update, {
       session: this.session,
@@ -118,7 +117,7 @@ export class MongodbQuerier extends BaseQuerier {
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}) {
     const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
-    log('deleteMany', entity.name, filter, opts);
+    this.logger?.('deleteMany', entity.name, filter, opts);
     const founds: E[] = await this.collection(entity)
       .find(filter, {
         projection: { _id: true },
@@ -165,7 +164,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (this.session?.inTransaction()) {
       throw new TypeError('pending transaction');
     }
-    log('beginTransaction');
+    this.logger?.('beginTransaction');
     this.session = this.conn.startSession();
     this.session.startTransaction();
   }
@@ -174,7 +173,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
-    log('commitTransaction');
+    this.logger?.('commitTransaction');
     await this.session.commitTransaction();
   }
 
@@ -182,7 +181,7 @@ export class MongodbQuerier extends BaseQuerier {
     if (!this.session?.inTransaction()) {
       throw new TypeError('not a pending transaction');
     }
-    log('rollbackTransaction');
+    this.logger?.('rollbackTransaction');
     await this.session.abortTransaction();
   }
 

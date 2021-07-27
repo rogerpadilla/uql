@@ -1,17 +1,16 @@
 import { Database } from 'sqlite';
-import { QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
-import { log } from '@uql/core';
+import { Logger, QuerierPoolConnection, QueryUpdateResult } from '@uql/core/type';
 
 export class SqliteConnection implements QuerierPoolConnection {
-  constructor(readonly db: Database) {}
+  constructor(readonly db: Database, readonly logger?: Logger) {}
 
   async all<T>(query: string) {
-    log(query);
+    this.logger?.(query);
     return this.db.all<T[]>(query);
   }
 
   async run(query: string) {
-    log(query);
+    this.logger?.(query);
     const { changes, lastID } = await this.db.run(query);
     const firstId = lastID ? lastID - (changes - 1) : undefined;
     return { changes, firstId } as QueryUpdateResult;
