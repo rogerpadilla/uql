@@ -56,8 +56,6 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 | `SQLite`     | `@uql/sqlite`   |
 | `MongoDB`    | `@uql/mongo`    |
 
--
-
 E.g. for `PostgreSQL`
 
 ```sh
