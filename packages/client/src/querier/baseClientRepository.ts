@@ -1,4 +1,4 @@
-import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Type } from '@uql/core/type';
+import { IdValue, Query, QueryCriteria, QueryOptions, QuerySearch, QueryUnique, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
 export class BaseClientRepository<E> implements ClientRepository<E> {
@@ -8,7 +8,7 @@ export class BaseClientRepository<E> implements ClientRepository<E> {
     return this.querier.count(this.entity, qm, opts);
   }
 
-  findOneById(id: IdValue<E>, qm?: QueryOne<E>, opts?: RequestOptions) {
+  findOneById(id: IdValue<E>, qm?: QueryUnique<E>, opts?: RequestOptions) {
     return this.querier.findOneById(this.entity, id, qm, opts);
   }
 

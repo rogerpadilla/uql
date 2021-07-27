@@ -1,10 +1,13 @@
-import { Query, QueryOne, UniversalRepository, QueryCriteria, QueryOptions, QuerySearch, IdValue } from '@uql/core/type';
+import { Query, UniversalRepository, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
+/**
+ * base contract for the client repositories.
+ */
 export interface ClientRepository<E> extends UniversalRepository<E> {
   count(qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  findOneById(id: IdValue<E>, qo: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById(id: IdValue<E>, qm: QueryUnique<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
   findOne(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 

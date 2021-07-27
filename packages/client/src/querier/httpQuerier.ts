@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity/decorator';
-import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Type } from '@uql/core/type';
+import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
@@ -15,7 +15,7 @@ export class HttpQuerier implements ClientQuerier {
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryOne<E>, opts?: RequestOptions) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/${id}${qs}`, opts);

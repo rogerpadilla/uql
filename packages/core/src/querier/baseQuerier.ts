@@ -10,6 +10,7 @@ import {
   QueryOptions,
   QueryProject,
   QuerySearch,
+  QueryUnique,
   RelationKey,
   RelationValue,
   Repository,
@@ -19,13 +20,12 @@ import {
 export abstract class BaseQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qo: QueryOne<E> = {}) {
-    return this.findOne(entity, { ...qo, $filter: id });
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E> = {}) {
+    return this.findOne(entity, { ...qm, $filter: id });
   }
 
   async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
-    qm.$limit = 1;
-    const rows = await this.findMany(entity, qm);
+    const rows = await this.findMany(entity, { ...qm, $limit: 1 });
     return rows[0];
   }
 
