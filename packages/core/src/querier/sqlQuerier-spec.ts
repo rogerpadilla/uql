@@ -82,6 +82,7 @@ export class BaseSqlQuerierSpec implements Spec {
   async shouldFindAndProjectRaw() {
     await this.querier.findMany(InventoryAdjustment, {
       $project: {
+        creator: ['id', 'name'],
         itemAdjustments: {
           $project: {
             item: {
@@ -91,13 +92,22 @@ export class BaseSqlQuerierSpec implements Spec {
               },
             },
           },
-          $limit: 100,
           $sort: { createdAt: -1 },
+          $limit: 100,
         },
       },
+      $filter: {
+        companyId: 1,
+      },
+      $sort: { creator: { name: 'asc' } },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment`');
+    expect(this.querier.conn.all).nthCalledWith(
+      1,
+      'SELECT `InventoryAdjustment`.`id`, `creator`.`id` `creator.id`, `creator`.`name` `creator.name`' +
+        ' FROM `InventoryAdjustment` LEFT JOIN `User` `creator` ON `creator`.`id` = `InventoryAdjustment`.`creatorId`' +
+        ' WHERE `InventoryAdjustment`.`companyId` = 1 ORDER BY `creator`.`name`'
+    );
     expect(this.querier.conn.all).nthCalledWith(
       2,
       'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`inventoryAdjustmentId`' +
