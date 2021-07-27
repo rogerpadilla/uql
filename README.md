@@ -13,7 +13,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 - `JSON` (serializable) syntax for all the queries.
 - uses the power of `TypeScript` to get (smart) type-safety everywhere.
 - the generated queries are efficient, safe, and human-readable.
-- criteria like `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
+- `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
 - declarative and programmatic `transactions`.
 - `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
 - different kinds of `relations` between entities.
