@@ -3,7 +3,7 @@
   "homepage": "https://uql.io",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
-  "version": "0.4.62",
+  "version": "0.4.63",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
