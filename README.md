@@ -8,6 +8,8 @@
 
 Given it is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend, or just use `uql` directly in the backend, or even use it in a mobile app with an embedded database.
 
+![autocomplete demo](https://uql.io/code.gif)
+
 ## <a name="features"></a> Features
 
 - `JSON` (serializable) syntax for all the queries.
