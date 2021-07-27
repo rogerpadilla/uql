@@ -1,5 +1,5 @@
 {
-  "name": "@uql/mongo",
+  "name": "@uql/maria",
   "homepage": "https://uql.io",
   "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
   "license": "MIT",
@@ -13,13 +13,13 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "mongodb": "^3.6.10"
+    "mariadb": "^2.5.4"
   },
   "peerDependencies": {
     "@uql/core": "^0.4.59"
   },
   "devDependencies": {
-    "@types/mongodb": "^3.6.20",
+    "@types/mysql": "^2.15.19",
     "@types/node": "^16.4.3",
     "@uql/core": "^0.4.60",
     "copyfiles": "^2.4.1",
@@ -39,8 +39,8 @@
     "persistence",
     "orm",
     "object relational mapper",
-    "mongo",
-    "mongodb",
+    "mysql",
+    "mariadb",
     "ts",
     "typescript",
     "js",

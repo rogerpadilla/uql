@@ -1,7 +1,7 @@
 import { Request } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
-import { getOptions, getQuerier } from '@uql/core/options';
+import { getQuerier } from '@uql/core/options';
 import { IdValue, Query, QueryOne, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
@@ -9,14 +9,13 @@ import { parseQuery } from './query.util';
 
 export function querierMiddleware(opts: MiddlewareOptions = {}) {
   const router = expressRouter();
-  const { logger } = getOptions();
 
   let entities = opts.include ?? getEntities();
   if (opts.exclude) {
     entities = entities.filter((entity) => !opts.exclude.includes(entity));
   }
   if (!entities.length) {
-    logger('no entities for the uql express middleware');
+    throw new TypeError('no entities for the uql express middleware');
   }
 
   const crudRouterOpts = {
