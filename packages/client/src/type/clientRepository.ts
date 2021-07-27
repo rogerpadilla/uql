@@ -1,9 +1,6 @@
 import { Query, UniversalRepository, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from '@uql/core/type';
 import { RequestOptions, RequestSuccessResponse } from './request';
 
-/**
- * base contract for the client repositories.
- */
 export interface ClientRepository<E> extends UniversalRepository<E> {
   count(qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 

@@ -2,7 +2,7 @@ import { IdValue } from './entity';
 import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
 
 /**
- * base contract for the repositories.
+ * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.
  */
 export type UniversalRepository<E> = {
   /**

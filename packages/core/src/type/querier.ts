@@ -3,6 +3,9 @@ import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique 
 import { Repository, UniversalRepository } from './repository';
 import { IdValue } from './entity';
 
+/**
+ * A `querier` allows to interact with the datasource to perform persistence operations on any entity.
+ */
 export interface UniversalQuerier {
   /**
    * counts the number of records matching the given search parameters.
