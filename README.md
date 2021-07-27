@@ -4,7 +4,7 @@
 
 # Getting Started
 
-`uql` is a flexible `ORM`, with declarative `JSON` syntax to query/update multiple data sources. Just declare what you want from the data source, and then `uql` will run efficient and safe `SQL` (or `Mongo`) queries.
+`uql` is a flexible and efficient `ORM`, with declarative `JSON` syntax and smart type-safety.
 
 Given it is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend, or just use `uql` directly in the backend, or even use it in a mobile app with an embedded database.
 
