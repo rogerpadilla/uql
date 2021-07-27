@@ -2,7 +2,7 @@ import { Request } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getQuerier } from '@uql/core/options';
-import { IdValue, Query, QueryOne, Type } from '@uql/core/type';
+import { IdValue, Query, QueryOne, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities } from '@uql/core/entity/decorator';
 import { parseQuery } from './query.util';
@@ -91,7 +91,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.get('/:id', async (req, res, next) => {
-    const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
+    const qm = augmentQuery<E>(entity, req, opts.query) as QueryUnique<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOneById(entity, req.params.id as IdValue<E>, qm);

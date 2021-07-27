@@ -89,14 +89,10 @@ export class BaseSqlQuerierSpec implements Spec {
                 companyId: true,
                 total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
               },
-              $group: ['companyId'],
-              $having: {
-                total: {
-                  $gte: 10,
-                } as any,
-              } as QueryFilter<ItemAdjustment>,
             },
           },
+          $limit: 100,
+          $sort: { createdAt: -1 },
         },
       },
     });
@@ -107,7 +103,9 @@ export class BaseSqlQuerierSpec implements Spec {
       'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`inventoryAdjustmentId`' +
         ', `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
         ' FROM `ItemAdjustment` LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId`' +
-        ' WHERE `ItemAdjustment`.`inventoryAdjustmentId` IN ()'
+        ' WHERE `ItemAdjustment`.`inventoryAdjustmentId` IN ()' +
+        ' ORDER BY `ItemAdjustment`.`createdAt`' +
+        ' DESC LIMIT 100'
     );
 
     expect(this.querier.conn.all).toBeCalledTimes(2);

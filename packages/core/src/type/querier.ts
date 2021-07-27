@@ -1,40 +1,40 @@
 import { Type } from './utility';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch } from './query';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
 import { Repository, UniversalRepository } from './repository';
 import { IdValue } from './entity';
 
 export interface UniversalQuerier {
   /**
-   * Counts the number of records matching the given search parameters.
+   * counts the number of records matching the given search parameters.
    * @param entity the target entity
    * @param qm the search options
    */
   count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<any>;
 
   /**
-   * Obtains the record with the given primary key.
+   * obtains the record with the given primary key.
    * @param entity the target entity
    * @param id the primary key value
-   * @param qo the criteria options
+   * @param qm the criteria options
    */
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qo?: QueryOne<E>): Promise<any>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm?: QueryUnique<E>): Promise<any>;
 
   /**
-   * Obtains the first record matching the given search parameters.
+   * obtains the first record matching the given search parameters.
    * @param entity the target entity
    * @param qm the criteria options
    */
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<any>;
 
   /**
-   * Obtains the records matching the given search parameters.
+   * obtains the records matching the given search parameters.
    * @param entity the target entity
    * @param qm the criteria options
    */
   findMany<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
   /**
-   * Obtains the records matching the given search parameters,
+   * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param entity the target entity
    * @param qm the criteria options
@@ -42,7 +42,7 @@ export interface UniversalQuerier {
   findManyAndCount<E>(entity: Type<E>, qm: Query<E>): Promise<any>;
 
   /**
-   * Inserts a record.
+   * inserts a record.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    */
@@ -56,7 +56,7 @@ export interface UniversalQuerier {
   insertMany?<E>(entity: Type<E>, payload: E[]): Promise<any>;
 
   /**
-   * Updates a record partially.
+   * updates a record partially.
    * @param entity the entity to persist on
    * @param id the primary key of the record to be updated
    * @param payload the data to be persisted
@@ -64,7 +64,7 @@ export interface UniversalQuerier {
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<any>;
 
   /**
-   * Updates many records partially.
+   * updates many records partially.
    * @param entity the entity to persist on
    * @param qm the criteria to look for the records
    * @param payload the data to be persisted
@@ -72,7 +72,7 @@ export interface UniversalQuerier {
   updateMany?<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<any>;
 
   /**
-   * Insert or update a record.
+   * insert or update a record.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    */
@@ -86,21 +86,21 @@ export interface UniversalQuerier {
   saveMany?<E>(entity: Type<E>, payload: E[]): Promise<any>;
 
   /**
-   * Delete or SoftDelete a record.
+   * delete or SoftDelete a record.
    * @param entity the entity to persist on
    * @param id the primary key of the record
    */
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<any>;
 
   /**
-   * Delete or SoftDelete records.
+   * delete or SoftDelete records.
    * @param entity the entity to persist on
    * @param qm the criteria to look for the records
    */
   deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<any>;
 
   /**
-   * Get a repository for the given entity.
+   * get a repository for the given entity.
    * @param entity the entity to get the repository for
    */
   getRepository<E>(entity: Type<E>): UniversalRepository<E>;
@@ -109,7 +109,7 @@ export interface UniversalQuerier {
 export interface Querier extends UniversalQuerier {
   count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qo?: QueryOne<E>): Promise<E>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm?: QueryUnique<E>): Promise<E>;
 
   findOne<E>(entity: Type<E>, qm: QueryOne<E>): Promise<E>;
 
@@ -136,27 +136,27 @@ export interface Querier extends UniversalQuerier {
   getRepository<E>(entity: Type<E>): Repository<E>;
 
   /**
-   * Whether this querier is in a transaction or not.
+   * whether this querier is in a transaction or not.
    */
   readonly hasOpenTransaction: boolean;
 
   /**
-   * Starts a new transaction in this querier.
+   * starts a new transaction in this querier.
    */
   beginTransaction(): Promise<void>;
 
   /**
-   * Commits the currently active transaction in this querier.
+   * commits the currently active transaction in this querier.
    */
   commitTransaction(): Promise<void>;
 
   /**
-   * Aborts the currently active transaction in this querier.
+   * aborts the currently active transaction in this querier.
    */
   rollbackTransaction(): Promise<void>;
 
   /**
-   * Release the querier to the pool.
+   * release the querier to the pool.
    */
   release(): Promise<void>;
 }

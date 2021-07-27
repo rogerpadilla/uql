@@ -1,4 +1,4 @@
-import { IdValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Repository, Type } from '@uql/core/type';
+import { IdValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Repository, Type } from '@uql/core/type';
 
 export class BaseRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}
@@ -7,7 +7,7 @@ export class BaseRepository<E> implements Repository<E> {
     return this.querier.count(this.entity, qm);
   }
 
-  findOneById(id: IdValue<E>, qm?: QueryOne<E>) {
+  findOneById(id: IdValue<E>, qm?: QueryUnique<E>) {
     return this.querier.findOneById(this.entity, id, qm);
   }
 

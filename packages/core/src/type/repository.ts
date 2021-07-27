@@ -1,41 +1,44 @@
 import { IdValue } from './entity';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch } from './query';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
 
+/**
+ * base contract for the repositories.
+ */
 export type UniversalRepository<E> = {
   /**
-   * Counts the number of records matching the given search parameters.
+   * counts the number of records matching the given search parameters.
    * @param qm the search options
    */
   count(qm: QuerySearch<E>): Promise<any>;
 
   /**
-   * Obtains the record with the given primary key.
+   * obtains the record with the given primary key.
    * @param id the primary key value
-   * @param qo the criteria options
+   * @param qm the criteria options
    */
-  findOneById(id: IdValue<E>, qo?: QueryOne<E>): Promise<any>;
+  findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<any>;
 
   /**
-   * Obtains the first record matching the given search parameters.
+   * obtains the first record matching the given search parameters.
    * @param qm the criteria options
    */
   findOne(qm: QueryOne<E>): Promise<any>;
 
   /**
-   * Obtains the records matching the given search parameters.
+   * obtains the records matching the given search parameters.
    * @param qm the criteria options
    */
   findMany(qm: Query<E>): Promise<any>;
 
   /**
-   * Obtains the records matching the given search parameters,
+   * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param qm the criteria options
    */
   findManyAndCount(qm: Query<E>): Promise<any>;
 
   /**
-   * Inserts a record.
+   * inserts a record.
    * @param payload the data to be persisted
    */
   insertOne(payload: E): Promise<any>;
@@ -48,14 +51,14 @@ export type UniversalRepository<E> = {
   insertMany?(payload: E[]): Promise<any>;
 
   /**
-   * Updates a record partially.
+   * updates a record partially.
    * @param id the primary key of the record to be updated
    * @param payload the data to be persisted
    */
   updateOneById(id: IdValue<E>, payload: E): Promise<any>;
 
   /**
-   * Updates many records partially.
+   * updates many records partially.
    * @param qm the criteria to look for the records
    * @param payload the data to be persisted
    */
@@ -68,28 +71,31 @@ export type UniversalRepository<E> = {
   saveOne(payload: E): Promise<any>;
 
   /**
-   * Insert or update records.
+   * insert or update records.
    * @param payload the data to be persisted
    */
   saveMany?(payload: E[]): Promise<any>;
 
   /**
-   * Delete or SoftDelete a record.
+   * delete or SoftDelete a record.
    * @param id the primary key of the record
    */
   deleteOneById(id: IdValue<E>, opts?: QueryOptions): Promise<any>;
 
   /**
-   * Delete or SoftDelete records.
+   * delete or SoftDelete records.
    * @param qm the criteria to look for the records
    */
   deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions): Promise<any>;
 };
 
+/**
+ * base contract for the backend repositories.
+ */
 export interface Repository<E> extends UniversalRepository<E> {
   count(qm: QueryCriteria<E>): Promise<number>;
 
-  findOneById(id: IdValue<E>, qm?: QueryOne<E>): Promise<E>;
+  findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<E>;
 
   findOne(qm: QueryOne<E>): Promise<E>;
 
