@@ -15,12 +15,9 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 - the generated queries are efficient, safe, and human-readable.
 - criteria like `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
 - declarative and programmatic `transactions`.
-- `soft-delete`.
-- `virtual fields`.
-- `repositories`.
+- `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
 - different kinds of `relations` between entities.
 - transparent support for `inheritance` patterns between entities.
-- connection pooling.
 - supports `Postgres`, `MySQL`, `MariaDB`, `SQLite`, `MongoDB` (beta).
 - plugins for frameworks: `express` (more coming).
 
