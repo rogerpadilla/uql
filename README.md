@@ -16,7 +16,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 - uses the power of `TypeScript` to get (smart) type-safety everywhere.
 - the generated queries are efficient, safe, and human-readable.
 - `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
-- declarative and programmatic `transactions`.
+- declarative and imperative `transactions`.
 - `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
 - different kinds of `relations` between entities.
 - transparent support for `inheritance` patterns between entities.
@@ -29,7 +29,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 2. [Configuration](#configuration)
 3. [Entities](#entities)
 4. [Declarative Transactions](#declarative-transactions)
-5. [Programmatic Transactions](#programmatic-transactions)
+5. [Imperative Transactions](#imperative-transactions)
 6. [Generate REST APIs with Express](#express)
 7. [Consume REST APIs from the Frontend](#client)
 8. [FAQs](#faq)
@@ -198,7 +198,7 @@ export class ItemTag {
 
 ## <a name="declarative-transactions"></a> Declarative Transactions
 
-Both, _declarative_ and _programmatic_ transactions are supported, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
+Both, _declarative_ and _imperative_ transactions are supported, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
 To use Declarative Transactions (using the `@Transactional` decorator):
 
@@ -235,11 +235,11 @@ export const confirmationService = new ConfirmationService();
 await confirmationService.confirmAction(data);
 ```
 
-## <a name="programmatic-transactions"></a> Programmatic Transactions
+## <a name="imperative-transactions"></a> Imperative Transactions
 
-`uql` supports both, _declarative_ and _programmatic_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
+`uql` supports both, _declarative_ and _imperative_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
 
-To use Programmatic Transactions:
+To use Imperative Transactions:
 
 1. obtain the `querier` object with `await getQuerier()`.
 2. open a `try/catch/finally` block.
