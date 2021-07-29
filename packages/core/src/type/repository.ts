@@ -1,4 +1,5 @@
 import { IdValue } from './entity';
+import { Querier } from './querier';
 import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
 
 /**
@@ -93,6 +94,8 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
+  readonly querier: Querier;
+
   count(qm: QueryCriteria<E>): Promise<number>;
 
   findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<E>;

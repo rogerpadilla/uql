@@ -242,16 +242,34 @@ await confirmationService.confirmAction(data);
 To use Imperative Transactions:
 
 1. obtain the `querier` object with `await getQuerier()`.
-2. open a `try/catch/finally` block.
-3. start the transaction with `await querier.beginTransaction()`.
-4. perform the different operations using the `querier` or `repositories`.
-5. commit the transaction with `await querier.commitTransaction()`.
-6. in the `catch` block, add `await querier.rollbackTransaction()`.
-7. release the `querier` back to the pool with `await querier.release()` in the `finally` block.
+2. run the transaction with `await querier.transaction(callback)`.
+3. perform the different operations using the same `querier` (or `repositories`) inside your `callback` function.
 
 ```ts
 import { getQuerier } from '@uql/core';
 
+async function confirmAction(confirmation: Confirmation): Promise<void> {
+  const querier = await getQuerier();
+  await querier.transaction(async () => {
+    if (confirmation.action === 'signup') {
+      await querier.insertOne(User, {
+        name: confirmation.name,
+        email: confirmation.email,
+        password: confirmation.password,
+      });
+    } else {
+      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
+    }
+    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
+  });
+}
+```
+
+---
+
+The above code could also be implemented as below (even more granular control):
+
+```ts
 async function confirmAction(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
   try {

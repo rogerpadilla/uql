@@ -144,6 +144,11 @@ export interface Querier extends UniversalQuerier {
   readonly hasOpenTransaction: boolean;
 
   /**
+   * run the given callback inside a transaction in this querier.
+   */
+  transaction<T>(callback: (querier?: ThisType<Querier>) => Promise<T>): Promise<T>;
+
+  /**
    * starts a new transaction in this querier.
    */
   beginTransaction(): Promise<void>;
