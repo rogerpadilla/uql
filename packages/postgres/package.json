@@ -13,13 +13,13 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "pg": "^8.6.0"
+    "pg": "^8.7.1"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.59"
+    "@uql/core": "^0.4.62"
   },
   "devDependencies": {
-    "@types/node": "^16.4.3",
+    "@types/node": "^16.4.7",
     "@types/pg": "^8.6.1",
     "@uql/core": "^0.4.63",
     "copyfiles": "^2.4.1",
