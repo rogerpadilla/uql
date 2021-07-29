@@ -95,4 +95,8 @@ describe('repository', () => {
     await repository.deleteMany({}, { softDelete: false });
     expect(querier.deleteMany).toHaveBeenCalledWith(User, {}, { softDelete: false });
   });
+
+  it('repository property', () => {
+    expect(repository.querier).toBe(querier);
+  });
 });
