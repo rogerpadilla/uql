@@ -336,7 +336,8 @@ app
       exclude: [Confirmation],
 
       // `query` callback allows to extend all then queries that are requested to the API,
-      // so it is a good place to add additional filters to the queries (e.g. for multi tenant apps).
+      // so it is a good place to add additional filters to the queries, 
+      // e.g. for multi tenant apps.
       query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
           ...qm.$filter,
