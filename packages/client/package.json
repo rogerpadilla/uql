@@ -1,6 +1,6 @@
 {
   "name": "@uql/client",
-  "description": "Querier for TypeScript, ES2015+. Supports MySQL, PostgreSQL, MariaDB, MongoDB databases.",
+  "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
   "version": "0.4.64",
   "main": "uql-client.min.js",
@@ -32,22 +32,26 @@
     "url": "https://github.com/impensables/uql/issues"
   },
   "keywords": [
-    "uql",
-    "persistence",
     "orm",
-    "object relational mapper",
-    "ts",
-    "typescript",
-    "js",
-    "javascript",
+    "data-mapper",
+    "persistence",
+    "typescript-orm",
+    "javascript-orm",
+    "mariadb",
+    "mariadb-orm",
+    "mysql",
+    "mysql-orm",
+    "postgresql",
+    "postgresql-orm",
+    "sqlite",
+    "sqlite-orm",
+    "mongodb",
+    "mongodb-orm",
     "entity",
     "dao",
-    "data access object",
-    "decorator",
+    "transaction",
     "repository",
-    "service",
-    "browser",
-    "client"
+    "service"
   ],
   "publishConfig": {
     "access": "public"

@@ -14,7 +14,7 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 
 - `JSON` (serializable) syntax for all the queries.
 - uses the power of `TypeScript` to get (smart) type-safety everywhere.
-- the generated queries are efficient, safe, and human-readable.
+- the generated queries are performant, safe, and human-readable.
 - `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
 - declarative and imperative `transactions`.
 - `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
@@ -336,7 +336,7 @@ app
       exclude: [Confirmation],
 
       // `query` callback allows to extend all then queries that are requested to the API,
-      // so it is a good place to add additional filters to the queries, 
+      // so it is a good place to add additional filters to the queries,
       // e.g. for multi tenant apps.
       query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
