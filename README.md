@@ -211,7 +211,7 @@ import { Transactional, InjectQuerier } from '@uql/core/querier';
 
 class ConfirmationService {
   @Transactional()
-  async confirmAction(confirmation: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
+  async confirm(confirmation: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
     if (confirmation.type === 'register') {
       await querier.insertOne(User, {
         name: confirmation.name,
@@ -219,7 +219,9 @@ class ConfirmationService {
         password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
+      await querier.updateOneById(User, confirmation.creatorId, {
+        password: confirmation.password,
+      });
     }
     await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
   }
@@ -248,7 +250,7 @@ To use Imperative Transactions:
 ```ts
 import { getQuerier } from '@uql/core';
 
-async function confirmAction(confirmation: Confirmation): Promise<void> {
+async function confirm(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
   await querier.transaction(async () => {
     if (confirmation.action === 'signup') {
@@ -258,7 +260,9 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
         password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
+      await querier.updateOneById(User, confirmation.creatorId, {
+        password: confirmation.password,
+      });
     }
     await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
   });
@@ -270,7 +274,7 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
 That &#9650; can also be implemented as this &#9660; (for more granular control):
 
 ```ts
-async function confirmAction(confirmation: Confirmation): Promise<void> {
+async function confirm(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
   try {
     await querier.beginTransaction();
@@ -281,7 +285,9 @@ async function confirmAction(confirmation: Confirmation): Promise<void> {
         password: confirmation.password,
       });
     } else {
-      await querier.updateOneById(User, confirmation.creatorId, { password: confirmation.password });
+      await querier.updateOneById(User, confirmation.creatorId, {
+        password: confirmation.password,
+      });
     }
     await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
     await querier.commitTransaction();
@@ -330,7 +336,7 @@ app
       exclude: [Confirmation],
 
       // `query` callback allows to extend all then queries that are requested to the API,
-      // so it is a good place to add additional filters to the queries (like for multi tenant apps).
+      // so it is a good place to add additional filters to the queries (e.g. for multi tenant apps).
       query<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
         qm.$filter = {
           ...qm.$filter,
