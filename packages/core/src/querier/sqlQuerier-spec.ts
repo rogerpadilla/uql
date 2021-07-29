@@ -733,15 +733,47 @@ export class BaseSqlQuerierSpec implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateOneById(User, 5, { name: 'Hola' });
+    await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
-    expect(this.querier.conn.run).toBeCalledWith('COMMIT');
+    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
+    expect(this.querier.conn.run).nthCalledWith(3, 'COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.release();
     expect(this.querier.conn.run).toBeCalledTimes(3);
     expect(this.querier.conn.all).toBeCalledTimes(0);
     expect(this.querier.hasOpenTransaction).toBeFalsy();
+  }
+
+  async shouldUseTransactionCallback() {
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    await this.querier.transaction(async () => {
+      expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.hasOpenTransaction).toBe(true);
+      await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
+    });
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
+    expect(this.querier.conn.run).nthCalledWith(3, 'COMMIT');
+    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
+  }
+
+  async shouldThrowIfRollbackIfErrorInCallback() {
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    const prom = this.querier.transaction(async () => {
+      expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.hasOpenTransaction).toBe(true);
+      throw new Error('some error');
+    });
+    await expect(prom).rejects.toThrow('some error');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.conn.run).nthCalledWith(2, 'ROLLBACK');
+    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.conn.all).toBeCalledTimes(0);
   }
 
   async shouldThrowIfTransactionIsPending() {
