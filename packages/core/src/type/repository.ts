@@ -94,6 +94,9 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
+  /**
+   * the `querier` instance to which this `repository` is linked to.
+   */
   readonly querier: Querier;
 
   count(qm: QueryCriteria<E>): Promise<number>;
