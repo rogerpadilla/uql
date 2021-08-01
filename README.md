@@ -341,7 +341,7 @@ app
       // so it is a good place to add additional filters to the queries,
       // e.g. for multi tenant apps.
       augmentQuery: <E>(meta: EntityMeta<E>, qm: Query<E>, req: express.Request): Query<E> => {
-        // ensure the user can only see the data that belongs to the related company.
+        // ensure the user can only see the data that belongs to his company.
         qm.$filter = augmentFilter(meta, qm.$filter, { companyId: req.identity.companyId } as QueryFilter<E>);
         return qm;
       },
