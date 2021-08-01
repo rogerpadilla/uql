@@ -38,15 +38,15 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 
 1. Install the core package:
 
-    ```sh
-    npm install @uql/core --save
-    ```
+   ```sh
+   npm install @uql/core --save
+   ```
 
-    or
+   or
 
-    ```sh
-    yarn add @uql/core
-    ```
+   ```sh
+   yarn add @uql/core
+   ```
 
 1. Install one of the following packages according to your database:
 
@@ -320,6 +320,8 @@ yarn add @uql/express
 
 ```ts
 import * as express from 'express';
+import { augmentFilter } from '@uql/core/util';
+import { Query, EntityMeta } from '@uql/core/type';
 import { querierMiddleware } from '@uql/express';
 
 const app = express();
@@ -338,12 +340,9 @@ app
       // `augmentQuery` callback allows to extend all then queries that are requested to the API,
       // so it is a good place to add additional filters to the queries,
       // e.g. for multi tenant apps.
-      augmentQuery<E>(entity: Type<E>, qm: Query<E>, req: Request): Query<E> {
-        qm.$filter = {
-          ...qm.$filter,
-          // ensure the user can only see the data that belongs to his company.
-          companyId: req.identity.companyId,
-        };
+      augmentQuery: <E>(meta: EntityMeta<E>, qm: Query<E>, req: express.Request): Query<E> => {
+        // ensure the user can only see the data that belongs to the related company.
+        qm.$filter = augmentFilter(qm.$filter, { companyId: req.identity.companyId });
         return qm;
       },
     })
