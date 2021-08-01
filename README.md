@@ -321,7 +321,7 @@ yarn add @uql/express
 ```ts
 import * as express from 'express';
 import { augmentFilter } from '@uql/core/util';
-import { Query, EntityMeta } from '@uql/core/type';
+import { Query, QueryFilter, EntityMeta } from '@uql/core/type';
 import { querierMiddleware } from '@uql/express';
 
 const app = express();
@@ -342,7 +342,7 @@ app
       // e.g. for multi tenant apps.
       augmentQuery: <E>(meta: EntityMeta<E>, qm: Query<E>, req: express.Request): Query<E> => {
         // ensure the user can only see the data that belongs to the related company.
-        qm.$filter = augmentFilter(qm.$filter, { companyId: req.identity.companyId });
+        qm.$filter = augmentFilter(meta, qm.$filter, { companyId: req.identity.companyId } as QueryFilter<E>);
         return qm;
       },
     })
