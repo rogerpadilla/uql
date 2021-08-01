@@ -10,16 +10,16 @@ import {
   buildSortMap,
   flatObject,
   getRawValue,
-  getVirtualValue,
   raw,
   Raw,
+  getQueryFilterAsMap,
 } from '@uql/core/util';
 
 import {
   QueryFilter,
   Query,
   Scalar,
-  QueryFilterFieldOperator,
+  QueryFilterFieldOperatorMap,
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
@@ -30,13 +30,13 @@ import {
   QueryProjectArray,
   QueryOptions,
   QueryDialect,
-  QueryFilterFieldValue,
   QueryFilterOptions,
   QueryComparisonOptions,
-  QueryFilterComparison,
+  QueryFilterMap,
   QuerySearch,
   QueryProjectOptions,
   QuerySortDirection,
+  QueryFilterLogical,
 } from '@uql/core/type';
 
 export abstract class BaseSqlDialect implements QueryDialect {
@@ -77,7 +77,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
               }
               return key as FieldKey<E>;
             })
-          : (getKeys(meta.fields).filter((it) => !(it in project) || project[it]) as FieldKey<E>[]);
+          : (getKeys(meta.fields).filter((key) => !(key in project)) as FieldKey<E>[]);
       }
       fields = fields.filter((key) => key instanceof Raw || meta.fields[key as FieldKey<E>]);
       if (!fields.length || (opts.prefix && !fields.includes(meta.id))) {
@@ -102,7 +102,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
         const field = meta.fields[key as FieldKey<E>];
 
         if (field.virtual) {
-          return getVirtualValue({
+          return getRawValue({
             value: field.virtual,
             alias: key as string,
             dialect: this,
@@ -187,11 +187,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    if (typeof filter !== 'object' || Array.isArray(filter)) {
-      filter = {
-        [meta.id]: filter,
-      };
-    }
+    filter = getQueryFilterAsMap(meta, filter);
 
     if (meta.softDeleteKey && (softDelete || softDelete === undefined) && clause !== 'HAVING' && !filter[meta.softDeleteKey as string]) {
       filter[meta.softDeleteKey as string] = null;
@@ -205,7 +201,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
     const options = { ...opts, usePrecedence: entries.length > 1 };
 
-    let sql = entries.map(([key, val]) => this.compare(entity, key as keyof QueryFilterComparison<E>, val, options)).join(` AND `);
+    let sql = entries.map(([key, val]) => this.compare(entity, key as keyof QueryFilterMap<E>, val as any, options)).join(` AND `);
 
     if (usePrecedence) {
       sql = `(${sql})`;
@@ -214,19 +210,42 @@ export abstract class BaseSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends keyof QueryFilterComparison<E>>(
-    entity: Type<E>,
-    key: K,
-    val: QueryFilterFieldValue<E[K]>,
-    opts?: QueryComparisonOptions
-  ): string {
+  compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
     const meta = getMeta(entity);
 
-    if (key === '$and' || key === '$or') {
-      const values = val as E[K][];
+    if (val instanceof Raw) {
+      if (key === '$exists' || key === '$nexists') {
+        const value = val as Raw;
+        const query = getRawValue({
+          value,
+          dialect: this,
+          prefix: meta.name,
+          escapedPrefix: this.escapeId(meta.name, false, true),
+        });
+        return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
+      }
+      const comparisonKey = this.getComparisonKey(entity, key as FieldKey<E>, opts);
+      return `${comparisonKey} = ${val.value}`;
+    }
+
+    if (key === '$text') {
+      const search = val as QueryTextSearchOptions<E>;
+      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
+    }
+
+    if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {
+      const negateOperatorMap = {
+        $not: '$and',
+        $nor: '$or',
+      } as const;
+
+      const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
+      const negate = key in negateOperatorMap ? 'NOT ' : '';
+
+      const values = val as QueryFilterLogical<E>;
       const hasManyItems = values.length > 1;
       const logicalComparison = values
-        .map((filterEntry: QueryFilter<E>) => {
+        .map((filterEntry) => {
           if (filterEntry instanceof Raw) {
             return getRawValue({
               value: filterEntry,
@@ -237,53 +256,27 @@ export abstract class BaseSqlDialect implements QueryDialect {
           }
           return this.where(entity, filterEntry, {
             prefix: opts.prefix,
-            usePrecedence: hasManyItems && getKeys(filterEntry).length > 1,
+            usePrecedence: hasManyItems && !Array.isArray(filterEntry) && getKeys(filterEntry).length > 1,
             clause: false,
           });
         })
-        .join(key === '$or' ? ' OR ' : ' AND ');
-      return opts.usePrecedence && hasManyItems ? `(${logicalComparison})` : logicalComparison;
-    }
+        .join(op === '$or' ? ' OR ' : ' AND ');
 
-    if (key === '$not' || key === '$nor') {
-      const op = (key === '$not' ? '$and' : '$or') as K;
-      const values = val as E[K][];
-      return `NOT ` + this.compare(entity, op, values, { usePrecedence: values.length > 1 });
-    }
-
-    if (key === '$text') {
-      const search = val as QueryTextSearchOptions<E>;
-      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
-    }
-
-    if (key === '$exists' || key === '$nexists') {
-      const value = val as Raw;
-      const query = getRawValue({
-        value,
-        dialect: this,
-        prefix: meta.name,
-        escapedPrefix: this.escapeId(meta.name, false, true),
-      });
-      return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
-    }
-
-    if (val instanceof Raw) {
-      const comparisonKey = this.getComparisonKey(entity, key, opts);
-      return `${comparisonKey} = ${val.value}`;
+      return (opts.usePrecedence || negate) && hasManyItems ? `${negate}(${logicalComparison})` : `${negate}${logicalComparison}`;
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
-    const operators = getKeys(value) as (keyof QueryFilterFieldOperator<E>)[];
-    const comparisons = operators.map((op) => this.compareFieldOperator(entity, key, op, value[op], opts)).join(' AND ');
+    const operators = getKeys(value) as (keyof QueryFilterFieldOperatorMap<E>)[];
+    const comparisons = operators.map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts)).join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
-  compareFieldOperator<E, K extends keyof QueryFilterComparison<E>>(
+  compareFieldOperator<E, K extends keyof QueryFilterFieldOperatorMap<E>>(
     entity: Type<E>,
-    key: K,
-    op: keyof QueryFilterFieldOperator<E[K]>,
-    val: QueryFilterFieldValue<E[K]>,
+    key: FieldKey<E>,
+    op: K,
+    val: QueryFilterFieldOperatorMap<E>[K],
     opts?: QueryOptions
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
@@ -293,7 +286,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       case '$ne':
         return val === null ? `${comparisonKey} IS NOT NULL` : `${comparisonKey} <> ${this.escape(val)}`;
       case '$not':
-        return 'NOT ' + this.compare(entity, key, val, opts);
+        return this.compare(entity, '$not', [{ [key]: val }] as any, opts);
       case '$gt':
         return `${comparisonKey} > ${this.escape(val)}`;
       case '$gte':
@@ -335,7 +328,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const field = meta.fields[key];
 
     if (field?.virtual) {
-      return getVirtualValue({
+      return getRawValue({
         value: field.virtual,
         dialect: this,
         prefix,
@@ -464,9 +457,6 @@ export abstract class BaseSqlDialect implements QueryDialect {
   }
 
   escape(value: any): Scalar {
-    if (value instanceof Raw) {
-      return getRawValue({ value, dialect: this });
-    }
     return escape(value);
   }
 }

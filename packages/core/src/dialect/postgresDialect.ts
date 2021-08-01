@@ -1,12 +1,12 @@
 import { getMeta } from '@uql/core/entity';
 import {
   QueryComparisonOptions,
-  QueryFilterFieldValue,
-  QueryFilterComparison,
+  QueryFilterMap,
   QueryOptions,
-  QueryFilterFieldOperator,
+  QueryFilterFieldOperatorMap,
   QueryTextSearchOptions,
   Type,
+  FieldKey,
 } from '@uql/core/type';
 import { BaseSqlDialect } from './baseSqlDialect';
 
@@ -22,12 +22,7 @@ export class PostgresDialect extends BaseSqlDialect {
     return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  override compare<E, K extends keyof QueryFilterComparison<E>>(
-    entity: Type<E>,
-    key: K,
-    val: QueryFilterFieldValue<E[K]>,
-    opts?: QueryComparisonOptions
-  ): string {
+  override compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
@@ -38,11 +33,11 @@ export class PostgresDialect extends BaseSqlDialect {
     return super.compare(entity, key, val, opts);
   }
 
-  override compareFieldOperator<E, K extends keyof QueryFilterComparison<E>>(
+  override compareFieldOperator<E, K extends keyof QueryFilterFieldOperatorMap<E>>(
     entity: Type<E>,
-    key: K,
-    op: keyof QueryFilterFieldOperator<E[K]>,
-    val: QueryFilterFieldValue<E[K]>,
+    key: FieldKey<E>,
+    op: K,
+    val: QueryFilterFieldOperatorMap<E>[K],
     opts?: QueryOptions
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);

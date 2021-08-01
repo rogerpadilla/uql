@@ -37,15 +37,13 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: any;
   readonly reference?: EntityGetter | ReferenceOptions;
-  readonly virtual?: VirtualValue;
+  readonly virtual?: QueryRaw;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
   readonly onDelete?: OnFieldCallback;
 };
 
-export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar | QueryRaw;
-
-export type VirtualValue = Scalar | QueryRaw;
+export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar;
 
 export type EntityGetter<E = any> = () => Type<E>;
 

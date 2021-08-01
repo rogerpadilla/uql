@@ -862,6 +862,30 @@ export abstract class BaseSqlDialectSpec implements Spec {
         $filter: { $or: [raw('SUM(salePrice) > 500'), 1, { companyId: 1 }] },
       })
     ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = 1 OR `companyId` = 1');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $and: [raw('SUM(salePrice) > 500')] },
+        $group: ['creatorId'],
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 GROUP BY `creatorId`');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: raw('SUM(salePrice) > 500'),
+        $group: ['creatorId'],
+      })
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 GROUP BY `creatorId`');
+
+    expect(
+      this.dialect.find(Item, {
+        $project: ['id'],
+        $filter: { $or: [[1, 2], { code: 'abc' }] },
+        $group: ['creatorId'],
+      })
+    ).toBe("SELECT `id` FROM `Item` WHERE `id` IN (1, 2) OR `code` = 'abc' GROUP BY `creatorId`");
   }
 
   shouldFind$startsWith() {

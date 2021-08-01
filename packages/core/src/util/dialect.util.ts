@@ -9,8 +9,8 @@ import {
   QuerySort,
   QuerySortMap,
   QueryRawFnOptions,
-  VirtualValue,
-  Scalar,
+  QueryFilter,
+  QueryFilterMap,
 } from '@uql/core/type';
 import { getKeys, Raw } from '@uql/core/util';
 
@@ -26,16 +26,6 @@ export function getRawValue(opts: QueryRawFnOptions & { value: Raw; alias?: stri
     return `${val} ${escapedFullAlias}`;
   }
   return val;
-}
-
-export function getVirtualValue(opts: QueryRawFnOptions & { value: VirtualValue; alias?: string; autoPrefixAlias?: boolean }): Scalar {
-  const { value } = opts;
-
-  if (value instanceof Raw) {
-    return getRawValue({ ...opts, value });
-  }
-
-  return value as Scalar;
 }
 
 export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
@@ -58,7 +48,7 @@ function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: Cal
   const keys = getKeys(meta.fields).filter((col) => meta.fields[col][callbackKey]);
   return payloads.map((it) => {
     for (const key of keys) {
-      if (!(key in it)) {
+      if (it[key] === undefined) {
         it[key] = meta.fields[key][callbackKey]();
       }
     }
@@ -111,3 +101,28 @@ export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
   }
   return sort as QuerySortMap<E>;
 }
+
+export function augmentFilter<E>(meta: EntityMeta<E>, target: QueryFilter<E> = {}, source: QueryFilter<E> = {}): QueryFilter<E> {
+  const targetComparison = getQueryFilterAsMap(meta, target);
+  const sourceComparison = getQueryFilterAsMap(meta, source);
+  return {
+    ...targetComparison,
+    ...sourceComparison,
+  };
+}
+
+export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<E> = {}): QueryFilterMap<E> {
+  if (filter instanceof Raw) {
+    return { $and: [filter] } as QueryFilterMap<E>;
+  }
+  if (typeof filter !== 'object' || Array.isArray(filter) || typeof (filter as MongoId).toHexString === 'function') {
+    return {
+      [meta.id]: filter,
+    } as QueryFilterMap<E>;
+  }
+  return filter as QueryFilterMap<E>;
+}
+
+type MongoId = {
+  readonly toHexString: Function;
+};

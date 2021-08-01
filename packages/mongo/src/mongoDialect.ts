@@ -12,17 +12,13 @@ import {
   RelationKey,
 } from '@uql/core/type';
 import { getMeta } from '@uql/core/entity/decorator';
-import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys } from '@uql/core/util';
+import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from '@uql/core/util';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): FilterQuery<E> {
     const meta = getMeta(entity);
 
-    if (typeof filter !== 'object' || Array.isArray(filter) || filter instanceof ObjectId || ObjectId.isValid(filter as string)) {
-      filter = {
-        [meta.id]: filter,
-      };
-    }
+    filter = getQueryFilterAsMap(meta, filter);
 
     if (meta.softDeleteKey && (softDelete || softDelete === undefined) && !filter[meta.softDeleteKey as string]) {
       filter[meta.softDeleteKey as string] = null;

@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity';
-import { QueryComparisonOptions, QueryFilterFieldValue, QueryFilterComparison, QueryTextSearchOptions, Type } from '@uql/core/type';
+import { QueryComparisonOptions, QueryFilterMap, QueryTextSearchOptions, Type } from '@uql/core/type';
 import { BaseSqlDialect } from './baseSqlDialect';
 
 export class MySqlDialect extends BaseSqlDialect {
@@ -7,12 +7,7 @@ export class MySqlDialect extends BaseSqlDialect {
     super('START TRANSACTION', '`');
   }
 
-  override compare<E, K extends keyof QueryFilterComparison<E>>(
-    entity: Type<E>,
-    key: K,
-    val: QueryFilterFieldValue<E[K]>,
-    opts?: QueryComparisonOptions
-  ): string {
+  override compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;

@@ -64,16 +64,6 @@ export type QueryProjectRelationMap<E> = {
 export type QueryProjectRelationOptions<E> = (E extends any[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & { readonly $required?: boolean };
 
 /**
- * entry for logical filtering.
- */
-export type QueryFilterLogicalEntry<E> = IdValue<E> | QueryFilterMapComparison<E> | QueryRaw;
-
-/**
- * value for a logical filtering.
- */
-export type QueryFilterLogical<E> = readonly QueryFilterLogicalEntry<E>[];
-
-/**
  * options for full-text-search operator.
  */
 export type QueryTextSearchOptions<E> = {
@@ -88,9 +78,19 @@ export type QueryTextSearchOptions<E> = {
 };
 
 /**
+ * value for a logical filtering.
+ */
+export type QueryFilterLogical<E> = readonly QueryFilter<E>[];
+
+/**
+ * comparison by fields.
+ */
+export type QueryFilterFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> };
+
+/**
  * complex operators.
  */
-export type QueryFilterComplexOperator<E> = {
+export type QueryFilterMap<E> = QueryFilterFieldMap<E> & {
   /**
    * joins query clauses with a logical `AND`, returns records that match all the clauses.
    */
@@ -121,7 +121,7 @@ export type QueryFilterComplexOperator<E> = {
   readonly $nexists?: QueryRaw;
 };
 
-export type QueryFilterFieldOperator<T> = {
+export type QueryFilterFieldOperatorMap<T> = {
   /**
    * whether a value is equal to the given value.
    */
@@ -199,24 +199,12 @@ export type QueryFilterFieldOperator<T> = {
 /**
  * Value for a field comparison.
  */
-export type QueryFilterFieldValue<T> = T | readonly T[] | QueryFilterFieldOperator<T> | QueryRaw;
-
-/**
- * query filter comparison as a map.
- */
-export type QueryFilterMapComparison<E> = {
-  readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]>;
-};
-
-/**
- * query filter comparison.
- */
-export type QueryFilterComparison<E> = QueryFilterMapComparison<E> | QueryFilterComplexOperator<E>;
+export type QueryFilterFieldValue<T> = T | readonly T[] | QueryFilterFieldOperatorMap<T> | QueryRaw;
 
 /**
  * query filter.
  */
-export type QueryFilter<E> = IdValue<E> | readonly IdValue<E>[] | QueryFilterComparison<E>;
+export type QueryFilter<E> = IdValue<E> | readonly IdValue<E>[] | QueryRaw | QueryFilterMap<E>;
 
 /**
  * direction for the sort.
@@ -236,21 +224,21 @@ export type QuerySortObjects<E> = readonly { readonly field: FieldKey<E>; readon
 /**
  * sort by fields.
  */
-export type QuerySortField<E> = {
+export type QuerySortFieldMap<E> = {
   [K in FieldKey<E>]?: QuerySortDirection;
 };
 
 /**
  * sort by relations fields.
  */
-export type QuerySortRelation<E> = {
+export type QuerySortRelationMap<E> = {
   [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
 };
 
 /**
  * sort by map.
  */
-export type QuerySortMap<E> = QuerySortField<E> | QuerySortRelation<E>;
+export type QuerySortMap<E> = QuerySortFieldMap<E> | QuerySortRelationMap<E>;
 
 /**
  * sort options.

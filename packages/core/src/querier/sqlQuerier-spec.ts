@@ -1,6 +1,6 @@
 import { raw } from '@uql/core/util/raw';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, cleanTables, ItemAdjustment } from '@uql/core/test';
-import { QuerierPool, QueryFilter } from '@uql/core/type';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, cleanTables } from '@uql/core/test';
+import { QuerierPool } from '@uql/core/type';
 import { SqlQuerier } from './sqlQuerier';
 
 export class BaseSqlQuerierSpec implements Spec {
@@ -270,18 +270,39 @@ export class BaseSqlQuerierSpec implements Spec {
   async shouldFindOneAndProjectOneToManyWithSpecifiedFields() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
+        description: 'something a',
         createdAt: 1,
-        itemAdjustments: [{ createdAt: 1 }, { createdAt: 1 }],
+        itemAdjustments: [
+          { buyPrice: 1, createdAt: 1 },
+          { buyPrice: 1, createdAt: 1 },
+        ],
       },
       {
+        description: 'something b',
         createdAt: 1,
-        itemAdjustments: [{ createdAt: 1 }, { createdAt: 1 }],
+        itemAdjustments: [
+          { id: 1, buyPrice: 1, updatedAt: 1 },
+          { buyPrice: 1, createdAt: 1 },
+        ],
       },
     ]);
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1), (1)');
-    expect(this.querier.conn.run).nthCalledWith(2, 'INSERT INTO `ItemAdjustment` (`createdAt`, `inventoryAdjustmentId`) VALUES (1, 1), (1, 1)');
-    expect(this.querier.conn.run).nthCalledWith(3, 'INSERT INTO `ItemAdjustment` (`createdAt`, `inventoryAdjustmentId`) VALUES (1, 2), (1, 2)');
+    expect(this.querier.conn.run).nthCalledWith(
+      1,
+      "INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES ('something a', 1), ('something b', 1)"
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      2,
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (1, 1, 1), (1, 1, 1)'
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      3,
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (1, 1, 2)'
+    );
+    expect(this.querier.conn.run).nthCalledWith(
+      4,
+      'UPDATE `ItemAdjustment` SET `buyPrice` = 1, `updatedAt` = 1, `inventoryAdjustmentId` = 2 WHERE `id` = 1'
+    );
 
     await this.querier.findMany(InventoryAdjustment, {
       $project: { id: true, itemAdjustments: ['buyPrice'] },
@@ -298,7 +319,7 @@ export class BaseSqlQuerierSpec implements Spec {
     );
 
     expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.conn.run).toBeCalledTimes(4);
   }
 
   async shouldFindManyAndProjectOneToMany() {

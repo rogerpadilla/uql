@@ -81,8 +81,9 @@ export abstract class BaseQuerier implements Querier {
       ...ids,
       ...(inserts.length ? await this.insertMany(entity, inserts) : []),
       ...updates.map(async (it) => {
-        await this.updateOneById(entity, it[meta.id], it);
-        return it[meta.id];
+        const { [meta.id]: id, ...data } = it;
+        await this.updateOneById(entity, id, data);
+        return id;
       }),
     ]);
   }
@@ -247,15 +248,10 @@ export abstract class BaseQuerier implements Querier {
       return;
     }
 
-    if (cardinality === 'm1') {
+    if (cardinality === 'm1' && relPayload) {
       const referenceKey = references[0].source;
-      if (payload[referenceKey]) {
-        return;
-      }
-      if (relPayload) {
-        const referenceId = await this.insertOne(relEntity, relPayload);
-        await this.updateOneById(entity, id, { [referenceKey]: referenceId });
-      }
+      const referenceId = await this.insertOne(relEntity, relPayload);
+      await this.updateOneById(entity, id, { [referenceKey]: referenceId });
       return;
     }
   }

@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { Query, QueryOne, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue, Logger, QueryUnique } from '@uql/core/type';
+import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue, Logger, QueryUnique } from '@uql/core/type';
 import { BaseQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone, getPersistable, getPersistables, hasKeys, isProjectingRelations } from '@uql/core/util';

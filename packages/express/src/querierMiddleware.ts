@@ -2,9 +2,9 @@ import { Request } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getQuerier } from '@uql/core/options';
-import { IdValue, Query, QueryOne, QueryUnique, Type } from '@uql/core/type';
+import { EntityMeta, IdValue, Query, QueryOne, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
-import { getEntities } from '@uql/core/entity/decorator';
+import { getEntities, getMeta } from '@uql/core/entity/decorator';
 import { parseQuery } from './query.util';
 
 export function querierMiddleware(opts: MiddlewareOptions = {}) {
@@ -19,7 +19,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   }
 
   const crudRouterOpts = {
-    query: opts.query,
+    augmentQuery: opts.augmentQuery,
   };
 
   for (const entity of entities) {
@@ -31,7 +31,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   return router;
 }
 
-export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCallback }) {
+export function buildQuerierRouter<E>(entity: Type<E>, opts: { augmentQuery?: AugmentQueryCallback }) {
   const router = expressRouter();
 
   router.post('/', async (req, res, next) => {
@@ -65,7 +65,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.get('/one', async (req, res, next) => {
-    const qm = augmentQuery<E>(entity, req, opts.query) as QueryOne<E>;
+    const qm = extendQuery<E>(entity, req, opts.augmentQuery) as QueryOne<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm);
@@ -78,7 +78,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.get('/count', async (req, res, next) => {
-    const qm = augmentQuery<E>(entity, req, opts.query);
+    const qm = extendQuery<E>(entity, req, opts.augmentQuery);
     const querier = await getQuerier();
     try {
       const data = await querier.count(entity, qm);
@@ -91,7 +91,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.get('/:id', async (req, res, next) => {
-    const qm = augmentQuery<E>(entity, req, opts.query) as QueryUnique<E>;
+    const qm = extendQuery<E>(entity, req, opts.augmentQuery) as QueryUnique<E>;
     const querier = await getQuerier();
     try {
       const data = await querier.findOneById(entity, req.params.id as IdValue<E>, qm);
@@ -104,7 +104,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.get('/', async (req, res, next) => {
-    const qm = augmentQuery<E>(entity, req, opts.query);
+    const qm = extendQuery<E>(entity, req, opts.augmentQuery);
     const querier = await getQuerier();
     try {
       const json: { data?: E[]; count?: number } = {};
@@ -143,7 +143,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   });
 
   router.delete('/', async (req, res, next) => {
-    const qm = augmentQuery(entity, req, opts.query);
+    const qm = extendQuery(entity, req, opts.augmentQuery);
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
@@ -161,15 +161,16 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { query?: QueryCall
   return router;
 }
 
-function augmentQuery<E>(entity: Type<E>, req: Request, query?: QueryCallback) {
+function extendQuery<E>(entity: Type<E>, req: Request, augmentQuery?: AugmentQueryCallback) {
+  const meta = getMeta(entity);
   const qm = parseQuery<E>(req.query);
-  return query ? query(entity, qm, req) : qm;
+  return augmentQuery ? augmentQuery(meta, qm, req) : qm;
 }
 
 type MiddlewareOptions = {
   include?: Type<any>[];
   exclude?: Type<any>[];
-  query?: QueryCallback;
+  augmentQuery?: AugmentQueryCallback;
 };
 
-type QueryCallback = <E>(entity: Type<E>, qm: Query<E>, req: Request) => Query<E>;
+type AugmentQueryCallback = <E>(meta: EntityMeta<E>, qm: Query<E>, req: Request) => Query<E>;
