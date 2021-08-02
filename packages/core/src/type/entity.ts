@@ -64,13 +64,13 @@ type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' 
 type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'mappedBy' | 'cascade'>;
 type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'through' | 'references' | 'cascade'>;
 
-export type KeyMap<E> = { readonly [K in Key<E>]: Key<E> };
+export type RelationKeyMap<E> = { readonly [K in RelationKey<E>]: K };
 
-export type KeyMapper<E> = (keyMap: KeyMap<E>) => Key<E>;
+export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => RelationKey<E>;
 
-export type RelationReferences = { source: string; target: string }[];
+export type RelationReferences = { local: string; foreign: string }[];
 
-export type RelationMappedBy<E> = E extends object ? Key<E> | KeyMapper<E> : Key<E>;
+export type RelationMappedBy<E> = RelationKey<E> | RelationKeyMapper<E>;
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
@@ -86,7 +86,7 @@ export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name: string;
   id?: FieldKey<E>;
-  softDeleteKey?: FieldKey<E>;
+  softDelete?: FieldKey<E>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;
   };
@@ -95,3 +95,10 @@ export type EntityMeta<E> = {
   };
   processed?: boolean;
 };
+
+// TODO
+// export interface NamingStrategy {
+//   tableName<T>(entity: Type<T>): string;
+//   columnName<T>(entity: Type<T>, fieldName: string): string;
+//   referenceColumnName<T>(sourceEntity: Type<T>, targetEntity: string, fieldName: string): string;
+// }

@@ -26,11 +26,11 @@ it('User', () => {
 
   expect((meta.fields.companyId.reference as ReferenceOptions).entity()).toBe(Company);
   expect(meta.relations.company.entity()).toBe(Company);
-  expect(meta.relations.company.references).toEqual([{ source: 'companyId', target: 'id' }]);
+  expect(meta.relations.company.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
 
   expect((meta.fields.creatorId.reference as ReferenceOptions).entity()).toBe(User);
   expect(meta.relations.creator.entity()).toBe(User);
-  expect(meta.relations.creator.references).toEqual([{ source: 'creatorId', target: 'id' }]);
+  expect(meta.relations.creator.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
   const expectedMeta: EntityMeta<User> = {
     entity: User,
@@ -59,25 +59,25 @@ it('User', () => {
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
       users: {
         cardinality: '1m',
         entity: expect.any(Function),
         mappedBy: 'creator',
-        references: [{ source: 'id', target: 'creatorId' }],
+        references: [{ local: 'id', foreign: 'creatorId' }],
       },
       profile: {
         cardinality: '11',
         cascade: true,
         entity: expect.any(Function),
         mappedBy: 'creator',
-        references: [{ source: 'id', target: 'creatorId' }],
+        references: [{ local: 'id', foreign: 'creatorId' }],
       },
     },
   };
@@ -112,12 +112,12 @@ it('Profile', () => {
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: '11',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -180,32 +180,32 @@ it('Item', () => {
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
       buyLedgerAccount: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'buyLedgerAccountId', target: 'id' }],
+        references: [{ local: 'buyLedgerAccountId', foreign: 'id' }],
       },
       saleLedgerAccount: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'saleLedgerAccountId', target: 'id' }],
+        references: [{ local: 'saleLedgerAccountId', foreign: 'id' }],
       },
       tax: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'taxId', target: 'id' }],
+        references: [{ local: 'taxId', foreign: 'id' }],
       },
       measureUnit: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'measureUnitId', target: 'id' }],
+        references: [{ local: 'measureUnitId', foreign: 'id' }],
       },
       tags: {
         cardinality: 'mm',
@@ -213,8 +213,8 @@ it('Item', () => {
         entity: expect.any(Function),
         through: expect.any(Function),
         references: [
-          { source: 'itemId', target: 'id' },
-          { source: 'tagId', target: 'id' },
+          { local: 'itemId', foreign: 'id' },
+          { local: 'tagId', foreign: 'id' },
         ],
       },
     },
@@ -276,7 +276,7 @@ it('Tag', () => {
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       items: {
         cardinality: 'mm',
@@ -284,14 +284,14 @@ it('Tag', () => {
         mappedBy: 'tags',
         through: expect.any(Function),
         references: [
-          { source: 'itemId', target: 'id' },
-          { source: 'tagId', target: 'id' },
+          { local: 'tagId', foreign: 'id' },
+          { local: 'itemId', foreign: 'id' },
         ],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -322,12 +322,12 @@ it('ItemTag', () => {
       item: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'itemId', target: 'id' }],
+        references: [{ local: 'itemId', foreign: 'id' }],
       },
       tag: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'tagId', target: 'id' }],
+        references: [{ local: 'tagId', foreign: 'id' }],
       },
     },
   };
@@ -362,12 +362,12 @@ it('TaxCategory', () => {
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -415,20 +415,20 @@ it('Tax', () => {
         entity: expect.any(Function),
         references: [
           {
-            source: 'categoryId',
-            target: 'pk',
+            local: 'categoryId',
+            foreign: 'pk',
           },
         ],
       },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -490,22 +490,32 @@ it('ItemAdjustment', () => {
       storehouse: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'storehouseId', target: 'id' }],
+        references: [{ local: 'storehouseId', foreign: 'id' }],
       },
       item: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'itemId', target: 'id' }],
+        references: [{ local: 'itemId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
+      },
+      inventoryAdjustment: {
+        cardinality: 'm1',
+        entity: expect.any(Function),
+        references: [
+          {
+            local: 'inventoryAdjustmentId',
+            foreign: 'id',
+          },
+        ],
       },
     },
   };
@@ -541,18 +551,18 @@ it('InventoryAdjustment', () => {
         cardinality: '1m',
         cascade: true,
         entity: expect.any(Function),
-        mappedBy: 'inventoryAdjustmentId',
-        references: [{ source: 'inventoryAdjustmentId', target: 'id' }],
+        mappedBy: 'inventoryAdjustment',
+        references: [{ local: 'id', foreign: 'inventoryAdjustmentId' }],
       },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -565,7 +575,7 @@ it('MeasureUnitCategory', () => {
     entity: MeasureUnitCategory,
     name: 'MeasureUnitCategory',
     id: 'id',
-    softDeleteKey: 'deletedAt',
+    softDelete: 'deletedAt',
     processed: true,
     fields: {
       id: { name: 'id', type: Number, isId: true },
@@ -589,17 +599,17 @@ it('MeasureUnitCategory', () => {
         cardinality: '1m',
         entity: expect.any(Function),
         mappedBy: 'category',
-        references: [{ source: 'id', target: 'categoryId' }],
+        references: [{ local: 'id', foreign: 'categoryId' }],
       },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };
@@ -612,7 +622,7 @@ it('MeasureUnit', () => {
     entity: MeasureUnit,
     name: 'MeasureUnit',
     id: 'id',
-    softDeleteKey: 'deletedAt',
+    softDelete: 'deletedAt',
     processed: true,
     fields: {
       id: { name: 'id', type: Number, isId: true },
@@ -641,17 +651,17 @@ it('MeasureUnit', () => {
         cardinality: 'm1',
         cascade: 'persist',
         entity: expect.any(Function),
-        references: [{ source: 'categoryId', target: 'id' }],
+        references: [{ local: 'categoryId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'companyId', target: 'id' }],
+        references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
         entity: expect.any(Function),
-        references: [{ source: 'creatorId', target: 'id' }],
+        references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
   };

@@ -20,8 +20,8 @@ export class MongoDialect {
 
     filter = getQueryFilterAsMap(meta, filter);
 
-    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && !filter[meta.softDeleteKey as string]) {
-      filter[meta.softDeleteKey as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !filter[meta.softDelete as string]) {
+      filter[meta.softDelete as string] = null;
     }
 
     return getKeys(filter).reduce((acc, key) => {
@@ -94,16 +94,16 @@ export class MongoDialect {
         pipeline.push({
           $lookup: {
             from: relMeta.name,
-            localField: relOpts.references[0].source,
+            localField: relOpts.references[0].local,
             foreignField: '_id',
             as: relKey,
           },
         });
       } else {
-        const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
+        const foreignField = relOpts.references[0].foreign;
         const referenceFilter = this.filter(relEntity, qm.$filter);
         const referenceSort = this.sort(relEntity, qm.$sort);
-        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = { $match: { [referenceKey]: referenceFilter._id } };
+        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = { $match: { [foreignField]: referenceFilter._id } };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
         }

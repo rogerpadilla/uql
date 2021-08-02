@@ -279,6 +279,20 @@ export class ItemTag {
 }
 
 @Entity()
+export class InventoryAdjustment extends BaseEntity {
+  @OneToMany({
+    entity: () => ItemAdjustment,
+    mappedBy: (rel) => rel.inventoryAdjustment,
+    cascade: true,
+  })
+  itemAdjustments?: ItemAdjustment[];
+  @Field()
+  date?: Date;
+  @Field()
+  description?: string;
+}
+
+@Entity()
 export class ItemAdjustment extends BaseEntity {
   @Field({ reference: () => Item })
   itemId?: number;
@@ -294,18 +308,6 @@ export class ItemAdjustment extends BaseEntity {
   storehouse?: Storehouse;
   @Field({ reference: () => InventoryAdjustment })
   inventoryAdjustmentId?: number;
-}
-
-@Entity()
-export class InventoryAdjustment extends BaseEntity {
-  @OneToMany({
-    entity: () => ItemAdjustment,
-    mappedBy: (rel) => rel.inventoryAdjustmentId,
-    cascade: true,
-  })
-  itemAdjustments?: ItemAdjustment[];
-  @Field()
-  date?: Date;
-  @Field()
-  description?: string;
+  @ManyToOne()
+  inventoryAdjustment?: InventoryAdjustment;
 }

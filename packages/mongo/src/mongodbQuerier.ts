@@ -129,10 +129,10 @@ export class MongodbQuerier extends BaseQuerier {
     }
     const ids: IdValue<E>[] = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
     let changes: number;
-    if (meta.softDeleteKey && !opts.softDelete) {
+    if (meta.softDelete && !opts.softDelete) {
       const updateResult = await this.collection(entity).updateMany(
         { _id: { $in: ids } },
-        { $set: { [meta.softDeleteKey]: meta.fields[meta.softDeleteKey].onDelete() } },
+        { $set: { [meta.softDelete]: meta.fields[meta.softDelete].onDelete() } },
         {
           session: this.session,
         }

@@ -160,7 +160,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       const joinAlias = this.escapeId(joinRelAlias, true);
 
       tables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
-      tables += relOpts.references.map((it) => `${joinAlias}.${this.escapeId(it.target)} = ${relPath}.${this.escapeId(it.source)}`).join(' AND ');
+      tables += relOpts.references.map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`).join(' AND ');
 
       if (relQuery.$filter) {
         const filter = this.where(relEntity, relQuery.$filter, { prefix: key, clause: false });
@@ -189,8 +189,8 @@ export abstract class BaseSqlDialect implements QueryDialect {
 
     filter = getQueryFilterAsMap(meta, filter);
 
-    if (meta.softDeleteKey && (softDelete || softDelete === undefined) && clause !== 'HAVING' && !filter[meta.softDeleteKey as string]) {
-      filter[meta.softDeleteKey as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && clause !== 'HAVING' && !filter[meta.softDelete as string]) {
+      filter[meta.softDelete as string] = null;
     }
 
     const entries = Object.entries(filter);
@@ -422,10 +422,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
 
     if (opts.softDelete || opts.softDelete === undefined) {
-      if (meta.softDeleteKey) {
+      if (meta.softDelete) {
         const criteria = this.criteria(entity, qm, opts);
-        const value = meta.fields[meta.softDeleteKey].onDelete();
-        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDeleteKey)} = ${this.escape(value)}${criteria}`;
+        const value = meta.fields[meta.softDelete].onDelete();
+        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(value)}${criteria}`;
       } else if (opts.softDelete) {
         throw new TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }

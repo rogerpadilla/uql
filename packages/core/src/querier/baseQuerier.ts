@@ -98,40 +98,43 @@ export abstract class BaseQuerier implements Querier {
       const relProject = clone(project[relKey as string]);
       const relQuery: Query<any> =
         relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
-      const referenceKey = relOpts.references[0].source;
       const ids: IdValue<E>[] = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
+        const localField = relOpts.references[0].local;
         const throughEntity = relOpts.through();
         const throughMeta = getMeta(throughEntity);
-        const targetRelKey = getKeys(throughMeta.relations)[relOpts.mappedBy ? 0 : 1];
+        const targetRelKey = Object.keys(throughMeta.relations).find((key) =>
+          throughMeta.relations[key].references.some(({ local }) => local === relOpts.references[1].local)
+        );
         const throughFounds = await this.findMany(throughEntity, {
           $project: {
-            [referenceKey]: true,
+            [localField]: true,
             [targetRelKey]: {
               ...relQuery,
               $required: true,
             },
           },
           $filter: {
-            [referenceKey]: ids,
+            [localField]: ids,
           },
         });
-        const founds = throughFounds.map((it) => ({ ...it[targetRelKey], [referenceKey]: it[referenceKey] }));
-        this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
+        const founds = throughFounds.map((it) => ({ ...it[targetRelKey], [localField]: it[localField] }));
+        this.putChildrenInParents(payload, founds, meta.id, localField, relKey);
       } else if (relOpts.cardinality === '1m') {
+        const foreignField = relOpts.references[0].foreign;
         if (relQuery.$project) {
           if (Array.isArray(relQuery.$project)) {
-            if (!relQuery.$project.includes(referenceKey)) {
-              relQuery.$project.push(referenceKey);
+            if (!relQuery.$project.includes(foreignField)) {
+              relQuery.$project.push(foreignField);
             }
-          } else if (!relQuery.$project[referenceKey]) {
-            relQuery.$project[referenceKey] = true;
+          } else if (!relQuery.$project[foreignField]) {
+            relQuery.$project[foreignField] = true;
           }
         }
-        relQuery.$filter = { [referenceKey]: ids };
+        relQuery.$filter = { [foreignField]: ids };
         const founds = await this.findMany(relEntity, relQuery);
-        this.putChildrenInParents(payload, founds, meta.id, referenceKey, relKey);
+        this.putChildrenInParents(payload, founds, meta.id, foreignField, relKey);
       }
     }
   }
@@ -190,14 +193,13 @@ export abstract class BaseQuerier implements Querier {
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
+      const localField = relOpts.references[0].local;
       if (relOpts.through) {
         const throughEntity = relOpts.through();
-        const referenceKey = relOpts.mappedBy ? relOpts.references[1].source : relOpts.references[0].source;
-        await this.deleteMany(throughEntity, { $filter: { [referenceKey]: ids } }, opts);
+        await this.deleteMany(throughEntity, { $filter: { [localField]: ids } }, opts);
         return;
       }
-      const referenceKey = relOpts.mappedBy ? relOpts.references[0].target : relOpts.references[0].source;
-      await this.deleteMany(relEntity, { [referenceKey]: ids }, opts);
+      await this.deleteMany(relEntity, { [localField]: ids }, opts);
     }
   }
 
@@ -209,29 +211,30 @@ export abstract class BaseQuerier implements Querier {
     const relPayload = payload[relKey] as RelationValue<E>[];
 
     if (cardinality === '1m' || cardinality === 'mm') {
-      const referenceKey = references[0].source;
-
       if (through) {
+        const localField = references[0].local;
+
         const throughEntity = through();
         if (isUpdate) {
-          await this.deleteMany(throughEntity, { $filter: { [referenceKey]: id } });
+          await this.deleteMany(throughEntity, { $filter: { [localField]: id } });
         }
         if (relPayload) {
           const savedIds = await this.saveMany(relEntity, relPayload);
           const throughBodies = savedIds.map((relId) => ({
-            [references[0].source]: id,
-            [references[1].source]: relId,
+            [references[0].local]: id,
+            [references[1].local]: relId,
           }));
           await this.insertMany(throughEntity, throughBodies);
         }
         return;
       }
+      const foreignField = references[0].foreign;
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $filter: { [referenceKey]: id } });
+        await this.deleteMany(relEntity, { $filter: { [foreignField]: id } });
       }
       if (relPayload) {
         for (const it of relPayload) {
-          it[referenceKey] = id;
+          it[foreignField] = id;
         }
         await this.saveMany(relEntity, relPayload);
       }
@@ -239,19 +242,19 @@ export abstract class BaseQuerier implements Querier {
     }
 
     if (cardinality === '11') {
-      const referenceKey = references[0].target;
+      const foreignField = references[0].foreign;
       if (relPayload === null) {
-        await this.deleteMany(relEntity, { $filter: { [referenceKey]: id } });
+        await this.deleteMany(relEntity, { $filter: { [foreignField]: id } });
         return;
       }
-      await this.saveOne(relEntity, { ...relPayload, [referenceKey]: id });
+      await this.saveOne(relEntity, { ...relPayload, [foreignField]: id });
       return;
     }
 
     if (cardinality === 'm1' && relPayload) {
-      const referenceKey = references[0].source;
+      const localField = references[0].local;
       const referenceId = await this.insertOne(relEntity, relPayload);
-      await this.updateOneById(entity, id, { [referenceKey]: referenceId });
+      await this.updateOneById(entity, id, { [localField]: referenceId });
       return;
     }
   }

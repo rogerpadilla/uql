@@ -1,6 +1,6 @@
 import { Querier, QuerierPool } from '@uql/core/type';
 import { getEntities } from '@uql/core/entity';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, TaxCategory, User } from '@uql/core/test';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '@uql/core/test';
 
 export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
   querier: Q;
@@ -285,14 +285,27 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
     expect(id).toBeDefined();
 
-    const found = await this.querier.findOneById(Item, id, {
-      $project: { name: true, createdAt: true, tags: true },
+    const foundItem = await this.querier.findOneById(Item, id, {
+      $project: { name: true, createdAt: true, tags: ['name', 'createdAt'] },
     });
 
-    expect(found).toMatchObject({
+    expect(foundItem).toMatchObject({
       id,
       ...payload,
     });
+
+    const foundTags = await this.querier.findMany(Tag, {
+      $project: { name: true, createdAt: true, items: ['name', 'createdAt'] },
+    });
+
+    console.log('** foundTags', typeof foundItem.id, foundTags[0], foundTags[1]);
+
+    // expect(foundTags).toMatchObject(
+    //   payload.tags.map((it) => {
+    //     it.items = [foundItem];
+    //     return it;
+    //   })
+    // );
   }
 
   async shouldUpdateOneAndCascadeManyToMany() {

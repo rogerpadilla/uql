@@ -6,13 +6,10 @@ import {
   EntityOptions,
   EntityMeta,
   Type,
-  KeyMapper,
-  RelationMappedBy,
-  KeyMap,
+  RelationKeyMap,
   ReferenceOptions,
   RelationKey,
   FieldKey,
-  Key,
 } from '@uql/core/type';
 
 const holder = globalThis;
@@ -69,7 +66,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
     if (!onDeleteKeys.length) {
       throw new TypeError(`'${entity.name}' must have one field with 'onDelete' to enable 'softDelete'`);
     }
-    meta.softDeleteKey = onDeleteKeys[0];
+    meta.softDelete = onDeleteKeys[0];
   }
 
   meta.name = opts.name ?? entity.name;
@@ -77,7 +74,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
 
   while (proto.constructor !== Object) {
     const parentMeta = ensureMeta(proto.constructor as Type<E>);
-    extend(parentMeta, meta);
+    extendMeta(meta, parentMeta);
     proto = Object.getPrototypeOf(proto);
   }
 
@@ -144,11 +141,11 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
       const source = lowerFirst(meta.name) + upperFirst(idName);
       const target = lowerFirst(relMeta.name) + upperFirst(relIdName);
       relOpts.references = [
-        { source, target: idName },
-        { source: target, target: relIdName },
+        { local: source, foreign: meta.id },
+        { local: target, foreign: relMeta.id },
       ];
     } else {
-      relOpts.references = [{ source: `${relKey}Id`, target: relMeta.id }];
+      relOpts.references = [{ local: `${relKey}Id`, foreign: relMeta.id }];
     }
 
     if (relOpts.through) {
@@ -162,23 +159,18 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
 function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
-  const mappedByKey = getMappedByKey(relOpts);
-  relOpts.mappedBy = mappedByKey as RelationMappedBy<E>;
+  relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
-  if (relMeta.relations[mappedByKey as RelationKey<E>]) {
-    const { cardinality, references, through } = relMeta.relations[mappedByKey as RelationKey<E>];
-    if (cardinality === '11' || cardinality === 'm1') {
-      // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
-      relOpts.references = references.map(({ source, target }) => ({
-        source: target,
-        target: source,
-      }));
-    } else {
-      relOpts.references = references;
-      relOpts.through = through;
-    }
+  // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
+  const { cardinality, references, through } = relMeta.relations[relOpts.mappedBy];
+  if (cardinality === '11' || cardinality === 'm1') {
+    relOpts.references = references.map(({ local, foreign }) => ({
+      local: foreign,
+      foreign: local,
+    }));
   } else {
-    relOpts.references = [{ source: mappedByKey, target: relMeta.id }];
+    relOpts.references = references.slice().reverse();
+    relOpts.through = through;
   }
 }
 
@@ -194,7 +186,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
       const relOpts: RelationOptions = {
         cardinality: 'm1',
         entity: relEntityGetter,
-        references: [{ source: key, target: relMeta.id }],
+        references: [{ local: key, foreign: relMeta.id }],
       };
       relations[relKey] = relOpts;
     }
@@ -202,22 +194,21 @@ function fillThroughRelations<E>(entity: Type<E>): void {
   }, {});
 }
 
-function getMappedByKey<E>(relOpts: RelationOptions<E>): Key<E> {
+function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): RelationKey<E> {
   if (typeof relOpts.mappedBy === 'function') {
     const relEntity = relOpts.entity();
     const relMeta = ensureMeta(relEntity);
-    const keyMap = getKeyMap(relMeta);
-    const mapper = relOpts.mappedBy as KeyMapper<E>;
-    return mapper(keyMap);
+    const keyMap = getRelationKeyMap(relMeta);
+    return relOpts.mappedBy(keyMap);
   }
-  return relOpts.mappedBy as Key<E>;
+  return relOpts.mappedBy;
 }
 
-function getKeyMap<E>(meta: EntityMeta<E>): KeyMap<E> {
-  return getKeys({ ...meta.fields, ...meta.relations }).reduce((acc, key) => {
+function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
+  return getKeys(meta.relations).reduce((acc, key) => {
     acc[key] = key;
     return acc;
-  }, {} as KeyMap<E>);
+  }, {} as RelationKeyMap<E>);
 }
 
 function getId<E>(meta: EntityMeta<E>): FieldKey<E> {
@@ -225,7 +216,7 @@ function getId<E>(meta: EntityMeta<E>): FieldKey<E> {
   return id as FieldKey<E>;
 }
 
-function extend<E>(source: EntityMeta<E>, target: EntityMeta<E>): void {
+function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   const sourceFields = { ...source.fields };
   const targetId = getId(target);
   if (targetId) {
