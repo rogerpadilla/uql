@@ -298,14 +298,9 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
       $project: { name: true, createdAt: true, items: ['name', 'createdAt'] },
     });
 
-    console.log('** foundTags', typeof foundItem.id, foundTags[0], foundTags[1]);
+    delete foundItem.tags;
 
-    // expect(foundTags).toMatchObject(
-    //   payload.tags.map((it) => {
-    //     it.items = [foundItem];
-    //     return it;
-    //   })
-    // );
+    expect(foundTags).toMatchObject(payload.tags.map((tag) => ({ ...tag, items: [foundItem] })));
   }
 
   async shouldUpdateOneAndCascadeManyToMany() {

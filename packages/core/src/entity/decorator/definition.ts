@@ -161,7 +161,7 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relMeta = getMeta(relEntity);
   relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
-  // invert here makes the SQL generation simpler (no need to check for `mappedBy`)
+  // reversing references here makes the SQL generation simpler (no need to check for `mappedBy`)
   const { cardinality, references, through } = relMeta.relations[relOpts.mappedBy];
   if (cardinality === '11' || cardinality === 'm1') {
     relOpts.references = references.map(({ local, foreign }) => ({
