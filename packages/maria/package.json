@@ -16,11 +16,11 @@
     "mariadb": "^2.5.4"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.64"
+    "@uql/core": "^0.4.66"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.19",
-    "@types/node": "^16.4.8",
+    "@types/node": "^16.4.10",
     "@uql/core": "^0.4.67",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
