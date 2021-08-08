@@ -162,7 +162,7 @@ export class MongodbQuerier extends BaseQuerier {
 
   override async beginTransaction() {
     if (this.session?.inTransaction()) {
-      throw new TypeError('pending transaction');
+      throw TypeError('pending transaction');
     }
     this.logger?.('beginTransaction');
     this.session = this.conn.startSession();
@@ -171,7 +171,7 @@ export class MongodbQuerier extends BaseQuerier {
 
   override async commitTransaction() {
     if (!this.session?.inTransaction()) {
-      throw new TypeError('not a pending transaction');
+      throw TypeError('not a pending transaction');
     }
     this.logger?.('commitTransaction');
     await this.session.commitTransaction();
@@ -179,7 +179,7 @@ export class MongodbQuerier extends BaseQuerier {
 
   override async rollbackTransaction() {
     if (!this.session?.inTransaction()) {
-      throw new TypeError('not a pending transaction');
+      throw TypeError('not a pending transaction');
     }
     this.logger?.('rollbackTransaction');
     await this.session.abortTransaction();
@@ -187,7 +187,7 @@ export class MongodbQuerier extends BaseQuerier {
 
   override async release(force?: boolean) {
     if (this.session?.inTransaction()) {
-      throw new TypeError('pending transaction');
+      throw TypeError('pending transaction');
     }
     await this.conn.close(force);
   }

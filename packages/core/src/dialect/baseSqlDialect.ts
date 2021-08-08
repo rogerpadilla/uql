@@ -318,7 +318,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
       case '$regex':
         return `${comparisonKey} REGEXP ${this.escape(val)}`;
       default:
-        throw new TypeError(`unknown operator: ${op}`);
+        throw TypeError(`unknown operator: ${op}`);
     }
   }
 
@@ -427,7 +427,7 @@ export abstract class BaseSqlDialect implements QueryDialect {
         const value = meta.fields[meta.softDelete].onDelete();
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(value)}${criteria}`;
       } else if (opts.softDelete) {
-        throw new TypeError(`'${meta.name}' has not enabled 'softDelete'`);
+        throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }
     }
 

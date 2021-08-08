@@ -84,7 +84,7 @@ export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | Rela
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
-  name: string;
+  name?: string;
   id?: FieldKey<E>;
   softDelete?: FieldKey<E>;
   fields: {
@@ -95,10 +95,3 @@ export type EntityMeta<E> = {
   };
   processed?: boolean;
 };
-
-// TODO
-// export interface NamingStrategy {
-//   tableName<T>(entity: Type<T>): string;
-//   columnName<T>(entity: Type<T>, fieldName: string): string;
-//   referenceColumnName<T>(sourceEntity: Type<T>, targetEntity: string, fieldName: string): string;
-// }

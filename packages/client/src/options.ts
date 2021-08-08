@@ -28,6 +28,6 @@ export function getQuerier() {
 }
 
 export function getRepository<E>(entity: Type<E>, querier?: ClientQuerier) {
-  const finalQuerier = querier ?? getQuerier();
-  return new BaseClientRepository(entity, finalQuerier);
+  const theQuerier = querier ?? getQuerier();
+  return new BaseClientRepository(entity, theQuerier);
 }

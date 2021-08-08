@@ -15,7 +15,7 @@ export function getOptions(): UqlOptions {
 export function getQuerierPool(): QuerierPool {
   const options = getOptions();
   if (!options.querierPool) {
-    throw new TypeError(`'querierPool' has to be passed via 'setOptions'`);
+    throw TypeError(`'querierPool' has to be passed via 'setOptions'`);
   }
   return options.querierPool;
 }

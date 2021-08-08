@@ -67,7 +67,7 @@ export class SqlQuerier extends BaseQuerier {
 
   override async beginTransaction() {
     if (this.hasPendingTransaction) {
-      throw new TypeError('pending transaction');
+      throw TypeError('pending transaction');
     }
     await this.conn.run(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
@@ -75,7 +75,7 @@ export class SqlQuerier extends BaseQuerier {
 
   override async commitTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new TypeError('not a pending transaction');
+      throw TypeError('not a pending transaction');
     }
     await this.conn.run('COMMIT');
     this.hasPendingTransaction = undefined;
@@ -83,7 +83,7 @@ export class SqlQuerier extends BaseQuerier {
 
   override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
-      throw new TypeError('not a pending transaction');
+      throw TypeError('not a pending transaction');
     }
     await this.conn.run('ROLLBACK');
     this.hasPendingTransaction = undefined;
@@ -91,7 +91,7 @@ export class SqlQuerier extends BaseQuerier {
 
   override async release() {
     if (this.hasPendingTransaction) {
-      throw new TypeError('pending transaction');
+      throw TypeError('pending transaction');
     }
     return this.conn.release();
   }

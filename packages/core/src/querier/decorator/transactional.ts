@@ -15,7 +15,7 @@ export function Transactional({
     const injectedQuerierIndex = getInjectedQuerierIndex(theClass, key);
 
     if (injectedQuerierIndex === undefined) {
-      throw new TypeError(`missing decorator @InjectQuerier() in '${target.constructor.name}.${key}'`);
+      throw TypeError(`missing decorator @InjectQuerier() in '${target.constructor.name}.${key}'`);
     }
 
     propDescriptor.value = async function func(this: object, ...args: any[]) {

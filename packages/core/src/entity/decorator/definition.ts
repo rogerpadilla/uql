@@ -34,7 +34,7 @@ export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): E
   const meta = ensureMeta(entity);
   const id = getId(meta);
   if (id) {
-    throw new TypeError(`'${entity.name}' must have a single field decorated with @Id`);
+    throw TypeError(`'${entity.name}' must have a single field decorated with @Id`);
   }
   return defineField(entity, key, { ...opts, isId: true });
 }
@@ -53,18 +53,18 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
   const meta = ensureMeta(entity);
 
   if (!hasKeys(meta.fields)) {
-    throw new TypeError(`'${entity.name}' must have fields`);
+    throw TypeError(`'${entity.name}' must have fields`);
   }
 
   const onDeleteKeys = getKeys(meta.fields).filter((key) => meta.fields[key].onDelete) as FieldKey<E>[];
 
   if (onDeleteKeys.length > 1) {
-    throw new TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
+    throw TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
   }
 
   if (opts.softDelete) {
     if (!onDeleteKeys.length) {
-      throw new TypeError(`'${entity.name}' must have one field with 'onDelete' to enable 'softDelete'`);
+      throw TypeError(`'${entity.name}' must have one field with 'onDelete' to enable 'softDelete'`);
     }
     meta.softDelete = onDeleteKeys[0];
   }
@@ -80,7 +80,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
 
   const id = getId(meta);
   if (!id) {
-    throw new TypeError(`'${entity.name}' must have one field decorated with @Id`);
+    throw TypeError(`'${entity.name}' must have one field decorated with @Id`);
   }
   meta.id = id;
 
@@ -101,7 +101,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity, name: entity.name, fields: {}, relations: {} };
+  meta = { entity, fields: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
 }
@@ -109,7 +109,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
 export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
   const meta = metas.get(entity);
   if (!meta) {
-    throw new TypeError(`'${entity.name}' is not an entity`);
+    throw TypeError(`'${entity.name}' is not an entity`);
   }
   if (meta.processed) {
     return meta;
@@ -237,7 +237,7 @@ function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
-    throw new TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
+    throw TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
   }
   return inferredType;
 }
