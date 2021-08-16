@@ -1,9 +1,9 @@
 import { createSpec } from '@uql/core/test';
-import { BaseSqlQuerierIt } from '@uql/core/querier/sqlQuerier-it';
+import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
 import { MySql2QuerierPool } from './mysql2QuerierPool';
 
-export class MySql2QuerierIt extends BaseSqlQuerierIt {
-  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+export class MySql2QuerierIt extends AbstractSqlQuerierIt {
+  readonly idType = 'SERIAL PRIMARY KEY';
 
   constructor() {
     super(

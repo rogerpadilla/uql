@@ -1,4 +1,4 @@
-import { BaseRepository } from '@uql/core/repository';
+import { GenericRepository } from '@uql/core/repository';
 import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from '@uql/core/util';
 import { getMeta } from '@uql/core/entity';
 import {
@@ -14,10 +14,12 @@ import {
   RelationKey,
   RelationValue,
   Repository,
+  Column,
   Type,
+  Table,
 } from '@uql/core/type';
 
-export abstract class BaseQuerier implements Querier {
+export abstract class AbstractQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
   findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E> = {}) {
@@ -260,7 +262,7 @@ export abstract class BaseQuerier implements Querier {
   }
 
   getRepository<E>(entity: Type<E>): Repository<E> {
-    return new BaseRepository(entity, this);
+    return new GenericRepository(entity, this);
   }
 
   abstract readonly hasOpenTransaction: boolean;
@@ -286,4 +288,28 @@ export abstract class BaseQuerier implements Querier {
   abstract rollbackTransaction(): Promise<void>;
 
   abstract release(): Promise<void>;
+
+  abstract end(): Promise<void>;
+
+  abstract listTables(): Promise<string[]>;
+
+  abstract createTable(table: Table): Promise<void>;
+
+  abstract clearTable(table?: string): Promise<void>;
+
+  abstract clearTables(tables?: string[]): Promise<void>;
+
+  abstract dropTable(table: string): Promise<void>;
+
+  abstract dropTables(tables?: string[]): Promise<void>;
+
+  abstract renameTable(oldTable: string, newTable: string): Promise<void>;
+
+  abstract addColumn(table: string, column: string, options: Column): Promise<void>;
+
+  abstract dropColumn(table: string, column: string): Promise<void>;
+
+  abstract changeColumn(table: string, column: string, options?: Column): Promise<void>;
+
+  abstract renameColumn(table: string, oldColumn: string, newColumn: string): Promise<void>;
 }

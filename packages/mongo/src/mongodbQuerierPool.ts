@@ -1,12 +1,12 @@
 import { connect, MongoClientOptions } from 'mongodb';
-import { Logger, QuerierPool } from '@uql/core/type';
+import { QuerierLogger, QuerierPool } from '@uql/core/type';
 import { MongodbQuerier } from './mongodbQuerier';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
   private querier: MongodbQuerier;
 
-  constructor(readonly uri: string, readonly options?: MongoClientOptions, readonly logger?: Logger) {}
+  constructor(readonly uri: string, readonly options?: MongoClientOptions, readonly logger?: QuerierLogger) {}
 
   async getQuerier() {
     if (!this.querier || !this.querier.conn.isConnected()) {

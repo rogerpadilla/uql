@@ -9,7 +9,7 @@ class PostgresDialectSpec {
   }
 
   shouldBeginTransaction() {
-    expect(this.dialect.beginTransactionCommand).toBe('BEGIN');
+    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
   shouldInsertMany() {

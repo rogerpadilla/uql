@@ -1,4 +1,4 @@
-import { BaseRepository } from '@uql/core/repository';
+import { GenericRepository } from '@uql/core/repository';
 import { Querier, QuerierPool, Repository, Type, UqlOptions } from '@uql/core/type';
 
 let options: UqlOptions;
@@ -25,5 +25,5 @@ export function getQuerier(): Promise<Querier> {
 }
 
 export function getRepository<E>(entity: Type<E>, querier: Querier): Repository<E> {
-  return new BaseRepository(entity, querier);
+  return new GenericRepository(entity, querier);
 }

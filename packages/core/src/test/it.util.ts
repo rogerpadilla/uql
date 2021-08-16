@@ -1,40 +1,40 @@
 import { getEntities, getMeta } from '@uql/core/entity';
 import { Type } from '@uql/core/type';
 import { getKeys } from '@uql/core/util';
-import { SqlQuerier } from '@uql/core/querier';
+import { AbstractSqlQuerier } from '@uql/core/querier';
 
-export async function createTables(querier: SqlQuerier, primaryKeyType: string) {
+export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: string) {
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
       const sql = getDdlForTable(entity, querier, primaryKeyType);
-      return querier.conn.run(sql);
+      return querier.run(sql);
     })
   );
 }
 
-export async function dropTables(querier: SqlQuerier) {
+export async function dropTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
       const meta = getMeta(entity);
       const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name)}`;
-      return querier.conn.run(sql);
+      return querier.run(sql);
     })
   );
 }
 
-export async function cleanTables(querier: SqlQuerier) {
+export async function clearTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
       const sql = querier.dialect.delete(entity, {}, { softDelete: false });
-      return querier.conn.run(sql);
+      return querier.run(sql);
     })
   );
 }
 
-function getDdlForTable<E>(entity: Type<E>, querier: SqlQuerier, primaryKeyType: string) {
+function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primaryKeyType: string) {
   const meta = getMeta(entity);
 
   let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name)} (\n\t`;

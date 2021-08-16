@@ -1,14 +1,14 @@
 import { types } from 'pg';
 import { createSpec } from '@uql/core/test';
-import { BaseSqlQuerierIt } from '@uql/core/querier/sqlQuerier-it';
+import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
 import { PgQuerierPool } from './pgQuerierPool';
 
 types.setTypeParser(types.builtins.INT8, (value: string) => parseInt(value));
 types.setTypeParser(types.builtins.FLOAT8, (value: string) => parseFloat(value));
 types.setTypeParser(types.builtins.NUMERIC, (value: string) => parseFloat(value));
 
-export class PostgresQuerierIt extends BaseSqlQuerierIt {
-  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+export class PostgresQuerierIt extends AbstractSqlQuerierIt {
+  readonly idType = 'SERIAL PRIMARY KEY';
 
   constructor() {
     super(

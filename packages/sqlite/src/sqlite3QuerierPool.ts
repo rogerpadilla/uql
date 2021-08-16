@@ -1,25 +1,23 @@
 import { ISqlite, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import { Logger, QuerierPool } from '@uql/core/type';
-import { SqlQuerier } from '@uql/core/querier';
-import { SqliteDialect } from '@uql/core/dialect';
-import { SqliteConnection } from './sqliteConnection';
+import { QuerierLogger, QuerierPool } from '@uql/core/type';
+import { SqliteQuerier } from './sqliteQuerier';
 
-export class Sqlite3QuerierPool implements QuerierPool<SqlQuerier> {
-  private querier: SqlQuerier;
+export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
+  private querier: SqliteQuerier;
 
-  constructor(readonly config: Omit<ISqlite.Config, 'driver'>, readonly logger?: Logger) {}
+  constructor(readonly config: Omit<ISqlite.Config, 'driver'>, readonly logger?: QuerierLogger) {}
 
   async getQuerier() {
     if (!this.querier) {
       const db = await open({ ...this.config, driver: Sqlite3Driver });
-      this.querier = new SqlQuerier(new SqliteDialect(), new SqliteConnection(db, this.logger));
+      this.querier = new SqliteQuerier(db, this.logger);
     }
     return this.querier;
   }
 
   async end() {
-    await this.querier.conn.end();
+    await this.querier.end();
     delete this.querier;
   }
 }

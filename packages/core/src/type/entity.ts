@@ -11,9 +11,9 @@ export type FieldKey<E> = {
 
 export type FieldValue<E> = E[FieldKey<E>];
 
-export const idKey = Symbol('idKey');
+export const idType = Symbol('idType');
 
-export type IdValue<E> = E extends { [idKey]?: infer U }
+export type IdValue<E> = E extends { [idType]?: infer U }
   ? U
   : E extends { id?: infer U }
   ? U

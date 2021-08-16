@@ -2,7 +2,7 @@ import { Querier, QuerierPool } from '@uql/core/type';
 import { getEntities } from '@uql/core/entity';
 import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '@uql/core/test';
 
-export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
+export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier: Q;
 
   constructor(readonly pool: QuerierPool<Q>) {}
@@ -16,7 +16,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
-    await this.cleanTables();
+    await this.clearTables();
   }
 
   async afterEach() {
@@ -495,7 +495,7 @@ export abstract class BaseQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
-  async cleanTables() {
+  async clearTables() {
     const entities = getEntities();
     await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {})));
   }

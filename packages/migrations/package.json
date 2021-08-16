@@ -1,5 +1,5 @@
 {
-  "name": "@uql/postgres",
+  "name": "@uql/migrations",
   "homepage": "https://uql.io",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
@@ -8,19 +8,19 @@
   "types": "index.d.ts",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc --build tsconfig.build.json && yarn copyfiles",
+    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "pg": "^8.7.1"
+    "sqlite": "^4.0.23",
+    "sqlite3": "^5.0.2"
   },
   "peerDependencies": {
     "@uql/core": "^0.4.68"
   },
   "devDependencies": {
     "@types/node": "^16.6.1",
-    "@types/pg": "^8.6.1",
     "@uql/core": "^0.4.69",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",

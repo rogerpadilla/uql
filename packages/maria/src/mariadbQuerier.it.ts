@@ -1,9 +1,9 @@
 import { createSpec } from '@uql/core/test';
-import { BaseSqlQuerierIt } from '@uql/core/querier/sqlQuerier-it';
+import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
 import { MariadbQuerierPool } from './mariadbQuerierPool';
 
-export class MariadbQuerierIt extends BaseSqlQuerierIt {
-  readonly primaryKeyType = 'SERIAL PRIMARY KEY';
+export class MariadbQuerierIt extends AbstractSqlQuerierIt {
+  readonly idType = 'SERIAL PRIMARY KEY';
 
   constructor() {
     super(

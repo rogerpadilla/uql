@@ -1,19 +1,17 @@
 import { Pool, PoolConfig } from 'pg';
-import { Logger, QuerierPool } from '@uql/core/type';
-import { SqlQuerier } from '@uql/core/querier';
-import { PostgresDialect } from '@uql/core/dialect';
-import { PgConnection } from './pgConnection';
+import { QuerierLogger, QuerierPool } from '@uql/core/type';
+import { PgQuerier } from './pgQuerier';
 
-export class PgQuerierPool implements QuerierPool<SqlQuerier> {
+export class PgQuerierPool implements QuerierPool<PgQuerier> {
   readonly pool: Pool;
 
-  constructor(opts: PoolConfig, readonly logger?: Logger) {
+  constructor(opts: PoolConfig, readonly logger?: QuerierLogger) {
     this.pool = new Pool(opts);
   }
 
   async getQuerier() {
     const conn = await this.pool.connect();
-    return new SqlQuerier(new PostgresDialect(), new PgConnection(conn, this.logger));
+    return new PgQuerier(conn, this.logger);
   }
 
   async end() {

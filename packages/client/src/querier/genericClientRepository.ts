@@ -1,7 +1,7 @@
 import { IdValue, Query, QueryCriteria, QueryOptions, QuerySearch, QueryUnique, Type } from '@uql/core/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
 
-export class BaseClientRepository<E> implements ClientRepository<E> {
+export class GenericClientRepository<E> implements ClientRepository<E> {
   constructor(readonly entity: Type<E>, readonly querier: ClientQuerier) {}
 
   count(qm: QuerySearch<E>, opts?: RequestOptions) {

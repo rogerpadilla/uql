@@ -1,19 +1,17 @@
 import { createPool, Pool, PoolOptions } from 'mysql2/promise';
-import { Logger, QuerierPool } from '@uql/core/type';
-import { SqlQuerier } from '@uql/core/querier';
-import { MySqlDialect } from '@uql/core/dialect';
-import { MySql2Connection } from './mysql2Connection';
+import { QuerierLogger, QuerierPool } from '@uql/core/type';
+import { MySql2Querier } from './mysql2Querier';
 
-export class MySql2QuerierPool implements QuerierPool<SqlQuerier> {
+export class MySql2QuerierPool implements QuerierPool<MySql2Querier> {
   readonly pool: Pool;
 
-  constructor(opts: PoolOptions, readonly logger?: Logger) {
+  constructor(opts: PoolOptions, readonly logger?: QuerierLogger) {
     this.pool = createPool(opts);
   }
 
   async getQuerier() {
     const conn = await this.pool.getConnection();
-    return new SqlQuerier(new MySqlDialect(), new MySql2Connection(conn, this.logger));
+    return new MySql2Querier(conn, this.logger);
   }
 
   async end() {

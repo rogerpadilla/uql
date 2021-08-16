@@ -1,15 +1,27 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue, Logger, QueryUnique } from '@uql/core/type';
-import { BaseQuerier } from '@uql/core/querier';
+import {
+  Query,
+  Type,
+  QueryCriteria,
+  QueryOptions,
+  QuerySearch,
+  IdValue,
+  FieldValue,
+  QuerierLogger,
+  QueryUnique,
+  Table,
+  Column,
+} from '@uql/core/type';
+import { AbstractQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone, getPersistable, getPersistables, hasKeys, isProjectingRelations } from '@uql/core/util';
 
 import { MongoDialect } from './mongoDialect';
 
-export class MongodbQuerier extends BaseQuerier {
+export class MongodbQuerier extends AbstractQuerier {
   private session: ClientSession;
 
-  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly logger?: Logger) {
+  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly logger?: QuerierLogger) {
     super();
   }
 
@@ -155,13 +167,17 @@ export class MongodbQuerier extends BaseQuerier {
     return this.session?.inTransaction();
   }
 
-  collection<E>(entity: Type<E>) {
-    const meta = getMeta(entity);
-    return this.conn.db().collection(meta.name);
+  collection<E>(entity: Type<E> | string) {
+    const name = typeof entity === 'string' ? entity : getMeta(entity).name;
+    return this.db.collection(name);
+  }
+
+  get db() {
+    return this.conn.db();
   }
 
   override async beginTransaction() {
-    if (this.session?.inTransaction()) {
+    if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
     this.logger?.('beginTransaction');
@@ -170,7 +186,7 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   override async commitTransaction() {
-    if (!this.session?.inTransaction()) {
+    if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
     this.logger?.('commitTransaction');
@@ -178,7 +194,7 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   override async rollbackTransaction() {
-    if (!this.session?.inTransaction()) {
+    if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
     this.logger?.('rollbackTransaction');
@@ -186,9 +202,64 @@ export class MongodbQuerier extends BaseQuerier {
   }
 
   override async release(force?: boolean) {
-    if (this.session?.inTransaction()) {
+    if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
     await this.conn.close(force);
+  }
+
+  override async end() {
+    await this.release(true);
+  }
+
+  async createTable(table: Table) {
+    this.db.createCollection(table.name);
+  }
+
+  override async listTables() {
+    const collections = await this.db.listCollections({ nameOnly: true }).toArray();
+    return collections as string[];
+  }
+
+  override async clearTable(table: string) {
+    await this.collection(table).deleteMany({});
+  }
+
+  override async clearTables(tables?: string[]) {
+    if (!tables) {
+      tables = await this.listTables();
+    }
+    await Promise.all(tables.map((table) => this.clearTable(table)));
+  }
+
+  override async dropTable(table: string) {
+    await this.collection(table).drop();
+  }
+
+  override async dropTables(tables?: string[]) {
+    if (!tables) {
+      tables = await this.listTables();
+    }
+    await Promise.all(tables.map((table) => this.dropTable(table)));
+  }
+
+  override async renameTable(oldTable: string, newTable: string) {
+    await this.collection(oldTable).rename(newTable);
+  }
+
+  override async addColumn(table: string, column: string, options: Column) {
+    // no-op
+  }
+
+  override async dropColumn(table: string, column: string) {
+    await this.collection(table).updateMany({}, { $unset: { [column]: 1 } });
+  }
+
+  override async changeColumn(table: string, column: string, options?: Column) {
+    // no-op
+  }
+
+  override async renameColumn(table: string, oldColumn: string, newColumn: string) {
+    await this.collection(table).updateMany({}, { $rename: { [oldColumn]: newColumn } });
   }
 }

@@ -1,6 +1,6 @@
 import { User } from '@uql/core/test';
 import { Querier, Repository } from '@uql/core/type';
-import { BaseRepository } from './baseRepository';
+import { GenericRepository } from './genericRepository';
 
 describe('repository', () => {
   let repository: Repository<User>;
@@ -22,7 +22,7 @@ describe('repository', () => {
       deleteOneById: jest.fn(),
       deleteMany: jest.fn(),
     };
-    repository = new BaseRepository(User, querier as Querier);
+    repository = new GenericRepository(User, querier as Querier);
   });
 
   it('count', async () => {

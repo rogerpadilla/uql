@@ -2,17 +2,17 @@ import { Spec, User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjust
 
 import { FieldKey, QueryFilter } from '@uql/core/type';
 import { raw } from '@uql/core/util';
-import { BaseSqlDialect } from './baseSqlDialect';
+import { AbstractSqlDialect } from './abstractSqlDialect';
 
-export abstract class BaseSqlDialectSpec implements Spec {
-  constructor(readonly dialect: BaseSqlDialect) {}
+export abstract class AbstractSqlDialectSpec implements Spec {
+  constructor(readonly dialect: AbstractSqlDialect) {}
 
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('`');
   }
 
   shouldBeginTransaction() {
-    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+    expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
   }
 
   shouldInsertMany() {
@@ -1079,22 +1079,22 @@ export abstract class BaseSqlDialectSpec implements Spec {
   shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: { id: true },
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
+        $project: ['id'],
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, creatorId: 1 },
         $limit: 30,
       })
-    ).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH 'some text' AND `companyId` = 1 LIMIT 30");
+    ).toBe("SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `creatorId` = 1 LIMIT 30");
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
+        $project: { id: true },
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          companyId: 1,
+          creatorId: 1,
         },
         $limit: 10,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE `User` MATCH 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
+    ).toBe("SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `creatorId` = 1 LIMIT 10");
   }
 }

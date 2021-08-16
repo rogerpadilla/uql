@@ -39,7 +39,7 @@ import {
   QueryFilterLogical,
 } from '@uql/core/type';
 
-export abstract class BaseSqlDialect implements QueryDialect {
+export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
 
   constructor(readonly beginTransactionCommand: string, readonly escapeIdChar: '`' | '"') {
@@ -229,8 +229,10 @@ export abstract class BaseSqlDialect implements QueryDialect {
     }
 
     if (key === '$text') {
+      const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      return `${this.escapeId(meta.name)} MATCH ${this.escape(search.$value)}`;
+      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
+      return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {

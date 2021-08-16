@@ -1,19 +1,17 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
-import { Logger, QuerierPool } from '@uql/core/type';
-import { SqlQuerier } from '@uql/core/querier';
-import { MySqlDialect } from '@uql/core/dialect';
-import { MariadbConnection } from './mariadbConnection';
+import { QuerierLogger, QuerierPool } from '@uql/core/type';
+import { MariadbQuerier } from './mariadbQuerier';
 
-export class MariadbQuerierPool implements QuerierPool<SqlQuerier> {
+export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
   readonly pool: Pool;
 
-  constructor(opts: PoolConfig, readonly logger?: Logger) {
+  constructor(opts: PoolConfig, readonly logger?: QuerierLogger) {
     this.pool = createPool(opts);
   }
 
   async getQuerier() {
     const conn = await this.pool.getConnection();
-    return new SqlQuerier(new MySqlDialect(), new MariadbConnection(conn, this.logger));
+    return new MariadbQuerier(conn, this.logger);
   }
 
   async end() {

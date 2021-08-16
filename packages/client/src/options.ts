@@ -1,7 +1,7 @@
 import { Type } from '@uql/core/type';
-import { BaseClientRepository } from './querier/baseClientRepository';
+import { GenericClientRepository } from './querier/genericClientRepository';
 import { HttpQuerier } from './querier/httpQuerier';
-import { ClientQuerier, UqlClientOptions } from './type';
+import { UqlClientOptions } from './type';
 
 let options: UqlClientOptions;
 
@@ -27,7 +27,6 @@ export function getQuerier() {
   return getQuerierPool().getQuerier();
 }
 
-export function getRepository<E>(entity: Type<E>, querier?: ClientQuerier) {
-  const theQuerier = querier ?? getQuerier();
-  return new BaseClientRepository(entity, theQuerier);
+export function getRepository<E>(entity: Type<E>, querier = getQuerier()) {
+  return new GenericClientRepository(entity, querier);
 }

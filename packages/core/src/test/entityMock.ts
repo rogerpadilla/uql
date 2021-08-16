@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
 import { raw } from '@uql/core/util';
+import { idType } from '../type';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.
@@ -120,6 +121,12 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
+  /**
+   * `idType` symbol can be used to specify the type of the identifier property
+   * so the type of the identifier can always be type-safe
+   * (the type of identifiers named as `id` or `_id` is auto-inferred).
+   */
+  [idType]?: string;
   /**
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.

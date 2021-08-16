@@ -1,10 +1,10 @@
 import { getEntities, getMeta } from '@uql/core/entity/decorator';
-import { BaseQuerierIt } from '@uql/core/querier/baseQuerier-it';
+import { AbstractQuerierIt } from '@uql/core/querier/abstractQuerier-it';
 import { createSpec } from '@uql/core/test';
 import { MongodbQuerierPool } from './mongodbQuerierPool';
 import { MongodbQuerier } from './mongodbQuerier';
 
-class MongodbQuerierIt extends BaseQuerierIt<MongodbQuerier> {
+class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {
     super(
       new MongodbQuerierPool(`mongodb://localhost/test?replicaSet=rs`, {

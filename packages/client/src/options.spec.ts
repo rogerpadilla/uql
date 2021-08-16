@@ -1,6 +1,6 @@
 import { User } from '@uql/core/test';
 import { getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
-import { BaseClientRepository, HttpQuerier } from './querier';
+import { GenericClientRepository, HttpQuerier } from './querier';
 import { ClientQuerier, UqlClientOptions } from './type';
 
 describe('options', () => {
@@ -48,8 +48,8 @@ describe('options', () => {
     const querier2 = getQuerier();
     expect(querier2).toBe(querierMock);
 
-    expect(getRepository(User)).toBeInstanceOf(BaseClientRepository);
-    expect(getRepository(User, querier1)).toBeInstanceOf(BaseClientRepository);
+    expect(getRepository(User)).toBeInstanceOf(GenericClientRepository);
+    expect(getRepository(User, querier1)).toBeInstanceOf(GenericClientRepository);
 
     expect(getQuerierPool()).toBe(getQuerierPool());
   });

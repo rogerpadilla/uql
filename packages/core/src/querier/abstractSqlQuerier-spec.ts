@@ -1,26 +1,26 @@
 import { raw } from '@uql/core/util/raw';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, cleanTables } from '@uql/core/test';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '@uql/core/test';
 import { QuerierPool } from '@uql/core/type';
-import { SqlQuerier } from './sqlQuerier';
+import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
-export class BaseSqlQuerierSpec implements Spec {
-  readonly primaryKeyType: string = 'INTEGER PRIMARY KEY';
-  querier: SqlQuerier;
+export abstract class AbstractSqlQuerierSpec implements Spec {
+  readonly idType: string = 'INTEGER PRIMARY KEY';
+  querier: AbstractSqlQuerier;
 
-  constructor(readonly pool: QuerierPool<SqlQuerier>) {}
+  constructor(readonly pool: QuerierPool<AbstractSqlQuerier>) {}
 
   async beforeAll() {
     this.querier = await this.pool.getQuerier();
     await dropTables(this.querier);
-    await createTables(this.querier, this.primaryKeyType);
+    await createTables(this.querier, this.idType);
     await this.querier.release();
   }
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
-    await cleanTables(this.querier);
-    jest.spyOn(this.querier.conn, 'all');
-    jest.spyOn(this.querier.conn, 'run');
+    await clearTables(this.querier);
+    jest.spyOn(this.querier, 'all');
+    jest.spyOn(this.querier, 'run');
   }
 
   async afterEach() {
@@ -34,19 +34,19 @@ export class BaseSqlQuerierSpec implements Spec {
 
   async shouldFindOneById() {
     await this.querier.findOneById(User, 1);
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email`, `password` FROM `User` WHERE `id` = 1 LIMIT 1'
     );
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFindOne() {
     await this.querier.findOne(User, { $project: ['id', 'name'], $filter: { companyId: 123 } });
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 1');
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 1');
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFindOneAndProjectOneToMany() {
@@ -58,25 +58,25 @@ export class BaseSqlQuerierSpec implements Spec {
       { id: 456, createdAt: 1 },
     ]);
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
 
     await this.querier.findMany(InventoryAdjustment, {
       $project: ['id', 'itemAdjustments'],
       $filter: { createdAt: 1 },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = 1'
     );
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
         ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123, 456)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldFindAndProjectRaw() {
@@ -102,13 +102,13 @@ export class BaseSqlQuerierSpec implements Spec {
       $sort: { creator: { name: 'asc' } },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `InventoryAdjustment`.`id`, `creator`.`id` `creator.id`, `creator`.`name` `creator.name`' +
         ' FROM `InventoryAdjustment` LEFT JOIN `User` `creator` ON `creator`.`id` = `InventoryAdjustment`.`creatorId`' +
         ' WHERE `InventoryAdjustment`.`companyId` = 1 ORDER BY `creator`.`name`'
     );
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`inventoryAdjustmentId`' +
         ', `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
@@ -118,8 +118,8 @@ export class BaseSqlQuerierSpec implements Spec {
         ' DESC LIMIT 100'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldVirtualField() {
@@ -132,12 +132,12 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.conn.all).toBeCalledWith(
+    expect(this.querier.all).toBeCalledWith(
       'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= 10'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
     jest.clearAllMocks();
 
     await this.querier.findMany(Item, {
@@ -153,7 +153,7 @@ export class BaseSqlQuerierSpec implements Spec {
       $limit: 100,
     });
 
-    expect(this.querier.conn.all).toBeCalledWith(
+    expect(this.querier.all).toBeCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
@@ -163,8 +163,8 @@ export class BaseSqlQuerierSpec implements Spec {
         ' LIMIT 100'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
 
     jest.clearAllMocks();
 
@@ -175,12 +175,12 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.conn.all).toBeCalledWith(
+    expect(this.querier.all).toBeCalledWith(
       'SELECT `id`, (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFind$exists() {
@@ -202,12 +202,12 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.conn.all).toBeCalledWith(
+    expect(this.querier.all).toBeCalledWith(
       'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFind$nexists() {
@@ -229,12 +229,12 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.conn.all).toBeCalledWith(
+    expect(this.querier.all).toBeCalledWith(
       'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFindOneAndProjectOneToManyOnly() {
@@ -246,25 +246,25 @@ export class BaseSqlQuerierSpec implements Spec {
       { id: 456, createdAt: 1 },
     ]);
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
 
     await this.querier.findMany(InventoryAdjustment, {
       $project: { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] },
       $filter: { createdAt: 1 },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = 1'
     );
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `id`, `buyPrice`, `itemId`, `creatorId`, `createdAt`, `inventoryAdjustmentId`' +
         ' FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123, 456)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldFindOneAndProjectOneToManyWithSpecifiedFields() {
@@ -287,19 +287,16 @@ export class BaseSqlQuerierSpec implements Spec {
       },
     ]);
 
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(
       1,
       "INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES ('something a', 1), ('something b', 1)"
     );
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(
       2,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (1, 1, 1), (1, 1, 1)'
     );
-    expect(this.querier.conn.run).nthCalledWith(
-      3,
-      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (1, 1, 2)'
-    );
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(3, 'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (1, 1, 2)');
+    expect(this.querier.run).nthCalledWith(
       4,
       'UPDATE `ItemAdjustment` SET `buyPrice` = 1, `updatedAt` = 1, `inventoryAdjustmentId` = 2 WHERE `id` = 1'
     );
@@ -309,17 +306,17 @@ export class BaseSqlQuerierSpec implements Spec {
       $filter: { createdAt: 1 },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = 1'
     );
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (1, 2)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(4);
   }
 
   async shouldFindManyAndProjectOneToMany() {
@@ -328,7 +325,7 @@ export class BaseSqlQuerierSpec implements Spec {
       { id: 456, description: 'something b', createdAt: 1 },
     ]);
 
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(
       1,
       "INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (123, 'something a', 1), (456, 'something b', 1)"
     );
@@ -338,60 +335,60 @@ export class BaseSqlQuerierSpec implements Spec {
       $filter: { createdAt: 1 },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = 1'
     );
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
         ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123, 456)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldFindOneAndProjectManyToMany() {
     await this.querier.insertOne(Item, { id: 123, createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOne(Item, {
       $project: { id: true, createdAt: true, tags: ['id'] },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` LIMIT 1');
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` LIMIT 1');
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (123)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldFindOneByIdAndProjectManyToMany() {
     await this.querier.insertOne(Item, { id: 123, createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOneById(Item, 123, {
       $project: { id: 1, createdAt: 1, tags: ['id'] },
     });
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` WHERE `Item`.`id` = 123 LIMIT 1');
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` WHERE `Item`.`id` = 123 LIMIT 1');
+    expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (123)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldFindMany() {
@@ -400,9 +397,9 @@ export class BaseSqlQuerierSpec implements Spec {
       $filter: { companyId: 123 },
       $limit: 100,
     });
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 100');
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 100');
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldFindManyAndCount() {
@@ -413,20 +410,20 @@ export class BaseSqlQuerierSpec implements Spec {
       $skip: 50,
       $limit: 100,
     });
-    expect(this.querier.conn.all).nthCalledWith(
+    expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50'
     );
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).nthCalledWith(2, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldInsertOne() {
     await this.querier.insertOne(User, { companyId: 123, createdAt: 1 });
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`companyId`, `createdAt`) VALUES (123, 1)');
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `User` (`companyId`, `createdAt`) VALUES (123, 1)');
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldInsertOneAndCascadeOneToOne() {
@@ -435,10 +432,10 @@ export class BaseSqlQuerierSpec implements Spec {
       createdAt: 1,
       profile: { picture: 'abc', createdAt: 1 },
     });
-    expect(this.querier.conn.run).nthCalledWith(1, "INSERT INTO `User` (`name`, `createdAt`) VALUES ('some name', 1)");
-    expect(this.querier.conn.run).nthCalledWith(2, "INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES ('abc', 1, 1)");
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.run).nthCalledWith(1, "INSERT INTO `User` (`name`, `createdAt`) VALUES ('some name', 1)");
+    expect(this.querier.run).nthCalledWith(2, "INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES ('abc', 1, 1)");
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldInsertOneAndCascadeManyToOne() {
@@ -448,14 +445,14 @@ export class BaseSqlQuerierSpec implements Spec {
       category: { name: 'Metric', createdAt: 123 },
     });
 
-    expect(this.querier.conn.run).nthCalledWith(1, "INSERT INTO `MeasureUnit` (`name`, `createdAt`) VALUES ('Centimeter', 123)");
-    expect(this.querier.conn.run).nthCalledWith(2, "INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`) VALUES ('Metric', 123)");
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(1, "INSERT INTO `MeasureUnit` (`name`, `createdAt`) VALUES ('Centimeter', 123)");
+    expect(this.querier.run).nthCalledWith(2, "INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`) VALUES ('Metric', 123)");
+    expect(this.querier.run).nthCalledWith(
       3,
       expect.toMatch(/^UPDATE `MeasureUnit` SET `categoryId` = 1, `updatedAt` = \d+ WHERE `id` = 1 AND `deletedAt` IS NULL$/)
     );
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(3);
   }
 
   async shouldInsertOneAndCascadeOneToMany() {
@@ -467,33 +464,33 @@ export class BaseSqlQuerierSpec implements Spec {
         { buyPrice: 300, createdAt: 1 },
       ],
     });
-    expect(this.querier.conn.run).nthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES ('some description', 1)");
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES ('some description', 1)");
+    expect(this.querier.run).nthCalledWith(
       2,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (50, 1, 1), (300, 1, 1)'
     );
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldUpdateMany() {
     await this.querier.updateMany(User, { $filter: { companyId: 4 } }, { name: 'Hola', updatedAt: 1 });
-    expect(this.querier.conn.run).nthCalledWith(1, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `companyId` = 4");
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.run).nthCalledWith(1, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `companyId` = 4");
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldUpdateOneById() {
     await this.querier.updateOneById(User, 5, { companyId: 123, updatedAt: 1 });
-    expect(this.querier.conn.run).nthCalledWith(1, 'UPDATE `User` SET `companyId` = 123, `updatedAt` = 1 WHERE `id` = 5');
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.run).nthCalledWith(1, 'UPDATE `User` SET `companyId` = 123, `updatedAt` = 1 WHERE `id` = 5');
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToOne() {
     await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(User, 1, {
       name: 'something',
@@ -501,19 +498,19 @@ export class BaseSqlQuerierSpec implements Spec {
       profile: { picture: 'xyz', createdAt: 1 },
     });
 
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'something', `updatedAt` = 1 WHERE `id` = 1");
-    expect(this.querier.conn.run).nthCalledWith(3, "INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES ('xyz', 1, 1)");
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'something', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.run).nthCalledWith(3, "INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES ('xyz', 1, 1)");
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(3);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToOneNull() {
     await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(User, 1, {
       name: 'something',
@@ -521,18 +518,18 @@ export class BaseSqlQuerierSpec implements Spec {
       profile: null,
     });
 
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'something', `updatedAt` = 1 WHERE `id` = 1");
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile` WHERE `creatorId` = 1');
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'something', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile` WHERE `creatorId` = 1');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToMany() {
     await this.querier.insertOne(InventoryAdjustment, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
@@ -543,25 +540,22 @@ export class BaseSqlQuerierSpec implements Spec {
       ],
     });
 
-    expect(this.querier.conn.run).nthCalledWith(
-      2,
-      "UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = 1 WHERE `id` = 1"
-    );
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
+    expect(this.querier.run).nthCalledWith(
       3,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (50, 1, 1), (300, 1, 1)'
     );
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(3);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToManyNull() {
     await this.querier.insertOne(InventoryAdjustment, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
@@ -569,21 +563,18 @@ export class BaseSqlQuerierSpec implements Spec {
       itemAdjustments: null,
     });
 
-    expect(this.querier.conn.run).nthCalledWith(
-      2,
-      "UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = 1 WHERE `id` = 1"
-    );
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
     await this.querier.insertOne(InventoryAdjustment, { companyId: 1, createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`companyId`, `createdAt`) VALUES (1, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`companyId`, `createdAt`) VALUES (1, 1)');
 
     await this.querier.updateMany(
       InventoryAdjustment,
@@ -595,15 +586,15 @@ export class BaseSqlQuerierSpec implements Spec {
       }
     );
 
-    expect(this.querier.conn.run).nthCalledWith(
+    expect(this.querier.run).nthCalledWith(
       2,
       "UPDATE `InventoryAdjustment` SET `description` = 'some description', `updatedAt` = 1 WHERE `companyId` = 1"
     );
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `companyId` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `companyId` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = 1');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldInsertOneAndCascadeManyToManyInserts() {
@@ -621,18 +612,18 @@ export class BaseSqlQuerierSpec implements Spec {
         },
       ],
     });
-    expect(this.querier.conn.run).nthCalledWith(1, "INSERT INTO `Item` (`name`, `createdAt`) VALUES ('item one', 1)");
-    expect(this.querier.conn.run).nthCalledWith(2, "INSERT INTO `Tag` (`name`, `createdAt`) VALUES ('tag one', 1), ('tag two', 1)");
-    expect(this.querier.conn.run).nthCalledWith(3, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 1), (1, 2)');
+    expect(this.querier.run).nthCalledWith(1, "INSERT INTO `Item` (`name`, `createdAt`) VALUES ('item one', 1)");
+    expect(this.querier.run).nthCalledWith(2, "INSERT INTO `Tag` (`name`, `createdAt`) VALUES ('tag one', 1), ('tag two', 1)");
+    expect(this.querier.run).nthCalledWith(3, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 1), (1, 2)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(0);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(3);
   }
 
   async shouldUpdateAndCascadeManyToManyInserts() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(Item, id, {
       name: 'item one',
@@ -649,21 +640,21 @@ export class BaseSqlQuerierSpec implements Spec {
       ],
     });
 
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `Item` SET `name` = 'item one', `updatedAt` = 1 WHERE `id` = 1");
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
-    expect(this.querier.conn.run).nthCalledWith(3, "INSERT INTO `Tag` (`name`, `createdAt`) VALUES ('tag one', 1), ('tag two', 1)");
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `Item` SET `name` = 'item one', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
+    expect(this.querier.run).nthCalledWith(3, "INSERT INTO `Tag` (`name`, `createdAt`) VALUES ('tag one', 1), ('tag two', 1)");
 
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = 1');
-    expect(this.querier.conn.run).nthCalledWith(4, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 1), (1, 2)');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = 1');
+    expect(this.querier.run).nthCalledWith(4, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 1), (1, 2)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(4);
   }
 
   async shouldUpdateAndCascadeManyToManyLinks() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (1)');
 
     await this.querier.updateOneById(Item, id, {
       name: 'item one',
@@ -671,13 +662,13 @@ export class BaseSqlQuerierSpec implements Spec {
       updatedAt: 1,
     });
 
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `Item` SET `name` = 'item one', `updatedAt` = 1 WHERE `id` = 1");
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = 1');
-    expect(this.querier.conn.run).nthCalledWith(3, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 22), (1, 33)');
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `Item` SET `name` = 'item one', `updatedAt` = 1 WHERE `id` = 1");
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = 1');
+    expect(this.querier.run).nthCalledWith(3, 'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (1, 22), (1, 33)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(3);
   }
 
   async shouldDeleteOneAndCascadeManyToManyDeletes() {
@@ -687,13 +678,13 @@ export class BaseSqlQuerierSpec implements Spec {
 
     await this.querier.deleteOneById(Item, 1);
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` IN (1)');
-    expect(this.querier.conn.run).nthCalledWith(1, 'DELETE FROM `Item` WHERE `id` IN (1)');
-    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM `ItemTag` WHERE `id` IN (1, 2)');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` IN (1)');
+    expect(this.querier.run).nthCalledWith(1, 'DELETE FROM `Item` WHERE `id` IN (1)');
+    expect(this.querier.run).nthCalledWith(2, 'DELETE FROM `ItemTag` WHERE `id` IN (1, 2)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldDeleteOneAndNoCascadeManyToManyDeletes() {
@@ -703,98 +694,98 @@ export class BaseSqlQuerierSpec implements Spec {
 
     await this.querier.deleteOneById(Tag, 1);
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `Tag` WHERE `id` = 1');
-    expect(this.querier.conn.run).nthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` IN (1)');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `Tag` WHERE `id` = 1');
+    expect(this.querier.run).nthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` IN (1)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(1);
   }
 
   async shouldDeleteOneById() {
     const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
-    expect(this.querier.conn.run).nthCalledWith(2, 'INSERT INTO `user_profile` (`createdAt`, `creatorId`) VALUES (1, 1)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (1)');
+    expect(this.querier.run).nthCalledWith(2, 'INSERT INTO `user_profile` (`createdAt`, `creatorId`) VALUES (1, 1)');
 
     await this.querier.deleteOneById(User, id);
 
-    expect(this.querier.conn.run).nthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (1)');
-    expect(this.querier.conn.run).nthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (1)');
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
+    expect(this.querier.run).nthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (1)');
+    expect(this.querier.run).nthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (1)');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(4);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(4);
   }
 
   async shouldDeleteMany() {
     await this.querier.insertOne(User, { createdAt: 123 });
 
-    expect(this.querier.conn.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (123)');
+    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (123)');
 
     await this.querier.deleteMany(User, { $filter: { createdAt: 123 } });
 
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = 123');
-    expect(this.querier.conn.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
-    expect(this.querier.conn.run).nthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (1)');
+    expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = 123');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
+    expect(this.querier.run).nthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (1)');
 
-    expect(this.querier.conn.all).toBeCalledTimes(2);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(2);
+    expect(this.querier.run).toBeCalledTimes(2);
   }
 
   async shouldCount() {
     await this.querier.count(User, { $filter: { companyId: 123 } });
-    expect(this.querier.conn.all).nthCalledWith(1, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
-    expect(this.querier.conn.all).toBeCalledTimes(1);
-    expect(this.querier.conn.run).toBeCalledTimes(0);
+    expect(this.querier.all).nthCalledWith(1, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
+    expect(this.querier.all).toBeCalledTimes(1);
+    expect(this.querier.run).toBeCalledTimes(0);
   }
 
   async shouldUseTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
-    expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
-    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
-    expect(this.querier.conn.run).nthCalledWith(3, 'COMMIT');
+    expect(this.querier.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
+    expect(this.querier.run).nthCalledWith(3, 'COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.release();
-    expect(this.querier.conn.run).toBeCalledTimes(3);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(0);
     expect(this.querier.hasOpenTransaction).toBeFalsy();
   }
 
   async shouldUseTransactionCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.transaction(async () => {
-      expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     });
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.conn.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
-    expect(this.querier.conn.run).nthCalledWith(3, 'COMMIT');
-    expect(this.querier.conn.run).toBeCalledTimes(3);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
+    expect(this.querier.run).nthCalledWith(3, 'COMMIT');
+    expect(this.querier.run).toBeCalledTimes(3);
+    expect(this.querier.all).toBeCalledTimes(0);
   }
 
   async shouldThrowIfRollbackIfErrorInCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {
-      expect(this.querier.conn.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       throw new Error('some error');
     });
     await expect(prom).rejects.toThrow('some error');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.conn.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.conn.run).nthCalledWith(2, 'ROLLBACK');
-    expect(this.querier.conn.run).toBeCalledTimes(2);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).nthCalledWith(1, this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.run).nthCalledWith(2, 'ROLLBACK');
+    expect(this.querier.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(0);
   }
 
   async shouldThrowIfTransactionIsPending() {
@@ -803,8 +794,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(this.querier.conn.run).toBeCalledTimes(1);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(1);
+    expect(this.querier.all).toBeCalledTimes(0);
     await this.querier.rollbackTransaction();
   }
 
@@ -812,16 +803,16 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.commitTransaction()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.conn.run).toBeCalledTimes(0);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(0);
   }
 
   async shouldThrowIfRollbackWithNoPendingTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.conn.run).toBeCalledTimes(0);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(0);
+    expect(this.querier.all).toBeCalledTimes(0);
   }
 
   async shouldThrowIfReleaseWithPendingTransaction() {
@@ -832,8 +823,8 @@ export class BaseSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(this.querier.conn.run).toBeCalledTimes(2);
-    expect(this.querier.conn.all).toBeCalledTimes(0);
+    expect(this.querier.run).toBeCalledTimes(2);
+    expect(this.querier.all).toBeCalledTimes(0);
     await this.querier.rollbackTransaction();
   }
 }

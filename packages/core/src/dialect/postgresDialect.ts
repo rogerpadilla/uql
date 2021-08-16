@@ -8,11 +8,11 @@ import {
   Type,
   FieldKey,
 } from '@uql/core/type';
-import { BaseSqlDialect } from './baseSqlDialect';
+import { AbstractSqlDialect } from './abstractSqlDialect';
 
-export class PostgresDialect extends BaseSqlDialect {
+export class PostgresDialect extends AbstractSqlDialect {
   constructor() {
-    super('BEGIN', '"');
+    super('BEGIN TRANSACTION', '"');
   }
 
   override insert<E>(entity: Type<E>, payload: E | E[]): string {
@@ -29,7 +29,6 @@ export class PostgresDialect extends BaseSqlDialect {
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field)).join(` || ' ' || `);
       return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
     }
-
     return super.compare(entity, key, val, opts);
   }
 
