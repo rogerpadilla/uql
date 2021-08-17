@@ -4,7 +4,7 @@ import { QuerierPool } from '@uql/core/type';
 import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
-  readonly idType: string = 'SERIAL PRIMARY KEY';
+  readonly idType: string = 'INTEGER AUTO_INCREMENT PRIMARY KEY';
 
   querier: AbstractSqlQuerier;
 

@@ -3,7 +3,7 @@ import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
 import { MySql2QuerierPool } from './mysql2QuerierPool';
 
 export class MySql2QuerierIt extends AbstractSqlQuerierIt {
-  readonly idType = 'SERIAL PRIMARY KEY';
+  readonly idType = 'INTEGER AUTO_INCREMENT PRIMARY KEY';
 
   constructor() {
     super(

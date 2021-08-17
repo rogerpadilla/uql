@@ -3,7 +3,7 @@ import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
 import { MariadbQuerierPool } from './mariadbQuerierPool';
 
 export class MariadbQuerierIt extends AbstractSqlQuerierIt {
-  readonly idType = 'SERIAL PRIMARY KEY';
+  readonly idType = 'INTEGER AUTO_INCREMENT PRIMARY KEY';
 
   constructor() {
     super(
