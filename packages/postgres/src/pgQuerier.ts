@@ -31,14 +31,4 @@ export class PgQuerier extends AbstractSqlQuerier {
   override async end() {
     await this.release();
   }
-
-  override listTables() {
-    return this.all<string>(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type LIKE '%TABLE' AND table_name != 'spatial_ref_sys'"
-    );
-  }
-
-  override async clearTable(table: string) {
-    await this.run(`TRUNCATE TABLE ${this.dialect.escapeId(table)} RESTART IDENTITY`);
-  }
 }

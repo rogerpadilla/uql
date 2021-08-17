@@ -31,15 +31,4 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     await this.release();
     await this.db.close();
   }
-
-  override async clearTable(table?: string) {
-    await Promise.all([
-      this.run(`DELETE FROM ${this.dialect.escape(table)}`),
-      this.run(`UPDATE sqlite_sequence SET seq=0 WHERE name=${this.dialect.escape(table)}`),
-    ]);
-  }
-
-  override listTables() {
-    return this.all<string>("SELECT name FROM sqlite_master WHERE type='table' and name!='sqlite_sequence'");
-  }
 }

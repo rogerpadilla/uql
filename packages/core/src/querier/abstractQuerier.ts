@@ -14,9 +14,7 @@ import {
   RelationKey,
   RelationValue,
   Repository,
-  Column,
   Type,
-  Table,
 } from '@uql/core/type';
 
 export abstract class AbstractQuerier implements Querier {
@@ -290,26 +288,4 @@ export abstract class AbstractQuerier implements Querier {
   abstract release(): Promise<void>;
 
   abstract end(): Promise<void>;
-
-  abstract listTables(): Promise<string[]>;
-
-  abstract createTable(table: Table): Promise<void>;
-
-  abstract clearTable(table?: string): Promise<void>;
-
-  abstract clearTables(tables?: string[]): Promise<void>;
-
-  abstract dropTable(table: string): Promise<void>;
-
-  abstract dropTables(tables?: string[]): Promise<void>;
-
-  abstract renameTable(oldTable: string, newTable: string): Promise<void>;
-
-  abstract addColumn(table: string, column: string, options: Column): Promise<void>;
-
-  abstract dropColumn(table: string, column: string): Promise<void>;
-
-  abstract changeColumn(table: string, column: string, options?: Column): Promise<void>;
-
-  abstract renameColumn(table: string, oldColumn: string, newColumn: string): Promise<void>;
 }
