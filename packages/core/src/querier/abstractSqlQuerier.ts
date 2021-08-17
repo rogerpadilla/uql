@@ -151,7 +151,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   }
 
   override async changeColumn(table: string, column: string, options?: Column) {
-    await this.run(``);
+    const sqlOptions = this.columnOptionsToSql(options);
+    await this.run(`ALTER TABLE ${this.escapeId(table)} CHANGE COLUMN ${this.escapeId(column)}${sqlOptions}`);
   }
 
   override async renameColumn(table: string, oldColumn: string, newColumn: string) {
@@ -160,6 +161,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
 
   columnOptionsToSql(opts: Column) {
     let sql = '';
+    if (opts.type) {
+      sql += ` ${opts.type.toUpperCase()}`;
+    }
     if (opts.required) {
       sql += ' NOT NULL';
     }
@@ -172,7 +176,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     if (opts.unique) {
       sql += ' UNIQUE';
     }
-    if (opts.primary) {
+    if (opts.id) {
       sql += ' PRIMARY KEY';
     }
     if (opts.comment) {

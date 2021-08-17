@@ -4,7 +4,7 @@ import { AbstractQuerierIt } from './abstractQuerier-it';
 import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
-  readonly idType: string = 'INTEGER PRIMARY KEY';
+  readonly idType: string = 'SERIAL PRIMARY KEY';
 
   constructor(pool: QuerierPool<AbstractSqlQuerier>) {
     super(pool);

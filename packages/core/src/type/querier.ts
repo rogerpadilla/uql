@@ -192,7 +192,7 @@ export type Column = {
   /**
    * Primary key flag
    */
-  primary?: boolean;
+  id?: boolean;
   required?: boolean;
   default?: string;
   comment?: string;
