@@ -1,4 +1,4 @@
-# [uql](https://uql.io) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/impensables/uql/blob/main/LICENSE) [![tests](https://github.com/impensables/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/impensables/uql) [![coverage status](https://coveralls.io/repos/impensables/uql/badge.svg?branch=main)](https://coveralls.io/r/impensables/uql?branch=main) [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
+# [uql](https://uql.io) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
 [Learn how to use uql in your own project](https://uql.io).
 
