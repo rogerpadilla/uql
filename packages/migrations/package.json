@@ -3,7 +3,7 @@
   "homepage": "https://uql.io",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.4.70",
+  "version": "0.4.71",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^16.9.6",
-    "@uql/core": "^0.4.70",
+    "@uql/core": "^0.4.71",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
     "typescript": "^4.4.3"
