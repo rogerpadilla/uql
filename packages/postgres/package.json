@@ -19,7 +19,7 @@
     "@uql/core": "^0.4.69"
   },
   "devDependencies": {
-    "@types/node": "^16.9.6",
+    "@types/node": "^16.10.1",
     "@types/pg": "^8.6.1",
     "@uql/core": "^0.4.71",
     "copyfiles": "^2.4.1",
