@@ -6,7 +6,6 @@
   "scripts": {
     "release": "yarn build && lerna publish patch && git pull && git push",
     "build": "lerna run build --ignore=@uql/core && lerna run build --scope=@uql/core",
-    "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 1",
     "lint": "eslint .",
     "lint.fix": "yarn lint --fix",
     "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
@@ -27,7 +26,6 @@
     "@typescript-eslint/eslint-plugin": "^5.10.1",
     "@typescript-eslint/parser": "^5.10.1",
     "concurrently": "^7.0.0",
-    "conventional-changelog-cli": "^2.2.2",
     "coveralls": "^3.1.1",
     "eslint": "^8.7.0",
     "eslint-config-prettier": "^8.3.0",
