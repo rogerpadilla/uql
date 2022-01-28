@@ -94,7 +94,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { augmentQuery?: Au
     const qm = extendQuery<E>(entity, req, opts.augmentQuery) as QueryUnique<E>;
     const querier = await getQuerier();
     try {
-      const data = await querier.findOneById(entity, req.params.id as IdValue<E>, qm);
+      const data = await querier.findOneById(entity, req.params.id as unknown as IdValue<E>, qm);
       res.json({ data });
     } catch (err: any) {
       next(err);
@@ -129,8 +129,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { augmentQuery?: Au
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.deleteOneById(entity, req.params.id as IdValue<E>, {
-        softDelete: req.params.softDelete as unknown as boolean,
+      const data = await querier.deleteOneById(entity, req.params.id as unknown as IdValue<E>, {
+        softDelete: !!req.query.softDelete,
       });
       await querier.commitTransaction();
       res.json({ data });
@@ -147,7 +147,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: { augmentQuery?: Au
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.deleteMany(entity, qm, { softDelete: req.params.softDelete as unknown as boolean });
+      const data = await querier.deleteMany(entity, qm, { softDelete: !!req.query.softDelete });
       await querier.commitTransaction();
       res.json({ data });
     } catch (err: any) {
