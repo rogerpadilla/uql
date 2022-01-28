@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
 import { raw } from '@uql/core/util';
-import { idType } from '../type';
+import { IdKey, idKey, IdValue } from '../type';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.
@@ -122,11 +122,11 @@ export class LedgerAccount extends BaseEntity {
 @Entity()
 export class TaxCategory extends BaseEntity {
   /**
-   * `idType` symbol can be used to specify the type of the identifier property
+   * `idKey` symbol can be used to specify the name of the identifier property,
    * so the type of the identifier can always be type-safe
-   * (the type of identifiers named as `id` or `_id` is auto-inferred).
+   * (the identifiers named as `id` or `_id` are auto-inferred).
    */
-  [idType]?: string;
+  [idKey]?: 'pk';
   /**
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
@@ -140,6 +140,26 @@ export class TaxCategory extends BaseEntity {
   @Field()
   description?: string;
 }
+
+export class Test {
+  @Field()
+  name?: string;
+  @Field()
+  percentage?: number;
+  @Field({ reference: () => TaxCategory })
+  categoryId?: string;
+  @ManyToOne()
+  category?: TaxCategory;
+  @Field()
+  description?: string;
+}
+
+type id1 = IdKey<User>;
+type id2 = IdKey<TaxCategory>;
+type id3 = IdKey<Test>;
+type val1 = IdValue<User>;
+type val2 = IdValue<TaxCategory>;
+type val3 = IdValue<Test>;
 
 @Entity()
 export class Tax extends BaseEntity {

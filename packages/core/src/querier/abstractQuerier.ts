@@ -82,7 +82,7 @@ export abstract class AbstractQuerier implements Querier {
       ...(inserts.length ? await this.insertMany(entity, inserts) : []),
       ...updates.map(async (it) => {
         const { [meta.id]: id, ...data } = it;
-        await this.updateOneById(entity, id, data);
+        await this.updateOneById(entity, id, data as E);
         return id;
       }),
     ]);
@@ -98,7 +98,7 @@ export abstract class AbstractQuerier implements Querier {
       const relProject = clone(project[relKey as string]);
       const relQuery: Query<any> =
         relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
-      const ids: IdValue<E>[] = payload.map((it) => it[meta.id]);
+      const ids = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
         const localField = relOpts.references[0].local;
@@ -181,7 +181,7 @@ export abstract class AbstractQuerier implements Querier {
       $project: [meta.id],
     });
 
-    const ids: IdValue<E>[] = founds.map((found) => found[meta.id]);
+    const ids = founds.map((found) => found[meta.id]);
 
     await Promise.all(ids.map((id) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))));
   }
@@ -208,7 +208,7 @@ export abstract class AbstractQuerier implements Querier {
     const id = payload[meta.id];
     const { entity: entityGetter, cardinality, references, through } = meta.relations[relKey];
     const relEntity = entityGetter();
-    const relPayload = payload[relKey] as RelationValue<E>[];
+    const relPayload = payload[relKey] as unknown as RelationValue<E>[];
 
     if (cardinality === '1m' || cardinality === 'mm') {
       if (through) {

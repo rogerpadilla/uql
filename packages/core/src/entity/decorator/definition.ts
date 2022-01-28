@@ -10,6 +10,7 @@ import {
   ReferenceOptions,
   RelationKey,
   FieldKey,
+  IdKey,
 } from '@uql/core/type';
 
 const holder = globalThis;
@@ -32,7 +33,7 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
 
 export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  const id = getId(meta);
+  const id = getIdKey(meta);
   if (id) {
     throw TypeError(`'${entity.name}' must have a single field decorated with @Id`);
   }
@@ -78,7 +79,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
     proto = Object.getPrototypeOf(proto);
   }
 
-  const id = getId(meta);
+  const id = getIdKey(meta);
   if (!id) {
     throw TypeError(`'${entity.name}' must have one field decorated with @Id`);
   }
@@ -211,16 +212,16 @@ function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
   }, {} as RelationKeyMap<E>);
 }
 
-function getId<E>(meta: EntityMeta<E>): FieldKey<E> {
+function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {
   const id = getKeys(meta.fields).find((key) => meta.fields[key]?.isId);
-  return id as FieldKey<E>;
+  return id as IdKey<E>;
 }
 
 function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   const sourceFields = { ...source.fields };
-  const targetId = getId(target);
+  const targetId = getIdKey(target);
   if (targetId) {
-    const sourceId = getId(source);
+    const sourceId = getIdKey(source);
     if (sourceId) {
       delete sourceFields[sourceId];
     }

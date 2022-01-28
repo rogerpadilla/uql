@@ -1,28 +1,30 @@
 import { QueryRaw, QueryRawFnOptions } from './query';
 import { Scalar, Type } from './utility';
 
+export const idKey = Symbol('idKey');
+
 export type Key<E> = {
-  readonly [K in keyof E]: K & string;
+  readonly [K in keyof E]?: K & string;
 }[keyof E & string];
 
 export type FieldKey<E> = {
-  readonly [K in Key<E>]: E[K] extends Scalar ? K : never;
+  readonly [K in Key<E>]?: E[K] extends Scalar ? K : never;
 }[Key<E>];
 
 export type FieldValue<E> = E[FieldKey<E>];
 
-export const idType = Symbol('idType');
+export type IdKey<E> = E extends { [idKey]?: infer K }
+  ? K & FieldKey<E>
+  : E extends { _id?: unknown }
+  ? '_id' & FieldKey<E>
+  : E extends { id?: unknown }
+  ? 'id' & FieldKey<E>
+  : FieldKey<E>;
 
-export type IdValue<E> = E extends { [idType]?: infer U }
-  ? U
-  : E extends { id?: infer U }
-  ? U
-  : E extends { _id?: infer U }
-  ? U & string
-  : FieldValue<E>;
+export type IdValue<E> = E[IdKey<E>];
 
 export type RelationKey<E> = {
-  readonly [K in Key<E>]: E[K] extends Scalar ? never : K;
+  readonly [K in Key<E>]?: E[K] extends Scalar ? never : K;
 }[Key<E>];
 
 export type RelationValue<E> = E[RelationKey<E>];
@@ -85,7 +87,7 @@ export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | Rela
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name?: string;
-  id?: FieldKey<E>;
+  id?: IdKey<E>;
   softDelete?: FieldKey<E>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;

@@ -43,7 +43,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     const query = this.dialect.insert(entity, payload);
     const { firstId } = await this.run(query);
     const meta = getMeta(entity);
-    const ids: IdValue<E>[] = payload.map((it, index) => {
+    const ids = payload.map((it, index) => {
       it[meta.id as string] ??= firstId + index;
       return it[meta.id];
     });
@@ -66,7 +66,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     if (!founds.length) {
       return 0;
     }
-    const ids: IdValue<E>[] = founds.map((it) => it[meta.id]);
+    const ids = founds.map((it) => it[meta.id]);
     const query = this.dialect.delete(entity, { $filter: ids }, opts);
     const { changes } = await this.run(query);
     await this.deleteRelations(entity, ids, opts);
