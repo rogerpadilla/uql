@@ -12,7 +12,7 @@ import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {
-    super('BEGIN TRANSACTION', '"');
+    super('"', 'BEGIN TRANSACTION');
   }
 
   override insert<E>(entity: Type<E>, payload: E | E[]): string {

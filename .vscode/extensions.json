@@ -6,9 +6,6 @@
     "dbaeumer.vscode-eslint",
     // make vscode to verify our prettier formatting rules while coding
     // https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode
-    "esbenp.prettier-vscode",
-    // make vscode debugger to understand when webpack task produces errors
-    // https://marketplace.visualstudio.com/items?itemName=eamodio.tsl-problem-matcher
-    "eamodio.tsl-problem-matcher"
+    "esbenp.prettier-vscode"
   ]
 }

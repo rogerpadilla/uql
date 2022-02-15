@@ -42,7 +42,7 @@ import {
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
 
-  constructor(readonly beginTransactionCommand: string, readonly escapeIdChar: '`' | '"') {
+  constructor(readonly escapeIdChar: '`' | '"', readonly beginTransactionCommand: string) {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
@@ -229,10 +229,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
 
     if (key === '$text') {
-      const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
-      return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
+      return `${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : ${this.escape(search.$value)}`;
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {

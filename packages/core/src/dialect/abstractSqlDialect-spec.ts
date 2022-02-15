@@ -12,7 +12,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldBeginTransaction() {
-    expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
+    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
   shouldInsertMany() {
@@ -1079,22 +1079,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: ['id'],
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, creatorId: 1 },
+        $project: { id: true },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
         $limit: 30,
       })
-    ).toBe("SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `creatorId` = 1 LIMIT 30");
+    ).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30");
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
+        $project: { id: 1 },
         $filter: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          creatorId: 1,
+          companyId: 1,
         },
         $limit: 10,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `creatorId` = 1 LIMIT 10");
+    ).toBe("SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
   }
 }

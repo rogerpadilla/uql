@@ -8,8 +8,6 @@ types.setTypeParser(types.builtins.FLOAT8, (value: string) => parseFloat(value))
 types.setTypeParser(types.builtins.NUMERIC, (value: string) => parseFloat(value));
 
 export class PostgresQuerierIt extends AbstractSqlQuerierIt {
-  readonly idType = 'SERIAL PRIMARY KEY';
-
   constructor() {
     super(
       new PgQuerierPool({
@@ -18,7 +16,8 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
         user: 'test',
         password: 'test',
         database: 'test',
-      })
+      }),
+      'SERIAL PRIMARY KEY'
     );
   }
 }

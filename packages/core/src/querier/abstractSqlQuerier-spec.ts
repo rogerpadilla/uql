@@ -4,11 +4,9 @@ import { QuerierPool } from '@uql/core/type';
 import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
-  readonly idType: string = 'INTEGER AUTO_INCREMENT PRIMARY KEY';
-
   querier: AbstractSqlQuerier;
 
-  constructor(readonly pool: QuerierPool<AbstractSqlQuerier>) {}
+  constructor(readonly pool: QuerierPool<AbstractSqlQuerier>, readonly idType: string) {}
 
   async beforeAll() {
     this.querier = await this.pool.getQuerier();

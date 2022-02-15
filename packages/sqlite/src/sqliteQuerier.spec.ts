@@ -3,17 +3,19 @@ import { createSpec } from '@uql/core/test';
 import { Sqlite3QuerierPool } from './sqlite3QuerierPool';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
-  readonly idType = 'INTEGER PRIMARY KEY';
-
   constructor() {
-    super(new Sqlite3QuerierPool({ filename: ':memory:' }));
+    super(new Sqlite3QuerierPool({ filename: ':memory:' }), 'INTEGER PRIMARY KEY');
   }
 
-  async beforeAll() {
-    await super.beforeAll();
-    this.querier = await this.pool.getQuerier();
-    await this.querier.run('PRAGMA foreign_keys = ON');
-    await this.querier.release();
+  override async beforeEach() {
+    await super.beforeEach();
+    await Promise.all([
+      this.querier.run('PRAGMA foreign_keys = ON'),
+      this.querier.run('PRAGMA journal_mode = WAL'),
+      this.querier.run('PRAGMA synchronous = normal'),
+      this.querier.run('PRAGMA temp_store = memory'),
+    ]);
+    jest.spyOn(this.querier, 'run').mockClear();
   }
 }
 
