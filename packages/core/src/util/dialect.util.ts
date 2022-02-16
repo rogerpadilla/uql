@@ -11,6 +11,7 @@ import {
   QueryRawFnOptions,
   QueryFilter,
   QueryFilterMap,
+  OnFieldCallback,
 } from '@uql/core/type';
 import { getKeys, Raw } from '@uql/core/util';
 
@@ -43,13 +44,17 @@ export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callba
   );
 }
 
+export function getFieldCallbackValue(val: OnFieldCallback) {
+  return typeof val === 'function' ? val() : val;
+}
+
 function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key][callbackKey]);
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
-        it[key] = meta.fields[key][callbackKey]();
+        it[key] = getFieldCallbackValue(meta.fields[key][callbackKey]);
       }
     }
     return it;

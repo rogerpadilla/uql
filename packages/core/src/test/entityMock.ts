@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
 import { raw } from '@uql/core/util';
-import { IdKey, idKey, IdValue } from '@uql/core/type';
+import { idKey } from '@uql/core/type';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.
@@ -133,7 +133,7 @@ export class TaxCategory extends BaseEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
-  @Id({ onInsert: () => uuidv4() })
+  @Id({ onInsert: uuidv4 })
   pk?: string;
   @Field()
   name?: string;
@@ -153,13 +153,6 @@ export class Test {
   @Field()
   description?: string;
 }
-
-type id1 = IdKey<User>;
-type id2 = IdKey<TaxCategory>;
-type id3 = IdKey<Test>;
-type val1 = IdValue<User>;
-type val2 = IdValue<TaxCategory>;
-type val3 = IdValue<Test>;
 
 @Entity()
 export class Tax extends BaseEntity {

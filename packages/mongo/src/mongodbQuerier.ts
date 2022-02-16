@@ -1,8 +1,8 @@
 import { MongoClient, ClientSession } from 'mongodb';
-import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, FieldValue, QuerierLogger, QueryUnique } from '@uql/core/type';
+import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QuerierLogger, QueryUnique } from '@uql/core/type';
 import { AbstractQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
-import { clone, getPersistable, getPersistables, hasKeys, isProjectingRelations } from '@uql/core/util';
+import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from '@uql/core/util';
 
 import { MongoDialect } from './mongoDialect';
 
@@ -132,7 +132,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (meta.softDelete && !opts.softDelete) {
       const updateResult = await this.collection(entity).updateMany(
         { _id: { $in: ids } },
-        { $set: { [meta.softDelete]: meta.fields[meta.softDelete].onDelete() } },
+        { $set: { [meta.softDelete]: getFieldCallbackValue(meta.fields[meta.softDelete].onDelete) } },
         {
           session: this.session,
         }

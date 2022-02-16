@@ -13,6 +13,7 @@ import {
   raw,
   Raw,
   getQueryFilterAsMap,
+  getFieldCallbackValue,
 } from '@uql/core/util';
 
 import {
@@ -424,7 +425,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
         const criteria = this.criteria(entity, qm, opts);
-        const value = meta.fields[meta.softDelete].onDelete();
+        const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(value)}${criteria}`;
       } else if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
