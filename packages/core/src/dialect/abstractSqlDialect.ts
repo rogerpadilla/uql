@@ -402,21 +402,20 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
-    payload = getPersistables(meta, payload, 'onInsert');
-    const keys = getKeys(payload[0]);
+    const records = getPersistables(meta, payload, 'onInsert');
+    const keys = getKeys(records[0]);
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
-    const values = payload.map((it) => keys.map((key) => this.escape(it[key])).join(', ')).join('), (');
+    const values = records.map((record) => keys.map((key) => this.escape(record[key])).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
   update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string {
     const meta = getMeta(entity);
-    payload = getPersistable(meta, payload, 'onUpdate');
-    const values = getKeys(payload)
-      .map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`)
-      .join(', ');
+    const record = getPersistable(meta, payload, 'onUpdate');
+    const keys = getKeys(record);
+    const entries = keys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
     const criteria = this.criteria(entity, qm, opts);
-    return `UPDATE ${this.escapeId(meta.name)} SET ${values}${criteria}`;
+    return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
   }
 
   delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}): string {
@@ -458,6 +457,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   }
 
   escape(value: any): Scalar {
+    if (value instanceof Raw) {
+      return getRawValue({ value, dialect: this });
+    }
     return escape(value);
   }
 }

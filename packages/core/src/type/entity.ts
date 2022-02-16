@@ -45,7 +45,7 @@ export type FieldOptions = {
   readonly onDelete?: OnFieldCallback;
 };
 
-export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar;
+export type OnFieldCallback = (opts?: QueryRawFnOptions) => Scalar | QueryRaw;
 
 export type EntityGetter<E = any> = () => Type<E>;
 

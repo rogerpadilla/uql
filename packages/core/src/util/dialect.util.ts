@@ -45,7 +45,7 @@ export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callba
 
 function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const keys = getKeys(meta.fields).filter((col) => meta.fields[col][callbackKey]);
+  const keys = getKeys(meta.fields).filter((key) => meta.fields[key][callbackKey]);
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
