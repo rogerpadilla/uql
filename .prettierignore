@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+.tmp
+
+// we will do this via eslint instead
+.js
+.jsx
+.ts
+.tsx

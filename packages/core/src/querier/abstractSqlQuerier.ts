@@ -1,5 +1,5 @@
 import { getMeta } from '@uql/core/entity';
-import { Query, Type, QueryCriteria, QueryOptions, IdValue, QueryUpdateResult, IsolationLevel } from '@uql/core/type';
+import { Query, Type, QueryCriteria, QueryOptions, QueryUpdateResult } from '@uql/core/type';
 import { unflatObjects, clone } from '@uql/core/util';
 import { AbstractSqlDialect } from '@uql/core/dialect';
 

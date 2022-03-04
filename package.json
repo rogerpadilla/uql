@@ -22,13 +22,14 @@
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",
     "@commitlint/config-conventional": "^16.2.1",
-    "@types/jest": "^27.4.0",
-    "@typescript-eslint/eslint-plugin": "^5.12.0",
-    "@typescript-eslint/parser": "^5.12.0",
+    "@types/jest": "^27.4.1",
+    "@typescript-eslint/eslint-plugin": "^5.13.0",
+    "@typescript-eslint/parser": "^5.13.0",
     "concurrently": "^7.0.0",
     "coveralls": "^3.1.1",
-    "eslint": "^8.9.0",
-    "eslint-config-prettier": "^8.3.0",
+    "eslint": "^8.10.0",
+    "eslint-import-resolver-typescript": "2.5.0",
+    "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-import": "^2.25.4",
     "eslint-plugin-prettier": "^4.0.0",
     "jest": "^27.5.1",
@@ -36,9 +37,9 @@
     "rimraf": "^3.0.2",
     "run-rs": "^0.7.6",
     "ts-jest": "^27.1.3",
-    "ts-node": "^10.5.0",
+    "ts-node": "^10.6.0",
     "ts-node-dev": "^1.1.8",
-    "typescript": "^4.5.5"
+    "typescript": "^4.6.2"
   },
   "prettier": {
     "tabWidth": 2,

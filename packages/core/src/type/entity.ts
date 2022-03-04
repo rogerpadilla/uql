@@ -1,4 +1,4 @@
-import { QueryRaw, QueryRawFnOptions } from './query';
+import { QueryRaw } from './query';
 import { Scalar, Type } from './utility';
 
 export const idKey = Symbol('idKey');

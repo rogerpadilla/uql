@@ -1,5 +1,5 @@
 import { Database } from 'sqlite';
-import { IsolationLevel, QuerierLogger, QueryUpdateResult } from '@uql/core/type';
+import { QuerierLogger, QueryUpdateResult } from '@uql/core/type';
 import { AbstractSqlQuerier } from '@uql/core/querier';
 import { SqliteDialect } from '@uql/core/dialect';
 
