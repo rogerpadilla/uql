@@ -32,7 +32,8 @@ class DtsBundlePlugin {
 
 const config: Configuration = {
   mode,
-
+  profile: true,
+  bail: isProductionMode,
   devtool: isProductionMode ? 'source-map' : 'cheap-module-source-map',
 
   resolve: {
