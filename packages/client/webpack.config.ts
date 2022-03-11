@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import path from 'path';
+import { resolve } from 'path';
 import { Compiler, Configuration } from 'webpack';
 
 const parentDir = '../../';
@@ -14,7 +14,7 @@ console.debug('*** mode', mode);
 class DtsBundlePlugin {
   apply(compiler: Compiler) {
     compiler.hooks.done.tapAsync('DtsBundlePlugin', () => {
-      const rootDir = path.resolve(__dirname);
+      const rootDir = resolve(__dirname);
       const dts = require('dts-bundle');
       const rimraf = require('rimraf');
 
@@ -46,7 +46,7 @@ const config: Configuration = {
   },
 
   output: {
-    path: path.resolve(outDir),
+    path: resolve(outDir),
     publicPath: '/',
     filename: '[name].js',
     chunkFilename: '[id].chunk.js',
@@ -76,7 +76,7 @@ function buildAlias() {
   return Object.keys(tsPathAliases).reduce((acc, key) => {
     const prop = key.replace('/*', '');
     const val = tsPathAliases[key][0].replace('/*', '');
-    acc[prop] = path.resolve(parentDir, val);
+    acc[prop] = resolve(parentDir, val);
     return acc;
   }, {});
 }

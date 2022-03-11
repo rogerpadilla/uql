@@ -1,10 +1,10 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist",
     "target": "ES2015",
     "lib": ["ESNext", "DOM"],
-    "importHelpers": false
+    "importHelpers": false,
+    "outDir": "dist"
   },
   "references": [{ "path": "../core" }],
   "exclude": ["node_modules", "dist"]
