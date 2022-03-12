@@ -22,8 +22,7 @@
   },
   "rules": {
     "complexity": ["error", 21],
-
-    "import/no-named-as-default-member": ["off"],
+    "@typescript-eslint/ban-types": ["error", { "types": { "Symbol": false } }],
     "import/first": ["warn"],
     "import/no-duplicates": ["warn"],
     "import/order": [
@@ -38,10 +37,10 @@
         ]
       }
     ],
-    "@typescript-eslint/no-unused-vars": ["error", { "args": "none" }],
-    "@typescript-eslint/ban-types": ["error", { "types": { "Symbol": false } }],
+    "@typescript-eslint/no-unused-vars": ["warn", { "args": "none" }],
+    "prettier/prettier": ["warn"],
     "@typescript-eslint/no-explicit-any": 0,
-    "prettier/prettier": ["warn"]
+    "import/no-named-as-default-member": 0
   },
   "settings": {
     "import/parsers": {

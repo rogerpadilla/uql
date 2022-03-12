@@ -12,6 +12,7 @@ import {
   QueryFilter,
   QueryFilterMap,
   OnFieldCallback,
+  MongoId,
 } from '@uql/core/type';
 import { getKeys, Raw } from '@uql/core/util';
 
@@ -127,7 +128,3 @@ export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<
   }
   return filter as QueryFilterMap<E>;
 }
-
-type MongoId = {
-  readonly toHexString: () => string;
-};
