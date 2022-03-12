@@ -129,5 +129,5 @@ export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<
 }
 
 type MongoId = {
-  readonly toHexString: Function;
+  readonly toHexString: () => string;
 };

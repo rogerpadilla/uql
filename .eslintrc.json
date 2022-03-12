@@ -1,14 +1,8 @@
 {
   "ignorePatterns": ["coverage", "data", "node_modules", "dist", "packages/**/node_modules", "packages/**/dist"],
   "env": {
-    "node": true,
-    "es2022": true
-  },
-  "parser": "@typescript-eslint/parser",
-  "parserOptions": {
-    "ecmaVersion": "latest",
-    "sourceType": "module",
-    "project": "tsconfig.json"
+    "es2022": true,
+    "node": true
   },
   "extends": [
     "eslint:recommended",
@@ -17,44 +11,18 @@
     "plugin:import/typescript",
     "plugin:prettier/recommended"
   ],
-  "settings": {
-    "import/parsers": {
-      "@typescript-eslint/parser": [".ts"]
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaFeatures": {
+      "jsx": true
     },
-    "import/resolver": {
-      "typescript": {
-        "alwaysTryTypes": true
-      }
-    }
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "project": "tsconfig.json"
   },
   "rules": {
-    "semi": ["warn", "always"],
     "complexity": ["error", 21],
-    "curly": ["error", "all"],
-    "no-restricted-syntax": ["error", "LabeledStatement", "WithStatement"],
-    "no-implicit-coercion": ["error", { "boolean": false }],
-    "no-new-wrappers": ["error"],
-    "no-new-object": ["error"],
-    "new-cap": ["error", { "newIsCap": false, "capIsNew": false }],
-    "no-array-constructor": ["error"],
-    "max-params": ["error", 5],
-    "max-lines": ["error", 500],
-    "max-statements": ["error", 50],
-    "one-var": ["error", "never"],
-    "max-nested-callbacks": ["error", 3],
-    "no-negated-condition": "error",
-    "no-case-declarations": 0,
-    "class-methods-use-this": 0,
-    "no-param-reassign": 0,
-    "no-use-before-define": 0,
-    "no-plusplus": 0,
-    "no-console": 0,
-    "prefer-destructuring": 0,
-    "consistent-return": 0,
-    "guard-for-in": 0,
-    "max-classes-per-file": 0,
 
-    "@typescript-eslint/no-unused-vars": ["warn", { "vars": "all", "args": "none" }],
     "import/no-named-as-default-member": ["off"],
     "import/first": ["warn"],
     "import/no-duplicates": ["warn"],
@@ -70,12 +38,20 @@
         ]
       }
     ],
-    "@typescript-eslint/ban-ts-comment": ["error", { "ts-expect-error": true }],
-    "@typescript-eslint/no-inferrable-types": 0,
-    "@typescript-eslint/ban-types": 0,
-    "@typescript-eslint/explicit-module-boundary-types": 0,
+    "@typescript-eslint/no-unused-vars": ["error", { "args": "none" }],
+    "@typescript-eslint/ban-types": ["error", { "types": { "Symbol": false } }],
     "@typescript-eslint/no-explicit-any": 0,
-    "prettier/prettier": "warn"
+    "prettier/prettier": ["warn"]
+  },
+  "settings": {
+    "import/parsers": {
+      "@typescript-eslint/parser": [".ts"]
+    },
+    "import/resolver": {
+      "typescript": {
+        "alwaysTryTypes": true
+      }
+    }
   },
   "overrides": [
     {
@@ -99,7 +75,6 @@
       },
       "rules": {
         "@typescript-eslint/no-unused-vars": 0,
-        "@typescript-eslint/unbound-method": 0,
         "@typescript-eslint/no-empty-function": 0,
         "max-lines": ["error", 1200]
       }

@@ -5,12 +5,12 @@ export function get<T>(url: string, opts?: RequestOptions) {
   return request<T>(url, { method: 'get' }, opts);
 }
 
-export function post<T>(url: string, payload: Object, opts?: RequestOptions) {
+export function post<T>(url: string, payload: unknown, opts?: RequestOptions) {
   const body = JSON.stringify(payload);
   return request<T>(url, { method: 'post', body }, opts);
 }
 
-export function patch<T>(url: string, payload: Object, opts?: RequestOptions) {
+export function patch<T>(url: string, payload: unknown, opts?: RequestOptions) {
   const body = JSON.stringify(payload);
   return request<T>(url, { method: 'patch', body }, opts);
 }
