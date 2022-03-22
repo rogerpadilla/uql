@@ -6,7 +6,7 @@
   "version": "0.4.82",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc --build tsconfig.build.json && yarn copyfiles",
+    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },

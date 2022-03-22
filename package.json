@@ -5,7 +5,7 @@
   ],
   "scripts": {
     "release": "yarn build && lerna publish patch && git pull && git push",
-    "build": "lerna run build --ignore=@uql/core",
+    "build": "lerna run build",
     "lint": "eslint .",
     "lint.fix": "yarn lint --fix",
     "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
