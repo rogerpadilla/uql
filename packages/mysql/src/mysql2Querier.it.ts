@@ -7,12 +7,12 @@ export class MySql2QuerierIt extends AbstractSqlQuerierIt {
     super(
       new MySql2QuerierPool({
         host: '0.0.0.0',
-        port: 3307,
+        port: 3316,
         user: 'test',
         password: 'test',
         database: 'test',
       }),
-      'INTEGER AUTO_INCREMENT PRIMARY KEY'
+      'INT AUTO_INCREMENT PRIMARY KEY'
     );
   }
 }

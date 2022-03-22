@@ -12,7 +12,7 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
     super(
       new PgQuerierPool({
         host: '0.0.0.0',
-        port: 5432,
+        port: 5442,
         user: 'test',
         password: 'test',
         database: 'test',

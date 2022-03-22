@@ -7,12 +7,12 @@ export class MariadbQuerierIt extends AbstractSqlQuerierIt {
     super(
       new MariadbQuerierPool({
         host: '0.0.0.0',
-        port: 3310,
+        port: 3326,
         user: 'test',
         password: 'test',
         database: 'test',
       }),
-      'INTEGER AUTO_INCREMENT PRIMARY KEY'
+      'INT AUTO_INCREMENT PRIMARY KEY'
     );
   }
 }

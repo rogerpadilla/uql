@@ -50,13 +50,13 @@ export abstract class BaseEntity implements IEntity {
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
    */
-  @Field({ onInsert: Date.now })
+  @Field({ onInsert: () => Date.now() })
   createdAt?: number;
   /**
    * 'onUpdate' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
-  @Field({ onUpdate: Date.now })
+  @Field({ onUpdate: () => Date.now() })
   updatedAt?: number;
 }
 
@@ -83,11 +83,11 @@ export class Profile extends BaseEntity {
    * auto-generating the primary-key's value when inserting.
    */
   @Id({ name: 'pk' })
-  id?: number;
+  override id?: number;
   @Field({ name: 'image' })
   picture?: string;
   @OneToOne({ entity: () => User })
-  creator?: IUser;
+  override creator?: IUser;
 }
 
 @Entity()
@@ -180,7 +180,7 @@ export class MeasureUnitCategory extends BaseEntity {
   /**
    * `onDelete` callback allows to specify which field will be used when deleting/querying this entity.
    */
-  @Field({ onDelete: Date.now })
+  @Field({ onDelete: () => Date.now() })
   deletedAt?: number;
 }
 
@@ -192,7 +192,7 @@ export class MeasureUnit extends BaseEntity {
   categoryId?: number;
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
-  @Field({ onDelete: Date.now })
+  @Field({ onDelete: () => Date.now() })
   deletedAt?: number;
 }
 

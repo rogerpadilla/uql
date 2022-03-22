@@ -20,6 +20,7 @@
     "importHelpers": true,
     "skipLibCheck": true,
     "incremental": true,
+    "noImplicitOverride": true,
     "paths": {
       "@uql/core": ["packages/core/src"],
       "@uql/core/*": ["packages/core/src/*"]

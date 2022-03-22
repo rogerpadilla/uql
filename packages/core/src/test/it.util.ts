@@ -48,7 +48,13 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
     if (field.isId) {
       propSql += field.onInsert ? `${insertableIdType} PRIMARY KEY` : primaryKeyType;
     } else {
-      propSql += field.type === Number ? 'BIGINT' : defaultType;
+      if (field.type === Number) {
+        propSql += 'BIGINT';
+      } else if (field.type === Date) {
+        propSql += 'TIMESTAMP';
+      } else {
+        propSql += defaultType;
+      }
     }
     return propSql;
   });
