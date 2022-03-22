@@ -25,7 +25,7 @@ services:
       - 3326:3306
     container_name: uql-mariadb-10
 
-  postgres-14:
+  postgres:
     image: postgres:14.2-alpine
     restart: always
     environment:
