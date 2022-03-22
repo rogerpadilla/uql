@@ -7,7 +7,7 @@ import { MongodbQuerier } from './mongodbQuerier';
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {
     super(
-      new MongodbQuerierPool('mongodb://localhost:27017,localhost:27018,localhost:27019/test?replicaSet=rs', {
+      new MongodbQuerierPool('mongodb://localhost:27027,localhost:27028,localhost:27029/test?replicaSet=rs', {
         useNewUrlParser: true,
         useUnifiedTopology: true,
       })

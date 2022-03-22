@@ -12,8 +12,8 @@
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.watch": "jest --watchAll",
     "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "run-rs": "run-rs -v 4.4.13",
-    "container": "concurrently 'run-rs' 'docker-compose up'"
+    "mongo-rs": "run-rs -v 4.4.13 --portStart 27027",
+    "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
   },
   "commitlint": {
     "extends": [
