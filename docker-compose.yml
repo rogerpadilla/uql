@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   mysql:
-    image: 'mysql:8.0.28'
+    image: mysql:8.0.28
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -10,11 +10,11 @@ services:
       MYSQL_PASSWORD: 'test'
       MYSQL_DATABASE: 'test'
     ports:
-      - '3316:3306'
-    container_name: 'uql-mysql-8'
+      - 3316:3306
+    container_name: uql-mysql-8
 
   mariadb:
-    image: 'yobasystems/alpine-mariadb:10.6.4'
+    image: yobasystems/alpine-mariadb:10.6.4
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -22,8 +22,8 @@ services:
       MYSQL_PASSWORD: 'test'
       MYSQL_DATABASE: 'test'
     ports:
-      - '3326:3306'
-    container_name: 'uql-mariadb-10'
+      - 3326:3306
+    container_name: uql-mariadb-10
 
   postgres-14:
     image: postgres:14.2-alpine
@@ -33,47 +33,5 @@ services:
       POSTGRES_PASSWORD: test
       POSTGRES_DB: test
     ports:
-      - '5442:5432'
+      - 5442:5432
     container_name: uql-postgres-14
-
-  mongo1:
-    image: mongo:4.4.13
-    restart: always
-    volumes:
-      - ~/mongos/data1:/data/db
-      - ./rs-init.sh:/scripts/rs-init.sh
-    networks:
-      - mongos-network
-    ports:
-      - 27027:27017
-    links:
-      - mongo2
-      - mongo3
-    entrypoint: ['/usr/bin/mongod', '--bind_ip_all', '--replSet', 'rs']
-    container_name: uql-mongo
-  mongo2:
-    image: mongo:4.4.13
-    restart: always
-    volumes:
-      - ~/mongos/data2:/data/db
-    networks:
-      - mongos-network
-    ports:
-      - 27028:27017
-    entrypoint: ['/usr/bin/mongod', '--bind_ip_all', '--replSet', 'rs']
-    container_name: uql-mongo2
-  mongo3:
-    image: mongo:4.4.13
-    restart: always
-    volumes:
-      - ~/mongos/data3:/data/db
-    networks:
-      - mongos-network
-    ports:
-      - 27029:27017
-    entrypoint: ['/usr/bin/mongod', '--bind_ip_all', '--replSet', 'rs']
-    container_name: uql-mongo3
-
-networks:
-  mongos-network:
-    driver: bridge

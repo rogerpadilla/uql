@@ -12,7 +12,8 @@
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.watch": "jest --watchAll",
     "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "container": "docker-compose up"
+    "run-rs": "run-rs -v 4.4.13",
+    "container": "concurrently 'run-rs' 'docker-compose up'"
   },
   "commitlint": {
     "extends": [
@@ -28,13 +29,14 @@
     "concurrently": "^7.0.0",
     "coveralls": "^3.1.1",
     "eslint": "^8.11.0",
-    "eslint-import-resolver-typescript": "2.5.0",
     "eslint-config-prettier": "^8.5.0",
+    "eslint-import-resolver-typescript": "2.5.0",
     "eslint-plugin-import": "^2.25.4",
     "eslint-plugin-prettier": "^4.0.0",
     "jest": "^27.5.1",
     "prettier": "^2.6.0",
     "rimraf": "^3.0.2",
+    "run-rs": "^0.7.6",
     "ts-jest": "^27.1.3",
     "ts-node": "^10.7.0",
     "ts-node-dev": "^1.1.8",
