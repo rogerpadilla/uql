@@ -222,7 +222,7 @@ export class Item extends BaseEntity {
   saleLedgerAccountId?: number;
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
-  @Field({ reference: { entity: () => Tax } })
+  @Field({ reference: () => Tax })
   taxId?: number;
   @ManyToOne()
   tax?: Tax;

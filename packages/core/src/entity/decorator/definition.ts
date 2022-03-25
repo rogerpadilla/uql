@@ -7,8 +7,9 @@ import {
   EntityMeta,
   Type,
   RelationKeyMap,
-  ReferenceOptions,
   RelationKey,
+  RelationCardinality,
+  Key,
   FieldKey,
   IdKey,
 } from '@uql/core/type';
@@ -23,9 +24,6 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   if (!opts.type) {
     const type = inferType(entity, key);
     opts = { ...opts, type };
-  }
-  if (typeof opts.reference === 'function') {
-    opts = { ...opts, reference: { entity: opts.reference } };
   }
   meta.fields[key] = { ...meta.fields[key], ...{ name: key, ...opts } };
   return meta;
@@ -162,12 +160,12 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relMeta = getMeta(relEntity);
   relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
-  const reversedCardinality = [...relOpts.cardinality].reverse().join('');
+  const reversedCardinality = [...relOpts.cardinality].reverse().join('') as RelationCardinality;
 
-  // reversing references here makes the SQL generation simpler (no need to check for `mappedBy`)
-  const mappedByRelation = relMeta.relations[relOpts.mappedBy as any];
+  // reversing references here makes the SQL generation simpler (no need to check for `mappedBy` in other places again)
+  const mappedByRelation = relMeta.relations[relOpts.mappedBy as RelationKey<E>];
   if (reversedCardinality === '11' || reversedCardinality === 'm1') {
-    relOpts.references = mappedByRelation.references.map(({ local, foreign }: any) => ({
+    relOpts.references = mappedByRelation.references.map(({ local, foreign }) => ({
       local: foreign,
       foreign: local,
     }));
@@ -180,14 +178,13 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
 function fillThroughRelations<E>(entity: Type<E>): void {
   const meta = ensureMeta(entity);
   meta.relations = getKeys(meta.fields).reduce((relations, key) => {
-    const { reference } = meta.fields[key];
+    const { reference } = meta.fields[key as FieldKey<E>];
     if (reference) {
-      const relEntityGetter = (reference as ReferenceOptions).entity;
-      const relEntity = relEntityGetter();
+      const relEntity = reference();
       const relMeta = ensureMeta(relEntity);
       const relKey = key.slice(0, -relMeta.id.length);
       const relOpts: RelationOptions = {
-        entity: relEntityGetter,
+        entity: reference,
         cardinality: 'm1',
         references: [{ local: key, foreign: relMeta.id }],
       };
@@ -197,7 +194,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
   }, {});
 }
 
-function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): RelationKey<E> {
+function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
   if (typeof relOpts.mappedBy === 'function') {
     const relEntity = relOpts.entity();
     const relMeta = ensureMeta(relEntity);

@@ -1,4 +1,4 @@
-import { EntityMeta, ReferenceOptions } from '@uql/core/type';
+import { EntityMeta } from '@uql/core/type';
 import { Raw } from '@uql/core/util';
 import {
   User,
@@ -24,11 +24,11 @@ import { Field } from './field';
 it('User', () => {
   const meta = getMeta(User);
 
-  expect((meta.fields.companyId.reference as ReferenceOptions).entity()).toBe(Company);
+  expect(meta.fields.companyId.reference()).toBe(Company);
   expect(meta.relations.company.entity()).toBe(Company);
   expect(meta.relations.company.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
 
-  expect((meta.fields.creatorId.reference as ReferenceOptions).entity()).toBe(User);
+  expect(meta.fields.creatorId.reference()).toBe(User);
   expect(meta.relations.creator.entity()).toBe(User);
   expect(meta.relations.creator.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
@@ -42,12 +42,12 @@ it('User', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -97,12 +97,12 @@ it('Profile', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -136,12 +136,12 @@ it('Item', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -151,22 +151,22 @@ it('Item', () => {
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       taxId: {
         name: 'taxId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       measureUnitId: {
         name: 'measureUnitId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
@@ -237,9 +237,7 @@ it('Tag', () => {
       },
       companyId: {
         name: 'companyId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: Number,
       },
       createdAt: {
@@ -266,9 +264,7 @@ it('Tag', () => {
       },
       creatorId: {
         name: 'creatorId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: Number,
       },
     },
@@ -310,12 +306,12 @@ it('ItemTag', () => {
       itemId: {
         name: 'itemId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       tagId: {
         name: 'tagId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
     },
     relations: {
@@ -346,12 +342,12 @@ it('TaxCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -385,9 +381,7 @@ it('Tax', () => {
       id: { name: 'id', type: Number, isId: true },
       categoryId: {
         name: 'categoryId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: String,
       },
       percentage: {
@@ -397,12 +391,12 @@ it('Tax', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -450,16 +444,12 @@ it('ItemAdjustment', () => {
       },
       inventoryAdjustmentId: {
         name: 'inventoryAdjustmentId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: Number,
       },
       itemId: {
         name: 'itemId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: Number,
       },
       number: {
@@ -468,20 +458,18 @@ it('ItemAdjustment', () => {
       },
       storehouseId: {
         name: 'storehouseId',
-        reference: {
-          entity: expect.any(Function),
-        },
+        reference: expect.any(Function),
         type: Number,
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -534,12 +522,12 @@ it('InventoryAdjustment', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -583,12 +571,12 @@ it('MeasureUnitCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
@@ -630,17 +618,17 @@ it('MeasureUnit', () => {
       categoryId: {
         name: 'categoryId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: { entity: expect.any(Function) },
+        reference: expect.any(Function),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },

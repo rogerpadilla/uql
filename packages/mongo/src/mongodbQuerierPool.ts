@@ -6,11 +6,11 @@ import { MongoDialect } from './mongoDialect';
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
   private querier: MongodbQuerier;
 
-  constructor(readonly uri: string, readonly options?: MongoClientOptions, readonly logger?: QuerierLogger) {}
+  constructor(readonly uri: string, readonly opts?: MongoClientOptions, readonly logger?: QuerierLogger) {}
 
   async getQuerier() {
     if (!this.querier || !this.querier.conn.isConnected()) {
-      const conn = await connect(this.uri, this.options);
+      const conn = await connect(this.uri, this.opts);
       this.querier = new MongodbQuerier(new MongoDialect(), conn, this.logger);
     }
     return this.querier;

@@ -6,11 +6,11 @@ import { SqliteQuerier } from './sqliteQuerier';
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   private querier: SqliteQuerier;
 
-  constructor(readonly config: Omit<ISqlite.Config, 'driver'>, readonly logger?: QuerierLogger) {}
+  constructor(readonly opts: Omit<ISqlite.Config, 'driver'>, readonly logger?: QuerierLogger) {}
 
   async getQuerier() {
     if (!this.querier) {
-      const db = await open({ ...this.config, driver: Sqlite3Driver });
+      const db = await open({ ...this.opts, driver: Sqlite3Driver });
       this.querier = new SqliteQuerier(db, this.logger);
     }
     return this.querier;

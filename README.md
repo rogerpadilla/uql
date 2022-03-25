@@ -86,17 +86,17 @@ Initialization should be done once (e.g. in one of the bootstrap files of your a
 import { setOptions } from '@uql/core';
 import { PgQuerierPool } from '@uql/postgres';
 
-setOptions({
-  querierPool: new PgQuerierPool(
-    {
-      host: 'localhost',
-      user: 'theUser',
-      password: 'thePassword',
-      database: 'theDatabase',
-    },
-    console.log
-  ),
-});
+const querierPool = new PgQuerierPool(
+  {
+    host: 'localhost',
+    user: 'theUser',
+    password: 'thePassword',
+    database: 'theDatabase',
+  },
+  console.log
+);
+
+setOptions({ querierPool });
 ```
 
 ## <a name="entities"></a> Entities

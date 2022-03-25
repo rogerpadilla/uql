@@ -36,7 +36,7 @@ export type FieldOptions = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: any;
-  readonly reference?: EntityGetter | ReferenceOptions;
+  readonly reference?: EntityGetter;
   readonly virtual?: QueryRaw;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
@@ -47,13 +47,11 @@ export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
 
 export type EntityGetter<E = any> = () => Type<E>;
 
-export type ReferenceOptions<E = any> = { entity: EntityGetter<E> };
-
 export type CascadeType = 'persist' | 'delete';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
-  readonly cardinality: RelationCardinality;
+  cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   mappedBy?: RelationMappedBy<E>;
   through?: EntityGetter<RelationValue<E>>;
@@ -66,11 +64,11 @@ type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'throu
 
 export type RelationKeyMap<E> = { readonly [K in keyof E]: K };
 
-export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => RelationKey<E>;
+export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => Key<E>;
 
-export type RelationReferences = { local: string; foreign: string }[];
+export type RelationReferences = { readonly local: string; readonly foreign: string }[];
 
-export type RelationMappedBy<E> = RelationKey<E> | RelationKeyMapper<E>;
+export type RelationMappedBy<E> = Key<E> | RelationKeyMapper<E>;
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
