@@ -6,7 +6,7 @@ export type MongoId = {
   toHexString: () => string;
 };
 
-export type Scalar = boolean | string | number | bigint | Symbol | Date | RegExp | Buffer | MongoId;
+export type Scalar = string | number | boolean | bigint | Symbol | Date | RegExp | Buffer | MongoId;
 
 export type ExpandScalar<T> = null | (T extends Date ? Date | string : T);
 

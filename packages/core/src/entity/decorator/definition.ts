@@ -162,16 +162,18 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relMeta = getMeta(relEntity);
   relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
+  const reversedCardinality = [...relOpts.cardinality].reverse().join('');
+
   // reversing references here makes the SQL generation simpler (no need to check for `mappedBy`)
-  const { cardinality, references, through } = relMeta.relations[relOpts.mappedBy];
-  if (cardinality === '11' || cardinality === 'm1') {
-    relOpts.references = references.map(({ local, foreign }) => ({
+  const mappedByRelation = relMeta.relations[relOpts.mappedBy as any];
+  if (reversedCardinality === '11' || reversedCardinality === 'm1') {
+    relOpts.references = mappedByRelation.references.map(({ local, foreign }: any) => ({
       local: foreign,
       foreign: local,
     }));
   } else {
-    relOpts.references = references.slice().reverse();
-    relOpts.through = through;
+    relOpts.references = mappedByRelation.references.slice().reverse();
+    relOpts.through = mappedByRelation.through;
   }
 }
 
@@ -185,8 +187,8 @@ function fillThroughRelations<E>(entity: Type<E>): void {
       const relMeta = ensureMeta(relEntity);
       const relKey = key.slice(0, -relMeta.id.length);
       const relOpts: RelationOptions = {
-        cardinality: 'm1',
         entity: relEntityGetter,
+        cardinality: 'm1',
         references: [{ local: key, foreign: relMeta.id }],
       };
       relations[relKey] = relOpts;

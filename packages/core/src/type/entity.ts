@@ -3,12 +3,14 @@ import { Scalar, Type } from './utility';
 
 export const idKey = Symbol('idKey');
 
-export type Key<E> = {
-  readonly [K in keyof E]?: K & string;
-}[keyof E & string];
+export type Key<E> = keyof E & string;
 
 export type FieldKey<E> = {
-  readonly [K in Key<E>]?: E[K] extends Scalar ? K : never;
+  readonly [K in keyof E]: E[K] extends Scalar ? K : never;
+}[Key<E>];
+
+export type RelationKey<E> = {
+  readonly [K in keyof E]: E[K] extends Scalar ? never : K;
 }[Key<E>];
 
 export type FieldValue<E> = E[FieldKey<E>];
@@ -22,10 +24,6 @@ export type IdKey<E> = E extends { [idKey]?: infer K }
   : FieldKey<E>;
 
 export type IdValue<E> = E[IdKey<E>];
-
-export type RelationKey<E> = {
-  readonly [K in Key<E>]?: E[K] extends Scalar ? never : K;
-}[Key<E>];
 
 export type RelationValue<E> = E[RelationKey<E>];
 
@@ -55,7 +53,7 @@ export type CascadeType = 'persist' | 'delete';
 
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
-  readonly cardinality?: RelationCardinality;
+  readonly cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   mappedBy?: RelationMappedBy<E>;
   through?: EntityGetter<RelationValue<E>>;
@@ -66,7 +64,7 @@ type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' 
 type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'mappedBy' | 'cascade'>;
 type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'through' | 'references' | 'cascade'>;
 
-export type RelationKeyMap<E> = { readonly [K in RelationKey<E>]: K };
+export type RelationKeyMap<E> = { readonly [K in keyof E]: K };
 
 export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => RelationKey<E>;
 

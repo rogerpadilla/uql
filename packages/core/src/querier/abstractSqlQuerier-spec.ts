@@ -49,29 +49,27 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldFindOneAndProjectOneToMany() {
-    await this.querier.insertMany(InventoryAdjustment, [
-      {
-        id: 123,
-        createdAt: 1,
-      },
-      { id: 456, createdAt: 1 },
-    ]);
+    await this.querier.insertOne(InventoryAdjustment, {
+      id: 123,
+      description: 'something a',
+      createdAt: 1,
+    });
 
-    expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
+    expect(this.querier.run).nthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (123, 'something a', 1)");
 
-    await this.querier.findMany(InventoryAdjustment, {
-      $project: ['id', 'itemAdjustments'],
-      $filter: { createdAt: 1 },
+    await this.querier.findOne(InventoryAdjustment, {
+      $filter: { id: 123 },
+      $project: ['id', 'description', 'itemAdjustments'],
     });
 
     expect(this.querier.all).nthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = 1'
+      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = 123 LIMIT 1'
     );
     expect(this.querier.all).nthCalledWith(
       2,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
-        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123, 456)'
+        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123)'
     );
 
     expect(this.querier.all).toBeCalledTimes(2);
