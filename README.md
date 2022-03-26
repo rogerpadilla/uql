@@ -149,7 +149,7 @@ export class MeasureUnit {
 }
 ```
 
-## <a name="creation-of-queries"></a> Queries
+## <a name="creation-of-queries"></a> Creation of Queries
 
 ```ts
 import { getQuerier, getRepository } from '@uql/core';
@@ -169,4 +169,4 @@ await querier.release();
 
 ---
 
-See more in https://uql.io :high_brightness:
+See much more in https://uql.io :high_brightness:
