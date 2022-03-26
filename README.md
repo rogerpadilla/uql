@@ -58,7 +58,7 @@ The `uql` queries can be safely written in the frontend (browser/mobile) and sen
 3. Additionally, your `tsconfig.json` may need the following flags:
 
    ```json
-   "target": "es6", // or a more recent ecmascript version.
+   "target": "es2020",
    "experimentalDecorators": true,
    "emitDecoratorMetadata": true
    ```
