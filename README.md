@@ -169,4 +169,4 @@ await querier.release();
 
 ---
 
-See much more in https://uql.io :high_brightness:
+See more in https://uql.io :high_brightness:
