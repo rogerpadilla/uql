@@ -1,48 +1,29 @@
 import { User } from '@uql/core/test';
-import { getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
+import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
 import { GenericClientRepository, HttpQuerier } from './querier';
-import { ClientQuerier, UqlClientOptions } from './type';
+import { ClientQuerier } from './type';
+import { ClientQuerierPool } from './type/clientQuerierPool';
 
 describe('options', () => {
-  afterEach(() => {
-    setOptions(undefined);
-  });
-
-  it('getOptions unset', () => {
-    expect(getOptions()).toBeDefined();
+  it('default getQuerier', () => {
     const querier = getQuerier();
     expect(querier).toBeInstanceOf(HttpQuerier);
   });
 
-  it('setOptions', () => {
-    const opts: UqlClientOptions = {
-      querierPool: {
-        getQuerier: () => undefined,
-      },
-    };
-
-    setOptions(opts);
-
-    expect(getOptions()).toEqual(opts);
-
-    setOptions({
-      querierPool: undefined,
-    });
-    expect(getOptions()).toEqual({
-      querierPool: undefined,
-    });
+  it('default querierPool', () => {
+    expect(getDefaultQuerierPool()).toBeDefined();
   });
 
-  it('getQuerier', () => {
+  it('custom querierPool', () => {
     const querierMock = {} as ClientQuerier;
 
-    setOptions({
-      querierPool: {
-        getQuerier: () => querierMock,
-      },
-    });
+    const querierPool: ClientQuerierPool = {
+      getQuerier: () => querierMock,
+    };
 
-    const querier1 = getQuerierPool().getQuerier();
+    setDefaultQuerierPool(querierPool);
+
+    const querier1 = getDefaultQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);
 
     const querier2 = getQuerier();
@@ -51,6 +32,6 @@ describe('options', () => {
     expect(getRepository(User)).toBeInstanceOf(GenericClientRepository);
     expect(getRepository(User, querier1)).toBeInstanceOf(GenericClientRepository);
 
-    expect(getQuerierPool()).toBe(getQuerierPool());
+    expect(getDefaultQuerierPool()).toBe(getDefaultQuerierPool());
   });
 });

@@ -1,14 +1,12 @@
 # [uql](https://uql.io) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![npm version](https://badge.fury.io/js/%40uql%2Fcore.svg)](https://badge.fury.io/js/%40uql%2Fcore)
 
-[Learn how to use uql in your own project](https://uql.io).
+Learn more of uql in the website https://uql.io :high_brightness:
 
-# Getting Started
+# Quick Start
 
-`uql` is a flexible and efficient `ORM`, with declarative `JSON` syntax and smart type-safety.
+`uql` is a flexible and efficient `ORM`, with declarative `JSON` syntax and really smart type-safety.
 
-Given it is just a small library with serializable `JSON` syntax, the queries can be written in the client (web/mobile) and send to the backend, or just use `uql` directly in the backend, or even use it in a mobile app with an embedded database.
-
-![autocomplete demo](https://uql.io/code.gif)
+The `uql` queries can be safely written in the frontend (browser/mobile) and sent to the backend; or only use `uql` in the backend, or even in a mobile app with an embedded database (like `sqlite`).
 
 ## <a name="features"></a> Features
 
@@ -18,23 +16,10 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 - `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
 - declarative and imperative `transactions`.
 - `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
-- different kinds of `relations` between entities.
 - transparent support for `inheritance` patterns between entities.
 - supports `Postgres`, `MySQL`, `MariaDB`, `SQLite`, `MongoDB` (beta).
-- plugins for frameworks: `express` (more coming).
 
-## Table of Contents
-
-1. [Installation](#installation)
-2. [Configuration](#configuration)
-3. [Entities](#entities)
-4. [Declarative Transactions](#declarative-transactions)
-5. [Imperative Transactions](#imperative-transactions)
-6. [Generate REST APIs with Express](#express)
-7. [Consume REST APIs from the Frontend](#client)
-8. [FAQs](#faq)
-
-## <a name="installation"></a> Installation
+## <a name="install"></a> Install
 
 1. Install the core package:
 
@@ -48,42 +33,42 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
    yarn add @uql/core
    ```
 
-1. Install one of the following packages according to your database:
+2. Install one of the specific packages according to your database:
 
-| Database     | Package         |
-| ------------ | --------------- |
-| `MySQL`      | `@uql/mysql`    |
-| `MariaDB`    | `@uql/maria`    |
-| `PostgreSQL` | `@uql/postgres` |
-| `MongoDB`    | `@uql/mongo`    |
-| `SQLite`     | `@uql/sqlite`   |
+   | Database     | Package         |
+   | ------------ | --------------- |
+   | `MySQL`      | `@uql/mysql`    |
+   | `PostgreSQL` | `@uql/postgres` |
+   | `MariaDB`    | `@uql/maria`    |
+   | `MongoDB`    | `@uql/mongo`    |
+   | `SQLite`     | `@uql/sqlite`   |
 
-E.g. for `PostgreSQL`
+   E.g. for `PostgreSQL`
 
-```sh
-npm install @uql/postgres --save
-```
+   ```sh
+   npm install @uql/postgres --save
+   ```
 
-or with _yarn_
+   or with _yarn_
 
-```sh
-yarn add @uql/postgres
-```
+   ```sh
+   yarn add @uql/postgres
+   ```
 
-1. Additionally, your `tsconfig.json` needs the following flags:
+3. Additionally, your `tsconfig.json` may need the following flags:
 
-```json
-"target": "es6", // or a more recent ecmascript version.
-"experimentalDecorators": true,
-"emitDecoratorMetadata": true
-```
+   ```json
+   "target": "es6", // or a more recent ecmascript version.
+   "experimentalDecorators": true,
+   "emitDecoratorMetadata": true
+   ```
 
 ## <a name="configuration"></a> Configuration
 
-Initialization should be done once (e.g. in one of the bootstrap files of your app).
+A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
 ```ts
-import { setOptions } from '@uql/core';
+import { setDefaultQuerierPool } from '@uql/core';
 import { PgQuerierPool } from '@uql/postgres';
 
 const querierPool = new PgQuerierPool(
@@ -93,19 +78,19 @@ const querierPool = new PgQuerierPool(
     password: 'thePassword',
     database: 'theDatabase',
   },
+  // a logger can optionally be passed so the SQL queries are logged
   console.log
 );
 
-setOptions({ querierPool });
+setDefaultQuerierPool(querierPool);
 ```
 
-## <a name="entities"></a> Entities
+## <a name="entities"></a> Define the Entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `'@uql/core/entity'`.
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
-
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
 
 @Entity()
@@ -162,214 +147,26 @@ export class MeasureUnit {
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
 }
-
-@Entity()
-export class Item {
-  @Id({ onInsert: uuidv4 })
-  id?: string;
-  @Field()
-  name?: string;
-  @Field()
-  description?: string;
-  @Field()
-  code?: string;
-  @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
-  tags?: Tag[];
-}
-
-@Entity()
-export class Tag {
-  @Id({ onInsert: uuidv4 })
-  id?: string;
-  @Field()
-  name?: string;
-  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
-  items?: Item[];
-}
-
-@Entity()
-export class ItemTag {
-  @Id({ onInsert: uuidv4 })
-  id?: string;
-  @Field({ reference: () => Item })
-  itemId?: string;
-  @Field({ reference: () => Tag })
-  tagId?: string;
-}
 ```
 
-## <a name="declarative-transactions"></a> Declarative Transactions
-
-Both, _declarative_ and _imperative_ transactions are supported, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
-
-To use Declarative Transactions (using the `@Transactional` decorator):
-
-1. take any service class, annotate the wanted function with the `@Transactional` decorator.
-2. inject the querier instance by decorating one of the function's arguments with `@InjectQuerier`.
+## <a name="queries"></a> Queries
 
 ```ts
-import { Querier } from '@uql/core/type';
-import { Transactional, InjectQuerier } from '@uql/core/querier';
+import { getQuerier, getRepository } from '@uql/core';
+import { User } from './entity';
 
-class ConfirmationService {
-  @Transactional()
-  async confirm(confirmation: Confirmation, @InjectQuerier() querier?: Querier): Promise<void> {
-    if (confirmation.type === 'register') {
-      await querier.insertOne(User, {
-        name: confirmation.name,
-        email: confirmation.email,
-        password: confirmation.password,
-      });
-    } else {
-      await querier.updateOneById(User, confirmation.creatorId, {
-        password: confirmation.password,
-      });
-    }
-    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
-  }
-}
+const querier = await getQuerier();
 
-export const confirmationService = new ConfirmationService();
+const users = await querier.findMany(User, {
+  $project: { id: true, email: true, profile: ['id', 'picture'] },
+  $filter: { email: { $iendsWith: '@google.com' } },
+  $sort: { createdAt: -1 },
+  $limit: 100,
+});
 
-/**
- * then you could just import the constant `confirmationService` in another file,
- * and when you call `confirmAction` function, all the operations there
- * will (automatically) run inside a single transaction.
- */
-await confirmationService.confirmAction(data);
-```
-
-## <a name="imperative-transactions"></a> Imperative Transactions
-
-`uql` supports both, _declarative_ and _imperative_ transactions, with the former you can just describe the scope of your transactions, with the later you have more flexibility (hence more responsibility).
-
-To use Imperative Transactions:
-
-1. obtain the `querier` object with `await getQuerier()`.
-2. run the transaction with `await querier.transaction(callback)`.
-3. perform the different operations using the same `querier` (or `repositories`) inside your `callback` function.
-
-```ts
-import { getQuerier } from '@uql/core';
-
-async function confirm(confirmation: Confirmation): Promise<void> {
-  const querier = await getQuerier();
-
-  await querier.transaction(async () => {
-    if (confirmation.action === 'signup') {
-      await querier.insertOne(User, {
-        name: confirmation.name,
-        email: confirmation.email,
-        password: confirmation.password,
-      });
-    } else {
-      await querier.updateOneById(User, confirmation.creatorId, {
-        password: confirmation.password,
-      });
-    }
-    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
-  });
-}
+await querier.release();
 ```
 
 ---
 
-That &#9650; can also be implemented as this &#9660; (for more granular control):
-
-```ts
-async function confirm(confirmation: Confirmation): Promise<void> {
-  const querier = await getQuerier();
-
-  try {
-    await querier.beginTransaction();
-    if (confirmation.action === 'signup') {
-      await querier.insertOne(User, {
-        name: confirmation.name,
-        email: confirmation.email,
-        password: confirmation.password,
-      });
-    } else {
-      await querier.updateOneById(User, confirmation.creatorId, {
-        password: confirmation.password,
-      });
-    }
-    await querier.updateOneById(Confirmation, confirmation.id, { status: 1 });
-    await querier.commitTransaction();
-  } catch (error) {
-    await querier.rollbackTransaction();
-    throw error;
-  } finally {
-    await querier.release();
-  }
-}
-```
-
-## <a name="express"></a> Autogenerate REST APIs with Express
-
-A `express` plugin is provided to automatically generate REST APIs for your entities.
-
-1. Install express plugin in your server project:
-
-```sh
-npm install @uql/express --save
-```
-
-or with _yarn_
-
-```sh
-yarn add @uql/express
-```
-
-1. Initialize the `express` middleware in your server code to generate REST APIs for your entities
-
-```ts
-import * as express from 'express';
-import { Query, QueryFilter, EntityMeta } from '@uql/core/type';
-import { querierMiddleware } from '@uql/express';
-
-const app = express();
-
-app
-  // ...
-  .use(
-    '/api',
-    // this will generate REST APIs for the entities.
-    querierMiddleware({
-      // all entities will be automatically exposed unless
-      // 'include' or 'exclude' options are provided.
-      exclude: [Confirmation],
-    })
-  );
-```
-
-## <a name="client"></a> Easily call the generated REST APIs from the Client
-
-A client plugin (for browser/mobile) is provided to easily consume the REST APIs from the frontend.
-
-1. Install client plugin in your frontend project:
-
-```sh
-npm install @uql/client --save
-```
-
-or with _yarn_
-
-```sh
-yarn add @uql/client
-```
-
-1. Use the client to call the `uql` CRUD API
-
-```ts
-import { getRepository } from '@uql/client';
-
-// 'User' is an entity class.
-const userRepository = getRepository(User);
-
-const users = await userRepository.findMany({
-  $project: { email: true, profile: ['picture'] },
-  $filter: { email: { $endsWith: '@domain.com' } },
-  $sort: { createdAt: -1 },
-  $limit: 100,
-});
-```
+See more in https://uql.io

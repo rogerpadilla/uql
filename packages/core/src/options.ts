@@ -1,27 +1,21 @@
 import { GenericRepository } from '@uql/core/repository';
-import { Querier, QuerierPool, Repository, Type, UqlOptions } from '@uql/core/type';
+import { Querier, QuerierPool, Repository, Type } from '@uql/core/type';
 
-let options: UqlOptions;
-const defaultOptions = {} as const as UqlOptions;
+let defaultPool: QuerierPool;
 
-export function setOptions(opts: UqlOptions): void {
-  options = { ...defaultOptions, ...opts };
+export function setDefaultQuerierPool<T extends QuerierPool = QuerierPool>(pool: T): void {
+  defaultPool = pool;
 }
 
-export function getOptions(): UqlOptions {
-  return options ?? { ...defaultOptions };
-}
-
-export function getQuerierPool(): QuerierPool {
-  const options = getOptions();
-  if (!options.querierPool) {
-    throw TypeError(`'querierPool' has to be passed via 'setOptions'`);
+export function getDefaultQuerierPool(): QuerierPool {
+  if (!defaultPool) {
+    throw new TypeError('A default querier-pool has to be set first');
   }
-  return options.querierPool;
+  return defaultPool;
 }
 
 export function getQuerier(): Promise<Querier> {
-  return getQuerierPool().getQuerier();
+  return defaultPool.getQuerier();
 }
 
 export function getRepository<E>(entity: Type<E>, querier: Querier): Repository<E> {

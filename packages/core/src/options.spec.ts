@@ -1,53 +1,25 @@
 import { User } from '@uql/core/test';
 import { Querier } from '@uql/core/type';
-import { getOptions, getQuerier, getQuerierPool, getRepository, setOptions } from './options';
+import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
 
 describe('options', () => {
   beforeEach(() => {
     jest.spyOn(console, 'log');
   });
 
-  afterEach(() => {
-    setOptions(undefined);
-  });
-
-  it('getOptions unset', () => {
-    expect(getOptions()).toEqual({});
-  });
-
-  it('setOptions', () => {
-    const logger = jest.fn();
-
-    setOptions({
-      querierPool: undefined,
-    });
-    expect(getOptions()).toEqual({
-      querierPool: undefined,
-    });
-
-    setOptions({
-      querierPool: undefined,
-    });
-    expect(getOptions()).toEqual({
-      querierPool: undefined,
-    });
-  });
-
-  it('getQuerierPool unset', () => {
-    expect(() => getQuerierPool()).toThrow(`'querierPool' has to be passed via 'setOptions'`);
+  it('getDefaultQuerierPool unset', () => {
+    expect(() => getDefaultQuerierPool()).toThrow('A default querier-pool has to be set first');
   });
 
   it('getQuerier', async () => {
     const querierMock = {} as Querier;
 
-    setOptions({
-      querierPool: {
-        getQuerier: async () => querierMock,
-        end: async () => {},
-      },
+    setDefaultQuerierPool({
+      getQuerier: async () => querierMock,
+      end: async () => {},
     });
 
-    const querier1 = await getQuerierPool().getQuerier();
+    const querier1 = await getDefaultQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);
 
     const querier2 = await getQuerier();
@@ -57,6 +29,6 @@ describe('options', () => {
 
     expect(repository).toBeDefined();
 
-    expect(getQuerierPool()).toBe(getQuerierPool());
+    expect(getDefaultQuerierPool()).toBe(getDefaultQuerierPool());
   });
 });

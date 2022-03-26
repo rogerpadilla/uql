@@ -1,32 +1,25 @@
 import { Type } from '@uql/core/type';
 import { GenericClientRepository } from './querier/genericClientRepository';
 import { HttpQuerier } from './querier/httpQuerier';
-import { UqlClientOptions } from './type';
+import { ClientQuerier, ClientRepository } from './type';
+import { ClientQuerierPool } from './type/clientQuerierPool';
 
-let options: UqlClientOptions;
+let defaultQuerierPool: ClientQuerierPool = {
+  getQuerier: () => new HttpQuerier('/api'),
+};
 
-const defaultOptions: Partial<UqlClientOptions> = {
-  querierPool: {
-    getQuerier: () => new HttpQuerier('/api'),
-  },
-} as const;
-
-export function setOptions(opts: UqlClientOptions) {
-  options = { ...defaultOptions, ...opts };
+export function setDefaultQuerierPool<T extends ClientQuerierPool>(pool: T) {
+  defaultQuerierPool = pool;
 }
 
-export function getOptions() {
-  return options ?? { ...defaultOptions };
+export function getDefaultQuerierPool(): ClientQuerierPool {
+  return defaultQuerierPool;
 }
 
-export function getQuerierPool() {
-  return getOptions().querierPool;
+export function getQuerier(): ClientQuerier {
+  return getDefaultQuerierPool().getQuerier();
 }
 
-export function getQuerier() {
-  return getQuerierPool().getQuerier();
-}
-
-export function getRepository<E>(entity: Type<E>, querier = getQuerier()) {
+export function getRepository<E>(entity: Type<E>, querier = getQuerier()): ClientRepository<E> {
   return new GenericClientRepository(entity, querier);
 }

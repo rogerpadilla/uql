@@ -1,4 +1,4 @@
-import { getQuerier, setOptions } from '@uql/core/options';
+import { getQuerier, setDefaultQuerierPool } from '@uql/core/options';
 import { Querier, QuerierPool, Writable } from '@uql/core/type';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
@@ -10,11 +10,9 @@ describe('transactional', () => {
     const defaultQuerierSingleton = buildQuerierMock();
     const anotherQuerierSingleton = buildQuerierMock();
 
-    setOptions({
-      querierPool: {
-        getQuerier: async () => defaultQuerierSingleton,
-        end: async () => undefined,
-      },
+    setDefaultQuerierPool({
+      getQuerier: async () => defaultQuerierSingleton,
+      end: async () => undefined,
     });
 
     anotherQuerierPool = {
