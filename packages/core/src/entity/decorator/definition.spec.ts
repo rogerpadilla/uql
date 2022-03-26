@@ -586,7 +586,7 @@ it('MeasureUnitCategory', () => {
       measureUnits: {
         cardinality: '1m',
         entity: expect.any(Function),
-        mappedBy: 'category',
+        mappedBy: 'categoryId',
         references: [{ local: 'id', foreign: 'categoryId' }],
       },
       company: {

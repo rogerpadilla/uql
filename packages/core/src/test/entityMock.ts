@@ -175,7 +175,7 @@ export class Tax extends BaseEntity {
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
-  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category })
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
   /**
    * `onDelete` callback allows to specify which field will be used when deleting/querying this entity.

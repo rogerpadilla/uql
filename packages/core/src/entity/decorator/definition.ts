@@ -160,19 +160,23 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relMeta = getMeta(relEntity);
   relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
-  const reversedCardinality = [...relOpts.cardinality].reverse().join('') as RelationCardinality;
+  if (relMeta.fields[relOpts.mappedBy as FieldKey<E>]) {
+    relOpts.references = [{ local: relMeta.id, foreign: relOpts.mappedBy }];
+    return;
+  }
 
-  // reversing references here makes the SQL generation simpler (no need to check for `mappedBy` in other places again)
   const mappedByRelation = relMeta.relations[relOpts.mappedBy as RelationKey<E>];
-  if (reversedCardinality === '11' || reversedCardinality === 'm1') {
-    relOpts.references = mappedByRelation.references.map(({ local, foreign }) => ({
-      local: foreign,
-      foreign: local,
-    }));
-  } else {
+
+  if (relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm') {
     relOpts.references = mappedByRelation.references.slice().reverse();
     relOpts.through = mappedByRelation.through;
+    return;
   }
+
+  relOpts.references = mappedByRelation.references.map(({ local, foreign }) => ({
+    local: foreign,
+    foreign: local,
+  }));
 }
 
 function fillThroughRelations<E>(entity: Type<E>): void {
@@ -205,10 +209,12 @@ function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
 }
 
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
-  return getKeys(meta.relations).reduce((acc, key) => {
-    acc[key] = key;
-    return acc;
-  }, {} as RelationKeyMap<E>);
+  return getKeys(meta.fields)
+    .concat(getKeys(meta.relations))
+    .reduce((acc, key) => {
+      acc[key] = key;
+      return acc;
+    }, {} as RelationKeyMap<E>);
 }
 
 function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {
