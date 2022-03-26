@@ -15,7 +15,7 @@ export class HttpQuerier implements ClientQuerier {
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E>, opts?: RequestOptions) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E> = {}, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
     return get<E>(`${basePath}/${id}${qs}`, opts);

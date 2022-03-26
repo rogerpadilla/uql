@@ -4,7 +4,7 @@ import { RequestOptions, RequestSuccessResponse } from './request';
 export interface ClientRepository<E> extends UniversalRepository<E> {
   count(qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  findOneById(id: IdValue<E>, qm: QueryUnique<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById(id: IdValue<E>, qm?: QueryUnique<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
   findOne(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
