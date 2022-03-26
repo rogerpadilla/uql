@@ -329,8 +329,17 @@ import { querierMiddleware } from '@uql/express';
 
 const app = express();
 
-// this will generate REST APIs for the entities.
-app.use('/api', querierMiddleware());
+app
+  // ...
+  .use(
+    '/api',
+    // this will generate REST APIs for the entities.
+    querierMiddleware({
+      // all entities will be automatically exposed unless
+      // 'include' or 'exclude' options are provided.
+      exclude: [Confirmation],
+    })
+  );
 ```
 
 ## <a name="client"></a> Easily call the generated REST APIs from the Client
