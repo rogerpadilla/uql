@@ -59,8 +59,8 @@ export type RelationOptions<E = any> = {
 };
 
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
-type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'mappedBy' | 'cascade'>;
-type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'through' | 'references' | 'cascade'>;
+type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> & Pick<RelationOptions<E>, 'cascade'>;
+type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> & Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
 
 export type RelationKeyMap<E> = { readonly [K in keyof E]: K };
 
@@ -74,7 +74,7 @@ export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
 export type RelationOneToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 
-export type RelationOneToManyOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E> | RelationOptionsThroughOwner<E>;
+export type RelationOneToManyOptions<E> = RelationOptionsInverseSide<E> | RelationOptionsThroughOwner<E>;
 
 export type RelationManyToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
 

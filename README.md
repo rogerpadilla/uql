@@ -55,8 +55,8 @@ Given it is just a small library with serializable `JSON` syntax, the queries ca
 | `MySQL`      | `@uql/mysql`    |
 | `MariaDB`    | `@uql/maria`    |
 | `PostgreSQL` | `@uql/postgres` |
-| `SQLite`     | `@uql/sqlite`   |
 | `MongoDB`    | `@uql/mongo`    |
+| `SQLite`     | `@uql/sqlite`   |
 
 E.g. for `PostgreSQL`
 
@@ -104,6 +104,8 @@ setOptions({ querierPool });
 Take any dump class (aka DTO) and annotate it with the decorators from `'@uql/core/entity'`.
 
 ```ts
+import { v4 as uuidv4 } from 'uuid';
+
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
 
 @Entity()
@@ -111,21 +113,21 @@ export class Profile {
   /**
    * primary key
    */
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   picture?: string;
   /**
    * foreign-keys are really simple to specify.
    */
   @Field({ reference: () => User })
-  creatorId?: number;
+  creatorId?: string;
 }
 
 @Entity()
 export class User {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   name?: string;
   @Field()
@@ -141,8 +143,8 @@ export class User {
 
 @Entity()
 export class MeasureUnitCategory {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   name?: string;
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.category })
@@ -151,20 +153,20 @@ export class MeasureUnitCategory {
 
 @Entity()
 export class MeasureUnit {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   name?: string;
   @Field({ reference: () => MeasureUnitCategory })
-  categoryId?: number;
+  categoryId?: string;
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
 }
 
 @Entity()
 export class Item {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   name?: string;
   @Field()
@@ -177,8 +179,8 @@ export class Item {
 
 @Entity()
 export class Tag {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field()
   name?: string;
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
@@ -187,12 +189,12 @@ export class Tag {
 
 @Entity()
 export class ItemTag {
-  @Id()
-  id?: number;
+  @Id({ onInsert: uuidv4 })
+  id?: string;
   @Field({ reference: () => Item })
-  itemId?: number;
+  itemId?: string;
   @Field({ reference: () => Tag })
-  tagId?: number;
+  tagId?: string;
 }
 ```
 
@@ -252,6 +254,7 @@ import { getQuerier } from '@uql/core';
 
 async function confirm(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
+
   await querier.transaction(async () => {
     if (confirmation.action === 'signup') {
       await querier.insertOne(User, {
@@ -276,6 +279,7 @@ That &#9650; can also be implemented as this &#9660; (for more granular control)
 ```ts
 async function confirm(confirmation: Confirmation): Promise<void> {
   const querier = await getQuerier();
+
   try {
     await querier.beginTransaction();
     if (confirmation.action === 'signup') {
@@ -326,27 +330,8 @@ import { querierMiddleware } from '@uql/express';
 
 const app = express();
 
-app
-  // ...
-  .use(
-    '/api',
-
-    // this will generate REST APIs for the entities.
-    querierMiddleware({
-      // all entities will be automatically exposed unless
-      // 'include' or 'exclude' options are provided.
-      exclude: [Confirmation],
-
-      // `augmentQuery` callback allows to extend all then queries that are requested to the API,
-      // so it is a good place to add additional filters to the queries,
-      // e.g. for multi tenant apps.
-      augmentQuery: <E>(meta: EntityMeta<E>, qm: Query<E>, req: express.Request): Query<E> => {
-        // ensure the user can only see the data that belongs to his company.
-        qm.$filter = augmentFilter(meta, qm.$filter, { companyId: req.identity.companyId } as QueryFilter<E>);
-        return qm;
-      },
-    })
-  );
+// this will generate REST APIs for the entities.
+app.use('/api', querierMiddleware());
 ```
 
 ## <a name="client"></a> Easily call the generated REST APIs from the Client
