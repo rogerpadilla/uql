@@ -324,7 +324,6 @@ yarn add @uql/express
 
 ```ts
 import * as express from 'express';
-import { augmentFilter } from '@uql/core/util';
 import { Query, QueryFilter, EntityMeta } from '@uql/core/type';
 import { querierMiddleware } from '@uql/express';
 
