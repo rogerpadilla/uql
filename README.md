@@ -10,14 +10,14 @@ The `uql` queries can be safely written in the frontend (browser/mobile) and sen
 
 ## <a name="features"></a> Features
 
-- `JSON` (serializable) syntax for all the queries.
-- uses the power of `TypeScript` to get (smart) type-safety everywhere.
-- the generated queries are performant, safe, and human-readable.
-- `$project`, `$filter`, `$sort`, `$limit` works at multiple levels (including deep relations and their fields).
-- declarative and imperative `transactions`.
-- `soft-delete`, `virtual fields`, `repositories`, `connection pooling`.
-- transparent support for `inheritance` patterns between entities.
-- supports `Postgres`, `MySQL`, `MariaDB`, `SQLite`, `MongoDB` (beta).
+- `JSON` (serializable) syntax for all the [queries](https://uql.io/docs/querying-logical-operators).
+- uses the power of `TypeScript` to get smart type-safety [everywhere](https://uql.io/docs/api-repository).
+- the generated queries are [performant](https://uql.io/docs/querying-retrieve-relations), safe, and human-readable.
+- `$project`, `$filter`, `$sort`, `$limit` works at [multiple levels](https://uql.io/docs/querying-retrieve-relations) (including deep relations and their fields).
+- [declarative](https://uql.io/docs/transactions-declarative) and [imperative](https://uql.io/docs/transactions-imperative) `transactions`.
+- [soft-delete](https://uql.io/docs/entities-soft-delete), [virtual fields](https://uql.io/docs/entities-virtual-fields), [repositories](https://uql.io/docs/api-repository), `connection pooling`.
+- transparent support for [inheritance](https://uql.io/docs/entities-advanced) between entities.
+- supports `Postgres`, `MySQL`, `MariaDB`, `SQLite`, `MongoDB`.
 
 ## <a name="installation"></a> Installation
 
@@ -96,7 +96,9 @@ import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@
 @Entity()
 export class Profile {
   /**
-   * primary key
+   * primary-key.
+   * the `onInsert` callback can be used to specify a custom mechanism for auto-generating
+   * the default value of a field when inserting a new record.
    */
   @Id({ onInsert: uuidv4 })
   id?: string;
