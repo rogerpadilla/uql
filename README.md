@@ -159,7 +159,7 @@ import { User } from './entity';
 
 const querier = await getQuerier();
 
-await this.querier.insertOne(User, {
+const id = await this.querier.insertOne(User, {
   email: 'lorem@example.com',
   profile: { picture: 'ipsum.jpg' },
 });
