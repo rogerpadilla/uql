@@ -154,13 +154,18 @@ export class MeasureUnit {
 ## <a name="creation-of-queries"></a> Creation of Queries
 
 ```ts
-import { getQuerier, getRepository } from '@uql/core';
+import { getQuerier } from '@uql/core';
 import { User } from './entity';
 
 const querier = await getQuerier();
 
+await this.querier.insertOne(User, {
+  email: 'lorem@example.com',
+  profile: { picture: 'ipsum.jpg' },
+});
+
 const users = await querier.findMany(User, {
-  $project: { id: true, email: true, profile: ['id', 'picture'] },
+  $project: { id: true, email: true, profile: ['picture'] },
   $filter: { email: { $iendsWith: '@google.com' } },
   $sort: { createdAt: -1 },
   $limit: 100,
