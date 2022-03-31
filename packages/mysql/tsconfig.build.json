@@ -4,14 +4,6 @@
   "compilerOptions": {
     "outDir": "dist"
   },
-  "references": [{ "path": "../core" }],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/*/*.spec.ts",
-    "**/*/*-spec.ts",
-    "**/*/*.it.ts",
-    "**/*/*-it.ts",
-    "**/*/test"
-  ]
+  "references": [{ "path": "../core/tsconfig.build.json" }],
+  "exclude": ["node_modules", "dist", "**/*/*.spec.ts", "**/*/*-spec.ts", "**/*/*.it.ts", "**/*/*-it.ts", "**/*/test"]
 }
