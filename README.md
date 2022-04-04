@@ -2,13 +2,13 @@
 
 Learn more of uql in the website https://uql.io :high_brightness:
 
-# Quick Start
+## Quick Start
 
 `uql` is a flexible and efficient `ORM`, with declarative `JSON` syntax and really smart type-safety.
 
 The `uql` queries can be safely written in the frontend (browser/mobile) and sent to the backend; or only use `uql` in the backend, or even in a mobile app with an embedded database (like `sqlite`).
 
-## <a name="features"></a> Features
+### <a name="features"></a> Features
 
 - `JSON` (serializable) syntax for all the [queries](https://uql.io/docs/querying-logical-operators).
 - uses the power of `TypeScript` to get smart type-safety [everywhere](https://uql.io/docs/api-repository).
@@ -19,51 +19,51 @@ The `uql` queries can be safely written in the frontend (browser/mobile) and sen
 - transparent support for [inheritance](https://uql.io/docs/entities-advanced) between entities.
 - supports `Postgres`, `MySQL`, `MariaDB`, `SQLite`, `MongoDB`.
 
-## <a name="installation"></a> Installation
+### <a name="installation"></a> Installation
 
 1. Install the core package:
 
-   ```sh
-   npm install @uql/core --save
-   ```
+```sh
+npm install @uql/core --save
+```
 
-   or
+or
 
-   ```sh
-   yarn add @uql/core
-   ```
+```sh
+yarn add @uql/core
+```
 
 2. Install one of the specific packages according to your database:
 
-   | Database     | Package         |
-   | ------------ | --------------- |
-   | `MySQL`      | `@uql/mysql`    |
-   | `PostgreSQL` | `@uql/postgres` |
-   | `MariaDB`    | `@uql/maria`    |
-   | `MongoDB`    | `@uql/mongo`    |
-   | `SQLite`     | `@uql/sqlite`   |
+| Database     | Package         |
+| ------------ | --------------- |
+| `MySQL`      | `@uql/mysql`    |
+| `PostgreSQL` | `@uql/postgres` |
+| `MariaDB`    | `@uql/maria`    |
+| `MongoDB`    | `@uql/mongo`    |
+| `SQLite`     | `@uql/sqlite`   |
 
-   E.g. for `PostgreSQL`
+E.g. for `PostgreSQL`
 
-   ```sh
-   npm install @uql/postgres --save
-   ```
+```sh
+npm install @uql/postgres --save
+```
 
-   or with _yarn_
+or with _yarn_
 
-   ```sh
-   yarn add @uql/postgres
-   ```
+```sh
+yarn add @uql/postgres
+```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
 
-   ```json
-   "target": "es2020",
-   "experimentalDecorators": true,
-   "emitDecoratorMetadata": true
-   ```
+```json
+"target": "es2020",
+"experimentalDecorators": true,
+"emitDecoratorMetadata": true
+```
 
-## <a name="configuration"></a> Configuration
+### <a name="configuration"></a> Configuration
 
 A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
@@ -85,7 +85,7 @@ const querierPool = new PgQuerierPool(
 setDefaultQuerierPool(querierPool);
 ```
 
-## <a name="definition-of-entities"></a> Definition of Entities
+### <a name="definition-of-entities"></a> Definition of Entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `'@uql/core/entity'`.
 
@@ -151,7 +151,7 @@ export class MeasureUnit {
 }
 ```
 
-## <a name="creation-of-queries"></a> Creation of Queries
+### <a name="data-query"></a> Data query
 
 ```ts
 import { getQuerier } from '@uql/core';
