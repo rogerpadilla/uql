@@ -25,10 +25,10 @@
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/uql.git"
+    "url": "https://github.com/unthinkables/uql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/uql/issues"
+    "url": "https://github.com/unthinkables/uql/issues"
   },
   "keywords": [
     "orm",
