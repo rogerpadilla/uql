@@ -1,5 +1,4 @@
-import { EntityMeta } from '@uql/core/type';
-import { Raw } from '@uql/core/util';
+import { EntityMeta, QueryRaw } from '@uql/core/type';
 import {
   User,
   Item,
@@ -173,7 +172,7 @@ it('Item', () => {
       tagsCount: {
         name: 'tagsCount',
         type: Number,
-        virtual: expect.any(Raw),
+        virtual: expect.any(QueryRaw),
       },
     },
     relations: {

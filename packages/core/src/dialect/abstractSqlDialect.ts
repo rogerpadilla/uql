@@ -11,7 +11,6 @@ import {
   flatObject,
   getRawValue,
   raw,
-  Raw,
   getQueryFilterAsMap,
   getFieldCallbackValue,
 } from '@uql/core/util';
@@ -38,6 +37,7 @@ import {
   QueryProjectOptions,
   QuerySortDirection,
   QueryFilterLogical,
+  QueryRaw,
 } from '@uql/core/type';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
@@ -73,14 +73,14 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         fields = positiveProjectKeys.length
           ? positiveProjectKeys.map((key) => {
               const val = project[key];
-              if (val instanceof Raw) {
+              if (val instanceof QueryRaw) {
                 return raw(val.value, key);
               }
               return key as FieldKey<E>;
             })
           : (getKeys(meta.fields).filter((key) => !(key in project)) as FieldKey<E>[]);
       }
-      fields = fields.filter((key) => key instanceof Raw || meta.fields[key as FieldKey<E>]);
+      fields = fields.filter((key) => key instanceof QueryRaw || meta.fields[key as FieldKey<E>]);
       if (!fields.length || (opts.prefix && !fields.includes(meta.id))) {
         fields = [meta.id, ...fields];
       }
@@ -90,7 +90,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
     return fields
       .map((key) => {
-        if (key instanceof Raw) {
+        if (key instanceof QueryRaw) {
           return getRawValue({
             value: key,
             dialect: this,
@@ -104,8 +104,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
         if (field.virtual) {
           return getRawValue({
-            value: field.virtual,
-            alias: key as string,
+            value: raw(field.virtual.value, key),
             dialect: this,
             prefix,
             escapedPrefix,
@@ -214,9 +213,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
     const meta = getMeta(entity);
 
-    if (val instanceof Raw) {
+    if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
-        const value = val as Raw;
+        const value = val as QueryRaw;
         const query = getRawValue({
           value,
           dialect: this,
@@ -248,7 +247,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const hasManyItems = values.length > 1;
       const logicalComparison = values
         .map((filterEntry) => {
-          if (filterEntry instanceof Raw) {
+          if (filterEntry instanceof QueryRaw) {
             return getRawValue({
               value: filterEntry,
               dialect: this,
@@ -458,7 +457,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   }
 
   escape(value: any): Scalar {
-    if (value instanceof Raw) {
+    if (value instanceof QueryRaw) {
       return getRawValue({ value, dialect: this });
     }
     return escape(value);

@@ -6,6 +6,7 @@ import {
   RelationKey,
   FieldOptions,
   Key,
+  QueryRaw,
   QuerySort,
   QuerySortMap,
   QueryRawFnOptions,
@@ -14,14 +15,14 @@ import {
   OnFieldCallback,
   MongoId,
 } from '@uql/core/type';
-import { getKeys, Raw } from '@uql/core/util';
+import { getKeys } from '@uql/core/util';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
-export function getRawValue(opts: QueryRawFnOptions & { value: Raw; alias?: string; autoPrefixAlias?: boolean }) {
+export function getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
   const { value, prefix = '', dialect, autoPrefixAlias } = opts;
   const val = typeof value.value === 'function' ? value.value(opts) : prefix + value.value;
-  const alias = opts.alias ?? value.alias;
+  const alias = value.alias;
   if (alias) {
     const fullAlias = autoPrefixAlias ? prefix + alias : alias;
     const escapedFullAlias = dialect.escapeId(fullAlias, true);
@@ -118,7 +119,7 @@ export function augmentFilter<E>(meta: EntityMeta<E>, target: QueryFilter<E> = {
 }
 
 export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<E> = {}): QueryFilterMap<E> {
-  if (filter instanceof Raw) {
+  if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryFilterMap<E>;
   }
   if (typeof filter !== 'object' || Array.isArray(filter) || typeof (filter as MongoId).toHexString === 'function') {

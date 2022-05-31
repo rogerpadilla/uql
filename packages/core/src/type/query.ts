@@ -343,21 +343,11 @@ export type QueryRawFnOptions = {
 /**
  * a `raw` function
  */
-export type QueryRawFn = (opts?: QueryRawFnOptions) => Scalar;
+export type QueryRawFn = (opts?: QueryRawFnOptions) => string;
 
-/**
- * a `raw` query.
- */
-export type QueryRaw = {
-  /**
-   * the value to be used.
-   */
-  readonly value: Scalar | QueryRawFn;
-  /**
-   * optional alias for the value.
-   */
-  readonly alias?: string;
-};
+export class QueryRaw {
+  constructor(readonly value: Scalar | QueryRawFn, readonly alias?: string) {}
+}
 
 /**
  * comparison options.
