@@ -5,6 +5,7 @@
   },
   "compilerOptions": {
     "module": "ES2022",
+    "lib": ["ES2022"],
     "target": "ES2022",
     "moduleResolution": "node",
     "strict": true,
@@ -16,7 +17,6 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
-    "lib": ["ESNext"],
     "inlineSourceMap": true,
     "inlineSources": true,
     "declaration": true,
