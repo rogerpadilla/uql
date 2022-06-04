@@ -4,8 +4,8 @@
   "license": "MIT",
   "version": "1.0.3",
   "type": "module",
-  "main": "uql-client.min.js",
-  "types": "uql-client.min.d.ts",
+  "exports": "./uql-client.min.js",
+  "types": "./uql-client.min.d.ts",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "yarn clean && concurrently 'yarn:compile' 'yarn:dts' && yarn copyfiles",
