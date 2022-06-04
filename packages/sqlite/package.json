@@ -5,8 +5,8 @@
   "license": "MIT",
   "version": "1.0.2",
   "type": "module",
-  "exports": "./index.js",
-  "types": "./index.d.ts",
+  "main": "index.js",
+  "types": "index.d.ts",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
