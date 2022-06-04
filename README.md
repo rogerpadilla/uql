@@ -21,6 +21,9 @@ The `uql` queries can be safely written in the frontend (browser/mobile) and sen
 
 ### <a name="installation"></a> Installation
 
+This package is a [Pure ESM package](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c):
+Node 12+ is needed to use it and it must be `import`ed instead of `require`d.
+
 1. Install the core package:
 
 ```sh
@@ -155,7 +158,7 @@ export class MeasureUnit {
 
 ```ts
 import { getQuerier } from '@uql/core';
-import { User } from './entity';
+import { User } from './entity.js';
 
 const querier = await getQuerier();
 

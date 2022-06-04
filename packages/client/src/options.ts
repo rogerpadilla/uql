@@ -1,8 +1,8 @@
 import { Type } from '@uql/core/type';
-import { GenericClientRepository } from './querier/genericClientRepository';
-import { HttpQuerier } from './querier/httpQuerier';
-import { ClientQuerier, ClientRepository } from './type';
-import { ClientQuerierPool } from './type/clientQuerierPool';
+import { GenericClientRepository } from './querier/genericClientRepository.js';
+import { HttpQuerier } from './querier/httpQuerier.js';
+import { ClientQuerier, ClientRepository } from './type/index.js';
+import { ClientQuerierPool } from './type/clientQuerierPool.js';
 
 let defaultQuerierPool: ClientQuerierPool = {
   getQuerier: () => new HttpQuerier('/api'),

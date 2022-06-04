@@ -1,4 +1,4 @@
-import { kebabCase, lowerFirst, upperFirst } from './string.util';
+import { kebabCase, lowerFirst, upperFirst } from './string.util.js';
 
 it('kebabCase', () => {
   const res1 = kebabCase('SomeWordsAndMore');

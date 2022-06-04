@@ -1,7 +1,7 @@
-import { Type } from './utility';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
-import { UniversalRepository } from './repository';
-import { IdValue } from './entity';
+import { Type } from './utility.js';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query.js';
+import { UniversalRepository } from './repository.js';
+import { IdValue } from './entity.js';
 
 /**
  * A `querier` allows to interact with the datasource to perform persistence operations on any entity.

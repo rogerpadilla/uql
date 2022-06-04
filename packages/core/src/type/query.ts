@@ -1,5 +1,5 @@
-import { FieldKey, IdValue, Key, RelationKey } from './entity';
-import { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility';
+import { FieldKey, IdValue, Key, RelationKey } from './entity.js';
+import { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
   /**

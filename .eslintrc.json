@@ -61,7 +61,7 @@
       }
     },
     {
-      "files": ["packages/**/webpack.config.ts"],
+      "files": ["packages/**/webpack.config.*"],
       "env": {
         "browser": false,
         "node": true

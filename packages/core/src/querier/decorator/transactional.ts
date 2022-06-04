@@ -1,6 +1,6 @@
 import { getDefaultQuerierPool } from '@uql/core/options';
 import { Querier, QuerierPool, Type } from '@uql/core/type';
-import { getInjectedQuerierIndex } from './injectQuerier';
+import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({
   propagation = 'required',

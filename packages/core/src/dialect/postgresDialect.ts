@@ -8,7 +8,7 @@ import {
   Type,
   FieldKey,
 } from '@uql/core/type';
-import { AbstractSqlDialect } from './abstractSqlDialect';
+import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {

@@ -1,1 +1,1 @@
-import './jest';
+import './jest.js';

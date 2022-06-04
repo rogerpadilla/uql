@@ -1,6 +1,6 @@
 import { Pool, PoolConfig } from 'pg';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
-import { PgQuerier } from './pgQuerier';
+import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool implements QuerierPool<PgQuerier> {
   readonly pool: Pool;

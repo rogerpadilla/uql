@@ -6,7 +6,7 @@ import {
   RelationManyToManyOptions,
   Type,
 } from '@uql/core/type';
-import { defineRelation } from './definition';
+import { defineRelation } from './definition.js';
 
 function Relation<E>(opts: RelationOptions<E>) {
   return (target: object, key: string) => {

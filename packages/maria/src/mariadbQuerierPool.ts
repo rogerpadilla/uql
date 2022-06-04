@@ -1,6 +1,6 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
-import { MariadbQuerier } from './mariadbQuerier';
+import { MariadbQuerier } from './mariadbQuerier.js';
 
 export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
   readonly pool: Pool;

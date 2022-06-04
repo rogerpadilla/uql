@@ -1,8 +1,8 @@
-import { Type } from './utility';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
-import { Repository } from './repository';
-import { IdValue } from './entity';
-import { UniversalQuerier } from './universalQuerier';
+import { Type } from './utility.js';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query.js';
+import { Repository } from './repository.js';
+import { IdValue } from './entity.js';
+import { UniversalQuerier } from './universalQuerier.js';
 
 /**
  * logger function to debug queries.

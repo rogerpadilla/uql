@@ -2,7 +2,7 @@ import { Spec, User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjust
 
 import { FieldKey, QueryFilter } from '@uql/core/type';
 import { raw } from '@uql/core/util';
-import { AbstractSqlDialect } from './abstractSqlDialect';
+import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}

@@ -1,6 +1,6 @@
-import { getMeta } from '../entity';
-import { QueryComparisonOptions, QueryFilterMap, QueryTextSearchOptions, Type } from '../type';
-import { AbstractSqlDialect } from './abstractSqlDialect';
+import { getMeta } from '../entity/index.js';
+import { QueryComparisonOptions, QueryFilterMap, QueryTextSearchOptions, Type } from '../type/index.js';
+import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export class MySqlDialect extends AbstractSqlDialect {
   constructor() {
