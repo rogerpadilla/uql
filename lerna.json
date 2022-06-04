@@ -12,8 +12,7 @@
       "changelog": false,
       "yes": true,
       "forceGitTag": true,
-      "forcePublish": true,
-      "beta": true
+      "forcePublish": true
     },
     "version": {
       "yes": true
