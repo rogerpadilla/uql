@@ -1,1 +1,1 @@
-export * from './decorator';
+export * from './decorator/index.js';

@@ -1,7 +1,11 @@
 {
+  "ts-node": {
+    "files": true,
+    "esm": true
+  },
   "compilerOptions": {
-    "module": "CommonJS",
-    "target": "es2020",
+    "module": "NodeNext",
+    "target": "ES2022",
     "moduleResolution": "node",
     "strict": true,
     "strictNullChecks": false,
@@ -21,6 +25,7 @@
     "skipLibCheck": true,
     "incremental": true,
     "noImplicitOverride": true,
+    "resolveJsonModule": true,
     "paths": {
       "@uql/core": ["packages/core/src"],
       "@uql/core/*": ["packages/core/src/*"]

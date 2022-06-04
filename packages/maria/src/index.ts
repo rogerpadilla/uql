@@ -1,1 +1,1 @@
-export * from './mariadbQuerierPool';
+export * from './mariadbQuerierPool.js';

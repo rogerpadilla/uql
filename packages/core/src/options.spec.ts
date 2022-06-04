@@ -1,6 +1,6 @@
 import { User } from '@uql/core/test';
 import { Querier } from '@uql/core/type';
-import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
+import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options.js';
 
 describe('options', () => {
   beforeEach(() => {

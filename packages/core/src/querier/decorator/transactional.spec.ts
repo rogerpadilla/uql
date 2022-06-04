@@ -1,7 +1,7 @@
 import { getQuerier, setDefaultQuerierPool } from '@uql/core/options';
 import { Querier, QuerierPool, Writable } from '@uql/core/type';
-import { InjectQuerier } from './injectQuerier';
-import { Transactional } from './transactional';
+import { InjectQuerier } from './injectQuerier.js';
+import { Transactional } from './transactional.js';
 
 describe('transactional', () => {
   let anotherQuerierPool: QuerierPool;

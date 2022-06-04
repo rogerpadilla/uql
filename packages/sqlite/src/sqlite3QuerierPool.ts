@@ -1,7 +1,7 @@
 import { ISqlite, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
-import { SqliteQuerier } from './sqliteQuerier';
+import { SqliteQuerier } from './sqliteQuerier.js';
 
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   private querier: SqliteQuerier;

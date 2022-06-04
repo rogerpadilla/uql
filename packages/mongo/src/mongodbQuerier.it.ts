@@ -1,8 +1,8 @@
 import { getEntities, getMeta } from '@uql/core/entity/decorator';
 import { AbstractQuerierIt } from '@uql/core/querier/abstractQuerier-it';
 import { createSpec } from '@uql/core/test';
-import { MongodbQuerierPool } from './mongodbQuerierPool';
-import { MongodbQuerier } from './mongodbQuerier';
+import { MongodbQuerierPool } from './mongodbQuerierPool.js';
+import { MongodbQuerier } from './mongodbQuerier.js';
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {

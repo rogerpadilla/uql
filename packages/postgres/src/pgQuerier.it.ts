@@ -1,7 +1,7 @@
 import { types } from 'pg';
 import { createSpec } from '@uql/core/test';
 import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
-import { PgQuerierPool } from './pgQuerierPool';
+import { PgQuerierPool } from './pgQuerierPool.js';
 
 types.setTypeParser(types.builtins.INT8, (value: string) => parseInt(value));
 types.setTypeParser(types.builtins.FLOAT8, (value: string) => parseFloat(value));

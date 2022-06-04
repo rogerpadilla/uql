@@ -1,6 +1,6 @@
-import { IdValue } from './entity';
-import { Querier } from './querier';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
+import { IdValue } from './entity.js';
+import { Querier } from './querier.js';
+import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query.js';
 
 /**
  * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.

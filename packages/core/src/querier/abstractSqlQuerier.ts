@@ -3,7 +3,7 @@ import { Query, Type, QueryCriteria, QueryOptions, QueryUpdateResult } from '@uq
 import { unflatObjects, clone } from '@uql/core/util';
 import { AbstractSqlDialect } from '@uql/core/dialect';
 
-import { AbstractQuerier } from './abstractQuerier';
+import { AbstractQuerier } from './abstractQuerier.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier {
   private hasPendingTransaction?: boolean;

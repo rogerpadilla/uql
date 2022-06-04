@@ -155,7 +155,7 @@ export class MeasureUnit {
 
 ```ts
 import { getQuerier } from '@uql/core';
-import { User } from './entity';
+import { User } from './entity.js';
 
 const querier = await getQuerier();
 

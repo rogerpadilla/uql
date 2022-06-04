@@ -4,7 +4,7 @@ import { AbstractQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
 import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from '@uql/core/util';
 
-import { MongoDialect } from './mongoDialect';
+import { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerier extends AbstractQuerier {
   private session: ClientSession;

@@ -1,7 +1,7 @@
 import { connect, MongoClientOptions } from 'mongodb';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
-import { MongodbQuerier } from './mongodbQuerier';
-import { MongoDialect } from './mongoDialect';
+import { MongodbQuerier } from './mongodbQuerier.js';
+import { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
   private querier: MongodbQuerier;

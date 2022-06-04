@@ -1,6 +1,6 @@
 import { User } from '@uql/core/test';
 import { Querier, Repository } from '@uql/core/type';
-import { GenericRepository } from './genericRepository';
+import { GenericRepository } from './genericRepository.js';
 
 describe('repository', () => {
   let repository: Repository<User>;
