@@ -2,7 +2,7 @@
   "name": "@uql/client",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.4.96",
+  "version": "1.0.0",
   "type": "module",
   "exports": "./uql-client.min.js",
   "types": "./uql-client.min.d.ts",
@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@types/webpack": "^5.28.0",
-    "@uql/core": "^0.4.96",
+    "@uql/core": "^1.0.0",
     "copyfiles": "^2.4.1",
     "dts-bundle-generator": "^6.10.0",
     "resolve-typescript-plugin": "^1.2.0",

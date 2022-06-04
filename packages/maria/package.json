@@ -3,7 +3,7 @@
   "homepage": "https://uql.io",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.4.96",
+  "version": "1.0.0",
   "type": "module",
   "exports": "./index.js",
   "types": "./index.d.ts",
@@ -17,7 +17,7 @@
     "mariadb": "^2.5.6"
   },
   "peerDependencies": {
-    "@uql/core": "^0.4.72"
+    "@uql/core": "^1.0.0"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
