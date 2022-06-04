@@ -1,4 +1,4 @@
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 import ResolveTypeScriptPlugin from 'resolve-typescript-plugin';
 
 import tsconfig from '../../tsconfig.json' assert { type: 'json' };
