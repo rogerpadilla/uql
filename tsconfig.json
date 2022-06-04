@@ -4,10 +4,10 @@
     "esm": true
   },
   "compilerOptions": {
-    "module": "ES2022",
-    "lib": ["ES2022"],
-    "target": "ES2022",
+    "module": "ESNext",
     "moduleResolution": "node",
+    "lib": ["ESNext"],
+    "target": "ES2022",
     "strict": true,
     "strictNullChecks": false,
     "suppressImplicitAnyIndexErrors": true,
@@ -17,6 +17,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "inlineSourceMap": true,
     "inlineSources": true,
     "declaration": true,

@@ -1,5 +1,5 @@
-import { AbstractSqlQuerierSpec } from '@uql/core/querier/abstractSqlQuerier-spec';
 import { createSpec } from '@uql/core/test';
+import { AbstractSqlQuerierSpec } from '@uql/core/querier/abstractSqlQuerier-spec';
 import { Sqlite3QuerierPool } from './sqlite3QuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {

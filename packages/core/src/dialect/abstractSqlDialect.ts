@@ -1,20 +1,4 @@
 import { escape } from 'sqlstring';
-import { getMeta } from '@uql/core/entity';
-import {
-  getPersistable,
-  getProjectRelationKeys,
-  getPersistables,
-  isProjectingRelations,
-  getKeys,
-  hasKeys,
-  buildSortMap,
-  flatObject,
-  getRawValue,
-  raw,
-  getQueryFilterAsMap,
-  getFieldCallbackValue,
-} from '@uql/core/util';
-
 import {
   QueryFilter,
   Query,
@@ -38,7 +22,23 @@ import {
   QuerySortDirection,
   QueryFilterLogical,
   QueryRaw,
-} from '@uql/core/type';
+} from '../type/index.js';
+import {
+  getPersistable,
+  getProjectRelationKeys,
+  getPersistables,
+  isProjectingRelations,
+  getKeys,
+  hasKeys,
+  buildSortMap,
+  flatObject,
+  getRawValue,
+  raw,
+  getQueryFilterAsMap,
+  getFieldCallbackValue,
+} from '../util/index.js';
+
+import { getMeta } from '../entity/index.js';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;

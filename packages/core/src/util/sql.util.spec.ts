@@ -1,5 +1,5 @@
-import { Item, Storehouse, ItemAdjustment } from '@uql/core/test';
-import { QuerySortMap } from '@uql/core/type';
+import { Item, ItemAdjustment, Storehouse } from '../test/index.js';
+import { QuerySortMap } from '../type/index.js';
 import { flatObject, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {

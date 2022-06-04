@@ -1,4 +1,3 @@
-import { getMeta } from '@uql/core/entity';
 import {
   QueryComparisonOptions,
   QueryFilterMap,
@@ -7,7 +6,8 @@ import {
   QueryTextSearchOptions,
   Type,
   FieldKey,
-} from '@uql/core/type';
+} from '../type/index.js';
+import { getMeta } from '../entity/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export class PostgresDialect extends AbstractSqlDialect {

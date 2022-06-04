@@ -1,4 +1,4 @@
-import { User, Item, createSpec, TaxCategory } from '@uql/core/test';
+import { User, Item, createSpec, TaxCategory } from '../test/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {

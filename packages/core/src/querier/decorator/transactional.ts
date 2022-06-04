@@ -1,5 +1,5 @@
-import { getDefaultQuerierPool } from '@uql/core/options';
-import { Querier, QuerierPool, Type } from '@uql/core/type';
+import { Querier, QuerierPool, Type } from '../../type/index.js';
+import { getDefaultQuerierPool } from '../../options.js';
 import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({

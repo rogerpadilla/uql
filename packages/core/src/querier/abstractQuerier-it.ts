@@ -1,6 +1,6 @@
-import { Querier, QuerierPool } from '@uql/core/type';
-import { getEntities } from '@uql/core/entity';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '@uql/core/test';
+import { getEntities } from '../entity/index.js';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '../test/index.js';
+import { Querier, QuerierPool } from '../type/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier: Q;

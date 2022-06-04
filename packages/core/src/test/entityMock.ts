@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '@uql/core/entity';
-import { raw } from '@uql/core/util';
-import { idKey } from '@uql/core/type';
+import { raw } from '../util/index.js';
+import { idKey } from '../type/index.js';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.

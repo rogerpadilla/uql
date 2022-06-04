@@ -1,7 +1,6 @@
-import { Spec, User, Item, ItemAdjustment, TaxCategory, Profile, InventoryAdjustment, MeasureUnit, Company, Tax } from '@uql/core/test';
-
-import { FieldKey, QueryFilter } from '@uql/core/type';
-import { raw } from '@uql/core/util';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index.js';
+import { FieldKey, QueryFilter } from '../type/index.js';
+import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export abstract class AbstractSqlDialectSpec implements Spec {

@@ -1,4 +1,3 @@
-import { EntityMeta, QueryRaw } from '@uql/core/type';
 import {
   User,
   Item,
@@ -14,7 +13,8 @@ import {
   Storehouse,
   Tag,
   ItemTag,
-} from '@uql/core/test';
+} from '../../test/index.js';
+import { EntityMeta, QueryRaw } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Id } from './id.js';

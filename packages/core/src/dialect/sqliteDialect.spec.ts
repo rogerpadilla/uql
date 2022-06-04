@@ -1,4 +1,4 @@
-import { createSpec, Item, User } from '@uql/core/test';
+import { createSpec } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 import { SqliteDialect } from './sqliteDialect.js';
 

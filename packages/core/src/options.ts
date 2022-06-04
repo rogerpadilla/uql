@@ -1,5 +1,5 @@
-import { GenericRepository } from '@uql/core/repository';
-import { Querier, QuerierPool, Repository, Type } from '@uql/core/type';
+import { GenericRepository } from './repository/index.js';
+import { Querier, QuerierPool, Repository, Type } from './type/index.js';
 
 let defaultPool: QuerierPool;
 

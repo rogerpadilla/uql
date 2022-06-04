@@ -1,7 +1,7 @@
-import { getEntities, getMeta } from '@uql/core/entity';
-import { Type } from '@uql/core/type';
-import { getKeys } from '@uql/core/util';
-import { AbstractSqlQuerier } from '@uql/core/querier';
+import { getKeys } from '../util/index.js';
+import { AbstractSqlQuerier } from '../querier/index.js';
+import { Type } from '../type/index.js';
+import { getEntities, getMeta } from '../entity/index.js';
 
 export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: string) {
   const entities = getEntities();

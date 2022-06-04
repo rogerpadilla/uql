@@ -1,6 +1,6 @@
-import { raw } from '@uql/core/util/raw';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '@uql/core/test';
-import { QuerierPool } from '@uql/core/type';
+import { raw } from '../util/index.js';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
+import { QuerierPool } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
