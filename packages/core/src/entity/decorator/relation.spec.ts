@@ -1,4 +1,4 @@
-import { ManyToOne } from './relation.js';
+import { ManyToOne } from './relation';
 
 it('invalid auto-inferred type', () => {
   expect(() => {

@@ -1,4 +1,4 @@
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor() {

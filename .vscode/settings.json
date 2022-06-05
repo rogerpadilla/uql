@@ -2,8 +2,6 @@
   "typescript.tsdk": "./node_modules/typescript/lib",
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "editor.formatOnSave": true,
-  "javascript.preferences.importModuleSpecifierEnding": "js",
-  "typescript.preferences.importModuleSpecifierEnding": "js",
   // we will do this via eslint instead
   "[javascript, javascriptreact, typescript, typescriptreact]": {
     "editor.formatOnSave": false,

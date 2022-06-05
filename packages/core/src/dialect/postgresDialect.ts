@@ -1,14 +1,6 @@
-import {
-  QueryComparisonOptions,
-  QueryFilterMap,
-  QueryOptions,
-  QueryFilterFieldOperatorMap,
-  QueryTextSearchOptions,
-  Type,
-  FieldKey,
-} from '../type/index.js';
-import { getMeta } from '../entity/index.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { QueryComparisonOptions, QueryFilterMap, QueryOptions, QueryFilterFieldOperatorMap, QueryTextSearchOptions, Type, FieldKey } from '../type';
+import { getMeta } from '../entity/index';
+import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {

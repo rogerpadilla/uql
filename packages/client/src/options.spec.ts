@@ -1,8 +1,8 @@
 import { User } from '@uql/core/test';
-import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options.js';
-import { GenericClientRepository, HttpQuerier } from './querier/index.js';
-import { ClientQuerier } from './type/index.js';
-import { ClientQuerierPool } from './type/clientQuerierPool.js';
+import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
+import { GenericClientRepository, HttpQuerier } from './querier/index';
+import { ClientQuerier } from './type/index';
+import { ClientQuerierPool } from './type/clientQuerierPool';
 
 describe('options', () => {
   it('default getQuerier', () => {

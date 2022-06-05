@@ -2,24 +2,18 @@ import tsconfig from './tsconfig.json';
 
 const tsConfigPaths = tsconfig.compilerOptions.paths;
 
-const moduleNameMapper = Object.keys(tsConfigPaths).reduce(
-  (acc, key) => {
-    const prop = '^' + key.replace('/*', '/(.*)') + '$';
-    acc[prop] = '<rootDir>/' + tsConfigPaths[key][0].replace('/*', '/$1');
-    return acc;
-  },
-  // sourced from https://kulshekhar.github.io/ts-jest/docs/guides/esm-support/#esm-presets
-  { '^(\\.{1,2}/.*)\\.js$': '$1' }
-);
+const moduleNameMapper = Object.keys(tsConfigPaths).reduce((acc, key) => {
+  const prop = '^' + key.replace('/*', '/(.*)') + '$';
+  acc[prop] = '<rootDir>/' + tsConfigPaths[key][0].replace('/*', '/$1');
+  return acc;
+}, {});
 
 module.exports = {
   verbose: true,
-  preset: 'ts-jest/presets/default-esm',
-  extensionsToTreatAsEsm: ['.ts'],
+  preset: 'ts-jest',
   globals: {
     'ts-jest': {
       tsconfig: 'tsconfig.test.json',
-      useESM: true,
     },
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],

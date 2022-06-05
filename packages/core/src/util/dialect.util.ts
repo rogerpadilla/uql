@@ -1,4 +1,4 @@
-import { getKeys } from '../util/index.js';
+import { getKeys } from '../util/index';
 import {
   EntityMeta,
   FieldKey,
@@ -15,7 +15,7 @@ import {
   QueryFilterMap,
   OnFieldCallback,
   MongoId,
-} from '../type/index.js';
+} from '../type';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 

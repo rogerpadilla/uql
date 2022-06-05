@@ -1,6 +1,6 @@
-import { createSpec, Item, User } from '../test/index.js';
-import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
-import { MySqlDialect } from './mysqlDialect.js';
+import { createSpec, Item, User } from '../test/index';
+import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec';
+import { MySqlDialect } from './mysqlDialect';
 
 export class MySqlDialectSpec extends AbstractSqlDialectSpec {
   constructor() {

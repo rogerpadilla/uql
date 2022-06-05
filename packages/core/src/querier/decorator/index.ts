@@ -1,2 +1,2 @@
-export * from './injectQuerier.js';
-export * from './transactional.js';
+export * from './injectQuerier';
+export * from './transactional';

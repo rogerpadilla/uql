@@ -1,1 +1,1 @@
-export * from './pgQuerierPool.js';
+export * from './pgQuerierPool';

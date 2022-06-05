@@ -1,6 +1,6 @@
 import { Query } from '@uql/core/type';
 import { Item, User } from '@uql/core/test';
-import { stringifyQuery, stringifyQueryParameter } from './querier.util.js';
+import { stringifyQuery, stringifyQueryParameter } from './querier.util';
 
 it('stringifyQuery -- empty', () => {
   const source: Query<User> = {};

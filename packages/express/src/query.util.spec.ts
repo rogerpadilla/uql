@@ -1,6 +1,6 @@
 import { Query, QueryFilter, QueryStringified } from '@uql/core/type';
 import { Item } from '@uql/core/test';
-import { parseQuery } from './query.util.js';
+import { parseQuery } from './query.util';
 
 it('parseQuery -- empty', () => {
   const res1 = parseQuery(undefined);

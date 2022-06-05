@@ -13,12 +13,12 @@ import {
   Storehouse,
   Tag,
   ItemTag,
-} from '../../test/index.js';
-import { EntityMeta, QueryRaw } from '../../type/index.js';
-import { getEntities, getMeta } from './definition.js';
-import { Entity } from './entity.js';
-import { Id } from './id.js';
-import { Field } from './field.js';
+} from '../../test';
+import { EntityMeta, QueryRaw } from '../../type/index';
+import { getEntities, getMeta } from './definition';
+import { Entity } from './entity';
+import { Id } from './id';
+import { Field } from './field';
 
 it('User', () => {
   const meta = getMeta(User);

@@ -1,1 +1,1 @@
-export * from './mysql2QuerierPool.js';
+export * from './mysql2QuerierPool';

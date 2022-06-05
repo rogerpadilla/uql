@@ -1,5 +1,5 @@
-export * from './entity.js';
-export * from './id.js';
-export * from './field.js';
-export * from './relation.js';
-export { getMeta, getEntities } from './definition.js';
+export * from './entity';
+export * from './id';
+export * from './field';
+export * from './relation';
+export { getMeta, getEntities } from './definition';

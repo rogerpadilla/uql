@@ -1,6 +1,6 @@
 import { createPool, Pool, PoolOptions } from 'mysql2/promise';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
-import { MySql2Querier } from './mysql2Querier.js';
+import { MySql2Querier } from './mysql2Querier';
 
 export class MySql2QuerierPool implements QuerierPool<MySql2Querier> {
   readonly pool: Pool;

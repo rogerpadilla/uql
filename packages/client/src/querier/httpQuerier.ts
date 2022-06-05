@@ -1,10 +1,10 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
-import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index.js';
-import { get, post, patch, remove } from '../http/index.js';
-import { stringifyQuery } from './querier.util.js';
-import { GenericClientRepository } from './genericClientRepository.js';
+import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index';
+import { get, post, patch, remove } from '../http/index';
+import { stringifyQuery } from './querier.util';
+import { GenericClientRepository } from './genericClientRepository';
 
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}

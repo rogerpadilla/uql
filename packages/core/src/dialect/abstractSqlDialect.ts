@@ -22,7 +22,7 @@ import {
   QuerySortDirection,
   QueryFilterLogical,
   QueryRaw,
-} from '../type/index.js';
+} from '../type';
 import {
   getPersistable,
   getProjectRelationKeys,
@@ -36,9 +36,9 @@ import {
   raw,
   getQueryFilterAsMap,
   getFieldCallbackValue,
-} from '../util/index.js';
+} from '../util';
 
-import { getMeta } from '../entity/index.js';
+import { getMeta } from '../entity/index';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;

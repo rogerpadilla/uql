@@ -1,17 +1,6 @@
 import 'reflect-metadata';
-import {
-  RelationOptions,
-  FieldOptions,
-  EntityOptions,
-  EntityMeta,
-  Type,
-  RelationKeyMap,
-  RelationKey,
-  Key,
-  FieldKey,
-  IdKey,
-} from '../../type/index.js';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
+import { RelationOptions, FieldOptions, EntityOptions, EntityMeta, Type, RelationKeyMap, RelationKey, Key, FieldKey, IdKey } from '../../type';
+import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index';
 
 const holder = globalThis;
 const metaKey = '@uql/core/entity/decorator';

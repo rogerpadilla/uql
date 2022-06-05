@@ -1,6 +1,6 @@
-import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options.js';
-import { User } from './test/index.js';
-import { Querier } from './type/index.js';
+import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
+import { User } from './test/index';
+import { Querier } from './type/index';
 
 describe('options', () => {
   beforeEach(() => {

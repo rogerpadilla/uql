@@ -1,1 +1,1 @@
-import './express.js';
+import './express';

@@ -1,5 +1,5 @@
-import { QueryRaw } from './query.js';
-import { Scalar, Type } from './utility.js';
+import { QueryRaw } from './query';
+import { Scalar, Type } from './utility';
 
 export const idKey = Symbol('idKey');
 

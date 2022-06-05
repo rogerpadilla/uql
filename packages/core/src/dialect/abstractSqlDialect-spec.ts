@@ -1,7 +1,7 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { FieldKey, QueryFilter } from '../type/index.js';
-import { raw } from '../util/index.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index';
+import { FieldKey, QueryFilter } from '../type/index';
+import { raw } from '../util/index';
+import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}

@@ -1,7 +1,7 @@
-import { getMeta } from '../entity/decorator/index.js';
-import { User } from '../test/entityMock.js';
-import { augmentFilter } from './dialect.util.js';
-import { raw } from './raw.js';
+import { getMeta } from '../entity/decorator/index';
+import { User } from '../test/entityMock';
+import { augmentFilter } from './dialect.util';
+import { raw } from './raw';
 
 it('augmentFilter empty', () => {
   const meta = getMeta(User);

@@ -1,6 +1,6 @@
-import { createSpec } from '../test/index.js';
-import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
-import { SqliteDialect } from './sqliteDialect.js';
+import { createSpec } from '../test/index';
+import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec';
+import { SqliteDialect } from './sqliteDialect';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
   constructor() {

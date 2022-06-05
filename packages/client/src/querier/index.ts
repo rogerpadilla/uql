@@ -1,3 +1,3 @@
-export * from './httpQuerier.js';
-export * from './genericClientRepository.js';
-export * from './querier.util.js';
+export * from './httpQuerier';
+export * from './genericClientRepository';
+export * from './querier.util';

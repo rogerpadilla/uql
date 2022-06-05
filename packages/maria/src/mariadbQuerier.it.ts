@@ -1,6 +1,6 @@
 import { createSpec } from '@uql/core/test';
 import { AbstractSqlQuerierIt } from '@uql/core/querier/abstractSqlQuerier-it';
-import { MariadbQuerierPool } from './mariadbQuerierPool.js';
+import { MariadbQuerierPool } from './mariadbQuerierPool';
 
 export class MariadbQuerierIt extends AbstractSqlQuerierIt {
   constructor() {

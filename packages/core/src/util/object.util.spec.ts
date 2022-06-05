@@ -1,4 +1,4 @@
-import { clone, hasKeys, getKeys } from './object.util.js';
+import { clone, hasKeys, getKeys } from './object.util';
 
 it('clone', () => {
   expect(clone({})).toEqual({});

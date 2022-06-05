@@ -1,1 +1,1 @@
-export * from './sqlite3QuerierPool.js';
+export * from './sqlite3QuerierPool';

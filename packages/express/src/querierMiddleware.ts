@@ -5,7 +5,7 @@ import { getQuerier } from '@uql/core/options';
 import { EntityMeta, IdValue, Query, QueryOne, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
 import { getEntities, getMeta } from '@uql/core/entity/decorator';
-import { parseQuery } from './query.util.js';
+import { parseQuery } from './query.util';
 
 export function querierMiddleware(opts: MiddlewareOptions = {}) {
   const router = expressRouter();

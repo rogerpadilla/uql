@@ -1,6 +1,6 @@
 import { Query, Type, UniversalQuerier, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from '@uql/core/type';
-import { ClientRepository } from './clientRepository.js';
-import { RequestOptions, RequestSuccessResponse } from './request.js';
+import { ClientRepository } from './clientRepository';
+import { RequestOptions, RequestSuccessResponse } from './request';
 
 export interface ClientQuerier extends UniversalQuerier {
   count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;

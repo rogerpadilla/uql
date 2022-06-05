@@ -1,2 +1,2 @@
-export * from './querierMiddleware.js';
-export * from './query.util.js';
+export * from './querierMiddleware';
+export * from './query.util';

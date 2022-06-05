@@ -1,7 +1,7 @@
-import { createTables, dropTables } from '../test/index.js';
-import { QuerierPool } from '../type/index.js';
-import { AbstractQuerierIt } from './abstractQuerier-it.js';
-import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
+import { createTables, dropTables } from '../test/index';
+import { QuerierPool } from '../type/index';
+import { AbstractQuerierIt } from './abstractQuerier-it';
+import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
   constructor(pool: QuerierPool<AbstractSqlQuerier>, readonly idType: string) {

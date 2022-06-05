@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { raw } from '../util/index.js';
-import { idKey } from '../type/index.js';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
+import { raw } from '../util/index';
+import { idKey } from '../type/index';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index';
 
 /**
  * interfaces can (optionally) be used to avoid circular-reference issue between entities.

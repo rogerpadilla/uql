@@ -1,4 +1,4 @@
-import { Querier, QuerierLogger } from './querier.js';
+import { Querier, QuerierLogger } from './querier';
 
 /**
  * querier pool.
