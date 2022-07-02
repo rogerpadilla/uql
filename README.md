@@ -157,10 +157,10 @@ export class MeasureUnit {
 ### <a name="query-data"></a> Query the data
 
 ```ts
-import { getQuerier } from '@uql/core';
+import { getDefaultQuerier } from '@uql/core';
 import { User } from './entity';
 
-const querier = await getQuerier();
+const querier = await getDefaultQuerier();
 
 const id = await this.querier.insertOne(User, {
   email: 'lorem@example.com',

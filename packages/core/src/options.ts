@@ -1,5 +1,4 @@
-import { GenericRepository } from './repository/index';
-import { Querier, QuerierPool, Repository, Type } from './type/index';
+import { Querier, QuerierPool } from './type/index';
 
 let defaultPool: QuerierPool;
 
@@ -14,10 +13,6 @@ export function getDefaultQuerierPool(): QuerierPool {
   return defaultPool;
 }
 
-export function getQuerier(): Promise<Querier> {
+export function getDefaultQuerier(): Promise<Querier> {
   return defaultPool.getQuerier();
-}
-
-export function getRepository<E>(entity: Type<E>, querier: Querier): Repository<E> {
-  return new GenericRepository(entity, querier);
 }

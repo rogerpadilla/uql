@@ -1,4 +1,4 @@
-import { getQuerier, setDefaultQuerierPool } from '../../options';
+import { getDefaultQuerier, setDefaultQuerierPool } from '../../options';
 import { Querier, QuerierPool, Writable } from '../../type/index';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
@@ -30,7 +30,7 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.save();
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
@@ -54,7 +54,7 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.save();
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
@@ -78,7 +78,7 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.find();
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -109,7 +109,7 @@ describe('transactional', () => {
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.release).toBeCalledTimes(1);
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -137,7 +137,7 @@ describe('transactional', () => {
     const serviceB = new ServiceB();
     await serviceB.delete('123');
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(deleteStub).toBeCalledTimes(1);
 
@@ -168,7 +168,7 @@ describe('transactional', () => {
 
     await expect(serviceA.save()).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
@@ -195,7 +195,7 @@ describe('transactional', () => {
 
     await expect(serviceA.save()).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getQuerier();
+    const defaultQuerier = await getDefaultQuerier();
 
     expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
     expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);

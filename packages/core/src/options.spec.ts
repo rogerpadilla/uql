@@ -1,4 +1,4 @@
-import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
+import { getDefaultQuerier, getDefaultQuerierPool, setDefaultQuerierPool } from './options';
 import { User } from './test/index';
 import { Querier } from './type/index';
 
@@ -11,7 +11,7 @@ describe('options', () => {
     expect(() => getDefaultQuerierPool()).toThrow('A default querier-pool has to be set first');
   });
 
-  it('getQuerier', async () => {
+  it('getDefaultQuerier', async () => {
     const querierMock = {} as Querier;
 
     setDefaultQuerierPool({
@@ -22,12 +22,8 @@ describe('options', () => {
     const querier1 = await getDefaultQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);
 
-    const querier2 = await getQuerier();
+    const querier2 = await getDefaultQuerier();
     expect(querier2).toBe(querierMock);
-
-    const repository = getRepository(User, querier1);
-
-    expect(repository).toBeDefined();
 
     expect(getDefaultQuerierPool()).toBe(getDefaultQuerierPool());
   });
