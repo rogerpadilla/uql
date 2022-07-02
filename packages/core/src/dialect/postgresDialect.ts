@@ -1,5 +1,5 @@
 import { QueryComparisonOptions, QueryFilterMap, QueryOptions, QueryFilterFieldOperatorMap, QueryTextSearchOptions, Type, FieldKey } from '../type';
-import { getMeta } from '../entity/index';
+import { getMeta } from '../entity';
 import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export class PostgresDialect extends AbstractSqlDialect {

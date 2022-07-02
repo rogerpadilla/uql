@@ -1,4 +1,4 @@
-import { User, Item, createSpec, TaxCategory } from '../test/index';
+import { User, Item, createSpec, TaxCategory } from '../test';
 import { PostgresDialect } from './postgresDialect';
 
 class PostgresDialectSpec {

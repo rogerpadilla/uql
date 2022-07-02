@@ -1,6 +1,7 @@
 import { IdValue } from './entity';
 import { Querier } from './querier';
 import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query';
+import { Type } from './utility';
 
 /**
  * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.
@@ -94,6 +95,11 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
+  /**
+   * the `entity` type to which this `repository` is linked to.
+   */
+  readonly entity: Type<E>;
+
   /**
    * the `querier` instance to which this `repository` is linked to.
    */

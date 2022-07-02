@@ -1,18 +1,18 @@
-import { Querier, QuerierPool } from './type/index';
+import { Querier, QuerierPool } from './type';
 
 let defaultPool: QuerierPool;
 
-export function setDefaultQuerierPool<T extends QuerierPool = QuerierPool>(pool: T): void {
+export function setQuerierPool<T extends QuerierPool = QuerierPool>(pool: T): void {
   defaultPool = pool;
 }
 
-export function getDefaultQuerierPool(): QuerierPool {
+export function getQuerierPool(): QuerierPool {
   if (!defaultPool) {
     throw new TypeError('A default querier-pool has to be set first');
   }
   return defaultPool;
 }
 
-export function getDefaultQuerier(): Promise<Querier> {
+export function getQuerier(): Promise<Querier> {
   return defaultPool.getQuerier();
 }

@@ -21,9 +21,6 @@ The `uql` queries can be safely written in the frontend (browser/mobile) and sen
 
 ### <a name="installation"></a> Installation
 
-This package is a [Pure ESM package](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c):
-Node 14.16+ is needed to use it and it must be `import`ed instead of `require`d.
-
 1. Install the core package:
 
 ```sh
@@ -71,7 +68,7 @@ yarn add @uql/postgres
 A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
 ```ts
-import { setDefaultQuerierPool } from '@uql/core';
+import { setQuerierPool } from '@uql/core';
 import { PgQuerierPool } from '@uql/postgres';
 
 const querierPool = new PgQuerierPool(
@@ -85,7 +82,7 @@ const querierPool = new PgQuerierPool(
   console.log
 );
 
-setDefaultQuerierPool(querierPool);
+setQuerierPool(querierPool);
 ```
 
 ### <a name="definition-of-entities"></a> Definition of Entities
@@ -157,10 +154,10 @@ export class MeasureUnit {
 ### <a name="query-data"></a> Query the data
 
 ```ts
-import { getDefaultQuerier } from '@uql/core';
+import { getQuerier } from '@uql/core';
 import { User } from './entity';
 
-const querier = await getDefaultQuerier();
+const querier = await getQuerier();
 
 const id = await this.querier.insertOne(User, {
   email: 'lorem@example.com',

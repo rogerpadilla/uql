@@ -1,5 +1,5 @@
-import { Querier, Repository } from '../type/index';
-import { User } from '../test/index';
+import { Querier, Repository } from '../type';
+import { User } from '../test';
 import { GenericRepository } from './genericRepository';
 
 describe('repository', () => {

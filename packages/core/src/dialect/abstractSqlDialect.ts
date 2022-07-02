@@ -38,7 +38,7 @@ import {
   getFieldCallbackValue,
 } from '../util';
 
-import { getMeta } from '../entity/index';
+import { getMeta } from '../entity';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;

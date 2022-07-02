@@ -1,4 +1,4 @@
-import { getMeta } from '../entity/decorator/index';
+import { getMeta } from '../entity/decorator';
 import { User } from '../test/entityMock';
 import { augmentFilter } from './dialect.util';
 import { raw } from './raw';

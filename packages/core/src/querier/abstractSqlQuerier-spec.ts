@@ -1,6 +1,6 @@
-import { raw } from '../util/index';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index';
-import { QuerierPool } from '../type/index';
+import { raw } from '../util';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test';
+import { QuerierPool } from '../type';
 import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {

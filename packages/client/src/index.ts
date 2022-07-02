@@ -1,4 +1,4 @@
-export * from './type/index';
+export * from './type';
 export * from './options';
-export * from './http/index';
-export * from './querier/index';
+export * from './http';
+export * from './querier';

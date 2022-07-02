@@ -1,4 +1,4 @@
-import { RequestCallback, RequestNotification } from '../type/index';
+import { RequestCallback, RequestNotification } from '../type';
 
 const subscriptors: RequestCallback[] = [];
 

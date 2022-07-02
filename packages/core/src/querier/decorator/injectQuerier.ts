@@ -1,4 +1,4 @@
-import { Key, Type } from '../../type/index';
+import { Key, Type } from '../../type';
 
 const metadataKey = Symbol('InjectQuerier');
 

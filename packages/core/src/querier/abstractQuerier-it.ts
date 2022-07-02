@@ -1,6 +1,6 @@
-import { getEntities } from '../entity/index';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '../test/index';
-import { Querier, QuerierPool } from '../type/index';
+import { getEntities } from '../entity';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '../test';
+import { Querier, QuerierPool } from '../type';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier: Q;

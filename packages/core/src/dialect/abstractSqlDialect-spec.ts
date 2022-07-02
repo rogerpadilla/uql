@@ -1,6 +1,6 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index';
-import { FieldKey, QueryFilter } from '../type/index';
-import { raw } from '../util/index';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test';
+import { FieldKey, QueryFilter } from '../type';
+import { raw } from '../util';
 import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export abstract class AbstractSqlDialectSpec implements Spec {

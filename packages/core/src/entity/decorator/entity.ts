@@ -1,4 +1,4 @@
-import { EntityOptions, Type } from '../../type/index';
+import { EntityOptions, Type } from '../../type';
 import { defineEntity } from './definition';
 
 export function Entity<E>(opts?: EntityOptions) {

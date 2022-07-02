@@ -1,4 +1,4 @@
-import { IdValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Repository, Type } from '../type/index';
+import { IdValue, Querier, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Repository, Type } from '../type';
 
 export class GenericRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}

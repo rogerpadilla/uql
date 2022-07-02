@@ -1,4 +1,4 @@
-import { RequestNotification } from '../type/index';
+import { RequestNotification } from '../type';
 import { on, notify } from './bus';
 
 it('bus', () => {

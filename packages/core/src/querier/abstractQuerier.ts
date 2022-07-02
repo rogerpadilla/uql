@@ -13,9 +13,9 @@ import {
   Repository,
   Type,
 } from '../type';
-import { getMeta } from '../entity/index';
-import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from '../util/index';
-import { GenericRepository } from '../repository/index';
+import { getMeta } from '../entity';
+import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from '../util';
+import { GenericRepository } from '../repository';
 
 export abstract class AbstractQuerier implements Querier {
   abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;

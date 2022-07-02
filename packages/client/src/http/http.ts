@@ -1,4 +1,4 @@
-import { RequestOptions, RequestSuccessResponse, RequestErrorResponse } from '../type/index';
+import { RequestOptions, RequestSuccessResponse, RequestErrorResponse } from '../type';
 import { notify } from './bus';
 
 export function get<T>(url: string, opts?: RequestOptions) {

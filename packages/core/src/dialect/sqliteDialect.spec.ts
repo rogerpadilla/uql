@@ -1,4 +1,4 @@
-import { createSpec } from '../test/index';
+import { createSpec } from '../test';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec';
 import { SqliteDialect } from './sqliteDialect';
 

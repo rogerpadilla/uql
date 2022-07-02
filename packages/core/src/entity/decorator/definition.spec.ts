@@ -14,7 +14,7 @@ import {
   Tag,
   ItemTag,
 } from '../../test';
-import { EntityMeta, QueryRaw } from '../../type/index';
+import { EntityMeta, QueryRaw } from '../../type';
 import { getEntities, getMeta } from './definition';
 import { Entity } from './entity';
 import { Id } from './id';

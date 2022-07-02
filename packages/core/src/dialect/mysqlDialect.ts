@@ -1,5 +1,5 @@
-import { getMeta } from '../entity/index';
-import { QueryComparisonOptions, QueryFilterMap, QueryTextSearchOptions, Type } from '../type/index';
+import { getMeta } from '../entity';
+import { QueryComparisonOptions, QueryFilterMap, QueryTextSearchOptions, Type } from '../type';
 import { AbstractSqlDialect } from './abstractSqlDialect';
 
 export class MySqlDialect extends AbstractSqlDialect {

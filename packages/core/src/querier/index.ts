@@ -1,3 +1,3 @@
 export * from './abstractQuerier';
 export * from './abstractSqlQuerier';
-export * from './decorator/index';
+export * from './decorator';

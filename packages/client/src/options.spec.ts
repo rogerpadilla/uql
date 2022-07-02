@@ -1,7 +1,6 @@
 import { User } from '@uql/core/test';
-import { getQuerier, getDefaultQuerierPool, getRepository, setDefaultQuerierPool } from './options';
-import { GenericClientRepository, HttpQuerier } from './querier/index';
-import { ClientQuerier } from './type/index';
+import { getQuerier, getQuerierPool, setQuerierPool } from './options';
+import { GenericClientRepository, HttpQuerier } from './querier';
 import { ClientQuerierPool } from './type/clientQuerierPool';
 
 describe('options', () => {
@@ -11,27 +10,27 @@ describe('options', () => {
   });
 
   it('default querierPool', () => {
-    expect(getDefaultQuerierPool()).toBeDefined();
+    expect(getQuerierPool()).toBeDefined();
   });
 
   it('custom querierPool', () => {
-    const querierMock = {} as ClientQuerier;
+    const querierMock = new HttpQuerier('/');
 
     const querierPool: ClientQuerierPool = {
       getQuerier: () => querierMock,
     };
 
-    setDefaultQuerierPool(querierPool);
+    setQuerierPool(querierPool);
 
-    const querier1 = getDefaultQuerierPool().getQuerier();
+    const querier1 = getQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);
 
     const querier2 = getQuerier();
     expect(querier2).toBe(querierMock);
 
-    expect(getRepository(User)).toBeInstanceOf(GenericClientRepository);
-    expect(getRepository(User, querier1)).toBeInstanceOf(GenericClientRepository);
+    const repository1 = querier2.getRepository(User);
+    expect(repository1).toBeInstanceOf(GenericClientRepository);
 
-    expect(getDefaultQuerierPool()).toBe(getDefaultQuerierPool());
+    expect(getQuerierPool()).toBe(getQuerierPool());
   });
 });

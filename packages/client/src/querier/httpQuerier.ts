@@ -1,8 +1,8 @@
 import { getMeta } from '@uql/core/entity/decorator';
 import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Type } from '@uql/core/type';
 import { kebabCase } from '@uql/core/util';
-import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index';
-import { get, post, patch, remove } from '../http/index';
+import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
+import { get, post, patch, remove } from '../http';
 import { stringifyQuery } from './querier.util';
 import { GenericClientRepository } from './genericClientRepository';
 

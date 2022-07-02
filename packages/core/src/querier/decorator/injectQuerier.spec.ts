@@ -1,4 +1,4 @@
-import { Querier } from '../../type/index';
+import { Querier } from '../../type';
 import { getInjectedQuerierIndex, InjectQuerier } from './injectQuerier';
 
 describe('injectQuerier', () => {

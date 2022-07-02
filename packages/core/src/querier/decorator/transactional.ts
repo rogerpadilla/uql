@@ -1,5 +1,5 @@
-import { Querier, QuerierPool, Type } from '../../type/index';
-import { getDefaultQuerierPool } from '../../options';
+import { Querier, QuerierPool, Type } from '../../type';
+import { getQuerierPool } from '../../options';
 import { getInjectedQuerierIndex } from './injectQuerier';
 
 export function Transactional({
@@ -27,7 +27,7 @@ export function Transactional({
         querier = params[injectedQuerierIndex];
       } else {
         isOwnTransaction = true;
-        const pool = querierPool ?? getDefaultQuerierPool();
+        const pool = querierPool ?? getQuerierPool();
         querier = await pool.getQuerier();
         params[injectedQuerierIndex] = querier;
       }

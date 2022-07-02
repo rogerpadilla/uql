@@ -1,7 +1,7 @@
-import { Query, Type, QueryCriteria, QueryOptions, QueryUpdateResult } from '../type/index';
-import { unflatObjects, clone } from '../util/index';
-import { AbstractSqlDialect } from '../dialect/index';
-import { getMeta } from '../entity/index';
+import { Query, Type, QueryCriteria, QueryOptions, QueryUpdateResult } from '../type';
+import { unflatObjects, clone } from '../util';
+import { AbstractSqlDialect } from '../dialect';
+import { getMeta } from '../entity';
 
 import { AbstractQuerier } from './abstractQuerier';
 

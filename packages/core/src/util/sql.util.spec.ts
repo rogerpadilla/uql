@@ -1,5 +1,5 @@
-import { Item, ItemAdjustment, Storehouse } from '../test/index';
-import { QuerySortMap } from '../type/index';
+import { Item, ItemAdjustment, Storehouse } from '../test';
+import { QuerySortMap } from '../type';
 import { flatObject, unflatObjects } from './sql.util';
 
 it('flatObject', () => {

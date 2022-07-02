@@ -1,5 +1,5 @@
-import { getDefaultQuerier, setDefaultQuerierPool } from '../../options';
-import { Querier, QuerierPool, Writable } from '../../type/index';
+import { getQuerier, setQuerierPool } from '../../options';
+import { Querier, QuerierPool, Writable } from '../../type';
 import { InjectQuerier } from './injectQuerier';
 import { Transactional } from './transactional';
 
@@ -7,11 +7,11 @@ describe('transactional', () => {
   let anotherQuerierPool: QuerierPool;
 
   beforeEach(() => {
-    const defaultQuerierSingleton = buildQuerierMock();
+    const querierSingleton = buildQuerierMock();
     const anotherQuerierSingleton = buildQuerierMock();
 
-    setDefaultQuerierPool({
-      getQuerier: async () => defaultQuerierSingleton,
+    setQuerierPool({
+      getQuerier: async () => querierSingleton,
       end: async () => undefined,
     });
 
@@ -30,12 +30,12 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.save();
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toBeCalledTimes(1);
+    expect(querier.commitTransaction).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
@@ -54,12 +54,12 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.save();
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toBeCalledTimes(1);
+    expect(querier.commitTransaction).toBeCalledTimes(1);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
@@ -78,12 +78,12 @@ describe('transactional', () => {
     const serviceA = new ServiceA();
     await serviceA.find();
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toBeCalledTimes(0);
+    expect(querier.commitTransaction).toBeCalledTimes(0);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
@@ -109,12 +109,12 @@ describe('transactional', () => {
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.release).toBeCalledTimes(1);
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(0);
+    expect(querier.beginTransaction).toBeCalledTimes(0);
+    expect(querier.commitTransaction).toBeCalledTimes(0);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(0);
   });
 
   it('injectQuerier and call super', async () => {
@@ -137,7 +137,7 @@ describe('transactional', () => {
     const serviceB = new ServiceB();
     await serviceB.delete('123');
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
     expect(deleteStub).toBeCalledTimes(1);
 
@@ -150,10 +150,10 @@ describe('transactional', () => {
     expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
     expect(anotherQuerier.release).toBeCalledTimes(1);
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(0);
+    expect(querier.beginTransaction).toBeCalledTimes(0);
+    expect(querier.commitTransaction).toBeCalledTimes(0);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(0);
   });
 
   it('throw', async () => {
@@ -168,12 +168,12 @@ describe('transactional', () => {
 
     await expect(serviceA.save()).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toBeCalledTimes(0);
+    expect(querier.commitTransaction).toBeCalledTimes(0);
+    expect(querier.rollbackTransaction).toBeCalledTimes(0);
+    expect(querier.release).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
@@ -195,12 +195,12 @@ describe('transactional', () => {
 
     await expect(serviceA.save()).rejects.toThrow('Some Error');
 
-    const defaultQuerier = await getDefaultQuerier();
+    const querier = await getQuerier();
 
-    expect(defaultQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(defaultQuerier.rollbackTransaction).toBeCalledTimes(1);
-    expect(defaultQuerier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toBeCalledTimes(1);
+    expect(querier.commitTransaction).toBeCalledTimes(0);
+    expect(querier.rollbackTransaction).toBeCalledTimes(1);
+    expect(querier.release).toBeCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 

@@ -1,5 +1,5 @@
-import { createTables, dropTables } from '../test/index';
-import { QuerierPool } from '../type/index';
+import { createTables, dropTables } from '../test';
+import { QuerierPool } from '../type';
 import { AbstractQuerierIt } from './abstractQuerier-it';
 import { AbstractSqlQuerier } from './abstractSqlQuerier';
 
