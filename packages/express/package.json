@@ -3,7 +3,7 @@
   "homepage": "https://uql.io",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "main": "./index.js",
   "types": "./index.d.ts",
   "scripts": {
@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@types/express": "4.17.13",
-    "@uql/core": "^1.0.11",
+    "@uql/core": "^1.0.12",
     "copyfiles": "^2.4.1",
     "express": "^4.18.1",
     "rimraf": "^3.0.2",
@@ -57,5 +57,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "d810f4d9ff640d9a00f722e6ee36098dc7130592"
+  "gitHead": "7cdf3d3a1f616742eaacb8ea6020b6a68ca4a7eb"
 }
