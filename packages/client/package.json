@@ -2,7 +2,7 @@
   "name": "@uql/client",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "main": "./uql-client.min.js",
   "types": "./uql-client.min.d.ts",
   "scripts": {
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@types/webpack": "^5.28.0",
-    "@uql/core": "^1.0.10",
+    "@uql/core": "^1.0.11",
     "copyfiles": "^2.4.1",
     "dts-bundle": "^0.7.3",
     "rimraf": "^3.0.2",
@@ -58,5 +58,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "3dd247e9ca2539e6bbc8877afc3ebf2da4b89a7f"
+  "gitHead": "d810f4d9ff640d9a00f722e6ee36098dc7130592"
 }
