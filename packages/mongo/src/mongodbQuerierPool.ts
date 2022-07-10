@@ -1,23 +1,22 @@
-import { connect, MongoClientOptions } from 'mongodb';
+import { MongoClient, MongoClientOptions } from 'mongodb';
 import { QuerierLogger, QuerierPool } from '@uql/core/type';
 import { MongodbQuerier } from './mongodbQuerier';
 import { MongoDialect } from './mongoDialect';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
-  private querier: MongodbQuerier;
+  private readonly client: MongoClient;
 
-  constructor(readonly uri: string, readonly opts?: MongoClientOptions, readonly logger?: QuerierLogger) {}
+  constructor(uri: string, opts?: MongoClientOptions, readonly logger?: QuerierLogger) {
+    this.client = new MongoClient(uri, opts);
+  }
 
   async getQuerier() {
-    if (!this.querier || !this.querier.conn.isConnected()) {
-      const conn = await connect(this.uri, this.opts);
-      this.querier = new MongodbQuerier(new MongoDialect(), conn, this.logger);
-    }
-    return this.querier;
+    const conn = await this.client.connect();
+    const querier = new MongodbQuerier(new MongoDialect(), conn, this.logger);
+    return querier;
   }
 
   async end() {
-    await this.querier.conn.close();
-    delete this.querier;
+    await this.client.close();
   }
 }

@@ -85,7 +85,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
 
-    const ids = Object.values(insertedIds) as IdValue<E>[];
+    const ids = Object.values(insertedIds) as unknown as IdValue<E>[];
 
     for (const [index, it] of payloads.entries()) {
       it[meta.id] = ids[index];
@@ -118,7 +118,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
     this.logger?.('deleteMany', entity.name, filter, opts);
-    const founds: E[] = await this.collection(entity)
+    const founds = await this.collection(entity)
       .find(filter, {
         projection: { _id: true },
         session: this.session,
@@ -127,7 +127,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!founds.length) {
       return 0;
     }
-    const ids = this.dialect.normalizeIds(meta, founds).map((found) => found[meta.id]);
+    const ids = this.dialect.normalizeIds(meta, founds as unknown as E[]).map((found) => found[meta.id]);
     let changes: number;
     if (meta.softDelete && !opts.softDelete) {
       const updateResult = await this.collection(entity).updateMany(

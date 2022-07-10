@@ -1,4 +1,4 @@
-import { FilterQuery, ObjectId, SortOptionObject } from 'mongodb';
+import { Filter, ObjectId, Sort } from 'mongodb';
 import {
   QueryFilter,
   Query,
@@ -15,7 +15,7 @@ import { getMeta } from '@uql/core/entity/decorator';
 import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from '@uql/core/util';
 
 export class MongoDialect {
-  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): FilterQuery<E> {
+  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
 
     filter = getQueryFilterAsMap(meta, filter);
@@ -37,10 +37,10 @@ export class MongoDialect {
             $in: value,
           };
         }
-        acc[key as keyof FilterQuery<E>] = value;
+        acc[key as keyof Filter<E>] = value;
       }
       return acc;
-    }, {} as FilterQuery<E>);
+    }, {} as Filter<E>);
   }
 
   project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
@@ -53,8 +53,8 @@ export class MongoDialect {
     return project as QueryProjectMap<E>;
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>): MongoSort<E> {
-    return buildSortMap(sort) as MongoSort<E>;
+  sort<E>(entity: Type<E>, sort: QuerySort<E>): Sort {
+    return buildSortMap(sort) as Sort;
   }
 
   aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): MongoAggregationPipelineEntry<E>[] {
@@ -162,8 +162,8 @@ export class MongoDialect {
 
 type MongoAggregationPipelineEntry<E> = {
   readonly $lookup?: MongoAggregationLookup<E>;
-  $match?: FilterQuery<E> | Record<string, any>;
-  $sort?: MongoSort<E>;
+  $match?: Filter<E> | Record<string, any>;
+  $sort?: Sort;
   readonly $unwind?: MongoAggregationUnwind;
 };
 
@@ -179,5 +179,3 @@ type MongoAggregationUnwind = {
   readonly path?: string;
   readonly preserveNullAndEmptyArrays?: boolean;
 };
-
-type MongoSort<E> = [string, number][] | SortOptionObject<E>;

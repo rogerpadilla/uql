@@ -6,12 +6,7 @@ import { MongodbQuerier } from './mongodbQuerier';
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {
-    super(
-      new MongodbQuerierPool('mongodb://localhost:27027,localhost:27028,localhost:27029/test?replicaSet=rs', {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-      })
-    );
+    super(new MongodbQuerierPool('mongodb://localhost:27020,localhost:27028,localhost:27029/test?replicaSet=rs'));
   }
 
   override async createTables() {
