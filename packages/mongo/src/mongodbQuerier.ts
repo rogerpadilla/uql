@@ -1,4 +1,4 @@
-import { MongoClient, ClientSession } from 'mongodb';
+import { MongoClient, ClientSession, UpdateFilter, Document } from 'mongodb';
 import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QuerierLogger, QueryUnique } from '@uql/core/type';
 import { AbstractQuerier } from '@uql/core/querier';
 import { getMeta } from '@uql/core/entity/decorator';
@@ -99,9 +99,9 @@ export class MongodbQuerier extends AbstractQuerier {
   override async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const persistable = getPersistable(meta, payload, 'onUpdate');
+    const persistable = getPersistable(meta, payload, 'onUpdate') as Document;
     const filter = this.dialect.filter(entity, qm.$filter);
-    const update = { $set: persistable };
+    const update: UpdateFilter<Document> = { $set: persistable };
 
     this.logger?.('updateMany', entity.name, filter, update);
 

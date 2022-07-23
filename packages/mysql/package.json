@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
-    "@types/node": "^18.0.3",
+    "@types/node": "^18.0.6",
     "@uql/core": "^1.0.11",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
