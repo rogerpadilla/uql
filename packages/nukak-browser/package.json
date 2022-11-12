@@ -1,0 +1,62 @@
+{
+  "name": "nukak-browser",
+  "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
+  "license": "MIT",
+  "version": "0.0.0",
+  "main": "./nukak-browser.min.js",
+  "types": "./nukak-browser.min.d.ts",
+  "scripts": {
+    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "compile": "NODE_ENV=production webpack",
+    "build": "yarn clean && concurrently 'yarn:compile' && yarn copyfiles",
+    "start": "yarn clean && webpack --profile --bail --watch --info-verbosity verbose",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/webpack": "^5.28.0",
+    "nukak": "^1.0.12",
+    "copyfiles": "^2.4.1",
+    "dts-bundle": "^0.7.3",
+    "rimraf": "^3.0.2",
+    "source-map-loader": "^4.0.1",
+    "ts-loader": "^9.4.1",
+    "typescript": "^4.8.4",
+    "webpack": "^5.75.0",
+    "webpack-cli": "^4.10.0",
+    "webpack-log": "^3.0.2"
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogerpadilla/nukak.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rogerpadilla/nukak/issues"
+  },
+  "keywords": [
+    "orm",
+    "data-mapper",
+    "persistence",
+    "typescript-orm",
+    "javascript-orm",
+    "mariadb",
+    "mariadb-orm",
+    "mysql",
+    "mysql-orm",
+    "postgresql",
+    "postgresql-orm",
+    "sqlite",
+    "sqlite-orm",
+    "mongodb",
+    "mongodb-orm",
+    "entity",
+    "dao",
+    "transaction",
+    "repository",
+    "service"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "3ced0c218364ddcd9e234096155ff205a7583b13"
+}

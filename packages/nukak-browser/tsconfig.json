@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2022", "DOM"],
+    "importHelpers": false,
+    "outDir": "dist"
+  },
+  "references": [{ "path": "../nukak" }],
+  "exclude": ["node_modules", "dist"]
+}

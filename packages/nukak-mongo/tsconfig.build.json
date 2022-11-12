@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist"
+  },
+  "references": [{ "path": "../nukak/tsconfig.build.json" }],
+  "exclude": ["node_modules", "dist", "**/*/*.spec.ts", "**/*/*-spec.ts", "**/*/*.it.ts", "**/*/*-it.ts", "**/*/test"]
+}

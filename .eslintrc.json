@@ -30,7 +30,7 @@
       {
         "pathGroups": [
           {
-            "pattern": "@uql/**",
+            "pattern": "nukak-?/**",
             "group": "external",
             "position": "after"
           }
