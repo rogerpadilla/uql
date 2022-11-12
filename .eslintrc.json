@@ -30,7 +30,7 @@
       {
         "pathGroups": [
           {
-            "pattern": "nukak-?/**",
+            "pattern": "nukak/**",
             "group": "external",
             "position": "after"
           }
