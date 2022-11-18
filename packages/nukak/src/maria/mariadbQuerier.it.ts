@@ -11,6 +11,9 @@ export class MariadbQuerierIt extends AbstractSqlQuerierIt {
         user: 'test',
         password: 'test',
         database: 'test',
+        connectionLimit: 5,
+        trace: true,
+        bigIntAsNumber: true,
       }),
       'INT AUTO_INCREMENT PRIMARY KEY'
     );
