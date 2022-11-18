@@ -14,7 +14,7 @@ services:
     container_name: nukak-mysql-8
 
   mariadb:
-    image: yobasystems/alpine-mariadb:10.6.4
+    image: yobasystems/alpine-mariadb:10.6.9
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
