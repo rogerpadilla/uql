@@ -10,11 +10,15 @@ const moduleNameMapper = Object.keys(tsConfigPaths).reduce((acc, key) => {
 
 module.exports = {
   verbose: true,
-  preset: 'ts-jest',
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.test.json',
-    },
+  transform: {
+    // '^.+\\.[tj]sx?$' to process js/ts with `ts-jest`
+    // '^.+\\.m?[tj]sx?$' to process js/ts/mjs/mts with `ts-jest`
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        tsconfig: 'tsconfig.test.json',
+      },
+    ],
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
   testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
