@@ -1,17 +1,9 @@
 {
-<<<<<<< HEAD:packages/nukak-express/package.json
-  "name": "nukak-express",
-  "homepage": "https://nukak.org",
-  "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
-  "license": "MIT",
-  "version": "0.0.3",
-=======
-  "name": "@uql/express",
+  "name": "@uql/sqlite",
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
   "version": "1.0.13",
->>>>>>> main:packages/express/package.json
   "main": "./index.js",
   "types": "./index.d.ts",
   "scripts": {
@@ -20,30 +12,28 @@
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
+  "dependencies": {
+    "sqlite": "^4.1.2",
+    "sqlite3": "^5.0.10"
+  },
   "peerDependencies": {
-    "express": "^4.18.2",
-    "nukak": "^0.0.2"
+    "@uql/core": "^1.0.9"
   },
   "devDependencies": {
-<<<<<<< HEAD:packages/nukak-express/package.json
-    "@types/express": "4.17.14",
-=======
-    "@types/express": "4.17.13",
+    "@types/node": "^18.0.6",
+    "@types/sqlite3": "^3.1.8",
     "@uql/core": "^1.0.13",
->>>>>>> main:packages/express/package.json
     "copyfiles": "^2.4.1",
-    "express": "^4.18.2",
-    "nukak": "^0.0.3",
     "rimraf": "^3.0.2",
-    "typescript": "^4.9.3"
+    "typescript": "^4.7.4"
   },
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/nukak.git"
+    "url": "https://github.com/rogerpadilla/uql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/nukak/issues"
+    "url": "https://github.com/rogerpadilla/uql/issues"
   },
   "keywords": [
     "orm",

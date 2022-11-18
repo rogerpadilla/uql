@@ -2,9 +2,15 @@
   "name": "nukak-browser",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
+<<<<<<< HEAD:packages/nukak-browser/package.json
   "version": "0.0.3",
   "main": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
+=======
+  "version": "1.0.13",
+  "main": "./uql-client.min.js",
+  "types": "./uql-client.min.d.ts",
+>>>>>>> main:packages/client/package.json
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "NODE_ENV=production webpack",
@@ -14,6 +20,10 @@
   },
   "devDependencies": {
     "@types/webpack": "^5.28.0",
+<<<<<<< HEAD:packages/nukak-browser/package.json
+=======
+    "@uql/core": "^1.0.13",
+>>>>>>> main:packages/client/package.json
     "copyfiles": "^2.4.1",
     "dts-bundle": "^0.7.3",
     "nukak": "^0.0.3",
