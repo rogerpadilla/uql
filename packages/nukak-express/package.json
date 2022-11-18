@@ -14,7 +14,7 @@
   },
   "peerDependencies": {
     "express": "^4.18.2",
-    "nukak": "^1.0.9"
+    "nukak": "^0.0.2"
   },
   "devDependencies": {
     "@types/express": "4.17.14",
