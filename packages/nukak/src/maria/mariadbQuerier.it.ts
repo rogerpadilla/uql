@@ -1,6 +1,6 @@
 import { AbstractSqlQuerierIt } from 'nukak/querier/abstractSqlQuerier-it';
 import { createSpec } from 'nukak/test';
-import { MariadbQuerierPool } from './mariadbQuerierPool';
+import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
 export class MariadbQuerierIt extends AbstractSqlQuerierIt {
   constructor() {

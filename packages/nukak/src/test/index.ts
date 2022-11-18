@@ -1,3 +1,3 @@
-export * from './entityMock';
-export * from './spec.util';
-export * from './it.util';
+export * from './entityMock.js';
+export * from './spec.util.js';
+export * from './it.util.js';

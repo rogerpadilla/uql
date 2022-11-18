@@ -1,7 +1,7 @@
 import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test';
 import { FieldKey, QueryFilter } from '../type';
 import { raw } from '../util';
-import { AbstractSqlDialect } from './abstractSqlDialect';
+import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}

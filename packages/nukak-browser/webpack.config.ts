@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 import { Compiler, Configuration } from 'webpack';
+import ResolveTypeScriptPlugin from 'resolve-typescript-plugin';
 
 const parentDir = '../../';
 const tsPathAliases = require(`${parentDir}tsconfig.json`).compilerOptions.paths;
@@ -39,6 +40,7 @@ const config: Configuration = {
   resolve: {
     extensions: ['.ts', '.js'],
     alias: buildAlias(),
+    plugins: [new ResolveTypeScriptPlugin()],
   },
 
   entry: {

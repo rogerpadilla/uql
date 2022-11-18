@@ -3,8 +3,8 @@ import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, Que
 import { kebabCase } from 'nukak/util';
 import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
 import { get, post, patch, remove } from '../http';
-import { stringifyQuery } from './querier.util';
-import { GenericClientRepository } from './genericClientRepository';
+import { stringifyQuery } from './querier.util.js';
+import { GenericClientRepository } from './genericClientRepository.js';
 
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}

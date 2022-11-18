@@ -15,10 +15,10 @@ import {
   ItemTag,
 } from '../../test';
 import { EntityGetter, EntityMeta, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type';
-import { getEntities, getMeta } from './definition';
-import { Entity } from './entity';
-import { Id } from './id';
-import { Field } from './field';
+import { getEntities, getMeta } from './definition.js';
+import { Entity } from './entity.js';
+import { Id } from './id.js';
+import { Field } from './field.js';
 
 it('User', () => {
   const meta = getMeta(User);

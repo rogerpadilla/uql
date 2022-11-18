@@ -1,4 +1,4 @@
-import { getQuerier, getQuerierPool, setQuerierPool } from './options';
+import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { User } from './test';
 import { Querier, Repository } from './type';
 

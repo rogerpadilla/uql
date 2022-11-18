@@ -1,6 +1,6 @@
 import { Query } from 'nukak/type';
 import { Item, User } from 'nukak/test';
-import { stringifyQuery, stringifyQueryParameter } from './querier.util';
+import { stringifyQuery, stringifyQueryParameter } from './querier.util.js';
 
 it('stringifyQuery -- empty', () => {
   const source: Query<User> = {};

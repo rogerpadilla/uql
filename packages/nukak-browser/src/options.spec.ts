@@ -1,7 +1,7 @@
 import { User } from 'nukak/test';
-import { getQuerier, getQuerierPool, setQuerierPool } from './options';
+import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { GenericClientRepository, HttpQuerier } from './querier';
-import { ClientQuerierPool } from './type/clientQuerierPool';
+import { ClientQuerierPool } from './type/clientQuerierPool.js';
 
 describe('options', () => {
   it('default getQuerier', () => {

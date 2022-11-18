@@ -1,7 +1,7 @@
 import { getQuerier, setQuerierPool } from '../../options';
 import { Querier, QuerierPool, Writable } from '../../type';
-import { InjectQuerier } from './injectQuerier';
-import { Transactional } from './transactional';
+import { InjectQuerier } from './injectQuerier.js';
+import { Transactional } from './transactional.js';
 
 describe('transactional', () => {
   let anotherQuerierPool: QuerierPool;

@@ -4,7 +4,8 @@
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
   "version": "0.0.4",
-  "main": "index.js",
+  "main": "./index.js",
+  "exports": "./index.js",
   "types": "./index.d.ts",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",

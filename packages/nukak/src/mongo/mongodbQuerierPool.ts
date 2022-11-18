@@ -1,7 +1,7 @@
 import { MongoClient, MongoClientOptions } from 'mongodb';
 import { QuerierLogger, QuerierPool } from 'nukak/type';
-import { MongodbQuerier } from './mongodbQuerier';
-import { MongoDialect } from './mongoDialect';
+import { MongodbQuerier } from './mongodbQuerier.js';
+import { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
   private readonly client: MongoClient;

@@ -1,6 +1,6 @@
 import { Item, ItemAdjustment, Storehouse } from '../test';
 import { QuerySortMap } from '../type';
-import { flatObject, unflatObjects } from './sql.util';
+import { flatObject, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
   expect(flatObject(undefined)).toEqual({});

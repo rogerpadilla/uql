@@ -1,1 +1,1 @@
-export * from './genericRepository';
+export * from './genericRepository.js';

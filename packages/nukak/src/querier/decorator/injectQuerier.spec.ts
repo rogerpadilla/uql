@@ -1,5 +1,5 @@
 import { Querier } from '../../type';
-import { getInjectedQuerierIndex, InjectQuerier } from './injectQuerier';
+import { getInjectedQuerierIndex, InjectQuerier } from './injectQuerier.js';
 
 describe('injectQuerier', () => {
   it('no inject', () => {

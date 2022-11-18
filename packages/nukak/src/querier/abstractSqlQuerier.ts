@@ -3,7 +3,7 @@ import { unflatObjects, clone } from '../util';
 import { AbstractSqlDialect } from '../dialect';
 import { getMeta } from '../entity';
 
-import { AbstractQuerier } from './abstractQuerier';
+import { AbstractQuerier } from './abstractQuerier.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier {
   private hasPendingTransaction?: boolean;

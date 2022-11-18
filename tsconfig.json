@@ -1,10 +1,11 @@
 {
   "ts-node": {
-    "files": true
+    "files": true,
+    "esm": true
   },
   "compilerOptions": {
-    "module": "CommonJS",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
     "target": "ES2022",
     "strict": true,
