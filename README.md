@@ -1,6 +1,6 @@
 # [nukak](https://nukak.org) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![npm version](https://badge.fury.io/js/%40nukak.svg)](https://badge.fury.io/js/%40nukak)
 
-Learn more of `nukak` in the website https://nukak.org
+Learn more of `nukak` on its website https://nukak.org
 
 ## Quick Start
 
