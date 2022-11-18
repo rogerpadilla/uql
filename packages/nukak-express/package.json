@@ -22,7 +22,7 @@
     "express": "^4.18.2",
     "nukak": "^0.0.1",
     "rimraf": "^3.0.2",
-    "typescript": "^4.8.4"
+    "typescript": "^4.9.3"
   },
   "author": "Roger Padilla",
   "repository": {
