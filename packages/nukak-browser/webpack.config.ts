@@ -13,25 +13,6 @@ const mode = (process.env.NODE_ENV as Mode) ?? 'development';
 const isProductionMode = mode === 'production';
 console.debug('*** mode', mode);
 
-// class DtsBundlePlugin {
-//   apply(compiler: Compiler) {
-//     compiler.hooks.done.tapAsync('DtsBundlePlugin', () => {
-//       const rootDir = resolve(__dirname);
-//       const dts = require('dts-bundle');
-//       const rimraf = require('rimraf');
-
-//       dts.bundle({
-//         name: 'nukak',
-//         main: `${rootDir}/${outDir}/nukak-browser/**/*.d.ts`,
-//         out: `${rootDir}/${outDir}/${entryName}.d.ts`,
-//         outputAsModuleFolder: true,
-//       });
-
-//       rimraf.sync(`${outDir}/{core,client}`);
-//     });
-//   }
-// }
-
 const config: Configuration = {
   mode,
   profile: true,
@@ -71,8 +52,6 @@ const config: Configuration = {
       },
     ],
   },
-
-  // plugins: [new DtsBundlePlugin()],
 };
 
 function buildAlias() {
