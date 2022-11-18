@@ -1,17 +1,9 @@
 {
-<<<<<<< HEAD:packages/nukak/package.json
   "name": "nukak",
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
   "version": "0.0.3",
-=======
-  "name": "@uql/core",
-  "homepage": "https://nukak.org",
-  "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
-  "license": "MIT",
-  "version": "1.0.13",
->>>>>>> main:packages/core/package.json
   "main": "index.js",
   "types": "./index.d.ts",
   "scripts": {
