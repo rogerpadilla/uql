@@ -16,12 +16,12 @@
     "pg": "^8.7.3"
   },
   "peerDependencies": {
-    "@uql/core": "^1.0.9"
+    "nukak": "^0.0.3"
   },
   "devDependencies": {
     "@types/node": "^18.0.6",
     "@types/pg": "^8.6.5",
-    "@uql/core": "^1.0.13",
+    "nukak": "^0.0.3",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
     "typescript": "^4.7.4"

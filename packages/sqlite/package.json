@@ -17,12 +17,12 @@
     "sqlite3": "^5.0.10"
   },
   "peerDependencies": {
-    "@uql/core": "^1.0.9"
+    "nukak": "^0.0.3"
   },
   "devDependencies": {
     "@types/node": "^18.0.6",
     "@types/sqlite3": "^3.1.8",
-    "@uql/core": "^1.0.13",
+    "nukak": "^0.0.3",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",
     "typescript": "^4.7.4"
