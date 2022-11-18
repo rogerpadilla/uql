@@ -11,10 +11,10 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3316:3306
-    container_name: uql-mysql-8
+    container_name: nukak-mysql-8
 
   mariadb:
-    image: yobasystems/alpine-mariadb:10.6.4
+    image: yobasystems/alpine-mariadb:10.6.9
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -23,7 +23,7 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3326:3306
-    container_name: uql-mariadb-10
+    container_name: nukak-mariadb-10
 
   postgres:
     image: postgres:14.2-alpine
@@ -34,4 +34,4 @@ services:
       POSTGRES_DB: test
     ports:
       - 5442:5432
-    container_name: uql-postgres-14
+    container_name: nukak-postgres-14

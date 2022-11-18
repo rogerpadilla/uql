@@ -1,0 +1,96 @@
+{
+  "name": "nukak",
+  "homepage": "https://nukak.org",
+  "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
+  "license": "MIT",
+  "version": "0.0.3",
+  "main": "index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
+    "start": "tsc --watch",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.1.13",
+    "sqlstring": "^2.3.3",
+    "tslib": "^2.4.1"
+  },
+  "devDependencies": {
+    "@types/mongodb": "^4.0.6",
+    "@types/mysql": "^2.15.21",
+    "@types/node": "^18.11.9",
+    "@types/pg": "^8.6.5",
+    "@types/sqlite3": "^3.1.8",
+    "@types/sqlstring": "^2.3.0",
+    "@types/uuid": "^8.3.4",
+    "copyfiles": "^2.4.1",
+    "mariadb": "^3.0.2",
+    "mongodb": "^4.12.0",
+    "mysql2": "^2.3.3",
+    "pg": "^8.8.0",
+    "rimraf": "^3.0.2",
+    "sqlite3": "^5.1.2",
+    "typescript": "^4.9.3",
+    "uuid": "^9.0.0"
+  },
+  "peerDependencies": {
+    "mariadb": "^3.0.2",
+    "mongodb": "^4.12.0",
+    "mysql2": "^2.3.3",
+    "pg": "^8.8.0",
+    "sqlite3": "^5.1.2"
+  },
+  "peerDependenciesMeta": {
+    "mariadb": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "sqlite3": {
+      "optional": true
+    }
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogerpadilla/nukak.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rogerpadilla/nukak/issues"
+  },
+  "keywords": [
+    "orm",
+    "data-mapper",
+    "persistence",
+    "typescript-orm",
+    "javascript-orm",
+    "mariadb",
+    "mariadb-orm",
+    "mysql",
+    "mysql-orm",
+    "postgresql",
+    "postgresql-orm",
+    "sqlite",
+    "sqlite-orm",
+    "mongodb",
+    "mongodb-orm",
+    "entity",
+    "dao",
+    "transaction",
+    "repository",
+    "service"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "gitHead": "3ced0c218364ddcd9e234096155ff205a7583b13"
+}

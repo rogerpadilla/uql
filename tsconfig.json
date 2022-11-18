@@ -27,8 +27,8 @@
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "paths": {
-      "@uql/core": ["packages/core/src"],
-      "@uql/core/*": ["packages/core/src/*"]
+      "nukak": ["packages/nukak/src"],
+      "nukak/*": ["packages/nukak/src/*"]
     }
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]
