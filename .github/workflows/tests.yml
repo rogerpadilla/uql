@@ -4,9 +4,9 @@ on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-latest
-    # strategy:
-    #   matrix:
-    #     node: [16, 18]
+    strategy:
+      matrix:
+        node: [16, 18]
     name: Run Tests
 
     steps:
@@ -20,8 +20,7 @@ jobs:
 
       - uses: actions/setup-node@v3
         with:
-          node-version: 16.x
-          cache: npm
+          node-version: ${{ matrix.node }}
 
       - name: Install
         run: yarn install
