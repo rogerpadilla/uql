@@ -1,10 +1,8 @@
 {
-  "version": "1.0.12",
+  "version": "1.0.13",
   "useWorkspaces": true,
   "npmClient": "yarn",
-  "npmClientArgs": [
-    "--no-package-lock"
-  ],
+  "npmClientArgs": ["--no-package-lock"],
   "command": {
     "publish": {
       "contents": "dist",
