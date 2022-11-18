@@ -4,10 +4,10 @@ on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [16, 18]
-    name: Run Tests on ${{ matrix.node }}
+    # strategy:
+    #   matrix:
+    #     node: [16, 18]
+    name: Run Tests
 
     steps:
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-node@v2
         with:
-          node-version: ${{ matrix.node }}
+          node-version: 'lts/*'
 
       - name: Install
         run: yarn install
