@@ -15,7 +15,7 @@ import {
   QueryFilterMap,
   OnFieldCallback,
   MongoId,
-} from '../type';
+} from '../type/index.js';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 

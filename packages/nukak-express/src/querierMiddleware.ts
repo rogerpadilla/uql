@@ -2,7 +2,7 @@ import { Request } from 'express-serve-static-core';
 import { Router as expressRouter } from 'express';
 
 import { getQuerier } from 'nukak/options';
-import { EntityMeta, IdValue, Query, QueryOne, QueryUnique, Type } from 'nukak/type';
+import { EntityMeta, IdValue, Query, QueryOne, QueryUnique, Type } from 'nukak/type/index.js';
 import { kebabCase } from 'nukak/util';
 import { getEntities, getMeta } from 'nukak/entity/decorator';
 import { parseQuery } from './query.util.js';

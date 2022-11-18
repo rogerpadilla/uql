@@ -1,5 +1,5 @@
 import { HttpQuerier } from './querier/httpQuerier.js';
-import { ClientQuerier } from './type';
+import { ClientQuerier } from './type/index.js';
 import { ClientQuerierPool } from './type/clientQuerierPool.js';
 
 let defaultPool: ClientQuerierPool = {

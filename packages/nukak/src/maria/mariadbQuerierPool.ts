@@ -1,5 +1,5 @@
 import { createPool, Pool, PoolConfig } from 'mariadb';
-import { QuerierLogger, QuerierPool } from 'nukak/type';
+import { QuerierLogger, QuerierPool } from 'nukak/type/index.js';
 import { MariadbQuerier } from './mariadbQuerier.js';
 
 export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {

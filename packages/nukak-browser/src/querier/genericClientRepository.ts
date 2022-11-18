@@ -1,5 +1,5 @@
-import { IdValue, Query, QueryCriteria, QueryOptions, QuerySearch, QueryUnique, Type } from 'nukak/type';
-import { ClientQuerier, ClientRepository, RequestOptions } from '../type';
+import { IdValue, Query, QueryCriteria, QueryOptions, QuerySearch, QueryUnique, Type } from 'nukak/type/index.js';
+import { ClientQuerier, ClientRepository, RequestOptions } from '../type/index.js';
 
 export class GenericClientRepository<E> implements ClientRepository<E> {
   constructor(readonly entity: Type<E>, readonly querier: ClientQuerier) {}

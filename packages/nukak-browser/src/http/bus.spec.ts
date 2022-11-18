@@ -1,4 +1,4 @@
-import { RequestNotification } from '../type';
+import { RequestNotification } from '../type/index.js';
 import { on, notify } from './bus.js';
 
 it('bus', () => {

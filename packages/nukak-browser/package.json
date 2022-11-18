@@ -9,8 +9,9 @@
   "types": "./nukak-browser.min.d.ts",
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "compile": "NODE_ENV=production webpack",
-    "build": "yarn clean && concurrently 'yarn:compile' && yarn copyfiles",
+    "compile": "NODE_ENV=production node --loader ts-node/esm node_modules/.bin/webpack",
+    "dts": "dts-bundle-generator --no-check -o './dist/nukak-browser.min.d.ts' './src/index.ts'",
+    "build": "yarn clean && concurrently 'yarn:compile' 'yarn:dts' && yarn copyfiles",
     "start": "yarn clean && webpack --profile --bail --watch --info-verbosity verbose",
     "clean": "rimraf dist *.tsbuildinfo"
   },
@@ -18,6 +19,7 @@
     "@types/webpack": "^5.28.0",
     "copyfiles": "^2.4.1",
     "dts-bundle": "^0.7.3",
+    "dts-bundle-generator": "^7.0.0",
     "nukak": "^0.0.4",
     "rimraf": "^3.0.2",
     "source-map-loader": "^4.0.1",

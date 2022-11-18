@@ -12,7 +12,7 @@ import {
   RelationValue,
   Repository,
   Type,
-} from '../type';
+} from '../type/index.js';
 import { getMeta } from '../entity';
 import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from '../util';
 import { GenericRepository } from '../repository';

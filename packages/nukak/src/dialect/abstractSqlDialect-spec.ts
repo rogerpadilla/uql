@@ -1,5 +1,5 @@
 import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test';
-import { FieldKey, QueryFilter } from '../type';
+import { FieldKey, QueryFilter } from '../type/index.js';
 import { raw } from '../util';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 

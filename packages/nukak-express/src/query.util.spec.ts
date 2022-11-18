@@ -1,4 +1,4 @@
-import { Query, QueryFilter, QueryStringified } from 'nukak/type';
+import { Query, QueryFilter, QueryStringified } from 'nukak/type/index.js';
 import { Item } from 'nukak/test';
 import { parseQuery } from './query.util.js';
 

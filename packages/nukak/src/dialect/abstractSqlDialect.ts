@@ -22,7 +22,7 @@ import {
   QuerySortDirection,
   QueryFilterLogical,
   QueryRaw,
-} from '../type';
+} from '../type/index.js';
 import {
   getPersistable,
   getProjectRelationKeys,

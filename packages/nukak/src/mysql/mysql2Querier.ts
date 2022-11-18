@@ -1,6 +1,6 @@
 import { PoolConnection } from 'mysql2/promise';
 
-import { QuerierLogger, QueryUpdateResult } from 'nukak/type';
+import { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
 import { AbstractSqlQuerier } from 'nukak/querier';
 import { MySqlDialect } from 'nukak/dialect';
 

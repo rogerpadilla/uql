@@ -1,4 +1,12 @@
-import { QueryComparisonOptions, QueryFilterMap, QueryOptions, QueryFilterFieldOperatorMap, QueryTextSearchOptions, Type, FieldKey } from '../type';
+import {
+  QueryComparisonOptions,
+  QueryFilterMap,
+  QueryOptions,
+  QueryFilterFieldOperatorMap,
+  QueryTextSearchOptions,
+  Type,
+  FieldKey,
+} from '../type/index.js';
 import { getMeta } from '../entity/decorator';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 

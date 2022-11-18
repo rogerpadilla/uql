@@ -14,7 +14,7 @@ import {
   Tag,
   ItemTag,
 } from '../../test';
-import { EntityGetter, EntityMeta, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type';
+import { EntityGetter, EntityMeta, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Id } from './id.js';

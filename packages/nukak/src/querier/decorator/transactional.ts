@@ -1,4 +1,4 @@
-import { Querier, QuerierPool, Type } from '../../type';
+import { Querier, QuerierPool, Type } from '../../type/index.js';
 import { getQuerierPool } from '../../options';
 import { getInjectedQuerierIndex } from './injectQuerier.js';
 

@@ -1,4 +1,4 @@
-import { Query, QueryStringified } from 'nukak/type';
+import { Query, QueryStringified } from 'nukak/type/index.js';
 
 export function parseQuery<E>(qmsSrc?: QueryStringified): Query<E> {
   const qm: Query<E> = {};

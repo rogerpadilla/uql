@@ -1,5 +1,5 @@
 import { MongoClient, ClientSession, UpdateFilter, Document } from 'mongodb';
-import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QuerierLogger, QueryUnique } from 'nukak/type';
+import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QuerierLogger, QueryUnique } from 'nukak/type/index.js';
 import { AbstractQuerier } from 'nukak/querier';
 import { getMeta } from 'nukak/entity/decorator';
 import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from 'nukak/util';

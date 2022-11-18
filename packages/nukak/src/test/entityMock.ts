@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { raw } from '../util';
-import { idKey } from '../type';
+import { idKey } from '../type/index.js';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity';
 
 /**

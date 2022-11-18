@@ -1,5 +1,16 @@
 import { Filter, ObjectId, Sort } from 'mongodb';
-import { QueryFilter, Query, EntityMeta, Type, QueryProject, QueryProjectMap, QueryOptions, QuerySort, FieldValue, RelationKey } from 'nukak/type';
+import {
+  QueryFilter,
+  Query,
+  EntityMeta,
+  Type,
+  QueryProject,
+  QueryProjectMap,
+  QueryOptions,
+  QuerySort,
+  FieldValue,
+  RelationKey,
+} from 'nukak/type/index.js';
 import { getMeta } from 'nukak/entity/decorator';
 import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from 'nukak/util';
 

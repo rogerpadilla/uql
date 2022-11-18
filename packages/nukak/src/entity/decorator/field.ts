@@ -1,4 +1,4 @@
-import { FieldOptions, Type } from '../../type';
+import { FieldOptions, Type } from '../../type/index.js';
 import { defineField } from './definition.js';
 
 export function Field<E>(opts?: FieldOptions) {

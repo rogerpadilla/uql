@@ -1,6 +1,6 @@
 import { getKeys } from '../util';
 import { AbstractSqlQuerier } from '../querier';
-import { Type } from '../type';
+import { Type } from '../type/index.js';
 import { getEntities, getMeta } from '../entity/decorator';
 
 export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: string) {

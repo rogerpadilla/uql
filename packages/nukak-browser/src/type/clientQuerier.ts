@@ -1,4 +1,4 @@
-import { Query, Type, UniversalQuerier, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from 'nukak/type';
+import { Query, Type, UniversalQuerier, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from 'nukak/type/index.js';
 import { ClientRepository } from './clientRepository.js';
 import { RequestOptions, RequestSuccessResponse } from './request.js';
 

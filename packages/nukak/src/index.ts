@@ -1,2 +1,2 @@
 export * from './options.js';
-export * from './type';
+export * from './type/index.js';

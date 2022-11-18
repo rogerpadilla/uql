@@ -1,8 +1,8 @@
-import { getMeta } from 'nukak/entity/decorator';
-import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Type } from 'nukak/type';
-import { kebabCase } from 'nukak/util';
-import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type';
-import { get, post, patch, remove } from '../http';
+import { getMeta } from 'nukak/entity/decorator/definition.js';
+import { IdValue, Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique, Type } from 'nukak/type/index.js';
+import { kebabCase } from 'nukak/util/index.js';
+import { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index.js';
+import { get, post, patch, remove } from '../http/index.js';
 import { stringifyQuery } from './querier.util.js';
 import { GenericClientRepository } from './genericClientRepository.js';
 

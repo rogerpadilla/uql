@@ -1,4 +1,4 @@
-import { Querier, Repository } from '../type';
+import { Querier, Repository } from '../type/index.js';
 import { User } from '../test';
 import { GenericRepository } from './genericRepository.js';
 
