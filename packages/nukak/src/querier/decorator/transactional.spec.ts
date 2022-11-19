@@ -1,4 +1,4 @@
-import { getQuerier, setQuerierPool } from '../../options';
+import { getQuerier, setQuerierPool } from '../../options.js';
 import { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';
 import { Transactional } from './transactional.js';

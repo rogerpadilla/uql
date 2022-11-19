@@ -1,5 +1,5 @@
 import { Querier, QuerierPool, Type } from '../../type/index.js';
-import { getQuerierPool } from '../../options';
+import { getQuerierPool } from '../../options.js';
 import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({

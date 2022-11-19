@@ -1,5 +1,5 @@
-import { raw } from '../util';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test';
+import { raw } from '../util/index.js';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
 import { QuerierPool } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 

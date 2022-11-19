@@ -1,4 +1,4 @@
-import { createTables, dropTables } from '../test';
+import { createTables, dropTables } from '../test/index.js';
 import { QuerierPool } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-it.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';

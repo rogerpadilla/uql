@@ -1,6 +1,6 @@
-import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test';
+import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index.js';
 import { FieldKey, QueryFilter } from '../type/index.js';
-import { raw } from '../util';
+import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export abstract class AbstractSqlDialectSpec implements Spec {

@@ -1,3 +1,4 @@
+import type { JestConfigWithTsJest } from 'ts-jest';
 import tsconfig from './tsconfig.json';
 
 const tsConfigPaths = tsconfig.compilerOptions.paths;
@@ -6,17 +7,21 @@ const moduleNameMapper = Object.keys(tsConfigPaths).reduce(
   (acc, key) => {
     const prop = '^' + key.replace('/*', '/(.*)') + '$';
     acc[prop] = '<rootDir>/' + tsConfigPaths[key][0].replace('/*', '/$1');
+    console.log(prop, acc);
     return acc;
   },
   // sourced from https://kulshekhar.github.io/ts-jest/docs/guides/esm-support/#esm-presets
   { '^(\\.{1,2}/.*)\\.js$': '$1' }
 );
 
-module.exports = {
+const jestConfig: JestConfigWithTsJest = {
   verbose: true,
+  extensionsToTreatAsEsm: ['.ts'],
+  // moduleNameMapper,
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
   transform: {
-    // '^.+\\.[tj]sx?$' to process js/ts with `ts-jest`
-    // '^.+\\.m?[tj]sx?$' to process js/ts/mjs/mts with `ts-jest`
     '^.+\\.tsx?$': [
       'ts-jest',
       {
@@ -33,5 +38,6 @@ module.exports = {
   coverageDirectory: 'coverage',
   coveragePathIgnorePatterns: ['node_modules', 'test'],
   modulePathIgnorePatterns: ['dist'],
-  moduleNameMapper,
 };
+
+export default jestConfig;

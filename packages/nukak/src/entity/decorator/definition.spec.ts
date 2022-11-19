@@ -13,7 +13,7 @@ import {
   Storehouse,
   Tag,
   ItemTag,
-} from '../../test';
+} from '../../test/index.js';
 import { EntityGetter, EntityMeta, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';

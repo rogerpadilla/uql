@@ -1,4 +1,4 @@
-import { createSpec, Item, User } from '../test';
+import { createSpec, Item, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 import { MySqlDialect } from './mysqlDialect.js';
 

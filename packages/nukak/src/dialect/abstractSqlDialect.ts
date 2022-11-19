@@ -36,9 +36,9 @@ import {
   raw,
   getQueryFilterAsMap,
   getFieldCallbackValue,
-} from '../util';
+} from '../util/index.js';
 
-import { getMeta } from '../entity';
+import { getMeta } from '../entity/index.js';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;

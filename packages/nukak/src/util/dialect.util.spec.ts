@@ -1,5 +1,5 @@
-import { getMeta } from '../entity/decorator';
-import { User } from '../test/entityMock';
+import { getMeta } from '../entity/decorator/index.js';
+import { User } from '../test/entityMock.js';
 import { augmentFilter } from './dialect.util.js';
 import { raw } from './raw.js';
 

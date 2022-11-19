@@ -1,5 +1,5 @@
 import { Query, QueryFilter, QueryStringified } from 'nukak/type/index.js';
-import { Item } from 'nukak/test';
+import { Item } from 'nukak/test/index.js';
 import { parseQuery } from './query.util.js';
 
 it('parseQuery -- empty', () => {

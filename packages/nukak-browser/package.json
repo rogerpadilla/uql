@@ -5,8 +5,8 @@
   "version": "0.0.5",
   "type": "module",
   "main": "./nukak-browser.min.js",
-  "exports": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
+  "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "NODE_ENV=production node --loader ts-node/esm node_modules/.bin/webpack",

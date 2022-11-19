@@ -1,4 +1,4 @@
-import { getKeys } from '../util';
+import { getKeys } from '../util/index.js';
 import {
   EntityMeta,
   FieldKey,

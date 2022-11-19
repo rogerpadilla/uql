@@ -1,5 +1,5 @@
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
-import { User } from './test';
+import { User } from './test/index.js';
 import { Querier, Repository } from './type/index.js';
 
 describe('options', () => {

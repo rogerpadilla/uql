@@ -11,7 +11,7 @@ import {
   FieldKey,
   IdKey,
 } from '../../type/index.js';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util';
+import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
 const metaKey = 'nukak/entity/decorator';

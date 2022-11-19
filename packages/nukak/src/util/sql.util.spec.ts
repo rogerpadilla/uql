@@ -1,4 +1,4 @@
-import { Item, ItemAdjustment, Storehouse } from '../test';
+import { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import { QuerySortMap } from '../type/index.js';
 import { flatObject, unflatObjects } from './sql.util.js';
 

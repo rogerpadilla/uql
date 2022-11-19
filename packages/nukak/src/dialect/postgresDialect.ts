@@ -7,7 +7,7 @@ import {
   Type,
   FieldKey,
 } from '../type/index.js';
-import { getMeta } from '../entity/decorator';
+import { getMeta } from '../entity/decorator/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
