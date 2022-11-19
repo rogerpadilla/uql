@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 import { resolve } from 'node:path';
-import { Compiler, Configuration } from 'webpack';
+import { Configuration } from 'webpack';
 import ResolveTypeScriptPlugin from 'resolve-typescript-plugin';
 import tsconfig from '../../tsconfig.json' assert { type: 'json' };
 
