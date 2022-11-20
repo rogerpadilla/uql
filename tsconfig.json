@@ -5,7 +5,7 @@
   },
   "compilerOptions": {
     "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "Node",
     "lib": ["ESNext"],
     "target": "ES2022",
     "strict": true,

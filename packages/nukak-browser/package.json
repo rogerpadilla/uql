@@ -16,7 +16,6 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "devDependencies": {
-    "@types/webpack": "^5.28.0",
     "copyfiles": "^2.4.1",
     "dts-bundle-generator": "^7.0.0",
     "nukak": "^0.0.6",
