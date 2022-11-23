@@ -4,10 +4,10 @@
     "esm": true
   },
   "compilerOptions": {
-    "module": "NodeNext",
+    "module": "ESNext",
     "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
-    "target": "ES2022",
+    "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,
     "suppressImplicitAnyIndexErrors": true,
