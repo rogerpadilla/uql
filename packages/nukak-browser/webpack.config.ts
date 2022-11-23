@@ -19,13 +19,13 @@ const config: Configuration = {
   devtool: isProductionMode ? 'source-map' : 'cheap-module-source-map',
 
   resolve: {
-    extensions: ['.ts', '.js'],
+    extensions: ['.js'],
     alias: buildAlias(),
     plugins: [new ResolveTypeScriptPlugin()],
   },
 
   entry: {
-    [entryName]: ['./src/index.ts'],
+    [entryName]: ['./src/index.js'],
   },
 
   output: {
@@ -54,12 +54,14 @@ const config: Configuration = {
 };
 
 function buildAlias() {
-  return Object.keys(tsPathAliases).reduce((acc, key) => {
+  const alias = Object.keys(tsPathAliases).reduce((acc, key) => {
     const prop = key.replace('/*', '');
     const val = tsPathAliases[key][0].replace('/*', '');
     acc[prop] = resolve(parentDir, val);
     return acc;
   }, {});
+  console.log('ts alias', alias);
+  return alias;
 }
 
 export default config;
