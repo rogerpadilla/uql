@@ -1,8 +1,8 @@
 import { PoolConnection } from 'mariadb';
 
-import { QuerierLogger, QueryUpdateResult } from 'nukak/type';
-import { AbstractSqlQuerier } from 'nukak/querier';
-import { MySqlDialect } from 'nukak/dialect';
+import { MySqlDialect } from '../dialect/index.js';
+import { AbstractSqlQuerier } from '../querier/index.js';
+import { QuerierLogger, QueryUpdateResult } from '../type/index.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {
   constructor(readonly conn: PoolConnection, readonly logger?: QuerierLogger) {

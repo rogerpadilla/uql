@@ -1,3 +1,3 @@
-export * from './mongoDialect';
-export * from './mongodbQuerier';
-export * from './mongodbQuerierPool';
+export * from './mongoDialect.js';
+export * from './mongodbQuerier.js';
+export * from './mongodbQuerierPool.js';

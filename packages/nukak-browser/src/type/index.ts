@@ -1,3 +1,3 @@
-export * from './request';
-export * from './clientQuerier';
-export * from './clientRepository';
+export * from './request.js';
+export * from './clientQuerier.js';
+export * from './clientRepository.js';

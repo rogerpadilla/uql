@@ -1,5 +1,5 @@
-import { User, Item, createSpec, TaxCategory } from '../test';
-import { PostgresDialect } from './postgresDialect';
+import { User, Item, createSpec, TaxCategory } from '../test/index.js';
+import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {
   readonly dialect = new PostgresDialect();

@@ -1,4 +1,4 @@
-import { escape } from 'sqlstring';
+import sqlstring from 'sqlstring';
 import {
   QueryFilter,
   Query,
@@ -22,7 +22,7 @@ import {
   QuerySortDirection,
   QueryFilterLogical,
   QueryRaw,
-} from '../type';
+} from '../type/index.js';
 import {
   getPersistable,
   getProjectRelationKeys,
@@ -36,9 +36,9 @@ import {
   raw,
   getQueryFilterAsMap,
   getFieldCallbackValue,
-} from '../util';
+} from '../util/index.js';
 
-import { getMeta } from '../entity';
+import { getMeta } from '../entity/index.js';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -460,6 +460,6 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     if (value instanceof QueryRaw) {
       return getRawValue({ value, dialect: this });
     }
-    return escape(value);
+    return sqlstring.escape(value);
   }
 }

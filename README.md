@@ -156,7 +156,7 @@ export class MeasureUnit {
 ```ts
 import { getQuerier } from 'nukak';
 import { Transactional, InjectQuerier } from 'nukak/querier';
-import { User } from './shared/models';
+import { User } from './shared/models.js';
 
 export class UserService {
   @Transactional()

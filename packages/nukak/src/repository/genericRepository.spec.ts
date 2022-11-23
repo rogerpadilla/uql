@@ -1,6 +1,6 @@
-import { Querier, Repository } from '../type';
-import { User } from '../test';
-import { GenericRepository } from './genericRepository';
+import { Querier, Repository } from '../type/index.js';
+import { User } from '../test/index.js';
+import { GenericRepository } from './genericRepository.js';
 
 describe('repository', () => {
   let repository: Repository<User>;

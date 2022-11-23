@@ -1,12 +1,13 @@
 {
   "ts-node": {
-    "files": true
+    "files": true,
+    "esm": true
   },
   "compilerOptions": {
-    "module": "CommonJS",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
-    "target": "ES2022",
+    "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,
     "suppressImplicitAnyIndexErrors": true,

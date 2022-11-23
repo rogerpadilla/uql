@@ -5,8 +5,8 @@ import {
   RelationManyToOneOptions,
   RelationManyToManyOptions,
   Type,
-} from '../../type';
-import { defineRelation } from './definition';
+} from '../../type/index.js';
+import { defineRelation } from './definition.js';
 
 function Relation<E>(opts: RelationOptions<E>) {
   return (target: object, key: string) => {

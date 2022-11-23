@@ -1,7 +1,7 @@
-import { raw } from '../util';
-import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test';
-import { QuerierPool } from '../type';
-import { AbstractSqlQuerier } from './abstractSqlQuerier';
+import { raw } from '../util/index.js';
+import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
+import { QuerierPool } from '../type/index.js';
+import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier: AbstractSqlQuerier;

@@ -1,6 +1,6 @@
-import { Querier, QuerierPool, Type } from '../../type';
-import { getQuerierPool } from '../../options';
-import { getInjectedQuerierIndex } from './injectQuerier';
+import { Querier, QuerierPool, Type } from '../../type/index.js';
+import { getQuerierPool } from '../../options.js';
+import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({
   propagation = 'required',

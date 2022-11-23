@@ -1,6 +1,17 @@
 import 'reflect-metadata';
-import { RelationOptions, FieldOptions, EntityOptions, EntityMeta, Type, RelationKeyMap, RelationKey, Key, FieldKey, IdKey } from '../../type';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util';
+import {
+  RelationOptions,
+  FieldOptions,
+  EntityOptions,
+  EntityMeta,
+  Type,
+  RelationKeyMap,
+  RelationKey,
+  Key,
+  FieldKey,
+  IdKey,
+} from '../../type/index.js';
+import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
 const metaKey = 'nukak/entity/decorator';
