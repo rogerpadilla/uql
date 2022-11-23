@@ -1,4 +1,4 @@
-import { escape } from 'sqlstring';
+import sqlstring from 'sqlstring';
 import {
   QueryFilter,
   Query,
@@ -460,6 +460,6 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     if (value instanceof QueryRaw) {
       return getRawValue({ value, dialect: this });
     }
-    return escape(value);
+    return sqlstring.escape(value);
   }
 }

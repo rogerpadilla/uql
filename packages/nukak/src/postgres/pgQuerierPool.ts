@@ -1,12 +1,12 @@
-import { Pool, PoolConfig } from 'pg';
+import pg from 'pg';
 import { QuerierLogger, QuerierPool } from '../type/index.js';
 import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool implements QuerierPool<PgQuerier> {
-  readonly pool: Pool;
+  readonly pool: pg.Pool;
 
-  constructor(opts: PoolConfig, readonly logger?: QuerierLogger) {
-    this.pool = new Pool(opts);
+  constructor(opts: pg.PoolConfig, readonly logger?: QuerierLogger) {
+    this.pool = new pg.Pool(opts);
   }
 
   async getQuerier() {
