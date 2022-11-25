@@ -27,12 +27,6 @@ The `nukak` queries can be safely written in the frontend (browser/mobile) and s
 npm install nukak --save
 ```
 
-or
-
-```sh
-yarn add nukak
-```
-
 2. Install one of the specific adapters for your database:
 
 | Database     | Package          |
@@ -43,7 +37,7 @@ yarn add nukak
 | `MongoDB`    | `nukak-mongo`    |
 | `SQLite`     | `nukak-sqlite`   |
 
-E.g. use `nukak-postres` driver for `Postgres`
+E.g. use `nukak-postres` adapter for `Postgres`
 
 ```sh
 npm install nukak-postgres --save
@@ -85,7 +79,7 @@ Take any dump class (aka DTO) and annotate it with the decorators from `nukak/en
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from 'nukak/entity';
+import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from 'nukak/entity/index.js';
 
 @Entity()
 export class Profile {
@@ -149,8 +143,8 @@ export class MeasureUnit {
 
 ```ts
 import { getQuerier } from 'nukak';
-import { Transactional, InjectQuerier } from 'nukak/querier';
-import { User } from './shared/models.js';
+import { Transactional, InjectQuerier } from 'nukak/querier/index.js';
+import { User } from './shared/models/index.js';
 
 export class UserService {
   @Transactional()
