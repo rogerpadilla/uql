@@ -18,7 +18,7 @@
     "pg": "^8.8.0"
   },
   "peerDependencies": {
-    "nukak": "^0.0.11"
+    "nukak": "^0.0.13"
   },
   "devDependencies": {
     "@types/node": "^18.11.9",

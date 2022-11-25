@@ -18,7 +18,7 @@
     "mysql2": "^2.3.3"
   },
   "peerDependencies": {
-    "nukak": "^0.0.11"
+    "nukak": "^0.0.13"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
