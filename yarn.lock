@@ -6400,13 +6400,6 @@ resolve-global@1.0.0, resolve-global@^1.0.0:
   dependencies:
     global-dirs "^0.1.1"
 
-resolve-typescript-plugin@^2.0.0:
-  version "2.0.0"
-  resolved "https://registry.yarnpkg.com/resolve-typescript-plugin/-/resolve-typescript-plugin-2.0.0.tgz#1c4c91e6cc37ee82b1093586fe9ac531247456a7"
-  integrity sha512-bkQMP9BVupQfZM9N6SS/QOy6PZh4dL4/d9LBhC+fmb5CdE6geGcm2fZUfXii2xXqwmCOu4xp2QTAnZhIBwGadQ==
-  dependencies:
-    tslib "2.4.0"
-
 resolve.exports@^1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/resolve.exports/-/resolve.exports-1.1.0.tgz#5ce842b94b05146c0e03076985d1d0e7e48c90c9"
