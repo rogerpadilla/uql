@@ -29,18 +29,18 @@ npm install nukak --save
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Package          |
-| ------------ | ---------------- |
-| `PostgreSQL` | `nukak-postgres` |
-| `MySQL`      | `nukak-mysql`    |
-| `MariaDB`    | `nukak-maria`    |
-| `MongoDB`    | `nukak-mongo`    |
-| `SQLite`     | `nukak-sqlite`   |
+| Database     | Driver           | Nukak Adapter    |
+| ------------ | ---------------- | ---------------- |
+| `MySQL`      | `mysql2`         | `nukak-mysql`    |
+| `MariaDB`    | `mariadb`        | `nukak-maria`    |
+| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
+| `PostgreSQL` | `pg`             | `nukak-postgres` |
+| `MongoDB`    | `mongodb`        | `nukak-mongo`    |
 
-E.g. use `nukak-postgres` adapter for `Postgres`
+For example, for `Postgres`:
 
 ```sh
-npm install nukak-postgres --save
+npm install pg nukak-postgres --save
 ```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
