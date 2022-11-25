@@ -1,5 +1,5 @@
 import { Company, InventoryAdjustment, Item, ItemAdjustment, MeasureUnit, Profile, Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { FieldKey, QueryFilter } from '../type/index.js';
+import type { FieldKey, QueryFilter } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -11,7 +11,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldBeginTransaction() {
-    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+    expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
   }
 
   shouldInsertMany() {
@@ -1082,7 +1082,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
         $limit: 30,
       })
-    ).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30");
+    ).toBe("SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `companyId` = 1 LIMIT 30");
 
     expect(
       this.dialect.find(User, {
@@ -1094,6 +1094,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 10,
       })
-    ).toBe("SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
+    ).toBe("SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
   }
 }

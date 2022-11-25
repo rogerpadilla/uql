@@ -43,7 +43,7 @@ import { getMeta } from '../entity/index.js';
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
 
-  constructor(readonly escapeIdChar: '`' | '"', readonly beginTransactionCommand: string) {
+  constructor(readonly escapeIdChar: '`' | '"' = '`', readonly beginTransactionCommand: string = 'START TRANSACTION') {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
@@ -231,7 +231,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
-      return `${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : ${this.escape(search.$value)}`;
+      return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {

@@ -1,10 +1,36 @@
-import { createSpec } from '../test/index.js';
+import { createSpec, Item, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
     super(new SqliteDialect());
+  }
+
+  override shouldBeginTransaction() {
+    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+  }
+
+  override shouldFind$text() {
+    expect(
+      this.dialect.find(Item, {
+        $project: { id: true },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
+        $limit: 30,
+      })
+    ).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30");
+
+    expect(
+      this.dialect.find(User, {
+        $project: { id: 1 },
+        $filter: {
+          $text: { $fields: ['name'], $value: 'something' },
+          name: { $ne: 'other unwanted' },
+          companyId: 1,
+        },
+        $limit: 10,
+      })
+    ).toBe("SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
   }
 }
 
