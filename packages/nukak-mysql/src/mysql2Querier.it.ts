@@ -1,5 +1,5 @@
-import { createSpec } from '../test/index.js';
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-it.js';
+import { createSpec } from 'nukak/test/index.js';
+import { AbstractSqlQuerierIt } from 'nukak/querier/abstractSqlQuerier-it.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
 export class MySql2QuerierIt extends AbstractSqlQuerierIt {

@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { QuerierLogger, QuerierPool } from '../type/index.js';
+import { QuerierLogger, QuerierPool } from 'nukak/type/index.js';
 import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool implements QuerierPool<PgQuerier> {

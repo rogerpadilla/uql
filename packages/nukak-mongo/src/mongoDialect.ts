@@ -1,6 +1,6 @@
 import { Filter, ObjectId, Sort } from 'mongodb';
-import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from '../util/index.js';
-import { getMeta } from '../entity/decorator/index.js';
+import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from 'nukak/util/index.js';
+import { getMeta } from 'nukak/entity/decorator/index.js';
 import {
   QueryFilter,
   Query,
@@ -12,7 +12,7 @@ import {
   QuerySort,
   FieldValue,
   RelationKey,
-} from '../type/index.js';
+} from 'nukak/type/index.js';
 
 export class MongoDialect {
   filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {

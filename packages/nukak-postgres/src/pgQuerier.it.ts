@@ -1,6 +1,6 @@
 import { types } from 'pg';
-import { createSpec } from '../test/index.js';
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-it.js';
+import { createSpec } from 'nukak/test/index.js';
+import { AbstractSqlQuerierIt } from 'nukak/querier/abstractSqlQuerier-it.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
 types.setTypeParser(types.builtins.INT8, (value: string) => parseInt(value));

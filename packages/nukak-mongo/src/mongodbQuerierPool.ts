@@ -1,5 +1,5 @@
 import { MongoClient, MongoClientOptions } from 'mongodb';
-import { QuerierLogger, QuerierPool } from '../type/index.js';
+import { QuerierLogger, QuerierPool } from 'nukak/type/index.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 import { MongoDialect } from './mongoDialect.js';
 

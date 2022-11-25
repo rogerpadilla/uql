@@ -21,7 +21,7 @@ The `nukak` queries can be safely written in the frontend (browser/mobile) and s
 
 ### <a name="installation"></a> Installation
 
-1. Install the `nukak` core package:
+1. Install the `nukak` main package:
 
 ```sh
 npm install nukak --save
@@ -33,26 +33,20 @@ or
 yarn add nukak
 ```
 
-2. Install one of the specific drivers according to your database:
+2. Install one of the specific adapters for your database:
 
-| Database     | Package   |
-| ------------ | --------- |
-| `MySQL`      | `mysql2`  |
-| `PostgreSQL` | `pg`      |
-| `MariaDB`    | `mariadb` |
-| `MongoDB`    | `mongodb` |
-| `SQLite`     | `sqlite3` |
+| Database     | Package          |
+| ------------ | ---------------- |
+| `PostgreSQL` | `nukak-postgres` |
+| `MySQL`      | `nukak-mysql`    |
+| `MariaDB`    | `nukak-maria`    |
+| `MongoDB`    | `nukak-mongo`    |
+| `SQLite`     | `nukak-sqlite`   |
 
-E.g. use `pg` driver for `Postgres` DB
-
-```sh
-npm install pg --save
-```
-
-or with _yarn_
+E.g. use `nukak-postres` driver for `Postgres`
 
 ```sh
-yarn add pg
+npm install nukak-postgres --save
 ```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
@@ -69,7 +63,7 @@ A default querier-pool can be set in any of the bootstrap files of your app (e.g
 
 ```ts
 import { setQuerierPool } from 'nukak';
-import { PgQuerierPool } from 'nukak/postgres';
+import { PgQuerierPool } from 'nukak-postgres';
 
 const querierPool = new PgQuerierPool(
   {
@@ -87,7 +81,7 @@ setQuerierPool(querierPool);
 
 ### <a name="definition-of-entities"></a> Definition of Entities
 
-Take any dump class (aka DTO) and annotate it with the decorators from `'nukak/entity'`.
+Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
