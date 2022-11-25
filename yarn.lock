@@ -6787,6 +6787,11 @@ sqlite3@^5.1.2:
   optionalDependencies:
     node-gyp "8.x"
 
+sqlite@^4.1.2:
+  version "4.1.2"
+  resolved "https://registry.yarnpkg.com/sqlite/-/sqlite-4.1.2.tgz#35643893dc1cec118c835cbab9ddbd283ffaba7d"
+  integrity sha512-FlBG51gHbux5vPjwnoqFEghNGvnTMTbHyiI09U3qFTQs9AtWuwd4i++6+WCusCXKrVdIDLzfdGekrolr3m4U4A==
+
 sqlstring@^2.3.2:
   version "2.3.2"
   resolved "https://registry.yarnpkg.com/sqlstring/-/sqlstring-2.3.2.tgz#cdae7169389a1375b18e885f2e60b3e460809514"
