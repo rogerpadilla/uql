@@ -6,6 +6,7 @@
   "type": "module",
   "main": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
+  "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "bunchee ./src/index.ts -o ./dist/nukak-browser.min.js",
