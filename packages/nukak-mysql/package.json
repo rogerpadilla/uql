@@ -14,13 +14,12 @@
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
-  "dependencies": {
-    "mysql2": "^2.3.3"
-  },
   "peerDependencies": {
+    "mysql2": "^2.3.3",
     "nukak": "^0.0.13"
   },
   "devDependencies": {
+    "mysql2": "^2.3.3",
     "@types/mysql": "^2.15.21",
     "@types/node": "^18.11.9"
   },

@@ -14,15 +14,14 @@
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
-  "dependencies": {
-    "mongodb": "^4.12.1"
-  },
   "peerDependencies": {
+    "mongodb": "^4.12.1",
     "nukak": "^0.0.13"
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.6",
-    "@types/node": "^18.11.9"
+    "@types/node": "^18.11.9",
+    "mongodb": "^4.12.1"
   },
   "author": "Roger Padilla",
   "repository": {

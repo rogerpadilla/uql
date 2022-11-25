@@ -14,11 +14,9 @@
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
-  "dependencies": {
-    "sqlite": "^4.1.2",
-    "sqlite3": "^5.1.2"
-  },
   "peerDependencies": {
+    "sqlite": "^4.1.2",
+    "sqlite3": "^5.1.2",
     "nukak": "^0.0.13"
   },
   "devDependencies": {
