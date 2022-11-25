@@ -37,7 +37,7 @@ npm install nukak --save
 | `MongoDB`    | `nukak-mongo`    |
 | `SQLite`     | `nukak-sqlite`   |
 
-E.g. use `nukak-postres` adapter for `Postgres`
+E.g. use `nukak-postgres` adapter for `Postgres`
 
 ```sh
 npm install nukak-postgres --save
