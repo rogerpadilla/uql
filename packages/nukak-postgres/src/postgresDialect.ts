@@ -1,4 +1,4 @@
-import {
+import type {
   QueryComparisonOptions,
   QueryFilterMap,
   QueryOptions,
@@ -6,9 +6,9 @@ import {
   QueryTextSearchOptions,
   Type,
   FieldKey,
-} from '../type/index.js';
-import { getMeta } from '../entity/decorator/index.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+} from 'nukak/type/index.js';
+import { AbstractSqlDialect } from 'nukak/dialect/abstractSqlDialect.js';
+import { getMeta } from 'nukak/entity/decorator/index.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {

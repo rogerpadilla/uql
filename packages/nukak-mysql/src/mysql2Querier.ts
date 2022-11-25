@@ -2,7 +2,7 @@ import { PoolConnection } from 'mysql2/promise';
 
 import { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
 import { AbstractSqlQuerier } from 'nukak/querier/index.js';
-import { MySqlDialect } from 'nukak/dialect/index.js';
+import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractSqlQuerier {
   constructor(readonly conn: PoolConnection, readonly logger?: QuerierLogger) {

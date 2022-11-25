@@ -2,7 +2,7 @@ import { PoolClient } from 'pg';
 
 import { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
 import { AbstractSqlQuerier } from 'nukak/querier/index.js';
-import { PostgresDialect } from 'nukak/dialect/index.js';
+import { PostgresDialect } from './postgresDialect.js';
 
 export class PgQuerier extends AbstractSqlQuerier {
   constructor(readonly conn: PoolClient, readonly logger?: QuerierLogger) {

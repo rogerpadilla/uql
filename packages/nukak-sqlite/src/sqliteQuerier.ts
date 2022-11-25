@@ -1,7 +1,7 @@
 import type { Database } from 'sqlite';
 import type { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
 import { AbstractSqlQuerier } from 'nukak/querier/index.js';
-import { SqliteDialect } from 'nukak/dialect/index.js';
+import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqlQuerier {
   constructor(readonly db: Database, readonly logger?: QuerierLogger) {

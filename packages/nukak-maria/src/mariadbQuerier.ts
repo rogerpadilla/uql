@@ -1,12 +1,12 @@
 import { PoolConnection } from 'mariadb';
 
-import { MySqlDialect } from 'nukak/dialect/index.js';
 import { AbstractSqlQuerier } from 'nukak/querier/index.js';
 import { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
+import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {
   constructor(readonly conn: PoolConnection, readonly logger?: QuerierLogger) {
-    super(new MySqlDialect());
+    super(new MariaDialect());
   }
 
   override async all<T>(query: string) {
