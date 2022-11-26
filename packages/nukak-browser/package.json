@@ -9,7 +9,7 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "compile": "bunchee ./src/index.ts -o ./dist/nukak-browser.min.js",
+    "compile": "bunchee ./src/index.ts -m -o ./dist/nukak-browser.min.js",
     "build": "yarn clean && concurrently 'yarn:compile' 'yarn:copyfiles'",
     "clean": "rimraf dist *.tsbuildinfo"
   },
