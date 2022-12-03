@@ -6,6 +6,8 @@ Learn more of `nukak` on its website https://nukak.org
 
 The `nukak` queries can be safely written in the frontend (browser/mobile) and sent to the backend; or only use `nukak` in the backend, or even in a mobile app with an embedded database (like `sqlite`).
 
+&nbsp;
+
 ## Features
 
 - Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
