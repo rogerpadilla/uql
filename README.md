@@ -66,8 +66,8 @@ const querierPool = new PgQuerierPool(
     password: 'thePassword',
     database: 'theDatabase',
   },
-  // a logger can optionally be passed so the SQL queries are logged
-  console.log
+  // optionally, a logger can be passed to log the generated SQL queries
+  { logger: console.log }
 );
 
 setQuerierPool(querierPool);

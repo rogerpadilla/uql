@@ -1,24 +1,24 @@
 import { PoolConnection } from 'mariadb';
 
 import { AbstractSqlQuerier } from 'nukak/querier/index.js';
-import { QuerierLogger, QueryUpdateResult } from 'nukak/type/index.js';
+import { ExtraOptions, QueryUpdateResult } from 'nukak/type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {
-  constructor(readonly conn: PoolConnection, readonly logger?: QuerierLogger) {
+  constructor(readonly conn: PoolConnection, readonly extra?: ExtraOptions) {
     super(new MariaDialect());
   }
 
   override async all<T>(query: string) {
-    this.logger?.(query);
+    this.extra?.logger?.(query);
     const res: T[] = await this.conn.query(query);
     return res.slice(0, res.length);
   }
 
   override async run(query: string) {
-    this.logger?.(query);
+    this.extra?.logger?.(query);
     const res = await this.conn.query(query);
-    return { changes: res.affectedRows, firstId: Number(res.insertId) } as QueryUpdateResult;
+    return { changes: res.affectedRows, firstId: Number(res.insertId) } satisfies QueryUpdateResult;
   }
 
   override async release() {

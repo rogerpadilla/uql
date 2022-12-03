@@ -1,16 +1,19 @@
-import { Query, QueryFilter, QueryStringified } from 'nukak/type/index.js';
+import type { Request } from 'express';
+import type { Query, QueryFilter, QueryStringified } from 'nukak/type/index.js';
 import { Item } from 'nukak/test/index.js';
 import { parseQuery } from './query.util.js';
 
 it('parseQuery -- empty', () => {
-  const res1 = parseQuery(undefined);
-  expect(res1).toEqual({});
-  const res2 = parseQuery({});
-  expect(res2).toEqual({});
+  const req1 = {} as Request;
+  parseQuery(req1);
+  expect(req1).toEqual({ query: { $filter: {} } });
+  const req2 = { query: undefined as object } as Request;
+  parseQuery(req2);
+  expect(req2).toEqual({ query: { $filter: {} } });
 });
 
 it('parseQuery stringified', () => {
-  const qms: QueryStringified = {
+  const queryStr = {
     $project: '{ "id": true, "name": true, "measureUnit": {"$project":{"id":true, "name":true}}, "tax": {"$project":{"id":true, "name":true}} }',
     $filter: '{ "name": "lorem", "companyId": 40 }',
     $group: '["companyId"]',
@@ -18,8 +21,8 @@ it('parseQuery stringified', () => {
     $sort: '{ "name": -1, "companyId": 1 }',
     $skip: '200',
     $limit: '100',
-  };
-  const expected: Query<Item> = {
+  } satisfies QueryStringified;
+  const query = {
     $project: {
       id: true,
       name: true,
@@ -32,7 +35,8 @@ it('parseQuery stringified', () => {
     $sort: { name: -1, companyId: 1 },
     $skip: 200,
     $limit: 100,
-  };
-  const result = parseQuery(qms);
-  expect(result).toEqual(expected);
+  } satisfies Query<Item>;
+  const req = { query: queryStr } as unknown as Request;
+  parseQuery(req);
+  expect(req).toEqual({ query });
 });

@@ -2,20 +2,20 @@ import { MongoClient, ClientSession, UpdateFilter, Document } from 'mongodb';
 import { getMeta } from 'nukak/entity/decorator/index.js';
 import { AbstractQuerier } from 'nukak/querier/index.js';
 import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from 'nukak/util/index.js';
-import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QuerierLogger, QueryUnique } from 'nukak/type/index.js';
+import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique, ExtraOptions } from 'nukak/type/index.js';
 
 import { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerier extends AbstractQuerier {
   private session: ClientSession;
 
-  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly logger?: QuerierLogger) {
+  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly extra?: ExtraOptions) {
     super();
   }
 
   override count<E>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
-    this.logger?.('count', entity.name, filter);
+    this.extra?.logger?.('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
       session: this.session,
     });
@@ -33,9 +33,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
     if (hasProjectRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm);
-      if (this.logger) {
-        this.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
-      }
+      this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       documents = this.dialect.normalizeIds(meta, documents);
       await this.findToManyRelations(entity, documents, qm.$project);
@@ -61,7 +59,7 @@ export class MongodbQuerier extends AbstractQuerier {
         cursor.limit(qm.$limit);
       }
 
-      this.logger?.('findMany', entity.name, qm);
+      this.extra?.logger?.('findMany', entity.name, qm);
 
       documents = await cursor.toArray();
       documents = this.dialect.normalizeIds(meta, documents);
@@ -81,7 +79,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const payloads = Array.isArray(payload) ? payload : [payload];
     const persistables = getPersistables(meta, payload, 'onInsert');
 
-    this.logger?.('insertMany', entity.name, persistables);
+    this.extra?.logger?.('insertMany', entity.name, persistables);
 
     const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
 
@@ -103,7 +101,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const filter = this.dialect.filter(entity, qm.$filter);
     const update: UpdateFilter<Document> = { $set: persistable };
 
-    this.logger?.('updateMany', entity.name, filter, update);
+    this.extra?.logger?.('updateMany', entity.name, filter, update);
 
     const { matchedCount } = await this.collection(entity).updateMany(filter, update, {
       session: this.session,
@@ -117,7 +115,7 @@ export class MongodbQuerier extends AbstractQuerier {
   override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts: QueryOptions = {}) {
     const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
-    this.logger?.('deleteMany', entity.name, filter, opts);
+    this.extra?.logger?.('deleteMany', entity.name, filter, opts);
     const founds = await this.collection(entity)
       .find(filter, {
         projection: { _id: true },
@@ -168,7 +166,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
-    this.logger?.('beginTransaction');
+    this.extra?.logger?.('beginTransaction');
     this.session = this.conn.startSession();
     this.session.startTransaction();
   }
@@ -177,7 +175,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
-    this.logger?.('commitTransaction');
+    this.extra?.logger?.('commitTransaction');
     await this.session.commitTransaction();
   }
 
@@ -185,7 +183,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
-    this.logger?.('rollbackTransaction');
+    this.extra?.logger?.('rollbackTransaction');
     await this.session.abortTransaction();
   }
 

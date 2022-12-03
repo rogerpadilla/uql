@@ -5,11 +5,6 @@ import { IdValue } from './entity.js';
 import { UniversalQuerier } from './universalQuerier.js';
 
 /**
- * logger function to debug queries.
- */
-export type QuerierLogger = (message: any, ...args: any[]) => any;
-
-/**
  * Isolation levels for transactions.
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
@@ -73,3 +68,12 @@ export interface Querier extends UniversalQuerier {
    */
   release(): Promise<void>;
 }
+
+/**
+ * logger function to debug queries.
+ */
+export type Logger = (message: any, ...args: any[]) => any;
+
+export type ExtraOptions = {
+  readonly logger?: Logger;
+};

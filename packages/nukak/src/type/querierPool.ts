@@ -1,13 +1,13 @@
-import { Querier, QuerierLogger } from './querier.js';
+import { ExtraOptions, Querier } from './querier.js';
 
 /**
  * querier pool.
  */
 export type QuerierPool<Q extends Querier = Querier> = {
   /**
-   * logger function to print debug messages.
+   * extra options
    */
-  logger?: QuerierLogger;
+  readonly extra?: ExtraOptions;
 
   /**
    * get a querier from the pool.

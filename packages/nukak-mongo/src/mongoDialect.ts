@@ -48,7 +48,7 @@ export class MongoDialect {
       return project.reduce((acc, it) => {
         acc[it as string] = true;
         return acc;
-      }, {} as QueryProjectMap<E>);
+      }, {} satisfies QueryProjectMap<E>);
     }
     return project as QueryProjectMap<E>;
   }
@@ -146,7 +146,7 @@ export class MongoDialect {
       res[relKey] = Array.isArray(res[relKey]) ? this.normalizeIds(relMeta, res[relKey]) : this.normalizeId(relMeta, res[relKey]);
     }
 
-    return res as E;
+    return res;
   }
 
   getIdValue<T extends string | string[] | ObjectId | ObjectId[]>(value: T): T {

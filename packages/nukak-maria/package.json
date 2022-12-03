@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
-    "@types/node": "^18.11.9",
+    "@types/node": "^18.11.10",
     "mariadb": "^3.0.2"
   },
   "author": "Roger Padilla",
