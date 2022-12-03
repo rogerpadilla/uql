@@ -17,6 +17,8 @@ The `nukak` queries can be safely written in the frontend (browser/mobile) and s
 - Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
 - Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
 
+&nbsp;
+
 ## Install
 
 1. Install the core package:
@@ -49,7 +51,9 @@ npm install pg nukak-postgres --save
    "emitDecoratorMetadata": true
    ```
 
-## <a name="configure"></a> Configure
+&nbsp;
+
+## Configure
 
 A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
@@ -72,7 +76,9 @@ export const querierPool = new PgQuerierPool(
 setQuerierPool(querierPool);
 ```
 
-## <a name="define-the-entities"></a> Define the Entities
+&nbsp;
+
+## Define the entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
 
@@ -93,7 +99,9 @@ export class User {
 }
 ```
 
-## <a name="manipulate-the-data"></a> Manipulate the data
+&nbsp;
+
+## Manipulate the data
 
 ```ts
 import { getQuerier } from 'nukak';
