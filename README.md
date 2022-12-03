@@ -1,6 +1,6 @@
 # [nukak](https://nukak.org) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-Learn more of `nukak` on its website https://nukak.org
+Learn more about `nukak` at its website https://nukak.org
 
 `nukak` is a powerful and efficient ORM, featuring serializable `JSON` syntax and intelligent type-inference. It enables you to write queries in the frontend (browser/mobile), or any other client, which can then be safely sent to the server. Additionally, you can use `nukak` solely in the server, or even in a mobile application with an embedded database (such as `SQLite`).
 
@@ -125,3 +125,7 @@ async function createUser(body: User) {
   return id;
 }
 ```
+
+&nbsp;
+
+Learn more about `nukak` at its website https://nukak.org
