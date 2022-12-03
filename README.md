@@ -2,9 +2,7 @@
 
 Learn more of `nukak` on its website https://nukak.org
 
-`nukak` is a flexible and efficient `ORM`, with serializable `JSON` syntax and smart type-inference.
-
-As `nukak` relies on `JSON`, all its queries can be safely written in the frontend (browser/mobile), or any other client, and then sent to the server; or only use `nukak` in the server, or in a mobile app with an embedded database (like `sqlite`).
+`nukak` is a powerful and efficient ORM, featuring serializable `JSON` syntax and intelligent type-inference. It enables you to write queries in the frontend (browser/mobile), or any other client, which can then be safely sent to the server. Additionally, you can use `nukak` solely in the server, or even in a mobile application with an embedded database (such as `SQLite`).
 
 &nbsp;
 
