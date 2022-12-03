@@ -10,11 +10,11 @@ The `nukak` queries can be safely written in the frontend (browser/mobile) and s
 
 - Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
 - Uses the power of `TypeScript` to get smart type-safety [everywhere](https://nukak.org/docs/api-repository).
-- The generated queries are [performant](https://nukak.org/docs/querying-retrieve-relations), safe, and human-readable.
-- `$project`, `$filter`, `$sort`, `$limit` works at [multiple levels](https://nukak.org/docs/querying-retrieve-relations) (including deep relations and their fields).
+- The generated queries are [performant](https://nukak.org/docs/querying-relations), safe, and human-readable.
+- `$project`, `$filter`, `$sort`, `$limit` works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
 - [declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/api-repository), `connection pooling`.
-- Transparent support for [inheritance](https://nukak.org/docs/entities-advanced) between entities.
+- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
 - Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
 
 ## Install
