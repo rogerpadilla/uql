@@ -15,6 +15,11 @@ export function patch<T>(url: string, payload: unknown, opts?: RequestOptions) {
   return request<T>(url, { method: 'patch', body }, opts);
 }
 
+export function put<T>(url: string, payload: unknown, opts?: RequestOptions) {
+  const body = JSON.stringify(payload);
+  return request<T>(url, { method: 'put', body }, opts);
+}
+
 export function remove<T>(url: string, opts?: RequestOptions) {
   return request<T>(url, { method: 'delete' }, opts);
 }
