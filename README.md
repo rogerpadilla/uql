@@ -107,7 +107,7 @@ export class User {
 import { getQuerier } from 'nukak';
 import { User } from './shared/models/index.js';
 
-export async function findLastUsers(limit = 10) {
+async function findLastUsers(limit = 10) {
   const querier = await getQuerier();
   const users = await querier.findMany(User, {
     $project: ['id', 'name', 'email'],
@@ -118,7 +118,7 @@ export async function findLastUsers(limit = 10) {
   return users;
 }
 
-export async function createUser(body: User) {
+async function createUser(body: User) {
   const querier = await getQuerier();
   const id = await querier.insertOne(User, body);
   await querier.release();
