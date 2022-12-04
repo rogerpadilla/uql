@@ -149,12 +149,9 @@ export class MongoDialect {
     return res;
   }
 
-  getIdValue<T extends string | string[] | ObjectId | ObjectId[]>(value: T): T {
+  getIdValue<T extends string | ObjectId>(value: T): T {
     if (value instanceof ObjectId) {
       return value;
-    }
-    if (Array.isArray(value)) {
-      return value.map((it) => this.getIdValue(it)) as T;
     }
     return new ObjectId(value) as T;
   }

@@ -1,12 +1,22 @@
 import { IdValue } from './entity.js';
-import { Querier } from './querier.js';
 import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query.js';
+import { UniversalQuerier } from './universalQuerier.js';
 import { Type } from './utility.js';
 
 /**
  * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.
  */
 export type UniversalRepository<E> = {
+  /**
+   * the `entity` type to which this `repository` is linked to.
+   */
+  readonly entity: Type<E>;
+
+  /**
+   * the `querier` instance to which this `repository` is linked to.
+   */
+  readonly querier: UniversalQuerier;
+
   /**
    * counts the number of records matching the given search parameters.
    * @param qm the search options
@@ -95,16 +105,6 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
-  /**
-   * the `entity` type to which this `repository` is linked to.
-   */
-  readonly entity: Type<E>;
-
-  /**
-   * the `querier` instance to which this `repository` is linked to.
-   */
-  readonly querier: Querier;
-
   count(qm: QueryCriteria<E>): Promise<number>;
 
   findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<E>;
