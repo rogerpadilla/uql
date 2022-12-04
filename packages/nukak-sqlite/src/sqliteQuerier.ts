@@ -1,6 +1,6 @@
 import type { Database } from 'sqlite';
-import type { ExtraOptions, QueryUpdateResult } from 'nukak/type/index.js';
-import { AbstractSqlQuerier } from 'nukak/querier/index.js';
+import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
+import { AbstractSqlQuerier } from 'nukak/querier';
 import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqlQuerier {

@@ -1,3 +1,3 @@
-import { AbstractSqlDialect } from 'nukak/dialect/abstractSqlDialect.js';
+import { AbstractSqlDialect } from 'nukak/dialect';
 
 export class MySqlDialect extends AbstractSqlDialect {}

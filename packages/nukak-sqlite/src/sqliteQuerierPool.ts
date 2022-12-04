@@ -1,6 +1,6 @@
 import { type ISqlite, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import { ExtraOptions, QuerierPool } from 'nukak/type/index.js';
+import type { ExtraOptions, QuerierPool } from 'nukak/type';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {

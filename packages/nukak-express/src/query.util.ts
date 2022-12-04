@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import type { Query, QueryStringified } from 'nukak/type/index.js';
+import type { Query, QueryStringified } from 'nukak/type';
 
 export function parseQuery(req: Request) {
   req.query ??= {};

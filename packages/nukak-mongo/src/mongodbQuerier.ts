@@ -1,8 +1,8 @@
 import { MongoClient, ClientSession, UpdateFilter, Document } from 'mongodb';
-import { getMeta } from 'nukak/entity/decorator/index.js';
-import { AbstractQuerier } from 'nukak/querier/index.js';
-import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from 'nukak/util/index.js';
-import { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique, ExtraOptions } from 'nukak/type/index.js';
+import { getMeta } from 'nukak/entity';
+import { AbstractQuerier } from 'nukak/querier';
+import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from 'nukak/util';
+import type { Query, Type, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique, ExtraOptions } from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 

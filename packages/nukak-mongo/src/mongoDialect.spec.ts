@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
-import { getMeta } from 'nukak/entity/index.js';
-import { Item, Spec, TaxCategory, User, createSpec, Tax } from 'nukak/test/index.js';
+import { getMeta } from 'nukak/entity';
+import { Item, Spec, TaxCategory, User, createSpec, Tax } from 'nukak/test';
 import { MongoDialect } from './mongoDialect.js';
 
 class MongoDialectSpec implements Spec {

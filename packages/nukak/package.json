@@ -7,6 +7,15 @@
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
+  "exports": {
+    ".": "./index.js",
+    "./dialect": "./dialect/index.js",
+    "./entity": "./entity/index.js",
+    "./querier": "./querier/index.js",
+    "./repository": "./repository/index.js",
+    "./type": "./type/index.js",
+    "./util": "./util/index.js"
+  },
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",

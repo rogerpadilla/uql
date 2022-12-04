@@ -1,6 +1,6 @@
-import { getMeta } from 'nukak/entity/index.js';
-import type { QueryFilterMap, QueryTextSearchOptions, Type, QueryComparisonOptions } from 'nukak/type/index.js';
-import { AbstractSqlDialect } from 'nukak/dialect/abstractSqlDialect.js';
+import { getMeta } from 'nukak/entity';
+import type { QueryFilterMap, QueryTextSearchOptions, Type, QueryComparisonOptions } from 'nukak/type';
+import { AbstractSqlDialect } from 'nukak/dialect';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor() {

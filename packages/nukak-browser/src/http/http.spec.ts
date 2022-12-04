@@ -1,4 +1,3 @@
-import type { RequestNotification } from '../type/index.js';
 import { post, patch, put, get, remove } from './http.js';
 
 describe('http', () => {

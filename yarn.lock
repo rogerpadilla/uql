@@ -5771,6 +5771,11 @@ npmlog@^6.0.0:
     gauge "^4.0.3"
     set-blocking "^2.0.0"
 
+nukak-express@0.0.20:
+  version "0.0.20"
+  resolved "https://registry.yarnpkg.com/nukak-express/-/nukak-express-0.0.20.tgz#642ef811c9568b659792f9df8b3f3851e35330f2"
+  integrity sha512-n+fPKWGFVXfClYJaiNA2d0u0Pj5AQfOfg/rX+OqSr9PYBL0aaHlEqBYA02eWv/04Gm/IXhBs4MN1z4GBzCBKfQ==
+
 number-is-nan@^1.0.0:
   version "1.0.1"
   resolved "https://registry.yarnpkg.com/number-is-nan/-/number-is-nan-1.0.1.tgz#097b602b53422a522c1afb8790318336941a011d"

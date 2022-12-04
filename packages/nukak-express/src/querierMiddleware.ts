@@ -1,8 +1,8 @@
 import { Router as expressRouter, type Request } from 'express';
-import { getQuerier } from 'nukak/options.js';
-import { EntityMeta, type Type } from 'nukak/type/index.js';
-import { kebabCase } from 'nukak/util/index.js';
-import { getEntities, getMeta } from 'nukak/entity/decorator/index.js';
+import { getQuerier } from 'nukak';
+import { getEntities, getMeta } from 'nukak/entity';
+import type { EntityMeta, Type } from 'nukak/type';
+import { kebabCase } from 'nukak/util';
 import { parseQuery } from './query.util.js';
 
 export function querierMiddleware(opts: MiddlewareOptions = {}) {

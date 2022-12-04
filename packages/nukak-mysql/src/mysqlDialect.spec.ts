@@ -1,4 +1,4 @@
-import { createSpec } from 'nukak/test/index.js';
+import { createSpec } from 'nukak/test';
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
 import { MySqlDialect } from './mysqlDialect.js';
 

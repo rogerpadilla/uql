@@ -1,4 +1,4 @@
-import { createSpec } from 'nukak/test/index.js';
+import { createSpec } from 'nukak/test';
 import { AbstractSqlQuerierIt } from 'nukak/querier/abstractSqlQuerier-it.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 

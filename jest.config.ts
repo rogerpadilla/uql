@@ -4,11 +4,12 @@ const jestConfig: JestConfigWithTsJest = {
   verbose: true,
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
-    '^(nukak)/(.*)\\.js$': '<rootDir>/packages/$1/src/$2',
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^(nukak)/(.+)\\.js$': '<rootDir>/packages/$1/src/$2',
+    '^(nukak)/(.+)(?<!\\.js)$': '<rootDir>/packages/$1/src/$2',
+    '^(\\.{1,2}/.+)\\.js$': '$1',
   },
   transform: {
-    '^.+\\.tsx?$': [
+    '^.+\\.ts$': [
       'ts-jest',
       {
         tsconfig: 'tsconfig.test.json',

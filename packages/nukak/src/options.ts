@@ -1,4 +1,4 @@
-import { Querier, QuerierPool } from './type/index.js';
+import type { Querier, QuerierPool } from './type/index.js';
 
 let defaultPool: QuerierPool;
 

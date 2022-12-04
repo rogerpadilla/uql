@@ -1,6 +1,6 @@
 import { AbstractQuerierIt } from 'nukak/querier/abstractQuerier-it.js';
-import { createSpec } from 'nukak/test/index.js';
-import { getEntities, getMeta } from 'nukak/entity/decorator/index.js';
+import { createSpec } from 'nukak/test';
+import { getEntities, getMeta } from 'nukak/entity';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 

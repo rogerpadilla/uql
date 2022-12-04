@@ -51,6 +51,6 @@
   },
   "author": "Roger Padilla",
   "dependencies": {
-    "nukak-express": "0.0.16"
+    "nukak-express": "0.0.20"
   }
 }
