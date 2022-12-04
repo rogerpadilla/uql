@@ -2,19 +2,22 @@
 
 Learn more about `nukak` at its website https://nukak.org
 
-`nukak` is a powerful and efficient ORM, featuring serializable `JSON` syntax and intelligent type-inference. It enables you to write queries in the frontend (browser/mobile), or any other client, which can then be safely sent to the server. Additionally, you can use `nukak` solely in the server, or even in a mobile application with an embedded database (such as `SQLite`).
+[nukak](https://nukak.org) is a powerful and efficient `ORM`, designed from the ground up to be fast, secure, and easy to use. It is inspired by other `ORMs` such as [TypeORM](https://typeorm.io) and [MongoDB Node.js Driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/), and has been designed to rely on serializable `JSON` syntax for easy transport across platforms.
 
 &nbsp;
 
 ## Features
 
 - Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
-- Uses the power of `TypeScript` to get smart type-safety [everywhere](https://nukak.org/docs/api-repository).
+- Uses the power of [TypeScript](https://www.typescriptlang.org/) to get smart type-inference [everywhere](https://nukak.org/docs/api-repository).
+- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) approach. `ESM` is natively supported by Node.js 12 and later.
+- Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern.
+- Querying data with `$project`, `$filter`, `$sort`, `$limit`, works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
 - The generated queries are [performant](https://nukak.org/docs/querying-relations), safe, and human-readable.
-- `$project`, `$filter`, `$sort`, `$limit` works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
-- [declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/api-repository), `connection pooling`.
-- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
+- Transparent support for [inheritance](https://nukak.
+  org/docs/entities-inheritance) between entities.
+- [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
 - Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
 
 &nbsp;
