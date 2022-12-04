@@ -84,7 +84,7 @@ Take any dump class (aka DTO) and annotate it with the decorators from `nukak/en
 
 ```ts
 import { v4 as uuidv4 } from 'uuid';
-import { Id, Field, Entity } from 'nukak/entity/index.js';
+import { Id, Field, Entity } from 'nukak/entity';
 
 @Entity()
 export class User {
