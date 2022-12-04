@@ -112,10 +112,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
           });
         }
 
-        const name = field?.name ?? (key as FieldKey<E>);
-        const fieldPath = `${escapedPrefix}${this.escapeId(name)}`;
+        const fieldPath = `${escapedPrefix}${this.escapeId(field.name)}`;
 
-        return !opts.autoPrefixAlias && (name === key || !field) ? fieldPath : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
+        return !opts.autoPrefixAlias && field.name === key ? fieldPath : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
       })
       .join(', ');
   }
@@ -183,7 +182,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions = {}): string {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -230,7 +229,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
+      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field].name));
       return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
     }
 
@@ -323,7 +322,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
   }
 
-  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
+  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions): Scalar {
     const meta = getMeta(entity);
     const escapedPrefix = this.escapeId(prefix, true, true);
     const field = meta.fields[key];
@@ -340,7 +339,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escapedPrefix + this.escapeId(field?.name ?? key);
   }
 
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts: QueryOptions = {}): string {
+  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts: QueryOptions): string {
     if (!fields?.length) {
       return '';
     }
@@ -349,7 +348,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return ` GROUP BY ${names}`;
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions = {}): string {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): string {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return '';
