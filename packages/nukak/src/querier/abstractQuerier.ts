@@ -286,6 +286,4 @@ export abstract class AbstractQuerier implements Querier {
   abstract rollbackTransaction(): Promise<void>;
 
   abstract release(): Promise<void>;
-
-  abstract end(): Promise<void>;
 }

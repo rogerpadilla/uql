@@ -26,9 +26,4 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     }
     // no-op
   }
-
-  override async end() {
-    await this.release();
-    await this.db.close();
-  }
 }

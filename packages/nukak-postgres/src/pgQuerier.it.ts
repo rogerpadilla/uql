@@ -20,6 +20,10 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
       'SERIAL PRIMARY KEY'
     );
   }
+
+  override async afterAll() {
+    await super.afterAll();
+  }
 }
 
 createSpec(new PostgresQuerierIt());

@@ -27,9 +27,4 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     }
     await this.conn.release();
   }
-
-  override async end() {
-    await this.release();
-    await this.conn.end();
-  }
 }

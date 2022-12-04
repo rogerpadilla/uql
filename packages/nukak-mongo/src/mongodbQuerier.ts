@@ -193,8 +193,4 @@ export class MongodbQuerier extends AbstractQuerier {
     }
     await this.conn.close(force);
   }
-
-  override async end() {
-    await this.release(true);
-  }
 }

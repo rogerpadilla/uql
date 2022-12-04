@@ -17,7 +17,7 @@ export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   }
 
   async end() {
-    await this.querier.end();
+    await this.querier.db.close();
     delete this.querier;
   }
 }
