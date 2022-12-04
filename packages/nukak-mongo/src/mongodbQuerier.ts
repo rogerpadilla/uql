@@ -68,16 +68,11 @@ export class MongodbQuerier extends AbstractQuerier {
     return documents;
   }
 
-  override async insertMany<E>(entity: Type<E>, payload: E[]) {
-    if (!payload.length) {
-      return;
-    }
-
-    payload = clone(payload);
+  override async insertMany<E>(entity: Type<E>, payloads: E[]) {
+    payloads = clone(payloads);
 
     const meta = getMeta(entity);
-    const payloads = Array.isArray(payload) ? payload : [payload];
-    const persistables = getPersistables(meta, payload, 'onInsert');
+    const persistables = getPersistables(meta, payloads, 'onInsert');
 
     this.extra?.logger?.('insertMany', entity.name, persistables);
 
@@ -153,8 +148,8 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.session?.inTransaction();
   }
 
-  collection<E>(entity: Type<E> | string) {
-    const name = typeof entity === 'string' ? entity : getMeta(entity).name;
+  collection<E>(entity: Type<E>) {
+    const { name } = getMeta(entity);
     return this.db.collection(name);
   }
 

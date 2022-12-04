@@ -58,7 +58,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return where + group + having + sort + pager;
   }
 
-  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions = {}): string {
+  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);

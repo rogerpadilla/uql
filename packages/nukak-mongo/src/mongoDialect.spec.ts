@@ -94,6 +94,8 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $project: {} })).toEqual([]);
 
+    expect(this.dialect.aggregationPipeline(Item, { $sort: {} })).toEqual([]);
+
     expect(
       this.dialect.aggregationPipeline(User, {
         $project: { users: true },
@@ -104,11 +106,15 @@ class MongoDialectSpec implements Spec {
       this.dialect.aggregationPipeline(TaxCategory, {
         $project: { creator: true },
         $filter: { pk: '507f1f77bcf86cd799439011' },
+        $sort: { creatorId: -1 },
       })
     ).toEqual([
       {
         $match: {
           _id: new ObjectId('507f1f77bcf86cd799439011'),
+        },
+        $sort: {
+          creatorId: -1,
         },
       },
       {
