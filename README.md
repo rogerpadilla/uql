@@ -17,8 +17,6 @@ Learn more about `nukak` at its website https://nukak.org
 - Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
 - Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
 
-&nbsp;
-
 ## Install
 
 1. Install the core package:
