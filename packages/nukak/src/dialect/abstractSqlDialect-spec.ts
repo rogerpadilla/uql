@@ -107,9 +107,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(
       this.dialect.find(User, {
         $project: ['id'],
-        $filter: { id: 123, name: 'abc' },
+        $filter: { id: 123, name: { $ne: 'abc' } },
       })
-    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` <> 'abc'");
 
     expect(
       this.dialect.find(Profile, {

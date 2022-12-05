@@ -15,8 +15,7 @@ Learn more about `nukak` at its website https://nukak.org
 - Querying data with `$project`, `$filter`, `$sort`, `$limit`, works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
 - The generated queries are [performant](https://nukak.org/docs/querying-relations), safe, and human-readable.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/api-repository), `connection pooling`.
-- Transparent support for [inheritance](https://nukak.
-  org/docs/entities-inheritance) between entities.
+- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
 - Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
 
