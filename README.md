@@ -10,7 +10,7 @@
 
 - Serializable queries: the [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
 - Type-safe queries: auto-completion and validation of [queries](https://nukak.org/docs/querying-comparison-operators) is done by `TypeScript` while coding.
-- Context-aware queries: `TypeScript` infers the appropriate operators and fields based on every specific part of the query.
+- Context-aware queries: `TypeScript` infers the appropriate operators and fields based on each part of the query.
 - High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are efficient, safe, and human-readable.
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
 - Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) approach. `ESM` is natively supported by Node.js 12 and later.
