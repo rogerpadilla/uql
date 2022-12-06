@@ -11,7 +11,7 @@
 - Takes full advantage of `TypeScript` intelligent type-inference [everywhere](https://nukak.org/docs/api-repository).
 - Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
 - Querying data with `$project`, `$filter`, `$sort`, `$limit`, works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
-- Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern.
+- Supports the Data Mapper pattern.
 - The generated queries are [performant](https://nukak.org/docs/querying-relations), safe, and human-readable.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/api-repository), `connection pooling`.
 - Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
