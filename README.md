@@ -16,7 +16,7 @@
 - Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) approach. `ESM` is natively supported by Node.js 12 and later.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), `connection pooling`.
 - Supports the Data Mapper pattern.
-- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
+- Transparent support for [inheritance between entities](https://nukak.org/docs/entities-inheritance).
 - Support for projection, filtering, sorting, and other operations on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
 - Unified syntax across Databases: providing a standard `API` and transparently transforming queries according to the configured database.
 
