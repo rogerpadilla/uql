@@ -1,7 +1,9 @@
+/* eslint-disable prettier/prettier */
 import { raw } from '../util/index.js';
 import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
 import { QuerierPool } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
+import { getQuerier } from 'nukak';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier: AbstractSqlQuerier;
@@ -388,15 +390,15 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toBeCalledTimes(1);
   }
 
-  async shouldFindMany() {
-    await this.querier.findMany(User, {
-      $project: { id: true, name: true },
+  async findLastUsers() {
+    const querier = await getQuerier();
+    const users = await querier.findMany(User, {
+      $project: { id: true, name: true, profile: ['picture', 'company'] },
       $filter: { companyId: 123 },
       $limit: 100,
     });
-    expect(this.querier.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 100');
-    expect(this.querier.all).toBeCalledTimes(1);
-    expect(this.querier.run).toBeCalledTimes(0);
+    await querier.release();
+    return users;
   }
 
   async shouldFindManyAndCount() {

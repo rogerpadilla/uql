@@ -8,7 +8,7 @@ import { Type } from './utility.js';
  */
 export type UniversalRepository<E> = {
   /**
-   * the `entity` type to which this `repository` is linked to.
+   * the `entity` class to which this `repository` is linked to.
    */
   readonly entity: Type<E>;
 
