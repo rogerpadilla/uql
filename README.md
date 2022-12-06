@@ -8,16 +8,17 @@
 
 ## Features
 
-- Takes full advantage of `TypeScript` intelligent type-inference [everywhere](https://nukak.org/docs/querying-relations).
-- Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
-- Querying data with `$project`, `$filter`, `$sort`, `$limit`, works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
-- Supports the Data Mapper pattern.
-- The generated queries are [performant](https://nukak.org/docs/querying-relations), safe, and human-readable.
-- [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), `connection pooling`.
-- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
-- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) approach. `ESM` is natively supported by Node.js 12 and later.
+- Serializable queries: the [queries syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
+- Type-safe queries: auto-completion of [queries](https://nukak.org/docs/querying-comparison-operators) and their validation is assured by `TypeScript` while refactoring the code.
+- Context-aware queries: `TypeScript` is be able to suggest appropriate operators based on the context of the query.
+- High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are efficient, safe, and human-readable.
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions`.
-- Unified API for `MySQL`, `MariaDB`, `SQLite`, `Postgres`, `MongoDB`.
+- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) approach. `ESM` is natively supported by Node.js 12 and later.
+- [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), `connection pooling`.
+- Supports the Data Mapper pattern.
+- Transparent support for [inheritance](https://nukak.org/docs/entities-inheritance) between entities.
+- Support for projection, filtering, sorting, and other operations on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
+- Unified syntax across Databases: providing a standard `API` and transparently transforming queries according to the configured database.
 
 &nbsp;
 
