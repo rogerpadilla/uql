@@ -94,7 +94,7 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $project: {} })).toEqual([]);
 
-    expect(this.dialect.aggregationPipeline(Item, { $sort: {} })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
     expect(
       this.dialect.aggregationPipeline(User, {

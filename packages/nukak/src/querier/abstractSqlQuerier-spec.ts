@@ -390,17 +390,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toBeCalledTimes(1);
   }
 
-  async findLastUsers() {
-    const querier = await getQuerier();
-    const users = await querier.findMany(User, {
-      $project: { id: true, name: true, profile: ['picture', 'company'] },
-      $filter: { companyId: 123 },
-      $limit: 100,
-    });
-    await querier.release();
-    return users;
-  }
-
   async shouldFindManyAndCount() {
     await this.querier.findManyAndCount(User, {
       $project: { id: true, name: true },
