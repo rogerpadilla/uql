@@ -1,8 +1,10 @@
+![code](/assets/code.png 'code')
+
 # [nukak](https://nukak.org) &middot; [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-Learn more about `nukak` at its website https://nukak.org
-
 [nukak](https://nukak.org) is a powerful and efficient `ORM`, designed from the ground up to be fast, secure, and easy to use. It is inspired by other `ORMs` such as [TypeORM](https://typeorm.io) and [MongoDB Node.js Driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/), and has been designed to rely on serializable `JSON` syntax for easy transport across platforms.
+
+Learn more about `nukak` at its website https://nukak.org
 
 &nbsp;
 
