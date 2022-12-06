@@ -1,9 +1,9 @@
 /* eslint-disable prettier/prettier */
 import { raw } from '../util/index.js';
 import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
-import { QuerierPool } from '../type/index.js';
+import type { QuerierPool } from '../type/index.js';
+import { getQuerier } from '../options.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
-import { getQuerier } from 'nukak';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier: AbstractSqlQuerier;
