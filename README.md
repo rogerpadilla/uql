@@ -8,7 +8,7 @@
 
 ## Features
 
-- Takes full advantage of TypeScript intelligent type-inference [everywhere](https://nukak.org/docs/api-repository).
+- Takes full advantage of `TypeScript` intelligent type-inference [everywhere](https://nukak.org/docs/api-repository).
 - Serializable `JSON` syntax for all the [queries](https://nukak.org/docs/querying-logical-operators).
 - Querying data with `$project`, `$filter`, `$sort`, `$limit`, works at [multiple levels](https://nukak.org/docs/querying-relations) (including deep relations and their fields).
 - Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern.
