@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
-    "@types/node": "^18.11.10",
+    "@types/node": "^18.11.11",
     "mysql2": "^2.3.3"
   },
   "author": "Roger Padilla",
