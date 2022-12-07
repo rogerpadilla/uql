@@ -4,7 +4,7 @@
 
 [nukak](https://nukak.org) is a powerful `ORM`, ideated to be efficient, secure, and easy to use. Inspired by other `ORMs` such as [TypeORM](https://typeorm.io) and [MongoDB driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/), and has been designed to rely on serializable `JSON` syntax.
 
-It is built on top of `TypeScript` & modern `JavaScript`, and combines the best elements of OOP (Object Oriented Programming) and FP (Functional Programming).
+It is built on top of [TypeScript](http://www.typescriptlang.org/) & modern `JavaScript`, and combines the best elements of OOP (Object Oriented Programming) and FP (Functional Programming).
 
 &nbsp;
 
