@@ -2,9 +2,9 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is a powerful `ORM`, ideated to be fast, secure, and easy to use. Inspired by other `ORMs` such as [TypeORM](https://typeorm.io) and [MongoDB driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/), and has been designed to rely on serializable `JSON` syntax.
+[nukak](https://nukak.org) is a powerful `ORM`, ideated to be fast, secure, and easy to use. Inspired by other `ORMs` such as [TypeORM](https://typeorm.io) and [MongoDB driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/), and has been designed to rely on serializable `JSON` syntax while squezing all the power from [TypeScript](http://www.typescriptlang.org/) & modern `JavaScript`.
 
-It is built on top of [TypeScript](http://www.typescriptlang.org/) & modern `JavaScript`, and combines the best elements of OOP (Object Oriented Programming) and FP (Functional Programming).
+`nukak` combines the best elements of OOP (Object Oriented Programming) and FP (Functional Programming).
 
 &nbsp;
 
