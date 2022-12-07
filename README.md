@@ -8,8 +8,8 @@
 
 ## Features
 
-- Serializable queries: the [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing your queries to be transported across platforms with ease.
-- Type-safe queries: `TypeScript` will auto-complete and validate your [queries](https://nukak.org/docs/querying-comparison-operators) while coding and refactoring.
+- Serializable queries: the [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
+- Type-safe queries: `TypeScript` will auto-complete and validate the [queries](https://nukak.org/docs/querying-comparison-operators) while coding and refactoring.
 - Context-aware queries: `TypeScript` infers the appropriate operators and fields based on each part of a query.
 - High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions` for flexibility.
