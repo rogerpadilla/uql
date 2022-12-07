@@ -19,7 +19,7 @@
 - Supports the Data Mapper pattern for maintainability.
 - Transparent support for [inheritance between entities](https://nukak.org/docs/entities-inheritance).
 - Support for projection, filtering, sorting, and other operations on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
-- Unified syntax across Databases: providing a standard `API` and transparently transforming queries according to the configured database, simplify moving across databases if necessary.
+- Unified syntax across Databases: providing a standard `API` and transparently transforming queries according to the configured database.
 
 &nbsp;
 
