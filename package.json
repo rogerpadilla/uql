@@ -49,5 +49,6 @@
     "singleQuote": true,
     "printWidth": 150
   },
-  "author": "Roger Padilla"
+  "author": "Roger Padilla",
+  "packageManager": "yarn@3.3.0"
 }

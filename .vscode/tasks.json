@@ -9,21 +9,15 @@
       "script": "watch",
       "isBackground": true,
       "group": "build",
-      "problemMatcher": ["$ts-webpack-watch", "$ts-checker-webpack-watch"],
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
+      "problemMatcher": ["$ts-webpack-watch", "$ts-checker-webpack-watch"]
     },
     {
-      "label": "watch.test",
+      "label": "test.watch",
       "type": "npm",
-      "script": "watch.test",
+      "script": "test.watch",
       "isBackground": true,
       "group": "test",
-      "problemMatcher": ["$tsc-watch"],
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
+      "problemMatcher": ["$tsc-watch"]
     }
   ]
 }

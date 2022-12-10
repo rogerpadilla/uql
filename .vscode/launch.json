@@ -8,7 +8,6 @@
       "type": "node",
       "request": "launch",
       "name": "Test",
-      "disableOptimisticBPs": true,
       "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
       "args": ["--runInBand", "--collectCoverage=false", "--watchAll"],
       "restart": true,
@@ -19,14 +18,8 @@
       "type": "node",
       "request": "launch",
       "name": "Test pattern",
-      "disableOptimisticBPs": true,
       "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
-      "args": [
-        "--runInBand",
-        "--collectCoverage=false",
-        "--watchAll",
-        "packages/core/src/repository/genericServerRepository.spec.ts"
-      ],
+      "args": ["--runInBand", "--collectCoverage=false", "--watchAll", "packages/core/src/repository/genericServerRepository.spec.ts"],
       "restart": true,
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
@@ -35,7 +28,6 @@
       "type": "node",
       "request": "launch",
       "name": "Test current file",
-      "disableOptimisticBPs": true,
       "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
       "args": ["--runInBand", "--collectCoverage=false", "--watchAll", "${relativeFile}"],
       "restart": true,
