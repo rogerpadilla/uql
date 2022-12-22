@@ -12,7 +12,7 @@
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
     "start": "tsc --watch",
-    "clean": "rimraf dist *.tsbuildinfo"
+    "clean": "rimraf dist"
   },
   "peerDependencies": {
     "mysql2": "^2.3.3",
@@ -21,7 +21,8 @@
   "devDependencies": {
     "@types/mysql": "^2.15.21",
     "@types/node": "^18.11.17",
-    "mysql2": "^2.3.3"
+    "mysql2": "^2.3.3",
+    "rimraf": "^3.0.2"
   },
   "author": "Roger Padilla",
   "repository": {

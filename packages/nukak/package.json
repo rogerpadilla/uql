@@ -21,10 +21,11 @@
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
     "start": "tsc --watch",
-    "clean": "rimraf dist *.tsbuildinfo"
+    "clean": "rimraf dist"
   },
   "dependencies": {
     "reflect-metadata": "^0.1.13",
+    "rimraf": "^3.0.2",
     "sqlstring": "^2.3.3",
     "tslib": "^2.4.1"
   },

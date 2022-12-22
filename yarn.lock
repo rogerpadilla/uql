@@ -7388,6 +7388,7 @@ __metadata:
   dependencies:
     bunchee: ^2.2.0
     nukak: ^0.1.10
+    rimraf: ^3.0.2
   languageName: unknown
   linkType: soft
 
@@ -7397,6 +7398,7 @@ __metadata:
   dependencies:
     "@types/express": 4.17.15
     express: ^4.18.2
+    rimraf: ^3.0.2
   peerDependencies:
     express: ^4.18.2
     nukak: ^0.1.0
@@ -7410,6 +7412,7 @@ __metadata:
     "@types/mysql": ^2.15.21
     "@types/node": ^18.11.17
     mariadb: ^3.0.2
+    rimraf: ^3.0.2
   peerDependencies:
     mariadb: ^3.0.2
     nukak: ^0.1.0
@@ -7423,6 +7426,7 @@ __metadata:
     "@types/mongodb": ^4.0.6
     "@types/node": ^18.11.17
     mongodb: ^4.13.0
+    rimraf: ^3.0.2
   peerDependencies:
     mongodb: ^4.12.1
     nukak: ^0.1.0
@@ -7436,6 +7440,7 @@ __metadata:
     "@types/mysql": ^2.15.21
     "@types/node": ^18.11.17
     mysql2: ^2.3.3
+    rimraf: ^3.0.2
   peerDependencies:
     mysql2: ^2.3.3
     nukak: ^0.1.0
@@ -7449,6 +7454,7 @@ __metadata:
     "@types/node": ^18.11.17
     "@types/pg": ^8.6.5
     pg: ^8.8.0
+    rimraf: ^3.0.2
   peerDependencies:
     nukak: ^0.1.0
     pg: ^8.8.0
@@ -7461,6 +7467,7 @@ __metadata:
   dependencies:
     "@types/node": ^18.11.17
     "@types/sqlite3": ^3.1.8
+    rimraf: ^3.0.2
     sqlite: ^4.1.2
     sqlite3: ^5.1.4
   peerDependencies:

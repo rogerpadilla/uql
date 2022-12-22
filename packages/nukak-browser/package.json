@@ -11,11 +11,12 @@
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "bunchee ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
     "build": "yarn clean && concurrently 'yarn:compile' 'yarn:copyfiles'",
-    "clean": "rimraf dist *.tsbuildinfo"
+    "clean": "rimraf dist"
   },
   "devDependencies": {
     "bunchee": "^2.2.0",
-    "nukak": "^0.1.10"
+    "nukak": "^0.1.10",
+    "rimraf": "^3.0.2"
   },
   "author": "Roger Padilla",
   "repository": {
