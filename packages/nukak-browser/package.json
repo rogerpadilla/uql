@@ -14,7 +14,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "devDependencies": {
-    "bunchee": "^2.1.7",
+    "bunchee": "^2.2.0",
     "nukak": "^0.1.10"
   },
   "author": "Roger Padilla",

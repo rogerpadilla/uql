@@ -1,38 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { raw } from '../util/index.js';
-import { idKey } from '../type/index.js';
+import { idKey, Relation } from '../type/index.js';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
-
-/**
- * interfaces can (optionally) be used to avoid circular-reference issue between entities.
- */
-export interface IEntity {
-  id?: number;
-  companyId?: number;
-  company?: ICompany;
-  creatorId?: number;
-  creator?: IUser;
-  createdAt?: number;
-  updatedAt?: number;
-}
-
-interface ICompany extends IEntity {
-  name?: string;
-  description?: string;
-}
-
-interface IUser extends IEntity {
-  name?: string;
-  email?: string;
-  password?: string;
-  profile?: Profile;
-}
 
 /**
  * an abstract class can (optionally) be used as a "template" for the entities
  * (so the common attributes' declaration is reused).
  */
-export abstract class BaseEntity implements IEntity {
+export abstract class BaseEntity {
   @Id()
   id?: number;
   /**
@@ -41,11 +16,11 @@ export abstract class BaseEntity implements IEntity {
   @Field({ reference: () => Company })
   companyId?: number;
   @ManyToOne({ entity: () => Company })
-  company?: ICompany;
+  company?: Relation<Company>;
   @Field({ reference: () => User })
   creatorId?: number;
   @ManyToOne({ entity: () => User })
-  creator?: IUser;
+  creator?: Relation<User>;
   /**
    * 'onInsert' callback can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
@@ -64,7 +39,7 @@ export abstract class BaseEntity implements IEntity {
  * `Company` will inherit all the fields (including the `Id`) declared in `BaseEntity`.
  */
 @Entity()
-export class Company extends BaseEntity implements ICompany {
+export class Company extends BaseEntity {
   @Field()
   name?: string;
   @Field()
@@ -87,11 +62,11 @@ export class Profile extends BaseEntity {
   @Field({ name: 'image' })
   picture?: string;
   @OneToOne({ entity: () => User })
-  declare creator?: IUser;
+  declare creator?: Relation<User>;
 }
 
 @Entity()
-export class User extends BaseEntity implements IUser {
+export class User extends BaseEntity {
   @Field()
   name?: string;
   @Field()
