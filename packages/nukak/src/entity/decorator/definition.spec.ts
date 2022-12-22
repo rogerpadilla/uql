@@ -14,7 +14,7 @@ import {
   Tag,
   ItemTag,
 } from '../../test/index.js';
-import { EntityGetter, EntityMeta, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type/index.js';
+import { EntityGetter, EntityMeta, IdKey, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Id } from './id.js';
@@ -89,10 +89,10 @@ it('Profile', () => {
   const expectedMeta: EntityMeta<Profile> = {
     entity: Profile,
     name: 'user_profile',
-    id: 'id',
+    id: 'pk' as IdKey<Profile>,
     processed: true,
     fields: {
-      id: { name: 'pk', type: Number, isId: true },
+      pk: { name: 'pk', type: Number, isId: true },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -699,17 +699,6 @@ it('no @Id', () => {
       id: string;
     }
   }).toThrow(`'SomeEntity' must have one field decorated with @Id`);
-});
-
-it('one @Id', () => {
-  expect(() => {
-    class SomeEntity {
-      @Id()
-      idOne: string;
-      @Id()
-      idTwo: string;
-    }
-  }).toThrow(`'SomeEntity' must have a single field decorated with @Id`);
 });
 
 it('no fields', () => {

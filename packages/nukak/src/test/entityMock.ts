@@ -1,37 +1,50 @@
 import { v4 as uuidv4 } from 'uuid';
 import { raw } from '../util/index.js';
-import { idKey, Relation } from '../type/index.js';
+import { idKey, type Relation } from '../type/index.js';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
 
 /**
- * an abstract class can (optionally) be used as a "template" for the entities
- * (so the common attributes' declaration is reused).
+ * an `abstract` class can (optionally) be used as the base "template" for the entities
+ * (so common fields' declaration is easily reused).
  */
 export abstract class BaseEntity {
+  /**
+   * auto-generated primary-key (when the `onInsert` property is omitted).
+   */
   @Id()
   id?: number;
+
   /**
-   * foreign-keys are really simple to specify
+   * foreign-keys are really simple to specify with the `reference` property.
    */
   @Field({ reference: () => Company })
   companyId?: number;
+
+  /**
+   * The `Relation` wrapper type can be used in ESM projects for the relations to
+   * avoid circular dependency issues.
+   */
   @ManyToOne({ entity: () => Company })
   company?: Relation<Company>;
+
   @Field({ reference: () => User })
   creatorId?: number;
+
   @ManyToOne({ entity: () => User })
   creator?: Relation<User>;
+
   /**
-   * 'onInsert' callback can be used to specify a custom mechanism for
+   * 'onInsert' property can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
    */
-  @Field({ onInsert: () => Date.now() })
+  @Field({ onInsert: Date.now })
   createdAt?: number;
+
   /**
-   * 'onUpdate' callback can be used to specify a custom mechanism for
+   * 'onUpdate' property can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
-  @Field({ onUpdate: () => Date.now() })
+  @Field({ onUpdate: Date.now })
   updatedAt?: number;
 }
 
@@ -42,25 +55,26 @@ export abstract class BaseEntity {
 export class Company extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   description?: string;
 }
 
 /**
- * and entity can specify the table name
+ * and entity can specify the table name.
  */
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   /**
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
-   * 'onInsert' callback can be used to specify a custom mechanism for
-   * auto-generating the primary-key's value when inserting.
    */
-  @Id({ name: 'pk' })
-  declare id?: number;
+  @Id()
+  pk?: number;
+
   @Field({ name: 'image' })
   picture?: string;
+
   @OneToOne({ entity: () => User })
   declare creator?: Relation<User>;
 }
@@ -69,15 +83,19 @@ export class Profile extends BaseEntity {
 export class User extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   email?: string;
+
   @Field()
   password?: string;
+
   /**
-   * `mappedBy` can be a callback or a string (callback is useful for auto-refactoring).
+   * `mappedBy` property can be a callback or a string (callback is useful for auto-refactoring).
    */
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
+
   @OneToMany({ entity: () => User, mappedBy: 'creator' })
   users?: User[];
 }
@@ -86,10 +104,13 @@ export class User extends BaseEntity {
 export class LedgerAccount extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   description?: string;
+
   @Field({ reference: () => LedgerAccount })
   parentLedgerId?: number;
+
   @ManyToOne()
   parentLedger?: LedgerAccount;
 }
@@ -102,29 +123,19 @@ export class TaxCategory extends BaseEntity {
    * (the identifiers named as `id` or `_id` are auto-inferred).
    */
   [idKey]?: 'pk';
+
   /**
-   * an entity can specify its own ID Field and still inherit the others
+   * an entity can override the ID Field and still inherit the others
    * columns/relations from its parent entity.
-   * 'onInsert' callback can be used to specify a custom mechanism for
+   * 'onInsert' property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
   @Id({ onInsert: uuidv4 })
   pk?: string;
-  @Field()
-  name?: string;
-  @Field()
-  description?: string;
-}
 
-export class Test {
   @Field()
   name?: string;
-  @Field()
-  percentage?: number;
-  @Field({ reference: () => TaxCategory })
-  categoryId?: string;
-  @ManyToOne()
-  category?: TaxCategory;
+
   @Field()
   description?: string;
 }
@@ -133,12 +144,16 @@ export class Test {
 export class Tax extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   percentage?: number;
+
   @Field({ reference: () => TaxCategory })
   categoryId?: string;
+
   @ManyToOne()
   category?: TaxCategory;
+
   @Field()
   description?: string;
 }
@@ -150,12 +165,14 @@ export class Tax extends BaseEntity {
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
+
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
+
   /**
    * `onDelete` callback allows to specify which field will be used when deleting/querying this entity.
    */
-  @Field({ onDelete: () => Date.now() })
+  @Field({ onDelete: Date.now })
   deletedAt?: number;
 }
 
@@ -163,11 +180,14 @@ export class MeasureUnitCategory extends BaseEntity {
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
+
   @Field({ reference: () => MeasureUnitCategory })
   categoryId?: number;
+
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
-  @Field({ onDelete: () => Date.now() })
+
+  @Field({ onDelete: Date.now })
   deletedAt?: number;
 }
 
@@ -175,8 +195,10 @@ export class MeasureUnit extends BaseEntity {
 export class Storehouse extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   address?: string;
+
   @Field()
   description?: string;
 }
@@ -185,32 +207,46 @@ export class Storehouse extends BaseEntity {
 export class Item extends BaseEntity {
   @Field()
   name?: string;
+
   @Field()
   description?: string;
+
   @Field()
   code?: string;
+
   @Field({ reference: () => LedgerAccount })
   buyLedgerAccountId?: number;
+
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
+
   @Field({ reference: () => LedgerAccount })
   saleLedgerAccountId?: number;
+
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
+
   @Field({ reference: () => Tax })
   taxId?: number;
+
   @ManyToOne()
   tax?: Tax;
+
   @Field({ reference: () => MeasureUnit })
   measureUnitId?: number;
+
   @ManyToOne()
   measureUnit?: MeasureUnit;
+
   @Field()
   salePrice?: number;
+
   @Field()
   inventoryable?: boolean;
+
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
+
   @Field({
     /**
      * `virtual` property allows defining the value for a non-persistent field,
@@ -238,8 +274,10 @@ export class Item extends BaseEntity {
 export class Tag extends BaseEntity {
   @Field()
   name?: string;
+
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
+
   @Field({
     virtual: raw(({ escapedPrefix, dialect }) => {
       /**
@@ -267,8 +305,10 @@ export class Tag extends BaseEntity {
 export class ItemTag {
   @Id()
   id?: number;
+
   @Field({ reference: () => Item })
   itemId?: number;
+
   @Field({ reference: () => Tag })
   tagId?: number;
 }
@@ -281,8 +321,10 @@ export class InventoryAdjustment extends BaseEntity {
     cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];
+
   @Field()
   date?: Date;
+
   @Field()
   description?: string;
 }
@@ -291,18 +333,25 @@ export class InventoryAdjustment extends BaseEntity {
 export class ItemAdjustment extends BaseEntity {
   @Field({ reference: () => Item })
   itemId?: number;
+
   @ManyToOne()
   item?: Item;
+
   @Field()
   number?: number;
+
   @Field()
   buyPrice?: number;
+
   @Field({ reference: () => Storehouse })
   storehouseId?: number;
+
   @ManyToOne()
   storehouse?: Storehouse;
+
   @Field({ reference: () => InventoryAdjustment })
   inventoryAdjustmentId?: number;
+
   @ManyToOne()
   inventoryAdjustment?: InventoryAdjustment;
 }

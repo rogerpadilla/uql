@@ -39,6 +39,8 @@ export type IdKey<E> = E extends { [idKey]?: infer K }
   ? '_id' & FieldKey<E>
   : E extends { id?: unknown }
   ? 'id' & FieldKey<E>
+  : E extends { uuid?: unknown }
+  ? 'uuid' & FieldKey<E>
   : FieldKey<E>;
 
 /**

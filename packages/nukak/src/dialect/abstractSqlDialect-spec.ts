@@ -113,10 +113,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     expect(
       this.dialect.find(Profile, {
-        $project: ['id', 'picture', 'companyId'],
-        $filter: { id: 123, picture: 'abc' },
+        $project: ['pk', 'picture', 'companyId'],
+        $filter: { pk: 123, picture: 'abc' },
       })
-    ).toBe("SELECT `pk` `id`, `image` `picture`, `companyId` FROM `user_profile` WHERE `pk` = 123 AND `image` = 'abc'");
+    ).toBe("SELECT `pk`, `image` `picture`, `companyId` FROM `user_profile` WHERE `pk` = 123 AND `image` = 'abc'");
 
     expect(
       this.dialect.find(MeasureUnit, {
@@ -476,7 +476,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $project: { id: true, name: true, profile: ['id', 'picture'] },
       })
     ).toBe(
-      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture` FROM `User`' +
+      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture` FROM `User`' +
         ' LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`'
     );
 
@@ -484,7 +484,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       'SELECT `User`.`id`, `profile`.`companyId` `profile.companyId`' +
         ', `profile`.`creatorId` `profile.creatorId`, `profile`.`createdAt` `profile.createdAt`' +
         ', `profile`.`updatedAt` `profile.updatedAt`' +
-        ', `profile`.`pk` `profile.id`, `profile`.`image` `profile.picture`' +
+        ', `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture`' +
         ' FROM `User` LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`'
     );
   }

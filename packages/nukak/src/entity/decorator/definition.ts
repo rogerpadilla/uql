@@ -32,7 +32,8 @@ export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): E
   const meta = ensureMeta(entity);
   const id = getIdKey(meta);
   if (id) {
-    throw TypeError(`'${entity.name}' must have a single field decorated with @Id`);
+    console.info(`Overriding ID property for '${entity.name}' from '${id}' to '${key}'`);
+    delete meta.fields[id];
   }
   return defineField(entity, key, { ...opts, isId: true });
 }

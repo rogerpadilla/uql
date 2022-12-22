@@ -508,7 +508,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).nthCalledWith(2, "UPDATE `User` SET `name` = 'something', `updatedAt` = 1 WHERE `id` = 1");
     expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
-    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile` WHERE `creatorId` = 1');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` FROM `user_profile` WHERE `creatorId` = 1');
 
     expect(this.querier.all).toBeCalledTimes(2);
     expect(this.querier.run).toBeCalledTimes(2);
@@ -700,7 +700,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).nthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (1)');
     expect(this.querier.run).nthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (1)');
     expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = 1');
-    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` FROM `user_profile`');
 
     expect(this.querier.all).toBeCalledTimes(2);
     expect(this.querier.run).toBeCalledTimes(4);
@@ -714,7 +714,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteMany(User, { $filter: { createdAt: 123 } });
 
     expect(this.querier.all).nthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = 123');
-    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` `id` FROM `user_profile`');
+    expect(this.querier.all).nthCalledWith(2, 'SELECT `pk` FROM `user_profile`');
     expect(this.querier.run).nthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (1)');
 
     expect(this.querier.all).toBeCalledTimes(2);
