@@ -80,8 +80,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
             })
           : (getKeys(meta.fields).filter((key) => !(key in project)) as FieldKey<E>[]);
       }
-      fields = fields.filter((key) => key instanceof QueryRaw || meta.fields[key as FieldKey<E>]);
-      if (!fields.length || (opts.prefix && !fields.includes(meta.id))) {
+      fields = fields.filter((key) => key instanceof QueryRaw || key in meta.fields);
+      if (opts.prefix && !fields.includes(meta.id)) {
         fields = [meta.id, ...fields];
       }
     } else {

@@ -37,7 +37,7 @@ export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: 
 
 export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = fillOnFields(meta, payload, callbackKey);
-  const persistableKeys = getKeys(payloads[0]).filter((key) => meta.fields[key]) as FieldKey<E>[];
+  const persistableKeys = getKeys(payloads[0]).filter((key) => key in meta.fields) as FieldKey<E>[];
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
@@ -80,12 +80,12 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
 
 export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
   const keys = getProjectKeys(project);
-  return keys.filter((key) => meta.relations[key as RelationKey<E>]) as RelationKey<E>[];
+  return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
 }
 
 export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
   const keys = getProjectKeys(project);
-  return keys.some((key) => meta.relations[key as RelationKey<E>]);
+  return keys.some((key) => key in meta.relations);
 }
 
 function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
