@@ -15,8 +15,10 @@
   },
   "devDependencies": {
     "bunchee": "^2.2.0",
+    "copyfiles": "^2.4.1",
     "nukak": "^0.1.10",
-    "rimraf": "^3.0.2"
+    "rimraf": "^3.0.2",
+    "typescript": "^4.9.4"
   },
   "author": "Roger Padilla",
   "repository": {
