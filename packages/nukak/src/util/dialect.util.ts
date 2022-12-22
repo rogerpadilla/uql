@@ -79,16 +79,16 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
 }
 
 export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
-  const keys = getProjectKeys(project);
+  const keys = getPositiveKeys(project);
   return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
 }
 
 export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
-  const keys = getProjectKeys(project);
+  const keys = getPositiveKeys(project);
   return keys.some((key) => key in meta.relations);
 }
 
-function getProjectKeys<E>(project: QueryProject<E>): Key<E>[] {
+function getPositiveKeys<E>(project: QueryProject<E>): Key<E>[] {
   if (Array.isArray(project)) {
     return project as Key<E>[];
   }
