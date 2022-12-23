@@ -89,11 +89,24 @@ Take any dump class (aka DTO) and annotate it with the decorators from `nukak/en
 import { v4 as uuidv4 } from 'uuid';
 import { Id, Field, Entity } from 'nukak/entity';
 
+/**
+ * Any class can be annotated with this decorator to make it works as
+ * an entity.
+ */
 @Entity()
 export class User {
+  /**
+   * an entity should specify an ID Field, its name and type are automatically detected.
+   * the `onInsert` property can be used to specify a custom mechanism for
+   * auto-generating the primary-key's value when inserting.
+   */
   @Id({ onInsert: uuidv4 })
   id?: string;
 
+  /**
+   * the properties of the class can be annotated with this decorator so they
+   * are interpreted as a column, its name and type are automatically detected.
+   */
   @Field()
   name?: string;
 
