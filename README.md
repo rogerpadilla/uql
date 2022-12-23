@@ -8,9 +8,8 @@ Powerful [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) 
 
 ## Features
 
-- Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is valid `JSON` allowing the queries to be transported across platforms with ease, squeezing the strengths of `TypeScript` & modern `JavaScript`.
-- Type-safe queries: `TypeScript` auto-completes and validates the [queries](https://nukak.org/docs/querying-comparison-operators) while coding.
-- Context-aware queries: `TypeScript` infers the appropriate operators on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
+- Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is valid `JSON` allowing the queries to be transported across platforms with ease.
+- Type-safe and Context-aware queries: squeze the strength of `TypeScript` so it auto-completes and validates the [queries](https://nukak.org/docs/querying-comparison-operators), allowing it to infers the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations)
 - High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - Combines the best elements of `OOP` (Object Oriented Programming) and `FP` (Functional Programming).
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions` for flexibility, and `connection pooling` for scalability.
