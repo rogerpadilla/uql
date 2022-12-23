@@ -8,7 +8,7 @@ The perfectionistic [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relationa
 
 ## Features
 
-- Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is valid `JSON` allowing the queries to be transported across platforms with ease.
+- Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
 - Type-safe and Context-aware queries: squeeze the strength of `TypeScript` so it auto-completes, validates, and infers the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations).
 - High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - Combines the best elements of `OOP` (Object Oriented Programming) and `FP` (Functional Programming).
