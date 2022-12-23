@@ -9,7 +9,7 @@
 ## Features
 
 - Type-safe queries: `TypeScript` auto-completes and validate the [queries](https://nukak.org/docs/querying-comparison-operators) while coding.
-- Context-aware queries: `TypeScript` infers the appropriate operators and fields based on each part of a query.
+- Context-aware queries: `TypeScript` infers the appropriate operators on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
 - Serializable queries: the [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
 - High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - Combines the best elements of `OOP` (Object Oriented Programming) and `FP` (Functional Programming).
@@ -18,7 +18,6 @@
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), `connection pooling` for scalability.
 - Supports the Data Mapper pattern for maintainability.
 - Transparent support for [inheritance between entities](https://nukak.org/docs/entities-inheritance).
-- Support for projection, filtering, sorting, and other operations on any level of the query, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
 - Unified syntax across Databases: providing a standard `API` and transparently transforming queries according to the configured database.
 
 &nbsp;
