@@ -90,7 +90,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Id, Field, Entity } from 'nukak/entity';
 
 /**
- * Any class can be annotated with this decorator to make it works as
+ * any class can be annotated with this decorator to make it works as
  * an entity.
  */
 @Entity()
