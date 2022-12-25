@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.11.17",
-    "@types/pg": "^8.6.5",
+    "@types/pg": "^8.6.6",
     "copyfiles": "^2.4.1",
     "pg": "^8.8.0",
     "rimraf": "^3.0.2",

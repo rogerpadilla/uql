@@ -12,8 +12,8 @@ export function parseQuery(req: Request) {
   if (qmsSrc.$group) {
     qm.$group = JSON.parse(qmsSrc.$group);
   }
-  if (qmsSrc.$having) {
-    qm.$having = JSON.parse(qmsSrc.$having);
+  if (qmsSrc.$match) {
+    qm.$match = JSON.parse(qmsSrc.$match);
   }
   if (qmsSrc.$sort) {
     qm.$sort = JSON.parse(qmsSrc.$sort);

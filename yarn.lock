@@ -2423,14 +2423,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/pg@npm:^8.6.5":
-  version: 8.6.5
-  resolution: "@types/pg@npm:8.6.5"
+"@types/pg@npm:^8.6.6":
+  version: 8.6.6
+  resolution: "@types/pg@npm:8.6.6"
   dependencies:
     "@types/node": "*"
     pg-protocol: "*"
     pg-types: ^2.2.0
-  checksum: 49ef858d95e84a6c1be193d367996581c991cf383d8628449507cc4ce67ef43b75acb18a0f9f49f870594cdec3501ddf4d2ac3fbe0dcdaab35c295c038d47199
+  checksum: ac145553a8ad2f357feacad1bceaf5d6ce904eb9d66233b84c469a2b4fa3738d4ebdf29b7ea45387be2d07f915fd873a229f90a2f766d7c377afa7c41fbcf8d1
   languageName: node
   linkType: hard
 
@@ -7388,7 +7388,7 @@ __metadata:
   dependencies:
     bunchee: ^2.2.0
     copyfiles: ^2.4.1
-    nukak: ^0.1.10
+    nukak: ^0.1.18
     rimraf: ^3.0.2
     typescript: ^4.9.4
   languageName: unknown
@@ -7462,7 +7462,7 @@ __metadata:
   resolution: "nukak-postgres@workspace:packages/nukak-postgres"
   dependencies:
     "@types/node": ^18.11.17
-    "@types/pg": ^8.6.5
+    "@types/pg": ^8.6.6
     copyfiles: ^2.4.1
     pg: ^8.8.0
     rimraf: ^3.0.2
@@ -7491,7 +7491,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"nukak@^0.1.10, nukak@workspace:packages/nukak":
+"nukak@^0.1.18, nukak@workspace:packages/nukak":
   version: 0.0.0-use.local
   resolution: "nukak@workspace:packages/nukak"
   dependencies:
