@@ -266,9 +266,9 @@ export type QuerySearch<E> = {
    */
   $group?: readonly FieldKey<E>[];
   /**
-   * match options.
+   * having options.
    */
-  $match?: QueryFilter<E>;
+  $having?: QueryFilter<E>;
 };
 
 /**

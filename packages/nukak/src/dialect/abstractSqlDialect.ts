@@ -52,7 +52,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, qm.$project)) ? meta.name : undefined;
     const where = this.where<E>(entity, qm.$filter, { ...opts, prefix });
     const group = this.group<E>(entity, qm.$group, { ...opts, prefix });
-    const having = this.where<E>(entity, qm.$match, { ...opts, prefix, clause: 'HAVING' });
+    const having = this.where<E>(entity, qm.$having, { ...opts, prefix, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort, { ...opts, prefix });
     const pager = this.pager(qm);
     return where + group + having + sort + pager;

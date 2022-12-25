@@ -660,7 +660,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(User, {
         $project: ['companyId', raw('COUNT(*)', 'count')],
         $group: ['companyId'],
-        $match: {
+        $having: {
           count: {
             $gte: 10,
           },
@@ -801,7 +801,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(User, {
         $project: ['companyId', raw('COUNT(*)', 'count')],
         $group: ['companyId'],
-        $match: {
+        $having: {
           count: {
             $gte: 10,
           },
