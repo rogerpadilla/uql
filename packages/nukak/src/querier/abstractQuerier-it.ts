@@ -16,10 +16,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
-    await this.clearTables();
   }
 
   async afterEach() {
+    await this.clearTables();
     await this.querier.release();
   }
 

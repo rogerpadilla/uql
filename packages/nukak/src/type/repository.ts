@@ -1,7 +1,7 @@
 import type { IdValue } from './entity.js';
-import type { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch } from './query.js';
+import type { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Merge } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
-import type { Merge, Type } from './utility.js';
+import type { Type } from './utility.js';
 
 /**
  * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.

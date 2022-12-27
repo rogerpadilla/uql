@@ -18,13 +18,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
-    await clearTables(this.querier);
     jest.spyOn(this.querier, 'all');
     jest.spyOn(this.querier, 'run');
   }
 
   async afterEach() {
     jest.restoreAllMocks();
+    await clearTables(this.querier);
     await this.querier.release();
   }
 

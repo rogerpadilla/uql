@@ -49,7 +49,7 @@ export class MongodbQuerier extends AbstractQuerier {
         cursor.limit(qm.$limit);
       }
 
-      this.extra?.logger?.('findMany', entity.name, qm);
+      this.extra?.logger?.('findMany', entity.name, qm, project);
 
       documents = (await cursor.toArray()) as D[];
       documents = this.dialect.normalizeIds(meta, documents) as D[];

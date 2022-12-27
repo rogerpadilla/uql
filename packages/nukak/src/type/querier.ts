@@ -1,8 +1,8 @@
-import { Merge, Type } from './utility.js';
-import { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch } from './query.js';
-import { Repository } from './repository.js';
-import { IdValue } from './entity.js';
-import { UniversalQuerier } from './universalQuerier.js';
+import type { Type } from './utility.js';
+import type { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Merge } from './query.js';
+import type { Repository } from './repository.js';
+import type { IdValue } from './entity.js';
+import type { UniversalQuerier } from './universalQuerier.js';
 
 /**
  * Isolation levels for transactions.

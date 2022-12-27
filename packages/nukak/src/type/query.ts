@@ -469,3 +469,5 @@ export interface QueryDialect {
    */
   escape(val: any): Scalar;
 }
+
+export type Merge<E, P> = E & (P extends string[] ? {} : { [K in Exclude<keyof P, keyof E>]: number });

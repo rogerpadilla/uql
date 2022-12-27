@@ -13,5 +13,3 @@ export type ExpandScalar<T> = null | (T extends Date ? Date | string : T);
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 export type Unpacked<T> = T extends (infer U)[] ? U : T extends (...args: unknown[]) => infer U ? U : T extends Promise<infer U> ? U : T;
-
-export type Merge<E, P> = E & (P extends string[] ? {} : { [K in Exclude<keyof P, keyof E>]: Scalar });
