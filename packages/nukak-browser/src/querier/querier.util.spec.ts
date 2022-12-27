@@ -20,7 +20,7 @@ it('stringifyQueryParameter', () => {
 it('stringifyQuery', () => {
   expect(stringifyQuery(undefined)).toBe('');
   expect(stringifyQuery({})).toBe('');
-  expect(stringifyQuery({ project: undefined })).toBe('?project=undefined');
+  expect(stringifyQuery({ $sort: undefined })).toBe('');
   const source: Query<Item> = {
     $project: { id: 1, name: 1, tax: true, measureUnit: { $project: { id: 1, name: 1, categoryId: 1 } } },
     $filter: { name: 'Batman', companyId: 38 },

@@ -2,7 +2,6 @@
 import { raw } from '../util/index.js';
 import { User, InventoryAdjustment, Spec, Item, Tag, MeasureUnit, dropTables, createTables, clearTables } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
-import { getQuerier } from '../options.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
@@ -44,7 +43,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldFindOne() {
-    await this.querier.findOne(User, { $project: ['id', 'name'], $filter: { companyId: 123 } });
+    await this.querier.findOne(User, { $filter: { companyId: 123 } }, ['id', 'name']);
     expect(this.querier.all).nthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 1');
     expect(this.querier.all).toBeCalledTimes(1);
     expect(this.querier.run).toBeCalledTimes(0);
@@ -61,8 +60,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.findOne(InventoryAdjustment, {
       $filter: { id: 123 },
-      $project: ['id', 'description', 'itemAdjustments'],
-    });
+    }, ['id', 'description', 'itemAdjustments']);
 
     expect(this.querier.all).nthCalledWith(
       1,
@@ -80,25 +78,24 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFindAndProjectRaw() {
     await this.querier.findMany(InventoryAdjustment, {
-      $project: {
-        creator: ['id', 'name'],
-        itemAdjustments: {
-          $project: {
-            item: {
-              $project: {
-                companyId: true,
-                total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
-              },
-            },
-          },
-          $sort: { createdAt: -1 },
-          $limit: 100,
-        },
-      },
       $filter: {
         companyId: 1,
       },
       $sort: { creator: { name: 'asc' } },
+    }, {
+      creator: ['id', 'name'],
+      itemAdjustments: {
+        $project: {
+          item: {
+            $project: {
+              companyId: true,
+              total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
+            },
+          },
+        },
+        $sort: { createdAt: -1 },
+        $limit: 100,
+      },
     });
 
     expect(this.querier.all).nthCalledWith(
@@ -123,12 +120,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldVirtualField() {
     await this.querier.findMany(Item, {
-      $project: {
-        id: 1,
-      },
       $filter: {
         tagsCount: { $gte: 10 },
       },
+    }, {
+      id: 1,
     });
 
     expect(this.querier.all).toBeCalledWith(
@@ -140,16 +136,15 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     jest.clearAllMocks();
 
     await this.querier.findMany(Item, {
-      $project: {
-        id: 1,
-        name: 1,
-        code: 1,
-        tagsCount: 1,
-        measureUnit: {
-          $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
-        },
-      },
       $limit: 100,
+    }, {
+      id: 1,
+      name: 1,
+      code: 1,
+      tagsCount: 1,
+      measureUnit: {
+        $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+      },
     });
 
     expect(this.querier.all).toBeCalledWith(
@@ -167,12 +162,10 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     jest.clearAllMocks();
 
-    await this.querier.findMany(Tag, {
-      $project: {
+    await this.querier.findMany(Tag, {}, {
         id: 1,
         itemsCount: 1,
-      },
-    });
+      }    );
 
     expect(this.querier.all).toBeCalledWith(
       'SELECT `id`, (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`'
@@ -184,21 +177,20 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFind$exists() {
     await this.querier.findMany(Item, {
-      $project: {
-        id: 1,
-      },
       $filter: {
         $exists: raw(({ escapedPrefix, dialect }) =>
           dialect.find(
             User,
             {
-              $project: ['id'],
               $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
+            ['id'],
             { autoPrefix: true }
           )
         ),
       },
+    }, {
+      id: 1,
     });
 
     expect(this.querier.all).toBeCalledWith(
@@ -211,22 +203,19 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFind$nexists() {
     await this.querier.findMany(Item, {
-      $project: {
-        id: 1,
-      },
       $filter: {
         $nexists: raw(({ escapedPrefix, dialect }) =>
           dialect.find(
             User,
             {
-              $project: ['id'],
               $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
+            ['id'],
             { autoPrefix: true }
           )
         ),
       },
-    });
+    }, { id: 1});
 
     expect(this.querier.all).toBeCalledWith(
       'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
@@ -248,9 +237,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] },
       $filter: { createdAt: 1 },
-    });
+    }, { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] });
 
     expect(this.querier.all).nthCalledWith(
       1,
@@ -301,9 +289,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { id: true, itemAdjustments: ['buyPrice'] },
       $filter: { createdAt: 1 },
-    });
+    }, { id: true, itemAdjustments: ['buyPrice'] });
 
     expect(this.querier.all).nthCalledWith(
       1,
@@ -330,9 +317,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { id: true, itemAdjustments: true },
       $filter: { createdAt: 1 },
-    });
+    }, { id: true, itemAdjustments: true });
 
     expect(this.querier.all).nthCalledWith(
       1,
@@ -354,8 +340,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOne(Item, {
-      $project: { id: true, createdAt: true, tags: ['id'] },
-    });
+    }, { id: true, createdAt: true, tags: ['id'] });
 
     expect(this.querier.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` LIMIT 1');
     expect(this.querier.all).nthCalledWith(
@@ -375,7 +360,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).nthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOneById(Item, 123, {
-      $project: { id: 1, createdAt: 1, tags: ['id'] },
+      id: 1, createdAt: 1, tags: ['id'],
     });
 
     expect(this.querier.all).nthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` WHERE `Item`.`id` = 123 LIMIT 1');
@@ -392,12 +377,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFindManyAndCount() {
     await this.querier.findManyAndCount(User, {
-      $project: { id: true, name: true },
       $filter: { companyId: 123 },
       $sort: { createdAt: -1 },
       $skip: 50,
       $limit: 100,
-    });
+    }, { id: true, name: true });
     expect(this.querier.all).nthCalledWith(
       1,
       'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50'

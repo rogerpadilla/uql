@@ -12,8 +12,8 @@
     "lint.fix": "yarn lint --fix",
     "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
+    "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "test.watch": "jest --watchAll",
-    "test.watch.all": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "mongo-rs": "run-rs -v 4.4.13 --portStart 27027",
     "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
   },

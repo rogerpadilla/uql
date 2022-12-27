@@ -127,11 +127,14 @@ import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 10) {
   const querier = await getQuerier();
-  const users = await querier.findMany(User, {
-    $project: ['id', 'name', 'email'],
-    $sort: { createdAt: -1 },
-    $limit: limit,
-  });
+  const users = await querier.findMany(
+    User,
+    {
+      $sort: { createdAt: -1 },
+      $limit: limit,
+    },
+    ['id', 'name', 'email']
+  );
   await querier.release();
   return users;
 }

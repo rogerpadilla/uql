@@ -137,7 +137,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     };
     const id = await this.querier.insertOne(User, payload);
     expect(id).toBeDefined();
-    const found = await this.querier.findOneById(User, id, { $project: ['profile'] });
+    const found = await this.querier.findOneById(User, id, ['profile']);
     expect(found).toMatchObject({ id, profile: payload.profile });
   }
 
@@ -152,7 +152,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     expect(id).toBeDefined();
 
-    const found = await this.querier.findOneById(MeasureUnit, id, { $project: { category: true } });
+    const found = await this.querier.findOneById(MeasureUnit, id, { category: true });
 
     expect(found).toMatchObject({ id, category: payload.category });
   }
@@ -171,7 +171,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: true },
+      itemAdjustments: true,
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -195,7 +195,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: ['buyPrice'] },
+      itemAdjustments: ['buyPrice'],
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -224,7 +224,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: ['buyPrice'] },
+      itemAdjustments: ['buyPrice'],
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -286,7 +286,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(id).toBeDefined();
 
     const foundItem = await this.querier.findOneById(Item, id, {
-      $project: { name: true, createdAt: true, tags: ['name', 'createdAt'] },
+      name: true,
+      createdAt: true,
+      tags: ['name', 'createdAt'],
     });
 
     expect(foundItem).toMatchObject({
@@ -294,9 +296,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       ...payload,
     });
 
-    const foundTags = await this.querier.findMany(Tag, {
-      $project: { name: true, createdAt: true, items: ['name', 'createdAt'] },
-    });
+    const foundTags = await this.querier.findMany(Tag, {}, { name: true, createdAt: true, items: ['name', 'createdAt'] });
 
     delete foundItem.tags;
 
@@ -323,7 +323,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.updateOneById(Item, id, payload);
 
     const found = await this.querier.findOneById(Item, id, {
-      $project: { name: true, updatedAt: true, tags: true },
+      name: true,
+      updatedAt: true,
+      tags: true,
     });
 
     expect(found).toMatchObject({
@@ -335,14 +337,17 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldFindMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const users = await this.querier.findMany(User, {
-      $project: ['name'],
-      $skip: 1,
-      $limit: 2,
-      $sort: {
-        name: 1,
+    const users = await this.querier.findMany(
+      User,
+      {
+        $skip: 1,
+        $limit: 2,
+        $sort: {
+          name: 1,
+        },
       },
-    });
+      ['name']
+    );
 
     expect(users).toMatchObject([
       {
@@ -357,12 +362,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const found = await this.querier.findOne(User, {
-      $project: ['id', 'name', 'email', 'password'],
-      $filter: {
-        email: 'someemaila@example.com',
+    const found = await this.querier.findOne(
+      User,
+      {
+        $filter: {
+          email: 'someemaila@example.com',
+        },
       },
-    });
+      ['id', 'name', 'email', 'password']
+    );
 
     expect(found).toMatchObject({
       name: 'Some Name A',
@@ -439,10 +447,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldProjectOneToMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const [user, company] = await Promise.all([
-      this.querier.findOne(User, { $project: ['id'] }),
-      this.querier.findOne(Company, { $project: ['id'] }),
-    ]);
+    const [user, company] = await Promise.all([this.querier.findOne(User, {}, ['id']), this.querier.findOne(Company, {}, ['id'])]);
 
     const [firstItemId, secondItemId] = await this.querier.insertMany(Item, [
       {
@@ -468,7 +473,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $project: { itemAdjustments: true, creator: true },
+      itemAdjustments: true,
+      creator: true,
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({

@@ -28,6 +28,36 @@ export type QueryProjectOptions = {
 };
 
 /**
+ * query projection of operations
+ */
+export type QueryProjectOperation<E> = {
+  /**
+   * Calculates the quantity of entries
+   */
+  readonly $count?: FieldKey<E> | 1;
+
+  /**
+   * Gets the maximum value of a field in the entity
+   */
+  readonly $max?: FieldKey<E>;
+
+  /**
+   * Gets the minimum value of a field in the entity
+   */
+  readonly $min?: FieldKey<E>;
+
+  /**
+   * Gets the average value of a field in the entity
+   */
+  readonly $avg?: FieldKey<E>;
+
+  /**
+   * Sums up the specified values of all entries in the entity
+   */
+  readonly $sum?: FieldKey<E>;
+};
+
+/**
  * query projection as an array.
  */
 export type QueryProjectArray<E> = readonly (Key<E> | QueryRaw)[];
@@ -47,9 +77,10 @@ export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
  */
 export type QueryProjectFieldMap<E> =
   | {
+      // TODO add support to use alias for projected fields (string value)
       [K in FieldKey<E>]?: BooleanLike;
     }
-  | { [K: string]: QueryRaw };
+  | { [K: string]: QueryProjectOperation<E> | QueryRaw };
 
 /**
  * query projection of relations as a map.
@@ -61,7 +92,7 @@ export type QueryProjectRelationMap<E> = {
 /**
  * options to project a relation.
  */
-export type QueryProjectRelationOptions<E> = (E extends any[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & { readonly $required?: boolean };
+export type QueryProjectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & { readonly $required?: boolean };
 
 /**
  * options for full-text-search operator.
@@ -85,7 +116,9 @@ export type QueryFilterLogical<E> = readonly QueryFilter<E>[];
 /**
  * comparison by fields.
  */
-export type QueryFilterFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> };
+export type QueryFilterFieldMap<E> =
+  | { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> }
+  | { readonly [K: string]: QueryFilterFieldValue<E[any]> };
 
 /**
  * complex operators.
@@ -224,9 +257,11 @@ export type QuerySortObjects<E> = readonly { readonly field: FieldKey<E>; readon
 /**
  * sort by fields.
  */
-export type QuerySortFieldMap<E> = {
-  [K in FieldKey<E>]?: QuerySortDirection;
-};
+export type QuerySortFieldMap<E> =
+  | {
+      [K in FieldKey<E>]?: QuerySortDirection;
+    }
+  | { [K: string]: QuerySortDirection };
 
 /**
  * sort by relations fields.
@@ -249,7 +284,14 @@ export type QuerySort<E> = QuerySortMap<E> | QuerySortTuples<E> | QuerySortObjec
  * pager options.
  */
 export type QueryPager = {
+  /**
+   * Index from where start the search
+   */
   $skip?: number;
+
+  /**
+   * Max number of records to retrieve
+   */
   $limit?: number;
 };
 
@@ -261,15 +303,17 @@ export type QuerySearch<E> = {
    * filtering options.
    */
   $filter?: QueryFilter<E>;
+
   /**
    * list of fields to group.
    */
   $group?: readonly FieldKey<E>[];
+
   /**
    * having options.
    */
   $having?: QueryFilter<E>;
-};
+} & QueryPager;
 
 /**
  * criteria options.
@@ -279,7 +323,7 @@ export type QueryCriteria<E> = QuerySearch<E> & {
    * sorting options.
    */
   $sort?: QuerySort<E>;
-} & QueryPager;
+};
 
 /**
  * query options.
@@ -371,20 +415,20 @@ export type QueryFilterOptions = QueryComparisonOptions & {
 
 export interface QueryDialect {
   /**
+   * obtains the records matching the given search parameters.
+   * @param entity the target entity
+   * @param qm the criteria options
+   * @param opts the query options
+   */
+  find<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: QueryOptions): string;
+
+  /**
    * counts the number of records matching the given search parameters.
    * @param entity the target entity
    * @param qm the criteria options
    * @param opts the query options
    */
   count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
-
-  /**
-   * obtains the records matching the given search parameters.
-   * @param entity the target entity
-   * @param qm the criteria options
-   * @param opts the query options
-   */
-  find<E>(entity: Type<E>, qm: Query<E>, opts?: QueryOptions): string;
 
   /**
    * inser records.
@@ -401,7 +445,7 @@ export interface QueryDialect {
    * @param payload
    * @param opts the query options
    */
-  update<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E, opts?: QueryOptions): string;
+  update<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E, opts?: QueryOptions): string;
 
   /**
    * delete records.
@@ -409,7 +453,7 @@ export interface QueryDialect {
    * @param qm the criteria options
    * @param opts the query options
    */
-  delete<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): string;
+  delete<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
 
   /**
    * escape an identifier.

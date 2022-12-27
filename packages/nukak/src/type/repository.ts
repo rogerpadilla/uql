@@ -1,7 +1,7 @@
-import { IdValue } from './entity.js';
-import { Query, QueryCriteria, QueryOne, QueryOptions, QuerySearch, QueryUnique } from './query.js';
-import { UniversalQuerier } from './universalQuerier.js';
-import { Type } from './utility.js';
+import type { IdValue } from './entity.js';
+import type { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch } from './query.js';
+import type { UniversalQuerier } from './universalQuerier.js';
+import type { Merge, Type } from './utility.js';
 
 /**
  * A `repository` allows to interact with the datasource to perform persistence operations on a specific entity.
@@ -18,36 +18,36 @@ export type UniversalRepository<E> = {
   readonly querier: UniversalQuerier;
 
   /**
-   * counts the number of records matching the given search parameters.
-   * @param qm the search options
-   */
-  count(qm: QuerySearch<E>): Promise<any>;
-
-  /**
    * obtains the record with the given primary key.
    * @param id the primary key value
    * @param qm the criteria options
    */
-  findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<any>;
+  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P): Promise<any>;
 
   /**
    * obtains the first record matching the given search parameters.
    * @param qm the criteria options
    */
-  findOne(qm: QueryOne<E>): Promise<any>;
+  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
    * @param qm the criteria options
    */
-  findMany(qm: Query<E>): Promise<any>;
+  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param qm the criteria options
    */
-  findManyAndCount(qm: Query<E>): Promise<any>;
+  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<any>;
+
+  /**
+   * counts the number of records matching the given search parameters.
+   * @param qm the search options
+   */
+  count(qm?: QuerySearch<E>): Promise<any>;
 
   /**
    * inserts a record.
@@ -74,7 +74,7 @@ export type UniversalRepository<E> = {
    * @param qm the criteria to look for the records
    * @param payload the data to be persisted
    */
-  updateMany?(qm: QueryCriteria<E>, payload: E): Promise<any>;
+  updateMany?(qm: QuerySearch<E>, payload: E): Promise<any>;
 
   /**
    * Insert or update a record.
@@ -98,22 +98,22 @@ export type UniversalRepository<E> = {
    * delete or SoftDelete records.
    * @param qm the criteria to look for the records
    */
-  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions): Promise<any>;
+  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions): Promise<any>;
 };
 
 /**
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
-  count(qm: QueryCriteria<E>): Promise<number>;
+  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P): Promise<Merge<E, P>>;
 
-  findOneById(id: IdValue<E>, qm?: QueryUnique<E>): Promise<E>;
+  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P): Promise<Merge<E, P>>;
 
-  findOne(qm: QueryOne<E>): Promise<E>;
+  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
 
-  findMany(qm: Query<E>): Promise<E[]>;
+  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<[Merge<E, P>[], number]>;
 
-  findManyAndCount(qm: Query<E>): Promise<[E[], number]>;
+  count(qm?: QuerySearch<E>): Promise<number>;
 
   insertOne(payload: E): Promise<IdValue<E>>;
 
@@ -121,7 +121,7 @@ export interface Repository<E> extends UniversalRepository<E> {
 
   updateOneById(id: IdValue<E>, payload: E): Promise<number>;
 
-  updateMany(qm: QueryCriteria<E>, payload: E): Promise<number>;
+  updateMany(qm: QuerySearch<E>, payload: E): Promise<number>;
 
   saveOne(payload: E): Promise<IdValue<E>>;
 
@@ -129,5 +129,5 @@ export interface Repository<E> extends UniversalRepository<E> {
 
   deleteOneById(id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
-  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 }

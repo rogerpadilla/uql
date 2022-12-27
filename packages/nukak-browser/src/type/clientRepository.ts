@@ -1,22 +1,26 @@
-import type { Query, UniversalRepository, QueryCriteria, QueryOptions, QuerySearch, IdValue, QueryUnique } from 'nukak/type';
-import { RequestOptions, RequestSuccessResponse } from './request.js';
+import type { UniversalRepository, QueryOptions, IdValue, QueryProject, Merge, QueryOne, QuerySearch, QueryCriteria } from 'nukak/type';
+import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {
-  count(qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P, opts?: RequestOptions): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
-  findOneById(id: IdValue<E>, qm?: QueryUnique<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P, opts?: RequestOptions): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
-  findOne(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P, opts?: RequestOptions): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
-  findMany(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+  findManyAndCount<P extends QueryProject<E>>(
+    qm: QueryCriteria<E>,
+    project?: P,
+    opts?: RequestOptions
+  ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
-  findManyAndCount(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+  count(qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   insertOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
   insertMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
-  updateMany?(payload: E, qm: QueryCriteria<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  updateMany?(payload: E, qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   saveOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
@@ -24,5 +28,5 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
 
   deleteOneById(id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
 
-  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
 }

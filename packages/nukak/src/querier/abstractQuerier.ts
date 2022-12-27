@@ -1,5 +1,6 @@
 import {
   IdValue,
+  Merge,
   Querier,
   Query,
   QueryCriteria,
@@ -7,7 +8,6 @@ import {
   QueryOptions,
   QueryProject,
   QuerySearch,
-  QueryUnique,
   RelationKey,
   RelationValue,
   Repository,
@@ -18,22 +18,22 @@ import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from 
 import { GenericRepository } from '../repository/index.js';
 
 export abstract class AbstractQuerier implements Querier {
-  abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
-
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, qm: QueryUnique<E> = {}) {
-    return this.findOne(entity, { ...qm, $filter: id });
+  findOneById<E, P extends QueryProject<E>>(entity: Type<E>, id: IdValue<E>, project?: P) {
+    return this.findOne(entity, { $filter: id }, project);
   }
 
-  async findOne<E>(entity: Type<E>, qm: QueryOne<E>) {
-    const rows = await this.findMany(entity, { ...qm, $limit: 1 });
+  async findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOne<E>, project?: P) {
+    const rows = await this.findMany(entity, { ...qm, $limit: 1 }, project);
     return rows[0];
   }
 
-  abstract findMany<E>(entity: Type<E>, qm: Query<E>): Promise<E[]>;
+  abstract findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
 
-  findManyAndCount<E>(entity: Type<E>, qm: Query<E>) {
-    return Promise.all([this.findMany(entity, qm), this.count(entity, qm)]);
+  findManyAndCount<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
+    return Promise.all([this.findMany(entity, qm, project), this.count(entity, qm)]);
   }
+
+  abstract count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 
   async insertOne<E>(entity: Type<E>, payload: E) {
     const [id] = await this.insertMany(entity, [payload]);
@@ -46,13 +46,13 @@ export abstract class AbstractQuerier implements Querier {
     return this.updateMany(entity, { $filter: id }, payload);
   }
 
-  abstract updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E): Promise<number>;
+  abstract updateMany<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
     return this.deleteMany(entity, { $filter: id }, opts);
   }
 
-  abstract deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions): Promise<number>;
+  abstract deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   async saveOne<E>(entity: Type<E>, payload: E) {
     const [id] = await this.saveMany(entity, [payload]);
@@ -96,7 +96,7 @@ export abstract class AbstractQuerier implements Querier {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
       const relProject = clone(project[relKey as string]);
-      const relQuery: Query<any> =
+      const relQuery: Query<unknown> =
         relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
       const ids = payload.map((it) => it[meta.id]);
 
@@ -107,18 +107,21 @@ export abstract class AbstractQuerier implements Querier {
         const targetRelKey = Object.keys(throughMeta.relations).find((key) =>
           throughMeta.relations[key].references.some(({ local }) => local === relOpts.references[1].local)
         );
-        const throughFounds = await this.findMany(throughEntity, {
-          $project: {
+        const throughFounds = await this.findMany(
+          throughEntity,
+          {
+            $filter: {
+              [localField]: ids,
+            },
+          },
+          {
             [localField]: true,
             [targetRelKey]: {
               ...relQuery,
               $required: true,
             },
-          },
-          $filter: {
-            [localField]: ids,
-          },
-        });
+          }
+        );
         const founds = throughFounds.map((it) => ({ ...it[targetRelKey], [localField]: it[localField] }));
         this.putChildrenInParents(payload, founds, meta.id, localField, relKey);
       } else if (relOpts.cardinality === '1m') {
@@ -133,7 +136,8 @@ export abstract class AbstractQuerier implements Querier {
           }
         }
         relQuery.$filter = { [foreignField]: ids };
-        const founds = await this.findMany(relEntity, relQuery);
+        const { $project: relProject, ...relQm } = relQuery;
+        const founds = await this.findMany(relEntity, relQm, relProject);
         this.putChildrenInParents(payload, founds, meta.id, foreignField, relKey);
       }
     }
@@ -168,7 +172,7 @@ export abstract class AbstractQuerier implements Querier {
     );
   }
 
-  protected async updateRelations<E>(entity: Type<E>, criteria: QueryCriteria<E>, payload: E) {
+  protected async updateRelations<E>(entity: Type<E>, criteria: QuerySearch<E>, payload: E) {
     const meta = getMeta(entity);
     const relKeys = getPersistableRelations(meta, payload, 'persist');
 
@@ -176,10 +180,7 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
-    const founds = await this.findMany(entity, {
-      ...criteria,
-      $project: [meta.id],
-    });
+    const founds = await this.findMany(entity, criteria, [meta.id]);
 
     const ids = founds.map((found) => found[meta.id]);
 

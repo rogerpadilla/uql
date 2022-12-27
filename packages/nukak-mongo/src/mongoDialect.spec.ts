@@ -92,22 +92,21 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $filter: {} })).toEqual([]);
 
-    expect(this.dialect.aggregationPipeline(Item, { $project: {} })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(Item, {}, {})).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
-    expect(
-      this.dialect.aggregationPipeline(User, {
-        $project: { users: true },
-      })
-    ).toEqual([]);
+    expect(this.dialect.aggregationPipeline(User, {}, { users: true })).toEqual([]);
 
     expect(
-      this.dialect.aggregationPipeline(TaxCategory, {
-        $project: { creator: true },
-        $filter: { pk: '507f1f77bcf86cd799439011' },
-        $sort: { creatorId: -1 },
-      })
+      this.dialect.aggregationPipeline(
+        TaxCategory,
+        {
+          $filter: { pk: '507f1f77bcf86cd799439011' },
+          $sort: { creatorId: -1 },
+        },
+        { creator: true }
+      )
     ).toEqual([
       {
         $match: {
@@ -134,10 +133,13 @@ class MongoDialectSpec implements Spec {
     ]);
 
     expect(
-      this.dialect.aggregationPipeline(Item, {
-        $project: { measureUnit: true, tax: true },
-        $filter: { code: '123' },
-      })
+      this.dialect.aggregationPipeline(
+        Item,
+        {
+          $filter: { code: '123' },
+        },
+        { measureUnit: true, tax: true }
+      )
     ).toEqual([
       {
         $match: {

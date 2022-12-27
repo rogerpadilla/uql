@@ -1,27 +1,27 @@
-import { IdValue, Query, QueryCriteria, QueryOptions, QuerySearch, QueryUnique, Type } from 'nukak/type';
+import { IdValue, QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Type } from 'nukak/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type/index.js';
 
 export class GenericClientRepository<E> implements ClientRepository<E> {
   constructor(readonly entity: Type<E>, readonly querier: ClientQuerier) {}
 
-  count(qm: QuerySearch<E>, opts?: RequestOptions) {
+  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P, opts?: RequestOptions) {
+    return this.querier.findOneById(this.entity, id, project, opts);
+  }
+
+  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P, opts?: RequestOptions) {
+    return this.querier.findOne(this.entity, qm, project, opts);
+  }
+
+  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P, opts?: RequestOptions) {
+    return this.querier.findMany(this.entity, qm, project, opts);
+  }
+
+  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P, opts?: RequestOptions) {
+    return this.querier.findManyAndCount(this.entity, qm, project, opts);
+  }
+
+  count(qm?: QuerySearch<E>, opts?: RequestOptions) {
     return this.querier.count(this.entity, qm, opts);
-  }
-
-  findOneById(id: IdValue<E>, qm?: QueryUnique<E>, opts?: RequestOptions) {
-    return this.querier.findOneById(this.entity, id, qm, opts);
-  }
-
-  findOne(qm: Query<E>, opts?: RequestOptions) {
-    return this.querier.findOne(this.entity, qm, opts);
-  }
-
-  findMany(qm: Query<E>, opts?: RequestOptions) {
-    return this.querier.findMany(this.entity, qm, opts);
-  }
-
-  findManyAndCount(qm: Query<E>, opts?: RequestOptions) {
-    return this.querier.findManyAndCount(this.entity, qm, opts);
   }
 
   insertOne(payload: E, opts?: RequestOptions) {
@@ -40,7 +40,7 @@ export class GenericClientRepository<E> implements ClientRepository<E> {
     return this.querier.deleteOneById(this.entity, id, opts);
   }
 
-  deleteMany(qm: QueryCriteria<E>, opts?: QueryOptions) {
+  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions) {
     return this.querier.deleteMany(this.entity, qm, opts);
   }
 }

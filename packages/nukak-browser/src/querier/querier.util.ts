@@ -13,6 +13,6 @@ export function stringifyQuery(query: object): string {
   if (keys.length === 0) {
     return '';
   }
-  const qsArr = keys.map((key) => stringifyQueryParameter(key, query[key]));
+  const qsArr = keys.filter((key) => query[key] !== undefined).map((key) => stringifyQueryParameter(key, query[key]));
   return qsArr.length ? '?' + qsArr.join('&') : '';
 }
