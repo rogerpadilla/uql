@@ -123,38 +123,36 @@ export type QueryFilterFieldMap<E> =
 /**
  * complex operators.
  */
-export type QueryFilterMap<E> =
-  | QueryFilterFieldMap<E>
-  | {
-      /**
-       * joins query clauses with a logical `AND`, returns records that match all the clauses.
-       */
-      readonly $and?: QueryFilterLogical<E>;
-      /**
-       * joins query clauses with a logical `OR`, returns records that match any of the clauses.
-       */
-      readonly $or?: QueryFilterLogical<E>;
-      /**
-       * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
-       */
-      readonly $not?: QueryFilterLogical<E>;
-      /**
-       * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
-       */
-      readonly $nor?: QueryFilterLogical<E>;
-      /**
-       * whether the specified fields match against a full-text search of the given string.
-       */
-      readonly $text?: QueryTextSearchOptions<E>;
-      /**
-       * whether the record exists in the given sub-query.
-       */
-      readonly $exists?: QueryRaw;
-      /**
-       * whether the record does not exists in the given sub-query.
-       */
-      readonly $nexists?: QueryRaw;
-    };
+export type QueryFilterMap<E> = QueryFilterFieldMap<E> & {
+  /**
+   * joins query clauses with a logical `AND`, returns records that match all the clauses.
+   */
+  readonly $and?: QueryFilterLogical<E>;
+  /**
+   * joins query clauses with a logical `OR`, returns records that match any of the clauses.
+   */
+  readonly $or?: QueryFilterLogical<E>;
+  /**
+   * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
+   */
+  readonly $not?: QueryFilterLogical<E>;
+  /**
+   * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
+   */
+  readonly $nor?: QueryFilterLogical<E>;
+  /**
+   * whether the specified fields match against a full-text search of the given string.
+   */
+  readonly $text?: QueryTextSearchOptions<E>;
+  /**
+   * whether the record exists in the given sub-query.
+   */
+  readonly $exists?: QueryRaw;
+  /**
+   * whether the record does not exists in the given sub-query.
+   */
+  readonly $nexists?: QueryRaw;
+};
 
 export type QueryFilterFieldOperatorMap<T> = {
   /**
