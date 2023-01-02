@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "mongodb": "^4.12.1",
-    "nukak": "^0.1.0"
+    "nukak": "^0.2.0"
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.6",
