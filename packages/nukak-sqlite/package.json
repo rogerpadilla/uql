@@ -20,7 +20,7 @@
     "sqlite3": "^5.1.2"
   },
   "devDependencies": {
-    "@types/node": "^18.11.17",
+    "@types/node": "^18.11.18",
     "@types/sqlite3": "^3.1.8",
     "copyfiles": "^2.4.1",
     "rimraf": "^3.0.2",

@@ -1,4 +1,4 @@
-import { Query, Type, QueryCriteria, QueryOptions, QueryUpdateResult } from '../type/index.js';
+import { Type, QueryOptions, QueryUpdateResult, QueryProject, Merge, QuerySearch, QueryCriteria } from '../type/index.js';
 import { unflatObjects, clone } from '../util/index.js';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
@@ -24,18 +24,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
    */
   abstract run(query: string): Promise<QueryUpdateResult>;
 
-  override async count<E>(entity: Type<E>, qm?: QueryCriteria<E>) {
-    const query = await this.dialect.count(entity, qm);
-    const res: any = await this.all<E>(query);
-    return Number(res[0].count);
+  override async findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
+    const query = this.dialect.find(entity, qm, project);
+    const res = await this.all<Merge<E, P>>(query);
+    const founds = unflatObjects(res);
+    await this.findToManyRelations(entity, founds, project);
+    return founds;
   }
 
-  override async findMany<E>(entity: Type<E>, qm: Query<E>) {
-    const query = this.dialect.find(entity, qm);
-    const res = await this.all<E>(query);
-    const founds = unflatObjects(res);
-    await this.findToManyRelations(entity, founds, qm.$project);
-    return founds;
+  override async count<E>(entity: Type<E>, qm?: QuerySearch<E>) {
+    const query = await this.dialect.count(entity, qm);
+    const res = await this.all<{ count: number }>(query);
+    return Number(res[0].count);
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
@@ -51,7 +51,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     return ids;
   }
 
-  override async updateMany<E>(entity: Type<E>, qm: QueryCriteria<E>, payload: E) {
+  override async updateMany<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const query = this.dialect.update(entity, qm, payload);
     const { changes } = await this.run(query);
@@ -59,9 +59,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     return changes;
   }
 
-  override async deleteMany<E>(entity: Type<E>, qm: QueryCriteria<E>, opts?: QueryOptions) {
+  override async deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const findQuery = await this.dialect.find(entity, { ...qm, $project: [meta.id] });
+    const findQuery = await this.dialect.find(entity, qm, [meta.id]);
     const founds = await this.all<E>(findQuery);
     if (!founds.length) {
       return 0;

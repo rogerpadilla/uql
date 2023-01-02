@@ -3,7 +3,6 @@ import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterA
 import { getMeta } from 'nukak/entity';
 import type {
   QueryFilter,
-  Query,
   EntityMeta,
   Type,
   QueryProject,
@@ -12,6 +11,7 @@ import type {
   QuerySort,
   FieldValue,
   RelationKey,
+  QueryCriteria,
 } from 'nukak/type';
 
 export class MongoDialect {
@@ -57,7 +57,7 @@ export class MongoDialect {
     return buildSortMap(sort) as Sort;
   }
 
-  aggregationPipeline<E>(entity: Type<E>, qm: Query<E>): MongoAggregationPipelineEntry<E>[] {
+  aggregationPipeline<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
     const filter = this.filter(entity, qm.$filter);
@@ -77,7 +77,7 @@ export class MongoDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relations = getProjectRelationKeys(meta, qm.$project);
+    const relations = getProjectRelationKeys(meta, project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];

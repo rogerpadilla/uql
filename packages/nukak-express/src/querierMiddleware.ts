@@ -1,7 +1,7 @@
 import { Router as expressRouter, type Request } from 'express';
 import { getQuerier } from 'nukak';
 import { getEntities, getMeta } from 'nukak/entity';
-import type { EntityMeta, Type } from 'nukak/type';
+import type { EntityMeta, Query, Type } from 'nukak/type';
 import { kebabCase } from 'nukak/util';
 import { parseQuery } from './query.util.js';
 
@@ -39,6 +39,60 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     next();
   });
 
+  router.get('/one', async (req, res, next) => {
+    const { $project: project, ...qm } = req.query as Query<E>;
+    const querier = await getQuerier();
+    try {
+      const data = await querier.findOne(entity, qm, project);
+      res.json({ data });
+    } catch (err: any) {
+      next(err);
+    } finally {
+      await querier.release();
+    }
+  });
+
+  router.get('/:id', async (req, res, next) => {
+    const { $project: project, ...qm } = req.query as Query<E>;
+    req.query.$filter[meta.id as string] = req.params.id;
+    const querier = await getQuerier();
+    try {
+      const data = await querier.findOne(entity, qm, project);
+      res.json({ data });
+    } catch (err: any) {
+      next(err);
+    } finally {
+      await querier.release();
+    }
+  });
+
+  router.get('/', async (req, res, next) => {
+    const { $project: project, ...qm } = req.query as Query<E>;
+    const querier = await getQuerier();
+    try {
+      const findManyPromise = querier.findMany(entity, qm, project);
+      const countPromise = req.query.count ? querier.count(entity, qm) : undefined;
+      const [data, count] = await Promise.all([findManyPromise, countPromise]);
+      res.json({ data, count });
+    } catch (err: any) {
+      next(err);
+    } finally {
+      await querier.release();
+    }
+  });
+
+  router.get('/count', async (req, res, next) => {
+    const querier = await getQuerier();
+    try {
+      const count = await querier.count(entity, req.query);
+      res.json({ count });
+    } catch (err: any) {
+      next(err);
+    } finally {
+      await querier.release();
+    }
+  });
+
   router.post('/', async (req, res, next) => {
     const querier = await getQuerier();
     try {
@@ -59,62 +113,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const count = await querier.updateMany(entity, req.query, req.body);
+      const changes = await querier.updateMany(entity, req.query, req.body);
       await querier.commitTransaction();
-      res.json({ data: req.params.id, count });
+      res.json({ data: req.params.id, changes });
     } catch (err: any) {
       await querier.rollbackTransaction();
-      next(err);
-    } finally {
-      await querier.release();
-    }
-  });
-
-  router.get('/one', async (req, res, next) => {
-    const querier = await getQuerier();
-    try {
-      const data = await querier.findOne(entity, req.query);
-      res.json({ data });
-    } catch (err: any) {
-      next(err);
-    } finally {
-      await querier.release();
-    }
-  });
-
-  router.get('/count', async (req, res, next) => {
-    const querier = await getQuerier();
-    try {
-      const count = await querier.count(entity, req.query);
-      res.json({ count });
-    } catch (err: any) {
-      next(err);
-    } finally {
-      await querier.release();
-    }
-  });
-
-  router.get('/:id', async (req, res, next) => {
-    req.query.$filter[meta.id as string] = req.params.id;
-    const querier = await getQuerier();
-    try {
-      const data = await querier.findOne(entity, req.query);
-      res.json({ data });
-    } catch (err: any) {
-      next(err);
-    } finally {
-      await querier.release();
-    }
-  });
-
-  router.get('/', async (req, res, next) => {
-    const querier = await getQuerier();
-    try {
-      const findManyPromise = querier.findMany(entity, req.query);
-      const countPromise = req.query.count ? querier.count(entity, req.query) : 0;
-      const [data, count] = await Promise.all([findManyPromise, countPromise]);
-      res.json({ data, count });
-    } catch (err: any) {
       next(err);
     } finally {
       await querier.release();
@@ -126,11 +129,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const count = await querier.deleteMany(entity, req.query, {
+      const changes = await querier.deleteMany(entity, req.query, {
         softDelete: !!req.query.softDelete,
       });
       await querier.commitTransaction();
-      res.json({ data: req.params.id, count });
+      res.json({ data: req.params.id, changes });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
@@ -143,9 +146,9 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const count = await querier.deleteMany(entity, req.query, { softDelete: !!req.query.softDelete });
+      const changes = await querier.deleteMany(entity, req.query, { softDelete: !!req.query.softDelete });
       await querier.commitTransaction();
-      res.json({ count });
+      res.json({ changes });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);

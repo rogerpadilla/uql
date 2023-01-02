@@ -31,13 +31,13 @@ The perfectionistic [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relationa
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | Nukak Adapter    |
-| ------------ | ---------------- | ---------------- |
-| `MySQL`      | `mysql2`         | `nukak-mysql`    |
-| `MariaDB`    | `mariadb`        | `nukak-maria`    |
-| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
-| `PostgreSQL` | `pg`             | `nukak-postgres` |
-| `MongoDB`    | `mongodb`        | `nukak-mongo`    |
+| Database     | Driver           | Nukak Adapter         |
+| ------------ | ---------------- | --------------------- |
+| `MySQL`      | `mysql2`         | `nukak-mysql`         |
+| `MariaDB`    | `mariadb`        | `nukak-maria`         |
+| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`        |
+| `PostgreSQL` | `pg`             | `nukak-postgres`      |
+| `MongoDB`    | `mongodb`        | `nukak-mongo` (alpha) |
 
 For example, for `Postgres`:
 
@@ -127,11 +127,14 @@ import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 10) {
   const querier = await getQuerier();
-  const users = await querier.findMany(User, {
-    $project: ['id', 'name', 'email'],
-    $sort: { createdAt: -1 },
-    $limit: limit,
-  });
+  const users = await querier.findMany(
+    User,
+    {
+      $sort: { createdAt: -1 },
+      $limit: limit,
+    },
+    ['id', 'name', 'email']
+  );
   await querier.release();
   return users;
 }
