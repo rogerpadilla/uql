@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.6",
-    "@types/node": "^18.11.17",
+    "@types/node": "^18.11.18",
     "copyfiles": "^2.4.1",
     "mongodb": "^4.13.0",
     "rimraf": "^3.0.2",

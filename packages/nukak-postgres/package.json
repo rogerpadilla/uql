@@ -19,7 +19,7 @@
     "pg": "^8.8.0"
   },
   "devDependencies": {
-    "@types/node": "^18.11.17",
+    "@types/node": "^18.11.18",
     "@types/pg": "^8.6.6",
     "copyfiles": "^2.4.1",
     "pg": "^8.8.0",

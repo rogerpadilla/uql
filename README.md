@@ -31,13 +31,13 @@ The perfectionistic [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relationa
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | Nukak Adapter    |
-| ------------ | ---------------- | ---------------- |
-| `MySQL`      | `mysql2`         | `nukak-mysql`    |
-| `MariaDB`    | `mariadb`        | `nukak-maria`    |
-| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
-| `PostgreSQL` | `pg`             | `nukak-postgres` |
-| `MongoDB`    | `mongodb`        | `nukak-mongo`    |
+| Database     | Driver           | Nukak Adapter         |
+| ------------ | ---------------- | --------------------- |
+| `MySQL`      | `mysql2`         | `nukak-mysql`         |
+| `MariaDB`    | `mariadb`        | `nukak-maria`         |
+| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`        |
+| `PostgreSQL` | `pg`             | `nukak-postgres`      |
+| `MongoDB`    | `mongodb`        | `nukak-mongo` (alpha) |
 
 For example, for `Postgres`:
 
