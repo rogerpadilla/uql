@@ -6,8 +6,6 @@
 
 [nukak](https://nukak.org) provides a consistent `API` for a wide variety of databases including `PostgreSQL`, `MySQL`, `SQLite` and `MongoDB`.
 
-&nbsp;
-
 ## Features
 
 - Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
