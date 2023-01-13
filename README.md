@@ -4,9 +4,9 @@
 
 [nukak](https://nukak.org) is a [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) for [TypeScript](http://www.typescriptlang.org) and modern JavaScript, is designed to be fast, safe, and easy to integrate into any application. It draws inspiration from [TypeORM](https://typeorm.io) and [Mongo driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
 
-[nukak](https://nukak.org) provides a consistent API for a wide variety of databases including PostgreSQL, MySQL, SQLite and MongoDB.
-
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, and Electron platforms.
+
+[nukak](https://nukak.org) provides a consistent API for a wide variety of databases including PostgreSQL, MySQL, SQLite and MongoDB.
 
 &nbsp;
 
