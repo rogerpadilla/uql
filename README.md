@@ -2,9 +2,9 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is a [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) for [TypeScript](http://www.typescriptlang.org) and modern `JavaScript`, is designed to be fast, safe, and easy to integrate into any application. It draws inspiration from [TypeORM](https://typeorm.io) and [Mongo driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
+[nukak](https://nukak.org) is a [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) for [TypeScript](http://www.typescriptlang.org) and modern JavaScript, is designed to be fast, safe, and easy to integrate into any application. It draws inspiration from [TypeORM](https://typeorm.io) and [Mongo driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
 
-[nukak](https://nukak.org) provides a consistent `API` for a wide variety of databases including `PostgreSQL`, `MySQL`, `SQLite` and `MongoDB`.
+[nukak](https://nukak.org) provides a consistent API for a wide variety of databases including PostgreSQL, MySQL, SQLite and MongoDB.
 
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, and Electron platforms.
 
