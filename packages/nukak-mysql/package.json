@@ -22,8 +22,8 @@
     "@types/mysql": "^2.15.21",
     "@types/node": "^18.11.18",
     "copyfiles": "^2.4.1",
-    "mysql2": "^2.3.3",
-    "rimraf": "^3.0.2",
+    "mysql2": "^3.0.1",
+    "rimraf": "^4.0.4",
     "typescript": "^4.9.4"
   },
   "author": "Roger Padilla",
