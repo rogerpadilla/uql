@@ -6,6 +6,8 @@
 
 [nukak](https://nukak.org) provides a consistent `API` for a wide variety of databases including `PostgreSQL`, `MySQL`, `SQLite` and `MongoDB`.
 
+[nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, and Electron platforms.
+
 &nbsp;
 
 ## Features
