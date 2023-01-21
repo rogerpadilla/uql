@@ -1,5 +1,5 @@
 ```ts
-const users = await this.querier.findMany(
+const users = await querier.findMany(
   User,
   {
     $skip: 1,
