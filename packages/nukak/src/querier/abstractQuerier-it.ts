@@ -491,6 +491,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  async shouldReturnTransactionValue() {
+    const affectedRows = await this.querier.transaction(async () => {
+      await this.shouldInsertMany();
+      const count = await this.querier.count(User);
+      await this.querier.deleteMany(User, {});
+      return count;
+    });
+    expect(affectedRows).toBe(2);
+  }
+
   async shouldDeleteMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
     await expect(this.querier.deleteMany(User, { $filter: { companyId: 1 } })).resolves.toBe(0);
