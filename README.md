@@ -1,17 +1,3 @@
-```ts
-const users = await querier.findMany(
-  User,
-  {
-    $skip: 1,
-    $limit: 2,
-    $sort: {
-      name: 1,
-    },
-  },
-  ['name']
-);
-```
-
 <!-- ![code](/assets/code.webp 'code') -->
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
