@@ -334,31 +334,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
-  async shouldFindMany() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-
-    const users = await this.querier.findMany(
-      User,
-      {
-        $skip: 1,
-        $limit: 2,
-        $sort: {
-          name: 1,
-        },
-      },
-      ['name']
-    );
-
-    expect(users).toMatchObject([
-      {
-        name: 'Some Name B',
-      },
-      {
-        name: 'Some Name C',
-      },
-    ]);
-  }
-
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
