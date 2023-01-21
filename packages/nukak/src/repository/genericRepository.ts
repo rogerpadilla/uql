@@ -1,4 +1,4 @@
-import { IdValue, Querier, QueryOptions, QueryOne, Repository, Type, QueryProject, QuerySearch, QueryCriteria } from '../type/index.js';
+import type { IdValue, Querier, QueryOptions, Repository, Type, QueryProject, QuerySearch, QueryCriteria, QueryOneCriteria } from '../type/index.js';
 
 export class GenericRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}
@@ -7,7 +7,7 @@ export class GenericRepository<E> implements Repository<E> {
     return this.querier.findOneById(this.entity, id, project);
   }
 
-  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P) {
+  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P) {
     return this.querier.findOne(this.entity, qm, project);
   }
 

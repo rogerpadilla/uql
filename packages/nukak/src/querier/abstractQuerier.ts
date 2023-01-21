@@ -1,10 +1,10 @@
-import {
+import type {
   IdValue,
   Merge,
   Querier,
   Query,
   QueryCriteria,
-  QueryOne,
+  QueryOneCriteria,
   QueryOptions,
   QueryProject,
   QuerySearch,
@@ -22,7 +22,7 @@ export abstract class AbstractQuerier implements Querier {
     return this.findOne(entity, { $filter: id }, project);
   }
 
-  async findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOne<E>, project?: P) {
+  async findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: P) {
     const rows = await this.findMany(entity, { ...qm, $limit: 1 }, project);
     return rows[0];
   }

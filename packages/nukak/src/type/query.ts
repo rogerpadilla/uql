@@ -326,6 +326,11 @@ export type QueryCriteria<E> = QuerySearch<E> & {
 };
 
 /**
+ * criteria one options.
+ */
+export type QueryOneCriteria<E> = Omit<QueryCriteria<E>, '$limit'>;
+
+/**
  * query options.
  */
 export type Query<E> = {
@@ -343,7 +348,7 @@ export type QueryOne<E> = Omit<Query<E>, '$limit'>;
 /**
  * options to get an unique record.
  */
-export type QueryUnique<E> = Pick<Query<E>, '$project' | '$filter'>;
+export type QueryUnique<E> = Pick<QueryOne<E>, '$project' | '$filter'>;
 
 /**
  * stringified query.

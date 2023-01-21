@@ -1,5 +1,5 @@
 import type { Type } from './utility.js';
-import type { Query, QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch } from './query.js';
+import type { QueryCriteria, QueryOneCriteria, QueryOptions, QueryProject, QuerySearch } from './query.js';
 import type { UniversalRepository } from './repository.js';
 import type { IdValue } from './entity.js';
 
@@ -21,7 +21,7 @@ export interface UniversalQuerier {
    * @param qm the criteria options
    * @return the record
    */
-  findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOne<E>, project?: P): Promise<any>;
+  findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: P): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.

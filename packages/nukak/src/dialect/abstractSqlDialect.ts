@@ -53,7 +53,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
     const where = this.where<E>(entity, qm.$filter, opts);
-    const group = this.group<E>(entity, qm.$group, opts);
+    const group = this.group<E>(entity, qm.$group);
     const having = this.where<E>(entity, qm.$having, { ...opts, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort, opts);
     const pager = this.pager(qm);
@@ -370,7 +370,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escapedPrefix + this.escapeId(field?.name ?? key);
   }
 
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[], opts: QueryOptions): string {
+  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[]): string {
     if (!fields?.length) {
       return '';
     }

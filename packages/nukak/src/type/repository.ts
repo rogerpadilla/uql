@@ -1,5 +1,5 @@
 import type { IdValue } from './entity.js';
-import type { QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Merge } from './query.js';
+import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, Merge, QueryOneCriteria } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -28,7 +28,7 @@ export type UniversalRepository<E> = {
    * obtains the first record matching the given search parameters.
    * @param qm the criteria options
    */
-  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P): Promise<any>;
+  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -107,7 +107,7 @@ export type UniversalRepository<E> = {
 export interface Repository<E> extends UniversalRepository<E> {
   findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P): Promise<Merge<E, P>>;
 
-  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P): Promise<Merge<E, P>>;
+  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P): Promise<Merge<E, P>>;
 
   findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
 
