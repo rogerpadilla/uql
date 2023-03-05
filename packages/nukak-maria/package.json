@@ -20,10 +20,10 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
-    "@types/node": "^18.13.0",
+    "@types/node": "^18.14.6",
     "copyfiles": "^2.4.1",
     "mariadb": "^3.1.0",
-    "rimraf": "^4.1.2",
+    "rimraf": "^4.3.0",
     "typescript": "^4.9.5"
   },
   "author": "Roger Padilla",
