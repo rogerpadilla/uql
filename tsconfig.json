@@ -10,7 +10,6 @@
     "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,
-    "suppressImplicitAnyIndexErrors": true,
     "noImplicitAny": true,
     "forceConsistentCasingInFileNames": true,
     "allowUnreachableCode": false,
