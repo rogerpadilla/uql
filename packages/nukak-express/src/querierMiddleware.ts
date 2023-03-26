@@ -44,7 +44,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm, project);
-      res.json({ data });
+      res.json({ data, count: data ? 1 : 0 });
     } catch (err: any) {
       next(err);
     } finally {
@@ -58,7 +58,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       const data = await querier.findOne(entity, qm, project);
-      res.json({ data });
+      res.json({ data, count: data ? 1 : 0 });
     } catch (err: any) {
       next(err);
     } finally {
@@ -85,7 +85,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       const count = await querier.count(entity, req.query);
-      res.json({ count });
+      res.json({ data: count, count });
     } catch (err: any) {
       next(err);
     } finally {
@@ -97,9 +97,9 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const data = await querier.insertOne(entity, req.body);
+      const id = await querier.insertOne(entity, req.body);
       await querier.commitTransaction();
-      res.json({ data });
+      res.json({ data: id, count: id ? 1 : 0 });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
@@ -146,9 +146,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const count = await querier.deleteMany(entity, req.query, { softDelete: !!req.query.softDelete });
+      const founds = await querier.findMany(entity, req.query, [meta.id]);
+      const ids = founds.map((found) => found[meta.id]);
+      const count = await querier.deleteMany(entity, { $filter: { [meta.id]: ids } }, { softDelete: !!req.query.softDelete });
       await querier.commitTransaction();
-      res.json({ count });
+      res.json({ data: ids, count });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);

@@ -35,19 +35,13 @@ export interface ClientQuerier extends UniversalQuerier {
 
   insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  insertMany?<E>(entity: Type<E>, payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
-
-  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
-
-  updateMany?<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  saveMany?<E>(entity: Type<E>, payload: E[]): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
-
-  deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
   getRepository<E>(entity: Type<E>): ClientRepository<E>;
 }

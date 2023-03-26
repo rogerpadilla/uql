@@ -50,7 +50,7 @@ export class HttpQuerier implements ClientQuerier {
 
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return patch<number>(`${basePath}/${id}`, payload, opts);
+    return patch<typeof id>(`${basePath}/${id}`, payload, opts);
   }
 
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
@@ -65,13 +65,13 @@ export class HttpQuerier implements ClientQuerier {
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = opts.softDelete ? stringifyQuery({ softDelete: opts.softDelete }) : '';
-    return remove<number>(`${basePath}/${id}${qs}`, opts);
+    return remove<typeof id>(`${basePath}/${id}${qs}`, opts);
   }
 
   deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(opts.softDelete ? { ...qm, softDelete: opts.softDelete } : qm);
-    return remove<number>(`${basePath}${qs}`, opts);
+    return remove<IdValue<E>[]>(`${basePath}${qs}`, opts);
   }
 
   getRepository<E>(entity: Type<E>): ClientRepository<E> {

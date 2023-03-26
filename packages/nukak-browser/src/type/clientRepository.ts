@@ -18,15 +18,9 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
 
   insertOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  insertMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
-
-  updateMany?(payload: E, qm: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
-
   saveOne(payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  saveMany?(payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+  deleteOneById(id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  deleteOneById(id: IdValue<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
-
-  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<number>>;
+  deleteMany(qm: QuerySearch<E>, opts?: QueryOptions & RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 }

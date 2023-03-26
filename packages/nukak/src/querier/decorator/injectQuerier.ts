@@ -3,7 +3,7 @@ import { Key, Type } from '../../type/index.js';
 const metadataKey = Symbol('InjectQuerier');
 
 export function InjectQuerier() {
-  return (proto: { [k: string | symbol]: WeakMap<object, any> }, key: string, index: number) => {
+  return (proto: object, key: string, index: number) => {
     const { constructor } = proto;
 
     if (!proto[metadataKey]) {
