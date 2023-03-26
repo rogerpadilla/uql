@@ -113,9 +113,9 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const changes = await querier.updateMany(entity, req.query, req.body);
+      const count = await querier.updateMany(entity, req.query, req.body);
       await querier.commitTransaction();
-      res.json({ data: req.params.id, changes });
+      res.json({ data: req.params.id, count });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
@@ -129,11 +129,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const changes = await querier.deleteMany(entity, req.query, {
+      const count = await querier.deleteMany(entity, req.query, {
         softDelete: !!req.query.softDelete,
       });
       await querier.commitTransaction();
-      res.json({ data: req.params.id, changes });
+      res.json({ data: req.params.id, count });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
@@ -146,9 +146,9 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     const querier = await getQuerier();
     try {
       await querier.beginTransaction();
-      const changes = await querier.deleteMany(entity, req.query, { softDelete: !!req.query.softDelete });
+      const count = await querier.deleteMany(entity, req.query, { softDelete: !!req.query.softDelete });
       await querier.commitTransaction();
-      res.json({ changes });
+      res.json({ count });
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
