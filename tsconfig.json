@@ -10,6 +10,7 @@
     "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,
+    "suppressImplicitAnyIndexErrors": true,
     "noImplicitAny": true,
     "forceConsistentCasingInFileNames": true,
     "allowUnreachableCode": false,
@@ -36,7 +37,8 @@
       "nukak/type": ["packages/nukak/src/type/index.ts"],
       "nukak/util": ["packages/nukak/src/util/index.ts"],
       "nukak/*": ["packages/nukak/src/*"]
-    }
+    },
+    "ignoreDeprecations": "5.0"
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]
 }
