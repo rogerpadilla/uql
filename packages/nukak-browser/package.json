@@ -14,11 +14,11 @@
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "bunchee": "^2.2.0",
+    "bunchee": "^2.2.1",
     "copyfiles": "^2.4.1",
     "nukak": "^0.2.12",
-    "rimraf": "^4.3.0",
-    "typescript": "^4.9.5"
+    "rimraf": "^4.4.1",
+    "typescript": "^5.0.2"
   },
   "author": "Roger Padilla",
   "repository": {
