@@ -40,7 +40,7 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
   let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name)} (\n\t`;
 
   const insertableIdType = 'VARCHAR(36)';
-  const defaultType = 'VARCHAR(50)';
+  const defaultType = 'VARCHAR(255)';
 
   const columns = getKeys(meta.fields).map((key) => {
     const field = meta.fields[key];
