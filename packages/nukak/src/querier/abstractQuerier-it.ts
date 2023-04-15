@@ -157,6 +157,21 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found).toMatchObject({ id, category: payload.category });
   }
 
+  async shouldInsertSpecialChars() {
+    const payload: MeasureUnit = {
+      name: `I'm Cielo! How are you doing today? It's been a while since we last talked`,
+      createdAt: 123,
+    };
+
+    const id = await this.querier.insertOne(MeasureUnit, payload);
+
+    expect(id).toBeDefined();
+
+    const found = await this.querier.findOneById(MeasureUnit, id);
+
+    expect(found).toMatchObject(payload);
+  }
+
   async shouldInsertOneAndCascadeOneToMany() {
     const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
 
