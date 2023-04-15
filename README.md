@@ -39,13 +39,13 @@
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | Nukak Adapter         |
-| ------------ | ---------------- | --------------------- |
-| `MySQL`      | `mysql2`         | `nukak-mysql`         |
-| `MariaDB`    | `mariadb`        | `nukak-maria`         |
-| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`        |
-| `PostgreSQL` | `pg`             | `nukak-postgres`      |
-| `MongoDB`    | `mongodb`        | `nukak-mongo` (alpha) |
+| Database     | Driver           | Nukak Adapter    |
+| ------------ | ---------------- | ---------------- |
+| `PostgreSQL` | `pg`             | `nukak-postgres` |
+| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
+| `MariaDB`    | `mariadb`        | `nukak-maria`    |
+| `MongoDB`    | `mongodb`        | `nukak-mongo`    |
+| `MySQL`      | `mysql2`         | `nukak-mysql`    |
 
 For example, for `Postgres`:
 
