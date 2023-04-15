@@ -1,4 +1,4 @@
-## 0.2.21 (Jan 02, 2023)
+## 0.2.21 (Apr 15, 2023)
 
 ### Reuse community open-source npm packages to escape literal-values according to each DB vendor
 
