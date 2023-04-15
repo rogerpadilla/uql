@@ -1,4 +1,3 @@
-import sqlstring from 'sqlstring';
 import {
   QueryFilter,
   Scalar,
@@ -487,10 +486,5 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escaped + suffix;
   }
 
-  escape(value: any): Scalar {
-    if (value instanceof QueryRaw) {
-      return getRawValue({ value, dialect: this });
-    }
-    return sqlstring.escape(value);
-  }
+  abstract escape(value: any): Scalar;
 }

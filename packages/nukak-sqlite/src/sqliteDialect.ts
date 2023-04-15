@@ -1,6 +1,8 @@
+import sqlstring from 'sqlstring-sqlite';
 import { getMeta } from 'nukak/entity';
-import type { QueryFilterMap, QueryTextSearchOptions, Type, QueryComparisonOptions } from 'nukak/type';
+import { QueryFilterMap, QueryTextSearchOptions, Type, QueryComparisonOptions, QueryRaw, Scalar } from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
+import { getRawValue } from 'nukak/util';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor() {
@@ -15,5 +17,12 @@ export class SqliteDialect extends AbstractSqlDialect {
       return `${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : ${this.escape(search.$value)}`;
     }
     return super.compare(entity, key, val, opts);
+  }
+
+  override escape(value: any): Scalar {
+    if (value instanceof QueryRaw) {
+      return getRawValue({ value, dialect: this });
+    }
+    return sqlstring.escape(value);
   }
 }

@@ -1275,12 +1275,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@commitlint/cli@npm:^17.5.1":
-  version: 17.5.1
-  resolution: "@commitlint/cli@npm:17.5.1"
+"@commitlint/cli@npm:^17.6.1":
+  version: 17.6.1
+  resolution: "@commitlint/cli@npm:17.6.1"
   dependencies:
     "@commitlint/format": ^17.4.4
-    "@commitlint/lint": ^17.4.4
+    "@commitlint/lint": ^17.6.1
     "@commitlint/load": ^17.5.0
     "@commitlint/read": ^17.5.1
     "@commitlint/types": ^17.4.4
@@ -1291,16 +1291,16 @@ __metadata:
     yargs: ^17.0.0
   bin:
     commitlint: cli.js
-  checksum: 2bdd26b3215796dccb16b0d7459d3b0db7f6324800aa73b97a8cdf79b77f3691d85ee88f37fa6cf20c97ac664f31dcb6ad7aef1da3c3b32d7bb12f18d49a37f2
+  checksum: ec559e1f529c8bdc680d71527d2eb591dc7d264fcc8a70cf7ee12d5b833c385374ae41943f7a8e8346423c51f8900dded5041b6e719586295573882e366c41ba
   languageName: node
   linkType: hard
 
-"@commitlint/config-conventional@npm:^17.4.4":
-  version: 17.4.4
-  resolution: "@commitlint/config-conventional@npm:17.4.4"
+"@commitlint/config-conventional@npm:^17.6.1":
+  version: 17.6.1
+  resolution: "@commitlint/config-conventional@npm:17.6.1"
   dependencies:
     conventional-changelog-conventionalcommits: ^5.0.0
-  checksum: 679d92509fe6e53ee0cc4202f8069d88360c4f9dbd7ab74114bb28278a196da517ef711dfe69893033a66e54ffc29e8df2ccf63cfd746a89c82a053949473c4b
+  checksum: a854bae11f76b22e188af2fabe4048b5054f56b7f270e6364ab1ed807670fa38192e1a2628d626a9b759785f64874a0b33b560080b34208f69f401ef70d91562
   languageName: node
   linkType: hard
 
@@ -1355,15 +1355,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@commitlint/lint@npm:^17.4.4":
-  version: 17.4.4
-  resolution: "@commitlint/lint@npm:17.4.4"
+"@commitlint/lint@npm:^17.6.1":
+  version: 17.6.1
+  resolution: "@commitlint/lint@npm:17.6.1"
   dependencies:
     "@commitlint/is-ignored": ^17.4.4
     "@commitlint/parse": ^17.4.4
-    "@commitlint/rules": ^17.4.4
+    "@commitlint/rules": ^17.6.1
     "@commitlint/types": ^17.4.4
-  checksum: bf04a9f9a1435e0d3cd03c58b6bf924613d0278b66b0a5d0e18eb96c7af9eeb02871e739a4d7d9312b2b4178f6f8ae9a49ba74382b4e28f623e1bf0af7067946
+  checksum: 990f6940fe277f252087e1d11d1042cfc034fa66b6355d451a0d7d8a24a0f0c381fd88f03556edb9a187c19e6d2a22a575b10c8d6db2f8342578c06396f10285
   languageName: node
   linkType: hard
 
@@ -1434,16 +1434,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@commitlint/rules@npm:^17.4.4":
-  version: 17.4.4
-  resolution: "@commitlint/rules@npm:17.4.4"
+"@commitlint/rules@npm:^17.6.1":
+  version: 17.6.1
+  resolution: "@commitlint/rules@npm:17.6.1"
   dependencies:
     "@commitlint/ensure": ^17.4.4
     "@commitlint/message": ^17.4.2
     "@commitlint/to-lines": ^17.4.0
     "@commitlint/types": ^17.4.4
     execa: ^5.0.0
-  checksum: f36525f6e234df6a17d47457b733a1fc10e3e01db1aa6fb45b18cbaf74b7915f634ab65f73d2412787137c366046f8264126c2f21ad9023ac6b68ec8b1cee8f4
+  checksum: e00b453e8a66eee6a335223a67cb328943133c54a9b416a7700857a917ea5ab3a6394c6c37e6123a8244bc2625e765c0f7182b7dfc2d4dee94577bb300d6d3a0
   languageName: node
   linkType: hard
 
@@ -3374,9 +3374,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"bunchee@npm:^3.0.1":
-  version: 3.0.1
-  resolution: "bunchee@npm:3.0.1"
+"bunchee@npm:^3.1.0":
+  version: 3.1.0
+  resolution: "bunchee@npm:3.1.0"
   dependencies:
     "@rollup/plugin-commonjs": 24.0.1
     "@rollup/plugin-json": 6.0.0
@@ -3385,6 +3385,7 @@ __metadata:
     "@swc/core": 1.3.46
     "@swc/helpers": 0.5.0
     arg: 5.0.2
+    pretty-bytes: 5.6.0
     publint: 0.1.11
     rollup: 3.20.2
     rollup-plugin-dts: 5.3.0
@@ -3400,7 +3401,7 @@ __metadata:
       optional: true
   bin:
     bunchee: dist/cli.js
-  checksum: 42fe02dad71589c0b7ff91e7803a81846134336983271b6f448a8cc07bcd3ab3afec7cbd52f781d317e33596dc68962c65e298ef81d3404765eec6f0900e2932
+  checksum: a3257e5e2988621fd55225e24e585d4d918963daa11b130a88f58618548e87c8f6d36f8634887ecfd1b339b5494f028faee2a9fc50716541c4f5b6083f6faa33
   languageName: node
   linkType: hard
 
@@ -6807,6 +6808,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"lru-cache@npm:^8.0.0":
+  version: 8.0.5
+  resolution: "lru-cache@npm:8.0.5"
+  checksum: 87d72196d8f46e8299c4ab576ed2ec8a07e3cbef517dc9874399c0b2470bd9bf62aacec3b67f84ed6d74aaa1ef31636d048edf996f76248fd17db72bfb631609
+  languageName: node
+  linkType: hard
+
 "lru-cache@npm:^9.0.0":
   version: 9.0.1
   resolution: "lru-cache@npm:9.0.1"
@@ -7379,19 +7387,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mysql2@npm:^3.2.0":
-  version: 3.2.0
-  resolution: "mysql2@npm:3.2.0"
+"mysql2@npm:^3.2.1":
+  version: 3.2.1
+  resolution: "mysql2@npm:3.2.1"
   dependencies:
     denque: ^2.1.0
     generate-function: ^2.3.1
     iconv-lite: ^0.6.3
     long: ^5.2.1
-    lru-cache: ^7.14.1
+    lru-cache: ^8.0.0
     named-placeholders: ^1.1.3
     seq-queue: ^0.0.5
     sqlstring: ^2.3.2
-  checksum: 7885d3b4f575e7321754de14bb4fadb80d4705d5b00f8b645d760ae7a0f3170ac6d4fe6e7b9307e698fe84c3ee047d7c2652f01b95c9393f56eace993f2952ab
+  checksum: 54229b7ff53e99b774f3955e915893a5513bed61de8fa36fc739ec59b516f98e6411cf1e112105afbc904fed571ad16baf079f5cdbe523986034601aab35ab2c
   languageName: node
   linkType: hard
 
@@ -7517,6 +7525,13 @@ __metadata:
   version: 0.4.0
   resolution: "node-int64@npm:0.4.0"
   checksum: d0b30b1ee6d961851c60d5eaa745d30b5c95d94bc0e74b81e5292f7c42a49e3af87f1eb9e89f59456f80645d679202537de751b7d72e9e40ceea40c5e449057e
+  languageName: node
+  linkType: hard
+
+"node-pg-format@npm:^1.3.5":
+  version: 1.3.5
+  resolution: "node-pg-format@npm:1.3.5"
+  checksum: 1bd317cd8fdffb964601ba891484449f16dddaddfa6a2efa4f06b7eaaa2961e7a603d82783135e971680b53bae7d70291dea3cb4595b8fcb933bbec2d5df261e
   languageName: node
   linkType: hard
 
@@ -7676,7 +7691,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "nukak-browser@workspace:packages/nukak-browser"
   dependencies:
-    bunchee: ^3.0.1
+    bunchee: ^3.1.0
     copyfiles: ^2.4.1
     nukak: ^0.2.15
     rimraf: ^5.0.0
@@ -7708,6 +7723,7 @@ __metadata:
     copyfiles: ^2.4.1
     mariadb: ^3.1.1
     rimraf: ^5.0.0
+    sqlstring: ^2.3.3
     typescript: ^5.0.4
   peerDependencies:
     mariadb: ^3.0.2
@@ -7738,8 +7754,9 @@ __metadata:
     "@types/mysql": ^2.15.21
     "@types/node": ^18.15.11
     copyfiles: ^2.4.1
-    mysql2: ^3.2.0
+    mysql2: ^3.2.1
     rimraf: ^5.0.0
+    sqlstring: ^2.3.3
     typescript: ^5.0.4
   peerDependencies:
     mysql2: ^2.3.3
@@ -7754,6 +7771,7 @@ __metadata:
     "@types/node": ^18.15.11
     "@types/pg": ^8.6.6
     copyfiles: ^2.4.1
+    node-pg-format: ^1.3.5
     pg: ^8.10.0
     rimraf: ^5.0.0
     typescript: ^5.0.4
@@ -7773,6 +7791,7 @@ __metadata:
     rimraf: ^5.0.0
     sqlite: ^4.1.2
     sqlite3: ^5.1.6
+    sqlstring-sqlite: ^0.1.1
     typescript: ^5.0.4
   peerDependencies:
     nukak: ^0.2.0
@@ -7791,7 +7810,6 @@ __metadata:
     copyfiles: ^2.4.1
     reflect-metadata: ^0.1.13
     rimraf: ^5.0.0
-    sqlstring: ^2.3.3
     tslib: ^2.5.0
     typescript: ^5.0.4
     uuid: ^9.0.0
@@ -8248,6 +8266,13 @@ __metadata:
   bin:
     prettier: bin-prettier.js
   checksum: fdc8f2616f099f5f0d685907f4449a70595a0fc1d081a88919604375989e0d5e9168d6121d8cc6861f21990b31665828e00472544d785d5940ea08a17660c3a6
+  languageName: node
+  linkType: hard
+
+"pretty-bytes@npm:5.6.0":
+  version: 5.6.0
+  resolution: "pretty-bytes@npm:5.6.0"
+  checksum: 9c082500d1e93434b5b291bd651662936b8bd6204ec9fa17d563116a192d6d86b98f6d328526b4e8d783c07d5499e2614a807520249692da9ec81564b2f439cd
   languageName: node
   linkType: hard
 
@@ -8774,8 +8799,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "root-workspace-0b6124@workspace:."
   dependencies:
-    "@commitlint/cli": ^17.5.1
-    "@commitlint/config-conventional": ^17.4.4
+    "@commitlint/cli": ^17.6.1
+    "@commitlint/config-conventional": ^17.6.1
     "@types/jest": ^29.5.0
     "@typescript-eslint/eslint-plugin": ^5.58.0
     "@typescript-eslint/parser": ^5.58.0
@@ -9204,6 +9229,13 @@ __metadata:
   version: 4.1.2
   resolution: "sqlite@npm:4.1.2"
   checksum: 3e8af1e36ac9978e6bdb2fd250a75e46f08e8361d2f7516c1a2061e1eefc810c3ea3d8c9f860a29cde95dea58ed7f3c1d994b3841428f9a57a9711dcdc7dd662
+  languageName: node
+  linkType: hard
+
+"sqlstring-sqlite@npm:^0.1.1":
+  version: 0.1.1
+  resolution: "sqlstring-sqlite@npm:0.1.1"
+  checksum: 72fc15fccb415e5e93073a8264556be2fd5bebc1fac3f374eabbd6f62cb750366d767a06d465a1ac125a8bb4ab61df40f4fe988e9b5a4f9e7d671d34bea05882
   languageName: node
   linkType: hard
 

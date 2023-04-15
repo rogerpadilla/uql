@@ -19,6 +19,9 @@
     "sqlite": "^4.1.2",
     "sqlite3": "^5.1.2"
   },
+  "dependencies": {
+    "sqlstring-sqlite": "^0.1.1"
+  },
   "devDependencies": {
     "@types/node": "^18.15.11",
     "@types/sqlite3": "^3.1.8",
