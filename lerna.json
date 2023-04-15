@@ -1,8 +1,7 @@
 {
-  "version": "0.2.15",
+  "version": "0.2.17",
   "useWorkspaces": true,
   "npmClient": "yarn",
-  "npmClientArgs": ["--no-package-lock"],
   "command": {
     "publish": {
       "contents": "dist",
