@@ -7693,7 +7693,7 @@ __metadata:
   dependencies:
     bunchee: ^3.1.0
     copyfiles: ^2.4.1
-    nukak: ^0.2.17
+    nukak: ^0.2.18
     rimraf: ^5.0.0
     typescript: ^5.0.4
   languageName: unknown
@@ -7800,7 +7800,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"nukak@^0.2.17, nukak@workspace:packages/nukak":
+"nukak@^0.2.18, nukak@workspace:packages/nukak":
   version: 0.0.0-use.local
   resolution: "nukak@workspace:packages/nukak"
   dependencies:
