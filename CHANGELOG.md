@@ -2,7 +2,7 @@
 
 ### fix(nukak-browser): check if ids are returned before use $in to delete them
 
-- https://github.com/rogerpadilla/nukak/commit/b64539e273589c46a22420d3260b3465b83e5e79
+- https://github.com/rogerpadilla/nukak/commit/463ff888de7c578c069668f810b049d36624166b
 
 ## 0.2.21 (Apr 15, 2023)
 
