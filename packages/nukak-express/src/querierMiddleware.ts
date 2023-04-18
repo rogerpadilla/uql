@@ -147,6 +147,9 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     try {
       await querier.beginTransaction();
       const founds = await querier.findMany(entity, req.query, [meta.id]);
+      if (!founds.length) {
+        return res.json({ data: [], count: 0 });
+      }
       const ids = founds.map((found) => found[meta.id]);
       const count = await querier.deleteMany(entity, { $filter: { [meta.id]: ids } }, { softDelete: !!req.query.softDelete });
       await querier.commitTransaction();
