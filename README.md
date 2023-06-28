@@ -63,7 +63,7 @@ npm install pg nukak-postgres --save
 
 &nbsp;
 
-## Configure
+---
 
 ## Define the entities
 
