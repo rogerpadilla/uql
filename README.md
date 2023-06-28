@@ -65,6 +65,8 @@ npm install pg nukak-postgres --save
 
 ---
 
+&nbsp;
+
 ## Define the entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
