@@ -2,7 +2,7 @@
   "name": "nukak-browser",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "type": "module",
   "main": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
@@ -16,9 +16,9 @@
   "devDependencies": {
     "bunchee": "^3.5.0",
     "copyfiles": "^2.4.1",
-    "nukak": "^0.2.25",
+    "nukak": "^0.2.26",
     "rimraf": "^5.0.1",
-    "typescript": "^5.1.3"
+    "typescript": "^5.1.5"
   },
   "author": "Roger Padilla",
   "repository": {
