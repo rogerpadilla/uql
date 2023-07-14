@@ -450,7 +450,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldProjectOneToMany() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    await this.shouldInsertOne();
 
     const [user, company] = await Promise.all([
       this.querier.findOne(User, {}, ['id']),
@@ -492,9 +492,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         { buyPrice: 2000, itemId: secondItemId },
       ],
       creator: {
-        email: 'someemaila@example.com',
-        name: 'Some Name A',
-        password: '123456789a!',
+        email: 'someemailc@example.com',
+        name: 'Some Name C',
+        password: '123456789z!',
       },
     });
   }
