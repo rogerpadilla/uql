@@ -1,7 +1,9 @@
 {
-  "version": "0.2.26",
-  "useWorkspaces": true,
+  "version": "0.2.31",
   "npmClient": "yarn",
+  "packages": [
+    "packages/*"
+  ],
   "command": {
     "publish": {
       "contents": "dist",
