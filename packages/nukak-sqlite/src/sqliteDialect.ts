@@ -9,7 +9,12 @@ export class SqliteDialect extends AbstractSqlDialect {
     super('`', 'BEGIN TRANSACTION');
   }
 
-  override compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
+  override compare<E, K extends keyof QueryFilterMap<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFilterMap<E>[K],
+    opts?: QueryComparisonOptions
+  ): string {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;

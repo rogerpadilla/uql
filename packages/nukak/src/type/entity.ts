@@ -91,8 +91,10 @@ export type RelationOptions<E = any> = {
 };
 
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
-type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> & Pick<RelationOptions<E>, 'cascade'>;
-type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> & Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
+type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> &
+  Pick<RelationOptions<E>, 'cascade'>;
+type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> &
+  Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
 
 export type RelationKeyMap<E> = { readonly [K in keyof E]: K };
 

@@ -26,11 +26,18 @@ export class PostgresDialect extends AbstractSqlDialect {
     return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  override compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
+  override compare<E, K extends keyof QueryFilterMap<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFilterMap<E>[K],
+    opts?: QueryComparisonOptions
+  ): string {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field)).join(` || ' ' || `);
+      const fields = search.$fields
+        .map((field) => this.escapeId(meta.fields[field]?.name ?? field))
+        .join(` || ' ' || `);
       return `to_tsvector(${fields}) @@ to_tsquery(${this.escape(search.$value)})`;
     }
     return super.compare(entity, key, val, opts);

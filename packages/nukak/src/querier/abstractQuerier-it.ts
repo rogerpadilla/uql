@@ -1,5 +1,16 @@
 import { getEntities } from '../entity/index.js';
-import { Company, InventoryAdjustment, Item, ItemAdjustment, LedgerAccount, MeasureUnit, Spec, Tag, TaxCategory, User } from '../test/index.js';
+import {
+  Company,
+  InventoryAdjustment,
+  Item,
+  ItemAdjustment,
+  LedgerAccount,
+  MeasureUnit,
+  Spec,
+  Tag,
+  TaxCategory,
+  User,
+} from '../test/index.js';
 import { Querier, QuerierPool } from '../type/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
@@ -311,7 +322,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       ...payload,
     });
 
-    const foundTags = await this.querier.findMany(Tag, {}, { name: true, createdAt: true, items: ['name', 'createdAt'] });
+    const foundTags = await this.querier.findMany(
+      Tag,
+      {},
+      { name: true, createdAt: true, items: ['name', 'createdAt'] }
+    );
 
     delete foundItem.tags;
 
@@ -437,7 +452,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldProjectOneToMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    const [user, company] = await Promise.all([this.querier.findOne(User, {}, ['id']), this.querier.findOne(Company, {}, ['id'])]);
+    const [user, company] = await Promise.all([
+      this.querier.findOne(User, {}, ['id']),
+      this.querier.findOne(Company, {}, ['id']),
+    ]);
 
     const [firstItemId, secondItemId] = await this.querier.insertMany(Item, [
       {

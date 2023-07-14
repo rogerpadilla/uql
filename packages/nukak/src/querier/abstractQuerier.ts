@@ -27,7 +27,11 @@ export abstract class AbstractQuerier implements Querier {
     return rows[0];
   }
 
-  abstract findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
+  abstract findMany<E, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project?: P
+  ): Promise<Merge<E, P>[]>;
 
   findManyAndCount<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
     return Promise.all([this.findMany(entity, qm, project), this.count(entity, qm)]);
@@ -97,7 +101,11 @@ export abstract class AbstractQuerier implements Querier {
       const relEntity = relOpts.entity();
       const relProject = clone(project[relKey as string]);
       const relQuery: Query<unknown> =
-        relProject === true || relProject === undefined ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
+        relProject === true || relProject === undefined
+          ? {}
+          : Array.isArray(relProject)
+          ? { $project: relProject }
+          : relProject;
       const ids = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
@@ -143,7 +151,13 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  protected putChildrenInParents<E>(parents: E[], children: E[], parentIdKey: string, referenceKey: string, relKey: string): void {
+  protected putChildrenInParents<E>(
+    parents: E[],
+    children: E[],
+    parentIdKey: string,
+    referenceKey: string,
+    relKey: string
+  ): void {
     const childrenByParentMap = children.reduce((acc, child) => {
       const parenId = child[referenceKey];
       if (!acc[parenId]) {
@@ -184,7 +198,11 @@ export abstract class AbstractQuerier implements Querier {
 
     const ids = founds.map((found) => found[meta.id]);
 
-    await Promise.all(ids.map((id) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))));
+    await Promise.all(
+      ids.map((id) =>
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id }, relKey, true)))
+      )
+    );
   }
 
   protected async deleteRelations<E>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {

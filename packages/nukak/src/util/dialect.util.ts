@@ -109,7 +109,11 @@ export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
   return sort as QuerySortMap<E>;
 }
 
-export function augmentFilter<E>(meta: EntityMeta<E>, target: QueryFilter<E> = {}, source: QueryFilter<E> = {}): QueryFilter<E> {
+export function augmentFilter<E>(
+  meta: EntityMeta<E>,
+  target: QueryFilter<E> = {},
+  source: QueryFilter<E> = {}
+): QueryFilter<E> {
   const targetComparison = getQueryFilterAsMap(meta, target);
   const sourceComparison = getQueryFilterAsMap(meta, source);
   return {

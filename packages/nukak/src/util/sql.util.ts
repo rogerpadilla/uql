@@ -1,7 +1,10 @@
 import { hasKeys, getKeys } from './object.util.js';
 
 export function flatObject<E>(obj: E, pre?: string): E {
-  return getKeys(obj).reduce((acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre), {} as E);
+  return getKeys(obj).reduce(
+    (acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre),
+    {} as E
+  );
 }
 
 function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {

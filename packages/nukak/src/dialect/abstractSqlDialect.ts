@@ -47,7 +47,12 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  criteria<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project: P, opts: QueryOptions = {}): string {
+  criteria<E, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project: P,
+    opts: QueryOptions = {}
+  ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
@@ -118,7 +123,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
         const fieldPath = `${escapedPrefix}${this.escapeId(field.name)}`;
 
-        return !opts.autoPrefixAlias && field.name === key ? fieldPath : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
+        return !opts.autoPrefixAlias && field.name === key
+          ? fieldPath
+          : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
       })
       .join(', ');
   }
@@ -149,7 +156,11 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return raw(formula, alias);
   }
 
-  projectRelations<E>(entity: Type<E>, project: QueryProject<E> = {}, { prefix }: { prefix?: string } = {}): { fields: string; tables: string } {
+  projectRelations<E>(
+    entity: Type<E>,
+    project: QueryProject<E> = {},
+    { prefix }: { prefix?: string } = {}
+  ): { fields: string; tables: string } {
     const meta = getMeta(entity);
     const relations = getProjectRelationKeys(meta, project);
     const isProjectArray = Array.isArray(project);
@@ -189,7 +200,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const joinAlias = this.escapeId(joinRelAlias, true);
 
       tables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
-      tables += relOpts.references.map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`).join(' AND ');
+      tables += relOpts.references
+        .map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`)
+        .join(' AND ');
 
       if (relQuery.$filter) {
         const filter = this.where(relEntity, relQuery.$filter, { prefix: key, clause: false });
@@ -218,7 +231,12 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
     filter = getQueryFilterAsMap(meta, filter);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && clause !== 'HAVING' && !filter[meta.softDelete as string]) {
+    if (
+      meta.softDelete &&
+      (softDelete || softDelete === undefined) &&
+      clause !== 'HAVING' &&
+      !filter[meta.softDelete as string]
+    ) {
       filter[meta.softDelete as string] = null;
     }
 
@@ -230,7 +248,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
     const options = { ...opts, usePrecedence: entries.length > 1 };
 
-    let sql = entries.map(([key, val]) => this.compare(entity, key as keyof QueryFilterMap<E>, val as any, options)).join(` AND `);
+    let sql = entries
+      .map(([key, val]) => this.compare(entity, key as keyof QueryFilterMap<E>, val as any, options))
+      .join(` AND `);
 
     if (usePrecedence) {
       sql = `(${sql})`;
@@ -239,7 +259,12 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends keyof QueryFilterMap<E>>(entity: Type<E>, key: K, val: QueryFilterMap<E>[K], opts?: QueryComparisonOptions): string {
+  compare<E, K extends keyof QueryFilterMap<E>>(
+    entity: Type<E>,
+    key: K,
+    val: QueryFilterMap<E>[K],
+    opts?: QueryComparisonOptions
+  ): string {
     const meta = getMeta(entity);
 
     if (val instanceof QueryRaw) {
@@ -292,12 +317,16 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         })
         .join(op === '$or' ? ' OR ' : ' AND ');
 
-      return (opts.usePrecedence || negate) && hasManyItems ? `${negate}(${logicalComparison})` : `${negate}${logicalComparison}`;
+      return (opts.usePrecedence || negate) && hasManyItems
+        ? `${negate}(${logicalComparison})`
+        : `${negate}${logicalComparison}`;
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
     const operators = getKeys(value) as (keyof QueryFilterFieldOperatorMap<E>)[];
-    const comparisons = operators.map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts)).join(' AND ');
+    const comparisons = operators
+      .map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts))
+      .join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
@@ -455,7 +484,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       if (meta.softDelete) {
         const criteria = this.criteria(entity, qm, undefined, opts);
         const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
-        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(value)}${criteria}`;
+        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(
+          value
+        )}${criteria}`;
       } else if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }
@@ -479,7 +510,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
 
     // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
-    const escaped = this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar;
+    const escaped =
+      this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar;
 
     const suffix = addDot ? '.' : '';
 

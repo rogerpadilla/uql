@@ -5,7 +5,10 @@ import { MariadbQuerier } from './mariadbQuerier.js';
 export class MariadbQuerierPool implements QuerierPool<MariadbQuerier> {
   readonly pool: Pool;
 
-  constructor(opts: PoolConfig, readonly extra?: ExtraOptions) {
+  constructor(
+    opts: PoolConfig,
+    readonly extra?: ExtraOptions,
+  ) {
     this.pool = createPool(opts);
   }
 

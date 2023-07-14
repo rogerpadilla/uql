@@ -1,5 +1,15 @@
 import { getMeta } from 'nukak/entity';
-import type { IdValue, Merge, Query, QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Type } from 'nukak/type';
+import type {
+  IdValue,
+  Merge,
+  Query,
+  QueryCriteria,
+  QueryOne,
+  QueryOptions,
+  QueryProject,
+  QuerySearch,
+  Type,
+} from 'nukak/type';
 import { kebabCase } from 'nukak/util';
 import type { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index.js';
 import { get, post, patch, remove } from '../http/index.js';
@@ -23,7 +33,12 @@ export class HttpQuerier implements ClientQuerier {
     return get<Merge<E, P>>(`${basePath}/one${qs}`, opts);
   }
 
-  findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: RequestFindOptions) {
+  findMany<E, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project?: P,
+    opts?: RequestFindOptions
+  ) {
     const data: Query<E> & Pick<typeof opts, 'count'> = { ...qm, $project: project };
     if (opts?.count) {
       data.count = true;
@@ -33,7 +48,12 @@ export class HttpQuerier implements ClientQuerier {
     return get<Merge<E, P>[]>(`${basePath}${qs}`, opts);
   }
 
-  findManyAndCount<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: RequestFindOptions) {
+  findManyAndCount<E, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project?: P,
+    opts?: RequestFindOptions
+  ) {
     return this.findMany(entity, qm, project, { ...opts, count: true });
   }
 

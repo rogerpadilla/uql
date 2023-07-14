@@ -1,8 +1,24 @@
-import type { MongoClient, ClientSession, UpdateFilter, Document } from 'mongodb';
+import type { MongoClient, ClientSession, UpdateFilter, Document, OptionalUnlessRequiredId } from 'mongodb';
 import { getMeta } from 'nukak/entity';
 import { AbstractQuerier } from 'nukak/querier';
-import { clone, getPersistable, getPersistables, getFieldCallbackValue, hasKeys, isProjectingRelations } from 'nukak/util';
-import type { Type, QueryOptions, IdValue, ExtraOptions, QueryProject, Merge, QuerySearch, QueryCriteria } from 'nukak/type';
+import {
+  clone,
+  getPersistable,
+  getPersistables,
+  getFieldCallbackValue,
+  hasKeys,
+  isProjectingRelations,
+} from 'nukak/util';
+import type {
+  Type,
+  QueryOptions,
+  IdValue,
+  ExtraOptions,
+  QueryProject,
+  Merge,
+  QuerySearch,
+  QueryCriteria,
+} from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 
@@ -13,7 +29,11 @@ export class MongodbQuerier extends AbstractQuerier {
     super();
   }
 
-  override async findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
+  override async findMany<E extends Document, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project?: P
+  ) {
     const meta = getMeta(entity);
 
     type D = Merge<E, P>;
@@ -58,7 +78,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return documents;
   }
 
-  override count<E>(entity: Type<E>, qm: QuerySearch<E> = {}) {
+  override count<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.filter(entity, qm.$filter);
     this.extra?.logger?.('count', entity.name, filter);
     return this.collection(entity).countDocuments(filter, {
@@ -66,11 +86,11 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
-  override async insertMany<E>(entity: Type<E>, payloads: E[]) {
+  override async insertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
     payloads = clone(payloads);
 
     const meta = getMeta(entity);
-    const persistables = getPersistables(meta, payloads, 'onInsert');
+    const persistables = getPersistables(meta, payloads, 'onInsert') as OptionalUnlessRequiredId<E>[];
 
     this.extra?.logger?.('insertMany', entity.name, persistables);
 
@@ -87,7 +107,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return ids;
   }
 
-  override async updateMany<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
+  override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = getPersistable(meta, payload, 'onUpdate') satisfies Document;
@@ -105,7 +125,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return matchedCount;
   }
 
-  override async deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {
+  override async deleteMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {
     const meta = getMeta(entity);
     const filter = this.dialect.filter(entity, qm.$filter);
     this.extra?.logger?.('deleteMany', entity.name, filter, opts);
@@ -121,9 +141,10 @@ export class MongodbQuerier extends AbstractQuerier {
     const ids = this.dialect.normalizeIds(meta, founds as unknown as E[]).map((found) => found[meta.id]);
     let changes: number;
     if (meta.softDelete && !opts.softDelete) {
+      const onDeleteValue = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
       const updateResult = await this.collection(entity).updateMany(
         { _id: { $in: ids } },
-        { $set: { [meta.softDelete]: getFieldCallbackValue(meta.fields[meta.softDelete].onDelete) } },
+        { $set: { [meta.softDelete]: onDeleteValue } } as UpdateFilter<E>,
         {
           session: this.session,
         }
@@ -146,9 +167,9 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.session?.inTransaction();
   }
 
-  collection<E>(entity: Type<E>) {
+  collection<E extends Document>(entity: Type<E>) {
     const { name } = getMeta(entity);
-    return this.db.collection(name);
+    return this.db.collection<E>(name);
   }
 
   get db() {

@@ -1,4 +1,14 @@
-import type { IdValue, Querier, QueryOptions, Repository, Type, QueryProject, QuerySearch, QueryCriteria, QueryOneCriteria } from '../type/index.js';
+import type {
+  IdValue,
+  Querier,
+  QueryOptions,
+  Repository,
+  Type,
+  QueryProject,
+  QuerySearch,
+  QueryCriteria,
+  QueryOneCriteria,
+} from '../type/index.js';
 
 export class GenericRepository<E> implements Repository<E> {
   constructor(readonly entity: Type<E>, readonly querier: Querier) {}

@@ -1,4 +1,12 @@
-import { Type, QueryOptions, QueryUpdateResult, QueryProject, Merge, QuerySearch, QueryCriteria } from '../type/index.js';
+import {
+  Type,
+  QueryOptions,
+  QueryUpdateResult,
+  QueryProject,
+  Merge,
+  QuerySearch,
+  QueryCriteria,
+} from '../type/index.js';
 import { unflatObjects, clone } from '../util/index.js';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';

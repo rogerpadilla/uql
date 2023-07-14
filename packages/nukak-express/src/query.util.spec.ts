@@ -14,7 +14,8 @@ it('parseQuery -- empty', () => {
 
 it('parseQuery stringified', () => {
   const queryStr = {
-    $project: '{ "id": true, "name": true, "measureUnit": {"$project":{"id":true, "name":true}}, "tax": {"$project":{"id":true, "name":true}} }',
+    $project:
+      '{ "id": true, "name": true, "measureUnit": {"$project":{"id":true, "name":true}}, "tax": {"$project":{"id":true, "name":true}} }',
     $filter: '{ "name": "lorem", "companyId": 40 }',
     $group: '["companyId"]',
     $having: '{ "count": {"$gte": 10} }',

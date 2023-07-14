@@ -6,8 +6,15 @@ it('flatObject', () => {
   expect(flatObject(undefined)).toEqual({});
   expect(flatObject(null)).toEqual({});
   expect(flatObject({})).toEqual({});
-  const sort: QuerySortMap<Item> = { name: 1, measureUnit: { name: -1, category: { creator: { profile: { picture: 1 } } } } };
-  expect(flatObject(sort)).toEqual({ name: 1, 'measureUnit.name': -1, 'measureUnit.category.creator.profile.picture': 1 });
+  const sort: QuerySortMap<Item> = {
+    name: 1,
+    measureUnit: { name: -1, category: { creator: { profile: { picture: 1 } } } },
+  };
+  expect(flatObject(sort)).toEqual({
+    name: 1,
+    'measureUnit.name': -1,
+    'measureUnit.category.creator.profile.picture': 1,
+  });
 });
 
 it('unflatObjects - empty', () => {

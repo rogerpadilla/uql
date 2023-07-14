@@ -12,19 +12,28 @@ describe('http', () => {
   it('post', async () => {
     const body = {};
     await post('/', body);
-    expect(globalThis.fetch).toBeCalledWith('/', expect.objectContaining({ body: JSON.stringify(body), method: 'post' }));
+    expect(globalThis.fetch).toBeCalledWith(
+      '/',
+      expect.objectContaining({ body: JSON.stringify(body), method: 'post' })
+    );
   });
 
   it('patch', async () => {
     const body = {};
     await patch('/', body);
-    expect(globalThis.fetch).toBeCalledWith('/', expect.objectContaining({ body: JSON.stringify(body), method: 'patch' }));
+    expect(globalThis.fetch).toBeCalledWith(
+      '/',
+      expect.objectContaining({ body: JSON.stringify(body), method: 'patch' })
+    );
   });
 
   it('put', async () => {
     const body = {};
     await put('/', body);
-    expect(globalThis.fetch).toBeCalledWith('/', expect.objectContaining({ body: JSON.stringify(body), method: 'put' }));
+    expect(globalThis.fetch).toBeCalledWith(
+      '/',
+      expect.objectContaining({ body: JSON.stringify(body), method: 'put' })
+    );
   });
 
   it('get', async () => {

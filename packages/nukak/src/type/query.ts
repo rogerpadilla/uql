@@ -92,7 +92,9 @@ export type QueryProjectRelationMap<E> = {
 /**
  * options to project a relation.
  */
-export type QueryProjectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & { readonly $required?: boolean };
+export type QueryProjectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
+  readonly $required?: boolean;
+};
 
 /**
  * options for full-text-search operator.

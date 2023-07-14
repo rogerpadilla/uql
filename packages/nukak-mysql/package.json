@@ -23,11 +23,11 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.21",
-    "@types/node": "^20.3.2",
+    "@types/node": "^20.4.2",
     "copyfiles": "^2.4.1",
-    "mysql2": "^3.4.2",
+    "mysql2": "^3.5.1",
     "rimraf": "^5.0.1",
-    "typescript": "^5.1.5"
+    "typescript": "^5.1.6"
   },
   "author": "Roger Padilla",
   "repository": {

@@ -21,7 +21,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
         { id: true }
       )
-    ).toBe("SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30");
+    ).toBe(
+      "SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30"
+    );
 
     expect(
       this.dialect.find(
@@ -36,7 +38,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
         { id: 1 }
       )
-    ).toBe("SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10");
+    ).toBe(
+      "SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10"
+    );
   }
 }
 

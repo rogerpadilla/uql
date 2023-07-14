@@ -77,7 +77,10 @@ class MongoDialectSpec implements Spec {
 
   shouldNormalizeIds() {
     const meta = getMeta(User);
-    expect(this.dialect.normalizeIds(meta, [{ _id: 'abc' } as User, { _id: 'def' } as User])).toEqual([{ id: 'abc' }, { id: 'def' }]);
+    expect(this.dialect.normalizeIds(meta, [{ _id: 'abc' } as User, { _id: 'def' } as User])).toEqual([
+      { id: 'abc' },
+      { id: 'def' },
+    ]);
     expect(this.dialect.normalizeIds(meta, undefined)).toBe(undefined);
     expect(this.dialect.normalizeId(meta, undefined)).toBe(undefined);
     expect(this.dialect.normalizeId(meta, { _id: 'abc', company: {}, users: [] } as User)).toEqual({

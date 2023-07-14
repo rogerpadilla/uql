@@ -1,4 +1,4 @@
-import { Filter, ObjectId, Sort } from 'mongodb';
+import { Document, Filter, ObjectId, Sort } from 'mongodb';
 import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from 'nukak/util';
 import { getMeta } from 'nukak/entity';
 import type {
@@ -15,7 +15,11 @@ import type {
 } from 'nukak/type';
 
 export class MongoDialect {
-  filter<E>(entity: Type<E>, filter: QueryFilter<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
+  filter<E extends Document>(
+    entity: Type<E>,
+    filter: QueryFilter<E> = {},
+    { softDelete }: QueryOptions = {}
+  ): Filter<E> {
     const meta = getMeta(entity);
 
     filter = getQueryFilterAsMap(meta, filter);
@@ -43,7 +47,7 @@ export class MongoDialect {
     }, {} as Filter<E>);
   }
 
-  project<E>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
+  project<E extends Document>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
     if (Array.isArray(project)) {
       return project.reduce((acc, it) => {
         acc[it as string] = true;
@@ -53,11 +57,15 @@ export class MongoDialect {
     return project as QueryProjectMap<E>;
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>): Sort {
+  sort<E extends Document>(entity: Type<E>, sort: QuerySort<E>): Sort {
     return buildSortMap(sort) as Sort;
   }
 
-  aggregationPipeline<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): MongoAggregationPipelineEntry<E>[] {
+  aggregationPipeline<E extends Document, P extends QueryProject<E>>(
+    entity: Type<E>,
+    qm: QueryCriteria<E>,
+    project?: P
+  ): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
     const filter = this.filter(entity, qm.$filter);
@@ -103,7 +111,9 @@ export class MongoDialect {
         const foreignField = relOpts.references[0].foreign;
         const referenceFilter = this.filter(relEntity, qm.$filter);
         const referenceSort = this.sort(relEntity, qm.$sort);
-        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = { $match: { [foreignField]: referenceFilter._id } };
+        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
+          $match: { [foreignField]: referenceFilter._id },
+        };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
         }
@@ -122,11 +132,11 @@ export class MongoDialect {
     return pipeline;
   }
 
-  normalizeIds<E>(meta: EntityMeta<E>, docs: E[]): E[] {
+  normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[]): E[] {
     return docs?.map((doc) => this.normalizeId(meta, doc));
   }
 
-  normalizeId<E>(meta: EntityMeta<E>, doc: E): E {
+  normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E): E {
     if (!doc) {
       return;
     }
@@ -138,18 +148,20 @@ export class MongoDialect {
       delete res._id;
     }
 
-    const relKeys = getKeys(meta.relations).filter((key) => doc[key]);
+    const relKeys = getKeys(meta.relations).filter((key) => doc[key]) as RelationKey<E>[];
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relMeta = getMeta(relOpts.entity());
-      res[relKey] = Array.isArray(res[relKey]) ? this.normalizeIds(relMeta, res[relKey]) : this.normalizeId(relMeta, res[relKey]);
+      res[relKey] = Array.isArray(res[relKey])
+        ? this.normalizeIds(relMeta, res[relKey])
+        : this.normalizeId(relMeta, res[relKey]);
     }
 
     return res;
   }
 
-  getIdValue<T extends string | ObjectId>(value: T): T {
+  getIdValue<T extends IdValue>(value: T): T {
     if (value instanceof ObjectId) {
       return value;
     }
@@ -157,14 +169,14 @@ export class MongoDialect {
   }
 }
 
-type MongoAggregationPipelineEntry<E> = {
+type MongoAggregationPipelineEntry<E extends Document> = {
   readonly $lookup?: MongoAggregationLookup<E>;
   $match?: Filter<E> | Record<string, any>;
   $sort?: Sort;
   readonly $unwind?: MongoAggregationUnwind;
 };
 
-type MongoAggregationLookup<E> = {
+type MongoAggregationLookup<E extends Document> = {
   readonly from?: string;
   readonly foreignField?: string;
   readonly localField?: string;
@@ -176,3 +188,5 @@ type MongoAggregationUnwind = {
   readonly path?: string;
   readonly preserveNullAndEmptyArrays?: boolean;
 };
+
+type IdValue = string | ObjectId;
