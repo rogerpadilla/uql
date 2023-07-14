@@ -1,10 +1,14 @@
 node_modules
 dist
-coverage
 .tmp
+.yarn
+coverage
+data
 
 // we will do this via eslint instead
 .js
 .jsx
 .ts
 .tsx
+.lock
+yarn.lock
