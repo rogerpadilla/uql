@@ -22,6 +22,9 @@ import {
   QuerySearch,
   QueryCriteria,
   Query,
+  AggregationPipelineStage,
+  AggregationPipeline,
+  AggregationLookupStage,
 } from '../type/index.js';
 import {
   getPersistable,
@@ -43,7 +46,10 @@ import { getMeta } from '../entity/index.js';
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
 
-  constructor(readonly escapeIdChar: '`' | '"' = '`', readonly beginTransactionCommand: string = 'START TRANSACTION') {
+  constructor(
+    readonly escapeIdChar: '`' | '"' = '`',
+    readonly beginTransactionCommand: string = 'START TRANSACTION',
+  ) {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
@@ -51,7 +57,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     entity: Type<E>,
     qm: QueryCriteria<E>,
     project: P,
-    opts: QueryOptions = {}
+    opts: QueryOptions = {},
   ): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
@@ -64,7 +70,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return where + group + having + sort + pager;
   }
 
-  projectFields<E, P extends QueryProject<E>>(entity: Type<E>, project: P, opts: QueryProjectOptions): string {
+  projectFields<E, P extends QueryProject<E>>(entity: Type<E>, project: P, opts: QueryProjectOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -159,7 +165,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   projectRelations<E>(
     entity: Type<E>,
     project: QueryProject<E> = {},
-    { prefix }: { prefix?: string } = {}
+    { prefix }: { prefix?: string } = {},
   ): { fields: string; tables: string } {
     const meta = getMeta(entity);
     const relations = getProjectRelationKeys(meta, project);
@@ -225,7 +231,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions): string {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions = {}): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -263,7 +269,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     entity: Type<E>,
     key: K,
     val: QueryFilterMap<E>[K],
-    opts?: QueryComparisonOptions
+    opts: QueryComparisonOptions = {},
   ): string {
     const meta = getMeta(entity);
 
@@ -336,7 +342,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     key: FieldKey<E>,
     op: K,
     val: QueryFilterFieldOperatorMap<E>[K],
-    opts?: QueryOptions
+    opts: QueryOptions = {},
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {
@@ -381,7 +387,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
   }
 
-  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions): Scalar {
+  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
     const meta = getMeta(entity);
     const escapedPrefix = this.escapeId(prefix, true, true);
     const field = meta.fields[key];
@@ -407,7 +413,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return ` GROUP BY ${names}`;
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): string {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions = {}): string {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return '';
@@ -485,7 +491,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         const criteria = this.criteria(entity, qm, undefined, opts);
         const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(
-          value
+          value,
         )}${criteria}`;
       } else if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
@@ -516,6 +522,77 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const suffix = addDot ? '.' : '';
 
     return escaped + suffix;
+  }
+
+  convertGroupStage<E>(entity: Type<E>, stage: AggregationPipelineStage<E>) {
+    if (!stage.$group) {
+      return '';
+    }
+
+    const groups =
+      stage.$group._id === 1
+        ? ['COUNT(*)']
+        : typeof stage.$group._id === 'object'
+        ? Object.keys(stage.$group._id).map((key) => this.escapeId(key))
+        : [this.escapeId(stage.$group._id)];
+
+    const aggregates = Object.entries(stage)
+      .filter(([key]) => key !== '_id')
+      .map(([key, value]) => `${key}(${value}) AS ${this.escapeId(key)}`);
+
+    return `GROUP BY ${groups.join(', ')} ${aggregates.join(', ')}`;
+  }
+
+  convertLookupStage<E>(entity: Type<E>, lookup: AggregationLookupStage<E>) {
+    if (!lookup) {
+      return '';
+    }
+
+    const { from, localField, foreignField, as } = lookup;
+
+    return `LEFT JOIN ${this.escapeId(from)} ON ${this.escapeId(localField)} = ${this.escapeId(foreignField)} ${
+      as ? `AS ${this.escapeId(as)}` : ''
+    }`;
+  }
+
+  convertUnwindStage<E>(entity: Type<E>, stage: AggregationPipelineStage<E>) {
+    if (!stage.$unwind) {
+      return '';
+    }
+
+    return `UNWIND ${this.escapeId(stage.$unwind)} AS UNP IVOT`;
+  }
+
+  aggregate<E>(entity: Type<E>, pipeline: AggregationPipeline<E> = []) {
+    const project = pipeline.reduce((acc, stage) => ({ ...acc, ...stage.$project }), {} as QueryProject<E>);
+
+    let sql = this.select(entity, project);
+
+    pipeline.forEach((stage) => {
+      if (stage.$match) {
+        sql += this.where(entity, stage.$match);
+      }
+      if (stage.$group) {
+        sql += ` ${this.convertGroupStage(entity, stage)}`;
+      }
+      if (stage.$lookup) {
+        sql += ` ${this.convertLookupStage(entity, stage.$lookup)}`;
+      }
+      if (stage.$unwind) {
+        sql += ` ${this.convertUnwindStage(entity, stage)}`;
+      }
+      // if (stage.$project) {
+      //   sql += ` ${this.projectFields(entity, stage.$project)}`;
+      // }
+      if (stage.$sort) {
+        sql += this.sort(entity, stage.$sort);
+      }
+      if (stage.$skip != undefined || stage.$limit != undefined) {
+        sql += this.pager(stage);
+      }
+    });
+
+    return sql.trim();
   }
 
   abstract escape(value: any): Scalar;

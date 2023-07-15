@@ -30,13 +30,13 @@ class PostgresDialectSpec {
           email: 'someemail3@example.com',
           createdAt: 789,
         },
-      ])
+      ]),
     ).toBe(
       'INSERT INTO "User" ("name", "email", "createdAt") VALUES' +
         " ('Some name 1', 'someemail1@example.com', 123)" +
         ", ('Some name 2', 'someemail2@example.com', 456)" +
         ", ('Some name 3', 'someemail3@example.com', 789)" +
-        ' RETURNING "id" "id"'
+        ' RETURNING "id" "id"',
     );
   }
 
@@ -46,9 +46,9 @@ class PostgresDialectSpec {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
-      })
+      }),
     ).toBe(
-      `INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`
+      `INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`,
     );
   }
 
@@ -57,9 +57,9 @@ class PostgresDialectSpec {
       this.dialect.insert(TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
-      })
+      }),
     ).toMatch(
-      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/
+      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/,
     );
   }
 
@@ -73,8 +73,8 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        ['id']
-      )
+        ['id'],
+      ),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
@@ -86,10 +86,10 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
   }
 
@@ -103,8 +103,8 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        ['id']
-      )
+        ['id'],
+      ),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
@@ -116,10 +116,10 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
   }
 
@@ -133,8 +133,8 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        ['id']
-      )
+        ['id'],
+      ),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
@@ -146,10 +146,10 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
   }
 
@@ -163,8 +163,8 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        ['id']
-      )
+        ['id'],
+      ),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
@@ -176,10 +176,10 @@ class PostgresDialectSpec {
           $skip: 0,
           $limit: 50,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`
+      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
   }
 
@@ -190,8 +190,8 @@ class PostgresDialectSpec {
         {
           $filter: { name: { $regex: '^some' } },
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }
 
@@ -203,10 +203,10 @@ class PostgresDialectSpec {
           $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
           $limit: 30,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`
+      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`,
     );
 
     expect(
@@ -220,10 +220,10 @@ class PostgresDialectSpec {
           },
           $limit: 10,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`
+      `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`,
     );
   }
 }

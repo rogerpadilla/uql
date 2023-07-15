@@ -30,7 +30,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     entity: Type<E>,
     key: K,
     val: QueryFilterMap<E>[K],
-    opts?: QueryComparisonOptions
+    opts: QueryComparisonOptions = {},
   ): string {
     if (key === '$text') {
       const meta = getMeta(entity);
@@ -48,7 +48,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     key: FieldKey<E>,
     op: K,
     val: QueryFilterFieldOperatorMap<E>[K],
-    opts?: QueryOptions
+    opts: QueryOptions = {},
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {

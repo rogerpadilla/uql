@@ -3,7 +3,7 @@ import { hasKeys, getKeys } from './object.util.js';
 export function flatObject<E>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(
     (acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre),
-    {} as E
+    {} as E,
   );
 }
 
@@ -51,10 +51,13 @@ export function unflatObjects<T>(objects: T[]): T[] {
 }
 
 function obtainAttrsPaths<T>(row: T) {
-  return getKeys(row).reduce((acc, col) => {
-    if (col.includes('.')) {
-      acc[col] = col.split('.');
-    }
-    return acc;
-  }, {} as { [k: string]: string[] });
+  return getKeys(row).reduce(
+    (acc, col) => {
+      if (col.includes('.')) {
+        acc[col] = col.split('.');
+      }
+      return acc;
+    },
+    {} as { [k: string]: string[] },
+  );
 }
