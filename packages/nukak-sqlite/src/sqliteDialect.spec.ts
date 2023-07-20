@@ -19,10 +19,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
           $limit: 30,
         },
-        { id: true }
-      )
+        { id: true },
+      ),
     ).toBe(
-      "SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30"
+      "SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30",
     );
 
     expect(
@@ -36,10 +36,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           },
           $limit: 10,
         },
-        { id: 1 }
-      )
+        { id: 1 },
+      ),
     ).toBe(
-      "SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10"
+      "SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10",
     );
   }
 }

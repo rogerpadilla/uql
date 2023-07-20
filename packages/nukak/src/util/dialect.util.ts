@@ -42,7 +42,7 @@ export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callba
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];
       return acc;
-    }, {} as E)
+    }, {} as E),
   );
 }
 
@@ -112,7 +112,7 @@ export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
 export function augmentFilter<E>(
   meta: EntityMeta<E>,
   target: QueryFilter<E> = {},
-  source: QueryFilter<E> = {}
+  source: QueryFilter<E> = {},
 ): QueryFilter<E> {
   const targetComparison = getQueryFilterAsMap(meta, target);
   const sourceComparison = getQueryFilterAsMap(meta, source);

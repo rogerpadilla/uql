@@ -18,7 +18,7 @@ export class MongoDialect {
   filter<E extends Document>(
     entity: Type<E>,
     filter: QueryFilter<E> = {},
-    { softDelete }: QueryOptions = {}
+    { softDelete }: QueryOptions = {},
   ): Filter<E> {
     const meta = getMeta(entity);
 
@@ -64,7 +64,7 @@ export class MongoDialect {
   aggregationPipeline<E extends Document, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P
+    project?: P,
   ): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 

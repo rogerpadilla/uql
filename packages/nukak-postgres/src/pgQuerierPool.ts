@@ -5,7 +5,10 @@ import { PgQuerier } from './pgQuerier.js';
 export class PgQuerierPool implements QuerierPool<PgQuerier> {
   readonly pool: pg.Pool;
 
-  constructor(opts: pg.PoolConfig, readonly extra?: ExtraOptions) {
+  constructor(
+    opts: pg.PoolConfig,
+    readonly extra?: ExtraOptions,
+  ) {
     this.pool = new pg.Pool(opts);
   }
 

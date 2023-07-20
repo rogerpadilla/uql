@@ -14,25 +14,25 @@ export interface ClientRepository<E> extends UniversalRepository<E> {
   findOneById<P extends QueryProject<E>>(
     id: IdValue<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
   findOne<P extends QueryProject<E>>(
     qm: QueryOneCriteria<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
   findMany<P extends QueryProject<E>>(
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
   findManyAndCount<P extends QueryProject<E>>(
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
   count(qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;

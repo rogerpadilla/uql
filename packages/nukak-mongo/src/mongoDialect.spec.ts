@@ -26,7 +26,7 @@ class MongoDialectSpec implements Spec {
         creatorId: 1,
         $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
         pk: '507f191e810c19729de860ea',
-      })
+      }),
     ).toEqual({
       creatorId: 1,
       $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
@@ -65,13 +65,13 @@ class MongoDialectSpec implements Spec {
       this.dialect.sort(Item, [
         ['name', 1],
         ['createdAt', -1],
-      ])
+      ]),
     ).toEqual({ name: 1, createdAt: -1 });
     expect(
       this.dialect.sort(Item, [
         ['name', -1],
         ['createdAt', -1],
-      ])
+      ]),
     ).toEqual({ name: -1, createdAt: -1 });
   }
 
@@ -108,8 +108,8 @@ class MongoDialectSpec implements Spec {
           $filter: { pk: '507f1f77bcf86cd799439011' },
           $sort: { creatorId: -1 },
         },
-        { creator: true }
-      )
+        { creator: true },
+      ),
     ).toEqual([
       {
         $match: {
@@ -141,8 +141,8 @@ class MongoDialectSpec implements Spec {
         {
           $filter: { code: '123' },
         },
-        { measureUnit: true, tax: true }
-      )
+        { measureUnit: true, tax: true },
+      ),
     ).toEqual([
       {
         $match: {

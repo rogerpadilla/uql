@@ -483,29 +483,3 @@ export interface QueryDialect {
 }
 
 export type Merge<E, P> = E & (P extends string[] ? {} : { [K in Exclude<keyof P, keyof E>]: Scalar });
-
-export type AggregationPipeline<E> = AggregationPipelineStage<E>[];
-
-export interface AggregationPipelineStage<E> {
-  $match?: QueryFilter<E>;
-  $group?: AggregationGroupStage<E>;
-  $sort?: Record<string, 1 | -1>;
-  $limit?: number;
-  $skip?: number;
-  $lookup?: AggregationLookupStage<E>;
-  $unwind?: string;
-  $project?: QueryProject<E>;
-  $addFields?: Record<string, string>;
-}
-
-export type AggregationGroupStage<E> = {
-  _id: 1 | string | Record<string, string>;
-  [key: string]: any;
-};
-
-export interface AggregationLookupStage<E> {
-  from: string;
-  localField: Key<E>;
-  foreignField: string;
-  as?: string;
-}

@@ -262,7 +262,7 @@ export class Item extends BaseEntity {
             itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
           },
         },
-        { autoPrefix: true }
+        { autoPrefix: true },
       );
       return `(${query})`;
     }),
@@ -293,7 +293,7 @@ export class Tag extends BaseEntity {
             tagId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
           },
         },
-        { autoPrefix: true }
+        { autoPrefix: true },
       );
       return `(${query})`;
     }),

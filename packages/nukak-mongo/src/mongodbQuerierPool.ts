@@ -6,7 +6,11 @@ import { MongoDialect } from './mongoDialect.js';
 export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
   private readonly client: MongoClient;
 
-  constructor(uri: string, opts?: MongoClientOptions, readonly extra?: ExtraOptions) {
+  constructor(
+    uri: string,
+    opts?: MongoClientOptions,
+    readonly extra?: ExtraOptions,
+  ) {
     this.client = new MongoClient(uri, opts);
   }
 

@@ -17,28 +17,28 @@ export interface ClientQuerier extends UniversalQuerier {
     entity: Type<E>,
     id: IdValue<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
   findOne<E, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryOne<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>>>;
 
   findMany<E, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
   findManyAndCount<E, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
 
   count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
@@ -49,7 +49,7 @@ export interface ClientQuerier extends UniversalQuerier {
     entity: Type<E>,
     id: IdValue<E>,
     payload: E,
-    opts?: RequestOptions
+    opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<IdValue<E>>>;
 
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
@@ -57,13 +57,13 @@ export interface ClientQuerier extends UniversalQuerier {
   deleteOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,
-    opts?: QueryOptions & RequestOptions
+    opts?: QueryOptions & RequestOptions,
   ): Promise<RequestSuccessResponse<IdValue<E>>>;
 
   deleteMany<E>(
     entity: Type<E>,
     qm: QuerySearch<E>,
-    opts?: QueryOptions & RequestOptions
+    opts?: QueryOptions & RequestOptions,
   ): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
   getRepository<E>(entity: Type<E>): ClientRepository<E>;

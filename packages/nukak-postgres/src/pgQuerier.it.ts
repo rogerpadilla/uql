@@ -17,7 +17,7 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
         password: 'test',
         database: 'test',
       }),
-      'SERIAL PRIMARY KEY'
+      'SERIAL PRIMARY KEY',
     );
   }
 

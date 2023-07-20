@@ -25,14 +25,18 @@ import { MongoDialect } from './mongoDialect.js';
 export class MongodbQuerier extends AbstractQuerier {
   private session: ClientSession;
 
-  constructor(readonly dialect: MongoDialect, readonly conn: MongoClient, readonly extra?: ExtraOptions) {
+  constructor(
+    readonly dialect: MongoDialect,
+    readonly conn: MongoClient,
+    readonly extra?: ExtraOptions,
+  ) {
     super();
   }
 
   override async findMany<E extends Document, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P
+    project?: P,
   ) {
     const meta = getMeta(entity);
 
@@ -147,7 +151,7 @@ export class MongodbQuerier extends AbstractQuerier {
         { $set: { [meta.softDelete]: onDeleteValue } } as UpdateFilter<E>,
         {
           session: this.session,
-        }
+        },
       );
       changes = updateResult.matchedCount;
     } else {
@@ -155,7 +159,7 @@ export class MongodbQuerier extends AbstractQuerier {
         { _id: { $in: ids } },
         {
           session: this.session,
-        }
+        },
       );
       changes = deleteResult.deletedCount;
     }

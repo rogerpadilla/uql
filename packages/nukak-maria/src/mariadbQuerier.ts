@@ -5,7 +5,10 @@ import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {
-  constructor(readonly conn: PoolConnection, readonly extra?: ExtraOptions) {
+  constructor(
+    readonly conn: PoolConnection,
+    readonly extra?: ExtraOptions,
+  ) {
     super(new MariaDialect());
   }
 

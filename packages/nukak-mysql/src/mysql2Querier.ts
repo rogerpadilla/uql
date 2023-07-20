@@ -5,7 +5,10 @@ import { AbstractSqlQuerier } from 'nukak/querier';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractSqlQuerier {
-  constructor(readonly conn: PoolConnection, readonly extra?: ExtraOptions) {
+  constructor(
+    readonly conn: PoolConnection,
+    readonly extra?: ExtraOptions,
+  ) {
     super(new MySqlDialect());
   }
 

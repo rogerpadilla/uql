@@ -19,7 +19,7 @@ export interface Querier extends UniversalQuerier {
   findManyAndCount<E, P extends QueryProject<E>>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P
+    project?: P,
   ): Promise<[Merge<E, P>[], number]>;
 
   count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;

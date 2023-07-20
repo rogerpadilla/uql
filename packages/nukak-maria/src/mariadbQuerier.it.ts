@@ -15,7 +15,7 @@ export class MariadbQuerierIt extends AbstractSqlQuerierIt {
         trace: true,
         bigIntAsNumber: true,
       }),
-      'INT AUTO_INCREMENT PRIMARY KEY'
+      'INT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }

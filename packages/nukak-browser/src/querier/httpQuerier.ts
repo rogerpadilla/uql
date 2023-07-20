@@ -37,7 +37,7 @@ export class HttpQuerier implements ClientQuerier {
     entity: Type<E>,
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestFindOptions
+    opts?: RequestFindOptions,
   ) {
     const data: Query<E> & Pick<typeof opts, 'count'> = { ...qm, $project: project };
     if (opts?.count) {
@@ -52,7 +52,7 @@ export class HttpQuerier implements ClientQuerier {
     entity: Type<E>,
     qm: QueryCriteria<E>,
     project?: P,
-    opts?: RequestFindOptions
+    opts?: RequestFindOptions,
   ) {
     return this.findMany(entity, qm, project, { ...opts, count: true });
   }

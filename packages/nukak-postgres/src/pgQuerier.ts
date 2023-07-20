@@ -5,7 +5,10 @@ import { AbstractSqlQuerier } from 'nukak/querier';
 import { PostgresDialect } from './postgresDialect.js';
 
 export class PgQuerier extends AbstractSqlQuerier {
-  constructor(readonly conn: PoolClient, readonly extra?: ExtraOptions) {
+  constructor(
+    readonly conn: PoolClient,
+    readonly extra?: ExtraOptions,
+  ) {
     super(new PostgresDialect());
   }
 

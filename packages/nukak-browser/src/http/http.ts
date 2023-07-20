@@ -47,7 +47,7 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
           opts,
         });
         throw Error(errorResp.error.message);
-      })
+      }),
     )
     .finally(() => {
       notify({ phase: 'complete', opts });

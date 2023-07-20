@@ -13,7 +13,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     entity: Type<E>,
     key: K,
     val: QueryFilterMap<E>[K],
-    opts?: QueryComparisonOptions
+    opts?: QueryComparisonOptions,
   ): string {
     if (key === '$text') {
       const meta = getMeta(entity);

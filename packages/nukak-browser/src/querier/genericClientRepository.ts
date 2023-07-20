@@ -2,7 +2,10 @@ import { IdValue, QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySear
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type/index.js';
 
 export class GenericClientRepository<E> implements ClientRepository<E> {
-  constructor(readonly entity: Type<E>, readonly querier: ClientQuerier) {}
+  constructor(
+    readonly entity: Type<E>,
+    readonly querier: ClientQuerier,
+  ) {}
 
   findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P, opts?: RequestOptions) {
     return this.querier.findOneById(this.entity, id, project, opts);

@@ -15,7 +15,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
       entities.map((entity) => {
         const meta = getMeta(entity);
         return this.querier.conn.db().createCollection(meta.name);
-      })
+      }),
     );
   }
 

@@ -22,9 +22,6 @@ import {
   QuerySearch,
   QueryCriteria,
   Query,
-  AggregationPipelineStage,
-  AggregationPipeline,
-  AggregationLookupStage,
 } from '../type/index.js';
 import {
   getPersistable,
@@ -522,77 +519,6 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const suffix = addDot ? '.' : '';
 
     return escaped + suffix;
-  }
-
-  convertGroupStage<E>(entity: Type<E>, stage: AggregationPipelineStage<E>) {
-    if (!stage.$group) {
-      return '';
-    }
-
-    const groups =
-      stage.$group._id === 1
-        ? ['COUNT(*)']
-        : typeof stage.$group._id === 'object'
-        ? Object.keys(stage.$group._id).map((key) => this.escapeId(key))
-        : [this.escapeId(stage.$group._id)];
-
-    const aggregates = Object.entries(stage)
-      .filter(([key]) => key !== '_id')
-      .map(([key, value]) => `${key}(${value}) AS ${this.escapeId(key)}`);
-
-    return `GROUP BY ${groups.join(', ')} ${aggregates.join(', ')}`;
-  }
-
-  convertLookupStage<E>(entity: Type<E>, lookup: AggregationLookupStage<E>) {
-    if (!lookup) {
-      return '';
-    }
-
-    const { from, localField, foreignField, as } = lookup;
-
-    return `LEFT JOIN ${this.escapeId(from)} ON ${this.escapeId(localField)} = ${this.escapeId(foreignField)} ${
-      as ? `AS ${this.escapeId(as)}` : ''
-    }`;
-  }
-
-  convertUnwindStage<E>(entity: Type<E>, stage: AggregationPipelineStage<E>) {
-    if (!stage.$unwind) {
-      return '';
-    }
-
-    return `UNWIND ${this.escapeId(stage.$unwind)} AS UNP IVOT`;
-  }
-
-  aggregate<E>(entity: Type<E>, pipeline: AggregationPipeline<E> = []) {
-    const project = pipeline.reduce((acc, stage) => ({ ...acc, ...stage.$project }), {} as QueryProject<E>);
-
-    let sql = this.select(entity, project);
-
-    pipeline.forEach((stage) => {
-      if (stage.$match) {
-        sql += this.where(entity, stage.$match);
-      }
-      if (stage.$group) {
-        sql += ` ${this.convertGroupStage(entity, stage)}`;
-      }
-      if (stage.$lookup) {
-        sql += ` ${this.convertLookupStage(entity, stage.$lookup)}`;
-      }
-      if (stage.$unwind) {
-        sql += ` ${this.convertUnwindStage(entity, stage)}`;
-      }
-      // if (stage.$project) {
-      //   sql += ` ${this.projectFields(entity, stage.$project)}`;
-      // }
-      if (stage.$sort) {
-        sql += this.sort(entity, stage.$sort);
-      }
-      if (stage.$skip != undefined || stage.$limit != undefined) {
-        sql += this.pager(stage);
-      }
-    });
-
-    return sql.trim();
   }
 
   abstract escape(value: any): Scalar;

@@ -14,7 +14,7 @@ describe('http', () => {
     await post('/', body);
     expect(globalThis.fetch).toBeCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'post' })
+      expect.objectContaining({ body: JSON.stringify(body), method: 'post' }),
     );
   });
 
@@ -23,7 +23,7 @@ describe('http', () => {
     await patch('/', body);
     expect(globalThis.fetch).toBeCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'patch' })
+      expect.objectContaining({ body: JSON.stringify(body), method: 'patch' }),
     );
   });
 
@@ -32,7 +32,7 @@ describe('http', () => {
     await put('/', body);
     expect(globalThis.fetch).toBeCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'put' })
+      expect.objectContaining({ body: JSON.stringify(body), method: 'put' }),
     );
   });
 

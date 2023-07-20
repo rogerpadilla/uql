@@ -12,7 +12,7 @@ export class MySql2QuerierIt extends AbstractSqlQuerierIt {
         password: 'test',
         database: 'test',
       }),
-      'INT AUTO_INCREMENT PRIMARY KEY'
+      'INT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }

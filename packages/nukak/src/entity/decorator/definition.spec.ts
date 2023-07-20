@@ -687,7 +687,7 @@ it('getEntities', () => {
       ItemTag,
       ItemAdjustment,
       InventoryAdjustment,
-    ].sort()
+    ].sort(),
   );
 });
 

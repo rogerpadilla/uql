@@ -11,7 +11,10 @@ import type {
 } from '../type/index.js';
 
 export class GenericRepository<E> implements Repository<E> {
-  constructor(readonly entity: Type<E>, readonly querier: Querier) {}
+  constructor(
+    readonly entity: Type<E>,
+    readonly querier: Querier,
+  ) {}
 
   findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P) {
     return this.querier.findOneById(this.entity, id, project);

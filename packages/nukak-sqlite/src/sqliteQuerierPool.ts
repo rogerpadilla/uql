@@ -6,7 +6,10 @@ import { SqliteQuerier } from './sqliteQuerier.js';
 export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
   private querier: SqliteQuerier;
 
-  constructor(readonly opts: Omit<ISqlite.Config, 'driver'>, readonly extra?: ExtraOptions) {}
+  constructor(
+    readonly opts: Omit<ISqlite.Config, 'driver'>,
+    readonly extra?: ExtraOptions,
+  ) {}
 
   async getQuerier() {
     if (!this.querier) {

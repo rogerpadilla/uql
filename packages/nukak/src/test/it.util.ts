@@ -9,7 +9,7 @@ export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: 
     entities.map((entity) => {
       const sql = getDdlForTable(entity, querier, primaryKeyType);
       return querier.run(sql);
-    })
+    }),
   );
 }
 
@@ -20,7 +20,7 @@ export async function dropTables(querier: AbstractSqlQuerier) {
       const meta = getMeta(entity);
       const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name)}`;
       return querier.run(sql);
-    })
+    }),
   );
 }
 
@@ -30,7 +30,7 @@ export async function clearTables(querier: AbstractSqlQuerier) {
     entities.map((entity) => {
       const sql = querier.dialect.delete(entity, {}, { softDelete: false });
       return querier.run(sql);
-    })
+    }),
   );
 }
 

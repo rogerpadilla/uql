@@ -4,7 +4,10 @@ import { AbstractQuerierIt } from './abstractQuerier-it.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
-  constructor(pool: QuerierPool<AbstractSqlQuerier>, readonly idType: string) {
+  constructor(
+    pool: QuerierPool<AbstractSqlQuerier>,
+    readonly idType: string,
+  ) {
     super(pool);
   }
 

@@ -285,7 +285,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { $filter: {} },
       {
         itemAdjustments: null,
-      }
+      },
     );
 
     await expect(this.querier.count(ItemAdjustment)).resolves.toBe(0);
@@ -325,7 +325,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const foundTags = await this.querier.findMany(
       Tag,
       {},
-      { name: true, createdAt: true, items: ['name', 'createdAt'] }
+      { name: true, createdAt: true, items: ['name', 'createdAt'] },
     );
 
     delete foundItem.tags;
@@ -374,7 +374,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
           email: 'someemaila@example.com',
         },
       },
-      ['id', 'name', 'email', 'password']
+      ['id', 'name', 'email', 'password'],
     );
 
     expect(found).toMatchObject({
@@ -418,7 +418,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(
       this.querier.findMany(User, {
         $filter: { name: { $someInvalidOperator: 'some' } as any },
-      })
+      }),
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 

@@ -4,7 +4,10 @@ import { AbstractSqlQuerier } from 'nukak/querier';
 import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqlQuerier {
-  constructor(readonly db: Database, readonly extra?: ExtraOptions) {
+  constructor(
+    readonly db: Database,
+    readonly extra?: ExtraOptions,
+  ) {
     super(new SqliteDialect());
   }
 

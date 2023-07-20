@@ -154,7 +154,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
         count = await querier.deleteMany(
           entity,
           { $filter: { [meta.id]: ids } },
-          { softDelete: !!req.query.softDelete }
+          { softDelete: !!req.query.softDelete },
         );
       }
       await querier.commitTransaction();
