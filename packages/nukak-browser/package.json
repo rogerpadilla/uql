@@ -14,7 +14,7 @@
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "bunchee": "^3.5.1",
+    "bunchee": "^3.6.0",
     "copyfiles": "^2.4.1",
     "nukak": "^0.2.31",
     "rimraf": "^5.0.1",
