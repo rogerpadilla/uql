@@ -8264,8 +8264,9 @@ __metadata:
   resolution: "nukak-browser@workspace:packages/nukak-browser"
   dependencies:
     bunchee: ^3.9.0
+    concurrently: ^8.2.1
     copyfiles: ^2.4.1
-    nukak: ^0.2.32
+    nukak: ^0.3.0
     rimraf: ^5.0.5
     typescript: ^5.2.2
   languageName: unknown
@@ -8372,7 +8373,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"nukak@^0.2.32, nukak@workspace:packages/nukak":
+"nukak@^0.3.0, nukak@workspace:packages/nukak":
   version: 0.0.0-use.local
   resolution: "nukak@workspace:packages/nukak"
   dependencies:
