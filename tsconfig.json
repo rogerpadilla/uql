@@ -24,7 +24,6 @@
     "baseUrl": ".",
     "importHelpers": true,
     "skipLibCheck": true,
-    "incremental": true,
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "paths": {
