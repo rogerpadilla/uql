@@ -13,6 +13,7 @@ export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
   async shouldGetQuerier() {
     const querier = await this.pool.getQuerier();
     expect(querier).toBeInstanceOf(AbstractQuerier);
+    expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.release();
   }
 
