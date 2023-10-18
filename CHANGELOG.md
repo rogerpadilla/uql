@@ -1,17 +1,31 @@
-## 0.2.21 (Apr 15, 2023)
+# Changelog
 
-### fix(nukak-browser): check if ids are returned before use $in to delete them
+All notable changes to this project will be documented in this file. Please add new changes to the top.
 
-- https://github.com/rogerpadilla/nukak/commit/463ff888de7c578c069668f810b049d36624166b
+date format is [yyyy-mm-dd]
 
-## 0.2.21 (Apr 15, 2023)
+## [0.3.0] - 2023-10-18
 
-### Reuse community open-source npm packages to escape literal-values according to each DB vendor
+- Add support for `transaction` operations using a QuerierPool.
+  Automatically wraps the code of the callback inside a transaction, and auto-releases the querier after running.
+- Update dependencies.
 
-- https://github.com/rogerpadilla/nukak/commit/b64539e273589c46a22420d3260b3465b83e5e79
+  ```ts
+  const ids = await querierPool.transaction(async (querier) => {
+    const data = await querier.findMany(...);
+    const ids = await querier.insertMany(...);
+    return ids;
+  });
+  ```
 
-## 0.2.0 (Jan 02, 2023)
+## [0.2.21] 2023-04-15
 
-### Move projection to a new parameter to improve type inference of the results
+- fix(nukak-browser): check if ids are returned before use $in to delete them.
 
-- Support dynamic operations while projecting fields, and move `$project` as an independent parameter in the `find*` functions [#55](https://github.com/rogerpadilla/nukak/pull/55)
+- Reuse community open-source npm packages to escape literal-values according to each DB vendor.
+
+## [0.2.0] 2023-01-02
+
+- Move projection to a new parameter to improve type inference of the results.
+
+- Support dynamic operations while projecting fields, and move `$project` as an independent parameter in the `find*` functions [#55](https://github.com/rogerpadilla/nukak/pull/55).

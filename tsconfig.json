@@ -4,7 +4,7 @@
     "esm": true
   },
   "compilerOptions": {
-    "module": "ESNext",
+    "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
     "target": "ESNext",

@@ -50,7 +50,7 @@ export interface Querier extends UniversalQuerier {
   /**
    * run the given callback inside a transaction in this querier.
    */
-  transaction<T>(callback: (querier?: ThisType<Querier>) => Promise<T>): Promise<T>;
+  transaction<T>(callback: () => Promise<T>): Promise<T>;
 
   /**
    * starts a new transaction in this querier.

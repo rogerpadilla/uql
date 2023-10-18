@@ -1,16 +1,14 @@
 import { MongoClient, MongoClientOptions } from 'mongodb';
-import type { ExtraOptions, QuerierPool } from 'nukak/type';
+import type { ExtraOptions } from 'nukak/type';
+import { AbstractQuerierPool } from 'nukak/querier';
 import { MongodbQuerier } from './mongodbQuerier.js';
 import { MongoDialect } from './mongoDialect.js';
 
-export class MongodbQuerierPool implements QuerierPool<MongodbQuerier> {
+export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier> {
   private readonly client: MongoClient;
 
-  constructor(
-    uri: string,
-    opts?: MongoClientOptions,
-    readonly extra?: ExtraOptions,
-  ) {
+  constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
+    super(extra);
     this.client = new MongoClient(uri, opts);
   }
 

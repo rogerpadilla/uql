@@ -13,11 +13,13 @@ describe('transactional', () => {
     setQuerierPool({
       getQuerier: async () => querierSingleton,
       end: async () => undefined,
+      transaction: async () => undefined,
     });
 
     anotherQuerierPool = {
       getQuerier: async () => anotherQuerierSingleton,
       end: async () => undefined,
+      transaction: async () => undefined,
     };
   });
 
