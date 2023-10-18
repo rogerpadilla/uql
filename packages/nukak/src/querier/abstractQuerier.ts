@@ -284,10 +284,10 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract readonly hasOpenTransaction: boolean;
 
-  async transaction<T>(callback: (querier?: ThisType<Querier>) => Promise<T>) {
+  async transaction<T>(callback: () => Promise<T>) {
     try {
       await this.beginTransaction();
-      const res = await callback(this);
+      const res = await callback();
       await this.commitTransaction();
       return res;
     } catch (err) {

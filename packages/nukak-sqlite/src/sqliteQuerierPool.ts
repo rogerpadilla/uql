@@ -1,15 +1,18 @@
 import { type ISqlite, open } from 'sqlite';
 import { Database as Sqlite3Driver } from 'sqlite3';
-import type { ExtraOptions, QuerierPool } from 'nukak/type';
+import type { ExtraOptions } from 'nukak/type';
+import { AbstractQuerierPool } from 'nukak/querier';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
-export class Sqlite3QuerierPool implements QuerierPool<SqliteQuerier> {
+export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
   private querier: SqliteQuerier;
 
   constructor(
     readonly opts: Omit<ISqlite.Config, 'driver'>,
-    readonly extra?: ExtraOptions,
-  ) {}
+    extra?: ExtraOptions,
+  ) {
+    super(extra);
+  }
 
   async getQuerier() {
     if (!this.querier) {

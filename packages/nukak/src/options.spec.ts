@@ -23,6 +23,9 @@ describe('options', () => {
     setQuerierPool({
       getQuerier: async () => querierMock,
       end: async () => {},
+      transaction: async (callback: (querier: Querier) => {}) => {
+        return undefined;
+      },
     });
 
     const querier1 = await getQuerierPool().getQuerier();

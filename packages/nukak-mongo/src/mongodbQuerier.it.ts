@@ -6,7 +6,15 @@ import { MongodbQuerier } from './mongodbQuerier.js';
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {
-    super(new MongodbQuerierPool('mongodb://localhost:27020,localhost:27028,localhost:27029/test?replicaSet=rs'));
+    super(
+      new MongodbQuerierPool('mongodb://localhost:27020,localhost:27028,localhost:27029/test?replicaSet=rs', {
+        serverApi: {
+          version: '1',
+          strict: true,
+          deprecationErrors: true,
+        },
+      }),
+    );
   }
 
   override async createTables() {
