@@ -8,6 +8,7 @@ date format is [yyyy-mm-dd]
 
 - Add support for `transaction` operations using a QuerierPool.
   Automatically wraps the code of the callback inside a transaction, and auto-releases the querier after running.
+- Update dependencies.
 
   ```ts
   const ids = await querierPool.transaction(async (querier) => {
