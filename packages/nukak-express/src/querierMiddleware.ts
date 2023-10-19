@@ -1,7 +1,7 @@
 import { Router as expressRouter, type Request } from 'express';
 import { getQuerier } from 'nukak';
 import { getEntities, getMeta } from 'nukak/entity';
-import type { EntityMeta, FieldValue, Query, Type } from 'nukak/type';
+import type { EntityMeta, IdValue, Query, Type } from 'nukak/type';
 import { kebabCase } from 'nukak/util';
 import { parseQuery } from './query.util.js';
 
@@ -144,18 +144,14 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
 
   router.delete('/', async (req, res, next) => {
     const querier = await getQuerier();
-    let ids: FieldValue<E>[] = [];
+    let ids: IdValue<E>[] = [];
     let count = 0;
     try {
       await querier.beginTransaction();
       const founds = await querier.findMany(entity, req.query, [meta.id]);
       if (founds.length) {
         ids = founds.map((found) => found[meta.id]);
-        count = await querier.deleteMany(
-          entity,
-          { $filter: { [meta.id]: ids } },
-          { softDelete: !!req.query.softDelete },
-        );
+        count = await querier.deleteMany(entity, { $filter: ids }, { softDelete: !!req.query.softDelete });
       }
       await querier.commitTransaction();
       res.json({ data: ids, count });
