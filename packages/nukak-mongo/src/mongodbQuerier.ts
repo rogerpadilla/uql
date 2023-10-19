@@ -9,16 +9,7 @@ import {
   hasKeys,
   isProjectingRelations,
 } from 'nukak/util';
-import type {
-  Type,
-  QueryOptions,
-  IdValue,
-  ExtraOptions,
-  QueryProject,
-  Merge,
-  QuerySearch,
-  QueryCriteria,
-} from 'nukak/type';
+import type { Type, QueryOptions, IdValue, ExtraOptions, QueryProject, QuerySearch, QueryCriteria } from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 
@@ -33,14 +24,10 @@ export class MongodbQuerier extends AbstractQuerier {
     super();
   }
 
-  override async findMany<E extends Document, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-  ) {
+  override async findMany<E extends Document>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>) {
     const meta = getMeta(entity);
 
-    type D = Merge<E, P>;
+    type D = E;
 
     let documents: D[];
     const hasProjectRelations = isProjectingRelations(meta, project);

@@ -1,5 +1,5 @@
 import type { Type } from './utility.js';
-import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, Merge, QueryOneCriteria } from './query.js';
+import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, QueryOneCriteria } from './query.js';
 import type { Repository } from './repository.js';
 import type { IdValue } from './entity.js';
 import type { UniversalQuerier } from './universalQuerier.js';
@@ -10,17 +10,13 @@ import type { UniversalQuerier } from './universalQuerier.js';
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E, P extends QueryProject<E>>(entity: Type<E>, id: IdValue<E>, project?: P): Promise<Merge<E, P>>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>): Promise<E>;
 
-  findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: P): Promise<Merge<E, P>>;
+  findOne<E>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<E>;
 
-  findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
+  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<E[]>;
 
-  findManyAndCount<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-  ): Promise<[Merge<E, P>[], number]>;
+  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<[E[], number]>;
 
   count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
 

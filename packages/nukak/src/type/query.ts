@@ -432,7 +432,7 @@ export interface QueryDialect {
    * @param qm the criteria options
    * @param opts the query options
    */
-  find<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: QueryOptions): string;
+  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -481,5 +481,3 @@ export interface QueryDialect {
    */
   escape(val: any): Scalar;
 }
-
-export type Merge<E, P> = E & (P extends string[] ? {} : { [K in Exclude<keyof P, keyof E>]: Scalar });

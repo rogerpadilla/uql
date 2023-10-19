@@ -4,7 +4,6 @@ import type {
   QueryOptions,
   IdValue,
   QueryProject,
-  Merge,
   QueryOne,
   QuerySearch,
   QueryCriteria,
@@ -13,33 +12,33 @@ import type { ClientRepository } from './clientRepository.js';
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientQuerier extends UniversalQuerier {
-  findOneById<E, P extends QueryProject<E>>(
+  findOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>>>;
+  ): Promise<RequestSuccessResponse<E>>;
 
-  findOne<E, P extends QueryProject<E>>(
+  findOne<E>(
     entity: Type<E>,
     qm: QueryOne<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>>>;
+  ): Promise<RequestSuccessResponse<E>>;
 
-  findMany<E, P extends QueryProject<E>>(
+  findMany<E>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
+  ): Promise<RequestSuccessResponse<E[]>>;
 
-  findManyAndCount<E, P extends QueryProject<E>>(
+  findManyAndCount<E>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
+  ): Promise<RequestSuccessResponse<E[]>>;
 
   count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 

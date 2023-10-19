@@ -1,12 +1,4 @@
-import {
-  Type,
-  QueryOptions,
-  QueryUpdateResult,
-  QueryProject,
-  Merge,
-  QuerySearch,
-  QueryCriteria,
-} from '../type/index.js';
+import { Type, QueryOptions, QueryUpdateResult, QueryProject, QuerySearch, QueryCriteria } from '../type/index.js';
 import { unflatObjects, clone } from '../util/index.js';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
@@ -32,9 +24,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
    */
   abstract run(query: string): Promise<QueryUpdateResult>;
 
-  override async findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
+  override async findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>) {
     const query = this.dialect.find(entity, qm, project);
-    const res = await this.all<Merge<E, P>>(query);
+    const res = await this.all<E>(query);
     const founds = unflatObjects(res);
     await this.findToManyRelations(entity, founds, project);
     return founds;

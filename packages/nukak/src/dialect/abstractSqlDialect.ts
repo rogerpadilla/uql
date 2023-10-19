@@ -50,12 +50,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  criteria<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project: P,
-    opts: QueryOptions = {},
-  ): string {
+  criteria<E>(entity: Type<E>, qm: QueryCriteria<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
@@ -67,7 +62,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return where + group + having + sort + pager;
   }
 
-  projectFields<E, P extends QueryProject<E>>(entity: Type<E>, project: P, opts: QueryProjectOptions = {}): string {
+  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -456,7 +451,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return select + criteria;
   }
 
-  find<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: QueryOptions): string {
+  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string {
     const select = this.select(entity, project, opts);
     const criteria = this.criteria(entity, qm, project, opts);
     return select + criteria;

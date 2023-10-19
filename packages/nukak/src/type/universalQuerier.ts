@@ -13,7 +13,7 @@ export interface UniversalQuerier {
    * @param id the primary key value
    * @return the record
    */
-  findOneById<E, P extends QueryProject<E>>(entity: Type<E>, id: IdValue<E>, project?: P): Promise<any>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -21,7 +21,7 @@ export interface UniversalQuerier {
    * @param qm the criteria options
    * @return the record
    */
-  findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: P): Promise<any>;
+  findOne<E>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -29,7 +29,7 @@ export interface UniversalQuerier {
    * @param qm the criteria options
    * @return the records
    */
-  findMany<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): Promise<any>;
+  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters,
@@ -38,7 +38,7 @@ export interface UniversalQuerier {
    * @param qm the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P): Promise<any>;
+  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * counts the number of records matching the given search parameters.
