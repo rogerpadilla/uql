@@ -16,7 +16,7 @@ import {
   QueryFilterMap,
   QueryProjectOptions,
   QuerySortDirection,
-  QueryFilterLogical,
+  QueryFilterArray,
   QueryRaw,
   QuerySearch,
   QueryCriteria,
@@ -266,7 +266,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
       const negate = key in negateOperatorMap ? 'NOT ' : '';
 
-      const values = val as QueryFilterLogical<E>;
+      const values = val as QueryFilterArray<E>;
       const hasManyItems = values.length > 1;
       const logicalComparison = values
         .map((filterEntry) => {
