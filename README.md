@@ -29,7 +29,7 @@
 
 &nbsp;
 
-## Install
+## 1. Install
 
 1. Install the core package:
 
@@ -67,7 +67,7 @@ npm install pg nukak-postgres --save
 
 &nbsp;
 
-## Define the entities
+## 2. Define the entities
 
 Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
 
@@ -106,7 +106,7 @@ export class User {
 
 &nbsp;
 
-## Setup a default querier-pool
+## 3. Setup a default querier-pool
 
 A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
@@ -122,7 +122,7 @@ export const querierPool = new PgQuerierPool(
     database: 'theDatabase',
   },
   // optionally, a logger can be passed to log the generated SQL queries
-  { logger: console.log }
+  { logger: console.log },
 );
 
 // the default querier pool that `nukak` will use
@@ -131,7 +131,7 @@ setQuerierPool(querierPool);
 
 &nbsp;
 
-## Manipulate the data
+## 4. Manipulate the data
 
 ```ts
 import { getQuerier } from 'nukak';
@@ -145,7 +145,7 @@ async function findFirstUsers(limit = 100) {
       $sort: { createdAt: 1 },
       $limit: limit,
     },
-    ['id', 'name', 'email']
+    ['id', 'name', 'email'],
   );
   await querier.release();
   return users;
