@@ -159,13 +159,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
             id: 1,
             something: 1,
           } as any,
-          $group: ['id', 'something' as any],
         },
         ['id', 'something' as FieldKey<User>],
       ),
-    ).toBe(
-      'SELECT `id` FROM `User` WHERE `id` = 1 AND `something` = 1 GROUP BY `id`, `something` ORDER BY `id`, `something`',
-    );
+    ).toBe('SELECT `id` FROM `User` WHERE `id` = 1 AND `something` = 1 ORDER BY `id`, `something`');
 
     expect(
       this.dialect.insert(User, {
@@ -788,191 +785,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
-  shouldFind$group() {
-    expect(
-      this.dialect.find(User, {
-        $group: ['companyId'],
-      }),
-    ).toBe(
-      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email`, `password` FROM `User` GROUP BY `companyId`',
-    );
-
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            count: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        ['companyId', raw('COUNT(*)', 'count')],
-      ),
-    ).toBe('SELECT `companyId`, COUNT(*) `count` FROM `User` GROUP BY `companyId` HAVING `count` >= 10');
-
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { companyId: 1 },
-          $group: ['companyId'],
-          $skip: 50,
-          $limit: 100,
-          $sort: { name: 'desc' },
-        },
-        ['id', 'name'],
-      ),
-    ).toBe(
-      'SELECT `id`, `name` FROM `User` WHERE `companyId` = 1 GROUP BY `companyId` ORDER BY `name` DESC LIMIT 100 OFFSET 50',
-    );
-  }
-
-  shouldProject$count() {
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            counting: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        {
-          companyId: true,
-          counting: { $count: 1 },
-        },
-      ),
-    ).toBe('SELECT `companyId`, COUNT(*) `counting` FROM `User` GROUP BY `companyId` HAVING `counting` >= 10');
-  }
-
-  shouldProject$max() {
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            latest: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        {
-          companyId: true,
-          latest: { $max: 'createdAt' },
-        },
-      ),
-    ).toBe('SELECT `companyId`, MAX(`createdAt`) `latest` FROM `User` GROUP BY `companyId` HAVING `latest` >= 10');
-  }
-
-  shouldProject$min() {
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            minimum: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        {
-          companyId: true,
-          minimum: { $min: 'updatedAt' },
-        },
-      ),
-    ).toBe('SELECT `companyId`, MIN(`updatedAt`) `minimum` FROM `User` GROUP BY `companyId` HAVING `minimum` >= 10');
-  }
-
-  shouldProject$avg() {
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            average: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        {
-          companyId: true,
-          average: { $avg: 'createdAt' },
-        },
-      ),
-    ).toBe('SELECT `companyId`, AVG(`createdAt`) `average` FROM `User` GROUP BY `companyId` HAVING `average` >= 10');
-  }
-
-  shouldProject$sum() {
-    expect(
-      this.dialect.find(
-        Item,
-        {
-          $group: ['creatorId'],
-          $having: {
-            total: {
-              $lt: 100,
-            },
-          },
-        },
-        {
-          creatorId: true,
-          total: { $sum: 'salePrice' },
-        },
-      ),
-    ).toBe('SELECT `creatorId`, SUM(`salePrice`) `total` FROM `Item` GROUP BY `creatorId` HAVING `total` < 100');
-
-    expect(
-      this.dialect.find(
-        Item,
-        {
-          $filter: { $or: [[1, 2], { code: 'abc' }] },
-          $group: ['creatorId'],
-          $having: {
-            total: {
-              $gte: 1000,
-            },
-          },
-        },
-        {
-          creatorId: true,
-          total: {
-            $sum: 'salePrice',
-          },
-        },
-      ),
-    ).toBe(
-      "SELECT `creatorId`, SUM(`salePrice`) `total` FROM `Item` WHERE `id` IN (1, 2) OR `code` = 'abc' GROUP BY `creatorId` HAVING `total` >= 1000",
-    );
-
-    // TODO support this
-    // expect(
-    //   this.dialect.find(ItemAdjustment, {
-    //     $project: {
-    //       item: {
-    //         $project: {
-    //           companyId: true,
-    //           total: {
-    //             $sum: 'salePrice',
-    //           },
-    //         },
-    //         $required: true,
-    //       },
-    //     },
-    //     $group: ['companyId'],
-    //   })
-    // ).toBe(
-    //   'SELECT `ItemAdjustment`.`id`, `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
-    //     ' FROM `ItemAdjustment` INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId` GROUP BY `companyId`'
-    // );
-  }
-
   shouldFind$limit() {
     expect(
       this.dialect.find(
@@ -1078,55 +890,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$projectRaw() {
     expect(
       this.dialect.find(
-        Item,
-        {
-          $group: ['companyId'],
-        },
-        {
-          companyId: true,
-          total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
-        },
-      ),
-    ).toBe('SELECT `companyId`, SUM(`salePrice`) `total` FROM `Item` GROUP BY `companyId`');
-
-    expect(
-      this.dialect.find(
-        ItemAdjustment,
-        {
-          $group: ['companyId'],
-        },
-        {
-          item: {
-            $project: {
-              companyId: true,
-              total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
-            },
-            $required: true,
-          },
-        },
-      ),
-    ).toBe(
-      'SELECT `ItemAdjustment`.`id`, `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
-        ' FROM `ItemAdjustment` INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId` GROUP BY `companyId`',
-    );
-
-    expect(
-      this.dialect.find(
-        User,
-        {
-          $group: ['companyId'],
-          $having: {
-            count: {
-              $gte: 10,
-            },
-          } as QueryFilter<User>,
-        },
-        ['companyId', raw('COUNT(*)', 'count')],
-      ),
-    ).toBe('SELECT `companyId`, COUNT(*) `count` FROM `User` GROUP BY `companyId` HAVING `count` >= 10');
-
-    expect(
-      this.dialect.find(
         User,
         {
           $filter: { name: 'something' },
@@ -1154,11 +917,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Item,
         {
           $filter: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
-          $group: ['creatorId'],
         },
         ['creatorId'],
       ),
-    ).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = 1 AND SUM(salePrice) > 500 GROUP BY `creatorId`');
+    ).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = 1 AND SUM(salePrice) > 500');
 
     expect(
       this.dialect.find(
@@ -1169,17 +931,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ['id'],
       ),
     ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 OR `id` = 5 OR SUM(salePrice) > 500');
-
-    expect(
-      this.dialect.find(
-        Item,
-        {
-          $filter: { $and: [raw('SUM(`salePrice`) > 500')] },
-          $group: ['companyId'],
-        },
-        ['id'],
-      ),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(`salePrice`) > 500 GROUP BY `companyId`');
 
     expect(
       this.dialect.find(
@@ -1206,33 +957,30 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Item,
         {
           $filter: { $and: [raw('SUM(salePrice) > 500')] },
-          $group: ['creatorId'],
         },
         ['id'],
       ),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 GROUP BY `creatorId`');
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
 
     expect(
       this.dialect.find(
         Item,
         {
           $filter: raw('SUM(salePrice) > 500'),
-          $group: ['creatorId'],
         },
         ['id'],
       ),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 GROUP BY `creatorId`');
+    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
 
     expect(
       this.dialect.find(
         Item,
         {
           $filter: { $or: [[1, 2], { code: 'abc' }] },
-          $group: ['creatorId'],
         },
         ['creatorId'],
       ),
-    ).toBe("SELECT `creatorId` FROM `Item` WHERE `id` IN (1, 2) OR `code` = 'abc' GROUP BY `creatorId`");
+    ).toBe("SELECT `creatorId` FROM `Item` WHERE `id` IN (1, 2) OR `code` = 'abc'");
   }
 
   shouldFind$startsWith() {

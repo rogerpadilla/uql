@@ -9,12 +9,6 @@ export function parseQuery(req: Request) {
     qm.$project = JSON.parse(qmsSrc.$project);
   }
   qm.$filter = qmsSrc.$filter ? JSON.parse(qmsSrc.$filter) : {};
-  if (qmsSrc.$group) {
-    qm.$group = JSON.parse(qmsSrc.$group);
-  }
-  if (qmsSrc.$having) {
-    qm.$having = JSON.parse(qmsSrc.$having);
-  }
   if (qmsSrc.$sort) {
     qm.$sort = JSON.parse(qmsSrc.$sort);
   }

@@ -18,7 +18,6 @@ import {
   QuerySortDirection,
   QueryFilterLogical,
   QueryRaw,
-  QueryProjectOperation,
   QuerySearch,
   QueryCriteria,
   Query,
@@ -55,11 +54,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
     const where = this.where<E>(entity, qm.$filter, opts);
-    const group = this.group<E>(entity, qm.$group);
-    const having = this.where<E>(entity, qm.$having, { ...opts, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort, opts);
     const pager = this.pager(qm);
-    return where + group + having + sort + pager;
+    return where + sort + pager;
   }
 
   projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions = {}): string {
@@ -80,8 +77,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
               if (val instanceof QueryRaw) {
                 return raw(val.value, it);
               }
-              if (typeof val === 'object' && !(it in meta.relations)) {
-                return this.projectOperation(val, it);
+              if (!(it in meta.fields) && !(it in meta.relations)) {
+                throw new TypeError(`Unsupported operation: ${it}`);
               }
               return it as FieldKey<E>;
             })
@@ -126,32 +123,6 @@ export abstract class AbstractSqlDialect implements QueryDialect {
           : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
       })
       .join(', ');
-  }
-
-  projectOperation<E>(operation: QueryProjectOperation<E>, alias: string): QueryRaw {
-    const operator = Object.keys(operation)[0] as keyof QueryProjectOperation<E>;
-    const val = operation[operator] as any;
-    let formula: string;
-    switch (operator) {
-      case '$count':
-        formula = `COUNT(${val === 1 ? '*' : val})`;
-        break;
-      case '$max':
-        formula = `MAX(${this.escapeId(val)})`;
-        break;
-      case '$min':
-        formula = `MIN(${this.escapeId(val)})`;
-        break;
-      case '$avg':
-        formula = `AVG(${this.escapeId(val)})`;
-        break;
-      case '$sum':
-        formula = `SUM(${this.escapeId(val)})`;
-        break;
-      default:
-        throw TypeError(`Unexpected operation ${JSON.stringify(operation, null, 2)} - ${alias}`);
-    }
-    return raw(formula, alias);
   }
 
   projectRelations<E>(
@@ -443,8 +414,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     delete search.$skip;
     delete search.$limit;
 
-    const project = { count: { $count: 1 } } satisfies QueryProject<E>;
-
+    const project = [raw('COUNT(*)', 'count')] satisfies QueryProject<E>;
     const select = this.select<E>(entity, project);
     const criteria = this.criteria(entity, search, project, opts);
 

@@ -28,36 +28,6 @@ export type QueryProjectOptions = {
 };
 
 /**
- * query projection of operations
- */
-export type QueryProjectOperation<E> = {
-  /**
-   * Calculates the quantity of entries
-   */
-  readonly $count?: FieldKey<E> | 1;
-
-  /**
-   * Gets the maximum value of a field in the entity
-   */
-  readonly $max?: FieldKey<E>;
-
-  /**
-   * Gets the minimum value of a field in the entity
-   */
-  readonly $min?: FieldKey<E>;
-
-  /**
-   * Gets the average value of a field in the entity
-   */
-  readonly $avg?: FieldKey<E>;
-
-  /**
-   * Sums up the specified values of all entries in the entity
-   */
-  readonly $sum?: FieldKey<E>;
-};
-
-/**
  * query projection as an array.
  */
 export type QueryProjectArray<E> = readonly (Key<E> | QueryRaw)[];
@@ -75,12 +45,9 @@ export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 /**
  * query projection of fields as a map.
  */
-export type QueryProjectFieldMap<E> =
-  | {
-      // TODO add support to use alias for projected fields (string value)
-      [K in FieldKey<E>]?: BooleanLike;
-    }
-  | { [K: string]: QueryProjectOperation<E> | QueryRaw };
+export type QueryProjectFieldMap<E> = {
+  [K in FieldKey<E>]?: BooleanLike;
+};
 
 /**
  * query projection of relations as a map.
@@ -307,16 +274,6 @@ export type QuerySearch<E> = {
    * filtering options.
    */
   $filter?: QueryFilter<E>;
-
-  /**
-   * list of fields to group.
-   */
-  $group?: readonly FieldKey<E>[];
-
-  /**
-   * having options.
-   */
-  $having?: QueryFilter<E>;
 } & QueryPager;
 
 /**
