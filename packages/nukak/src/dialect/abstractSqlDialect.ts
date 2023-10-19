@@ -70,18 +70,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       if (Array.isArray(project)) {
         projectArr = project;
       } else {
-        const projectPositive = getKeys(project).filter((it) => project[it]);
+        const projectPositive = getKeys(project).filter((it) => project[it]) as FieldKey<E>[];
         projectArr = projectPositive.length
-          ? projectPositive.map((it) => {
-              const val = project[it];
-              if (val instanceof QueryRaw) {
-                return raw(val.value, it);
-              }
-              if (!(it in meta.fields) && !(it in meta.relations)) {
-                throw new TypeError(`Unsupported operation: ${it}`);
-              }
-              return it as FieldKey<E>;
-            })
+          ? projectPositive
           : (getKeys(meta.fields).filter((it) => !(it in project)) as FieldKey<E>[]);
       }
       projectArr = projectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
