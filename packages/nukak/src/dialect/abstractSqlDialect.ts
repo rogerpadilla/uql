@@ -59,7 +59,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return where + sort + pager;
   }
 
-  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions = {}): string {
+  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -185,7 +185,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions = {}): string {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -358,16 +358,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escapedPrefix + this.escapeId(field?.name ?? key);
   }
 
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[]): string {
-    if (!fields?.length) {
-      return '';
-    }
-    const meta = getMeta(entity);
-    const names = fields.map((key) => this.escapeId(meta.fields[key]?.name ?? key)).join(', ');
-    return ` GROUP BY ${names}`;
-  }
-
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions = {}): string {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): string {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return '';
