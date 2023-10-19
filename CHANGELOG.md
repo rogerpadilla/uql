@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.1] - 2023-10-19
+
+1. Remove `$group` and `$having` as they detriment type safety as currently implemented (support may be redesigned later if required).
+2. Improve type safety of `$project` operator.
+3. Improve type safety of `$filter` operator.
+4. Remove projection operators (`$count`, `$min`, `$max`, `$min`, and `$sum`) as they detriment type safety as currently implemented. This can be done via Virtual fields instead as currently supported for better type safety.
+
 ## [0.3.0] - 2023-10-18
 
 - Add support for `transaction` operations using a QuerierPool.
