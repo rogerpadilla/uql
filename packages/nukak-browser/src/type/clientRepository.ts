@@ -3,7 +3,6 @@ import type {
   QueryOptions,
   IdValue,
   QueryProject,
-  Merge,
   QuerySearch,
   QueryCriteria,
   QueryOneCriteria,
@@ -11,29 +10,25 @@ import type {
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {
-  findOneById<P extends QueryProject<E>>(
-    id: IdValue<E>,
-    project?: P,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>>>;
+  findOneById(id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findOne<P extends QueryProject<E>>(
+  findOne(
     qm: QueryOneCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>>>;
+  ): Promise<RequestSuccessResponse<E>>;
 
-  findMany<P extends QueryProject<E>>(
+  findMany(
     qm: QueryCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
+  ): Promise<RequestSuccessResponse<E[]>>;
 
-  findManyAndCount<P extends QueryProject<E>>(
+  findManyAndCount(
     qm: QueryCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<Merge<E, P>[]>>;
+  ): Promise<RequestSuccessResponse<E[]>>;
 
   count(qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 

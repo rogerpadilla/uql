@@ -250,9 +250,9 @@ export class Item extends BaseEntity {
   @Field({
     /**
      * `virtual` property allows defining the value for a non-persistent field,
-     * such value might be a scalar or a (`raw`) function. Virtual-fields can be
-     * used in `$project`, `$filter` and `$having` as a common field whose value
-     * is replaced at runtime.
+     * such value might be a scalar or a (`raw`) function. Virtual-fields can
+     * be used in `$project` and `$filter` as a common field whose value is
+     * replaced is replaced at runtime.
      */
     virtual: raw(({ escapedPrefix, dialect }) => {
       const query = dialect.count(
@@ -282,9 +282,9 @@ export class Tag extends BaseEntity {
     virtual: raw(({ escapedPrefix, dialect }) => {
       /**
        * `virtual` property allows defining the value for a non-persistent field,
-       * such value might be a scalar or a (`raw`) function. Virtual-fields can be
-       * used in `$project`, `$filter` and `$having` as a common field whose value
-       * is replaced at runtime.
+       * such value might be a scalar or a (`raw`) function. Virtual-fields can
+       * be used in `$project` and `$filter` as a common field whose value is
+       * replaced at runtime.
        */
       const query = dialect.count(
         ItemTag,

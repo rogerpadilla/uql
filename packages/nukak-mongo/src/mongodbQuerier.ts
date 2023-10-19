@@ -9,16 +9,7 @@ import {
   hasKeys,
   isProjectingRelations,
 } from 'nukak/util';
-import type {
-  Type,
-  QueryOptions,
-  IdValue,
-  ExtraOptions,
-  QueryProject,
-  Merge,
-  QuerySearch,
-  QueryCriteria,
-} from 'nukak/type';
+import type { Type, QueryOptions, IdValue, ExtraOptions, QueryProject, QuerySearch, QueryCriteria } from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 
@@ -33,23 +24,17 @@ export class MongodbQuerier extends AbstractQuerier {
     super();
   }
 
-  override async findMany<E extends Document, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-  ) {
+  override async findMany<E extends Document>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>) {
     const meta = getMeta(entity);
 
-    type D = Merge<E, P>;
-
-    let documents: D[];
+    let documents: E[];
     const hasProjectRelations = isProjectingRelations(meta, project);
 
     if (hasProjectRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, qm, project);
       this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
-      documents = await this.collection(entity).aggregate<D>(pipeline, { session: this.session }).toArray();
-      documents = this.dialect.normalizeIds(meta, documents) as D[];
+      documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
+      documents = this.dialect.normalizeIds(meta, documents) as E[];
       await this.findToManyRelations(entity, documents, project);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
@@ -75,8 +60,8 @@ export class MongodbQuerier extends AbstractQuerier {
 
       this.extra?.logger?.('findMany', entity.name, qm, project);
 
-      documents = (await cursor.toArray()) as D[];
-      documents = this.dialect.normalizeIds(meta, documents) as D[];
+      documents = (await cursor.toArray()) as E[];
+      documents = this.dialect.normalizeIds(meta, documents) as E[];
     }
 
     return documents;

@@ -1,5 +1,5 @@
 import type { IdValue } from './entity.js';
-import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, Merge, QueryOneCriteria } from './query.js';
+import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, QueryOneCriteria } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -22,26 +22,26 @@ export type UniversalRepository<E> = {
    * @param id the primary key value
    * @param qm the criteria options
    */
-  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P): Promise<any>;
+  findOneById(id: IdValue<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the first record matching the given search parameters.
    * @param qm the criteria options
    */
-  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P): Promise<any>;
+  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
    * @param qm the criteria options
    */
-  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<any>;
+  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param qm the criteria options
    */
-  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<any>;
+  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -105,13 +105,13 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
-  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P): Promise<Merge<E, P>>;
+  findOneById(id: IdValue<E>, project?: QueryProject<E>): Promise<E>;
 
-  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P): Promise<Merge<E, P>>;
+  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<E>;
 
-  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<Merge<E, P>[]>;
+  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<E[]>;
 
-  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P): Promise<[Merge<E, P>[], number]>;
+  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<[E[], number]>;
 
   count(qm?: QuerySearch<E>): Promise<number>;
 

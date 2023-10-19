@@ -16,19 +16,19 @@ export class GenericRepository<E> implements Repository<E> {
     readonly querier: Querier,
   ) {}
 
-  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P) {
+  findOneById(id: IdValue<E>, project?: QueryProject<E>) {
     return this.querier.findOneById(this.entity, id, project);
   }
 
-  findOne<P extends QueryProject<E>>(qm: QueryOneCriteria<E>, project?: P) {
+  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>) {
     return this.querier.findOne(this.entity, qm, project);
   }
 
-  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P) {
+  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>) {
     return this.querier.findMany(this.entity, qm, project);
   }
 
-  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P) {
+  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>) {
     return this.querier.findManyAndCount(this.entity, qm, project);
   }
 

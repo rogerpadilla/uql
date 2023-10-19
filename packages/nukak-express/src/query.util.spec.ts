@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import type { Query, QueryFilter, QueryStringified } from 'nukak/type';
+import type { Query, QueryStringified } from 'nukak/type';
 import { Item } from 'nukak/test';
 import { parseQuery } from './query.util.js';
 
@@ -17,8 +17,6 @@ it('parseQuery stringified', () => {
     $project:
       '{ "id": true, "name": true, "measureUnit": {"$project":{"id":true, "name":true}}, "tax": {"$project":{"id":true, "name":true}} }',
     $filter: '{ "name": "lorem", "companyId": 40 }',
-    $group: '["companyId"]',
-    $having: '{ "count": {"$gte": 10} }',
     $sort: '{ "name": -1, "companyId": 1 }',
     $skip: '200',
     $limit: '100',
@@ -31,8 +29,6 @@ it('parseQuery stringified', () => {
       tax: { $project: { id: true, name: true } },
     },
     $filter: { name: 'lorem', companyId: 40 },
-    $group: ['companyId'],
-    $having: { count: { $gte: 10 } } as QueryFilter<Item>,
     $sort: { name: -1, companyId: 1 },
     $skip: 200,
     $limit: 100,

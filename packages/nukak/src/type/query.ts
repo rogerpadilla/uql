@@ -28,36 +28,6 @@ export type QueryProjectOptions = {
 };
 
 /**
- * query projection of operations
- */
-export type QueryProjectOperation<E> = {
-  /**
-   * Calculates the quantity of entries
-   */
-  readonly $count?: FieldKey<E> | 1;
-
-  /**
-   * Gets the maximum value of a field in the entity
-   */
-  readonly $max?: FieldKey<E>;
-
-  /**
-   * Gets the minimum value of a field in the entity
-   */
-  readonly $min?: FieldKey<E>;
-
-  /**
-   * Gets the average value of a field in the entity
-   */
-  readonly $avg?: FieldKey<E>;
-
-  /**
-   * Sums up the specified values of all entries in the entity
-   */
-  readonly $sum?: FieldKey<E>;
-};
-
-/**
  * query projection as an array.
  */
 export type QueryProjectArray<E> = readonly (Key<E> | QueryRaw)[];
@@ -75,18 +45,15 @@ export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
 /**
  * query projection of fields as a map.
  */
-export type QueryProjectFieldMap<E> =
-  | {
-      // TODO add support to use alias for projected fields (string value)
-      [K in FieldKey<E>]?: BooleanLike;
-    }
-  | { [K: string]: QueryProjectOperation<E> | QueryRaw };
+export type QueryProjectFieldMap<E> = {
+  readonly [K in FieldKey<E>]?: BooleanLike;
+};
 
 /**
  * query projection of relations as a map.
  */
 export type QueryProjectRelationMap<E> = {
-  [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | QueryProjectRelationOptions<E[K]>;
+  readonly [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | QueryProjectRelationOptions<E[K]>;
 };
 
 /**
@@ -111,16 +78,9 @@ export type QueryTextSearchOptions<E> = {
 };
 
 /**
- * value for a logical filtering.
- */
-export type QueryFilterLogical<E> = readonly QueryFilter<E>[];
-
-/**
  * comparison by fields.
  */
-export type QueryFilterFieldMap<E> =
-  | { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> }
-  | { readonly [K: string]: QueryFilterFieldValue<E[any]> };
+export type QueryFilterFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> };
 
 /**
  * complex operators.
@@ -131,19 +91,19 @@ export type QueryFilterRootOperator<E> = {
   /**
    * joins query clauses with a logical `AND`, returns records that match all the clauses.
    */
-  readonly $and?: QueryFilterLogical<E>;
+  readonly $and?: QueryFilterArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that match any of the clauses.
    */
-  readonly $or?: QueryFilterLogical<E>;
+  readonly $or?: QueryFilterArray<E>;
   /**
    * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
    */
-  readonly $not?: QueryFilterLogical<E>;
+  readonly $not?: QueryFilterArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
    */
-  readonly $nor?: QueryFilterLogical<E>;
+  readonly $nor?: QueryFilterArray<E>;
   /**
    * whether the specified fields match against a full-text search of the given string.
    */
@@ -239,9 +199,19 @@ export type QueryFilterFieldOperatorMap<T> = {
 export type QueryFilterFieldValue<T> = T | readonly T[] | QueryFilterFieldOperatorMap<T> | QueryRaw;
 
 /**
+ * query single filter.
+ */
+export type QueryFilterSingle<E> = IdValue<E> | readonly IdValue<E>[] | QueryFilterMap<E> | QueryRaw;
+
+/**
+ * query filter array.
+ */
+export type QueryFilterArray<E> = readonly QueryFilterSingle<E>[];
+
+/**
  * query filter.
  */
-export type QueryFilter<E> = IdValue<E> | readonly IdValue<E>[] | QueryRaw | QueryFilterMap<E>;
+export type QueryFilter<E> = QueryFilterSingle<E> | QueryFilterArray<E>;
 
 /**
  * direction for the sort.
@@ -261,17 +231,15 @@ export type QuerySortObjects<E> = readonly { readonly field: FieldKey<E>; readon
 /**
  * sort by fields.
  */
-export type QuerySortFieldMap<E> =
-  | {
-      [K in FieldKey<E>]?: QuerySortDirection;
-    }
-  | { [K: string]: QuerySortDirection };
+export type QuerySortFieldMap<E> = {
+  readonly [K in FieldKey<E>]?: QuerySortDirection;
+};
 
 /**
  * sort by relations fields.
  */
 export type QuerySortRelationMap<E> = {
-  [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
+  readonly [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
 };
 
 /**
@@ -307,16 +275,6 @@ export type QuerySearch<E> = {
    * filtering options.
    */
   $filter?: QueryFilter<E>;
-
-  /**
-   * list of fields to group.
-   */
-  $group?: readonly FieldKey<E>[];
-
-  /**
-   * having options.
-   */
-  $having?: QueryFilter<E>;
 } & QueryPager;
 
 /**
@@ -432,7 +390,7 @@ export interface QueryDialect {
    * @param qm the criteria options
    * @param opts the query options
    */
-  find<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: QueryOptions): string;
+  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -481,5 +439,3 @@ export interface QueryDialect {
    */
   escape(val: any): Scalar;
 }
-
-export type Merge<E, P> = E & (P extends string[] ? {} : { [K in Exclude<keyof P, keyof E>]: Scalar });

@@ -1,6 +1,5 @@
 import type {
   IdValue,
-  Merge,
   Querier,
   Query,
   QueryCriteria,
@@ -18,22 +17,18 @@ import { clone, getKeys, getProjectRelationKeys, getPersistableRelations } from 
 import { GenericRepository } from '../repository/index.js';
 
 export abstract class AbstractQuerier implements Querier {
-  findOneById<E, P extends QueryProject<E>>(entity: Type<E>, id: IdValue<E>, project?: P) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>) {
     return this.findOne(entity, { $filter: id }, project);
   }
 
-  async findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: P) {
+  async findOne<E>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: QueryProject<E>) {
     const rows = await this.findMany(entity, { ...qm, $limit: 1 }, project);
     return rows[0];
   }
 
-  abstract findMany<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-  ): Promise<Merge<E, P>[]>;
+  abstract findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<E[]>;
 
-  findManyAndCount<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P) {
+  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>) {
     return Promise.all([this.findMany(entity, qm, project), this.count(entity, qm)]);
   }
 

@@ -7,19 +7,19 @@ export class GenericClientRepository<E> implements ClientRepository<E> {
     readonly querier: ClientQuerier,
   ) {}
 
-  findOneById<P extends QueryProject<E>>(id: IdValue<E>, project?: P, opts?: RequestOptions) {
+  findOneById(id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     return this.querier.findOneById(this.entity, id, project, opts);
   }
 
-  findOne<P extends QueryProject<E>>(qm: QueryOne<E>, project?: P, opts?: RequestOptions) {
+  findOne(qm: QueryOne<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     return this.querier.findOne(this.entity, qm, project, opts);
   }
 
-  findMany<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P, opts?: RequestOptions) {
+  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     return this.querier.findMany(this.entity, qm, project, opts);
   }
 
-  findManyAndCount<P extends QueryProject<E>>(qm: QueryCriteria<E>, project?: P, opts?: RequestOptions) {
+  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     return this.querier.findManyAndCount(this.entity, qm, project, opts);
   }
 

@@ -1,7 +1,6 @@
 import { getMeta } from 'nukak/entity';
 import type {
   IdValue,
-  Merge,
   Query,
   QueryCriteria,
   QueryOne,
@@ -19,41 +18,31 @@ import { GenericClientRepository } from './genericClientRepository.js';
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}
 
-  findOneById<E, P extends QueryProject<E>>(entity: Type<E>, id: IdValue<E>, project?: P, opts?: RequestOptions) {
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     const qm = { $project: project } satisfies Query<E>;
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(qm);
-    return get<Merge<E, P>>(`${basePath}/${id}${qs}`, opts);
+    return get<E>(`${basePath}/${id}${qs}`, opts);
   }
 
-  findOne<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryOne<E>, project?: P, opts?: RequestOptions) {
+  findOne<E>(entity: Type<E>, qm: QueryOne<E>, project?: QueryProject<E>, opts?: RequestOptions) {
     const q = { ...qm, $project: project } satisfies Query<E>;
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<Merge<E, P>>(`${basePath}/one${qs}`, opts);
+    return get<E>(`${basePath}/one${qs}`, opts);
   }
 
-  findMany<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-    opts?: RequestFindOptions,
-  ) {
+  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestFindOptions) {
     const data: Query<E> & Pick<typeof opts, 'count'> = { ...qm, $project: project };
     if (opts?.count) {
       data.count = true;
     }
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(data);
-    return get<Merge<E, P>[]>(`${basePath}${qs}`, opts);
+    return get<E[]>(`${basePath}${qs}`, opts);
   }
 
-  findManyAndCount<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: P,
-    opts?: RequestFindOptions,
-  ) {
+  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestFindOptions) {
     return this.findMany(entity, qm, project, { ...opts, count: true });
   }
 

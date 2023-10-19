@@ -76,48 +76,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toBeCalledTimes(1);
   }
 
-  async shouldFindAndProjectRaw() {
-    await this.querier.findMany(InventoryAdjustment, {
-      $filter: {
-        companyId: 1,
-      },
-      $sort: { creator: { name: 'asc' } },
-    }, {
-      creator: ['id', 'name'],
-      itemAdjustments: {
-        $project: {
-          item: {
-            $project: {
-              companyId: true,
-              total: raw(({ escapedPrefix, dialect }) => `SUM(${escapedPrefix}${dialect.escapeId('salePrice')})`),
-            },
-          },
-        },
-        $sort: { createdAt: -1 },
-        $limit: 100,
-      },
-    });
-
-    expect(this.querier.all).nthCalledWith(
-      1,
-      'SELECT `InventoryAdjustment`.`id`, `creator`.`id` `creator.id`, `creator`.`name` `creator.name`' +
-        ' FROM `InventoryAdjustment` LEFT JOIN `User` `creator` ON `creator`.`id` = `InventoryAdjustment`.`creatorId`' +
-        ' WHERE `InventoryAdjustment`.`companyId` = 1 ORDER BY `creator`.`name`'
-    );
-    expect(this.querier.all).nthCalledWith(
-      2,
-      'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`inventoryAdjustmentId`' +
-        ', `item`.`id` `item.id`, `item`.`companyId` `item.companyId`, SUM(`item`.`salePrice`) `item.total`' +
-        ' FROM `ItemAdjustment` LEFT JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId`' +
-        ' WHERE `ItemAdjustment`.`inventoryAdjustmentId` IN ()' +
-        ' ORDER BY `ItemAdjustment`.`createdAt`' +
-        ' DESC LIMIT 100'
-    );
-
-    expect(this.querier.all).toBeCalledTimes(2);
-    expect(this.querier.run).toBeCalledTimes(0);
-  }
-
   async shouldVirtualField() {
     await this.querier.findMany(Item, {
       $filter: {

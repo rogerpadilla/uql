@@ -16,9 +16,8 @@ import {
   QueryFilterMap,
   QueryProjectOptions,
   QuerySortDirection,
-  QueryFilterLogical,
+  QueryFilterArray,
   QueryRaw,
-  QueryProjectOperation,
   QuerySearch,
   QueryCriteria,
   Query,
@@ -50,24 +49,17 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  criteria<E, P extends QueryProject<E>>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project: P,
-    opts: QueryOptions = {},
-  ): string {
+  criteria<E>(entity: Type<E>, qm: QueryCriteria<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
     const where = this.where<E>(entity, qm.$filter, opts);
-    const group = this.group<E>(entity, qm.$group);
-    const having = this.where<E>(entity, qm.$having, { ...opts, clause: 'HAVING' });
     const sort = this.sort<E>(entity, qm.$sort, opts);
     const pager = this.pager(qm);
-    return where + group + having + sort + pager;
+    return where + sort + pager;
   }
 
-  projectFields<E, P extends QueryProject<E>>(entity: Type<E>, project: P, opts: QueryProjectOptions = {}): string {
+  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -78,18 +70,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       if (Array.isArray(project)) {
         projectArr = project;
       } else {
-        const projectPositive = getKeys(project).filter((it) => project[it]);
+        const projectPositive = getKeys(project).filter((it) => project[it]) as FieldKey<E>[];
         projectArr = projectPositive.length
-          ? projectPositive.map((it) => {
-              const val = project[it];
-              if (val instanceof QueryRaw) {
-                return raw(val.value, it);
-              }
-              if (typeof val === 'object' && !(it in meta.relations)) {
-                return this.projectOperation(val, it);
-              }
-              return it as FieldKey<E>;
-            })
+          ? projectPositive
           : (getKeys(meta.fields).filter((it) => !(it in project)) as FieldKey<E>[]);
       }
       projectArr = projectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
@@ -131,32 +114,6 @@ export abstract class AbstractSqlDialect implements QueryDialect {
           : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
       })
       .join(', ');
-  }
-
-  projectOperation<E>(operation: QueryProjectOperation<E>, alias: string): QueryRaw {
-    const operator = Object.keys(operation)[0] as keyof QueryProjectOperation<E>;
-    const val = operation[operator] as any;
-    let formula: string;
-    switch (operator) {
-      case '$count':
-        formula = `COUNT(${val === 1 ? '*' : val})`;
-        break;
-      case '$max':
-        formula = `MAX(${this.escapeId(val)})`;
-        break;
-      case '$min':
-        formula = `MIN(${this.escapeId(val)})`;
-        break;
-      case '$avg':
-        formula = `AVG(${this.escapeId(val)})`;
-        break;
-      case '$sum':
-        formula = `SUM(${this.escapeId(val)})`;
-        break;
-      default:
-        throw TypeError(`Unexpected operation ${JSON.stringify(operation, null, 2)} - ${alias}`);
-    }
-    return raw(formula, alias);
   }
 
   projectRelations<E>(
@@ -228,7 +185,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions = {}): string {
+  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -300,7 +257,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
       const negate = key in negateOperatorMap ? 'NOT ' : '';
 
-      const values = val as QueryFilterLogical<E>;
+      const values = val as QueryFilterArray<E>;
       const hasManyItems = values.length > 1;
       const logicalComparison = values
         .map((filterEntry) => {
@@ -401,16 +358,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escapedPrefix + this.escapeId(field?.name ?? key);
   }
 
-  group<E>(entity: Type<E>, fields: readonly FieldKey<E>[]): string {
-    if (!fields?.length) {
-      return '';
-    }
-    const meta = getMeta(entity);
-    const names = fields.map((key) => this.escapeId(meta.fields[key]?.name ?? key)).join(', ');
-    return ` GROUP BY ${names}`;
-  }
-
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions = {}): string {
+  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): string {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return '';
@@ -448,15 +396,14 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     delete search.$skip;
     delete search.$limit;
 
-    const project = { count: { $count: 1 } } satisfies QueryProject<E>;
-
+    const project = [raw('COUNT(*)', 'count')] satisfies QueryProject<E>;
     const select = this.select<E>(entity, project);
     const criteria = this.criteria(entity, search, project, opts);
 
     return select + criteria;
   }
 
-  find<E, P extends QueryProject<E>>(entity: Type<E>, qm: QueryCriteria<E>, project?: P, opts?: QueryOptions): string {
+  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string {
     const select = this.select(entity, project, opts);
     const criteria = this.criteria(entity, qm, project, opts);
     return select + criteria;

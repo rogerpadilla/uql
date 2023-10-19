@@ -61,10 +61,10 @@ export class MongoDialect {
     return buildSortMap(sort) as Sort;
   }
 
-  aggregationPipeline<E extends Document, P extends QueryProject<E>>(
+  aggregationPipeline<E extends Document>(
     entity: Type<E>,
     qm: QueryCriteria<E>,
-    project?: P,
+    project?: QueryProject<E>,
   ): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
