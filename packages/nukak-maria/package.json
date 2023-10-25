@@ -16,14 +16,14 @@
   },
   "peerDependencies": {
     "mariadb": "^3.0.2",
-    "nukak": "^0.2.0"
+    "nukak": "^0.3.4"
   },
   "dependencies": {
     "sqlstring": "^2.3.3"
   },
   "devDependencies": {
     "@types/mysql": "^2.15.23",
-    "@types/node": "^20.8.8",
+    "@types/node": "^20.8.9",
     "copyfiles": "^2.4.1",
     "mariadb": "^3.2.2",
     "rimraf": "^5.0.5",
