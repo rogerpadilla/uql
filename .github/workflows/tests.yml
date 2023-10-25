@@ -26,14 +26,15 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      - name: Container
+        run: yarn container -d
+
       - name: Install
         run: yarn
 
-      - name: Container
+      - name: Wait Container
         # mongo-rs seems the slowest, so wait for it
-        run: |
-          yarn container -d
-          yarn wait-container
+        run: yarn wait-container
 
       - name: Run Tests
         run: yarn test.all
