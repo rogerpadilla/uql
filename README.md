@@ -27,6 +27,8 @@ const companyUsers = await userRepository.findMany(
 
 See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) in medium.com.
 
+&nbsp;
+
 ## Features
 
 - **Type-safe and Context-aware queries**: squeeze the powers of `TypeScript` so it auto-completes and validates, the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations).
