@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is the [smartest](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) ORM for TypeScript, it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from [Mongo queries](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
+[nukak](https://nukak.org) is the [smartest](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d){:target="\_blank"} ORM for TypeScript, it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from [Mongo queries](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/){:target="\_blank"}.
 
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, Electron, Bun and Deno.
 
