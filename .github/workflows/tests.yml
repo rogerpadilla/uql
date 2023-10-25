@@ -10,6 +10,10 @@ jobs:
     name: Run Tests
 
     steps:
+      - name: Install OS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install gcc libgssapi-krb5-2 libkrb5-dev libsasl2-modules-gssapi-mit
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
       - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
       - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
