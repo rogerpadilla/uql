@@ -15,7 +15,8 @@
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "test.watch": "jest --watchAll",
     "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
-    "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
+    "container": "concurrently 'npm:mongo-rs' 'docker-compose up'",
+    "wait-container": "wait-on --timeout 60000 tcp:localhost:27027"
   },
   "commitlint": {
     "extends": [
