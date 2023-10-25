@@ -29,15 +29,8 @@ jobs:
       - name: Install
         run: yarn
 
-      - name: Container
-        run: yarn container &
-
-      - name: Wait Container
-        # mongo-rs seems the slowest, so wait for it
-        run: yarn wait-container
-
       - name: Run Tests
-        run: yarn test.all
+        run: yarn test
       - name: Submit coverage
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
