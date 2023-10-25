@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is the <a href="https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d" target="_blank">smartest ORM</a> for TypeScript, it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from <a href="https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/" rel="nofollow" target="_blank">Mongo queries</a>.
+[nukak](https://nukak.org) is the <a href="https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d" target="_blank">smartest ORM</a> for TypeScript, it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from <a href="https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/" rel="nofollow" target="_blank">mongo queries</a>.
 
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, Electron, Bun and Deno.
 
