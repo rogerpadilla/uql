@@ -191,12 +191,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
     filter = getQueryFilterAsMap(meta, filter);
 
-    if (
-      meta.softDelete &&
-      (softDelete || softDelete === undefined) &&
-      clause !== 'HAVING' &&
-      !filter[meta.softDelete as string]
-    ) {
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !filter[meta.softDelete as string]) {
       filter[meta.softDelete as string] = null;
     }
 

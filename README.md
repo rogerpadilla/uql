@@ -2,11 +2,11 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is the smartest [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) for [TypeScript](http://www.typescriptlang.org), it is designed to be fast, safe, and easy to integrate into any application. It draws inspiration from [TypeORM](https://typeorm.io) and [Mongo driver](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
+[nukak](https://nukak.org) is the smartest [ORM](https://en.wikipedia.org/wiki/Object%E2%80%93relational_mapping) for [TypeScript](http://www.typescriptlang.org), it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from [Mongo queries](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
 
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, and Electron platforms.
 
-[nukak](https://nukak.org) has a consistent API for distinct databases, including PostgreSQL, MySQL, SQLite, and MongoDB.
+[nukak](https://nukak.org) has a consistent API for distinct databases, including PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB.
 
 &nbsp;
 
@@ -16,14 +16,14 @@
 
 ## Features
 
-- Type-safe and Context-aware queries: squeeze the strength of `TypeScript` so it auto-completes, validates, and infers the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations).
-- Serializable queries: its [syntax](https://nukak.org/docs/querying-logical-operators) is `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
-- Unified API across Databases: same query is transparently transformed according to the configured database.
-- Combines the best elements of `OOP` (Object Oriented Programming) and `FP` (Functional Programming).
+- **Type-safe and Context-aware queries**: squeeze the powers of `TypeScript` so it auto-completes and validates, the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations).
+- **Serializable queries**: its [syntax](https://nukak.org/docs/querying-logical-operators) can be `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
+- **Unified API across Databases**: same query is transparently transformed according to the configured database.
+- **FP + OOP**: Combines the best elements of `FP` (Functional Programming) and `OOP` (Object Oriented Programming).
 - [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions` for flexibility, and `connection pooling` for scalability.
 - Transparent support for [inheritance between entities](https://nukak.org/docs/entities-inheritance) for reusability and consistency.
-- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c) packages. `ESM` is natively supported by Node.js 12 and later.
-- High performance: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
+- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c): `ESM` is natively supported by Node.js 16 and later.
+- **High performance**: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern for maintainability.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository).
 
@@ -56,7 +56,7 @@ npm install pg nukak-postgres --save
 3. Additionally, your `tsconfig.json` may need the following flags:
 
    ```json
-   "target": "es2020",
+   "target": "es2022",
    "experimentalDecorators": true,
    "emitDecoratorMetadata": true
    ```
@@ -86,7 +86,7 @@ export class User {
    * the `onInsert` property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
-  @Id({ onInsert: uuidv4 })
+  @Id({ onInsert: () => uuidv4() })
   id?: string;
 
   /**
@@ -125,7 +125,8 @@ export const querierPool = new PgQuerierPool(
   { logger: console.log },
 );
 
-// the default querier pool that `nukak` will use
+// the default querier pool that `nukak` will use when calling `getQuerier()` and
+// in the `@Transactional` decorator (by default).
 setQuerierPool(querierPool);
 ```
 
@@ -137,15 +138,15 @@ setQuerierPool(querierPool);
 import { getQuerier } from 'nukak';
 import { User } from './shared/models/index.js';
 
-async function findFirstUsers(limit = 100) {
+async function findLastUsers(limit = 100) {
   const querier = await getQuerier();
   const users = await querier.findMany(
     User,
     {
-      $sort: { createdAt: 1 },
+      $sort: { createdAt: 'desc' },
       $limit: limit,
     },
-    ['id', 'name', 'email'],
+    { id: true, name: true, email: true },
   );
   await querier.release();
   return users;

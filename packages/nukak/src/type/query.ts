@@ -380,7 +380,7 @@ export type QueryFilterOptions = QueryComparisonOptions & {
   /**
    * clause to be used in the filter.
    */
-  readonly clause?: 'WHERE' | 'HAVING' | false;
+  readonly clause?: 'WHERE' | false;
 };
 
 export interface QueryDialect {

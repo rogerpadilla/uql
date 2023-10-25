@@ -22,7 +22,7 @@
     "node-pg-format": "^1.3.5"
   },
   "devDependencies": {
-    "@types/node": "^20.8.7",
+    "@types/node": "^20.8.8",
     "@types/pg": "^8.10.7",
     "copyfiles": "^2.4.1",
     "pg": "^8.11.3",
