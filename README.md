@@ -10,7 +10,16 @@
 
 &nbsp;
 
-![Sample code](./assets/code-s.jpg?raw=true 'Same code')
+```ts
+const companyUsers = await userRepository.findMany(
+  {
+    $filter: { email: { $endsWith: '@domain.com' } },
+    $sort: { createdAt: 'desc' },
+    $limit: 100,
+  },
+  { email: true, profile: ['picture'] },
+);
+```
 
 &nbsp;
 
