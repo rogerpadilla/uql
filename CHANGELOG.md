@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.3] - 2023-10-25
+
+- Update usage example in the README.md.
+
 ## [0.3.2] - 2023-10-24
 
 - Improve usage examples in the README.md, and make the overview section more concise.
