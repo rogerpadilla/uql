@@ -73,6 +73,12 @@ export type FieldOptions = {
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
   readonly onDelete?: OnFieldCallback;
+
+  // TODO implemente support for following fields
+  // readonly allowNull?: boolean;
+  // readonly defaultValue?: Scalar;
+  // readonly isAutoIncrement?: boolean;
+  // readonly comment?: string;
 };
 
 export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
