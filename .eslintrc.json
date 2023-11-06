@@ -73,9 +73,7 @@
         "jest": true
       },
       "rules": {
-        "@typescript-eslint/no-unused-vars": 0,
-        "@typescript-eslint/no-empty-function": 0,
-        "max-lines": ["error", 2000]
+        "@typescript-eslint/no-unused-vars": 0
       }
     }
   ]

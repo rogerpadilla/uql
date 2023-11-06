@@ -33,11 +33,19 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
+    expect(this.dialect.filter(Item, '507f191e810c19729de860ea' as any)).toEqual({
+      _id: new ObjectId('507f191e810c19729de860ea'),
+    });
+
     expect(this.dialect.filter(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
     expect(this.dialect.filter(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+      _id: new ObjectId('507f191e810c19729de860ea'),
+    });
+
+    expect(this.dialect.filter(TaxCategory, '507f191e810c19729de860ea')).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
@@ -95,21 +103,18 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $filter: {} })).toEqual([]);
 
-    expect(this.dialect.aggregationPipeline(Item, {}, {})).toEqual([]);
+    expect(this.dialect.aggregationPipeline(Item, {})).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
-    expect(this.dialect.aggregationPipeline(User, {}, { users: true })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(User, { $project: { users: true } })).toEqual([]);
 
     expect(
-      this.dialect.aggregationPipeline(
-        TaxCategory,
-        {
-          $filter: { pk: '507f1f77bcf86cd799439011' },
-          $sort: { creatorId: -1 },
-        },
-        { creator: true },
-      ),
+      this.dialect.aggregationPipeline(TaxCategory, {
+        $project: { creator: true },
+        $filter: { pk: '507f1f77bcf86cd799439011' },
+        $sort: { creatorId: -1 },
+      }),
     ).toEqual([
       {
         $match: {
@@ -136,13 +141,10 @@ class MongoDialectSpec implements Spec {
     ]);
 
     expect(
-      this.dialect.aggregationPipeline(
-        Item,
-        {
-          $filter: { code: '123' },
-        },
-        { measureUnit: true, tax: true },
-      ),
+      this.dialect.aggregationPipeline(Item, {
+        $project: { measureUnit: true, tax: true },
+        $filter: { code: '123' },
+      }),
     ).toEqual([
       {
         $match: {
@@ -174,14 +176,44 @@ class MongoDialectSpec implements Spec {
     ]);
 
     expect(
-      this.dialect.aggregationPipeline(
-        User,
-        {
-          $filter: '65496146f8f7899f63768df1' as any,
-          $limit: 1,
+      this.dialect.aggregationPipeline(User, {
+        $project: { profile: true },
+        $filter: '65496146f8f7899f63768df1' as any,
+        $limit: 1,
+      }),
+    ).toEqual([
+      {
+        $match: {
+          _id: new ObjectId('65496146f8f7899f63768df1'),
         },
-        { profile: true },
-      ),
+      },
+      {
+        $lookup: {
+          from: 'user_profile',
+          pipeline: [
+            {
+              $match: {
+                creatorId: new ObjectId('65496146f8f7899f63768df1'),
+              },
+            },
+          ],
+          as: 'profile',
+        },
+      },
+      {
+        $unwind: {
+          path: '$profile',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ]);
+
+    expect(
+      this.dialect.aggregationPipeline(User, {
+        $project: { profile: true },
+        $filter: { id: '65496146f8f7899f63768df1' as any },
+        $limit: 1,
+      }),
     ).toEqual([
       {
         $match: {

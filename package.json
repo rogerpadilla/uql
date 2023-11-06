@@ -13,6 +13,7 @@
     "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
+    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
     "test.watch": "jest --watchAll",
     "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
     "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
@@ -23,14 +24,14 @@
     ]
   },
   "devDependencies": {
-    "@commitlint/cli": "^18.1.0",
+    "@commitlint/cli": "^18.2.0",
     "@commitlint/config-conventional": "^18.1.0",
-    "@types/jest": "^29.5.6",
-    "@typescript-eslint/eslint-plugin": "^6.9.0",
-    "@typescript-eslint/parser": "^6.9.0",
+    "@types/jest": "^29.5.7",
+    "@typescript-eslint/eslint-plugin": "^6.10.0",
+    "@typescript-eslint/parser": "^6.10.0",
     "concurrently": "^8.2.2",
     "coveralls": "^3.1.1",
-    "eslint": "^8.52.0",
+    "eslint": "^8.53.0",
     "eslint-config-prettier": "^9.0.0",
     "eslint-import-resolver-typescript": "3.6.1",
     "eslint-plugin-import": "^2.29.0",

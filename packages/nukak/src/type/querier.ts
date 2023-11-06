@@ -1,5 +1,5 @@
 import type { Type } from './utility.js';
-import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, QueryOneCriteria } from './query.js';
+import type { QueryOptions, QuerySearch, Query, QueryOne } from './query.js';
 import type { Repository } from './repository.js';
 import type { IdValue } from './entity.js';
 import type { UniversalQuerier } from './universalQuerier.js';
@@ -10,15 +10,15 @@ import type { UniversalQuerier } from './universalQuerier.js';
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>): Promise<E>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
 
-  findOne<E>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<E>;
+  findOne<E>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
 
-  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<E[]>;
+  findMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
 
-  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<[E[], number]>;
+  findManyAndCount<E>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
 
-  count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<number>;
+  count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   insertOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
@@ -26,7 +26,7 @@ export interface Querier extends UniversalQuerier {
 
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<number>;
 
-  updateMany<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E): Promise<number>;
+  updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
 
   saveOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
@@ -34,7 +34,7 @@ export interface Querier extends UniversalQuerier {
 
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
-  deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   getRepository<E>(entity: Type<E>): Repository<E>;
 

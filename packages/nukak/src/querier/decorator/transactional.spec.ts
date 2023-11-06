@@ -34,17 +34,17 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(1);
-    expect(querier.commitTransaction).toBeCalledTimes(1);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
   it('injectQuerier - querier and repositories', async () => {
@@ -58,17 +58,17 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(1);
-    expect(querier.commitTransaction).toBeCalledTimes(1);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
   it('injectQuerier propagation: supported', async () => {
@@ -82,17 +82,17 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(0);
-    expect(querier.commitTransaction).toBeCalledTimes(0);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
   it('injectQuerier another querierPool', async () => {
@@ -106,17 +106,17 @@ describe('transactional', () => {
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(1);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(1);
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(0);
-    expect(querier.commitTransaction).toBeCalledTimes(0);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(0);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(0);
   });
 
   it('injectQuerier and call super', async () => {
@@ -141,21 +141,21 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(deleteStub).toBeCalledTimes(1);
+    expect(deleteStub).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
     expect(deleteStub).toHaveBeenCalledWith('123', anotherQuerier);
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(1);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(1);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(1);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(1);
 
-    expect(querier.beginTransaction).toBeCalledTimes(0);
-    expect(querier.commitTransaction).toBeCalledTimes(0);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(0);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(0);
   });
 
   it('throw', async () => {
@@ -172,17 +172,17 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(0);
-    expect(querier.commitTransaction).toBeCalledTimes(0);
-    expect(querier.rollbackTransaction).toBeCalledTimes(0);
-    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
   it('throw inside transaction', async () => {
@@ -199,17 +199,17 @@ describe('transactional', () => {
 
     const querier = await getQuerier();
 
-    expect(querier.beginTransaction).toBeCalledTimes(1);
-    expect(querier.commitTransaction).toBeCalledTimes(0);
-    expect(querier.rollbackTransaction).toBeCalledTimes(1);
-    expect(querier.release).toBeCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.release).toHaveBeenCalledTimes(1);
 
     const anotherQuerier = await anotherQuerierPool.getQuerier();
 
-    expect(anotherQuerier.beginTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.commitTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.rollbackTransaction).toBeCalledTimes(0);
-    expect(anotherQuerier.release).toBeCalledTimes(0);
+    expect(anotherQuerier.beginTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.commitTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
   it('missing injectQuerier', () => {

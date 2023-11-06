@@ -1,5 +1,5 @@
 import type { Type } from './utility.js';
-import type { QueryCriteria, QueryOneCriteria, QueryOptions, QueryProject, QuerySearch } from './query.js';
+import type { QueryOptions, QuerySearch, QueryOne, Query } from './query.js';
 import type { UniversalRepository } from './repository.js';
 import type { IdValue } from './entity.js';
 
@@ -11,42 +11,43 @@ export interface UniversalQuerier {
    * obtains the record with the given primary key.
    * @param entity the target entity
    * @param id the primary key value
+   * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>): Promise<any>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<any>;
 
   /**
    * obtains the first record matching the given search parameters.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @return the record
    */
-  findOne<E>(entity: Type<E>, qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findOne<E>(entity: Type<E>, q: QueryOne<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @return the records
    */
-  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findMany<E>(entity: Type<E>, q: Query<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findManyAndCount<E>(entity: Type<E>, q: Query<E>): Promise<any>;
 
   /**
    * counts the number of records matching the given search parameters.
    * @param entity the target entity
-   * @param qm the search options
+   * @param q the search options
    * @return the count
    */
-  count<E>(entity: Type<E>, qm?: QuerySearch<E>): Promise<any>;
+  count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<any>;
 
   /**
    * inserts a record.
@@ -76,11 +77,11 @@ export interface UniversalQuerier {
   /**
    * updates many records partially.
    * @param entity the entity to persist on
-   * @param qm the criteria to look for the records
+   * @param q the criteria to look for the records
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateMany?<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E): Promise<any>;
+  updateMany?<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<any>;
 
   /**
    * insert or update a record.
@@ -109,10 +110,10 @@ export interface UniversalQuerier {
   /**
    * delete or SoftDelete records.
    * @param entity the entity to persist on
-   * @param qm the criteria to look for the records
+   * @param q the criteria to look for the records
    * @return the number of affected records
    */
-  deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): Promise<any>;
+  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<any>;
 
   /**
    * get a repository for the given entity.

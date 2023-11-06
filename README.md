@@ -11,14 +11,12 @@
 &nbsp;
 
 ```ts
-const companyUsers = await userRepository.findMany(
-  {
-    $filter: { email: { $endsWith: '@domain.com' } },
-    $sort: { createdAt: 'desc' },
-    $limit: 100,
-  },
-  { email: true, profile: ['picture'] },
-);
+const companyUsers = await userRepository.findMany({
+  $project: { email: true, profile: ['picture'] },
+  $filter: { email: { $endsWith: '@domain.com' } },
+  $sort: { createdAt: 'desc' },
+  $limit: 100,
+});
 ```
 
 &nbsp;
@@ -155,21 +153,18 @@ import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 100) {
   const querier = await getQuerier();
-  const users = await querier.findMany(
-    User,
-    {
-      $sort: { createdAt: 'desc' },
-      $limit: limit,
-    },
-    { id: true, name: true, email: true },
-  );
+  const users = await querier.findMany(User, {
+    $project: { id: true, name: true, email: true },
+    $sort: { createdAt: 'desc' },
+    $limit: limit,
+  });
   await querier.release();
   return users;
 }
 
-async function createUser(body: User) {
+async function createUser(data: User) {
   const querier = await getQuerier();
-  const id = await querier.insertOne(User, body);
+  const id = await querier.insertOne(User, data);
   await querier.release();
   return id;
 }
