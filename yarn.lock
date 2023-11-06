@@ -8295,7 +8295,7 @@ __metadata:
     bunchee: ^3.9.1
     concurrently: ^8.2.2
     copyfiles: ^2.4.1
-    nukak: ^0.3.5
+    nukak: ^0.4.2
     rimraf: ^5.0.5
     typescript: ^5.2.2
   languageName: unknown
@@ -8402,7 +8402,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"nukak@^0.3.5, nukak@workspace:packages/nukak":
+"nukak@^0.4.2, nukak@workspace:packages/nukak":
   version: 0.0.0-use.local
   resolution: "nukak@workspace:packages/nukak"
   dependencies:

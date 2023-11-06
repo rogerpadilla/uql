@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.3.5",
+  "version": "0.4.2",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "mysql2": "^2.3.3",
-    "nukak": "^0.3.4"
+    "nukak": "^0.4.1"
   },
   "dependencies": {
     "sqlstring": "^2.3.3"
@@ -62,5 +62,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "0acecffc0804504607e625105d1537e51d5ce0e4"
+  "gitHead": "20644feafa79328c8a2a68dc9c2d3578d7caceaa"
 }
