@@ -172,6 +172,42 @@ class MongoDialectSpec implements Spec {
         $unwind: { path: '$tax', preserveNullAndEmptyArrays: true },
       },
     ]);
+
+    expect(
+      this.dialect.aggregationPipeline(
+        User,
+        {
+          $filter: '65496146f8f7899f63768df1' as any,
+          $limit: 1,
+        },
+        { profile: true },
+      ),
+    ).toEqual([
+      {
+        $match: {
+          _id: new ObjectId('65496146f8f7899f63768df1'),
+        },
+      },
+      {
+        $lookup: {
+          from: 'user_profile',
+          pipeline: [
+            {
+              $match: {
+                creatorId: new ObjectId('65496146f8f7899f63768df1'),
+              },
+            },
+          ],
+          as: 'profile',
+        },
+      },
+      {
+        $unwind: {
+          path: '$profile',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ]);
   }
 }
 
