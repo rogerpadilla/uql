@@ -8295,7 +8295,7 @@ __metadata:
     bunchee: ^3.9.1
     concurrently: ^8.2.2
     copyfiles: ^2.4.1
-    nukak: ^0.4.2
+    nukak: ^0.4.3
     rimraf: ^5.0.5
     typescript: ^5.2.2
   languageName: unknown
@@ -8312,7 +8312,7 @@ __metadata:
     typescript: ^5.2.2
   peerDependencies:
     express: ^4.18.2
-    nukak: ^0.3.4
+    nukak: ^0.4.1
   languageName: unknown
   linkType: soft
 
@@ -8329,7 +8329,7 @@ __metadata:
     typescript: ^5.2.2
   peerDependencies:
     mariadb: ^3.0.2
-    nukak: ^0.3.4
+    nukak: ^0.4.1
   languageName: unknown
   linkType: soft
 
@@ -8345,7 +8345,7 @@ __metadata:
     typescript: ^5.2.2
   peerDependencies:
     mongodb: ^4.12.1
-    nukak: ^0.3.4
+    nukak: ^0.4.1
   languageName: unknown
   linkType: soft
 
@@ -8362,7 +8362,7 @@ __metadata:
     typescript: ^5.2.2
   peerDependencies:
     mysql2: ^2.3.3
-    nukak: ^0.3.4
+    nukak: ^0.4.1
   languageName: unknown
   linkType: soft
 
@@ -8378,7 +8378,7 @@ __metadata:
     rimraf: ^5.0.5
     typescript: ^5.2.2
   peerDependencies:
-    nukak: ^0.3.4
+    nukak: ^0.4.1
     pg: ^8.8.0
   languageName: unknown
   linkType: soft
@@ -8396,13 +8396,13 @@ __metadata:
     sqlstring-sqlite: ^0.1.1
     typescript: ^5.2.2
   peerDependencies:
-    nukak: ^0.3.4
+    nukak: ^0.4.1
     sqlite: ^4.1.2
     sqlite3: ^5.1.2
   languageName: unknown
   linkType: soft
 
-"nukak@^0.4.2, nukak@workspace:packages/nukak":
+"nukak@^0.4.3, nukak@workspace:packages/nukak":
   version: 0.0.0-use.local
   resolution: "nukak@workspace:packages/nukak"
   dependencies:
