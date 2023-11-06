@@ -127,7 +127,7 @@ export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryFilterMap<E>;
   }
-  if (isIdFilter(filter)) {
+  if (isIdValue(filter)) {
     return {
       [meta.id]: filter,
     } as QueryFilterMap<E>;
@@ -135,7 +135,7 @@ export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<
   return filter as QueryFilterMap<E>;
 }
 
-function isIdFilter<E>(filter: QueryFilter<E>): filter is IdValue<E> | IdValue<E>[] {
+function isIdValue<E>(filter: QueryFilter<E>): filter is IdValue<E> | IdValue<E>[] {
   const type = typeof filter;
   return (
     type === 'string' ||

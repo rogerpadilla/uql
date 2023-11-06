@@ -33,11 +33,19 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
+    expect(this.dialect.filter(Item, '507f191e810c19729de860ea' as any)).toEqual({
+      _id: new ObjectId('507f191e810c19729de860ea'),
+    });
+
     expect(this.dialect.filter(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
     expect(this.dialect.filter(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+      _id: new ObjectId('507f191e810c19729de860ea'),
+    });
+
+    expect(this.dialect.filter(TaxCategory, '507f191e810c19729de860ea')).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
@@ -171,6 +179,39 @@ class MongoDialectSpec implements Spec {
       this.dialect.aggregationPipeline(User, {
         $project: { profile: true },
         $filter: '65496146f8f7899f63768df1' as any,
+        $limit: 1,
+      }),
+    ).toEqual([
+      {
+        $match: {
+          _id: new ObjectId('65496146f8f7899f63768df1'),
+        },
+      },
+      {
+        $lookup: {
+          from: 'user_profile',
+          pipeline: [
+            {
+              $match: {
+                creatorId: new ObjectId('65496146f8f7899f63768df1'),
+              },
+            },
+          ],
+          as: 'profile',
+        },
+      },
+      {
+        $unwind: {
+          path: '$profile',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ]);
+
+    expect(
+      this.dialect.aggregationPipeline(User, {
+        $project: { profile: true },
+        $filter: { id: '65496146f8f7899f63768df1' as any },
         $limit: 1,
       }),
     ).toEqual([

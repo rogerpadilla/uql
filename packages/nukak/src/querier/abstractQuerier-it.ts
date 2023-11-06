@@ -140,7 +140,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(founds.map(({ id }) => id)).toEqual(ids);
   }
 
-  async fffShouldInsertOneAndCascadeOneToOne() {
+  async shouldInsertOneAndCascadeOneToOne() {
     const payload = {
       name: 'Some Name D',
       createdAt: 123,

@@ -105,7 +105,7 @@ export class MongoDialect {
         });
       } else {
         const foreignField = relOpts.references[0].foreign;
-        const referenceFilter = this.filter(relEntity, q.$filter);
+        const referenceFilter = this.filter(relEntity, filter);
         const referenceSort = this.sort(relEntity, q.$sort);
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
           $match: { [foreignField]: referenceFilter._id },

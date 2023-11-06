@@ -30,11 +30,8 @@ export class MongodbQuerier extends AbstractQuerier {
     let documents: E[];
     const hasProjectedRelations = isProjectingRelations(meta, q.$project);
 
-    console.log('** hasProjectedRelations', hasProjectedRelations);
-
     if (hasProjectedRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, q);
-      console.log('** pipeline', JSON.stringify(pipeline, null, 2));
       this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       documents = this.dialect.normalizeIds(meta, documents) as E[];

@@ -18,9 +18,9 @@ export function createSpec<T extends Spec>(spec: T) {
   let describeFn: Global.DescribeBase;
   const specName = proto.constructor.name;
 
-  if (specName.startsWith('Fff')) {
+  if (specName.startsWith('fff')) {
     describeFn = fdescribe;
-  } else if (specName.startsWith('Xxx')) {
+  } else if (specName.startsWith('xxx')) {
     describeFn = xdescribe;
   } else {
     describeFn = describe;

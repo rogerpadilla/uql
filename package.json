@@ -12,7 +12,8 @@
     "lint.fix": "yarn lint --fix",
     "test": "jest --clearCache && concurrently 'yarn:lint' 'jest'",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
-    "test.all.watch": "jest --watchAll --testMatch '**/mongodbQuerier.it.ts'",
+    "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
+    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
     "test.watch": "jest --watchAll",
     "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
     "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
