@@ -33,6 +33,7 @@ export abstract class AbstractQuerier implements Querier {
     const qCount = {
       ...q,
     } satisfies QuerySearch<E>;
+    delete qCount.$sort;
     delete qCount.$limit;
     delete qCount.$skip;
     return Promise.all([this.findMany(entity, q), this.count(entity, qCount)]);
