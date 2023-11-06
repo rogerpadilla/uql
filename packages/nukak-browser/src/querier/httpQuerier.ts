@@ -1,14 +1,5 @@
 import { getMeta } from 'nukak/entity';
-import type {
-  IdValue,
-  Query,
-  QueryCriteria,
-  QueryOne,
-  QueryOptions,
-  QueryProject,
-  QuerySearch,
-  Type,
-} from 'nukak/type';
+import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from 'nukak/type';
 import { kebabCase } from 'nukak/util';
 import type { RequestOptions, RequestFindOptions, ClientQuerier, ClientRepository } from '../type/index.js';
 import { get, post, patch, remove } from '../http/index.js';
@@ -18,22 +9,20 @@ import { GenericClientRepository } from './genericClientRepository.js';
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    const qm = { $project: project } satisfies Query<E>;
+  findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(qm);
+    const qs = stringifyQuery(q);
     return get<E>(`${basePath}/${id}${qs}`, opts);
   }
 
-  findOne<E>(entity: Type<E>, qm: QueryOne<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    const q = { ...qm, $project: project } satisfies Query<E>;
+  findOne<E>(entity: Type<E>, q: QueryOne<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
     return get<E>(`${basePath}/one${qs}`, opts);
   }
 
-  findMany<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestFindOptions) {
-    const data: Query<E> & Pick<typeof opts, 'count'> = { ...qm, $project: project };
+  findMany<E>(entity: Type<E>, q: Query<E>, opts?: RequestFindOptions) {
+    const data: Query<E> & Pick<typeof opts, 'count'> = { ...q };
     if (opts?.count) {
       data.count = true;
     }
@@ -42,13 +31,13 @@ export class HttpQuerier implements ClientQuerier {
     return get<E[]>(`${basePath}${qs}`, opts);
   }
 
-  findManyAndCount<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestFindOptions) {
-    return this.findMany(entity, qm, project, { ...opts, count: true });
+  findManyAndCount<E>(entity: Type<E>, q: Query<E>, opts?: RequestFindOptions) {
+    return this.findMany(entity, q, { ...opts, count: true });
   }
 
-  count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: RequestOptions) {
+  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(qm);
+    const qs = stringifyQuery(q);
     return get<number>(`${basePath}/count${qs}`, opts);
   }
 
@@ -77,9 +66,9 @@ export class HttpQuerier implements ClientQuerier {
     return remove<typeof id>(`${basePath}/${id}${qs}`, opts);
   }
 
-  deleteMany<E>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
+  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(opts.softDelete ? { ...qm, softDelete: opts.softDelete } : qm);
+    const qs = stringifyQuery(opts.softDelete ? { ...q, softDelete: opts.softDelete } : q);
     return remove<IdValue<E>[]>(`${basePath}${qs}`, opts);
   }
 

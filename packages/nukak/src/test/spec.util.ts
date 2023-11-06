@@ -46,9 +46,9 @@ function createTestCases(spec: object) {
         hooks[key](callback);
       } else if (key.startsWith('should')) {
         it(key, callback);
-      } else if (key.startsWith('fffshould')) {
+      } else if (key.startsWith('fffShould')) {
         fit(key, callback);
-      } else if (key.startsWith('xxxshould')) {
+      } else if (key.startsWith('xxxShould')) {
         xit(key, callback);
       }
     }

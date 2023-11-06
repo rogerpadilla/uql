@@ -1,4 +1,4 @@
-import { IdValue, QueryCriteria, QueryOne, QueryOptions, QueryProject, QuerySearch, Type } from 'nukak/type';
+import { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from 'nukak/type';
 import { ClientQuerier, ClientRepository, RequestOptions } from '../type/index.js';
 
 export class GenericClientRepository<E> implements ClientRepository<E> {
@@ -7,20 +7,20 @@ export class GenericClientRepository<E> implements ClientRepository<E> {
     readonly querier: ClientQuerier,
   ) {}
 
-  findOneById(id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    return this.querier.findOneById(this.entity, id, project, opts);
+  findOneById(id: IdValue<E>, q?: QueryOne<E>, opts?: RequestOptions) {
+    return this.querier.findOneById(this.entity, id, q, opts);
   }
 
-  findOne(qm: QueryOne<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    return this.querier.findOne(this.entity, qm, project, opts);
+  findOne(q: QueryOne<E>, opts?: RequestOptions) {
+    return this.querier.findOne(this.entity, q, opts);
   }
 
-  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    return this.querier.findMany(this.entity, qm, project, opts);
+  findMany(q: Query<E>, opts?: RequestOptions) {
+    return this.querier.findMany(this.entity, q, opts);
   }
 
-  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: RequestOptions) {
-    return this.querier.findManyAndCount(this.entity, qm, project, opts);
+  findManyAndCount(q: Query<E>, opts?: RequestOptions) {
+    return this.querier.findManyAndCount(this.entity, q, opts);
   }
 
   count(qm?: QuerySearch<E>, opts?: RequestOptions) {

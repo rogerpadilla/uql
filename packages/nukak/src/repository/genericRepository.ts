@@ -1,14 +1,4 @@
-import type {
-  IdValue,
-  Querier,
-  QueryOptions,
-  Repository,
-  Type,
-  QueryProject,
-  QuerySearch,
-  QueryCriteria,
-  QueryOneCriteria,
-} from '../type/index.js';
+import type { IdValue, Querier, QueryOptions, Repository, Type, QuerySearch, QueryOne, Query } from '../type/index.js';
 
 export class GenericRepository<E> implements Repository<E> {
   constructor(
@@ -16,24 +6,24 @@ export class GenericRepository<E> implements Repository<E> {
     readonly querier: Querier,
   ) {}
 
-  findOneById(id: IdValue<E>, project?: QueryProject<E>) {
-    return this.querier.findOneById(this.entity, id, project);
+  findOneById(id: IdValue<E>, q?: QueryOne<E>) {
+    return this.querier.findOneById(this.entity, id, q);
   }
 
-  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>) {
-    return this.querier.findOne(this.entity, qm, project);
+  findOne(q: QueryOne<E>) {
+    return this.querier.findOne(this.entity, q);
   }
 
-  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>) {
-    return this.querier.findMany(this.entity, qm, project);
+  findMany(q: Query<E>) {
+    return this.querier.findMany(this.entity, q);
   }
 
-  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>) {
-    return this.querier.findManyAndCount(this.entity, qm, project);
+  findManyAndCount(q: Query<E>) {
+    return this.querier.findManyAndCount(this.entity, q);
   }
 
-  count(qm?: QuerySearch<E>) {
-    return this.querier.count(this.entity, qm);
+  count(q?: QuerySearch<E>) {
+    return this.querier.count(this.entity, q);
   }
 
   insertOne(payload: E) {

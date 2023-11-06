@@ -11,7 +11,7 @@ import type {
   QuerySort,
   FieldValue,
   RelationKey,
-  QueryCriteria,
+  Query,
 } from 'nukak/type';
 
 export class MongoDialect {
@@ -61,15 +61,11 @@ export class MongoDialect {
     return buildSortMap(sort) as Sort;
   }
 
-  aggregationPipeline<E extends Document>(
-    entity: Type<E>,
-    qm: QueryCriteria<E>,
-    project?: QueryProject<E>,
-  ): MongoAggregationPipelineEntry<E>[] {
+  aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
-    const filter = this.filter(entity, qm.$filter);
-    const sort = this.sort(entity, qm.$sort);
+    const filter = this.filter(entity, q.$filter);
+    const sort = this.sort(entity, q.$sort);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
     if (hasKeys(filter)) {
@@ -85,7 +81,7 @@ export class MongoDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relations = getProjectRelationKeys(meta, project);
+    const relations = getProjectRelationKeys(meta, q.$project);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];
@@ -109,8 +105,8 @@ export class MongoDialect {
         });
       } else {
         const foreignField = relOpts.references[0].foreign;
-        const referenceFilter = this.filter(relEntity, qm.$filter);
-        const referenceSort = this.sort(relEntity, qm.$sort);
+        const referenceFilter = this.filter(relEntity, q.$filter);
+        const referenceSort = this.sort(relEntity, q.$sort);
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
           $match: { [foreignField]: referenceFilter._id },
         };

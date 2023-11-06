@@ -1,34 +1,14 @@
-import type {
-  UniversalRepository,
-  QueryOptions,
-  IdValue,
-  QueryProject,
-  QuerySearch,
-  QueryCriteria,
-  QueryOneCriteria,
-} from 'nukak/type';
+import type { UniversalRepository, QueryOptions, IdValue, QuerySearch, QueryOne, Query } from 'nukak/type';
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientRepository<E> extends UniversalRepository<E> {
-  findOneById(id: IdValue<E>, project?: QueryProject<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
+  findOneById(id: IdValue<E>, q?: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findOne(
-    qm: QueryOneCriteria<E>,
-    project?: QueryProject<E>,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E>>;
+  findOne(qm: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E>>;
 
-  findMany(
-    qm: QueryCriteria<E>,
-    project?: QueryProject<E>,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E[]>>;
+  findMany(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  findManyAndCount(
-    qm: QueryCriteria<E>,
-    project?: QueryProject<E>,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E[]>>;
+  findManyAndCount(qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
   count(qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 

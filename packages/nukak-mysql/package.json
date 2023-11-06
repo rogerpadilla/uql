@@ -23,9 +23,9 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.23",
-    "@types/node": "^20.8.9",
+    "@types/node": "^20.8.10",
     "copyfiles": "^2.4.1",
-    "mysql2": "^3.6.2",
+    "mysql2": "^3.6.3",
     "rimraf": "^5.0.5",
     "typescript": "^5.2.2"
   },

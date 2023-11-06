@@ -9,7 +9,7 @@ import {
   hasKeys,
   isProjectingRelations,
 } from 'nukak/util';
-import type { Type, QueryOptions, IdValue, ExtraOptions, QueryProject, QuerySearch, QueryCriteria } from 'nukak/type';
+import type { Type, QueryOptions, IdValue, ExtraOptions, QuerySearch, Query } from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 
@@ -24,41 +24,44 @@ export class MongodbQuerier extends AbstractQuerier {
     super();
   }
 
-  override async findMany<E extends Document>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>) {
+  override async findMany<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
 
     let documents: E[];
-    const hasProjectRelations = isProjectingRelations(meta, project);
+    const hasProjectedRelations = isProjectingRelations(meta, q.$project);
 
-    if (hasProjectRelations) {
-      const pipeline = this.dialect.aggregationPipeline(entity, qm, project);
+    console.log('** hasProjectedRelations', hasProjectedRelations);
+
+    if (hasProjectedRelations) {
+      const pipeline = this.dialect.aggregationPipeline(entity, q);
+      console.log('** pipeline', JSON.stringify(pipeline, null, 2));
       this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
       documents = this.dialect.normalizeIds(meta, documents) as E[];
-      await this.findToManyRelations(entity, documents, project);
+      await this.fillToManyRelations(entity, documents, q.$project);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-      const filter = this.dialect.filter(entity, qm.$filter);
+      const filter = this.dialect.filter(entity, q.$filter);
       if (hasKeys(filter)) {
         cursor.filter(filter);
       }
-      const projection = this.dialect.project(entity, project);
+      const projection = this.dialect.project(entity, q.$project);
       if (hasKeys(projection)) {
         cursor.project(projection);
       }
-      const sort = this.dialect.sort(entity, qm.$sort);
+      const sort = this.dialect.sort(entity, q.$sort);
       if (hasKeys(sort)) {
         cursor.sort(sort);
       }
-      if (qm.$skip) {
-        cursor.skip(qm.$skip);
+      if (q.$skip) {
+        cursor.skip(q.$skip);
       }
-      if (qm.$limit) {
-        cursor.limit(qm.$limit);
+      if (q.$limit) {
+        cursor.limit(q.$limit);
       }
 
-      this.extra?.logger?.('findMany', entity.name, qm, project);
+      this.extra?.logger?.('findMany', entity.name, q);
 
       documents = (await cursor.toArray()) as E[];
       documents = this.dialect.normalizeIds(meta, documents) as E[];

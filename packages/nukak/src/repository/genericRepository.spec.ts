@@ -37,17 +37,17 @@ describe('repository', () => {
 
   it('findOne', async () => {
     await repository.findOne({});
-    expect(querier.findOne).toHaveBeenCalledWith(User, {}, undefined);
+    expect(querier.findOne).toHaveBeenCalledWith(User, {});
   });
 
   it('findMany', async () => {
     await repository.findMany({});
-    expect(querier.findMany).toHaveBeenCalledWith(User, {}, undefined);
+    expect(querier.findMany).toHaveBeenCalledWith(User, {});
   });
 
   it('findManyAndCount', async () => {
     await repository.findManyAndCount({});
-    expect(querier.findManyAndCount).toHaveBeenCalledWith(User, {}, undefined);
+    expect(querier.findManyAndCount).toHaveBeenCalledWith(User, {});
   });
 
   it('insertOne', async () => {
