@@ -168,14 +168,11 @@ class MongoDialectSpec implements Spec {
     ]);
 
     expect(
-      this.dialect.aggregationPipeline(
-        User,
-        {
-          $filter: '65496146f8f7899f63768df1' as any,
-          $limit: 1,
-        },
-        { profile: true },
-      ),
+      this.dialect.aggregationPipeline(User, {
+        $project: { profile: true },
+        $filter: '65496146f8f7899f63768df1' as any,
+        $limit: 1,
+      }),
     ).toEqual([
       {
         $match: {
