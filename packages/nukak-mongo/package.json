@@ -10,7 +10,7 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
+    "build": "npm run clean && tsc -b tsconfig.build.json && npm run copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist"
   },
@@ -20,11 +20,11 @@
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.6",
-    "@types/node": "^20.8.10",
+    "@types/node": "^20.11.25",
     "copyfiles": "^2.4.1",
-    "mongodb": "^6.2.0",
+    "mongodb": "^6.4.0",
     "rimraf": "^5.0.5",
-    "typescript": "^5.2.2"
+    "typescript": "^5.4.2"
   },
   "author": "Roger Padilla",
   "repository": {

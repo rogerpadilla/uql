@@ -10,7 +10,7 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
+    "build": "npm run clean && tsc -b tsconfig.build.json && npm run copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist"
   },
@@ -23,13 +23,13 @@
     "sqlstring-sqlite": "^0.1.1"
   },
   "devDependencies": {
-    "@types/node": "^20.8.10",
-    "@types/sqlite3": "^3.1.10",
+    "@types/node": "^20.11.25",
+    "@types/sqlite3": "^3.1.11",
     "copyfiles": "^2.4.1",
     "rimraf": "^5.0.5",
     "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.6",
-    "typescript": "^5.2.2"
+    "sqlite3": "^5.1.7",
+    "typescript": "^5.4.2"
   },
   "author": "Roger Padilla",
   "repository": {

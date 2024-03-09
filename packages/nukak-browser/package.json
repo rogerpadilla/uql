@@ -10,16 +10,16 @@
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "bunchee --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
-    "build": "yarn clean && concurrently 'yarn:compile' 'yarn:copyfiles'",
+    "build": "npm run clean && concurrently 'npm:compile' 'npm:copyfiles'",
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "bunchee": "^3.9.1",
+    "bunchee": "^4.4.8",
     "concurrently": "^8.2.2",
     "copyfiles": "^2.4.1",
     "nukak": "^0.4.3",
     "rimraf": "^5.0.5",
-    "typescript": "^5.2.2"
+    "typescript": "^5.4.2"
   },
   "author": "Roger Padilla",
   "repository": {

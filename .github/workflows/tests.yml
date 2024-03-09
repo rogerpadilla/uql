@@ -27,10 +27,10 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Install
-        run: yarn
+        run: npm install
 
       - name: Run Tests
-        run: yarn test
+        run: npm test
       - name: Submit coverage
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
