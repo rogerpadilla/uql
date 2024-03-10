@@ -2,7 +2,7 @@
   "name": "nukak-browser",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.3.5",
+  "version": "0.4.7",
   "type": "module",
   "main": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
@@ -10,16 +10,16 @@
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
     "compile": "bunchee --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
-    "build": "yarn clean && concurrently 'yarn:compile' 'yarn:copyfiles'",
+    "build": "npm run clean && concurrently 'npm:compile' 'npm:copyfiles'",
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "bunchee": "^3.9.1",
+    "bunchee": "^4.4.8",
     "concurrently": "^8.2.2",
     "copyfiles": "^2.4.1",
-    "nukak": "^0.3.5",
+    "nukak": "^0.4.7",
     "rimraf": "^5.0.5",
-    "typescript": "^5.2.2"
+    "typescript": "^5.4.2"
   },
   "author": "Roger Padilla",
   "repository": {
@@ -54,5 +54,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "0acecffc0804504607e625105d1537e51d5ce0e4"
+  "gitHead": "293d2169ed15ba4bf23057a6af9c69497f0f5c62"
 }

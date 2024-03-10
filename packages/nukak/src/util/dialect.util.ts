@@ -15,6 +15,7 @@ import {
   QueryFilterMap,
   OnFieldCallback,
   MongoId,
+  IdValue,
 } from '../type/index.js';
 
 type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
@@ -126,10 +127,21 @@ export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryFilterMap<E>;
   }
-  if (typeof filter !== 'object' || Array.isArray(filter) || typeof (filter as MongoId).toHexString === 'function') {
+  if (isIdValue(filter)) {
     return {
       [meta.id]: filter,
     } as QueryFilterMap<E>;
   }
   return filter as QueryFilterMap<E>;
+}
+
+function isIdValue<E>(filter: QueryFilter<E>): filter is IdValue<E> | IdValue<E>[] {
+  const type = typeof filter;
+  return (
+    type === 'string' ||
+    type === 'number' ||
+    type === 'bigint' ||
+    typeof (filter as MongoId).toHexString === 'function' ||
+    Array.isArray(filter)
+  );
 }

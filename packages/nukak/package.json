@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.3.5",
+  "version": "0.4.7",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -19,21 +19,21 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "build": "yarn clean && tsc -b tsconfig.build.json && yarn copyfiles",
+    "build": "npm run clean && tsc -b tsconfig.build.json && npm run copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "reflect-metadata": "^0.1.13",
+    "reflect-metadata": "^0.2.1",
     "tslib": "^2.6.2"
   },
   "devDependencies": {
-    "@types/node": "^20.8.9",
-    "@types/sqlstring": "^2.3.1",
-    "@types/uuid": "^9.0.6",
+    "@types/node": "^20.11.25",
+    "@types/sqlstring": "^2.3.2",
+    "@types/uuid": "^9.0.8",
     "copyfiles": "^2.4.1",
     "rimraf": "^5.0.5",
-    "typescript": "^5.2.2",
+    "typescript": "^5.4.2",
     "uuid": "^9.0.1"
   },
   "author": "Roger Padilla",
@@ -69,5 +69,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "0acecffc0804504607e625105d1537e51d5ce0e4"
+  "gitHead": "293d2169ed15ba4bf23057a6af9c69497f0f5c62"
 }

@@ -65,29 +65,23 @@ class PostgresDialectSpec {
 
   shouldFind$istartsWith() {
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $istartsWith: 'Some' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        ['id'],
-      ),
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $istartsWith: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        { id: true },
-      ),
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(
       `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
@@ -95,29 +89,23 @@ class PostgresDialectSpec {
 
   shouldFind$iendsWith() {
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $iendsWith: 'Some' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        ['id'],
-      ),
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $iendsWith: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        { id: true },
-      ),
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(
       `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
@@ -125,29 +113,23 @@ class PostgresDialectSpec {
 
   shouldFind$iincludes() {
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $iincludes: 'Some' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        ['id'],
-      ),
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $iincludes: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $iincludes: 'Some', $ne: 'Something' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        { id: true },
-      ),
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $iincludes: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(
       `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
@@ -155,29 +137,23 @@ class PostgresDialectSpec {
 
   shouldFind$ilike() {
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $ilike: 'Some' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        ['id'],
-      ),
+      this.dialect.find(User, {
+        $project: ['id'],
+        $filter: { name: { $ilike: 'Some' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
 
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
-          $sort: { name: 1, id: -1 },
-          $skip: 0,
-          $limit: 50,
-        },
-        { id: true },
-      ),
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
+        $sort: { name: 1, id: -1 },
+        $skip: 0,
+        $limit: 50,
+      }),
     ).toBe(
       `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
@@ -185,43 +161,34 @@ class PostgresDialectSpec {
 
   shouldFind$regex() {
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: { name: { $regex: '^some' } },
-        },
-        { id: true },
-      ),
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: { name: { $regex: '^some' } },
+      }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }
 
   shouldFind$text() {
     expect(
-      this.dialect.find(
-        Item,
-        {
-          $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
-          $limit: 30,
-        },
-        { id: true },
-      ),
+      this.dialect.find(Item, {
+        $project: { id: true },
+        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
+        $limit: 30,
+      }),
     ).toBe(
       `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`,
     );
 
     expect(
-      this.dialect.find(
-        User,
-        {
-          $filter: {
-            $text: { $fields: ['name'], $value: 'something' },
-            name: { $ne: 'other unwanted' },
-            creatorId: 1,
-          },
-          $limit: 10,
+      this.dialect.find(User, {
+        $project: { id: true },
+        $filter: {
+          $text: { $fields: ['name'], $value: 'something' },
+          name: { $ne: 'other unwanted' },
+          creatorId: 1,
         },
-        { id: true },
-      ),
+        $limit: 10,
+      }),
     ).toBe(
       `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`,
     );

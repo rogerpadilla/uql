@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.4.0] - 2023-11-06
+
+- move project inside query parameter [#63](https://github.com/rogerpadilla/nukak/pull/63)
+
 ## [0.3.3] - 2023-10-25
 
 - Update usage example in the README.md.

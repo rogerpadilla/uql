@@ -275,22 +275,17 @@ export type QuerySearch<E> = {
    * filtering options.
    */
   $filter?: QueryFilter<E>;
-} & QueryPager;
 
-/**
- * criteria options.
- */
-export type QueryCriteria<E> = QuerySearch<E> & {
   /**
    * sorting options.
    */
   $sort?: QuerySort<E>;
-};
+} & QueryPager;
 
 /**
  * criteria one options.
  */
-export type QueryOneCriteria<E> = Omit<QueryCriteria<E>, '$limit'>;
+export type QuerySearchOne<E> = Omit<QuerySearch<E>, '$limit'>;
 
 /**
  * query options.
@@ -300,7 +295,7 @@ export type Query<E> = {
    * projection options.
    */
   $project?: QueryProject<E>;
-} & QueryCriteria<E>;
+} & QuerySearch<E>;
 
 /**
  * options to get a single record.
@@ -387,18 +382,18 @@ export interface QueryDialect {
   /**
    * obtains the records matching the given search parameters.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @param opts the query options
    */
-  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string;
+  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): string;
 
   /**
    * counts the number of records matching the given search parameters.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @param opts the query options
    */
-  count<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
+  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string;
 
   /**
    * inser records.
@@ -411,19 +406,19 @@ export interface QueryDialect {
   /**
    * update records.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @param payload
    * @param opts the query options
    */
-  update<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E, opts?: QueryOptions): string;
+  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string;
 
   /**
    * delete records.
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param q the criteria options
    * @param opts the query options
    */
-  delete<E>(entity: Type<E>, qm: QuerySearch<E>, opts?: QueryOptions): string;
+  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string;
 
   /**
    * escape an identifier.

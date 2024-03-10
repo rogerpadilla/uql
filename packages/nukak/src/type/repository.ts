@@ -1,5 +1,5 @@
 import type { IdValue } from './entity.js';
-import type { QueryCriteria, QueryOptions, QueryProject, QuerySearch, QueryOneCriteria } from './query.js';
+import type { Query, QueryOne, QueryOptions, QuerySearch } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -20,34 +20,34 @@ export type UniversalRepository<E> = {
   /**
    * obtains the record with the given primary key.
    * @param id the primary key value
-   * @param qm the criteria options
+   * @param q the criteria options
    */
-  findOneById(id: IdValue<E>, project?: QueryProject<E>): Promise<any>;
+  findOneById(id: IdValue<E>, q?: QueryOne<E>): Promise<any>;
 
   /**
    * obtains the first record matching the given search parameters.
-   * @param qm the criteria options
+   * @param q the criteria options
    */
-  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findOne(q: QueryOne<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters.
-   * @param qm the criteria options
+   * @param q the criteria options
    */
-  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findMany(q: Query<E>): Promise<any>;
 
   /**
    * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
-   * @param qm the criteria options
+   * @param q the criteria options
    */
-  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<any>;
+  findManyAndCount(q: Query<E>): Promise<any>;
 
   /**
    * counts the number of records matching the given search parameters.
-   * @param qm the search options
+   * @param q the search options
    */
-  count(qm?: QuerySearch<E>): Promise<any>;
+  count(q: QuerySearch<E>): Promise<any>;
 
   /**
    * inserts a record.
@@ -105,15 +105,15 @@ export type UniversalRepository<E> = {
  * base contract for the backend repositories.
  */
 export interface Repository<E> extends UniversalRepository<E> {
-  findOneById(id: IdValue<E>, project?: QueryProject<E>): Promise<E>;
+  findOneById(id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
 
-  findOne(qm: QueryOneCriteria<E>, project?: QueryProject<E>): Promise<E>;
+  findOne(qm: QueryOne<E>): Promise<E>;
 
-  findMany(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<E[]>;
+  findMany(qm: Query<E>): Promise<E[]>;
 
-  findManyAndCount(qm: QueryCriteria<E>, project?: QueryProject<E>): Promise<[E[], number]>;
+  findManyAndCount(qm: Query<E>): Promise<[E[], number]>;
 
-  count(qm?: QuerySearch<E>): Promise<number>;
+  count(q?: QuerySearch<E>): Promise<number>;
 
   insertOne(payload: E): Promise<IdValue<E>>;
 

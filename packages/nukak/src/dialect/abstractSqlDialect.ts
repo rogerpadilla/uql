@@ -19,7 +19,6 @@ import {
   QueryFilterArray,
   QueryRaw,
   QuerySearch,
-  QueryCriteria,
   Query,
 } from '../type/index.js';
 import {
@@ -49,13 +48,13 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  criteria<E>(entity: Type<E>, qm: QueryCriteria<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
+  search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
+    const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, q.$project)) ? meta.name : undefined;
     opts = { ...opts, prefix };
-    const where = this.where<E>(entity, qm.$filter, opts);
-    const sort = this.sort<E>(entity, qm.$sort, opts);
-    const pager = this.pager(qm);
+    const where = this.where<E>(entity, q.$filter, opts);
+    const sort = this.sort<E>(entity, q.$sort, opts);
+    const pager = this.pager(q);
     return where + sort + pager;
   }
 
@@ -382,25 +381,20 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return sql;
   }
 
-  count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: QueryOptions): string {
+  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string {
     const search: Query<E> = {
-      ...qm,
+      ...q,
     };
-
     delete search.$sort;
-    delete search.$skip;
-    delete search.$limit;
-
     const project = [raw('COUNT(*)', 'count')] satisfies QueryProject<E>;
     const select = this.select<E>(entity, project);
-    const criteria = this.criteria(entity, search, project, opts);
-
+    const criteria = this.search(entity, search, opts);
     return select + criteria;
   }
 
-  find<E>(entity: Type<E>, qm: QueryCriteria<E>, project?: QueryProject<E>, opts?: QueryOptions): string {
-    const select = this.select(entity, project, opts);
-    const criteria = this.criteria(entity, qm, project, opts);
+  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): string {
+    const select = this.select(entity, q.$project, opts);
+    const criteria = this.search(entity, q, opts);
     return select + criteria;
   }
 
@@ -413,21 +407,21 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
-  update<E>(entity: Type<E>, qm: QuerySearch<E>, payload: E, opts?: QueryOptions): string {
+  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string {
     const meta = getMeta(entity);
     const record = getPersistable(meta, payload, 'onUpdate');
     const keys = getKeys(record);
     const entries = keys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
-    const criteria = this.criteria(entity, qm, undefined, opts);
+    const criteria = this.search(entity, q, opts);
     return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
   }
 
-  delete<E>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}): string {
+  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
 
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
-        const criteria = this.criteria(entity, qm, undefined, opts);
+        const criteria = this.search(entity, q, opts);
         const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(
           value,
@@ -437,7 +431,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       }
     }
 
-    const criteria = this.criteria(entity, qm, undefined, opts);
+    const criteria = this.search(entity, q, opts);
 
     return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
   }

@@ -17,7 +17,6 @@ import {
 import { EntityGetter, EntityMeta, IdKey, OnFieldCallback, QueryRaw, QueryRawFn } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
-import { Id } from './id.js';
 import { Field } from './field.js';
 
 it('User', () => {
