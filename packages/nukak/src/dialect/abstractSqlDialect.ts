@@ -50,7 +50,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, q.$project)) ? meta.name : undefined;
+    const prefix =
+      (opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, q.$project))) ? meta.name : undefined;
     opts = { ...opts, prefix };
     const where = this.where<E>(entity, q.$filter, opts);
     const sort = this.sort<E>(entity, q.$sort, opts);
@@ -176,7 +177,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   select<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project)) ? meta.name : undefined;
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project))) ? meta.name : undefined;
 
     const fields = this.projectFields(entity, project, { prefix });
     const { fields: relationFields, tables } = this.projectRelations(entity, project);

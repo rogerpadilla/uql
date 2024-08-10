@@ -106,8 +106,8 @@ export abstract class AbstractQuerier implements Querier {
         relProject === true || relProject === undefined
           ? {}
           : Array.isArray(relProject)
-          ? { $project: relProject }
-          : relProject;
+            ? { $project: relProject }
+            : relProject;
       const ids = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {

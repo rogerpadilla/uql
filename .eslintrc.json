@@ -1,7 +1,15 @@
 {
-  "ignorePatterns": ["coverage", "data", "node_modules", "dist", "packages/**/node_modules", "packages/**/dist"],
+  "ignorePatterns": [
+    "coverage",
+    "data",
+    "node_modules",
+    "dist",
+    "config",
+    "packages/**/node_modules",
+    "packages/**/dist"
+  ],
   "env": {
-    "es2022": true,
+    "es2023": true,
     "node": true
   },
   "extends": [

@@ -23,7 +23,7 @@ describe('options', () => {
     setQuerierPool({
       getQuerier: async () => querierMock,
       end: async () => {},
-      transaction: async (callback: (querier: Querier) => {}) => {
+      transaction: async (callback: (querier: Querier) => void) => {
         return undefined;
       },
     });

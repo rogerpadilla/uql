@@ -36,12 +36,12 @@ export type FieldValue<E> = E[FieldKey<E>];
 export type IdKey<E> = E extends { [idKey]?: infer K }
   ? K & FieldKey<E>
   : E extends { _id?: unknown }
-  ? '_id' & FieldKey<E>
-  : E extends { id?: unknown }
-  ? 'id' & FieldKey<E>
-  : E extends { uuid?: unknown }
-  ? 'uuid' & FieldKey<E>
-  : FieldKey<E>;
+    ? '_id' & FieldKey<E>
+    : E extends { id?: unknown }
+      ? 'id' & FieldKey<E>
+      : E extends { uuid?: unknown }
+        ? 'uuid' & FieldKey<E>
+        : FieldKey<E>;
 
 /**
  * Infers the value of the key identifier on an entity
