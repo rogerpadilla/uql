@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "mariadb": "^3.0.2",
-    "nukak": "^1.0.0"
+    "nukak": "^0.4.7"
   },
   "dependencies": {
     "sqlstring": "^2.3.3"
