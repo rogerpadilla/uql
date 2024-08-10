@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.4.7",
+  "version": "1.0.0",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -15,9 +15,9 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "nukak": "^0.4.7",
     "sqlite": "^4.1.2",
-    "sqlite3": "^5.1.2"
+    "sqlite3": "^5.1.2",
+    "nukak": "^1.0.0"
   },
   "dependencies": {
     "sqlstring-sqlite": "^0.1.1"

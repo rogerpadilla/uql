@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "0.4.7",
+  "version": "1.0.0",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "mongodb": "^4.12.1",
-    "nukak": "^0.4.7"
+    "nukak": "^1.0.0"
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.6",
