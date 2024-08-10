@@ -22,7 +22,6 @@
   },
   "rules": {
     "complexity": ["error", 21],
-    "@typescript-eslint/ban-types": ["error", { "types": { "Symbol": false, "{}": false } }],
     "import/first": ["warn"],
     "import/no-duplicates": ["warn"],
     "import/order": [
