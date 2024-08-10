@@ -84,7 +84,7 @@ export class User extends BaseEntity {
   @Field()
   name?: string;
 
-  @Field({ update: false })
+  @Field({ updatable: false })
   email?: string;
 
   @Field({ eager: false })

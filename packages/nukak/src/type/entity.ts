@@ -70,7 +70,7 @@ export type FieldOptions = {
   readonly type?: any;
   readonly reference?: EntityGetter;
   readonly virtual?: QueryRaw;
-  readonly update?: boolean;
+  readonly updatable?: boolean;
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;

@@ -4,9 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.0.0] - 2024-08-10
+
+- Allow to set a field as non-eager (i.e. lazy) in the entities with `eager: false` (by default all fields are `eager: true`).
+- Allow to set a field as non-updatable (i.e. insertable and read-only) in the entities with `updatable: false` (by default all fields are `updatable: true`).
+
 ## [0.4.0] - 2023-11-06
 
-- move project inside query parameter [#63](https://github.com/rogerpadilla/nukak/pull/63)
+- Move project inside query parameter [#63](https://github.com/rogerpadilla/nukak/pull/63)
 
 ## [0.3.3] - 2023-10-25
 

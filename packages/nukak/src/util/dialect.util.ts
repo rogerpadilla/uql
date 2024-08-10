@@ -40,7 +40,7 @@ export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callba
   const payloads = fillOnFields(meta, payload, callbackKey);
   const persistableKeys = getKeys(payloads[0]).filter((key) => {
     const fieldOpts = meta.fields[key as FieldKey<E>];
-    return fieldOpts && (callbackKey !== 'onUpdate' || (fieldOpts.update ?? true));
+    return fieldOpts && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
   }) as FieldKey<E>[];
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
