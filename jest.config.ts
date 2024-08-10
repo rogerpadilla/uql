@@ -3,6 +3,7 @@ import type { JestConfigWithTsJest } from 'ts-jest';
 const jestConfig: JestConfigWithTsJest = {
   verbose: true,
   extensionsToTreatAsEsm: ['.ts'],
+  watchPathIgnorePatterns: ['node_modules', 'data', 'coverage'],
   moduleNameMapper: {
     '^(nukak)/(.+)\\.js$': '<rootDir>/packages/$1/src/$2',
     '^(nukak)/(.+)(?<!\\.js)$': '<rootDir>/packages/$1/src/$2',
