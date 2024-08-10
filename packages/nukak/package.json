@@ -24,17 +24,17 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "reflect-metadata": "^0.2.1",
-    "tslib": "^2.6.2"
+    "reflect-metadata": "^0.2.2",
+    "tslib": "^2.6.3"
   },
   "devDependencies": {
-    "@types/node": "^20.11.25",
+    "@types/node": "^22.2.0",
     "@types/sqlstring": "^2.3.2",
-    "@types/uuid": "^9.0.8",
+    "@types/uuid": "^10.0.0",
     "copyfiles": "^2.4.1",
-    "rimraf": "^5.0.5",
-    "typescript": "^5.4.2",
-    "uuid": "^9.0.1"
+    "rimraf": "^6.0.1",
+    "typescript": "~5.4.5",
+    "uuid": "^10.0.0"
   },
   "author": "Roger Padilla",
   "repository": {

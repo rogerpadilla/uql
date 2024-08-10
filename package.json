@@ -16,7 +16,7 @@
     "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
     "test.watch": "jest --watchAll",
     "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
-    "container": "concurrently 'npm:mongo-rs' 'docker-compose up'"
+    "container": "concurrently 'npm:mongo-rs' 'docker compose up'"
   },
   "commitlint": {
     "extends": [
@@ -24,25 +24,25 @@
     ]
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.0.3",
-    "@commitlint/config-conventional": "^19.0.3",
+    "@commitlint/cli": "^19.4.0",
+    "@commitlint/config-conventional": "^19.2.2",
     "@types/jest": "^29.5.12",
-    "@typescript-eslint/eslint-plugin": "^7.1.1",
-    "@typescript-eslint/parser": "^7.1.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.1",
+    "@typescript-eslint/parser": "^8.0.1",
     "concurrently": "^8.2.2",
     "coveralls": "^3.1.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-typescript": "3.6.1",
     "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-prettier": "^5.1.3",
+    "eslint-plugin-prettier": "^5.2.1",
     "jest": "^29.7.0",
-    "prettier": "^3.2.5",
-    "rimraf": "^5.0.5",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
     "run-rs": "^0.7.7",
-    "ts-jest": "^29.1.2",
+    "ts-jest": "^29.2.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.2"
+    "typescript": "~5.4.5"
   },
   "prettier": {
     "tabWidth": 2,
