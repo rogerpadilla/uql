@@ -2,7 +2,7 @@ import { getKeys } from '../util/index.js';
 import {
   EntityMeta,
   FieldKey,
-  QueryProject,
+  QuerySelect,
   CascadeType,
   RelationKey,
   FieldOptions,
@@ -11,8 +11,8 @@ import {
   QuerySort,
   QuerySortMap,
   QueryRawFnOptions,
-  QueryFilter,
-  QueryFilterMap,
+  QueryWhere,
+  QueryWhereMap,
   OnFieldCallback,
   MongoId,
   IdValue,
@@ -82,21 +82,21 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
   return configuration === action;
 }
 
-export function getProjectRelationKeys<E>(meta: EntityMeta<E>, project: QueryProject<E>): RelationKey<E>[] {
-  const keys = getPositiveKeys(project);
+export function getSelectRelationKeys<E>(meta: EntityMeta<E>, select: QuerySelect<E>): RelationKey<E>[] {
+  const keys = getPositiveKeys(select);
   return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
 }
 
-export function isProjectingRelations<E>(meta: EntityMeta<E>, project: QueryProject<E>): boolean {
-  const keys = getPositiveKeys(project);
+export function isSelectingRelations<E>(meta: EntityMeta<E>, select: QuerySelect<E>): boolean {
+  const keys = getPositiveKeys(select);
   return keys.some((key) => key in meta.relations);
 }
 
-function getPositiveKeys<E>(project: QueryProject<E>): Key<E>[] {
-  if (Array.isArray(project)) {
-    return project as Key<E>[];
+function getPositiveKeys<E>(select: QuerySelect<E>): Key<E>[] {
+  if (Array.isArray(select)) {
+    return select as Key<E>[];
   }
-  return getKeys(project).filter((key) => project[key]) as Key<E>[];
+  return getKeys(select).filter((key) => select[key]) as Key<E>[];
 }
 
 export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
@@ -113,32 +113,32 @@ export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
   return sort as QuerySortMap<E>;
 }
 
-export function augmentFilter<E>(
+export function augmentWhere<E>(
   meta: EntityMeta<E>,
-  target: QueryFilter<E> = {},
-  source: QueryFilter<E> = {},
-): QueryFilter<E> {
-  const targetComparison = getQueryFilterAsMap(meta, target);
-  const sourceComparison = getQueryFilterAsMap(meta, source);
+  target: QueryWhere<E> = {},
+  source: QueryWhere<E> = {},
+): QueryWhere<E> {
+  const targetComparison = getQueryWhereAsMap(meta, target);
+  const sourceComparison = getQueryWhereAsMap(meta, source);
   return {
     ...targetComparison,
     ...sourceComparison,
   };
 }
 
-export function getQueryFilterAsMap<E>(meta: EntityMeta<E>, filter: QueryFilter<E> = {}): QueryFilterMap<E> {
+export function getQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
   if (filter instanceof QueryRaw) {
-    return { $and: [filter] } as QueryFilterMap<E>;
+    return { $and: [filter] } as QueryWhereMap<E>;
   }
   if (isIdValue(filter)) {
     return {
       [meta.id]: filter,
-    } as QueryFilterMap<E>;
+    } as QueryWhereMap<E>;
   }
-  return filter as QueryFilterMap<E>;
+  return filter as QueryWhereMap<E>;
 }
 
-function isIdValue<E>(filter: QueryFilter<E>): filter is IdValue<E> | IdValue<E>[] {
+function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[] {
   const type = typeof filter;
   return (
     type === 'string' ||

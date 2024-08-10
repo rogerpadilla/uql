@@ -53,11 +53,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
 
   router.get('/:id', async (req, res, next) => {
     const q = req.query as Query<E>;
-    q.$filter ??= {};
-    if (Array.isArray(q.$filter)) {
-      q.$filter.push(req.params.id);
+    q.$where ??= {};
+    if (Array.isArray(q.$where)) {
+      q.$where.push(req.params.id);
     } else {
-      q.$filter[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = req.params.id;
     }
     const querier = await getQuerier();
     try {
@@ -117,11 +117,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
   router.patch('/:id', async (req, res, next) => {
     const payload = req.body as E;
     const q = req.query as Query<E>;
-    q.$filter ??= {};
-    if (Array.isArray(q.$filter)) {
-      q.$filter.push(req.params.id);
+    q.$where ??= {};
+    if (Array.isArray(q.$where)) {
+      q.$where.push(req.params.id);
     } else {
-      q.$filter[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = req.params.id;
     }
     const querier = await getQuerier();
     try {
@@ -139,11 +139,11 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
 
   router.delete('/:id', async (req, res, next) => {
     const q = req.query as Query<E>;
-    q.$filter ??= {};
-    if (Array.isArray(q.$filter)) {
-      q.$filter.push(req.params.id);
+    q.$where ??= {};
+    if (Array.isArray(q.$where)) {
+      q.$where.push(req.params.id);
     } else {
-      q.$filter[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = req.params.id;
     }
     const querier = await getQuerier();
     try {
@@ -171,7 +171,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
       const founds = await querier.findMany(entity, q);
       if (founds.length) {
         ids = founds.map((found) => found[meta.id]);
-        count = await querier.deleteMany(entity, { $filter: ids }, { softDelete: !!req.query.softDelete });
+        count = await querier.deleteMany(entity, { $where: ids }, { softDelete: !!req.query.softDelete });
       }
       await querier.commitTransaction();
       res.json({ data: ids, count });
@@ -207,7 +207,7 @@ type ExtraOptions = {
    */
   readonly preSave?: PreSave;
   /**
-   * Allow augment a filtering request (GET, DELETE) before it runs
+   * Allow augment a filtering request (GET, PUT, DELETE) before it runs
    */
   readonly preFilter?: PreFilter;
 };

@@ -16,7 +16,7 @@ export type QueryOptions = {
   readonly autoPrefix?: boolean;
 };
 
-export type QueryProjectOptions = {
+export type QuerySelectOptions = {
   /**
    * prefix the query with this.
    */
@@ -28,38 +28,38 @@ export type QueryProjectOptions = {
 };
 
 /**
- * query projection as an array.
+ * query selection as an array.
  */
-export type QueryProjectArray<E> = readonly (Key<E> | QueryRaw)[];
+export type QuerySelectArray<E> = readonly (Key<E> | QueryRaw)[];
 
 /**
- * query projection as a map.
+ * query selection as a map.
  */
-export type QueryProjectMap<E> = QueryProjectFieldMap<E> | QueryProjectRelationMap<E>;
+export type QuerySelectMap<E> = QuerySelectFieldMap<E> | QuerySelectRelationMap<E>;
 
 /**
- * query projection.
+ * query selection.
  */
-export type QueryProject<E> = QueryProjectArray<E> | QueryProjectMap<E>;
+export type QuerySelect<E> = QuerySelectArray<E> | QuerySelectMap<E>;
 
 /**
- * query projection of fields as a map.
+ * query selection of fields as a map.
  */
-export type QueryProjectFieldMap<E> = {
+export type QuerySelectFieldMap<E> = {
   readonly [K in FieldKey<E>]?: BooleanLike;
 };
 
 /**
- * query projection of relations as a map.
+ * query selection of relations as a map.
  */
-export type QueryProjectRelationMap<E> = {
-  readonly [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | QueryProjectRelationOptions<E[K]>;
+export type QuerySelectRelationMap<E> = {
+  readonly [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | QuerySelectRelationOptions<E[K]>;
 };
 
 /**
- * options to project a relation.
+ * options to select a relation.
  */
-export type QueryProjectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
+export type QuerySelectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
   readonly $required?: boolean;
 };
 
@@ -80,30 +80,30 @@ export type QueryTextSearchOptions<E> = {
 /**
  * comparison by fields.
  */
-export type QueryFilterFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryFilterFieldValue<E[K]> };
+export type QueryWhereFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
 
 /**
  * complex operators.
  */
-export type QueryFilterMap<E> = QueryFilterFieldMap<E> & QueryFilterRootOperator<E>;
+export type QueryWhereMap<E> = QueryWhereFieldMap<E> & QueryWhereRootOperator<E>;
 
-export type QueryFilterRootOperator<E> = {
+export type QueryWhereRootOperator<E> = {
   /**
    * joins query clauses with a logical `AND`, returns records that match all the clauses.
    */
-  readonly $and?: QueryFilterArray<E>;
+  readonly $and?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that match any of the clauses.
    */
-  readonly $or?: QueryFilterArray<E>;
+  readonly $or?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
    */
-  readonly $not?: QueryFilterArray<E>;
+  readonly $not?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
    */
-  readonly $nor?: QueryFilterArray<E>;
+  readonly $nor?: QueryWhereArray<E>;
   /**
    * whether the specified fields match against a full-text search of the given string.
    */
@@ -118,7 +118,7 @@ export type QueryFilterRootOperator<E> = {
   readonly $nexists?: QueryRaw;
 };
 
-export type QueryFilterFieldOperatorMap<T> = {
+export type QueryWhereFieldOperatorMap<T> = {
   /**
    * whether a value is equal to the given value.
    */
@@ -130,7 +130,7 @@ export type QueryFilterFieldOperatorMap<T> = {
   /**
    * negates the given comparison.
    */
-  readonly $not?: QueryFilterFieldValue<T>;
+  readonly $not?: QueryWhereFieldValue<T>;
   /**
    * whether a value is less than the given value.
    */
@@ -196,22 +196,22 @@ export type QueryFilterFieldOperatorMap<T> = {
 /**
  * Value for a field comparison.
  */
-export type QueryFilterFieldValue<T> = T | readonly T[] | QueryFilterFieldOperatorMap<T> | QueryRaw;
+export type QueryWhereFieldValue<T> = T | readonly T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
 
 /**
  * query single filter.
  */
-export type QueryFilterSingle<E> = IdValue<E> | readonly IdValue<E>[] | QueryFilterMap<E> | QueryRaw;
+export type QueryWhereSingle<E> = IdValue<E> | readonly IdValue<E>[] | QueryWhereMap<E> | QueryRaw;
 
 /**
  * query filter array.
  */
-export type QueryFilterArray<E> = readonly QueryFilterSingle<E>[];
+export type QueryWhereArray<E> = readonly QueryWhereSingle<E>[];
 
 /**
  * query filter.
  */
-export type QueryFilter<E> = QueryFilterSingle<E> | QueryFilterArray<E>;
+export type QueryWhere<E> = QueryWhereSingle<E> | QueryWhereArray<E>;
 
 /**
  * direction for the sort.
@@ -274,7 +274,7 @@ export type QuerySearch<E> = {
   /**
    * filtering options.
    */
-  $filter?: QueryFilter<E>;
+  $where?: QueryWhere<E>;
 
   /**
    * sorting options.
@@ -292,9 +292,9 @@ export type QuerySearchOne<E> = Omit<QuerySearch<E>, '$limit'>;
  */
 export type Query<E> = {
   /**
-   * projection options.
+   * selection options.
    */
-  $project?: QueryProject<E>;
+  $select?: QuerySelect<E>;
 } & QuerySearch<E>;
 
 /**
@@ -305,7 +305,7 @@ export type QueryOne<E> = Omit<Query<E>, '$limit'>;
 /**
  * options to get an unique record.
  */
-export type QueryUnique<E> = Pick<QueryOne<E>, '$project' | '$filter'>;
+export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$where'>;
 
 /**
  * stringified query.
@@ -371,7 +371,7 @@ export type QueryComparisonOptions = QueryOptions & {
 /**
  * query filter options.
  */
-export type QueryFilterOptions = QueryComparisonOptions & {
+export type QueryWhereOptions = QueryComparisonOptions & {
   /**
    * clause to be used in the filter.
    */

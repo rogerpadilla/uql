@@ -1,12 +1,12 @@
 import { Document, Filter, ObjectId, Sort } from 'mongodb';
-import { getKeys, hasKeys, buildSortMap, getProjectRelationKeys, getQueryFilterAsMap } from 'nukak/util';
+import { getKeys, hasKeys, buildSortMap, getSelectRelationKeys, getQueryWhereAsMap } from 'nukak/util';
 import { getMeta } from 'nukak/entity';
 import type {
-  QueryFilter,
+  QueryWhere,
   EntityMeta,
   Type,
-  QueryProject,
-  QueryProjectMap,
+  QuerySelect,
+  QuerySelectMap,
   QueryOptions,
   QuerySort,
   FieldValue,
@@ -15,23 +15,19 @@ import type {
 } from 'nukak/type';
 
 export class MongoDialect {
-  filter<E extends Document>(
-    entity: Type<E>,
-    filter: QueryFilter<E> = {},
-    { softDelete }: QueryOptions = {},
-  ): Filter<E> {
+  where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
 
-    filter = getQueryFilterAsMap(meta, filter);
+    where = getQueryWhereAsMap(meta, where);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !filter[meta.softDelete as string]) {
-      filter[meta.softDelete as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
+      where[meta.softDelete as string] = null;
     }
 
-    return getKeys(filter).reduce((acc, key) => {
-      let value = filter[key];
+    return getKeys(where).reduce((acc, key) => {
+      let value = where[key];
       if (key === '$and' || key === '$or') {
-        acc[key] = value.map((filterIt: QueryFilter<E>) => this.filter(entity, filterIt));
+        acc[key] = value.map((filterIt: QueryWhere<E>) => this.where(entity, filterIt));
       } else {
         if (key === '_id' || key === meta.id) {
           key = '_id';
@@ -47,14 +43,14 @@ export class MongoDialect {
     }, {} as Filter<E>);
   }
 
-  project<E extends Document>(entity: Type<E>, project: QueryProject<E>): QueryProjectMap<E> {
-    if (Array.isArray(project)) {
-      return project.reduce((acc, it) => {
+  select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
+    if (Array.isArray(select)) {
+      return select.reduce((acc, it) => {
         acc[it as string] = true;
         return acc;
-      }, {} satisfies QueryProjectMap<E>);
+      }, {} satisfies QuerySelectMap<E>);
     }
-    return project as QueryProjectMap<E>;
+    return select as QuerySelectMap<E>;
   }
 
   sort<E extends Document>(entity: Type<E>, sort: QuerySort<E>): Sort {
@@ -64,12 +60,12 @@ export class MongoDialect {
   aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
 
-    const filter = this.filter(entity, q.$filter);
+    const where = this.where(entity, q.$where);
     const sort = this.sort(entity, q.$sort);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
-    if (hasKeys(filter)) {
-      firstPipelineEntry.$match = filter;
+    if (hasKeys(where)) {
+      firstPipelineEntry.$match = where;
     }
     if (hasKeys(sort)) {
       firstPipelineEntry.$sort = sort;
@@ -81,7 +77,7 @@ export class MongoDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relations = getProjectRelationKeys(meta, q.$project);
+    const relations = getSelectRelationKeys(meta, q.$select);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];
@@ -105,10 +101,10 @@ export class MongoDialect {
         });
       } else {
         const foreignField = relOpts.references[0].foreign;
-        const referenceFilter = this.filter(relEntity, filter);
+        const referenceWhere = this.where(relEntity, where);
         const referenceSort = this.sort(relEntity, q.$sort);
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
-          $match: { [foreignField]: referenceFilter._id },
+          $match: { [foreignField]: referenceWhere._id },
         };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;

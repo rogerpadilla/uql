@@ -1,38 +1,38 @@
 import {
-  QueryFilter,
+  QueryWhere,
   Scalar,
-  QueryFilterFieldOperatorMap,
+  QueryWhereFieldOperatorMap,
   QuerySort,
   QueryPager,
   QueryTextSearchOptions,
   FieldKey,
-  QueryProject,
+  QuerySelect,
   Type,
-  QueryProjectArray,
+  QuerySelectArray,
   QueryOptions,
   QueryDialect,
-  QueryFilterOptions,
+  QueryWhereOptions,
   QueryComparisonOptions,
-  QueryFilterMap,
-  QueryProjectOptions,
+  QueryWhereMap,
+  QuerySelectOptions,
   QuerySortDirection,
-  QueryFilterArray,
+  QueryWhereArray,
   QueryRaw,
   QuerySearch,
   Query,
 } from '../type/index.js';
 import {
   getPersistable,
-  getProjectRelationKeys,
+  getSelectRelationKeys,
   getPersistables,
-  isProjectingRelations,
+  isSelectingRelations,
   getKeys,
   hasKeys,
   buildSortMap,
   flatObject,
   getRawValue,
   raw,
-  getQueryFilterAsMap,
+  getQueryWhereAsMap,
   getFieldCallbackValue,
   getFieldKeys,
 } from '../util/index.js';
@@ -51,40 +51,39 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const prefix =
-      (opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, q.$project))) ? meta.name : undefined;
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? meta.name : undefined;
     opts = { ...opts, prefix };
-    const where = this.where<E>(entity, q.$filter, opts);
+    const where = this.where<E>(entity, q.$where, opts);
     const sort = this.sort<E>(entity, q.$sort, opts);
     const pager = this.pager(q);
     return where + sort + pager;
   }
 
-  projectFields<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryProjectOptions): string {
+  selectFields<E>(entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
 
-    let projectArr: QueryProjectArray<E>;
+    let selectArr: QuerySelectArray<E>;
 
-    if (project) {
-      if (Array.isArray(project)) {
-        projectArr = project;
+    if (select) {
+      if (Array.isArray(select)) {
+        selectArr = select;
       } else {
-        const projectPositive = getKeys(project).filter((it) => project[it]) as FieldKey<E>[];
-        projectArr = projectPositive.length
-          ? projectPositive
-          : (getFieldKeys(meta.fields).filter((it) => !(it in project)) as FieldKey<E>[]);
+        const selectPositive = getKeys(select).filter((it) => select[it]) as FieldKey<E>[];
+        selectArr = selectPositive.length
+          ? selectPositive
+          : (getFieldKeys(meta.fields).filter((it) => !(it in select)) as FieldKey<E>[]);
       }
-      projectArr = projectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
-      if (opts.prefix && !projectArr.includes(meta.id)) {
-        projectArr = [meta.id, ...projectArr];
+      selectArr = selectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
+      if (opts.prefix && !selectArr.includes(meta.id)) {
+        selectArr = [meta.id, ...selectArr];
       }
     } else {
-      projectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
+      selectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
     }
 
-    return projectArr
+    return selectArr
       .map((key) => {
         if (key instanceof QueryRaw) {
           return getRawValue({
@@ -117,14 +116,14 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       .join(', ');
   }
 
-  projectRelations<E>(
+  selectRelations<E>(
     entity: Type<E>,
-    project: QueryProject<E> = {},
+    select: QuerySelect<E> = {},
     { prefix }: { prefix?: string } = {},
   ): { fields: string; tables: string } {
     const meta = getMeta(entity);
-    const relations = getProjectRelationKeys(meta, project);
-    const isProjectArray = Array.isArray(project);
+    const relations = getSelectRelationKeys(meta, select);
+    const isSelectArray = Array.isArray(select);
     let fields = '';
     let tables = '';
 
@@ -138,17 +137,17 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
       const joinRelAlias = prefix ? prefix + '.' + key : key;
       const relEntity = relOpts.entity();
-      const relProject = project[key as string];
-      const relQuery = isProjectArray ? {} : Array.isArray(relProject) ? { $project: relProject } : relProject;
+      const relSelect = select[key as string];
+      const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
-      const relColumns = this.projectFields(relEntity, relQuery.$project, {
+      const relColumns = this.selectFields(relEntity, relQuery.$select, {
         prefix: joinRelAlias,
         autoPrefixAlias: true,
       });
 
       fields += ', ' + relColumns;
 
-      const { fields: subColumns, tables: subTables } = this.projectRelations(relEntity, relQuery.$project, {
+      const { fields: subColumns, tables: subTables } = this.selectRelations(relEntity, relQuery.$select, {
         prefix: joinRelAlias,
       });
 
@@ -165,9 +164,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         .map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`)
         .join(' AND ');
 
-      if (relQuery.$filter) {
-        const filter = this.where(relEntity, relQuery.$filter, { prefix: key, clause: false });
-        tables += ` AND ${filter}`;
+      if (relQuery.$where) {
+        const where = this.where(relEntity, relQuery.$where, { prefix: key, clause: false });
+        tables += ` AND ${where}`;
       }
 
       tables += subTables;
@@ -176,27 +175,27 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return { fields, tables };
   }
 
-  select<E>(entity: Type<E>, project: QueryProject<E>, opts: QueryOptions = {}): string {
+  select<E>(entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isProjectingRelations(meta, project))) ? meta.name : undefined;
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? meta.name : undefined;
 
-    const fields = this.projectFields(entity, project, { prefix });
-    const { fields: relationFields, tables } = this.projectRelations(entity, project);
+    const fields = this.selectFields(entity, select, { prefix });
+    const { fields: relationFields, tables } = this.selectRelations(entity, select);
 
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, filter: QueryFilter<E> = {}, opts: QueryFilterOptions): string {
+  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    filter = getQueryFilterAsMap(meta, filter);
+    where = getQueryWhereAsMap(meta, where);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !filter[meta.softDelete as string]) {
-      filter[meta.softDelete as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
+      where[meta.softDelete as string] = null;
     }
 
-    const entries = Object.entries(filter);
+    const entries = Object.entries(where);
 
     if (!entries.length) {
       return '';
@@ -205,7 +204,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const options = { ...opts, usePrecedence: entries.length > 1 };
 
     let sql = entries
-      .map(([key, val]) => this.compare(entity, key as keyof QueryFilterMap<E>, val as any, options))
+      .map(([key, val]) => this.compare(entity, key as keyof QueryWhereMap<E>, val as any, options))
       .join(` AND `);
 
     if (usePrecedence) {
@@ -215,10 +214,10 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return clause ? ` ${clause} ${sql}` : sql;
   }
 
-  compare<E, K extends keyof QueryFilterMap<E>>(
+  compare<E, K extends keyof QueryWhereMap<E>>(
     entity: Type<E>,
     key: K,
-    val: QueryFilterMap<E>[K],
+    val: QueryWhereMap<E>[K],
     opts: QueryComparisonOptions = {},
   ): string {
     const meta = getMeta(entity);
@@ -253,21 +252,21 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
       const negate = key in negateOperatorMap ? 'NOT ' : '';
 
-      const values = val as QueryFilterArray<E>;
+      const values = val as QueryWhereArray<E>;
       const hasManyItems = values.length > 1;
       const logicalComparison = values
-        .map((filterEntry) => {
-          if (filterEntry instanceof QueryRaw) {
+        .map((whereEntry) => {
+          if (whereEntry instanceof QueryRaw) {
             return getRawValue({
-              value: filterEntry,
+              value: whereEntry,
               dialect: this,
               prefix: opts.prefix,
               escapedPrefix: this.escapeId(opts.prefix, true, true),
             });
           }
-          return this.where(entity, filterEntry, {
+          return this.where(entity, whereEntry, {
             prefix: opts.prefix,
-            usePrecedence: hasManyItems && !Array.isArray(filterEntry) && getKeys(filterEntry).length > 1,
+            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
             clause: false,
           });
         })
@@ -279,7 +278,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
-    const operators = getKeys(value) as (keyof QueryFilterFieldOperatorMap<E>)[];
+    const operators = getKeys(value) as (keyof QueryWhereFieldOperatorMap<E>)[];
     const comparisons = operators
       .map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts))
       .join(' AND ');
@@ -287,11 +286,11 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return operators.length > 1 ? `(${comparisons})` : comparisons;
   }
 
-  compareFieldOperator<E, K extends keyof QueryFilterFieldOperatorMap<E>>(
+  compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
     entity: Type<E>,
     key: FieldKey<E>,
     op: K,
-    val: QueryFilterFieldOperatorMap<E>[K],
+    val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
@@ -388,14 +387,13 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       ...q,
     };
     delete search.$sort;
-    const project = [raw('COUNT(*)', 'count')] satisfies QueryProject<E>;
-    const select = this.select<E>(entity, project);
+    const select = this.select<E>(entity, [raw('COUNT(*)', 'count')]);
     const criteria = this.search(entity, search, opts);
     return select + criteria;
   }
 
   find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): string {
-    const select = this.select(entity, q.$project, opts);
+    const select = this.select(entity, q.$select, opts);
     const criteria = this.search(entity, q, opts);
     return select + criteria;
   }

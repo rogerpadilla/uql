@@ -1,6 +1,6 @@
 import sqlstring from 'sqlstring-sqlite';
 import { getMeta } from 'nukak/entity';
-import { QueryFilterMap, QueryTextSearchOptions, Type, QueryComparisonOptions, Scalar } from 'nukak/type';
+import { QueryWhereMap, QueryTextSearchOptions, Type, QueryComparisonOptions, Scalar } from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
 
 export class SqliteDialect extends AbstractSqlDialect {
@@ -8,10 +8,10 @@ export class SqliteDialect extends AbstractSqlDialect {
     super('`', 'BEGIN TRANSACTION');
   }
 
-  override compare<E, K extends keyof QueryFilterMap<E>>(
+  override compare<E, K extends keyof QueryWhereMap<E>>(
     entity: Type<E>,
     key: K,
-    val: QueryFilterMap<E>[K],
+    val: QueryWhereMap<E>[K],
     opts?: QueryComparisonOptions,
   ): string {
     if (key === '$text') {

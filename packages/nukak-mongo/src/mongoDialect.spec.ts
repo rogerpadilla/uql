@@ -10,19 +10,19 @@ class MongoDialectSpec implements Spec {
     this.dialect = new MongoDialect();
   }
 
-  shouldBuildFilter() {
-    expect(this.dialect.filter(Item, undefined)).toEqual({});
+  shouldBuildWhere() {
+    expect(this.dialect.where(Item, undefined)).toEqual({});
 
-    expect(this.dialect.filter(Item, {})).toEqual({});
+    expect(this.dialect.where(Item, {})).toEqual({});
 
-    expect(this.dialect.filter(Item, { code: '123' })).toEqual({ code: '123' });
+    expect(this.dialect.where(Item, { code: '123' })).toEqual({ code: '123' });
 
-    expect(this.dialect.filter(Item, { $and: [{ code: '123', name: 'abc' }] })).toEqual({
+    expect(this.dialect.where(Item, { $and: [{ code: '123', name: 'abc' }] })).toEqual({
       $and: [{ code: '123', name: 'abc' }],
     });
 
     expect(
-      this.dialect.filter(TaxCategory, {
+      this.dialect.where(TaxCategory, {
         creatorId: 1,
         $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
         pk: '507f191e810c19729de860ea',
@@ -33,34 +33,34 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(Item, '507f191e810c19729de860ea' as any)).toEqual({
+    expect(this.dialect.where(Item, '507f191e810c19729de860ea' as any)).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
+    expect(this.dialect.where(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    expect(this.dialect.where(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(TaxCategory, '507f191e810c19729de860ea')).toEqual({
+    expect(this.dialect.where(TaxCategory, '507f191e810c19729de860ea')).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(TaxCategory, { pk: '507f191e810c19729de860ea' })).toEqual({
+    expect(this.dialect.where(TaxCategory, { pk: '507f191e810c19729de860ea' })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.filter(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    expect(this.dialect.where(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
   }
 
-  shouldProject() {
-    expect(this.dialect.project(Tax, { name: true })).toEqual({ name: true });
-    expect(this.dialect.project(Tax, ['id', 'name'])).toEqual({ id: true, name: true });
+  shouldSelect() {
+    expect(this.dialect.select(Tax, { name: true })).toEqual({ name: true });
+    expect(this.dialect.select(Tax, ['id', 'name'])).toEqual({ id: true, name: true });
   }
 
   shouldBuildSort() {
@@ -101,18 +101,18 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregationPipeline() {
     expect(this.dialect.aggregationPipeline(Item, {})).toEqual([]);
 
-    expect(this.dialect.aggregationPipeline(Item, { $filter: {} })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(Item, { $where: {} })).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, {})).toEqual([]);
 
     expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
-    expect(this.dialect.aggregationPipeline(User, { $project: { users: true } })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(User, { $select: { users: true } })).toEqual([]);
 
     expect(
       this.dialect.aggregationPipeline(TaxCategory, {
-        $project: { creator: true },
-        $filter: { pk: '507f1f77bcf86cd799439011' },
+        $select: { creator: true },
+        $where: { pk: '507f1f77bcf86cd799439011' },
         $sort: { creatorId: -1 },
       }),
     ).toEqual([
@@ -142,8 +142,8 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(Item, {
-        $project: { measureUnit: true, tax: true },
-        $filter: { code: '123' },
+        $select: { measureUnit: true, tax: true },
+        $where: { code: '123' },
       }),
     ).toEqual([
       {
@@ -177,8 +177,8 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(User, {
-        $project: { profile: true },
-        $filter: '65496146f8f7899f63768df1' as any,
+        $select: { profile: true },
+        $where: '65496146f8f7899f63768df1' as any,
         $limit: 1,
       }),
     ).toEqual([
@@ -210,8 +210,8 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(User, {
-        $project: { profile: true },
-        $filter: { id: '65496146f8f7899f63768df1' as any },
+        $select: { profile: true },
+        $where: { id: '65496146f8f7899f63768df1' as any },
         $limit: 1,
       }),
     ).toEqual([

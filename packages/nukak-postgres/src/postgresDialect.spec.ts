@@ -66,8 +66,8 @@ class PostgresDialectSpec {
   shouldFind$istartsWith() {
     expect(
       this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $istartsWith: 'Some' } },
+        $select: ['id'],
+        $where: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -76,8 +76,8 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $istartsWith: 'Some', $ne: 'Something' } },
+        $select: { id: true },
+        $where: { name: { $istartsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -90,8 +90,8 @@ class PostgresDialectSpec {
   shouldFind$iendsWith() {
     expect(
       this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $iendsWith: 'Some' } },
+        $select: ['id'],
+        $where: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -100,8 +100,8 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $iendsWith: 'Some', $ne: 'Something' } },
+        $select: { id: true },
+        $where: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -114,8 +114,8 @@ class PostgresDialectSpec {
   shouldFind$iincludes() {
     expect(
       this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $iincludes: 'Some' } },
+        $select: ['id'],
+        $where: { name: { $iincludes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -124,8 +124,8 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $iincludes: 'Some', $ne: 'Something' } },
+        $select: { id: true },
+        $where: { name: { $iincludes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -138,8 +138,8 @@ class PostgresDialectSpec {
   shouldFind$ilike() {
     expect(
       this.dialect.find(User, {
-        $project: ['id'],
-        $filter: { name: { $ilike: 'Some' } },
+        $select: ['id'],
+        $where: { name: { $ilike: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -148,8 +148,8 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $ilike: 'Some', $ne: 'Something' } },
+        $select: { id: true },
+        $where: { name: { $ilike: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
@@ -162,8 +162,8 @@ class PostgresDialectSpec {
   shouldFind$regex() {
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: { name: { $regex: '^some' } },
+        $select: { id: true },
+        $where: { name: { $regex: '^some' } },
       }),
     ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
   }
@@ -171,8 +171,8 @@ class PostgresDialectSpec {
   shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: { id: true },
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
+        $select: { id: true },
+        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
         $limit: 30,
       }),
     ).toBe(
@@ -181,8 +181,8 @@ class PostgresDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: true },
-        $filter: {
+        $select: { id: true },
+        $where: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
           creatorId: 1,

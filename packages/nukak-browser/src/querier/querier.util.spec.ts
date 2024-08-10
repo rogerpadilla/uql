@@ -10,7 +10,7 @@ it('stringifyQuery -- empty', () => {
 });
 
 it('stringifyQueryParameter', () => {
-  expect(stringifyQueryParameter('project', undefined)).toBe('project=undefined');
+  expect(stringifyQueryParameter('select', undefined)).toBe('select=undefined');
   expect(stringifyQueryParameter('limit', 10, true)).toBe('?limit=10');
   expect(stringifyQueryParameter('limit', 10)).toBe('limit=10');
   expect(stringifyQueryParameter('limit', null, true)).toBe('?limit=null');
@@ -22,13 +22,13 @@ it('stringifyQuery', () => {
   expect(stringifyQuery({})).toBe('');
   expect(stringifyQuery({ $sort: undefined })).toBe('');
   const source: Query<Item> = {
-    $project: { id: 1, name: 1, tax: true, measureUnit: { $project: { id: 1, name: 1, categoryId: 1 } } },
-    $filter: { name: 'Batman', companyId: 38 },
+    $select: { id: 1, name: 1, tax: true, measureUnit: { $select: { id: 1, name: 1, categoryId: 1 } } },
+    $where: { name: 'Batman', companyId: 38 },
     $sort: { companyId: 1, name: -1 },
     $limit: 5,
   };
   const result = stringifyQuery(source);
   const expected =
-    '?$project={"id":1,"name":1,"tax":true,"measureUnit":{"$project":{"id":1,"name":1,"categoryId":1}}}&$filter={"name":"Batman","companyId":38}&$sort={"companyId":1,"name":-1}&$limit=5';
+    '?$select={"id":1,"name":1,"tax":true,"measureUnit":{"$select":{"id":1,"name":1,"categoryId":1}}}&$where={"name":"Batman","companyId":38}&$sort={"companyId":1,"name":-1}&$limit=5';
   expect(result).toBe(expected);
 });

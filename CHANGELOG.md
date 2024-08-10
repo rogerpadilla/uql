@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.0.1] - 2024-08-10
+
+- Rename `$project` operator to `$select` for consistency with most established frameworks so far.
+- Rename `$filter` operator to `$where` for consistency with most established frameworks so far.
+
 ## [1.0.0] - 2024-08-10
 
 - Allow to set a field as non-eager (i.e. lazy) in the entities with `eager: false` (by default all fields are `eager: true`).

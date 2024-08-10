@@ -1,8 +1,8 @@
 import {
   QueryComparisonOptions,
-  QueryFilterMap,
+  QueryWhereMap,
   QueryOptions,
-  QueryFilterFieldOperatorMap,
+  QueryWhereFieldOperatorMap,
   QueryTextSearchOptions,
   Type,
   FieldKey,
@@ -24,10 +24,10 @@ export class PostgresDialect extends AbstractSqlDialect {
     return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  override compare<E, K extends keyof QueryFilterMap<E>>(
+  override compare<E, K extends keyof QueryWhereMap<E>>(
     entity: Type<E>,
     key: K,
-    val: QueryFilterMap<E>[K],
+    val: QueryWhereMap<E>[K],
     opts: QueryComparisonOptions = {},
   ): string {
     if (key === '$text') {
@@ -41,11 +41,11 @@ export class PostgresDialect extends AbstractSqlDialect {
     return super.compare(entity, key, val, opts);
   }
 
-  override compareFieldOperator<E, K extends keyof QueryFilterFieldOperatorMap<E>>(
+  override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
     entity: Type<E>,
     key: FieldKey<E>,
     op: K,
-    val: QueryFilterFieldOperatorMap<E>[K],
+    val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
   ): string {
     const comparisonKey = this.getComparisonKey(entity, key, opts);

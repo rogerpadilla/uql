@@ -12,8 +12,8 @@
 
 ```ts
 const companyUsers = await userRepository.findMany({
-  $project: { email: true, profile: ['picture'] },
-  $filter: { email: { $endsWith: '@domain.com' } },
+  $select: { email: true, profile: ['picture'] },
+  $where: { email: { $endsWith: '@domain.com' } },
   $sort: { createdAt: 'desc' },
   $limit: 100,
 });
@@ -154,7 +154,7 @@ import { User } from './shared/models/index.js';
 async function findLastUsers(limit = 100) {
   const querier = await getQuerier();
   const users = await querier.findMany(User, {
-    $project: { id: true, name: true, email: true },
+    $select: { id: true, name: true, email: true },
     $sort: { createdAt: 'desc' },
     $limit: limit,
   });

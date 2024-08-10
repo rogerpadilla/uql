@@ -5,10 +5,10 @@ export function parseQuery(req: Request) {
   req.query ??= {};
   const qmsSrc: QueryStringified = req.query;
   const qm = qmsSrc as unknown as Query<any>;
-  if (qmsSrc.$project) {
-    qm.$project = JSON.parse(qmsSrc.$project);
+  if (qmsSrc.$select) {
+    qm.$select = JSON.parse(qmsSrc.$select);
   }
-  qm.$filter = qmsSrc.$filter ? JSON.parse(qmsSrc.$filter) : {};
+  qm.$where = qmsSrc.$where ? JSON.parse(qmsSrc.$where) : {};
   if (qmsSrc.$sort) {
     qm.$sort = JSON.parse(qmsSrc.$sort);
   }

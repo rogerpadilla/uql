@@ -14,8 +14,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   override shouldFind$text() {
     expect(
       this.dialect.find(Item, {
-        $project: { id: true },
-        $filter: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
+        $select: { id: true },
+        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
         $limit: 30,
       }),
     ).toBe(
@@ -24,8 +24,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
     expect(
       this.dialect.find(User, {
-        $project: { id: 1 },
-        $filter: {
+        $select: { id: 1 },
+        $where: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
           companyId: 1,

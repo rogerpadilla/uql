@@ -28,7 +28,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     const query = this.dialect.find(entity, q);
     const res = await this.all<E>(query);
     const founds = unflatObjects(res);
-    await this.fillToManyRelations(entity, founds, q.$project);
+    await this.fillToManyRelations(entity, founds, q.$select);
     return founds;
   }
 
@@ -61,14 +61,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
 
   override async deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    // TODO: project ID should be automatic unless specified to be ommited
-    const findQuery = await this.dialect.find(entity, { ...q, $project: [meta.id] });
+    // TODO: select ID should be automatic unless specified to be ommited
+    const findQuery = await this.dialect.find(entity, { ...q, $select: [meta.id] });
     const founds = await this.all<E>(findQuery);
     if (!founds.length) {
       return 0;
     }
     const ids = founds.map((it) => it[meta.id]);
-    const query = this.dialect.delete(entity, { $filter: ids }, opts);
+    const query = this.dialect.delete(entity, { $where: ids }, opts);
     const { changes } = await this.run(query);
     await this.deleteRelations(entity, ids, opts);
     return changes;

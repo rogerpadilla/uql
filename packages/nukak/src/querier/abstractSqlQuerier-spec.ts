@@ -43,13 +43,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldFindOne() {
-    await this.querier.findOne(User, { $project: ['id', 'name'], $filter: { companyId: 123 } });
+    await this.querier.findOne(User, { $select: ['id', 'name'], $where: { companyId: 123 } });
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id`, `name` FROM `User` WHERE `companyId` = 123 LIMIT 1');
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
 
-  async shouldFindOneAndProjectOneToMany() {
+  async shouldFindOneAndSelectOneToMany() {
     await this.querier.insertOne(InventoryAdjustment, {
       id: 123,
       description: 'something a',
@@ -59,8 +59,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenNthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (123, 'something a', 1)");
 
     await this.querier.findOne(InventoryAdjustment, {
-      $project: ['id', 'description', 'itemAdjustments'],
-      $filter: { id: 123 },
+      $select: ['id', 'description', 'itemAdjustments'],
+      $where: { id: 123 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -79,8 +79,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldVirtualField() {
     await this.querier.findMany(Item, {
-      $project: {id: 1},
-      $filter: {
+      $select: {id: 1},
+      $where: {
         tagsCount: { $gte: 10 },
       },
     });
@@ -94,13 +94,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     jest.clearAllMocks();
 
     await this.querier.findMany(Item, {
-      $project: {
+      $select: {
         id: 1,
         name: 1,
         code: 1,
         tagsCount: 1,
         measureUnit: {
-          $project: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+          $select: { id: 1, name: 1, categoryId: 1, category: ['name'] },
         },
       },
       $limit: 100,
@@ -121,7 +121,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     jest.clearAllMocks();
 
-    await this.querier.findMany(Tag, {$project: {
+    await this.querier.findMany(Tag, {$select: {
       id: 1,
       itemsCount: 1,
     } }   );
@@ -136,16 +136,16 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFind$exists() {
     await this.querier.findMany(Item, {
-      $project: {
+      $select: {
         id: 1,
       },
-      $filter: {
+      $where: {
         $exists: raw(({ escapedPrefix, dialect }) =>
           dialect.find(
             User,
             {
-              $project: ['id'],
-              $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
+              $select: ['id'],
+              $where: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
             { autoPrefix: true }
           )
@@ -163,14 +163,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFind$nexists() {
     await this.querier.findMany(Item, {
-      $project: { id: 1},
-      $filter: {
+      $select: { id: 1},
+      $where: {
         $nexists: raw(({ escapedPrefix, dialect }) =>
           dialect.find(
             User,
             {
-              $project: ['id'],
-              $filter: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
+              $select: ['id'],
+              $where: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
             },
             { autoPrefix: true }
           )
@@ -186,7 +186,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
 
-  async shouldFindOneAndProjectOneToManyOnly() {
+  async shouldFindOneAndSelectOneToManyOnly() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
         id: 123,
@@ -198,8 +198,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (123, 1), (456, 1)');
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] },
-      $filter: { createdAt: 1 },
+      $select: { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] },
+      $where: { createdAt: 1 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -216,7 +216,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
-  async shouldFindOneAndProjectOneToManyWithSpecifiedFields() {
+  async shouldFindOneAndSelectOneToManyWithSpecifiedFields() {
     await this.querier.insertMany(InventoryAdjustment, [
       {
         description: 'something a',
@@ -251,8 +251,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { id: true, itemAdjustments: ['buyPrice'] },
-      $filter: { createdAt: 1 },
+      $select: { id: true, itemAdjustments: ['buyPrice'] },
+      $where: { createdAt: 1 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -268,7 +268,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(4);
   }
 
-  async shouldFindManyAndProjectOneToMany() {
+  async shouldFindManyAndSelectOneToMany() {
     await this.querier.insertMany(InventoryAdjustment, [
       { id: 123, description: 'something a', createdAt: 1 },
       { id: 456, description: 'something b', createdAt: 1 },
@@ -280,8 +280,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $project: { id: true, itemAdjustments: true },
-      $filter: { createdAt: 1 },
+      $select: { id: true, itemAdjustments: true },
+      $where: { createdAt: 1 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -298,13 +298,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
-  async shouldFindOneAndProjectManyToMany() {
+  async shouldFindOneAndSelectManyToMany() {
     await this.querier.insertOne(Item, { id: 123, createdAt: 1 });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOne(Item, {
-      $project: { id: true, createdAt: true, tags: ['id'] },
+      $select: { id: true, createdAt: true, tags: ['id'] },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` LIMIT 1');
@@ -319,13 +319,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
-  async shouldFindOneByIdAndProjectManyToMany() {
+  async shouldFindOneByIdAndSelectManyToMany() {
     await this.querier.insertOne(Item, { id: 123, createdAt: 1 });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `Item` (`id`, `createdAt`) VALUES (123, 1)');
 
     await this.querier.findOneById(Item, 123, {
-      $project: {id: 1, createdAt: 1, tags: ['id']},
+      $select: {id: 1, createdAt: 1, tags: ['id']},
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` WHERE `Item`.`id` = 123 LIMIT 1');
@@ -342,8 +342,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFindManyAndCount() {
     await this.querier.findManyAndCount(User, {
-      $project: { id: true, name: true },
-      $filter: { companyId: 123 },
+      $select: { id: true, name: true },
+      $where: { companyId: 123 },
       $sort: { createdAt: -1 },
       $skip: 50,
       $limit: 100,
@@ -412,7 +412,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateMany() {
-    await this.querier.updateMany(User, { $filter: { companyId: 4 } }, { name: 'Hola', updatedAt: 1 });
+    await this.querier.updateMany(User, { $where: { companyId: 4 } }, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.run).toHaveBeenNthCalledWith(1, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `companyId` = 4");
     expect(this.querier.all).toHaveBeenCalledTimes(0);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
@@ -516,7 +516,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.updateMany(
       InventoryAdjustment,
-      { $filter: { companyId: 1 } },
+      { $where: { companyId: 1 } },
       {
         description: 'some description',
         updatedAt: 1,
@@ -661,7 +661,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (123)');
 
-    await this.querier.deleteMany(User, { $filter: { createdAt: 123 } });
+    await this.querier.deleteMany(User, { $where: { createdAt: 123 } });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = 123');
     expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `pk` FROM `user_profile`');
@@ -672,7 +672,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldCount() {
-    await this.querier.count(User, { $filter: { companyId: 123 } });
+    await this.querier.count(User, { $where: { companyId: 123 } });
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = 123');
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);

@@ -3,7 +3,7 @@ import type {
   Querier,
   Query,
   QueryOptions,
-  QueryProject,
+  QuerySelect,
   QuerySearch,
   RelationKey,
   RelationValue,
@@ -12,13 +12,13 @@ import type {
   QueryOne,
 } from '../type/index.js';
 import { getMeta } from '../entity/decorator/index.js';
-import { clone, getKeys, getProjectRelationKeys, getPersistableRelations, augmentFilter } from '../util/index.js';
+import { clone, getKeys, getSelectRelationKeys, getPersistableRelations, augmentWhere } from '../util/index.js';
 import { GenericRepository } from '../repository/index.js';
 
 export abstract class AbstractQuerier implements Querier {
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q: QueryOne<E> = {}) {
     const meta = getMeta(entity);
-    q.$filter = augmentFilter(meta, q.$filter, id);
+    q.$where = augmentWhere(meta, q.$where, id);
     return this.findOne(entity, q);
   }
 
@@ -49,13 +49,13 @@ export abstract class AbstractQuerier implements Querier {
   abstract insertMany<E>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E) {
-    return this.updateMany(entity, { $filter: id }, payload);
+    return this.updateMany(entity, { $where: id }, payload);
   }
 
   abstract updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
 
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
-    return this.deleteMany(entity, { $filter: id }, opts);
+    return this.deleteMany(entity, { $where: id }, opts);
   }
 
   abstract deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
@@ -94,20 +94,20 @@ export abstract class AbstractQuerier implements Querier {
     ]);
   }
 
-  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], project: QueryProject<E>) {
+  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], select: QuerySelect<E>) {
     const meta = getMeta(entity);
-    const relations = getProjectRelationKeys(meta, project);
+    const relations = getSelectRelationKeys(meta, select);
 
     for (const relKey of relations) {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
-      const relProject = clone(project[relKey as string]);
+      const relSelect = clone(select[relKey as string]);
       const relQuery: Query<unknown> =
-        relProject === true || relProject === undefined
+        relSelect === true || relSelect === undefined
           ? {}
-          : Array.isArray(relProject)
-            ? { $project: relProject }
-            : relProject;
+          : Array.isArray(relSelect)
+            ? { $select: relSelect }
+            : relSelect;
       const ids = payload.map((it) => it[meta.id]);
 
       if (relOpts.through) {
@@ -118,14 +118,14 @@ export abstract class AbstractQuerier implements Querier {
           throughMeta.relations[key].references.some(({ local }) => local === relOpts.references[1].local),
         );
         const throughFounds = await this.findMany(throughEntity, {
-          $project: {
+          $select: {
             [localField]: true,
             [targetRelKey]: {
               ...relQuery,
               $required: true,
             },
           },
-          $filter: {
+          $where: {
             [localField]: ids,
           },
         });
@@ -133,16 +133,16 @@ export abstract class AbstractQuerier implements Querier {
         this.putChildrenInParents(payload, founds, meta.id, localField, relKey);
       } else if (relOpts.cardinality === '1m') {
         const foreignField = relOpts.references[0].foreign;
-        if (relQuery.$project) {
-          if (Array.isArray(relQuery.$project)) {
-            if (!relQuery.$project.includes(foreignField)) {
-              relQuery.$project.push(foreignField);
+        if (relQuery.$select) {
+          if (Array.isArray(relQuery.$select)) {
+            if (!relQuery.$select.includes(foreignField)) {
+              relQuery.$select.push(foreignField);
             }
-          } else if (!relQuery.$project[foreignField]) {
-            relQuery.$project[foreignField] = true;
+          } else if (!relQuery.$select[foreignField]) {
+            relQuery.$select[foreignField] = true;
           }
         }
-        relQuery.$filter = { [foreignField]: ids };
+        relQuery.$where = { [foreignField]: ids };
         const founds = await this.findMany(relEntity, relQuery);
         this.putChildrenInParents(payload, founds, meta.id, foreignField, relKey);
       }
@@ -192,7 +192,7 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
-    const founds = await this.findMany(entity, { ...q, $project: [meta.id] });
+    const founds = await this.findMany(entity, { ...q, $select: [meta.id] });
     const ids = founds.map((found) => found[meta.id]);
 
     await Promise.all(
@@ -212,7 +212,7 @@ export abstract class AbstractQuerier implements Querier {
       const localField = relOpts.references[0].local;
       if (relOpts.through) {
         const throughEntity = relOpts.through();
-        await this.deleteMany(throughEntity, { $filter: { [localField]: ids } }, opts);
+        await this.deleteMany(throughEntity, { $where: { [localField]: ids } }, opts);
         return;
       }
       await this.deleteMany(relEntity, { [localField]: ids }, opts);
@@ -232,7 +232,7 @@ export abstract class AbstractQuerier implements Querier {
 
         const throughEntity = through();
         if (isUpdate) {
-          await this.deleteMany(throughEntity, { $filter: { [localField]: id } });
+          await this.deleteMany(throughEntity, { $where: { [localField]: id } });
         }
         if (relPayload) {
           const savedIds = await this.saveMany(relEntity, relPayload);
@@ -246,7 +246,7 @@ export abstract class AbstractQuerier implements Querier {
       }
       const foreignField = references[0].foreign;
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $filter: { [foreignField]: id } });
+        await this.deleteMany(relEntity, { $where: { [foreignField]: id } });
       }
       if (relPayload) {
         for (const it of relPayload) {
@@ -260,7 +260,7 @@ export abstract class AbstractQuerier implements Querier {
     if (cardinality === '11') {
       const foreignField = references[0].foreign;
       if (relPayload === null) {
-        await this.deleteMany(relEntity, { $filter: { [foreignField]: id } });
+        await this.deleteMany(relEntity, { $where: { [foreignField]: id } });
         return;
       }
       await this.saveOne(relEntity, { ...relPayload, [foreignField]: id });

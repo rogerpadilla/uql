@@ -6,7 +6,7 @@ export interface ClientQuerier extends UniversalQuerier {
   findOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,
-    project?: QueryOne<E>,
+    q?: QueryOne<E>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<E>>;
 
@@ -14,9 +14,9 @@ export interface ClientQuerier extends UniversalQuerier {
 
   findMany<E>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  findManyAndCount<E>(entity: Type<E>, qm: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+  findManyAndCount<E>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  count<E>(entity: Type<E>, qm?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  count<E>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
   insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
