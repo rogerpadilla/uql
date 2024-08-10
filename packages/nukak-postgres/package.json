@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -15,8 +15,8 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "pg": "^8.8.0",
-    "nukak": "^1.0.0"
+    "nukak": "^1.0.0",
+    "pg": "^8.8.0"
   },
   "dependencies": {
     "node-pg-format": "^1.3.5"
