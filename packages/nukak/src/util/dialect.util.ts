@@ -38,7 +38,10 @@ export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: 
 
 export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = fillOnFields(meta, payload, callbackKey);
-  const persistableKeys = getKeys(payloads[0]).filter((key) => key in meta.fields) as FieldKey<E>[];
+  const persistableKeys = getKeys(payloads[0]).filter((key) => {
+    const fieldOpts = meta.fields[key as FieldKey<E>];
+    return fieldOpts && (callbackKey !== 'onUpdate' || (fieldOpts.update ?? true));
+  }) as FieldKey<E>[];
   return payloads.map((it) =>
     persistableKeys.reduce((acc, key) => {
       acc[key] = it[key];

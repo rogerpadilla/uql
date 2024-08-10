@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { raw } from '../util/index.js';
 import { idKey, type Relation } from '../type/index.js';
 import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
@@ -84,10 +84,10 @@ export class User extends BaseEntity {
   @Field()
   name?: string;
 
-  @Field()
+  @Field({ update: false })
   email?: string;
 
-  @Field()
+  @Field({ eager: false })
   password?: string;
 
   /**
@@ -130,7 +130,7 @@ export class TaxCategory extends BaseEntity {
    * 'onInsert' property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
-  @Id({ onInsert: uuidv4 })
+  @Id({ onInsert: randomUUID })
   pk?: string;
 
   @Field()

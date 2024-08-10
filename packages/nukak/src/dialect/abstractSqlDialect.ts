@@ -34,6 +34,7 @@ import {
   raw,
   getQueryFilterAsMap,
   getFieldCallbackValue,
+  getFieldKeys,
 } from '../util/index.js';
 
 import { getMeta } from '../entity/index.js';
@@ -73,14 +74,14 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         const projectPositive = getKeys(project).filter((it) => project[it]) as FieldKey<E>[];
         projectArr = projectPositive.length
           ? projectPositive
-          : (getKeys(meta.fields).filter((it) => !(it in project)) as FieldKey<E>[]);
+          : (getFieldKeys(meta.fields).filter((it) => !(it in project)) as FieldKey<E>[]);
       }
       projectArr = projectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
       if (opts.prefix && !projectArr.includes(meta.id)) {
         projectArr = [meta.id, ...projectArr];
       }
     } else {
-      projectArr = getKeys(meta.fields) as FieldKey<E>[];
+      projectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
     }
 
     return projectArr

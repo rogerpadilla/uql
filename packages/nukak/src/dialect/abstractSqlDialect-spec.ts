@@ -108,6 +108,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         { $filter: { name: 'some', creatorId: 123 } },
         {
           name: 'Some Text',
+          email: 'this field should not be updated',
           updatedAt: 321,
         },
       ),

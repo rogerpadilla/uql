@@ -30,11 +30,9 @@
   "devDependencies": {
     "@types/node": "^22.2.0",
     "@types/sqlstring": "^2.3.2",
-    "@types/uuid": "^10.0.0",
     "copyfiles": "^2.4.1",
     "rimraf": "^6.0.1",
-    "typescript": "~5.4.5",
-    "uuid": "^10.0.0"
+    "typescript": "~5.4.5"
   },
   "author": "Roger Padilla",
   "repository": {

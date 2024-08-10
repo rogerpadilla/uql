@@ -36,7 +36,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findOneById(User, 1);
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email`, `password` FROM `User` WHERE `id` = 1 LIMIT 1'
+      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email` FROM `User` WHERE `id` = 1 LIMIT 1'
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);

@@ -85,7 +85,7 @@ npm install pg nukak-postgres --save
 Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
 
 ```ts
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { Id, Field, Entity } from 'nukak/entity';
 
 /**
@@ -99,7 +99,7 @@ export class User {
    * the `onInsert` property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
-  @Id({ onInsert: () => uuidv4() })
+  @Id({ onInsert: () => randomUUID })
   id?: string;
 
   /**

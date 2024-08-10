@@ -484,7 +484,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       creator: {
         email: 'someemailc@example.com',
         name: 'Some Name C',
-        password: '123456789z!',
       },
     });
   }

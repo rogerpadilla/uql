@@ -50,8 +50,8 @@ it('User', () => {
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
       name: { name: 'name', type: String },
-      email: { name: 'email', type: String },
-      password: { name: 'password', type: String },
+      email: { name: 'email', type: String, update: false },
+      password: { name: 'password', eager: false, type: String },
     },
     relations: {
       company: {

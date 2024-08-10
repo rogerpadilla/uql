@@ -70,6 +70,8 @@ export type FieldOptions = {
   readonly type?: any;
   readonly reference?: EntityGetter;
   readonly virtual?: QueryRaw;
+  readonly update?: boolean;
+  readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
   readonly onDelete?: OnFieldCallback;
@@ -95,7 +97,6 @@ export type RelationOptions<E = any> = {
   through?: EntityGetter<RelationValue<E>>;
   references?: RelationReferences;
 };
-
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
 type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> &
   Pick<RelationOptions<E>, 'cascade'>;
