@@ -2,11 +2,11 @@
 
 [![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
 
-[nukak](https://nukak.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application. It takes inspiration from [mongo queries](https://www.mongodb.com/docs/drivers/node/current/fundamentals/crud/query-document/).
+[nukak](https://nukak.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
 [nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, Electron, Bun and Deno.
 
-[nukak](https://nukak.org) has a consistent API for distinct databases, including PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB.
+[nukak](https://nukak.org) has a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, and SQLite.
 
 &nbsp;
 
@@ -57,7 +57,6 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 | `PostgreSQL` | `pg`             | `nukak-postgres` |
 | `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
 | `MariaDB`    | `mariadb`        | `nukak-maria`    |
-| `MongoDB`    | `mongodb`        | `nukak-mongo`    |
 | `MySQL`      | `mysql2`         | `nukak-mysql`    |
 
 For example, for `Postgres`:
