@@ -117,7 +117,7 @@ export type RelationOneToOneOptions<E> = RelationOptionsOwner<E> | RelationOptio
 
 export type RelationOneToManyOptions<E> = RelationOptionsInverseSide<E> | RelationOptionsThroughOwner<E>;
 
-export type RelationManyToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
+export type RelationManyToOneOptions<E> = RelationOptionsOwner<E>;
 
 export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | RelationOptionsInverseSide<E>;
 
