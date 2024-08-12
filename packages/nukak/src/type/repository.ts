@@ -1,5 +1,5 @@
 import type { IdValue } from './entity.js';
-import type { Query, QueryOne, QueryOptions, QuerySearch } from './query.js';
+import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -77,6 +77,13 @@ export type UniversalRepository<E> = {
   updateMany?(qm: QuerySearch<E>, payload: E): Promise<any>;
 
   /**
+   * Insert or update a record given a search criteria.
+   * @param conflictPaths the keys to use for the unique search.
+   * @param payload the data to insert or update.
+   */
+  upsertOne?(conflictPaths: QueryConflictPaths<E>, payload: E): Promise<any>;
+
+  /**
    * Insert or update a record.
    * @param payload the data to be persisted
    */
@@ -122,6 +129,8 @@ export interface Repository<E> extends UniversalRepository<E> {
   updateOneById(id: IdValue<E>, payload: E): Promise<number>;
 
   updateMany(qm: QuerySearch<E>, payload: E): Promise<number>;
+
+  upsertOne(conflictPaths: QueryConflictPaths<E>, payload: E): Promise<void>;
 
   saveOne(payload: E): Promise<IdValue<E>>;
 

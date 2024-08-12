@@ -63,6 +63,22 @@ class PostgresDialectSpec {
     );
   }
 
+  shouldUpsert() {
+    expect(
+      this.dialect.upsert(
+        User,
+        { id: true },
+        {
+          id: 1,
+          name: 'Some Name',
+          createdAt: 123,
+        },
+      ),
+    ).toBe(
+      `INSERT INTO "User" ("id", "name", "createdAt") VALUES (1, 'Some Name', 123) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt" RETURNING "id" "id"`,
+    );
+  }
+
   shouldFind$istartsWith() {
     expect(
       this.dialect.find(User, {

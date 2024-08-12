@@ -1,5 +1,5 @@
 import type { Type } from './utility.js';
-import type { QueryOptions, QuerySearch, Query, QueryOne } from './query.js';
+import type { QueryOptions, QuerySearch, Query, QueryOne, QueryConflictPaths } from './query.js';
 import type { Repository } from './repository.js';
 import type { IdValue } from './entity.js';
 import type { UniversalQuerier } from './universalQuerier.js';
@@ -27,6 +27,8 @@ export interface Querier extends UniversalQuerier {
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<number>;
 
   updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
+
+  upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<void>;
 
   saveOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 

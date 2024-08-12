@@ -1,4 +1,4 @@
-import {
+import type {
   QueryComparisonOptions,
   QueryWhereMap,
   QueryOptions,
@@ -7,10 +7,12 @@ import {
   Type,
   FieldKey,
   Scalar,
+  QueryConflictPaths,
 } from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import { quoteLiteral } from 'node-pg-format';
+import { getKeys, getPersistable } from 'nukak/util';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {
@@ -19,9 +21,24 @@ export class PostgresDialect extends AbstractSqlDialect {
 
   override insert<E>(entity: Type<E>, payload: E | E[]): string {
     const sql = super.insert(entity, payload);
+    const returning = this.returningId(entity);
+    return `${sql} ${returning}`;
+  }
+
+  override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
     const meta = getMeta(entity);
-    const idName = meta.fields[meta.id].name;
-    return `${sql} RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
+    const insert = super.insert(entity, payload);
+    const record = getPersistable(meta, payload, 'onInsert');
+    const columns = getKeys(record);
+    const update = columns
+      .filter((col) => !conflictPaths[col])
+      .map((col) => `${this.escapeId(col)} = EXCLUDED.${this.escapeId(col)}`)
+      .join(', ');
+    const keysStr = getKeys(conflictPaths)
+      .map((key) => this.escapeId(key))
+      .join(', ');
+    const returning = this.returningId(entity);
+    return `${insert} ON CONFLICT (${keysStr}) DO UPDATE SET ${update} ${returning}`;
   }
 
   override compare<E, K extends keyof QueryWhereMap<E>>(

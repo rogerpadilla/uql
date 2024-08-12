@@ -16,19 +16,17 @@
   },
   "peerDependencies": {
     "nukak": "^1.0.0",
-    "sqlite": "^4.1.2",
-    "sqlite3": "^5.1.2"
+    "better-sqlite3": "^11.1.2"
   },
   "dependencies": {
     "sqlstring-sqlite": "^0.1.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "better-sqlite3": "^11.1.2",
     "@types/node": "^22.2.0",
-    "@types/sqlite3": "^3.1.11",
     "copyfiles": "^2.4.1",
     "rimraf": "^6.0.1",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
     "typescript": "~5.4.5"
   },
   "author": "Roger Padilla",

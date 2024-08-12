@@ -358,6 +358,42 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  async shouldUpsertOne() {
+    const pk = '507f1f77bcf86cd799439011';
+    const recordBefore = await this.querier.findOne(TaxCategory, { $where: { pk } });
+    expect(recordBefore).toBeUndefined();
+    await this.querier.upsertOne(
+      TaxCategory,
+      { pk: true },
+      {
+        pk,
+        name: 'Some Name C',
+      },
+    );
+    const recordAfter1 = await this.querier.findOne(TaxCategory, {
+      $select: ['name'],
+      $where: { pk },
+    });
+    expect(recordAfter1).toMatchObject({
+      name: 'Some Name C',
+    });
+    await this.querier.upsertOne(
+      TaxCategory,
+      { pk: true },
+      {
+        pk,
+        name: 'Some Name D',
+      },
+    );
+    const recordAfter2 = await this.querier.findOne(TaxCategory, {
+      $select: ['name'],
+      $where: { pk },
+    });
+    expect(recordAfter2).toMatchObject({
+      name: 'Some Name D',
+    });
+  }
+
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 

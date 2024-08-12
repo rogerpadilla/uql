@@ -8,8 +8,18 @@ import {
   getFieldCallbackValue,
   hasKeys,
   isSelectingRelations,
+  getKeys,
 } from 'nukak/util';
-import type { Type, QueryOptions, IdValue, ExtraOptions, QuerySearch, Query } from 'nukak/type';
+import type {
+  Type,
+  QueryOptions,
+  IdValue,
+  ExtraOptions,
+  QuerySearch,
+  Query,
+  QueryConflictPaths,
+  QueryWhere,
+} from 'nukak/type';
 
 import { MongoDialect } from './mongoDialect.js';
 
@@ -99,9 +109,9 @@ export class MongodbQuerier extends AbstractQuerier {
   override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const persistable = getPersistable(meta, payload, 'onUpdate') satisfies Document;
+    const persistable = getPersistable(meta, payload, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where);
-    const update = { $set: persistable } satisfies UpdateFilter<Document>;
+    const update = { $set: persistable } satisfies UpdateFilter<E>;
 
     this.extra?.logger?.('updateMany', entity.name, where, update);
 
@@ -112,6 +122,26 @@ export class MongodbQuerier extends AbstractQuerier {
     await this.updateRelations(entity, qm, payload);
 
     return matchedCount;
+  }
+
+  override async upsertOne<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+    payload = clone(payload);
+
+    const meta = getMeta(entity);
+    const persistable = getPersistable(meta, payload, 'onInsert') as OptionalUnlessRequiredId<E>;
+
+    this.extra?.logger?.('upsertOne', entity.name, persistable);
+
+    const where = getKeys(conflictPaths).reduce((acc, key) => {
+      acc[key] = payload[key];
+      return acc;
+    }, {} as QueryWhere<E>);
+
+    const filter = this.dialect.where(entity, where);
+
+    const update = { $set: persistable } as UpdateFilter<E>;
+
+    await this.collection(entity).findOneAndUpdate(filter, update, { upsert: true, session: this.session });
   }
 
   override async deleteMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {

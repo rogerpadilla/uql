@@ -101,6 +101,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
+  shouldUpsert() {
+    expect(
+      this.dialect.upsert(
+        User,
+        { email: true },
+        {
+          name: 'Some Name',
+          email: 'someemail@example.com',
+          createdAt: 123,
+        },
+      ),
+    ).toBe(
+      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`)",
+    );
+  }
+
   shouldUpdate() {
     expect(
       this.dialect.update(

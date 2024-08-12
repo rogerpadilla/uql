@@ -1,4 +1,14 @@
-import type { IdValue, Querier, QueryOptions, Repository, Type, QuerySearch, QueryOne, Query } from '../type/index.js';
+import type {
+  IdValue,
+  Querier,
+  QueryOptions,
+  Repository,
+  Type,
+  QuerySearch,
+  QueryOne,
+  Query,
+  QueryConflictPaths,
+} from '../type/index.js';
 
 export class GenericRepository<E> implements Repository<E> {
   constructor(
@@ -28,6 +38,10 @@ export class GenericRepository<E> implements Repository<E> {
 
   insertOne(payload: E) {
     return this.querier.insertOne(this.entity, payload);
+  }
+
+  upsertOne(conflictPaths: QueryConflictPaths<E>, payload: E) {
+    return this.querier.upsertOne(this.entity, conflictPaths, payload);
   }
 
   insertMany(payload: E[]) {

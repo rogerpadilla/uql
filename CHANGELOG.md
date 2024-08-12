@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.1.0] - 2024-08-11
+
+- Add support for `upsert` operations.
+- Migrate SQLite package driver from `sqlite3` to `better-sqlite3` for better performance.
+- Make Maria package to use the `RETURNING id` clause to get the inserted IDs.
+
 ## [1.0.1] - 2024-08-10
 
 - Rename `$project` operator to `$select` for consistency with most established frameworks so far.

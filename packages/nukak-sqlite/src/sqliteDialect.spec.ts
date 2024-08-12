@@ -1,4 +1,4 @@
-import { createSpec, Item, User } from 'nukak/test';
+import { createSpec, Item, TaxCategory, User } from 'nukak/test';
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -9,6 +9,23 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldBeginTransaction() {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+  }
+
+  override shouldUpsert() {
+    expect(
+      this.dialect.upsert(
+        TaxCategory,
+        { pk: true },
+        {
+          pk: 'a',
+          name: 'Some Name D',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ),
+    ).toBe(
+      "INSERT OR IGNORE INTO `TaxCategory` (`pk`, `name`, `createdAt`, `updatedAt`) VALUES ('a', 'Some Name D', 1, 1); UPDATE `TaxCategory` SET `name` = 'Some Name D', `createdAt` = 1, `updatedAt` = 1 WHERE `pk` = 'a'",
+    );
   }
 
   override shouldFind$text() {

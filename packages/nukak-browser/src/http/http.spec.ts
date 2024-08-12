@@ -12,7 +12,7 @@ describe('http', () => {
   it('post', async () => {
     const body = {};
     await post('/', body);
-    expect(globalThis.fetch).toBeCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
       expect.objectContaining({ body: JSON.stringify(body), method: 'post' }),
     );
@@ -21,7 +21,7 @@ describe('http', () => {
   it('patch', async () => {
     const body = {};
     await patch('/', body);
-    expect(globalThis.fetch).toBeCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
       expect.objectContaining({ body: JSON.stringify(body), method: 'patch' }),
     );
@@ -30,7 +30,7 @@ describe('http', () => {
   it('put', async () => {
     const body = {};
     await put('/', body);
-    expect(globalThis.fetch).toBeCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
       expect.objectContaining({ body: JSON.stringify(body), method: 'put' }),
     );
@@ -38,12 +38,12 @@ describe('http', () => {
 
   it('get', async () => {
     await get('/?a=1');
-    expect(globalThis.fetch).toBeCalledWith('/?a=1', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'get' }));
   });
 
   it('remove', async () => {
     await remove('/?a=1');
-    expect(globalThis.fetch).toBeCalledWith('/?a=1', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'delete' }));
   });
 
   it('error', async () => {

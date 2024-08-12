@@ -50,6 +50,18 @@ export type QuerySelectFieldMap<E> = {
 };
 
 /**
+ * query conflict paths map.
+ */
+export type QueryConflictPathsMap<E> = {
+  readonly [K in FieldKey<E>]?: true;
+};
+
+/**
+ * query conflict paths.
+ */
+export type QueryConflictPaths<E> = QueryConflictPathsMap<E>;
+
+/**
  * query selection of relations as a map.
  */
 export type QuerySelectRelationMap<E> = {
@@ -396,7 +408,7 @@ export interface QueryDialect {
   count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string;
 
   /**
-   * inser records.
+   * insert records.
    * @param entity the target entity
    * @param qm the criteria options
    * @param opts the query options
@@ -411,6 +423,14 @@ export interface QueryDialect {
    * @param opts the query options
    */
   update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string;
+
+  /**
+   * upsert records.
+   * @param entity the target entity
+   * @param conflictPaths the conflict paths
+   * @param payload
+   */
+  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string;
 
   /**
    * delete records.

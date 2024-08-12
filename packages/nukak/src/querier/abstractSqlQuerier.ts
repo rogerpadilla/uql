@@ -1,4 +1,4 @@
-import { Type, QueryOptions, QueryUpdateResult, QuerySearch, Query } from '../type/index.js';
+import { Type, QueryOptions, QueryUpdateResult, QuerySearch, Query, QueryConflictPaths } from '../type/index.js';
 import { unflatObjects, clone } from '../util/index.js';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
@@ -57,6 +57,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     const { changes } = await this.run(query);
     await this.updateRelations(entity, q, payload);
     return changes;
+  }
+
+  override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+    payload = clone(payload);
+    const query = this.dialect.upsert(entity, conflictPaths, payload);
+    await this.run(query);
   }
 
   override async deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {

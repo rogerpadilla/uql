@@ -85,7 +85,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.all).toBeCalledWith(
+    expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= 10'
     );
 
@@ -106,7 +106,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $limit: 100,
     });
 
-    expect(this.querier.all).toBeCalledWith(
+    expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
@@ -126,7 +126,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       itemsCount: 1,
     } }   );
 
-    expect(this.querier.all).toBeCalledWith(
+    expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `id`, (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`'
     );
 
@@ -153,7 +153,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.all).toBeCalledWith(
+    expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
@@ -178,7 +178,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       },
     });
 
-    expect(this.querier.all).toBeCalledWith(
+    expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)'
     );
 
@@ -681,7 +681,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUseTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
-    expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+    expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.hasOpenTransaction).toBe(true);
@@ -699,7 +699,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUseTransactionCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.transaction(async () => {
-      expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     });
@@ -714,7 +714,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldThrowIfRollbackIfErrorInCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {
-      expect(this.querier.run).toBeCalledWith(this.querier.dialect.beginTransactionCommand);
+      expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       throw new Error('some error');
     });

@@ -4,7 +4,7 @@ import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 export class Sqlite3QuerierIt extends AbstractSqlQuerierIt {
   constructor() {
-    super(new Sqlite3QuerierPool({ filename: ':memory:' }), 'INTEGER PRIMARY KEY');
+    super(new Sqlite3QuerierPool(':memory:'), 'INTEGER PRIMARY KEY');
   }
 
   override async beforeEach() {

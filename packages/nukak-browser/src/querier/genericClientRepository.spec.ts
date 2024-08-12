@@ -17,67 +17,73 @@ describe('repository', () => {
 
   it('count', async () => {
     await repository.count({});
-    expect(globalThis.fetch).toBeCalledWith('/user/count', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/count', expect.objectContaining({ method: 'get' }));
   });
 
   it('findOneById', async () => {
     await repository.findOneById(1);
-    expect(globalThis.fetch).toBeCalledWith('/user/1', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/1', expect.objectContaining({ method: 'get' }));
   });
 
   it('findOne', async () => {
     await repository.findOne({});
-    expect(globalThis.fetch).toBeCalledWith('/user/one', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/one', expect.objectContaining({ method: 'get' }));
   });
 
   it('findMany', async () => {
     await repository.findMany({});
-    expect(globalThis.fetch).toBeCalledWith('/user', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user', expect.objectContaining({ method: 'get' }));
   });
 
   it('findManyAndCount', async () => {
     await repository.findManyAndCount({});
-    expect(globalThis.fetch).toBeCalledWith('/user?count=true', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user?count=true', expect.objectContaining({ method: 'get' }));
   });
 
   it('insertOne', async () => {
     await repository.insertOne({});
-    expect(globalThis.fetch).toBeCalledWith('/user', expect.objectContaining({ method: 'post' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user', expect.objectContaining({ method: 'post' }));
   });
 
   it('updateOneById', async () => {
     await repository.updateOneById(1, {});
-    expect(globalThis.fetch).toBeCalledWith('/user/1', expect.objectContaining({ method: 'patch' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/1', expect.objectContaining({ method: 'patch' }));
   });
 
   it('saveOne', async () => {
     await repository.saveOne({});
-    expect(globalThis.fetch).toBeCalledWith('/user', expect.objectContaining({ method: 'post' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user', expect.objectContaining({ method: 'post' }));
   });
 
   it('saveOne id', async () => {
     await repository.saveOne({ id: 2 });
-    expect(globalThis.fetch).toBeCalledWith('/user/2', expect.objectContaining({ method: 'patch' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/2', expect.objectContaining({ method: 'patch' }));
   });
 
   it('deleteOneById', async () => {
     await repository.deleteOneById(1);
-    expect(globalThis.fetch).toBeCalledWith('/user/1', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user/1', expect.objectContaining({ method: 'delete' }));
   });
 
   it('deleteOneById soft', async () => {
     await repository.deleteOneById(1, { softDelete: true });
-    expect(globalThis.fetch).toBeCalledWith('/user/1?softDelete=true', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/user/1?softDelete=true',
+      expect.objectContaining({ method: 'delete' }),
+    );
   });
 
   it('deleteMany', async () => {
     await repository.deleteMany({});
-    expect(globalThis.fetch).toBeCalledWith('/user', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/user', expect.objectContaining({ method: 'delete' }));
   });
 
   it('deleteMany soft', async () => {
     await repository.deleteMany({}, { softDelete: true });
-    expect(globalThis.fetch).toBeCalledWith('/user?softDelete=true', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/user?softDelete=true',
+      expect.objectContaining({ method: 'delete' }),
+    );
   });
 
   it('entity property', () => {

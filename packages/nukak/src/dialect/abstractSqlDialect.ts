@@ -20,6 +20,7 @@ import {
   QueryRaw,
   QuerySearch,
   Query,
+  QueryConflictPaths,
 } from '../type/index.js';
 import {
   getPersistable,
@@ -47,6 +48,12 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     readonly beginTransactionCommand: string = 'START TRANSACTION',
   ) {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
+  }
+
+  returningId<E>(entity: Type<E>): string {
+    const meta = getMeta(entity);
+    const idName = meta.fields[meta.id].name;
+    return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
   search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): string {
@@ -414,6 +421,18 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const entries = keys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
     const criteria = this.search(entity, q, opts);
     return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
+  }
+
+  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
+    const meta = getMeta(entity);
+    const insert = this.insert(entity, payload);
+    const record = getPersistable(meta, payload, 'onInsert');
+    const columns = getKeys(record);
+    const update = columns
+      .filter((col) => !conflictPaths[col])
+      .map((col) => `${this.escapeId(col)} = VALUES(${this.escapeId(col)})`)
+      .join(', ');
+    return `${insert} ON DUPLICATE KEY UPDATE ${update}`;
   }
 
   delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): string {
