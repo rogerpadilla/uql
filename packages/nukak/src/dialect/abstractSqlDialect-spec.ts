@@ -78,6 +78,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ).toMatch(/^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name', 123, '.+'\)$/);
   }
 
+  shouldUpdateWithRawString() {
+    expect(
+      this.dialect.update(
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: raw("jsonb_set(kind, '{open}', to_jsonb(1))"),
+          updatedAt: 123,
+        },
+      ),
+    ).toBe("UPDATE `Company` SET `kind` = jsonb_set(kind, '{open}', to_jsonb(1)), `updatedAt` = 123 WHERE `id` = 1");
+  }
+
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
     expect(
       this.dialect.insert(TaxCategory, [
@@ -494,7 +507,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(this.dialect.find(User, { $select: { id: true, company: true } })).toBe(
       'SELECT `User`.`id`, `company`.`id` `company.id`, `company`.`companyId` `company.companyId`, `company`.`creatorId` `company.creatorId`' +
         ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`' +
-        ', `company`.`name` `company.name`, `company`.`description` `company.description`' +
+        ', `company`.`name` `company.name`, `company`.`description` `company.description`, `company`.`kind` `company.kind`' +
         ' FROM `User` LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`companyId`',
     );
   }

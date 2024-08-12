@@ -8,9 +8,10 @@ import {
   Scalar,
   QueryConflictPaths,
   QuerySearch,
+  QueryRaw,
 } from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
-import { clone, getKeys } from 'nukak/util';
+import { clone, getKeys, getRawValue } from 'nukak/util';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor() {
@@ -51,6 +52,9 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override escape(value: any): Scalar {
+    if (value instanceof QueryRaw) {
+      return getRawValue({ value, dialect: this });
+    }
     return sqlstring.escape(value);
   }
 }

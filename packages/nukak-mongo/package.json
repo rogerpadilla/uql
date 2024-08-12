@@ -19,7 +19,7 @@
     "nukak": "^1.0.0"
   },
   "devDependencies": {
-    "@types/mongodb": "^4.0.6",
+    "@types/mongodb": "^4.0.7",
     "@types/node": "^22.2.0",
     "copyfiles": "^2.4.1",
     "mongodb": "^6.8.0",

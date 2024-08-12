@@ -48,6 +48,10 @@ export abstract class BaseEntity {
   updatedAt?: number;
 }
 
+export type CompanyKindKey = 'public' | 'private';
+
+export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 };
+
 /**
  * `Company` will inherit all the fields (including the `Id`) declared in `BaseEntity`.
  */
@@ -58,6 +62,9 @@ export class Company extends BaseEntity {
 
   @Field()
   description?: string;
+
+  @Field()
+  kind?: CompanyKind;
 }
 
 /**
