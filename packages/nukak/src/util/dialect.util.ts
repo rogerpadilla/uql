@@ -10,7 +10,6 @@ import {
   QueryRaw,
   QuerySort,
   QuerySortMap,
-  QueryRawFnOptions,
   QueryWhere,
   QueryWhereMap,
   OnFieldCallback,
@@ -19,18 +18,6 @@ import {
 } from '../type/index.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
-
-export function getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
-  const { value, prefix = '', dialect, autoPrefixAlias } = opts;
-  const val = typeof value.value === 'function' ? value.value(opts) : prefix + value.value;
-  const alias = value.alias;
-  if (alias) {
-    const fullAlias = autoPrefixAlias ? prefix + alias : alias;
-    const escapedFullAlias = dialect.escapeId(fullAlias, true);
-    return `${val} ${escapedFullAlias}`;
-  }
-  return val;
-}
 
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
   const persistableKeys = getKeys(payload).filter((key) => {

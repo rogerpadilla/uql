@@ -1,4 +1,4 @@
-import { User, Item, createSpec, TaxCategory } from 'nukak/test';
+import { User, Item, createSpec, TaxCategory, Company } from 'nukak/test';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {
@@ -208,6 +208,19 @@ class PostgresDialectSpec {
     ).toBe(
       `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`,
     );
+  }
+
+  shouldUpdateWithJsonbField() {
+    expect(
+      this.dialect.update(
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { private: 1 },
+          updatedAt: 123,
+        },
+      ),
+    ).toBe('UPDATE "Company" SET "kind" = \'{"private":1}\'::jsonb, "updatedAt" = 123 WHERE "id" = 1');
   }
 }
 

@@ -22,6 +22,7 @@ import {
   Query,
   QueryConflictPaths,
   EntityMeta,
+  QueryRawFnOptions,
 } from '../type/index.js';
 import {
   filterRelationKeys,
@@ -30,7 +31,6 @@ import {
   hasKeys,
   buildSortMap,
   flatObject,
-  getRawValue,
   raw,
   buldQueryWhereAsMap,
   getFieldCallbackValue,
@@ -95,9 +95,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return selectArr
       .map((key) => {
         if (key instanceof QueryRaw) {
-          return getRawValue({
+          return this.getRawValue({
             value: key,
-            dialect: this,
             prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -107,9 +106,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         const field = meta.fields[key as FieldKey<E>];
 
         if (field.virtual) {
-          return getRawValue({
+          return this.getRawValue({
             value: raw(field.virtual.value, key),
-            dialect: this,
             prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -234,9 +232,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
         const value = val as QueryRaw;
-        const query = getRawValue({
+        const query = this.getRawValue({
           value,
-          dialect: this,
           prefix: meta.name,
           escapedPrefix: this.escapeId(meta.name, false, true),
         });
@@ -266,9 +263,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const logicalComparison = values
         .map((whereEntry) => {
           if (whereEntry instanceof QueryRaw) {
-            return getRawValue({
+            return this.getRawValue({
               value: whereEntry,
-              dialect: this,
               prefix: opts.prefix,
               escapedPrefix: this.escapeId(opts.prefix, true, true),
             });
@@ -351,9 +347,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const field = meta.fields[key];
 
     if (field?.virtual) {
-      return getRawValue({
+      return this.getRawValue({
         value: field.virtual,
-        dialect: this,
         prefix,
         escapedPrefix,
       });
@@ -486,16 +481,32 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const fieldKeys = filterFieldKeys(meta, payloads[0], callbackKey);
     return payloads.map((it) =>
       fieldKeys.reduce((acc, key) => {
-        // const fieldOpts = meta.fields[key];
-        // const type = fieldOpts.type;
-        // if (typeof type === 'string' && (type === 'json' || type === 'jsonb')) {
-        //   it[key] = JSON.stringify(it[key]) as E[FieldKey<E>] + `::${type}`;
-        // }
-        acc[key] = this.escape(it[key]) as E[FieldKey<E>];
+        const { type } = meta.fields[key];
+        let value = it[key];
+        if (value instanceof QueryRaw) {
+          value = this.getRawValue({ value }) as E[FieldKey<E>];
+        } else if (type === 'json' || type === 'jsonb') {
+          value = (this.escape(JSON.stringify(value)) + `::${type}`) as E[FieldKey<E>];
+        } else {
+          value = this.escape(value) as E[FieldKey<E>];
+        }
+        acc[key] = value;
         return acc;
       }, {} as E),
     );
   }
 
-  abstract escape(value: any): Scalar;
+  getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
+    const { value, prefix = '', autoPrefixAlias } = opts;
+    const val = typeof value.value === 'function' ? value.value({ ...opts, dialect: this }) : prefix + value.value;
+    const alias = value.alias;
+    if (alias) {
+      const fullAlias = autoPrefixAlias ? prefix + alias : alias;
+      const escapedFullAlias = this.escapeId(fullAlias, true);
+      return `${val} ${escapedFullAlias}`;
+    }
+    return val;
+  }
+
+  abstract escape(value: any): string;
 }

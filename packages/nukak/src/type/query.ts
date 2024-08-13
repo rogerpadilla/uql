@@ -1,5 +1,5 @@
-import { FieldKey, IdValue, Key, RelationKey } from './entity.js';
-import { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
+import type { FieldKey, IdValue, Key, RelationKey } from './entity.js';
+import type { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
   /**
@@ -347,7 +347,7 @@ export type QueryRawFnOptions = {
   /**
    * the current dialect.
    */
-  readonly dialect: QueryDialect;
+  readonly dialect?: QueryDialect;
   /**
    * the prefix.
    */
@@ -452,5 +452,5 @@ export interface QueryDialect {
    * escape a value.
    * @param val the value to escape
    */
-  escape(val: any): Scalar;
+  escape(val: any): string;
 }

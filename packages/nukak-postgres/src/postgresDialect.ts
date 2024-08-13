@@ -1,19 +1,17 @@
-import {
-  type QueryComparisonOptions,
-  type QueryWhereMap,
-  type QueryOptions,
-  type QueryWhereFieldOperatorMap,
-  type QueryTextSearchOptions,
-  type Type,
-  type FieldKey,
-  type Scalar,
-  type QueryConflictPaths,
-  QueryRaw,
+import { quoteLiteral } from 'node-pg-format';
+import type {
+  QueryComparisonOptions,
+  QueryWhereMap,
+  QueryOptions,
+  QueryWhereFieldOperatorMap,
+  QueryTextSearchOptions,
+  Type,
+  FieldKey,
+  QueryConflictPaths,
 } from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
-import { quoteLiteral } from 'node-pg-format';
-import { getKeys, filterFieldKeys, getRawValue } from 'nukak/util';
+import { getKeys, filterFieldKeys } from 'nukak/util';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {
@@ -82,10 +80,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     }
   }
 
-  override escape(value: any): Scalar {
-    if (value instanceof QueryRaw) {
-      return getRawValue({ value, dialect: this });
-    }
+  override escape(value: any): string {
     return quoteLiteral(value);
   }
 }

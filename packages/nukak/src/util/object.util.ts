@@ -1,4 +1,4 @@
-import { FieldKey, FieldOptions } from 'nukak/type';
+import type { FieldKey, FieldOptions } from 'nukak/type';
 
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {

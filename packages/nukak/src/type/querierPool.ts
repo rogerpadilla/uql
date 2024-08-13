@@ -1,4 +1,4 @@
-import { ExtraOptions, Querier } from './querier.js';
+import type { ExtraOptions, Querier } from './querier.js';
 
 /**
  * querier pool.

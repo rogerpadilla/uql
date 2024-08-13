@@ -1,4 +1,4 @@
-import { FieldOptions, Type } from '../../type/index.js';
+import type { FieldOptions, Type } from '../../type/index.js';
 import { defineId } from './definition.js';
 
 export function Id<E>(opts?: Omit<FieldOptions, 'isId'>) {

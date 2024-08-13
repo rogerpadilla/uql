@@ -1,8 +1,7 @@
-import { Type, QueryOptions, QueryUpdateResult, QuerySearch, Query, QueryConflictPaths } from '../type/index.js';
+import type { Type, QueryOptions, QueryUpdateResult, QuerySearch, Query, QueryConflictPaths } from '../type/index.js';
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import { unflatObjects, clone } from '../util/index.js';
-import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-
 import { AbstractQuerier } from './abstractQuerier.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier {

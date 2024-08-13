@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.3.0] - 2024-08-13
+
+- Add support for `json` and `jsonb` fields. Automatically parse the JSON values when persisting with `JSON.parse` function.
+- Improve type-safety in general.
+- Move `getPersistables` inside dialect for higher reusability.
+
 ## [1.2.0] - 2024-08-12
 
 - Add support for `raw` in values (previously, it was only supported by `$select` and `$where` operators). Allows safe use of any SQL query/clause as the value in an insert or update operation that shouldn't be automatically escaped by the ORM.

@@ -1,4 +1,4 @@
-import { createSpec, Item, TaxCategory, User } from 'nukak/test';
+import { Company, createSpec, Item, TaxCategory, User } from 'nukak/test';
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -52,6 +52,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     ).toBe(
       "SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10",
     );
+  }
+
+  override shouldUpdateWithJsonbField() {
+    expect(
+      this.dialect.update(
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { private: 1 },
+          updatedAt: 123,
+        },
+      ),
+    ).toBe('UPDATE `Company` SET `kind` = \'{"private":1}\'::jsonb, `updatedAt` = 123 WHERE `id` = 1');
   }
 }
 

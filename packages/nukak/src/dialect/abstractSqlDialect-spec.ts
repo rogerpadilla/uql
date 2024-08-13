@@ -91,6 +91,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ).toBe("UPDATE `Company` SET `kind` = jsonb_set(kind, '{open}', to_jsonb(1)), `updatedAt` = 123 WHERE `id` = 1");
   }
 
+  shouldUpdateWithJsonbField() {
+    expect(
+      this.dialect.update(
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { private: 1 },
+          updatedAt: 123,
+        },
+      ),
+    ).toBe('UPDATE `Company` SET `kind` = \'{\\"private\\":1}\'::jsonb, `updatedAt` = 123 WHERE `id` = 1');
+  }
+
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
     expect(
       this.dialect.insert(TaxCategory, [

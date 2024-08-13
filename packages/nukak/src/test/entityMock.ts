@@ -63,7 +63,7 @@ export class Company extends BaseEntity {
   @Field()
   description?: string;
 
-  @Field()
+  @Field({ type: 'jsonb' })
   kind?: CompanyKind;
 }
 

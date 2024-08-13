@@ -1,5 +1,5 @@
-import { QueryRaw } from './query.js';
-import { Scalar, Type } from './utility.js';
+import type { QueryRaw } from './query.js';
+import type { Scalar, Type } from './utility.js';
 
 /**
  * Allow to customize the name of the property that identifies an entity
