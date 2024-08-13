@@ -95,7 +95,7 @@ import { Id, Field, Entity } from 'nukak/entity';
 @Entity()
 export class User {
   /**
-   * an entity should specify an ID Field, its name and type are automatically detected.
+   * an entity must specify an ID Field, its name and type are automatically detected.
    * the `onInsert` property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
@@ -109,10 +109,16 @@ export class User {
   @Field()
   name?: string;
 
-  @Field()
+  /**
+   * fields are `updatable: true` by default but can also be marked as `updatable: false` so they can only be inserted and read after.
+   */
+  @Field({ updatable: false })
   email?: string;
 
-  @Field()
+  /**
+   * fields are `eager: true` by default but can also be marked as `eager: false` (aka lazy fields).
+   */
+  @Field({ eager: false })
   password?: string;
 }
 ```
