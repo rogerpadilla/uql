@@ -121,6 +121,7 @@ export abstract class AbstractQuerier implements Querier {
           throughMeta.relations[key].references.some(({ local }) => local === relOpts.references[1].local),
         );
         const throughFounds = await this.findMany(throughEntity, {
+          ...relQuery,
           $select: {
             [localField]: true,
             [targetRelKey]: {
@@ -129,6 +130,7 @@ export abstract class AbstractQuerier implements Querier {
             },
           },
           $where: {
+            ...relQuery.$where,
             [localField]: ids,
           },
         });
@@ -145,7 +147,7 @@ export abstract class AbstractQuerier implements Querier {
             relQuery.$select[foreignField] = true;
           }
         }
-        relQuery.$where = { [foreignField]: ids };
+        relQuery.$where = { ...relQuery.$where, [foreignField]: ids };
         const founds = await this.findMany(relEntity, relQuery);
         this.putChildrenInParents(payload, founds, meta.id, foreignField, relKey);
       }

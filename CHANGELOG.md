@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.3.1] - 2024-08-13
+
+- Fix an issue related to the `$where` condition of selected relations missed in the final criteria for `@OneToMany` and `@ManyToMany` relationships.
+
 ## [1.3.0] - 2024-08-13
 
 - Add support for `json` and `jsonb` fields. Automatically parse the JSON values when persisting with `JSON.parse` function.

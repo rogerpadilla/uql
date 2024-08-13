@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "release": "npm run build && lerna publish minor && git pull && git push",
+    "release": "npm run build && lerna publish patch && git pull && git push",
     "build": "lerna run build",
     "lint": "eslint .",
     "lint.fix": "npm run lint --fix",

@@ -51,28 +51,27 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async shouldFindOneAndSelectOneToMany() {
     await this.querier.insertOne(InventoryAdjustment, {
-      id: 123,
+      id: 1,
       description: 'something a',
       createdAt: 1,
     });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (123, 'something a', 1)");
+    expect(this.querier.run).toHaveBeenNthCalledWith(1, "INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (1, 'something a', 1)");
 
     await this.querier.findOne(InventoryAdjustment, {
-      $select: ['id', 'description', 'itemAdjustments'],
-      $where: { id: 123 },
+      $select: { id: true, description: true, itemAdjustments: { $where: {id: [5, 6, 7]} } },
+      $where: { id: 1 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = 123 LIMIT 1'
+      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = 1 LIMIT 1'
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
-        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (123)'
+        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `id` IN (5, 6, 7) AND `inventoryAdjustmentId` IN (1)'
     );
-
     expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
@@ -251,7 +250,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: { id: true, itemAdjustments: ['buyPrice'] },
+      $select: { id: true, itemAdjustments: { $select: ['buyPrice'], $skip: 1, $limit: 2 } },
       $where: { createdAt: 1 },
     });
 
@@ -261,7 +260,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (1, 2)'
+      'SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (1, 2) LIMIT 2 OFFSET 1'
     );
 
     expect(this.querier.all).toHaveBeenCalledTimes(2);
