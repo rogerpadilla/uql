@@ -135,7 +135,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const res = await this.collection(entity).findOneAndUpdate(filter, update, { upsert: true, session: this.session });
 
-    const firstId = res?._id as unknown as number;
+    const firstId = res?._id as unknown as string;
 
     return { firstId, changes: firstId ? 1 : 0 };
   }

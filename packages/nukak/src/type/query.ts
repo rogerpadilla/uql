@@ -341,7 +341,7 @@ export type QueryUpdateResult = {
   /**
    * first inserted ID.
    */
-  readonly firstId?: number;
+  readonly firstId?: number | string;
 };
 
 /**
