@@ -7,7 +7,7 @@ export function flatObject<E>(obj: E, pre?: string): E {
   );
 }
 
-function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
+function flatObjectEntry<E>(map: E, key: string, val: unknown, pre?: string): E {
   const prefix = pre ? `${pre}.${key}` : key;
   return typeof val === 'object'
     ? Object.keys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)

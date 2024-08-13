@@ -11,6 +11,7 @@ import type {
   Type,
   QueryOne,
   QueryConflictPaths,
+  QueryUpdateResult,
 } from '../type/index.js';
 import { getMeta } from '../entity/decorator/index.js';
 import { clone, getKeys, filterRelationKeys, filterPersistableRelationKeys, augmentWhere } from '../util/index.js';
@@ -55,7 +56,7 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
 
-  abstract upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<void>;
+  abstract upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<QueryUpdateResult>;
 
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
     return this.deleteMany(entity, { $where: id }, opts);

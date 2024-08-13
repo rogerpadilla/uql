@@ -1,5 +1,4 @@
 import { PoolClient } from 'pg';
-
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { AbstractSqlQuerier } from 'nukak/querier';
 import { PostgresDialect } from './postgresDialect.js';

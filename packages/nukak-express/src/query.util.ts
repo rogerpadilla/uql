@@ -4,7 +4,7 @@ import type { Query, QueryStringified } from 'nukak/type';
 export function parseQuery(req: Request) {
   req.query ??= {};
   const qmsSrc: QueryStringified = req.query;
-  const qm = qmsSrc as unknown as Query<any>;
+  const qm = qmsSrc as unknown as Query<unknown>;
   if (qmsSrc.$select) {
     qm.$select = JSON.parse(qmsSrc.$select);
   }

@@ -213,10 +213,10 @@ type ExtraOptions = {
 };
 
 type MiddlewareOptions = {
-  readonly include?: Type<any>[];
-  readonly exclude?: Type<any>[];
+  readonly include?: Type<unknown>[];
+  readonly exclude?: Type<unknown>[];
 } & ExtraOptions;
 
-type Pre = <E = any>(req: Request, meta: EntityMeta<E>) => void;
-type PreSave = <E = any>(req: Request, meta: EntityMeta<E>) => void;
-type PreFilter = <E = any>(req: Request, meta: EntityMeta<E>) => void;
+type Pre = <E = unknown>(req: Request, meta: EntityMeta<E>) => void;
+type PreSave = <E = unknown>(req: Request, meta: EntityMeta<E>) => void;
+type PreFilter = <E = unknown>(req: Request, meta: EntityMeta<E>) => void;

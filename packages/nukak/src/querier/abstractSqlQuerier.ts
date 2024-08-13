@@ -61,7 +61,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
     const query = this.dialect.upsert(entity, conflictPaths, payload);
-    await this.run(query);
+    return this.run(query);
   }
 
   override async deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {

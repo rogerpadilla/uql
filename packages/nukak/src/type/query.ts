@@ -323,7 +323,7 @@ export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$where'>;
  * stringified query.
  */
 export type QueryStringified = {
-  readonly [K in keyof Query<any>]?: string;
+  readonly [K in keyof Query<unknown>]?: string;
 };
 
 /**
@@ -452,5 +452,5 @@ export interface QueryDialect {
    * escape a value.
    * @param val the value to escape
    */
-  escape(val: any): string;
+  escape(val: unknown): string;
 }

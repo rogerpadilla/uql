@@ -360,8 +360,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
-    const recordBefore = await this.querier.findOne(TaxCategory, { $where: { pk } });
-    expect(recordBefore).toBeUndefined();
+    const record1 = await this.querier.findOne(TaxCategory, {
+      $select: ['name'],
+      $where: { pk },
+    });
+    expect(record1).toBeUndefined();
     await this.querier.upsertOne(
       TaxCategory,
       { pk: true },
@@ -370,11 +373,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name C',
       },
     );
-    const recordAfter1 = await this.querier.findOne(TaxCategory, {
+    const record2 = await this.querier.findOne(TaxCategory, {
       $select: ['name'],
       $where: { pk },
     });
-    expect(recordAfter1).toMatchObject({
+    expect(record2).toMatchObject({
       name: 'Some Name C',
     });
     await this.querier.upsertOne(
@@ -385,11 +388,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name D',
       },
     );
-    const recordAfter2 = await this.querier.findOne(TaxCategory, {
+    const record3 = await this.querier.findOne(TaxCategory, {
       $select: ['name'],
       $where: { pk },
     });
-    expect(recordAfter2).toMatchObject({
+    expect(record3).toMatchObject({
       name: 'Some Name D',
     });
   }

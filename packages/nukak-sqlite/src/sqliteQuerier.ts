@@ -30,9 +30,9 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     const [insertOrIgnore, update] = upsert.split(';');
     const resInsert = await this.run(insertOrIgnore);
     if (resInsert.changes) {
-      return;
+      return resInsert;
     }
-    await this.run(update);
+    return this.run(update);
   }
 
   override async release() {

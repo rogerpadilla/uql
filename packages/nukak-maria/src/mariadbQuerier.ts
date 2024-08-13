@@ -1,5 +1,4 @@
 import { PoolConnection } from 'mariadb';
-
 import { AbstractSqlQuerier } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';

@@ -80,7 +80,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     }
   }
 
-  override escape(value: any): string {
+  override escape(value: unknown): string {
     return sqlstring.escape(value);
   }
 }

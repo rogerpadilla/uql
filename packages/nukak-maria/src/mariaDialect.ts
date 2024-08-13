@@ -23,7 +23,7 @@ export class MariaDialect extends AbstractSqlDialect {
     return `${insert} ON DUPLICATE KEY UPDATE ${update} ${returning}`;
   }
 
-  override escape(value: any): string {
+  override escape(value: unknown): string {
     return escape(value);
   }
 }

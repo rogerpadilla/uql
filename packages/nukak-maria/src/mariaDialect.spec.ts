@@ -1,7 +1,7 @@
 import { createSpec } from 'nukak/test/spec.util.js';
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
 import { InventoryAdjustment, TaxCategory, User } from 'nukak/test';
-import { FieldKey } from 'nukak/type';
+import type { FieldKey } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends AbstractSqlDialectSpec {

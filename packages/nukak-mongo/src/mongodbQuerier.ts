@@ -133,7 +133,11 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const update = { $set: persistable } as UpdateFilter<E>;
 
-    await this.collection(entity).findOneAndUpdate(filter, update, { upsert: true, session: this.session });
+    const res = await this.collection(entity).findOneAndUpdate(filter, update, { upsert: true, session: this.session });
+
+    const firstId = res?._id as unknown as number;
+
+    return { firstId, changes: firstId ? 1 : 0 };
   }
 
   override async deleteMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {

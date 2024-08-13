@@ -15,7 +15,7 @@ import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
 const metaKey = 'nukak/entity/decorator';
-const metas: Map<Type<any>, EntityMeta<any>> = holder[metaKey] ?? new Map();
+const metas: Map<Type<unknown>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
@@ -86,7 +86,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
   return meta;
 }
 
-export function getEntities(): Type<any>[] {
+export function getEntities(): Type<unknown>[] {
   return [...metas.entries()].reduce((acc, [key, val]) => {
     if (val.id) {
       acc.push(key);
@@ -248,7 +248,7 @@ function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   return inferredType;
 }
 
-export function isValidEntityType(type: any): type is Type<any> {
+export function isValidEntityType(type: unknown): type is Type<unknown> {
   return (
     typeof type === 'function' &&
     type !== Boolean &&

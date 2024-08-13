@@ -511,5 +511,5 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return val;
   }
 
-  abstract escape(value: any): string;
+  abstract escape(value: unknown): string;
 }

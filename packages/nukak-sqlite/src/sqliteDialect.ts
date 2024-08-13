@@ -49,7 +49,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `${insertOrIgnore}; ${update}`;
   }
 
-  override escape(value: any): string {
+  override escape(value: unknown): string {
     return sqlstring.escape(value);
   }
 }
