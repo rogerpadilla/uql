@@ -19,8 +19,9 @@ export class PgQuerier extends AbstractSqlQuerier {
 
   override async run(query: string) {
     this.extra?.logger?.(query);
-    const { rowCount: changes, rows }: any = await this.conn.query(query);
-    return { changes, firstId: rows[0]?.id } satisfies QueryUpdateResult;
+    const { rowCount: changes, rows = [] }: any = await this.conn.query(query);
+    const ids = rows.map((r: any) => r.id);
+    return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   override async release() {

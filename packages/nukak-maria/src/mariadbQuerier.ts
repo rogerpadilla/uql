@@ -20,7 +20,8 @@ export class MariadbQuerier extends AbstractSqlQuerier {
   override async run(query: string) {
     this.extra?.logger?.(query);
     const res = await this.conn.query(query);
-    return { changes: res.affectedRows, firstId: res[0]?.id } satisfies QueryUpdateResult;
+    const ids = res.length ? res.map((r: any) => r.id) : [];
+    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   override async release() {

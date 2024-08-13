@@ -331,9 +331,13 @@ export type QueryStringified = {
  */
 export type QueryUpdateResult = {
   /**
-   * number of changes.
+   * number of affected records.
    */
   readonly changes?: number;
+  /**
+   * the inserted IDs.
+   */
+  readonly ids?: readonly number[] | readonly string[];
   /**
    * first inserted ID.
    */

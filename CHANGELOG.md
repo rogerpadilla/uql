@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.3.2] - 2024-08-13
+
+- Return the inserted IDs in the response of the queriers' `run` function.
+
 ## [1.3.1] - 2024-08-13
 
 - Fix an issue related to the `$where` condition of selected relations missed in the final criteria for `@OneToMany` and `@ManyToMany` relationships.

@@ -40,14 +40,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
     payload = clone(payload);
     const query = this.dialect.insert(entity, payload);
-    const { firstId } = await this.run(query);
+    const { ids } = await this.run(query);
     const meta = getMeta(entity);
-    const ids = payload.map((it, index) => {
-      it[meta.id as string] ??= firstId + index;
+    const payloadIds = payload.map((it, index) => {
+      it[meta.id as string] ??= ids[index];
       return it[meta.id];
     });
     await this.insertRelations(entity, payload);
-    return ids;
+    return payloadIds;
   }
 
   override async updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E) {

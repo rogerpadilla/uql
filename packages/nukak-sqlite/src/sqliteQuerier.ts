@@ -21,7 +21,12 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     this.extra?.logger?.(query);
     const { changes, lastInsertRowid } = await this.db.prepare(query).run();
     const firstId = lastInsertRowid ? Number(lastInsertRowid) - (changes - 1) : undefined;
-    return { changes, firstId } satisfies QueryUpdateResult;
+    const ids = firstId
+      ? Array(changes)
+          .fill(firstId)
+          .map((i, index) => i + index)
+      : [];
+    return { changes, ids, firstId } satisfies QueryUpdateResult;
   }
 
   override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {

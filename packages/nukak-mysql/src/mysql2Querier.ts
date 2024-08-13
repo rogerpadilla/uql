@@ -20,7 +20,12 @@ export class MySql2Querier extends AbstractSqlQuerier {
   override async run(query: string) {
     this.extra?.logger?.(query);
     const [res]: any = await this.conn.query(query);
-    return { changes: res.affectedRows, firstId: res.insertId } satisfies QueryUpdateResult;
+    const ids = res.insertId
+      ? Array(res.affectedRows)
+          .fill(res.insertId)
+          .map((i, index) => i + index)
+      : [];
+    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   override async release() {
