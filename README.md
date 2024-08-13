@@ -13,8 +13,8 @@
 ```ts
 const companyUsers = await userRepository.findMany({
   $select: { email: true, profile: ['picture'] },
-  $where: { email: { $endsWith: '@domain.com' } },
-  $sort: { createdAt: 'desc' },
+  $where: { email: { $endsWith: '@example.com' } },
+  $sort: { createdAt: -1 },
   $limit: 100,
 });
 ```
@@ -130,6 +130,8 @@ export class User {
 A querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
 ```ts
+// file: ./shared/orm.ts
+
 import { PgQuerierPool } from 'nukak-postgres';
 
 export const querierPool = new PgQuerierPool(
@@ -140,7 +142,7 @@ export const querierPool = new PgQuerierPool(
     database: 'theDatabase',
   },
   // optionally, a logger can be passed to log the generated SQL queries
-  { logger: console.log },
+  { logger: console.debug },
 );
 ```
 
@@ -153,21 +155,27 @@ import { querierPool } from './shared/orm.js';
 import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 100) {
-  const querier = await getQuerier();
-  const users = await querier.findMany(User, {
-    $select: { id: true, name: true, email: true },
-    $sort: { createdAt: 'desc' },
-    $limit: limit,
-  });
-  await querier.release();
-  return users;
+  const querier = await querierPool.getQuerier();
+  try {
+    const users = await querier.findMany(User, {
+      $select: { id: true, name: true, email: true },
+      $sort: { createdAt: 'desc' },
+      $limit: limit,
+    });
+    return users;
+  } finally {
+    await querier.release();
+  }
 }
 
 async function createUser(data: User) {
-  const querier = await getQuerier();
-  const id = await querier.insertOne(User, data);
-  await querier.release();
-  return id;
+  const querier = await querierPool.getQuerier();
+  try {
+    const id = await querier.insertOne(User, data);
+    return id;
+  } finally {
+    await querier.release();
+  }
 }
 ```
 
