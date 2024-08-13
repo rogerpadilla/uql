@@ -487,6 +487,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
           value = this.getRawValue({ value }) as E[FieldKey<E>];
         } else if (type === 'json' || type === 'jsonb') {
           value = (this.escape(JSON.stringify(value)) + `::${type}`) as E[FieldKey<E>];
+        } else if (type === 'vector') {
+          value = (value as number[]).map((num) => +num).join(',') as E[FieldKey<E>];
+          value = `'[${value}]'` as E[FieldKey<E>];
         } else {
           value = this.escape(value) as E[FieldKey<E>];
         }

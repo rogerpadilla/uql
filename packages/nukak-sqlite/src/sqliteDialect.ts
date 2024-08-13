@@ -1,4 +1,4 @@
-import { escape } from 'sqlstring-sqlite';
+import sqlstring from 'sqlstring-sqlite';
 import { getMeta } from 'nukak/entity';
 import type {
   QueryWhereMap,
@@ -50,6 +50,6 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override escape(value: any): string {
-    return escape(value);
+    return sqlstring.escape(value);
   }
 }

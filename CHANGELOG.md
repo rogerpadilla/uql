@@ -9,6 +9,7 @@ date format is [yyyy-mm-dd]
 - Add support for `json` and `jsonb` fields. Automatically parse the JSON values when persisting with `JSON.parse` function.
 - Improve type-safety in general.
 - Move `getPersistables` inside dialect for higher reusability.
+- Add support for `vector` fields.
 
 ## [1.2.0] - 2024-08-12
 

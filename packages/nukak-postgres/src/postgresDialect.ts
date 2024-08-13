@@ -1,4 +1,4 @@
-import { quoteLiteral } from 'node-pg-format';
+import sqlstring from 'sqlstring-sqlite';
 import type {
   QueryComparisonOptions,
   QueryWhereMap,
@@ -81,6 +81,6 @@ export class PostgresDialect extends AbstractSqlDialect {
   }
 
   override escape(value: any): string {
-    return quoteLiteral(value);
+    return sqlstring.escape(value);
   }
 }
