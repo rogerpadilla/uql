@@ -1,15 +1,7 @@
 import type { MongoClient, ClientSession, UpdateFilter, Document, OptionalUnlessRequiredId } from 'mongodb';
 import { getMeta } from 'nukak/entity';
 import { AbstractQuerier } from 'nukak/querier';
-import {
-  clone,
-  getPersistable,
-  getPersistables,
-  getFieldCallbackValue,
-  hasKeys,
-  isSelectingRelations,
-  getKeys,
-} from 'nukak/util';
+import { clone, getFieldCallbackValue, hasKeys, isSelectingRelations, getKeys } from 'nukak/util';
 import type {
   Type,
   QueryOptions,
@@ -89,7 +81,7 @@ export class MongodbQuerier extends AbstractQuerier {
     payloads = clone(payloads);
 
     const meta = getMeta(entity);
-    const persistables = getPersistables(meta, payloads, 'onInsert') as OptionalUnlessRequiredId<E>[];
+    const persistables = this.dialect.getPersistables(meta, payloads, 'onInsert') as OptionalUnlessRequiredId<E>[];
 
     this.extra?.logger?.('insertMany', entity.name, persistables);
 
@@ -109,7 +101,7 @@ export class MongodbQuerier extends AbstractQuerier {
   override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const persistable = getPersistable(meta, payload, 'onUpdate');
+    const persistable = this.dialect.getPersistable(meta, payload, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where);
     const update = { $set: persistable } satisfies UpdateFilter<E>;
 
@@ -128,7 +120,7 @@ export class MongodbQuerier extends AbstractQuerier {
     payload = clone(payload);
 
     const meta = getMeta(entity);
-    const persistable = getPersistable(meta, payload, 'onInsert') as OptionalUnlessRequiredId<E>;
+    const persistable = this.dialect.getPersistable(meta, payload, 'onInsert') as OptionalUnlessRequiredId<E>;
 
     this.extra?.logger?.('upsertOne', entity.name, persistable);
 

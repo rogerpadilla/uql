@@ -1,5 +1,14 @@
 import { Document, Filter, ObjectId, Sort } from 'mongodb';
-import { getKeys, hasKeys, buildSortMap, getSelectRelationKeys, getQueryWhereAsMap } from 'nukak/util';
+import {
+  getKeys,
+  hasKeys,
+  buildSortMap,
+  filterRelationKeys,
+  buldQueryWhereAsMap,
+  CallbackKey,
+  fillOnFields,
+  filterFieldKeys,
+} from 'nukak/util';
 import { getMeta } from 'nukak/entity';
 import type {
   QueryWhere,
@@ -18,7 +27,7 @@ export class MongoDialect {
   where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
 
-    where = getQueryWhereAsMap(meta, where);
+    where = buldQueryWhereAsMap(meta, where);
 
     if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
       where[meta.softDelete as string] = null;
@@ -77,9 +86,9 @@ export class MongoDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relations = getSelectRelationKeys(meta, q.$select);
+    const relKeys = filterRelationKeys(meta, q.$select);
 
-    for (const relKey of relations) {
+    for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
@@ -158,6 +167,21 @@ export class MongoDialect {
       return value;
     }
     return new ObjectId(value) as T;
+  }
+
+  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
+    return this.getPersistables(meta, payload, callbackKey)[0];
+  }
+
+  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+    const payloads = fillOnFields(meta, payload, callbackKey);
+    const persistableKeys = filterFieldKeys(meta, payloads[0], callbackKey);
+    return payloads.map((it) =>
+      persistableKeys.reduce((acc, key) => {
+        acc[key] = it[key];
+        return acc;
+      }, {} as E),
+    );
   }
 }
 

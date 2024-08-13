@@ -21,11 +21,10 @@ import {
   QuerySearch,
   Query,
   QueryConflictPaths,
+  EntityMeta,
 } from '../type/index.js';
 import {
-  getPersistable,
-  getSelectRelationKeys,
-  getPersistables,
+  filterRelationKeys,
   isSelectingRelations,
   getKeys,
   hasKeys,
@@ -33,9 +32,12 @@ import {
   flatObject,
   getRawValue,
   raw,
-  getQueryWhereAsMap,
+  buldQueryWhereAsMap,
   getFieldCallbackValue,
   getFieldKeys,
+  fillOnFields,
+  filterFieldKeys,
+  CallbackKey,
 } from '../util/index.js';
 
 import { getMeta } from '../entity/index.js';
@@ -129,22 +131,22 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     { prefix }: { prefix?: string } = {},
   ): { fields: string; tables: string } {
     const meta = getMeta(entity);
-    const relations = getSelectRelationKeys(meta, select);
+    const relKeys = filterRelationKeys(meta, select);
     const isSelectArray = Array.isArray(select);
     let fields = '';
     let tables = '';
 
-    for (const key of relations) {
-      const relOpts = meta.relations[key];
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
 
-      const joinRelAlias = prefix ? prefix + '.' + key : key;
+      const joinRelAlias = prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
-      const relSelect = select[key as string];
+      const relSelect = select[relKey as string];
       const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
       const relColumns = this.selectFields(relEntity, relQuery.$select, {
@@ -172,7 +174,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         .join(' AND ');
 
       if (relQuery.$where) {
-        const where = this.where(relEntity, relQuery.$where, { prefix: key, clause: false });
+        const where = this.where(relEntity, relQuery.$where, { prefix: relKey, clause: false });
         tables += ` AND ${where}`;
       }
 
@@ -196,7 +198,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    where = getQueryWhereAsMap(meta, where);
+    where = buldQueryWhereAsMap(meta, where);
 
     if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
       where[meta.softDelete as string] = null;
@@ -407,18 +409,18 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   insert<E>(entity: Type<E>, payload: E | E[]): string {
     const meta = getMeta(entity);
-    const records = getPersistables(meta, payload, 'onInsert');
+    const records = this.getPersistables(meta, payload, 'onInsert');
     const keys = getKeys(records[0]);
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
-    const values = records.map((record) => keys.map((key) => this.escape(record[key])).join(', ')).join('), (');
+    const values = records.map((record) => keys.map((key) => record[key]).join(', ')).join('), (');
     return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
   }
 
   update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string {
     const meta = getMeta(entity);
-    const record = getPersistable(meta, payload, 'onUpdate');
+    const record = this.getPersistable(meta, payload, 'onUpdate');
     const keys = getKeys(record);
-    const entries = keys.map((key) => `${this.escapeId(key)} = ${this.escape(payload[key])}`).join(', ');
+    const entries = keys.map((key) => `${this.escapeId(key)} = ${record[key]}`).join(', ');
     const criteria = this.search(entity, q, opts);
     return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
   }
@@ -426,9 +428,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
     const meta = getMeta(entity);
     const insert = this.insert(entity, payload);
-    const record = getPersistable(meta, payload, 'onInsert');
-    const columns = getKeys(record);
-    const update = columns
+    const fields = filterFieldKeys(meta, payload, 'onInsert');
+    const update = fields
       .filter((col) => !conflictPaths[col])
       .map((col) => `${this.escapeId(col)} = VALUES(${this.escapeId(col)})`)
       .join(', ');
@@ -474,6 +475,26 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const suffix = addDot ? '.' : '';
 
     return escaped + suffix;
+  }
+
+  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
+    return this.getPersistables(meta, payload, callbackKey)[0];
+  }
+
+  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+    const payloads = fillOnFields(meta, payload, callbackKey);
+    const fieldKeys = filterFieldKeys(meta, payloads[0], callbackKey);
+    return payloads.map((it) =>
+      fieldKeys.reduce((acc, key) => {
+        // const fieldOpts = meta.fields[key];
+        // const type = fieldOpts.type;
+        // if (typeof type === 'string' && (type === 'json' || type === 'jsonb')) {
+        //   it[key] = JSON.stringify(it[key]) as E[FieldKey<E>] + `::${type}`;
+        // }
+        acc[key] = this.escape(it[key]) as E[FieldKey<E>];
+        return acc;
+      }, {} as E),
+    );
   }
 
   abstract escape(value: any): Scalar;

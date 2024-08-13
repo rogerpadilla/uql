@@ -13,7 +13,7 @@ import {
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import { quoteLiteral } from 'node-pg-format';
-import { getKeys, getPersistable, getRawValue } from 'nukak/util';
+import { getKeys, filterFieldKeys, getRawValue } from 'nukak/util';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {
@@ -29,9 +29,8 @@ export class PostgresDialect extends AbstractSqlDialect {
   override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
     const meta = getMeta(entity);
     const insert = super.insert(entity, payload);
-    const record = getPersistable(meta, payload, 'onInsert');
-    const columns = getKeys(record);
-    const update = columns
+    const fields = filterFieldKeys(meta, payload, 'onInsert');
+    const update = fields
       .filter((col) => !conflictPaths[col])
       .map((col) => `${this.escapeId(col)} = EXCLUDED.${this.escapeId(col)}`)
       .join(', ');

@@ -18,7 +18,7 @@ import {
   IdValue,
 } from '../type/index.js';
 
-type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
+export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
 export function getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
   const { value, prefix = '', dialect, autoPrefixAlias } = opts;
@@ -32,29 +32,19 @@ export function getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPre
   return val;
 }
 
-export function getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
-  return getPersistables(meta, payload, callbackKey)[0];
-}
-
-export function getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
-  const payloads = fillOnFields(meta, payload, callbackKey);
-  const persistableKeys = getKeys(payloads[0]).filter((key) => {
+export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
+  const persistableKeys = getKeys(payload).filter((key) => {
     const fieldOpts = meta.fields[key as FieldKey<E>];
     return fieldOpts && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
   }) as FieldKey<E>[];
-  return payloads.map((it) =>
-    persistableKeys.reduce((acc, key) => {
-      acc[key] = it[key];
-      return acc;
-    }, {} as E),
-  );
+  return persistableKeys;
 }
 
 export function getFieldCallbackValue(val: OnFieldCallback) {
   return typeof val === 'function' ? val() : val;
 }
 
-function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key][callbackKey]);
   return payloads.map((it) => {
@@ -67,7 +57,11 @@ function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: Cal
   });
 }
 
-export function getPersistableRelations<E>(meta: EntityMeta<E>, payload: E, action: CascadeType): RelationKey<E>[] {
+export function filterPersistableRelationKeys<E>(
+  meta: EntityMeta<E>,
+  payload: E,
+  action: CascadeType,
+): RelationKey<E>[] {
   const keys = getKeys(payload);
   return keys.filter((key) => {
     const relOpts = meta.relations[key as RelationKey<E>];
@@ -82,17 +76,17 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
   return configuration === action;
 }
 
-export function getSelectRelationKeys<E>(meta: EntityMeta<E>, select: QuerySelect<E>): RelationKey<E>[] {
-  const keys = getPositiveKeys(select);
+export function filterRelationKeys<E>(meta: EntityMeta<E>, select: QuerySelect<E>): RelationKey<E>[] {
+  const keys = filterPositiveKeys(select);
   return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
 }
 
 export function isSelectingRelations<E>(meta: EntityMeta<E>, select: QuerySelect<E>): boolean {
-  const keys = getPositiveKeys(select);
+  const keys = filterPositiveKeys(select);
   return keys.some((key) => key in meta.relations);
 }
 
-function getPositiveKeys<E>(select: QuerySelect<E>): Key<E>[] {
+function filterPositiveKeys<E>(select: QuerySelect<E>): Key<E>[] {
   if (Array.isArray(select)) {
     return select as Key<E>[];
   }
@@ -118,15 +112,15 @@ export function augmentWhere<E>(
   target: QueryWhere<E> = {},
   source: QueryWhere<E> = {},
 ): QueryWhere<E> {
-  const targetComparison = getQueryWhereAsMap(meta, target);
-  const sourceComparison = getQueryWhereAsMap(meta, source);
+  const targetComparison = buldQueryWhereAsMap(meta, target);
+  const sourceComparison = buldQueryWhereAsMap(meta, source);
   return {
     ...targetComparison,
     ...sourceComparison,
   };
 }
 
-export function getQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
+export function buldQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryWhereMap<E>;
   }

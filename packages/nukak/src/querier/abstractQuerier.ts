@@ -13,7 +13,7 @@ import type {
   QueryConflictPaths,
 } from '../type/index.js';
 import { getMeta } from '../entity/decorator/index.js';
-import { clone, getKeys, getSelectRelationKeys, getPersistableRelations, augmentWhere } from '../util/index.js';
+import { clone, getKeys, filterRelationKeys, filterPersistableRelationKeys, augmentWhere } from '../util/index.js';
 import { GenericRepository } from '../repository/index.js';
 
 export abstract class AbstractQuerier implements Querier {
@@ -99,9 +99,9 @@ export abstract class AbstractQuerier implements Querier {
 
   protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], select: QuerySelect<E>) {
     const meta = getMeta(entity);
-    const relations = getSelectRelationKeys(meta, select);
+    const relKeys = filterRelationKeys(meta, select);
 
-    for (const relKey of relations) {
+    for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
       const relSelect = clone(select[relKey as string]);
@@ -178,7 +178,7 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     await Promise.all(
       payload.map((it) => {
-        const relKeys = getPersistableRelations(meta, it, 'persist');
+        const relKeys = filterPersistableRelationKeys(meta, it, 'persist');
         if (!relKeys.length) {
           return;
         }
@@ -189,7 +189,7 @@ export abstract class AbstractQuerier implements Querier {
 
   protected async updateRelations<E>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
     const meta = getMeta(entity);
-    const relKeys = getPersistableRelations(meta, payload, 'persist');
+    const relKeys = filterPersistableRelationKeys(meta, payload, 'persist');
 
     if (!relKeys.length) {
       return;
@@ -207,7 +207,7 @@ export abstract class AbstractQuerier implements Querier {
 
   protected async deleteRelations<E>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const relKeys = getPersistableRelations(meta, meta.relations as E, 'delete');
+    const relKeys = filterPersistableRelationKeys(meta, meta.relations as E, 'delete');
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
