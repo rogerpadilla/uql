@@ -39,6 +39,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 - **High performance**: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
 - Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern for maintainability.
 - [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository).
+- Automatic handing of `json`, `jsonb` and `vector` fields.
 
 &nbsp;
 
@@ -118,12 +119,11 @@ export class User {
 
 &nbsp;
 
-## 3. Setup a default querier-pool
+## 3. Setup a querier-pool
 
-A default querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
+A querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
 
 ```ts
-import { setQuerierPool } from 'nukak';
 import { PgQuerierPool } from 'nukak-postgres';
 
 export const querierPool = new PgQuerierPool(
@@ -136,10 +136,6 @@ export const querierPool = new PgQuerierPool(
   // optionally, a logger can be passed to log the generated SQL queries
   { logger: console.log },
 );
-
-// the default querier pool that `nukak` will use when calling `getQuerier()` and
-// in the `@Transactional` decorator (by default).
-setQuerierPool(querierPool);
 ```
 
 &nbsp;
@@ -147,7 +143,7 @@ setQuerierPool(querierPool);
 ## 4. Manipulate the data
 
 ```ts
-import { getQuerier } from 'nukak';
+import { querierPool } from './shared/orm.js';
 import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 100) {
