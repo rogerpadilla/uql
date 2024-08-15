@@ -19,7 +19,6 @@ describe('transactional', () => {
     anotherQuerierPool = {
       getQuerier: async () => anotherQuerierSingleton,
       end: async () => undefined,
-      transaction: async () => undefined,
     };
   });
 

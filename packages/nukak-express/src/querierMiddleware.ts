@@ -46,8 +46,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
       res.json({ data, count: data ? 1 : 0 });
     } catch (err: any) {
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -65,8 +63,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
       res.json({ data, count: data ? 1 : 0 });
     } catch (err: any) {
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -80,8 +76,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
       res.json({ data, count });
     } catch (err: any) {
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -93,8 +87,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
       res.json({ data: count, count });
     } catch (err: any) {
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -109,8 +101,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -132,8 +122,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
-    } finally {
-      await querier.release();
     }
   });
 
@@ -156,8 +144,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
-    } finally {
-      querier.release();
     }
   });
 
@@ -178,8 +164,6 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
-    } finally {
-      querier.release();
     }
   });
 

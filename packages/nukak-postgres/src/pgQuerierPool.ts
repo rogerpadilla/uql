@@ -12,8 +12,7 @@ export class PgQuerierPool extends AbstractQuerierPool<PgQuerier> {
   }
 
   async getQuerier() {
-    const conn = await this.pool.connect();
-    return new PgQuerier(conn, this.extra);
+    return new PgQuerier(() => this.pool.connect(), this.extra);
   }
 
   async end() {

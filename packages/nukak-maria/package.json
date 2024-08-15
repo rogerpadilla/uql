@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "@types/mysql": "^2.15.26",
-    "@types/node": "^22.2.0",
+    "@types/node": "^22.3.0",
     "copyfiles": "^2.4.1",
     "mariadb": "^3.3.1",
     "rimraf": "^6.0.1",

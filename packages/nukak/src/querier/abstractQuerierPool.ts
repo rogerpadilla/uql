@@ -12,18 +12,4 @@ export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierP
    * end the pool.
    */
   abstract end(): Promise<void>;
-
-  /**
-   * Automatically wraps the given callback inside a transaction, and auto-releases the querier after running.
-   * @param callback the function to execute inside the transaction context.
-   */
-  async transaction<T>(callback: (querier: Querier) => Promise<T>) {
-    const querier = await this.getQuerier();
-    try {
-      const res = await querier.transaction<T>(() => callback(querier));
-      return res;
-    } finally {
-      await querier.release();
-    }
-  }
 }

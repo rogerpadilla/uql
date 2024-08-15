@@ -299,6 +299,12 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
+  async releaseIfFree() {
+    if (!this.hasOpenTransaction) {
+      await this.release();
+    }
+  }
+
   abstract beginTransaction(): Promise<void>;
 
   abstract commitTransaction(): Promise<void>;

@@ -83,31 +83,27 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     return this.hasPendingTransaction;
   }
 
-  override async beginTransaction(/*isolationLevel?: IsolationLevel*/) {
+  override async beginTransaction() {
     if (this.hasPendingTransaction) {
       throw TypeError('pending transaction');
     }
-    // TODO
-    // if (isolationLevel) {
-    //   await this.run(`SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`);
-    // }
-    await this.run(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
+    await this.run(this.dialect.beginTransactionCommand);
   }
 
   override async commitTransaction() {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    await this.run('COMMIT');
     this.hasPendingTransaction = undefined;
+    await this.run('COMMIT');
   }
 
   override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    await this.run('ROLLBACK');
     this.hasPendingTransaction = undefined;
+    await this.run('ROLLBACK');
   }
 }
