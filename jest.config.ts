@@ -6,8 +6,8 @@ const jestConfig: JestConfigWithTsJest = {
   watchPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
   testPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
   moduleNameMapper: {
-    '^(nukak)/(.+)\\.js$': '<rootDir>/packages/$1/src/$2',
-    '^(nukak)/(.+)(?<!\\.js)$': '<rootDir>/packages/$1/src/$2',
+    '^nukak/(.+)\\.js$': '<rootDir>/packages/core/src/$1',
+    '^nukak/(.+)(?<!\\.js)$': '<rootDir>/packages/core/src/$1',
     '^(\\.{1,2}/.+)\\.js$': '$1',
   },
   transform: {

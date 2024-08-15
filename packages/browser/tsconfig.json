@@ -2,8 +2,11 @@
   "$schema": "http://json.schemastore.org/tsconfig",
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ESNext", "DOM"],
+    "importHelpers": false,
     "outDir": "dist"
   },
-  "references": [{ "path": "../nukak" }],
+  "references": [{ "path": "../core" }],
   "exclude": ["node_modules", "dist"]
 }

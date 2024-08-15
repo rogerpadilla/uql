@@ -30,15 +30,15 @@
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "paths": {
-      "nukak": ["packages/nukak/src/index.ts"],
-      "nukak/dialect": ["packages/nukak/src/dialect/index.ts"],
-      "nukak/entity": ["packages/nukak/src/entity/index.ts"],
-      "nukak/querier": ["packages/nukak/src/querier/index.ts"],
-      "nukak/repository": ["packages/nukak/src/repository/index.ts"],
-      "nukak/test": ["packages/nukak/src/test/index.ts"],
-      "nukak/type": ["packages/nukak/src/type/index.ts"],
-      "nukak/util": ["packages/nukak/src/util/index.ts"],
-      "nukak/*": ["packages/nukak/src/*"]
+      "nukak": ["packages/core/src/index.ts"],
+      "nukak/dialect": ["packages/core/src/dialect/index.ts"],
+      "nukak/entity": ["packages/core/src/entity/index.ts"],
+      "nukak/querier": ["packages/core/src/querier/index.ts"],
+      "nukak/repository": ["packages/core/src/repository/index.ts"],
+      "nukak/test": ["packages/core/src/test/index.ts"],
+      "nukak/type": ["packages/core/src/type/index.ts"],
+      "nukak/util": ["packages/core/src/util/index.ts"],
+      "nukak/*": ["packages/core/src/*"]
     },
     "ignoreDeprecations": "5.0"
   },

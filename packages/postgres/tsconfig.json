@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": "dist"
   },
-  "references": [{ "path": "../nukak" }],
+  "references": [{ "path": "../core" }],
   "exclude": ["node_modules", "dist"]
 }
