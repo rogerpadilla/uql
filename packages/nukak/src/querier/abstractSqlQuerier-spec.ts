@@ -13,7 +13,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     this.querier = await this.pool.getQuerier();
     await dropTables(this.querier);
     await createTables(this.querier, this.idType);
-    await this.querier.release();
   }
 
   async beforeEach() {
@@ -25,7 +24,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
   async afterEach() {
     jest.restoreAllMocks();
-    await this.querier.release();
   }
 
   async afterAll() {
@@ -689,10 +687,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenNthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
     expect(this.querier.run).toHaveBeenNthCalledWith(3, 'COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    await this.querier.release();
     expect(this.querier.run).toHaveBeenCalledTimes(3);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
-    expect(this.querier.hasOpenTransaction).toBeFalsy();
   }
 
   async shouldUseTransactionCallback() {

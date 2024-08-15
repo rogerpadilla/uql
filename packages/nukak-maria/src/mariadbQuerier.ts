@@ -4,8 +4,10 @@ import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {
+  conn: PoolConnection;
+
   constructor(
-    readonly conn: PoolConnection,
+    readonly connect: () => Promise<PoolConnection>,
     readonly extra?: ExtraOptions,
   ) {
     super(new MariaDialect());
@@ -13,21 +15,33 @@ export class MariadbQuerier extends AbstractSqlQuerier {
 
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
+    await this.ensureConn();
     const res: T[] = await this.conn.query(query);
+    await this.releaseUnlessPendingTransaction();
     return res.slice(0, res.length);
   }
 
   override async run(query: string) {
     this.extra?.logger?.(query);
+    await this.ensureConn();
     const res = await this.conn.query(query);
+    await this.releaseUnlessPendingTransaction();
     const ids = res.length ? res.map((r: any) => r.id) : [];
     return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+  }
+
+  async ensureConn() {
+    this.conn ??= await this.connect();
   }
 
   override async release() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
+    if (!this.conn) {
+      return;
+    }
     await this.conn.release();
+    this.conn = undefined;
   }
 }

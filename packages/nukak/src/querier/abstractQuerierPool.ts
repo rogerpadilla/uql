@@ -19,11 +19,7 @@ export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierP
    */
   async transaction<T>(callback: (querier: Querier) => Promise<T>) {
     const querier = await this.getQuerier();
-    try {
-      const res = await querier.transaction<T>(() => callback(querier));
-      return res;
-    } finally {
-      await querier.release();
-    }
+    const res = await querier.transaction<T>(() => callback(querier));
+    return res;
   }
 }

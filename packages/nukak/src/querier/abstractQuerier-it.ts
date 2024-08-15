@@ -22,16 +22,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     this.querier = await this.pool.getQuerier();
     await this.dropTables();
     await this.createTables();
-    await this.querier.release();
   }
 
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
     await this.clearTables();
-  }
-
-  async afterEach() {
-    await this.querier.release();
   }
 
   async afterAll() {

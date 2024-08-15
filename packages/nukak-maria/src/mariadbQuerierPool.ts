@@ -12,8 +12,7 @@ export class MariadbQuerierPool extends AbstractQuerierPool<MariadbQuerier> {
   }
 
   async getQuerier() {
-    const conn = await this.pool.getConnection();
-    return new MariadbQuerier(conn, this.extra);
+    return new MariadbQuerier(() => this.pool.getConnection(), this.extra);
   }
 
   async end() {

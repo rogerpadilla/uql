@@ -12,8 +12,7 @@ export class MySql2QuerierPool extends AbstractQuerierPool<MySql2Querier> {
   }
 
   async getQuerier() {
-    const conn = await this.pool.getConnection();
-    return new MySql2Querier(conn, this.extra);
+    return new MySql2Querier(() => this.pool.getConnection(), this.extra);
   }
 
   async end() {
