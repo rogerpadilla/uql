@@ -16,13 +16,4 @@ export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
     expect(querier.hasOpenTransaction).toBeFalsy();
     await querier.release();
   }
-
-  async shouldRunTransaction() {
-    const res = await this.pool.transaction(async (querier) => {
-      expect(querier).toBeInstanceOf(AbstractQuerier);
-      expect(querier.hasOpenTransaction).toBe(true);
-      return 123;
-    });
-    expect(res).toBe(123);
-  }
 }

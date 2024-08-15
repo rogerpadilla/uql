@@ -7,6 +7,7 @@ date format is [yyyy-mm-dd]
 ## [1.4.0] - 2024-08-15
 
 - Automatically release the querier unless it is inside a current transaction.
+- Remove unnecessary wrapper for transactions from `AbstractQuerierPool` class.
 
 ## [1.3.3] - 2024-08-13
 

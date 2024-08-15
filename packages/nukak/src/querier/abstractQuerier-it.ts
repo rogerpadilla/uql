@@ -30,7 +30,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async afterAll() {
-    await this.pool.end();
+    // await this.pool.end();
   }
 
   shouldGetRepository() {
@@ -435,16 +435,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null })).resolves.toBe(3);
   }
 
-  async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
-    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
-  }
-
   async shouldThrowIfUnknownComparisonOperator() {
     await expect(
       this.querier.findMany(User, {
         $where: { name: { $someInvalidOperator: 'some' } as any },
       }),
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
+  }
+
+  async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
+    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
   }
 
   async shouldCommit() {
@@ -472,6 +472,20 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
+  }
+
+  async shouldReturnTransactionValue() {
+    const affectedRows = await this.querier.transaction(async () => {
+      await this.shouldInsertMany();
+      const count = await this.querier.count(User, {});
+      await this.querier.deleteMany(User, {});
+      return count;
+    });
+    expect(affectedRows).toBe(2);
+  }
+
+  async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
+    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
   async shouldSelectOneToMany() {
@@ -522,24 +536,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
-  async shouldReturnTransactionValue() {
-    const affectedRows = await this.querier.transaction(async () => {
-      await this.shouldInsertMany();
-      const count = await this.querier.count(User, {});
-      await this.querier.deleteMany(User, {});
-      return count;
-    });
-    expect(affectedRows).toBe(2);
-  }
-
   async shouldDeleteMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
     await expect(this.querier.deleteMany(User, { $where: { companyId: 1 } })).resolves.toBe(0);
     await expect(this.querier.deleteMany(User, { $where: { companyId: null } })).resolves.toBe(3);
-  }
-
-  async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
-    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
   async clearTables() {

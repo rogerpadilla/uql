@@ -106,11 +106,4 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     this.hasPendingTransaction = undefined;
     await this.run('ROLLBACK');
   }
-
-  override async releaseUnlessPendingTransaction() {
-    if (this.hasOpenTransaction) {
-      return;
-    }
-    await this.release();
-  }
 }

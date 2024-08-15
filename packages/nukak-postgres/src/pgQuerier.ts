@@ -15,22 +15,22 @@ export class PgQuerier extends AbstractSqlQuerier {
 
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
-    await this.ensureConn();
+    await this.lazyConnect();
     const res = await this.conn.query<T>(query);
-    await this.releaseUnlessPendingTransaction();
+    await this.releaseIfFree();
     return res.rows;
   }
 
   override async run(query: string) {
     this.extra?.logger?.(query);
-    await this.ensureConn();
+    await this.lazyConnect();
     const { rowCount: changes, rows = [] }: any = await this.conn.query(query);
-    await this.releaseUnlessPendingTransaction();
+    await this.releaseIfFree();
     const ids = rows.map((r: any) => r.id);
     return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
-  async ensureConn() {
+  async lazyConnect() {
     this.conn ??= await this.connect();
   }
 
