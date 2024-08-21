@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.1] - 2024-08-21
+
+- Add nukak-maku logo.
+- Update dependencies (functionality keeps the same in this release).
+
 ## [1.4.0] - 2024-08-15
 
 - Automatically release the querier unless it is inside a current transaction.
