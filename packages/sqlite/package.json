@@ -23,8 +23,8 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
-    "@types/node": "^22.4.2",
-    "better-sqlite3": "^11.2.0",
+    "@types/node": "^22.5.5",
+    "better-sqlite3": "^11.3.0",
     "copyfiles": "^2.4.1",
     "rimraf": "^6.0.1",
     "typescript": "~5.4.5"

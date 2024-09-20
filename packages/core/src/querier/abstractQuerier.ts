@@ -99,6 +99,10 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], select: QuerySelect<E>) {
+    if (!payload.length) {
+      return;
+    }
+
     const meta = getMeta(entity);
     const relKeys = filterRelationKeys(meta, select);
 

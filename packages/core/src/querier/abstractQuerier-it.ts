@@ -488,6 +488,18 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
+  async shouldSelectOneToManyEmpty() {
+    const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, -1, {
+      $select: { itemAdjustments: true, creator: true },
+    });
+    expect(inventoryAdjustment).toBeUndefined();
+
+    const inventoryAdjustments = await this.querier.findMany(InventoryAdjustment, {
+      $select: { itemAdjustments: true },
+    });
+    expect(inventoryAdjustments).toHaveLength(0);
+  }
+
   async shouldSelectOneToMany() {
     await this.shouldInsertOne();
 
