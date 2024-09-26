@@ -300,8 +300,6 @@ export abstract class AbstractQuerier implements Querier {
     } catch (err) {
       await this.rollbackTransaction();
       throw err;
-    } finally {
-      await this.release();
     }
   }
 

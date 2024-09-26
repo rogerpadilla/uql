@@ -6,7 +6,7 @@ date format is [yyyy-mm-dd]
 
 ## [1.4.3] - 2024-09-25
 
-- Always auto-release a connection after executing a transaction.
+- Ensure the connection is auto-released after `commit` or `rollback` runs.
 - Update dependencies.
 
 ## [1.4.2] - 2024-09-20
