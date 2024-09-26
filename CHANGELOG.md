@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.3] - 2024-09-25
+
+- Always auto-release a connection after executing a transaction.
+- Update dependencies.
+
 ## [1.4.2] - 2024-09-20
 
 - Fix projection of `@OneToMany` field when the 'one' side produces empty result.
