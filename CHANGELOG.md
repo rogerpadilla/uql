@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.4] - 2024-09-26
+
+- Correct issue when empty or null list is passed to `insertMany` operations.
+
 ## [1.4.3] - 2024-09-25
 
 - Ensure the connection is auto-released after `commit` or `rollback` runs.

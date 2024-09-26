@@ -354,6 +354,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
 
+  async shouldInsertManyEmpty() {
+    const res1 = await this.querier.insertMany(User, []);
+    expect(this.querier.run).not.toHaveBeenCalled();
+    expect(this.querier.all).not.toHaveBeenCalled();
+    expect(res1).toEqual([]);
+
+    const res2 = await this.querier.insertMany(User, undefined);
+    expect(this.querier.run).not.toHaveBeenCalled();
+    expect(this.querier.all).not.toHaveBeenCalled();
+    expect(res2).toEqual([]);
+  }
+
   async shouldInsertOne() {
     await this.querier.insertOne(User, { companyId: 123, createdAt: 1 });
     expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`companyId`, `createdAt`) VALUES (123, 1)');

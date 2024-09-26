@@ -78,6 +78,10 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   override async insertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
+    if (!payloads?.length) {
+      return [];
+    }
+
     payloads = clone(payloads);
 
     const meta = getMeta(entity);

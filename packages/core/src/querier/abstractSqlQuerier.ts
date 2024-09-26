@@ -38,6 +38,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   }
 
   override async insertMany<E>(entity: Type<E>, payload: E[]) {
+    if (!payload?.length) {
+      return [];
+    }
     payload = clone(payload);
     const query = this.dialect.insert(entity, payload);
     const { ids } = await this.run(query);

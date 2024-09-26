@@ -57,6 +57,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     }
   }
 
+  async shouldInsertManyEmpty() {
+    const ids = await this.querier.insertMany(User, []);
+    expect(ids).toEqual([]);
+  }
+
   async shouldInsertOne() {
     const creatorId = await this.querier.insertOne(User, {
       name: 'Some Name C',
