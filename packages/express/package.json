@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -58,5 +58,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "ebe190c5a043c5c6f3f6cc68c3a027d8e852b458"
+  "gitHead": "8170469e70cb6662b29b543518f0bc6afc3a0723"
 }
