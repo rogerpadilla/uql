@@ -6,6 +6,7 @@ date format is [yyyy-mm-dd]
 
 ## [1.4.4] - 2024-09-26
 
+- Ensure own connection is always released even if exception occurs.
 - Correct issue when empty or null list is passed to `insertMany` operations.
 
 ## [1.4.3] - 2024-09-25

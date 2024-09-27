@@ -16,18 +16,24 @@ export class MariadbQuerier extends AbstractSqlQuerier {
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    const res: T[] = await this.conn.query(query);
-    await this.releaseIfFree();
-    return res.slice(0, res.length);
+    try {
+      const res: T[] = await this.conn.query(query);
+      return res.slice(0, res.length);
+    } finally {
+      await this.releaseIfFree();
+    }
   }
 
   override async run(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    const res = await this.conn.query(query);
-    await this.releaseIfFree();
-    const ids = res.length ? res.map((r: any) => r.id) : [];
-    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    try {
+      const res = await this.conn.query(query);
+      const ids = res.length ? res.map((r: any) => r.id) : [];
+      return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    } finally {
+      await this.releaseIfFree();
+    }
   }
 
   async lazyConnect() {

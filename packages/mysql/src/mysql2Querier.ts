@@ -16,22 +16,28 @@ export class MySql2Querier extends AbstractSqlQuerier {
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    const [res] = await this.conn.query(query);
-    await this.releaseIfFree();
-    return res as T[];
+    try {
+      const [res] = await this.conn.query(query);
+      return res as T[];
+    } finally {
+      await this.releaseIfFree();
+    }
   }
 
   override async run(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    const [res]: any = await this.conn.query(query);
-    await this.releaseIfFree();
-    const ids = res.insertId
-      ? Array(res.affectedRows)
-          .fill(res.insertId)
-          .map((i, index) => i + index)
-      : [];
-    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    try {
+      const [res]: any = await this.conn.query(query);
+      const ids = res.insertId
+        ? Array(res.affectedRows)
+            .fill(res.insertId)
+            .map((i, index) => i + index)
+        : [];
+      return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    } finally {
+      await this.releaseIfFree();
+    }
   }
 
   async lazyConnect() {
