@@ -101,6 +101,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
+    } finally {
+      await querier.release();
     }
   });
 
@@ -122,6 +124,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
+    } finally {
+      await querier.release();
     }
   });
 
@@ -144,6 +148,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
+    } finally {
+      await querier.release();
     }
   });
 
@@ -164,6 +170,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
     } catch (err: any) {
       await querier.rollbackTransaction();
       next(err);
+    } finally {
+      await querier.release();
     }
   });
 

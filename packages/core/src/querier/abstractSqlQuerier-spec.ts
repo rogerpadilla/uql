@@ -695,6 +695,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
+    await this.querier.release();
     expect(this.querier.run).toHaveBeenNthCalledWith(1, this.querier.dialect.beginTransactionCommand);
     expect(this.querier.run).toHaveBeenNthCalledWith(2, "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
     expect(this.querier.run).toHaveBeenNthCalledWith(3, 'COMMIT');
@@ -742,6 +743,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
     await this.querier.rollbackTransaction();
+    await this.querier.release()
   }
 
   async shouldThrowIfCommitWithNoPendingTransaction() {
@@ -771,5 +773,6 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(2);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
     await this.querier.rollbackTransaction();
+    await this.querier.release()
   }
 }

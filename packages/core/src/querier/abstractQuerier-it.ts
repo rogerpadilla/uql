@@ -459,6 +459,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, {})).resolves.toBe(1);
     await this.querier.commitTransaction();
     await expect(this.querier.count(User, {})).resolves.toBe(1);
+    await this.querier.release();
   }
 
   async shouldRollback() {
@@ -468,6 +469,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, {})).resolves.toBe(1);
     await this.querier.rollbackTransaction();
     await expect(this.querier.count(User, {})).resolves.toBe(0);
+    await this.querier.release();
   }
 
   async shouldThrowWhenBeginTransactionAfterBeginTransaction() {
@@ -477,6 +479,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
+    await this.querier.release();
   }
 
   async shouldReturnTransactionValue() {

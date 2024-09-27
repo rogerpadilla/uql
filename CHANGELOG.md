@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.5] - 2024-09-26
+
+- Imperative transactions have to be closed manually.
+
 ## [1.4.4] - 2024-09-26
 
 - Ensure own connection is always released even if exception occurs.

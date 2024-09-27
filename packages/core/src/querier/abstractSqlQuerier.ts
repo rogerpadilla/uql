@@ -98,23 +98,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    try {
-      await this.run('COMMIT');
-    } finally {
-      this.hasPendingTransaction = undefined;
-      await this.release();
-    }
+    await this.run('COMMIT');
+    this.hasPendingTransaction = undefined;
   }
 
   override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    try {
-      await this.run('ROLLBACK');
-    } finally {
-      this.hasPendingTransaction = undefined;
-      await this.release();
-    }
+    await this.run('ROLLBACK');
+    this.hasPendingTransaction = undefined;
   }
 }
