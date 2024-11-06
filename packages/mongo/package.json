@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -20,9 +20,9 @@
   },
   "devDependencies": {
     "@types/mongodb": "^4.0.7",
-    "@types/node": "^22.7.2",
+    "@types/node": "^22.9.0",
     "copyfiles": "^2.4.1",
-    "mongodb": "^6.9.0",
+    "mongodb": "^6.10.0",
     "rimraf": "^6.0.1",
     "typescript": "~5.4.5"
   },
