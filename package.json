@@ -26,15 +26,15 @@
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
     "@commitlint/config-conventional": "^19.5.0",
-    "@types/jest": "^29.5.13",
-    "@typescript-eslint/eslint-plugin": "^8.7.0",
-    "@typescript-eslint/parser": "^8.7.0",
-    "concurrently": "^9.0.1",
+    "@types/jest": "^29.5.14",
+    "@typescript-eslint/eslint-plugin": "^8.13.0",
+    "@typescript-eslint/parser": "^8.13.0",
+    "concurrently": "^9.1.0",
     "coveralls": "^3.1.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-import-resolver-typescript": "3.6.3",
-    "eslint-plugin-import": "^2.30.0",
+    "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-prettier": "^5.2.1",
     "jest": "^29.7.0",
     "prettier": "^3.3.3",
@@ -50,6 +50,5 @@
     "singleQuote": true,
     "printWidth": 120
   },
-  "author": "Roger Padilla Camacho",
-  "packageManager": "pnpm@9.11.0"
+  "author": "Roger Padilla"
 }

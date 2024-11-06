@@ -118,7 +118,7 @@ export class User {
   email?: string;
 
   /**
-   * fields are `eager: true` by default but can also be marked as `eager: false` (aka lazy fields).
+   * by default, fields are `eager: true`, but they can also be marked as `eager: false` (aka lazy fields).
    */
   @Field({ eager: false })
   password?: string;

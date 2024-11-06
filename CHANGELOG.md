@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.6] - 2024-11-06
+
+- Update dependencies and improve readme.
+
 ## [1.4.5] - 2024-09-26
 
 - Imperative transactions have to be closed manually.
@@ -69,8 +73,8 @@ date format is [yyyy-mm-dd]
 
 ## [1.0.0] - 2024-08-10
 
-- Allow to set a field as non-eager (i.e. lazy) in the entities with `eager: false` (by default all fields are `eager: true`).
-- Allow to set a field as non-updatable (i.e. insertable and read-only) in the entities with `updatable: false` (by default all fields are `updatable: true`).
+- Allow to set a field as non-eager (i.e. lazy) with `eager: false` (by default fields are `eager: true`).
+- Allow to set a field as non-updatable (i.e. insertable and read-only) with `updatable: false` (by default fields are `updatable: true`).
 
 ## [0.4.0] - 2023-11-06
 
