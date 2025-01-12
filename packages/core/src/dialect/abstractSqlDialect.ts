@@ -415,7 +415,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const meta = getMeta(entity);
     const record = this.getPersistable(meta, payload, 'onUpdate');
     const keys = getKeys(record);
-    const entries = keys.map((key) => `${this.escapeId(key)} = ${record[key]}`).join(', ');
+    const entries = keys.map((key) => `${this.escapeId(meta.fields[key].name)} = ${record[key]}`).join(', ');
     const criteria = this.search(entity, q, opts);
     return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
   }
