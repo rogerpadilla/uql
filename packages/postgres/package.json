@@ -22,8 +22,8 @@
     "sqlstring-sqlite": "^0.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.9.0",
-    "@types/pg": "^8.11.10",
+    "@types/node": "^22.12.0",
+    "@types/pg": "^8.11.11",
     "copyfiles": "^2.4.1",
     "pg": "^8.13.1",
     "rimraf": "^6.0.1",

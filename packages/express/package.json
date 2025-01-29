@@ -21,7 +21,7 @@
   "devDependencies": {
     "@types/express": "5.0.0",
     "copyfiles": "^2.4.1",
-    "express": "^4.21.1",
+    "express": "^4.21.2",
     "rimraf": "^6.0.1",
     "typescript": "~5.4.5"
   },

@@ -157,6 +157,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ).toBe("UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `creatorId` = 123");
   }
 
+  shouldUpdateWithAlias() {
+    expect(
+      this.dialect.update(
+        Profile,
+        { $where: { pk: 123 } },
+        {
+          picture: 'a base64 image',
+          updatedAt: 321,
+        },
+      ),
+    ).toBe("UPDATE `user_profile` SET `image` = 'a base64 image', `updatedAt` = 321 WHERE `pk` = 123");
+  }
+
   shouldFind() {
     expect(
       this.dialect.find(User, {
