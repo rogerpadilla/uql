@@ -12,7 +12,7 @@
     "lint.fix": "bun run lint -- --write --unsafe",
     "test": "jest --clearCache && concurrently 'npm:lint' 'jest'",
     "test.watch": "jest --watchAll",
-    "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
+    "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts' --detectOpenHandles",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
     "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
