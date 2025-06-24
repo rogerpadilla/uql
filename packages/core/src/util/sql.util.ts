@@ -33,7 +33,7 @@ export function unflatObjects<T>(objects: T[]): T[] {
       if (row[col] === null) {
         continue;
       }
-      const attrPath = attrsPaths[col];
+      const attrPath = attrsPaths[col] as Key<T>[];
       if (attrPath) {
         const target = attrPath.slice(0, -1).reduce((acc, key) => {
           if (typeof acc[key] !== 'object') {
