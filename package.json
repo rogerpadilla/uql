@@ -10,7 +10,7 @@
     "build": "lerna run build",
     "lint": "biome check",
     "lint.fix": "bun run lint -- --write --unsafe",
-    "test": "jest --clearCache && concurrently 'npm:lint' 'jest'",
+    "test": "jest --clearCache && jest",
     "test.watch": "jest --watchAll",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts' --detectOpenHandles",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
@@ -35,7 +35,8 @@
     "jest": "^30.0.2",
     "rimraf": "^6.0.1",
     "run-rs": "^0.7.7",
-    "typescript": "~5.8.3"
+    "ts-node": "^10.9.2",
+    "typescript": "~5.4.5"
   },
   "author": "Roger Padilla"
 }

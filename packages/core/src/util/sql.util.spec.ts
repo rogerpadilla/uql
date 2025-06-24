@@ -1,6 +1,6 @@
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { QuerySortMap } from '../type/index.js';
-import { flatObject, unflatObjects } from './sql.util.js';
+import { flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
   expect(flatObject(undefined)).toEqual({});
@@ -171,4 +171,23 @@ it('unflatObjects deep', () => {
     },
   ];
   expect(result).toEqual(expected);
+});
+
+it('obtainAttrsPaths - empty', () => {
+  const res1 = obtainAttrsPaths(undefined);
+  expect(res1).toEqual({});
+  const res2 = obtainAttrsPaths({});
+  expect(res2).toEqual({});
+});
+
+it('obtainAttrsPaths - object', () => {
+  const res1 = obtainAttrsPaths({
+    'prop1.a.b': 1,
+    'prop2.c.d': 2,
+  });
+  console.log('***** res1', res1);
+  expect(res1).toEqual({
+    'prop1.a.b': ['prop1', 'a', 'b'],
+    'prop2.c.d': ['prop2', 'c', 'd'],
+  });
 });

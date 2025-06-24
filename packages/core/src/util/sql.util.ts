@@ -1,14 +1,14 @@
-import type { Key } from 'nukak/type';
+import type { FieldValue, Key } from 'nukak/type';
 import { getKeys, hasKeys } from './object.util.js';
 
 export function flatObject<E>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(
-    (acc, key) => flatObjectEntry(acc, key as Key<E>, obj[key], typeof obj[key] === 'object' ? '' : pre),
+    (acc, key) => flatObjectEntry(acc, key, obj[key as Key<E>], typeof obj[key as Key<E>] === 'object' ? '' : pre),
     {} as E,
   );
 }
 
-function flatObjectEntry<E>(map: E, key: Key<E>, val: unknown, pre?: string): E {
+function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
   const prefix = pre ? `${pre}.${key}` : key;
   return typeof val === 'object'
     ? getKeys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)
@@ -33,14 +33,17 @@ export function unflatObjects<T>(objects: T[]): T[] {
       if (row[col] === null) {
         continue;
       }
-      const attrPath = attrsPaths[col] as Key<T>[];
+      const attrPath = attrsPaths[col];
       if (attrPath) {
-        const target = attrPath.slice(0, -1).reduce((acc, key) => {
-          if (typeof acc[key] !== 'object') {
-            acc[key] = {};
-          }
-          return acc[key];
-        }, dto);
+        const target = attrPath.slice(0, -1).reduce(
+          (acc, key) => {
+            if (typeof acc[key as Key<T>] !== 'object') {
+              acc[key as Key<T>] = {} as FieldValue<T>;
+            }
+            return acc[key as Key<T>];
+          },
+          dto as Record<string, any>,
+        );
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
         dto[col] = row[col];
@@ -51,7 +54,7 @@ export function unflatObjects<T>(objects: T[]): T[] {
   });
 }
 
-function obtainAttrsPaths<T>(row: T) {
+export function obtainAttrsPaths<T>(row: T) {
   return getKeys(row).reduce(
     (acc, col) => {
       if (col.includes('.')) {

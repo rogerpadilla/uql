@@ -1,4 +1,4 @@
-import type { FieldKey, FieldOptions, Key } from 'nukak/type';
+import type { FieldKey, FieldOptions } from 'nukak/type';
 
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {
@@ -14,8 +14,8 @@ export function hasKeys<T>(obj: T): boolean {
   return getKeys(obj).length > 0;
 }
 
-export function getKeys<T>(obj: T): Key<T>[] {
-  return obj ? (Object.keys(obj) as Key<T>[]) : [];
+export function getKeys<T>(obj: T): string[] {
+  return obj ? Object.keys(obj) : [];
 }
 
 export function getFieldKeys<E>(
