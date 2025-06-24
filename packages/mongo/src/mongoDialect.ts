@@ -1,27 +1,27 @@
-import { Document, Filter, ObjectId, Sort } from 'mongodb';
-import {
-  getKeys,
-  hasKeys,
-  buildSortMap,
-  filterRelationKeys,
-  buldQueryWhereAsMap,
-  CallbackKey,
-  fillOnFields,
-  filterFieldKeys,
-} from 'nukak/util';
+import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
 import { getMeta } from 'nukak/entity';
 import type {
-  QueryWhere,
   EntityMeta,
-  Type,
+  FieldValue,
+  Query,
+  QueryOptions,
   QuerySelect,
   QuerySelectMap,
-  QueryOptions,
   QuerySort,
-  FieldValue,
+  QueryWhere,
   RelationKey,
-  Query,
+  Type,
 } from 'nukak/type';
+import {
+  buildSortMap,
+  buldQueryWhereAsMap,
+  type CallbackKey,
+  fillOnFields,
+  filterFieldKeys,
+  filterRelationKeys,
+  getKeys,
+  hasKeys,
+} from 'nukak/util';
 
 export class MongoDialect {
   where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
@@ -33,31 +33,37 @@ export class MongoDialect {
       where[meta.softDelete as string] = null;
     }
 
-    return getKeys(where).reduce((acc, key) => {
-      let value = where[key];
-      if (key === '$and' || key === '$or') {
-        acc[key] = value.map((filterIt: QueryWhere<E>) => this.where(entity, filterIt));
-      } else {
-        if (key === '_id' || key === meta.id) {
-          key = '_id';
-          value = this.getIdValue(value);
-        } else if (Array.isArray(value)) {
-          value = {
-            $in: value,
-          };
+    return getKeys(where).reduce(
+      (acc, key) => {
+        let value = where[key];
+        if (key === '$and' || key === '$or') {
+          acc[key] = value.map((filterIt: QueryWhere<E>) => this.where(entity, filterIt));
+        } else {
+          if (key === '_id' || key === meta.id) {
+            key = '_id';
+            value = this.getIdValue(value);
+          } else if (Array.isArray(value)) {
+            value = {
+              $in: value,
+            };
+          }
+          acc[key as keyof Filter<E>] = value;
         }
-        acc[key as keyof Filter<E>] = value;
-      }
-      return acc;
-    }, {} as Filter<E>);
+        return acc;
+      },
+      {} as Filter<E>,
+    );
   }
 
   select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
     if (Array.isArray(select)) {
-      return select.reduce((acc, it) => {
-        acc[it as string] = true;
-        return acc;
-      }, {} satisfies QuerySelectMap<E>);
+      return select.reduce(
+        (acc, it) => {
+          acc[it as string] = true;
+          return acc;
+        },
+        {} satisfies QuerySelectMap<E>,
+      );
     }
     return select as QuerySelectMap<E>;
   }

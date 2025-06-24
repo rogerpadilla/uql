@@ -6,12 +6,12 @@ import {
   ItemAdjustment,
   LedgerAccount,
   MeasureUnit,
-  Spec,
+  type Spec,
   Tag,
   TaxCategory,
   User,
 } from '../test/index.js';
-import { Querier, QuerierPool } from '../type/index.js';
+import type { Querier, QuerierPool } from '../type/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier: Q;

@@ -13,7 +13,9 @@ describe('transactional', () => {
     setQuerierPool({
       getQuerier: async () => querierSingleton,
       end: async () => undefined,
-      transaction: async () => undefined,
+      transaction: async (): Promise<void> => {
+        return undefined;
+      },
     });
 
     anotherQuerierPool = {

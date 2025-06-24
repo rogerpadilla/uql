@@ -1,21 +1,6 @@
-import {
-  describe,
-  fdescribe,
-  xdescribe,
-  it,
-  fit,
-  xit,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  afterAll,
-} from '@jest/globals';
-
-import type { Global } from '@jest/types';
-
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  let describeFn: Global.DescribeBase;
+  let describeFn: jest.Describe;
   const specName = proto.constructor.name;
 
   if (specName.startsWith('fff')) {
@@ -41,7 +26,7 @@ function createTestCases(spec: object) {
       if (isProcessed || key === 'constructor' || typeof spec[key] !== 'function') {
         continue;
       }
-      const callback: Global.TestFn = spec[key].bind(spec);
+      const callback: jest.Func = spec[key].bind(spec);
       if (hooks[key]) {
         hooks[key](callback);
       } else if (key.startsWith('should')) {
@@ -66,5 +51,5 @@ const hooks = {
 type SpecHooks = Partial<typeof hooks>;
 
 export type Spec = SpecHooks & {
-  readonly [k: string]: Global.It | any;
+  readonly [k: string]: jest.It | any;
 };

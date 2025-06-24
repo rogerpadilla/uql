@@ -1,25 +1,21 @@
-import type { JestConfigWithTsJest } from 'ts-jest';
+import { readFileSync } from 'node:fs';
 
-const jestConfig: JestConfigWithTsJest = {
+const config = JSON.parse(readFileSync(`.swcrc`, 'utf-8'));
+
+const jestConfig = {
   verbose: true,
-  extensionsToTreatAsEsm: ['.ts'],
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   watchPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
   testPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
   moduleNameMapper: {
     '^nukak/(.+)\\.js$': '<rootDir>/packages/core/src/$1',
     '^nukak/(.+)(?<!\\.js)$': '<rootDir>/packages/core/src/$1',
-    '^(\\.{1,2}/.+)\\.js$': '$1',
+    '(\\.+/.+)\\.js$': '$1',
   },
   transform: {
-    '^.+\\.ts$': [
-      'ts-jest',
-      {
-        tsconfig: 'tsconfig.test.json',
-        useESM: true,
-      },
-    ],
+    '^.+\\.(t|j)sx?$': ['@swc/jest', { ...config }],
   },
-  setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.js'],
+  setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.ts'],
   testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],

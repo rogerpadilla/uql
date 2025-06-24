@@ -149,3 +149,5 @@ export type EntityMeta<E> = {
   };
   processed?: boolean;
 };
+
+export type Primitive = string | number | symbol;

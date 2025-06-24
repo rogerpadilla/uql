@@ -1,17 +1,17 @@
 import 'reflect-metadata';
 import type {
-  RelationOptions,
-  FieldOptions,
-  EntityOptions,
   EntityMeta,
-  Type,
-  RelationKeyMap,
-  RelationKey,
-  Key,
+  EntityOptions,
   FieldKey,
+  FieldOptions,
   IdKey,
+  Key,
+  RelationKey,
+  RelationKeyMap,
+  RelationOptions,
+  Type,
 } from '../../type/index.js';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
+import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
 const metaKey = 'nukak/entity/decorator';
@@ -211,10 +211,13 @@ function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
   return getKeys(meta.fields)
     .concat(getKeys(meta.relations))
-    .reduce((acc, key) => {
-      acc[key] = key;
-      return acc;
-    }, {} as RelationKeyMap<E>);
+    .reduce(
+      (acc, key) => {
+        acc[key] = key;
+        return acc;
+      },
+      {} as RelationKeyMap<E>,
+    );
 }
 
 function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {
@@ -243,6 +246,7 @@ function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
+    console.log('****', entity, key, inferredType);
     throw TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
   }
   return inferredType;
@@ -256,7 +260,6 @@ export function isValidEntityType(type: unknown): type is Type<unknown> {
     type !== Number &&
     type !== BigInt &&
     type !== Date &&
-    type !== Symbol &&
-    type !== Object
+    type !== Symbol
   );
 }

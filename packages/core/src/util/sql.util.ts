@@ -1,4 +1,4 @@
-import { hasKeys, getKeys } from './object.util.js';
+import { getKeys, hasKeys } from './object.util.js';
 
 export function flatObject<E>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(

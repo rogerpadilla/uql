@@ -1,15 +1,15 @@
-import sqlstring from 'sqlstring-sqlite';
+import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import type {
-  QueryWhereMap,
-  QueryTextSearchOptions,
-  Type,
   QueryComparisonOptions,
   QueryConflictPaths,
   QuerySearch,
+  QueryTextSearchOptions,
+  QueryWhereMap,
+  Type,
 } from 'nukak/type';
-import { AbstractSqlDialect } from 'nukak/dialect';
 import { clone, getKeys } from 'nukak/util';
+import sqlstring from 'sqlstring-sqlite';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor() {

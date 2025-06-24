@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { raw } from '../util/index.js';
+import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { idKey, type Relation } from '../type/index.js';
-import { Field, ManyToOne, Id, OneToMany, Entity, OneToOne, ManyToMany } from '../entity/index.js';
+import { raw } from '../util/index.js';
 
 /**
  * an `abstract` class can (optionally) be used as the base "template" for the entities

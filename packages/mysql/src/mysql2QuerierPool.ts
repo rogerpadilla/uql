@@ -1,6 +1,6 @@
-import { createPool, Pool, PoolOptions } from 'mysql2/promise';
-import type { ExtraOptions } from 'nukak/type';
+import { createPool, type Pool, type PoolOptions } from 'mysql2/promise';
 import { AbstractQuerierPool } from 'nukak/querier';
+import type { ExtraOptions } from 'nukak/type';
 import { MySql2Querier } from './mysql2Querier.js';
 
 export class MySql2QuerierPool extends AbstractQuerierPool<MySql2Querier> {

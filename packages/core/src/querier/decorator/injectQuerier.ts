@@ -1,24 +1,22 @@
-import type { Key, Type } from '../../type/index.js';
+import type { Key, Primitive, Type } from '../../type/index.js';
 
 const metadataKey = Symbol('InjectQuerier');
 
 export function InjectQuerier() {
-  return (proto: object, key: string, index: number) => {
-    const { constructor } = proto;
-
+  return (proto: Record<Primitive, any>, key: string, index: number) => {
     if (!proto[metadataKey]) {
       proto[metadataKey] = new WeakMap();
     }
 
-    if (!proto[metadataKey].has(constructor)) {
-      proto[metadataKey].set(constructor, {});
+    if (!proto[metadataKey].has(proto.constructor)) {
+      proto[metadataKey].set(proto.constructor, {});
     }
 
-    const meta = proto[metadataKey].get(constructor);
+    const meta = proto[metadataKey].get(proto.constructor);
     const isAlreadyInjected = key in meta;
 
     if (isAlreadyInjected) {
-      throw new TypeError(`@InjectQuerier() can only appears once in '${constructor.name}.${key}'}`);
+      throw new TypeError(`@InjectQuerier() can only appears once in '${proto.constructor.name}.${key}'}`);
     }
 
     meta[key] = index;

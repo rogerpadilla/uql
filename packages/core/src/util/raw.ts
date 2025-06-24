@@ -1,4 +1,4 @@
-import { QueryRaw, QueryRawFn, Scalar } from '../type/index.js';
+import { QueryRaw, type QueryRawFn, type Scalar } from '../type/index.js';
 
 /**
  * Allow using any raw value that shouldn't be automatically escaped by the ORM.

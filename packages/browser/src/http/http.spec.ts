@@ -1,4 +1,4 @@
-import { post, patch, put, get, remove } from './http.js';
+import { get, patch, post, put, remove } from './http.js';
 
 describe('http', () => {
   beforeEach(() => {

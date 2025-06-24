@@ -1,21 +1,21 @@
-import { getKeys } from '../util/index.js';
 import {
-  EntityMeta,
-  FieldKey,
-  QuerySelect,
-  CascadeType,
-  RelationKey,
-  FieldOptions,
-  Key,
+  type CascadeType,
+  type EntityMeta,
+  type FieldKey,
+  type FieldOptions,
+  type IdValue,
+  type Key,
+  type MongoId,
+  type OnFieldCallback,
   QueryRaw,
-  QuerySort,
-  QuerySortMap,
-  QueryWhere,
-  QueryWhereMap,
-  OnFieldCallback,
-  MongoId,
-  IdValue,
+  type QuerySelect,
+  type QuerySort,
+  type QuerySortMap,
+  type QueryWhere,
+  type QueryWhereMap,
+  type RelationKey,
 } from '../type/index.js';
+import { getKeys } from '../util/index.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
@@ -82,14 +82,17 @@ function filterPositiveKeys<E>(select: QuerySelect<E>): Key<E>[] {
 
 export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
   if (Array.isArray(sort)) {
-    return sort.reduce((acc, it) => {
-      if (Array.isArray(it)) {
-        acc[it[0]] = it[1];
-      } else {
-        acc[it.field] = it.sort;
-      }
-      return acc;
-    }, {} as QuerySortMap<E>);
+    return sort.reduce(
+      (acc, it) => {
+        if (Array.isArray(it)) {
+          acc[it[0]] = it[1];
+        } else {
+          acc[it.field] = it.sort;
+        }
+        return acc;
+      },
+      {} as QuerySortMap<E>,
+    );
   }
   return sort as QuerySortMap<E>;
 }

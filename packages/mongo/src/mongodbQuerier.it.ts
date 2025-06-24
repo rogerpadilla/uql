@@ -1,8 +1,8 @@
+import { getEntities, getMeta } from 'nukak/entity';
 import { AbstractQuerierIt } from 'nukak/querier/abstractQuerier-it.js';
 import { createSpec } from 'nukak/test';
-import { getEntities, getMeta } from 'nukak/entity';
+import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
-import { MongodbQuerier } from './mongodbQuerier.js';
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {

@@ -1,7 +1,7 @@
 import { AbstractQuerierPoolIt } from 'nukak/querier/abstractQuerierPool-it.js';
 import { createSpec } from 'nukak/test';
+import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
-import { MongodbQuerier } from './mongodbQuerier.js';
 
 class MongodbQuerierPoolIt extends AbstractQuerierPoolIt<MongodbQuerier> {
   constructor() {

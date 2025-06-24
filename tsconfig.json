@@ -1,8 +1,4 @@
 {
-  "ts-node": {
-    "files": true,
-    "esm": true
-  },
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",

@@ -1,11 +1,11 @@
-import { types } from 'pg';
-import { createSpec } from 'nukak/test';
 import { AbstractSqlQuerierIt } from 'nukak/querier/abstractSqlQuerier-it.js';
+import { createSpec } from 'nukak/test';
+import { types } from 'pg';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
-types.setTypeParser(types.builtins.INT8, (value: string) => parseInt(value));
-types.setTypeParser(types.builtins.FLOAT8, (value: string) => parseFloat(value));
-types.setTypeParser(types.builtins.NUMERIC, (value: string) => parseFloat(value));
+types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(value));
+types.setTypeParser(types.builtins.FLOAT8, (value: string) => Number.parseFloat(value));
+types.setTypeParser(types.builtins.NUMERIC, (value: string) => Number.parseFloat(value));
 
 export class PostgresQuerierIt extends AbstractSqlQuerierIt {
   constructor() {

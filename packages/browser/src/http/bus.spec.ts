@@ -1,5 +1,5 @@
 import type { RequestNotification } from '../type/index.js';
-import { on, notify } from './bus.js';
+import { notify, on } from './bus.js';
 
 it('bus', () => {
   const off = on((msg) => {

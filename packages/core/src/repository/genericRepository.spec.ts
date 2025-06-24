@@ -1,5 +1,5 @@
-import type { Querier, Repository } from '../type/index.js';
 import { User } from '../test/index.js';
+import type { Querier, Repository } from '../type/index.js';
 import { GenericRepository } from './genericRepository.js';
 
 describe('repository', () => {
