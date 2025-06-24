@@ -122,7 +122,7 @@ export abstract class AbstractQuerier implements Querier {
         const localField = relOpts.references[0].local;
         const throughEntity = relOpts.through();
         const throughMeta = getMeta(throughEntity);
-        const targetRelKey = Object.keys(throughMeta.relations).find((key) =>
+        const targetRelKey = getKeys(throughMeta.relations).find((key) =>
           throughMeta.relations[key].references.some(({ local }) => local === relOpts.references[1].local),
         );
         const throughFounds = await this.findMany(throughEntity, {

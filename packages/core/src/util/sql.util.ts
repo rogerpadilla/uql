@@ -1,16 +1,17 @@
+import type { Key } from 'nukak/type';
 import { getKeys, hasKeys } from './object.util.js';
 
 export function flatObject<E>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(
-    (acc, key) => flatObjectEntry(acc, key, obj[key], typeof obj[key] === 'object' ? '' : pre),
+    (acc, key) => flatObjectEntry(acc, key as Key<E>, obj[key], typeof obj[key] === 'object' ? '' : pre),
     {} as E,
   );
 }
 
-function flatObjectEntry<E>(map: E, key: string, val: unknown, pre?: string): E {
+function flatObjectEntry<E>(map: E, key: Key<E>, val: unknown, pre?: string): E {
   const prefix = pre ? `${pre}.${key}` : key;
   return typeof val === 'object'
-    ? Object.keys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)
+    ? getKeys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)
     : { ...map, [prefix]: val };
 }
 
