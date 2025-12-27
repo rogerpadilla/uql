@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { getQuerier, setQuerierPool } from '../../options.js';
 import type { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';

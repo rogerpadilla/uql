@@ -1,5 +1,6 @@
-import type { Querier, Repository } from '../type/index.js';
+import { jest } from '@jest/globals';
 import { User } from '../test/index.js';
+import type { Querier, Repository } from '../type/index.js';
 import { GenericRepository } from './genericRepository.js';
 
 describe('repository', () => {

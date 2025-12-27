@@ -1,8 +1,6 @@
-version: '3.9'
-
 services:
   mysql:
-    image: mysql:8.4.2
+    image: mysql:9.2
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -11,10 +9,10 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3316:3306
-    container_name: nukak-mysql-8
+    container_name: nukak-mysql-9
 
   mariadb:
-    image: yobasystems/alpine-mariadb:10.11.6
+    image: mariadb:11.8
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -23,10 +21,10 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3326:3306
-    container_name: nukak-mariadb-10
+    container_name: nukak-mariadb-11
 
   postgres:
-    image: postgres:16.4-alpine3.20
+    image: postgres:18.1-alpine
     restart: always
     environment:
       POSTGRES_USER: test
@@ -34,4 +32,4 @@ services:
       POSTGRES_DB: test
     ports:
       - 5442:5432
-    container_name: nukak-postgres-16
+    container_name: nukak-postgres-18

@@ -1,5 +1,6 @@
 {
   "private": true,
+  "version": "1.4.14",
   "type": "module",
   "sideEffects": false,
   "workspaces": [
@@ -7,16 +8,18 @@
   ],
   "scripts": {
     "release": "npm run build && lerna publish patch && git pull && git push",
+    "check.ts": "tsc --noEmit",
     "build": "lerna run build",
-    "lint": "eslint .",
-    "lint.fix": "npm run lint --fix",
-    "test": "jest --clearCache && concurrently 'npm:lint' 'jest'",
-    "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
-    "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
-    "test.watch": "jest --watchAll",
-    "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
-    "container": "concurrently 'npm:mongo-rs' 'docker compose up'"
+    "lint": "biome check .",
+    "lint.fix": "biome check . --fix",
+    "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest",
+    "test:watch": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --watchAll",
+    "test:coverage": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --coverage",
+    "test.all": "jest --clearCache && NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --testMatch '**/*.{it,spec}.ts'",
+    "test.all.watch": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --watchAll --testMatch '**/*.{it,spec}.ts'",
+    "test.focus": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
+    "container": "docker compose up",
+    "container:down": "docker compose down"
   },
   "commitlint": {
     "extends": [
@@ -24,31 +27,20 @@
     ]
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.5.0",
-    "@commitlint/config-conventional": "^19.5.0",
-    "@types/jest": "^29.5.14",
-    "@typescript-eslint/eslint-plugin": "^8.13.0",
-    "@typescript-eslint/parser": "^8.13.0",
-    "concurrently": "^9.1.0",
-    "coveralls": "^3.1.1",
-    "eslint": "^8.57.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-import-resolver-typescript": "3.6.3",
-    "eslint-plugin-import": "^2.31.0",
-    "eslint-plugin-prettier": "^5.2.1",
-    "jest": "^29.7.0",
-    "prettier": "^3.3.3",
-    "rimraf": "^6.0.1",
-    "run-rs": "^0.7.7",
-    "ts-jest": "^29.2.5",
-    "ts-node": "^10.9.2",
-    "typescript": "~5.4.5"
-  },
-  "prettier": {
-    "tabWidth": 2,
-    "semi": true,
-    "singleQuote": true,
-    "printWidth": 120
+    "@biomejs/biome": "2.3.10",
+    "@commitlint/cli": "20.2.0",
+    "@commitlint/config-conventional": "20.2.0",
+    "@types/jest": "30.0.0",
+    "concurrently": "9.2.1",
+    "coveralls": "3.1.1",
+    "cross-env": "10.1.0",
+    "jest": "30.2.0",
+    "jest-util": "^30.2.0",
+    "mongodb-memory-server": "11.0.1",
+    "rimraf": "6.1.2",
+    "ts-jest": "29.4.6",
+    "ts-node": "10.9.2",
+    "typescript": "5.4.5"
   },
   "author": "Roger Padilla"
 }

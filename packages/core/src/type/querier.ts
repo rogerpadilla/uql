@@ -1,8 +1,8 @@
-import type { Type } from './utility.js';
-import type { QueryOptions, QuerySearch, Query, QueryOne, QueryConflictPaths, QueryUpdateResult } from './query.js';
-import type { Repository } from './repository.js';
 import type { IdValue } from './entity.js';
+import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type { Repository } from './repository.js';
 import type { UniversalQuerier } from './universalQuerier.js';
+import type { Type } from './utility.js';
 
 /**
  * Isolation levels for transactions.

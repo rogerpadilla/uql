@@ -1,6 +1,6 @@
-import type { JestConfigWithTsJest } from 'ts-jest';
+import type { Config } from 'jest';
 
-const jestConfig: JestConfigWithTsJest = {
+const jestConfig: Config = {
   verbose: true,
   extensionsToTreatAsEsm: ['.ts'],
   watchPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],

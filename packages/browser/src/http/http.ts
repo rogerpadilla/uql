@@ -1,4 +1,4 @@
-import type { RequestOptions, RequestSuccessResponse, RequestErrorResponse } from '../type/index.js';
+import type { RequestErrorResponse, RequestOptions, RequestSuccessResponse } from '../type/index.js';
 import { notify } from './bus.js';
 
 export function get<T>(url: string, opts?: RequestOptions) {
@@ -34,7 +34,7 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
 
   return fetch(url, init)
     .then((rawResp) =>
-      rawResp.json().then((resp: RequestSuccessResponse<T> | RequestErrorResponse) => {
+      rawResp.json().then((resp: unknown) => {
         const isSuccess = rawResp.status >= 200 && rawResp.status < 300;
         if (isSuccess) {
           notify({ phase: 'success', opts });

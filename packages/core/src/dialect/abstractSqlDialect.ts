@@ -1,46 +1,45 @@
+import { getMeta } from '../entity/index.js';
 import {
-  QueryWhere,
-  Scalar,
-  QueryWhereFieldOperatorMap,
-  QuerySort,
-  QueryPager,
-  QueryTextSearchOptions,
-  FieldKey,
-  QuerySelect,
-  Type,
-  QuerySelectArray,
-  QueryOptions,
-  QueryDialect,
-  QueryWhereOptions,
-  QueryComparisonOptions,
-  QueryWhereMap,
-  QuerySelectOptions,
-  QuerySortDirection,
-  QueryWhereArray,
+  type EntityMeta,
+  type FieldKey,
+  type Query,
+  type QueryComparisonOptions,
+  type QueryConflictPaths,
+  type QueryDialect,
+  type QueryOptions,
+  type QueryPager,
   QueryRaw,
-  QuerySearch,
-  Query,
-  QueryConflictPaths,
-  EntityMeta,
-  QueryRawFnOptions,
+  type QueryRawFnOptions,
+  type QuerySearch,
+  type QuerySelect,
+  type QuerySelectArray,
+  type QuerySelectOptions,
+  type QuerySort,
+  type QuerySortDirection,
+  type QueryTextSearchOptions,
+  type QueryWhere,
+  type QueryWhereArray,
+  type QueryWhereFieldOperatorMap,
+  type QueryWhereMap,
+  type QueryWhereOptions,
+  type Scalar,
+  type Type,
 } from '../type/index.js';
 import {
-  filterRelationKeys,
-  isSelectingRelations,
-  getKeys,
-  hasKeys,
   buildSortMap,
-  flatObject,
-  raw,
   buldQueryWhereAsMap,
-  getFieldCallbackValue,
-  getFieldKeys,
+  type CallbackKey,
   fillOnFields,
   filterFieldKeys,
-  CallbackKey,
+  filterRelationKeys,
+  flatObject,
+  getFieldCallbackValue,
+  getFieldKeys,
+  getKeys,
+  hasKeys,
+  isSelectingRelations,
+  raw,
 } from '../util/index.js';
-
-import { getMeta } from '../entity/index.js';
 
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
@@ -192,7 +191,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions): string {
+  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -441,7 +440,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(
           value,
         )}${criteria}`;
-      } else if (opts.softDelete) {
+      }
+      if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }
     }

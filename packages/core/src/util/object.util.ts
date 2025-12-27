@@ -18,8 +18,10 @@ export function getKeys<T>(obj: T): string[] {
   return obj ? Object.keys(obj) : [];
 }
 
-export function getFieldKeys<E>(fields: {
-  [K in FieldKey<E>]?: FieldOptions;
-}): FieldKey<E>[] {
+export function getFieldKeys<E>(
+  fields: {
+    [K in FieldKey<E>]?: FieldOptions;
+  },
+): FieldKey<E>[] {
   return getKeys(fields).filter((field) => fields[field as FieldKey<E>].eager ?? true) as FieldKey<E>[];
 }

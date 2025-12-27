@@ -1,4 +1,4 @@
-import { User, Item, createSpec, TaxCategory, Company } from 'nukak/test';
+import { Company, createSpec, Item, TaxCategory, User } from 'nukak/test';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {

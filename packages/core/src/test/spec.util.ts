@@ -1,27 +1,18 @@
-import {
-  describe,
-  fdescribe,
-  xdescribe,
-  it,
-  fit,
-  xit,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  afterAll,
-} from '@jest/globals';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from '@jest/globals';
 
-import type { Global } from '@jest/types';
+type DescribeFn = typeof describe | typeof describe.only | typeof describe.skip;
+type ItFn = typeof it | typeof it.only | typeof it.skip;
+type TestFn = () => void | Promise<unknown>;
 
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  let describeFn: Global.DescribeBase;
+  let describeFn: DescribeFn;
   const specName = proto.constructor.name;
 
   if (specName.startsWith('fff')) {
-    describeFn = fdescribe;
+    describeFn = describe.only;
   } else if (specName.startsWith('xxx')) {
-    describeFn = xdescribe;
+    describeFn = describe.skip;
   } else {
     describeFn = describe;
   }
@@ -41,15 +32,15 @@ function createTestCases(spec: object) {
       if (isProcessed || key === 'constructor' || typeof spec[key] !== 'function') {
         continue;
       }
-      const callback: Global.TestFn = spec[key].bind(spec);
+      const callback: TestFn = spec[key].bind(spec);
       if (hooks[key]) {
         hooks[key](callback);
       } else if (key.startsWith('should')) {
         it(key, callback);
       } else if (key.startsWith('fffShould')) {
-        fit(key, callback);
+        it.only(key, callback);
       } else if (key.startsWith('xxxShould')) {
-        xit(key, callback);
+        it.skip(key, callback);
       }
     }
     proto = Object.getPrototypeOf(proto);
@@ -66,5 +57,5 @@ const hooks = {
 type SpecHooks = Partial<typeof hooks>;
 
 export type Spec = SpecHooks & {
-  readonly [k: string]: Global.It | any;
+  readonly [k: string]: ItFn | any;
 };

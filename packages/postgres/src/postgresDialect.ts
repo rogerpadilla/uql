@@ -1,17 +1,17 @@
-import sqlstring from 'sqlstring-sqlite';
-import type {
-  QueryComparisonOptions,
-  QueryWhereMap,
-  QueryOptions,
-  QueryWhereFieldOperatorMap,
-  QueryTextSearchOptions,
-  Type,
-  FieldKey,
-  QueryConflictPaths,
-} from 'nukak/type';
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
-import { getKeys, filterFieldKeys } from 'nukak/util';
+import type {
+  FieldKey,
+  QueryComparisonOptions,
+  QueryConflictPaths,
+  QueryOptions,
+  QueryTextSearchOptions,
+  QueryWhereFieldOperatorMap,
+  QueryWhereMap,
+  Type,
+} from 'nukak/type';
+import { filterFieldKeys, getKeys } from 'nukak/util';
+import sqlstring from 'sqlstring-sqlite';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor() {

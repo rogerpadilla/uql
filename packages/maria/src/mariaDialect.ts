@@ -1,8 +1,8 @@
-import { escape } from 'sqlstring';
 import { AbstractSqlDialect } from 'nukak/dialect';
-import type { QueryConflictPaths, Type } from 'nukak/type';
 import { getMeta } from 'nukak/entity';
+import type { QueryConflictPaths, Type } from 'nukak/type';
 import { filterFieldKeys } from 'nukak/util';
+import SqlString from 'sqlstring';
 
 export class MariaDialect extends AbstractSqlDialect {
   override insert<E>(entity: Type<E>, payload: E | E[]): string {
@@ -24,6 +24,6 @@ export class MariaDialect extends AbstractSqlDialect {
   }
 
   override escape(value: unknown): string {
-    return escape(value);
+    return SqlString.escape(value);
   }
 }

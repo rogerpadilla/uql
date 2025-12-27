@@ -1,19 +1,19 @@
-import type { MongoClient, ClientSession, UpdateFilter, Document, OptionalUnlessRequiredId } from 'mongodb';
+import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { getMeta } from 'nukak/entity';
 import { AbstractQuerier } from 'nukak/querier';
-import { clone, getFieldCallbackValue, hasKeys, isSelectingRelations, getKeys } from 'nukak/util';
 import type {
-  Type,
-  QueryOptions,
-  IdValue,
   ExtraOptions,
-  QuerySearch,
+  IdValue,
   Query,
   QueryConflictPaths,
+  QueryOptions,
+  QuerySearch,
   QueryWhere,
+  Type,
 } from 'nukak/type';
+import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from 'nukak/util';
 
-import { MongoDialect } from './mongoDialect.js';
+import type { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerier extends AbstractQuerier {
   private session: ClientSession;
@@ -128,10 +128,13 @@ export class MongodbQuerier extends AbstractQuerier {
 
     this.extra?.logger?.('upsertOne', entity.name, persistable);
 
-    const where = getKeys(conflictPaths).reduce((acc, key) => {
-      acc[key] = payload[key];
-      return acc;
-    }, {} as QueryWhere<E>);
+    const where = getKeys(conflictPaths).reduce(
+      (acc, key) => {
+        acc[key] = payload[key];
+        return acc;
+      },
+      {} as QueryWhere<E>,
+    );
 
     const filter = this.dialect.where(entity, where);
 

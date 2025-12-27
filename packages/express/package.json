@@ -19,10 +19,10 @@
     "nukak": "^1.0.0"
   },
   "devDependencies": {
-    "@types/express": "5.0.0",
+    "@types/express": "5.0.6",
     "copyfiles": "^2.4.1",
-    "express": "^4.21.1",
-    "rimraf": "^6.0.1",
+    "express": "^5.2.1",
+    "rimraf": "^6.1.2",
     "typescript": "~5.4.5"
   },
   "author": "Roger Padilla",

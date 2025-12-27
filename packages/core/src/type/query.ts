@@ -5,32 +5,32 @@ export type QueryOptions = {
   /**
    * use or omit `softDelete` attribute.
    */
-  readonly softDelete?: boolean;
+  softDelete?: boolean;
   /**
    * prefix the query with this.
    */
-  readonly prefix?: string;
+  prefix?: string;
   /**
    * automatically infer the prefix for the query.
    */
-  readonly autoPrefix?: boolean;
+  autoPrefix?: boolean;
 };
 
 export type QuerySelectOptions = {
   /**
    * prefix the query with this.
    */
-  readonly prefix?: string;
+  prefix?: string;
   /**
    * automatically add the prefix for the alias.
    */
-  readonly autoPrefixAlias?: boolean;
+  autoPrefixAlias?: boolean;
 };
 
 /**
  * query selection as an array.
  */
-export type QuerySelectArray<E> = readonly (Key<E> | QueryRaw)[];
+export type QuerySelectArray<E> = (Key<E> | QueryRaw)[];
 
 /**
  * query selection as a map.
@@ -46,14 +46,14 @@ export type QuerySelect<E> = QuerySelectArray<E> | QuerySelectMap<E>;
  * query selection of fields as a map.
  */
 export type QuerySelectFieldMap<E> = {
-  readonly [K in FieldKey<E>]?: BooleanLike;
+  [K in FieldKey<E>]?: BooleanLike;
 };
 
 /**
  * query conflict paths map.
  */
 export type QueryConflictPathsMap<E> = {
-  readonly [K in FieldKey<E>]?: true;
+  [K in FieldKey<E>]?: true;
 };
 
 /**
@@ -65,14 +65,14 @@ export type QueryConflictPaths<E> = QueryConflictPathsMap<E>;
  * query selection of relations as a map.
  */
 export type QuerySelectRelationMap<E> = {
-  readonly [K in RelationKey<E>]?: BooleanLike | readonly Key<Unpacked<E[K]>>[] | QuerySelectRelationOptions<E[K]>;
+  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | QuerySelectRelationOptions<E[K]>;
 };
 
 /**
  * options to select a relation.
  */
 export type QuerySelectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
-  readonly $required?: boolean;
+  $required?: boolean;
 };
 
 /**
@@ -82,17 +82,17 @@ export type QueryTextSearchOptions<E> = {
   /**
    * text to search for.
    */
-  readonly $value: string;
+  $value: string;
   /**
    * list of fields to search on.
    */
-  readonly $fields?: readonly FieldKey<E>[];
+  $fields?: FieldKey<E>[];
 };
 
 /**
  * comparison by fields.
  */
-export type QueryWhereFieldMap<E> = { readonly [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
+export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
 
 /**
  * complex operators.
@@ -103,122 +103,122 @@ export type QueryWhereRootOperator<E> = {
   /**
    * joins query clauses with a logical `AND`, returns records that match all the clauses.
    */
-  readonly $and?: QueryWhereArray<E>;
+  $and?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that match any of the clauses.
    */
-  readonly $or?: QueryWhereArray<E>;
+  $or?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
    */
-  readonly $not?: QueryWhereArray<E>;
+  $not?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
    */
-  readonly $nor?: QueryWhereArray<E>;
+  $nor?: QueryWhereArray<E>;
   /**
    * whether the specified fields match against a full-text search of the given string.
    */
-  readonly $text?: QueryTextSearchOptions<E>;
+  $text?: QueryTextSearchOptions<E>;
   /**
    * whether the record exists in the given sub-query.
    */
-  readonly $exists?: QueryRaw;
+  $exists?: QueryRaw;
   /**
    * whether the record does not exists in the given sub-query.
    */
-  readonly $nexists?: QueryRaw;
+  $nexists?: QueryRaw;
 };
 
 export type QueryWhereFieldOperatorMap<T> = {
   /**
    * whether a value is equal to the given value.
    */
-  readonly $eq?: ExpandScalar<T>;
+  $eq?: ExpandScalar<T>;
   /**
    * whether a value is not equal to the given value.
    */
-  readonly $ne?: ExpandScalar<T>;
+  $ne?: ExpandScalar<T>;
   /**
    * negates the given comparison.
    */
-  readonly $not?: QueryWhereFieldValue<T>;
+  $not?: QueryWhereFieldValue<T>;
   /**
    * whether a value is less than the given value.
    */
-  readonly $lt?: ExpandScalar<T>;
+  $lt?: ExpandScalar<T>;
   /**
    * whether a value is less than or equal to the given value.
    */
-  readonly $lte?: ExpandScalar<T>;
+  $lte?: ExpandScalar<T>;
   /**
    * whether a value is greater than the given value.
    */
-  readonly $gt?: ExpandScalar<T>;
+  $gt?: ExpandScalar<T>;
   /**
    * whether a value is greater than or equal to the given value.
    */
-  readonly $gte?: ExpandScalar<T>;
+  $gte?: ExpandScalar<T>;
   /**
    * whether a string begins with the given string (case sensitive).
    */
-  readonly $startsWith?: string;
+  $startsWith?: string;
   /**
    * whether a string begins with the given string (case insensitive).
    */
-  readonly $istartsWith?: string;
+  $istartsWith?: string;
   /**
    * whether a string ends with the given string (case sensitive).
    */
-  readonly $endsWith?: string;
+  $endsWith?: string;
   /**
    * whether a string ends with the given string (case insensitive).
    */
-  readonly $iendsWith?: string;
+  $iendsWith?: string;
   /**
    * whether a string is contained within the given string (case sensitive).
    */
-  readonly $includes?: string;
+  $includes?: string;
   /**
    * whether a string is contained within the given string (case insensitive).
    */
-  readonly $iincludes?: string;
+  $iincludes?: string;
   /**
    * whether a string fulfills the given pattern (case sensitive).
    */
-  readonly $like?: string;
+  $like?: string;
   /**
    * whether a string fulfills the given pattern (case insensitive).
    */
-  readonly $ilike?: string;
+  $ilike?: string;
   /**
    * whether a string matches the given regular expression.
    */
-  readonly $regex?: string;
+  $regex?: string;
   /**
    * whether a value matches any of the given values.
    */
-  readonly $in?: readonly ExpandScalar<T>[];
+  $in?: ExpandScalar<T>[];
   /**
    * whether a value does not match any of the given values.
    */
-  readonly $nin?: readonly ExpandScalar<T>[];
+  $nin?: ExpandScalar<T>[];
 };
 
 /**
  * Value for a field comparison.
  */
-export type QueryWhereFieldValue<T> = T | readonly T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
+export type QueryWhereFieldValue<T> = T | T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
 
 /**
  * query single filter.
  */
-export type QueryWhereSingle<E> = IdValue<E> | readonly IdValue<E>[] | QueryWhereMap<E> | QueryRaw;
+export type QueryWhereSingle<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | QueryRaw;
 
 /**
  * query filter array.
  */
-export type QueryWhereArray<E> = readonly QueryWhereSingle<E>[];
+export type QueryWhereArray<E> = QueryWhereSingle<E>[];
 
 /**
  * query filter.
@@ -233,25 +233,25 @@ export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 /**
  * sort by tuples
  */
-export type QuerySortTuples<E> = readonly [FieldKey<E>, QuerySortDirection][];
+export type QuerySortTuples<E> = [FieldKey<E>, QuerySortDirection][];
 
 /**
  * sort by objects.
  */
-export type QuerySortObjects<E> = readonly { readonly field: FieldKey<E>; readonly sort: QuerySortDirection }[];
+export type QuerySortObjects<E> = { field: FieldKey<E>; sort: QuerySortDirection }[];
 
 /**
  * sort by fields.
  */
 export type QuerySortFieldMap<E> = {
-  readonly [K in FieldKey<E>]?: QuerySortDirection;
+  [K in FieldKey<E>]?: QuerySortDirection;
 };
 
 /**
  * sort by relations fields.
  */
 export type QuerySortRelationMap<E> = {
-  readonly [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
+  [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
 };
 
 /**
@@ -323,7 +323,7 @@ export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$where'>;
  * stringified query.
  */
 export type QueryStringified = {
-  readonly [K in keyof Query<unknown>]?: string;
+  [K in keyof Query<unknown>]?: string;
 };
 
 /**
@@ -333,15 +333,15 @@ export type QueryUpdateResult = {
   /**
    * number of affected records.
    */
-  readonly changes?: number;
+  changes?: number;
   /**
    * the inserted IDs.
    */
-  readonly ids?: readonly number[] | readonly string[];
+  ids?: number[] | string[];
   /**
    * first inserted ID.
    */
-  readonly firstId?: number | string;
+  firstId?: number | string;
 };
 
 /**
@@ -351,15 +351,15 @@ export type QueryRawFnOptions = {
   /**
    * the current dialect.
    */
-  readonly dialect?: QueryDialect;
+  dialect?: QueryDialect;
   /**
    * the prefix.
    */
-  readonly prefix?: string;
+  prefix?: string;
   /**
    * the escaped prefix.
    */
-  readonly escapedPrefix?: string;
+  escapedPrefix?: string;
 };
 
 /**
@@ -381,7 +381,7 @@ export type QueryComparisonOptions = QueryOptions & {
   /**
    * use precedence for the comparison or not.
    */
-  readonly usePrecedence?: boolean;
+  usePrecedence?: boolean;
 };
 
 /**
@@ -391,7 +391,7 @@ export type QueryWhereOptions = QueryComparisonOptions & {
   /**
    * clause to be used in the filter.
    */
-  readonly clause?: 'WHERE' | false;
+  clause?: 'WHERE' | false;
 };
 
 export interface QueryDialect {
@@ -417,7 +417,7 @@ export interface QueryDialect {
    * @param qm the criteria options
    * @param opts the query options
    */
-  insert<E>(entity: Type<E>, payload: E | readonly E[], opts?: QueryOptions): string;
+  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions): string;
 
   /**
    * update records.

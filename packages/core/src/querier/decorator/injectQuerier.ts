@@ -4,6 +4,7 @@ const metadataKey = Symbol('InjectQuerier');
 
 export function InjectQuerier() {
   return (proto: object, key: string, index: number) => {
+    // biome-ignore lint/suspicious/noShadowRestrictedNames: this is the constructor property
     const { constructor } = proto;
 
     if (!proto[metadataKey]) {

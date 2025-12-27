@@ -1,9 +1,9 @@
 import type {
-  RelationOptions,
-  RelationOneToOneOptions,
-  RelationOneToManyOptions,
-  RelationManyToOneOptions,
   RelationManyToManyOptions,
+  RelationManyToOneOptions,
+  RelationOneToManyOptions,
+  RelationOneToOneOptions,
+  RelationOptions,
   Type,
 } from '../../type/index.js';
 import { defineRelation } from './definition.js';

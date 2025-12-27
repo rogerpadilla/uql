@@ -1,17 +1,17 @@
 import 'reflect-metadata';
 import type {
-  RelationOptions,
-  FieldOptions,
-  EntityOptions,
   EntityMeta,
-  Type,
-  RelationKeyMap,
-  RelationKey,
-  Key,
+  EntityOptions,
   FieldKey,
+  FieldOptions,
   IdKey,
+  Key,
+  RelationKey,
+  RelationKeyMap,
+  RelationOptions,
+  Type,
 } from '../../type/index.js';
-import { hasKeys, lowerFirst, getKeys, upperFirst } from '../../util/index.js';
+import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
 const metaKey = 'nukak/entity/decorator';
@@ -211,10 +211,13 @@ function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
   return getKeys(meta.fields)
     .concat(getKeys(meta.relations))
-    .reduce((acc, key) => {
-      acc[key] = key;
-      return acc;
-    }, {} as RelationKeyMap<E>);
+    .reduce(
+      (acc, key) => {
+        acc[key] = key;
+        return acc;
+      },
+      {} as RelationKeyMap<E>,
+    );
 }
 
 function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {

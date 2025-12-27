@@ -1,6 +1,6 @@
-import pg from 'pg';
-import type { ExtraOptions } from 'nukak/type';
 import { AbstractQuerierPool } from 'nukak/querier';
+import type { ExtraOptions } from 'nukak/type';
+import pg from 'pg';
 import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool extends AbstractQuerierPool<PgQuerier> {

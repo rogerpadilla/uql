@@ -19,7 +19,12 @@
       "request": "launch",
       "name": "Test pattern",
       "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
-      "args": ["--runInBand", "--collectCoverage=false", "--watchAll", "packages/core/src/repository/genericServerRepository.spec.ts"],
+      "args": [
+        "--runInBand",
+        "--collectCoverage=false",
+        "--watchAll",
+        "packages/core/src/repository/genericServerRepository.spec.ts"
+      ],
       "restart": true,
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen"
