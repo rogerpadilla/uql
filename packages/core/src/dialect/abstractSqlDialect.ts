@@ -239,7 +239,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
       }
       const comparisonKey = this.getComparisonKey(entity, key as FieldKey<E>, opts);
-      return `${comparisonKey} = ${val.value}`;
+      return `${String(comparisonKey)} = ${String(val.value)}`;
     }
 
     if (key === '$text') {
@@ -300,41 +300,43 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {
       case '$eq':
-        return val === null ? `${comparisonKey} IS NULL` : `${comparisonKey} = ${this.escape(val)}`;
+        return val === null ? `${String(comparisonKey)} IS NULL` : `${String(comparisonKey)} = ${this.escape(val)}`;
       case '$ne':
-        return val === null ? `${comparisonKey} IS NOT NULL` : `${comparisonKey} <> ${this.escape(val)}`;
+        return val === null
+          ? `${String(comparisonKey)} IS NOT NULL`
+          : `${String(comparisonKey)} <> ${this.escape(val)}`;
       case '$not':
         return this.compare(entity, '$not', [{ [key]: val }] as any, opts);
       case '$gt':
-        return `${comparisonKey} > ${this.escape(val)}`;
+        return `${String(comparisonKey)} > ${this.escape(val)}`;
       case '$gte':
-        return `${comparisonKey} >= ${this.escape(val)}`;
+        return `${String(comparisonKey)} >= ${this.escape(val)}`;
       case '$lt':
-        return `${comparisonKey} < ${this.escape(val)}`;
+        return `${String(comparisonKey)} < ${this.escape(val)}`;
       case '$lte':
-        return `${comparisonKey} <= ${this.escape(val)}`;
+        return `${String(comparisonKey)} <= ${this.escape(val)}`;
       case '$startsWith':
-        return `${comparisonKey} LIKE ${this.escape(`${val}%`)}`;
+        return `${String(comparisonKey)} LIKE ${this.escape(`${val}%`)}`;
       case '$istartsWith':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
       case '$endsWith':
-        return `${comparisonKey} LIKE ${this.escape(`%${val}`)}`;
+        return `${String(comparisonKey)} LIKE ${this.escape(`%${val}`)}`;
       case '$iendsWith':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
       case '$includes':
-        return `${comparisonKey} LIKE ${this.escape(`%${val}%`)}`;
+        return `${String(comparisonKey)} LIKE ${this.escape(`%${val}%`)}`;
       case '$iincludes':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape('%' + (val as string).toLowerCase() + '%')}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape('%' + (val as string).toLowerCase() + '%')}`;
       case '$ilike':
-        return `LOWER(${comparisonKey}) LIKE ${this.escape((val as string).toLowerCase())}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape((val as string).toLowerCase())}`;
       case '$like':
-        return `${comparisonKey} LIKE ${this.escape(val)}`;
+        return `${String(comparisonKey)} LIKE ${this.escape(val)}`;
       case '$in':
-        return `${comparisonKey} IN (${this.escape(val)})`;
+        return `${String(comparisonKey)} IN (${this.escape(val)})`;
       case '$nin':
-        return `${comparisonKey} NOT IN (${this.escape(val)})`;
+        return `${String(comparisonKey)} NOT IN (${this.escape(val)})`;
       case '$regex':
-        return `${comparisonKey} REGEXP ${this.escape(val)}`;
+        return `${String(comparisonKey)} REGEXP ${this.escape(val)}`;
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
@@ -501,7 +503,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
     const { value, prefix = '', autoPrefixAlias } = opts;
-    const val = typeof value.value === 'function' ? value.value({ ...opts, dialect: this }) : prefix + value.value;
+    const val =
+      typeof value.value === 'function' ? value.value({ ...opts, dialect: this }) : prefix + String(value.value);
     const alias = value.alias;
     if (alias) {
       const fullAlias = autoPrefixAlias ? prefix + alias : alias;
