@@ -9,13 +9,12 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "compile": "bunchee --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
-    "build": "npm run clean && concurrently 'npm:compile' 'npm:copyfiles'",
+    "compile": "bunchee --clean false --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
+    "build": "npm run clean && npm run compile && npm run copyfiles",
     "clean": "rimraf dist"
   },
   "devDependencies": {
     "bunchee": "^6.8.0",
-    "concurrently": "^9.2.1",
     "copyfiles": "^2.4.1",
     "nukak": "^1.4.12",
     "rimraf": "^6.1.2",
@@ -54,5 +53,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "e30bc1427507ca6a43b6dcf4e480e8dd3efad369"
+  "gitHead": "5b34efa6bbc48e3ad307395595d0d805fac64eae"
 }
