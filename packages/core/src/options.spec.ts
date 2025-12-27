@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { User } from './test/index.js';
 import type { Querier, Repository } from './type/index.js';
@@ -23,7 +24,7 @@ describe('options', () => {
     setQuerierPool({
       getQuerier: async () => querierMock,
       end: async () => {},
-      transaction: async (callback: (querier: Querier) => void) => {
+      transaction: async (callback: (querier: Querier) => void): Promise<void> => {
         return undefined;
       },
     });

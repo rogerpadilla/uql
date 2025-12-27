@@ -5,17 +5,26 @@
   "javascript.preferences.quoteStyle": "single",
   "typescript.preferences.quoteStyle": "single",
   "editor.codeActionsOnSave": {
-    "quickfix.biome": "explicit",
     "source.organizeImports.biome": "explicit",
     "source.fixAll.biome": "explicit"
   },
-  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
-  "[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
-  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
-  "[javascriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
-  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
   "[postcss]": {
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "biomejs.biome"
   },
   "[jsonc]": {
     "editor.defaultFormatter": "biomejs.biome"

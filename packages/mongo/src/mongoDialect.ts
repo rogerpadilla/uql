@@ -172,7 +172,11 @@ export class MongoDialect {
     if (value instanceof ObjectId) {
       return value;
     }
-    return new ObjectId(value) as T;
+    try {
+      return new ObjectId(value) as T;
+    } catch (e) {
+      return value;
+    }
   }
 
   getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {

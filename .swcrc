@@ -1,6 +1,7 @@
 {
   "$schema": "https://swc.rs/schema.json",
   "jsc": {
+    "target": "esnext",
     "parser": {
       "syntax": "typescript",
       "tsx": false,

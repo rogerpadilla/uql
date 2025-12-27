@@ -15,7 +15,7 @@ import {
   type QueryWhereMap,
   type RelationKey,
 } from '../type/index.js';
-import { getKeys } from '../util/index.js';
+import { getKeys } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 

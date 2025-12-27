@@ -50,12 +50,13 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
   });
 
   router.get('/:id', async (req, res, next) => {
+    const id = req.params.id as IdValue<E>;
     const q = req.query as Query<E>;
     q.$where ??= {};
     if (Array.isArray(q.$where)) {
-      q.$where.push(req.params.id);
+      q.$where.push(id);
     } else {
-      q.$where[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = id;
     }
     const querier = await getQuerier();
     try {
@@ -108,12 +109,13 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
 
   router.patch('/:id', async (req, res, next) => {
     const payload = req.body as E;
+    const id = req.params.id as IdValue<E>;
     const q = req.query as Query<E>;
     q.$where ??= {};
     if (Array.isArray(q.$where)) {
-      q.$where.push(req.params.id);
+      q.$where.push(id);
     } else {
-      q.$where[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = id;
     }
     const querier = await getQuerier();
     try {
@@ -130,12 +132,13 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
   });
 
   router.delete('/:id', async (req, res, next) => {
+    const id = req.params.id as IdValue<E>;
     const q = req.query as Query<E>;
     q.$where ??= {};
     if (Array.isArray(q.$where)) {
-      q.$where.push(req.params.id);
+      q.$where.push(id);
     } else {
-      q.$where[meta.id as string] = req.params.id;
+      q.$where[meta.id as string] = id;
     }
     const querier = await getQuerier();
     try {

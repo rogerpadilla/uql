@@ -4,7 +4,7 @@ import type { Querier } from '../type/index.js';
 import type { AbstractQuerierPool } from './abstractQuerierPool.js';
 
 export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
-  constructor(readonly pool: AbstractQuerierPool<Q>) {}
+  constructor(protected pool: AbstractQuerierPool<Q>) {}
 
   async afterAll() {
     await this.pool.end();

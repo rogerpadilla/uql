@@ -1,3 +1,5 @@
+import { expect, jest } from '@jest/globals';
+
 expect.extend({
   toMatch(received, expected) {
     const fits = expected.test(received);

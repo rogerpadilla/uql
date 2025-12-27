@@ -2,6 +2,7 @@ import { getMeta } from '../entity/decorator/index.js';
 import { GenericRepository } from '../repository/index.js';
 import type {
   IdValue,
+  Key,
   Querier,
   Query,
   QueryConflictPaths,
@@ -109,8 +110,9 @@ export abstract class AbstractQuerier implements Querier {
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relEntity = relOpts.entity();
+      type RelEntity = typeof relEntity;
       const relSelect = clone(select[relKey as string]);
-      const relQuery: Query<unknown> =
+      const relQuery: Query<RelEntity> =
         relSelect === true || relSelect === undefined
           ? {}
           : Array.isArray(relSelect)
@@ -145,8 +147,8 @@ export abstract class AbstractQuerier implements Querier {
         const foreignField = relOpts.references[0].foreign;
         if (relQuery.$select) {
           if (Array.isArray(relQuery.$select)) {
-            if (!relQuery.$select.includes(foreignField)) {
-              relQuery.$select.push(foreignField);
+            if (!relQuery.$select.includes(foreignField as Key<RelEntity>)) {
+              relQuery.$select.push(foreignField as Key<RelEntity>);
             }
           } else if (!relQuery.$select[foreignField]) {
             relQuery.$select[foreignField] = true;
@@ -187,7 +189,7 @@ export abstract class AbstractQuerier implements Querier {
       payload.map((it) => {
         const relKeys = filterPersistableRelationKeys(meta, it, 'persist');
         if (!relKeys.length) {
-          return;
+          return Promise.resolve();
         }
         return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
       }),

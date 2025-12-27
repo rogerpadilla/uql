@@ -4,9 +4,6 @@ on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [18.x]
     name: Run Tests
 
     steps:
@@ -22,15 +19,17 @@ jobs:
       - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
       - run: echo "🖥️ The workflow is now ready to test your code on the runner."
 
-      - uses: actions/setup-node@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '20.x'
 
       - name: Install
         run: npm install
 
       - name: Run Tests
         run: npm test
+
       - name: Submit coverage
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}

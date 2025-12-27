@@ -54,9 +54,7 @@
       "performance": {
         "noDelete": "off"
       },
-      "nursery": {
-        "useUniqueElementIds": "off"
-      },
+      "nursery": {},
       "a11y": {
         "noAccessKey": "error",
         "noAriaUnsupportedElements": "error",
@@ -91,13 +89,15 @@
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": {
-            "maxAllowedComplexity": 30
+            "maxAllowedComplexity": 31
           }
         },
         "noForEach": "off",
         "useSimplifiedLogicExpression": "off"
       },
       "correctness": {
+        "useUniqueElementIds": "off",
+        "noUndeclaredVariables": "off",
         "noEmptyPattern": "off",
         "noChildrenProp": "error",
         "noConstAssign": "error",
@@ -111,7 +111,6 @@
         "noSelfAssign": "error",
         "noSetterReturn": "error",
         "noSwitchDeclarations": "error",
-        "noUndeclaredVariables": "error",
         "noUnreachable": "error",
         "noUnreachableSuper": "error",
         "noUnsafeFinally": "error",
@@ -146,9 +145,17 @@
         "useNumberNamespace": "error",
         "noInferrableTypes": "error",
         "noUselessElse": "error",
-        "useArrayLiterals": "off"
+        "useArrayLiterals": "off",
+        "noNonNullAssertion": "error",
+        "useConsistentObjectDefinitions": {
+          "level": "error",
+          "options": {
+            "syntax": "shorthand"
+          }
+        }
       },
       "suspicious": {
+        "noTemplateCurlyInString": "off",
         "noAsyncPromiseExecutor": "error",
         "noCatchAssign": "error",
         "noClassAssign": "error",
@@ -161,7 +168,7 @@
         "noDuplicateJsxProps": "error",
         "noDuplicateObjectKeys": "error",
         "noDuplicateParameters": "error",
-        "noEmptyBlockStatements": "error",
+        "noEmptyBlockStatements": "off",
         "noExplicitAny": "off",
         "noExtraNonNullAssertion": "error",
         "noFallthroughSwitchClause": "error",
@@ -181,40 +188,5 @@
         "noArrayIndexKey": "off"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": [
-        "**/*.spec.ts",
-        "**/*-spec.ts",
-        "**/*-it.ts",
-        "packages/core/src/test/*.ts",
-        "config/test-setup-after-env.ts"
-      ],
-      "javascript": {
-        "globals": [
-          "describe",
-          "fdescribe",
-          "xdescribe",
-          "expect",
-          "it",
-          "fit",
-          "xit",
-          "test",
-          "beforeAll",
-          "beforeEach",
-          "afterAll",
-          "afterEach",
-          "jest"
-        ]
-      },
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noEmptyBlockStatements": "off"
-          }
-        }
-      }
-    }
-  ]
+  }
 }

@@ -3,7 +3,7 @@ import { createSpec } from 'nukak/test';
 import { types } from 'pg';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
-types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(value));
+types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(value, 10));
 types.setTypeParser(types.builtins.FLOAT8, (value: string) => Number.parseFloat(value));
 types.setTypeParser(types.builtins.NUMERIC, (value: string) => Number.parseFloat(value));
 

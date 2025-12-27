@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { User } from 'nukak/test';
 import { GenericClientRepository } from './genericClientRepository.js';
 import { HttpQuerier } from './httpQuerier.js';

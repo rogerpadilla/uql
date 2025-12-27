@@ -4,9 +4,9 @@ export function createSpec<T extends Spec>(spec: T) {
   const specName = proto.constructor.name;
 
   if (specName.startsWith('fff')) {
-    describeFn = fdescribe;
+    describeFn = describe.only;
   } else if (specName.startsWith('xxx')) {
-    describeFn = xdescribe;
+    describeFn = describe.skip;
   } else {
     describeFn = describe;
   }
@@ -32,9 +32,9 @@ function createTestCases(spec: object) {
       } else if (key.startsWith('should')) {
         it(key, callback);
       } else if (key.startsWith('fffShould')) {
-        fit(key, callback);
+        it.only(key, callback);
       } else if (key.startsWith('xxxShould')) {
-        xit(key, callback);
+        it.skip(key, callback);
       }
     }
     proto = Object.getPrototypeOf(proto);

@@ -9,16 +9,15 @@
   "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
-    "compile": "bunchee --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
-    "build": "npm run clean && concurrently 'npm:compile' 'npm:copyfiles'",
+    "compile": "bunchee --clean false --dts ./src/index.ts --sourcemap -o ./dist/nukak-browser.min.js",
+    "build": "npm run clean && npm run compile && npm run copyfiles",
     "clean": "rimraf dist"
   },
   "devDependencies": {
-    "bunchee": "^6.5.4",
-    "concurrently": "^9.2.0",
+    "bunchee": "^6.8.0",
     "copyfiles": "^2.4.1",
-    "nukak": "^1.4.13",
-    "rimraf": "^6.0.1",
+    "nukak": "^1.4.12",
+    "rimraf": "^6.1.2",
     "typescript": "~5.4.5"
   },
   "author": "Roger Padilla",
@@ -54,5 +53,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "f2a50012d7a6822f362a9cf528f13c17a6f15e4b"
+  "gitHead": "5b34efa6bbc48e3ad307395595d0d805fac64eae"
 }

@@ -1,4 +1,4 @@
 {
   // This will make VsCode to recommend these extensions by default (the ones related to the tools we use)
-  "recommendations": ["biomejs.biome", "editorConfig.editorConfig", "tobermory.es6-string-html", "ironGeek.vscode-env"]
+  "recommendations": ["biomejs.biome", "editorConfig.editorConfig", "tobermory.es6-string-html", "eamodio.gitlens"]
 }

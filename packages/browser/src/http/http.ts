@@ -34,7 +34,7 @@ function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {
 
   return fetch(url, init)
     .then((rawResp) =>
-      rawResp.json().then((resp: RequestSuccessResponse<T> | RequestErrorResponse) => {
+      rawResp.json().then((resp: unknown) => {
         const isSuccess = rawResp.status >= 200 && rawResp.status < 300;
         if (isSuccess) {
           notify({ phase: 'success', opts });

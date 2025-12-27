@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
+import type { Config } from 'jest';
 
-const config = JSON.parse(readFileSync(`.swcrc`, 'utf-8'));
+const swcConfig = JSON.parse(readFileSync(`.swcrc`, 'utf-8'));
 
-const jestConfig = {
+const jestConfig: Config = {
   verbose: true,
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
   watchPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
@@ -13,7 +14,7 @@ const jestConfig = {
     '(\\.+/.+)\\.js$': '$1',
   },
   transform: {
-    '^.+\\.(t|j)sx?$': ['@swc/jest', { ...config }],
+    '^.+\\.(t|j)sx?$': ['@swc/jest', { ...swcConfig }],
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.ts'],
   testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],

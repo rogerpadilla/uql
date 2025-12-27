@@ -1,5 +1,6 @@
 {
   "private": true,
+  "version": "1.4.14",
   "type": "module",
   "sideEffects": false,
   "workspaces": [
@@ -7,16 +8,18 @@
   ],
   "scripts": {
     "release": "npm run build && lerna publish patch && git pull && git push",
+    "check.ts": "tsc --noEmit",
     "build": "lerna run build",
-    "lint": "biome check",
-    "lint.fix": "bun run lint -- --write --unsafe",
-    "test": "jest --clearCache && jest",
-    "test.watch": "jest --watchAll",
-    "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts' --detectOpenHandles",
+    "lint": "biome check .",
+    "lint.fix": "biome check . --fix",
+    "test": "jest",
+    "test:watch": "jest --watchAll",
+    "test:coverage": "jest --coverage",
+    "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
     "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
-    "mongo-rs": "run-rs -v 7.0.2 --portStart 27027 -h 127.0.0.1 [-m]",
-    "container": "concurrently 'npm:mongo-rs' 'docker compose up'"
+    "container": "docker compose up",
+    "container:down": "docker compose down"
   },
   "commitlint": {
     "extends": [
@@ -24,18 +27,18 @@
     ]
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.5",
-    "@commitlint/cli": "^19.8.1",
-    "@commitlint/config-conventional": "^19.8.1",
-    "@swc/jest": "^0.2.38",
-    "@types/jest": "^30.0.0",
-    "concurrently": "^9.2.0",
-    "coveralls": "^3.1.1",
-    "cross-env": "^7.0.3",
-    "jest": "^30.0.2",
-    "rimraf": "^6.0.1",
-    "run-rs": "^0.7.7",
-    "ts-node": "^10.9.2",
+    "@biomejs/biome": "2.3.10",
+    "@commitlint/cli": "20.2.0",
+    "@commitlint/config-conventional": "20.2.0",
+    "@swc/jest": "0.2.39",
+    "@types/jest": "30.0.0",
+    "concurrently": "9.2.1",
+    "coveralls": "3.1.1",
+    "cross-env": "10.1.0",
+    "jest": "30.2.0",
+    "mongodb-memory-server": "11.0.1",
+    "rimraf": "6.1.2",
+    "ts-node": "10.9.2",
     "typescript": "~5.4.5"
   },
   "author": "Roger Padilla"

@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { get, patch, post, put, remove } from './http.js';
 
 describe('http', () => {
@@ -48,9 +49,7 @@ describe('http', () => {
 
   it('error', async () => {
     globalThis.fetch = jest.fn().mockImplementation(setupFetchStubError(new Error('some error')));
-    await expect(async () => {
-      await remove('/?a=1');
-    }).rejects.toThrow('some error');
+    await expect(remove('/?a=1')).rejects.toThrow('some error');
   });
 });
 

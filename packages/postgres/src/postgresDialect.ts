@@ -66,15 +66,15 @@ export class PostgresDialect extends AbstractSqlDialect {
     const comparisonKey = this.getComparisonKey(entity, key, opts);
     switch (op) {
       case '$istartsWith':
-        return `${comparisonKey} ILIKE ${this.escape(`${val}%`)}`;
+        return `${String(comparisonKey)} ILIKE ${this.escape(`${val}%`)}`;
       case '$iendsWith':
-        return `${comparisonKey} ILIKE ${this.escape(`%${val}`)}`;
+        return `${String(comparisonKey)} ILIKE ${this.escape(`%${val}`)}`;
       case '$iincludes':
-        return `${comparisonKey} ILIKE ${this.escape(`%${val}%`)}`;
+        return `${String(comparisonKey)} ILIKE ${this.escape(`%${val}%`)}`;
       case '$ilike':
-        return `${comparisonKey} ILIKE ${this.escape(val)}`;
+        return `${String(comparisonKey)} ILIKE ${this.escape(val)}`;
       case '$regex':
-        return `${comparisonKey} ~ ${this.escape(val)}`;
+        return `${String(comparisonKey)} ~ ${this.escape(val)}`;
       default:
         return super.compareFieldOperator(entity, key, op, val, opts);
     }

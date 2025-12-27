@@ -1,5 +1,4 @@
-/* eslint-disable prettier/prettier */
-
+import { jest } from '@jest/globals';
 import {
   clearTables,
   createTables,
