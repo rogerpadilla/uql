@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [1.4.14] - 2025-12-27
+## [1.4.10] - 2025-12-27
 
 - Improve types, tests, migrate from EsLint/Prettier to Biome, and update dependencies.
 
