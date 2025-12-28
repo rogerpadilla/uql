@@ -1,4 +1,5 @@
 import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User, UserWithNonUpdatableId } from 'nukak/test';
+import { raw } from 'nukak/util';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {
@@ -311,6 +312,19 @@ class PostgresDialectSpec {
     ).toBe(
       `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`,
     );
+  }
+
+  shouldUpdateWithRawString() {
+    expect(
+      this.dialect.update(
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: raw("jsonb_set(kind, '{open}', to_jsonb(1))"),
+          updatedAt: 123,
+        },
+      ),
+    ).toBe('UPDATE "Company" SET "kind" = jsonb_set(kind, \'{open}\', to_jsonb(1)), "updatedAt" = 123 WHERE "id" = 1');
   }
 
   shouldUpdateWithJsonbField() {

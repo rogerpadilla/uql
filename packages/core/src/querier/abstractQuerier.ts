@@ -16,7 +16,15 @@ import type {
   Repository,
   Type,
 } from '../type/index.js';
-import { augmentWhere, clone, filterPersistableRelationKeys, filterRelationKeys, getKeys } from '../util/index.js';
+import {
+  augmentWhere,
+  clone,
+  filterPersistableRelationKeys,
+  filterRelationKeys,
+  getKeys,
+  hasKeys,
+} from '../util/index.js';
+import { Serialized } from './decorator/index.js';
 
 /**
  * Base class for all database queriers.
@@ -320,7 +328,7 @@ export abstract class AbstractQuerier implements Querier {
 
   async releaseIfFree() {
     if (!this.hasOpenTransaction) {
-      await this.release();
+      await this.internalRelease();
     }
   }
 
@@ -343,5 +351,10 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract rollbackTransaction(): Promise<void>;
 
-  abstract release(): Promise<void>;
+  protected abstract internalRelease(): Promise<void>;
+
+  @Serialized()
+  async release(): Promise<void> {
+    return this.internalRelease();
+  }
 }

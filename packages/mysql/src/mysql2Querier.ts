@@ -1,5 +1,5 @@
 import type { PoolConnection } from 'mysql2/promise';
-import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
+import { AbstractSqlQuerier } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MySqlDialect } from './mysqlDialect.js';
 
@@ -13,40 +13,30 @@ export class MySql2Querier extends AbstractSqlQuerier {
     super(new MySqlDialect());
   }
 
-  @Serialized()
-  override async all<T>(query: string) {
+  override async internalAll<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const [res] = await this.conn.query(query);
-      return res as T[];
-    } finally {
-      await this.releaseIfFree();
-    }
+    const [res] = await this.conn.query(query);
+    return res as T[];
   }
 
-  @Serialized()
-  override async run(query: string) {
+  override async internalRun(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const [res]: any = await this.conn.query(query);
-      const ids = res.insertId
-        ? Array(res.affectedRows)
-            .fill(res.insertId)
-            .map((i, index) => i + index)
-        : [];
-      return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
-    } finally {
-      await this.releaseIfFree();
-    }
+    const [res]: any = await this.conn.query(query);
+    const ids = res.insertId
+      ? Array(res.affectedRows)
+          .fill(res.insertId)
+          .map((i, index) => i + index)
+      : [];
+    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   async lazyConnect() {
     this.conn ??= await this.connect();
   }
 
-  override async release() {
+  override async internalRelease() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }

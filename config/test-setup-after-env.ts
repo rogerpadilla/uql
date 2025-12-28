@@ -11,4 +11,4 @@ expect.extend({
   },
 });
 
-jest.setTimeout(20_000);
+jest.setTimeout(15_000);

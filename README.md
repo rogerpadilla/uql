@@ -158,18 +158,28 @@ import { User } from './shared/models/index.js';
 
 async function findLastUsers(limit = 100) {
   const querier = await querierPool.getQuerier();
-  const users = await querier.findMany(User, {
-    $select: { id: true, name: true, email: true },
-    $sort: { createdAt: 'desc' },
-    $limit: limit,
-  });
-  return users;
+  try {
+    const users = await querier.findMany(User, {
+      $select: { id: true, name: true, email: true },
+      $sort: { createdAt: 'desc' },
+      $limit: limit,
+    });
+    return users;
+  } finally {
+    // ensure the connection is released back to the pool
+    await querier.release();
+  }
 }
 
 async function createUser(data: User) {
   const querier = await querierPool.getQuerier();
-  const id = await querier.insertOne(User, data);
-  return id;
+  try {
+    const id = await querier.insertOne(User, data);
+    return id;
+  } finally {
+    // ensure the connection is released back to the pool
+    await querier.release();
+  }
 }
 ```
 

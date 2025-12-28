@@ -47,6 +47,8 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   constructor(
     readonly escapeIdChar: '`' | '"' = '`',
     readonly beginTransactionCommand: string = 'START TRANSACTION',
+    readonly commitTransactionCommand: string = 'COMMIT',
+    readonly rollbackTransactionCommand: string = 'ROLLBACK',
   ) {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
@@ -506,18 +508,24 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         let value = it[key];
         if (value instanceof QueryRaw) {
           value = this.getRawValue({ value }) as E[FieldKey<E>];
-        } else if (type === 'json' || type === 'jsonb') {
-          value = (this.escape(JSON.stringify(value)) + `::${type}`) as E[FieldKey<E>];
-        } else if (type === 'vector') {
-          value = (value as number[]).map((num) => +num).join(',') as E[FieldKey<E>];
-          value = `'[${value}]'` as E[FieldKey<E>];
         } else {
-          value = this.escape(value) as E[FieldKey<E>];
+          value = this.formatPersistableValue(value, type) as E[FieldKey<E>];
         }
         acc[key] = value;
         return acc;
       }, {} as E),
     );
+  }
+
+  protected formatPersistableValue(value: any, type: string): string {
+    if (type === 'json' || type === 'jsonb') {
+      return this.escape(JSON.stringify(value));
+    }
+    if (type === 'vector') {
+      const vector = (value as number[]).map((num) => +num).join(',');
+      return `'[${vector}]'`;
+    }
+    return this.escape(value);
   }
 
   getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {

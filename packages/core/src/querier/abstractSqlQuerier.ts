@@ -3,6 +3,7 @@ import { getMeta } from '../entity/index.js';
 import type { Query, QueryConflictPaths, QueryOptions, QuerySearch, QueryUpdateResult, Type } from '../type/index.js';
 import { clone, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
+import { Serialized } from './decorator/index.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier {
   private hasPendingTransaction?: boolean;
@@ -12,16 +13,24 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   }
 
   /**
-   * read query.
-   * @param query the query
+   * internal read query.
    */
-  abstract all<T>(query: string): Promise<T[]>;
+  protected abstract internalAll<T>(query: string): Promise<T[]>;
 
   /**
-   * insert/update/delete/ddl query.
-   * @param query the query
+   * internal insert/update/delete/ddl query.
    */
-  abstract run(query: string): Promise<QueryUpdateResult>;
+  protected abstract internalRun(query: string): Promise<QueryUpdateResult>;
+
+  @Serialized()
+  async all<T>(query: string): Promise<T[]> {
+    return this.internalAll<T>(query);
+  }
+
+  @Serialized()
+  async run(query: string): Promise<QueryUpdateResult> {
+    return this.internalRun(query);
+  }
 
   override async findMany<E>(entity: Type<E>, q: Query<E>) {
     const query = this.dialect.find(entity, q);
@@ -86,27 +95,30 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
     return this.hasPendingTransaction;
   }
 
+  @Serialized()
   override async beginTransaction() {
     if (this.hasPendingTransaction) {
       throw TypeError('pending transaction');
     }
+    await this.internalRun(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
-    await this.run(this.dialect.beginTransactionCommand);
   }
 
+  @Serialized()
   override async commitTransaction() {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    await this.run('COMMIT');
-    this.hasPendingTransaction = undefined;
+    await this.internalRun(this.dialect.commitTransactionCommand);
+    this.hasPendingTransaction = false;
   }
 
+  @Serialized()
   override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
       throw TypeError('not a pending transaction');
     }
-    await this.run('ROLLBACK');
-    this.hasPendingTransaction = undefined;
+    await this.internalRun(this.dialect.rollbackTransactionCommand);
+    this.hasPendingTransaction = false;
   }
 }

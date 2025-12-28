@@ -19,9 +19,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   constructor(protected pool: QuerierPool<Q>) {}
 
   async beforeAll() {
-    this.querier = await this.pool.getQuerier();
-    await this.dropTables();
-    await this.createTables();
+    const querier = await this.pool.getQuerier();
+    try {
+      this.querier = querier;
+      await this.dropTables();
+      await this.createTables();
+    } finally {
+      await querier.release();
+      this.querier = undefined;
+    }
   }
 
   async beforeEach() {
@@ -29,8 +35,12 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.clearTables();
   }
 
+  async afterEach() {
+    await this.querier.release();
+  }
+
   async afterAll() {
-    // await this.pool.end();
+    await this.pool.end();
   }
 
   shouldGetRepository() {

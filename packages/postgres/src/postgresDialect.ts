@@ -74,6 +74,17 @@ export class PostgresDialect extends AbstractSqlDialect {
     }
   }
 
+  override formatPersistableValue(value: any, type: string): string {
+    if (type === 'json' || type === 'jsonb') {
+      return this.escape(JSON.stringify(value)) + `::${type}`;
+    }
+    if (type === 'vector') {
+      const vector = (value as number[]).map((num) => +num).join(',');
+      return `'[${vector}]'::vector`;
+    }
+    return super.formatPersistableValue(value, type);
+  }
+
   override escape(value: unknown): string {
     return sqlstring.escape(value);
   }

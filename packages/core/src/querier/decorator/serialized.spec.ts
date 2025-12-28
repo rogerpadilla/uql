@@ -27,7 +27,7 @@ class MockQuerier extends AbstractQuerier {
   beginTransaction(): any {}
   commitTransaction(): any {}
   rollbackTransaction(): any {}
-  release(): any {}
+  protected internalRelease(): any {}
   hasOpenTransaction = false;
 }
 
@@ -57,4 +57,42 @@ test('Serialized decorator advances queue even on failure', async () => {
   const result2 = await promise2;
   expect(result2).toBe(2);
   expect(querier.executionOrder).toEqual([2]);
+});
+
+test('Demonstrate deadlock when a @Serialized method calls another @Serialized method', async () => {
+  class DeadlockQuerier extends MockQuerier {
+    @Serialized()
+    async outer() {
+      return this.inner();
+    }
+
+    @Serialized()
+    async inner() {
+      return 'done';
+    }
+  }
+
+  const querier = new DeadlockQuerier();
+
+  // We expect this to deadlock/timeout because 'outer' holds the queue and waits for 'inner',
+  // but 'inner' is waiting for the queue to be free.
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('DEADLOCK')), 500));
+
+  await expect(Promise.race([querier.outer(), timeoutPromise])).rejects.toThrow('DEADLOCK');
+});
+
+test('Proper solution: @Serialized method calls a non-decorated internal method', async () => {
+  class SafeQuerier extends MockQuerier {
+    @Serialized()
+    async publicMethod() {
+      return this.internalMethod();
+    }
+
+    async internalMethod() {
+      return 'safe';
+    }
+  }
+
+  const querier = new SafeQuerier();
+  await expect(querier.publicMethod()).resolves.toBe('safe');
 });

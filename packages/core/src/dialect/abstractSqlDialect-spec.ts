@@ -84,11 +84,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Company,
         { $where: { id: 1 } },
         {
-          kind: raw("jsonb_set(kind, '{open}', to_jsonb(1))"),
+          kind: raw("'value'"),
           updatedAt: 123,
         },
       ),
-    ).toBe("UPDATE `Company` SET `kind` = jsonb_set(kind, '{open}', to_jsonb(1)), `updatedAt` = 123 WHERE `id` = 1");
+    ).toBe("UPDATE `Company` SET `kind` = 'value', `updatedAt` = 123 WHERE `id` = 1");
   }
 
   shouldUpdateWithJsonbField() {
@@ -101,7 +101,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE `Company` SET `kind` = \'{\\"private\\":1}\'::jsonb, `updatedAt` = 123 WHERE `id` = 1');
+    ).toBe('UPDATE `Company` SET `kind` = \'{\\"private\\":1}\', `updatedAt` = 123 WHERE `id` = 1');
   }
 
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {

@@ -36,6 +36,10 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async afterEach() {
+    if (this.querier.hasOpenTransaction) {
+      await this.querier.rollbackTransaction();
+    }
+    await this.querier.release();
     jest.restoreAllMocks();
   }
 
@@ -800,53 +804,37 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUseTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
-    expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     expect(this.querier.hasOpenTransaction).toBe(true);
     await this.querier.commitTransaction();
-    await this.querier.release();
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.run).toHaveBeenNthCalledWith(
-      2,
-      "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5",
-    );
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'COMMIT');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledWith("UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
   async shouldUseTransactionCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.transaction(async () => {
-      expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
     });
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.run).toHaveBeenNthCalledWith(
-      2,
-      "UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5",
-    );
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'COMMIT');
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledWith("UPDATE `User` SET `name` = 'Hola', `updatedAt` = 1 WHERE `id` = 5");
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
   async shouldThrowIfRollbackIfErrorInCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {
-      expect(this.querier.run).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
       expect(this.querier.hasOpenTransaction).toBe(true);
       throw new Error('some error');
     });
     await expect(prom).rejects.toThrow('some error');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, this.querier.dialect.beginTransactionCommand);
-    expect(this.querier.run).toHaveBeenNthCalledWith(2, 'ROLLBACK');
-    expect(this.querier.run).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
@@ -856,15 +844,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(this.querier.run).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
-    await this.querier.rollbackTransaction();
-    await this.querier.release();
   }
 
   async shouldThrowIfCommitWithNoPendingTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    await expect(this.querier.commitTransaction()).rejects.toThrow('pending transaction');
+    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     expect(this.querier.run).toHaveBeenCalledTimes(0);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
@@ -886,9 +872,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(this.querier.run).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
     await this.querier.rollbackTransaction();
     await this.querier.release();
+  }
+
+  async shouldBeIdempotentRelease() {
+    await this.querier.release();
+    await expect(this.querier.release()).resolves.toBeUndefined();
   }
 }

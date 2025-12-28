@@ -1,5 +1,5 @@
 import type { PoolConnection } from 'mariadb';
-import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
+import { AbstractSqlQuerier } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';
 
@@ -13,36 +13,26 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     super(new MariaDialect());
   }
 
-  @Serialized()
-  override async all<T>(query: string) {
+  override async internalAll<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const res: T[] = await this.conn.query(query);
-      return res.slice(0, res.length);
-    } finally {
-      await this.releaseIfFree();
-    }
+    const res: T[] = await this.conn.query(query);
+    return res.slice(0, res.length);
   }
 
-  @Serialized()
-  override async run(query: string) {
+  override async internalRun(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const res = await this.conn.query(query);
-      const ids = res.length ? res.map((r: any) => r.id) : [];
-      return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
-    } finally {
-      await this.releaseIfFree();
-    }
+    const res = await this.conn.query(query);
+    const ids = res.length ? res.map((r: any) => r.id) : [];
+    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   async lazyConnect() {
     this.conn ??= await this.connect();
   }
 
-  override async release() {
+  override async internalRelease() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }

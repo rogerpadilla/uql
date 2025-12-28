@@ -106,7 +106,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE `Company` SET `kind` = \'{"private":1}\'::jsonb, `updatedAt` = 123 WHERE `id` = 1');
+    ).toBe('UPDATE `Company` SET `kind` = \'{"private":1}\', `updatedAt` = 123 WHERE `id` = 1');
   }
 }
 

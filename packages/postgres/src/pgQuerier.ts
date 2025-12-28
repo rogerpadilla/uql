@@ -1,4 +1,4 @@
-import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
+import { AbstractSqlQuerier } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import type { PoolClient } from 'pg';
 import { PostgresDialect } from './postgresDialect.js';
@@ -13,36 +13,26 @@ export class PgQuerier extends AbstractSqlQuerier {
     super(new PostgresDialect());
   }
 
-  @Serialized()
-  override async all<T>(query: string) {
+  override async internalAll<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const res = await this.conn.query<T>(query);
-      return res.rows;
-    } finally {
-      await this.releaseIfFree();
-    }
+    const res = await this.conn.query<T>(query);
+    return res.rows;
   }
 
-  @Serialized()
-  override async run(query: string) {
+  override async internalRun(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
-    try {
-      const { rowCount: changes, rows = [] }: any = await this.conn.query(query);
-      const ids = rows.map((r: any) => r.id);
-      return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
-    } finally {
-      await this.releaseIfFree();
-    }
+    const { rowCount: changes, rows = [] }: any = await this.conn.query(query);
+    const ids = rows.map((r: any) => r.id);
+    return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   async lazyConnect() {
     this.conn ??= await this.connect();
   }
 
-  override async release() {
+  override async internalRelease() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }

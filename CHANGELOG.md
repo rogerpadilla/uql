@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+## [1.5.0] - 2025-12-28
+- **BREAKING CHANGE**: Implemented "Sticky Connections" for performance. `Querier` instances now hold their connection until `release()` is explicitly called.
+  - If you manually retrieve a querier via `pool.getQuerier()`, you **MUST** call `await querier.release()` when finished, otherwise connections will leak.
+  - `Repositories` and `pool.transaction(...)` callbacks automatically handle this, so high-level usage remains unchanged.
+- Unified serialization logic: `@Serialized()` decorator is now centralized in `AbstractSqlQuerier`, removing redundant overrides in drivers.
+- Fixed MongoDB consistency: `beginTransaction`, `commitTransaction`, and `rollbackTransaction` are now serialized to prevent race conditions.
+- Fix Cross-Dialect SQL JSON bug by moving PostgreSQL-specific casts to the appropriate dialect.
+- Fix transaction race conditions by serializing transaction lifecycle methods and implementing an internal execution pattern.
 
 ## [1.4.16] - 2025-12-28
 

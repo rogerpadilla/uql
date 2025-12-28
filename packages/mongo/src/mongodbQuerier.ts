@@ -217,15 +217,18 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.conn.db();
   }
 
+  @Serialized()
   override async beginTransaction() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
     this.extra?.logger?.('beginTransaction');
+    await this.session?.endSession();
     this.session = this.conn.startSession();
     this.session.startTransaction();
   }
 
+  @Serialized()
   override async commitTransaction() {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
@@ -234,6 +237,7 @@ export class MongodbQuerier extends AbstractQuerier {
     await this.session.commitTransaction();
   }
 
+  @Serialized()
   override async rollbackTransaction() {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
@@ -242,10 +246,11 @@ export class MongodbQuerier extends AbstractQuerier {
     await this.session.abortTransaction();
   }
 
-  override async release(force?: boolean) {
+  override async internalRelease() {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
-    await this.conn.close(force);
+    await this.session?.endSession();
+    this.session = undefined;
   }
 }
