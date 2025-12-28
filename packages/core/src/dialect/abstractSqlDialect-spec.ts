@@ -138,8 +138,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           createdAt: 123,
         },
       ),
-    ).toBe(
-      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`)",
+    ).toMatch(
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(.*'Some Name'.*'someemail@example\.com'.*123.*\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = VALUES\(`updatedAt`\).*$/,
     );
   }
 

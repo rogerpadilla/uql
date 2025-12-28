@@ -1,7 +1,6 @@
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import type { QueryConflictPaths, Type } from 'nukak/type';
-import { filterFieldKeys } from 'nukak/util';
 import SqlString from 'sqlstring';
 
 export class MariaDialect extends AbstractSqlDialect {
@@ -12,15 +11,13 @@ export class MariaDialect extends AbstractSqlDialect {
   }
 
   override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
-    const meta = getMeta(entity);
     const insert = super.insert(entity, payload);
-    const felds = filterFieldKeys(meta, payload, 'onInsert');
-    const update = felds
-      .filter((col) => !conflictPaths[col])
-      .map((col) => `${this.escapeId(col)} = VALUES(${this.escapeId(col)})`)
-      .join(', ');
+    const meta = getMeta(entity);
+    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `VALUES(${name})`);
     const returning = this.returningId(entity);
-    return `${insert} ON DUPLICATE KEY UPDATE ${update} ${returning}`;
+    const onConflict = update ? ` ON DUPLICATE KEY UPDATE ${update}` : '';
+    const sql = update ? insert : insert.replace(/^INSERT/, 'INSERT IGNORE');
+    return `${sql}${onConflict} ${returning}`;
   }
 
   override escape(value: unknown): string {

@@ -1,4 +1,4 @@
-import { Company, createSpec, Item, TaxCategory, User } from 'nukak/test';
+import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {
@@ -74,8 +74,96 @@ class PostgresDialectSpec {
           createdAt: 123,
         },
       ),
+    ).toMatch(
+      /^INSERT INTO "User" \("id", "name", "createdAt"\) VALUES \(1, 'Some Name', 123\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+  }
+
+  shouldUpsertWithDifferentColumnNames() {
+    expect(
+      this.dialect.upsert(
+        Profile,
+        { pk: true },
+        {
+          pk: 1,
+          picture: 'image.jpg',
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO "user_profile" \("pk", "image", "createdAt"\) VALUES \(1, 'image.jpg', .+\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id"$/,
+    );
+  }
+
+  shouldUpsertWithNonUpdatableFields() {
+    expect(
+      this.dialect.upsert(
+        User,
+        { id: true },
+        {
+          id: 1,
+          email: 'a@b.com',
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO "User" \("id", "email", "createdAt"\) VALUES \(1, 'a@b.com', .+\) ON CONFLICT \("id"\) DO UPDATE SET "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+  }
+
+  shouldUpsertWithDoNothing() {
+    expect(
+      this.dialect.upsert(
+        ItemTag,
+        { id: true },
+        {
+          id: 1,
+        },
+      ),
+    ).toBe('INSERT INTO "ItemTag" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"');
+  }
+
+  shouldUpsertWithCompositeKeys() {
+    expect(
+      this.dialect.upsert(
+        ItemTag,
+        { itemId: true, tagId: true },
+        {
+          itemId: 1,
+          tagId: 2,
+        },
+      ),
     ).toBe(
-      `INSERT INTO "User" ("id", "name", "createdAt") VALUES (1, 'Some Name', 123) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt" RETURNING "id" "id"`,
+      'INSERT INTO "ItemTag" ("itemId", "tagId") VALUES (1, 2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"',
+    );
+  }
+
+  shouldUpsertWithOnUpdateField() {
+    expect(
+      this.dialect.upsert(
+        User,
+        { id: true },
+        {
+          id: 1,
+          name: 'Some Name',
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*1.*'Some Name'.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = EXCLUDED."updatedAt".*$/,
+    );
+  }
+
+  shouldUpsertWithVirtualField() {
+    expect(
+      this.dialect.upsert(
+        Item,
+        { id: true },
+        {
+          id: 1,
+          name: 'Some Item',
+          tagsCount: 5,
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO "Item" \("id", "name", "createdAt"\) VALUES \(1, 'Some Item', .+\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
     );
   }
 

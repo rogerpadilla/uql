@@ -22,7 +22,7 @@ export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'on
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
   const persistableKeys = getKeys(payload).filter((key) => {
     const fieldOpts = meta.fields[key as FieldKey<E>];
-    return fieldOpts && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
+    return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
   }) as FieldKey<E>[];
   return persistableKeys;
 }

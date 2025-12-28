@@ -3,12 +3,10 @@ import { getMeta } from 'nukak/entity';
 import type {
   QueryComparisonOptions,
   QueryConflictPaths,
-  QuerySearch,
   QueryTextSearchOptions,
   QueryWhereMap,
   Type,
 } from 'nukak/type';
-import { clone, getKeys } from 'nukak/util';
 import sqlstring from 'sqlstring-sqlite';
 
 export class SqliteDialect extends AbstractSqlDialect {
@@ -32,21 +30,12 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
-    payload = clone(payload);
-    const insert = this.insert(entity, payload);
-    const insertOrIgnore = insert.replace(/^INSERT\s/, 'INSERT OR IGNORE ');
-    const search = getKeys(conflictPaths).reduce(
-      (acc, key) => {
-        acc.$where[key] = payload[key];
-        return acc;
-      },
-      { $where: {} } as QuerySearch<E>,
-    );
-    for (const prop in conflictPaths) {
-      delete payload[prop];
-    }
-    const update = this.update(entity, search, payload);
-    return `${insertOrIgnore}; ${update}`;
+    const insert = super.insert(entity, payload);
+    const meta = getMeta(entity);
+    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
+    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    return `${insert} ON CONFLICT (${keysStr}) ${onConflict}`;
   }
 
   override escape(value: unknown): string {

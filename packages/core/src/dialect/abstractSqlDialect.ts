@@ -422,14 +422,33 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   }
 
   upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
-    const meta = getMeta(entity);
     const insert = this.insert(entity, payload);
-    const fields = filterFieldKeys(meta, payload, 'onInsert');
-    const update = fields
+    const meta = getMeta(entity);
+    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `VALUES(${name})`);
+    return update ? `${insert} ON DUPLICATE KEY UPDATE ${update}` : insert.replace(/^INSERT/, 'INSERT IGNORE');
+  }
+
+  protected getUpsertUpdateAssignments<E>(
+    meta: EntityMeta<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E,
+    callback: (columnName: string) => string,
+  ): string {
+    fillOnFields(meta, payload, 'onUpdate');
+    const fields = filterFieldKeys(meta, payload, 'onUpdate');
+    return fields
       .filter((col) => !conflictPaths[col])
-      .map((col) => `${this.escapeId(col)} = VALUES(${this.escapeId(col)})`)
+      .map((col) => {
+        const columnName = this.escapeId(meta.fields[col].name);
+        return `${columnName} = ${callback(columnName)}`;
+      })
       .join(', ');
-    return `${insert} ON DUPLICATE KEY UPDATE ${update}`;
+  }
+
+  protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
+    return getKeys(conflictPaths)
+      .map((key) => this.escapeId(meta.fields[key]?.name ?? key))
+      .join(', ');
   }
 
   delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): string {

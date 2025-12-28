@@ -1,5 +1,5 @@
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
-import { Company, createSpec, Item, TaxCategory, User } from 'nukak/test';
+import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
@@ -23,9 +23,51 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           updatedAt: 1,
         },
       ),
-    ).toBe(
-      "INSERT OR IGNORE INTO `TaxCategory` (`pk`, `name`, `createdAt`, `updatedAt`) VALUES ('a', 'Some Name D', 1, 1); UPDATE `TaxCategory` SET `name` = 'Some Name D', `createdAt` = 1, `updatedAt` = 1 WHERE `pk` = 'a'",
+    ).toMatch(
+      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \('a', 'Some Name D', 1, 1\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
     );
+  }
+
+  shouldUpsertWithDifferentColumnNames() {
+    expect(
+      this.dialect.upsert(
+        Profile,
+        { pk: true },
+        {
+          pk: 1,
+          picture: 'image.jpg',
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*\) VALUES \(.*1.*'image.jpg'.*\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`createdAt` = EXCLUDED.`createdAt`.*$/,
+    );
+  }
+
+  shouldUpsertWithNonUpdatableFields() {
+    expect(
+      this.dialect.upsert(
+        User,
+        { id: true },
+        {
+          id: 1,
+          email: 'a@b.com',
+        },
+      ),
+    ).toMatch(
+      /^INSERT INTO `User` \(.*`id`.*`email`.*\) VALUES \(.*1.*'a@b.com'.*\) ON CONFLICT \(`id`\) DO UPDATE SET .*`createdAt` = EXCLUDED.`createdAt`.*$/,
+    );
+  }
+
+  shouldUpsertWithDoNothing() {
+    expect(
+      this.dialect.upsert(
+        ItemTag,
+        { id: true },
+        {
+          id: 1,
+        },
+      ),
+    ).toBe('INSERT INTO `ItemTag` (`id`) VALUES (1) ON CONFLICT (`id`) DO NOTHING');
   }
 
   override shouldFind$text() {

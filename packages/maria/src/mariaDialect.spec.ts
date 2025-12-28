@@ -92,7 +92,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
         },
       ),
     ).toBe(
-      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`) RETURNING `id` `id`",
+      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = VALUES(`updatedAt`) RETURNING `id` `id`",
     );
   }
 
