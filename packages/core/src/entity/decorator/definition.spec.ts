@@ -13,6 +13,7 @@ import {
   Tax,
   TaxCategory,
   User,
+  UserWithNonUpdatableId,
 } from '../../test/index.js';
 import {
   type EntityGetter,
@@ -693,6 +694,7 @@ it('getEntities', () => {
       ItemTag,
       ItemAdjustment,
       InventoryAdjustment,
+      UserWithNonUpdatableId,
     ].sort(),
   );
 });

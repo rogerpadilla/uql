@@ -108,6 +108,15 @@ export class User extends BaseEntity {
 }
 
 @Entity()
+export class UserWithNonUpdatableId {
+  @Id({ updatable: false })
+  id: number;
+
+  @Field()
+  name: string;
+}
+
+@Entity()
 export class LedgerAccount extends BaseEntity {
   @Field()
   name?: string;

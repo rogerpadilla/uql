@@ -1,4 +1,4 @@
-import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
+import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User, UserWithNonUpdatableId } from 'nukak/test';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {
@@ -106,6 +106,21 @@ class PostgresDialectSpec {
       ),
     ).toMatch(
       /^INSERT INTO "User" \("id", "email", "createdAt"\) VALUES \(1, 'a@b.com', .+\) ON CONFLICT \("id"\) DO UPDATE SET "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+  }
+
+  shouldUpsertWithNonUpdatableId() {
+    expect(
+      this.dialect.upsert(
+        UserWithNonUpdatableId,
+        { id: true },
+        {
+          id: 1,
+          name: 'Some Name',
+        },
+      ),
+    ).toBe(
+      'INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES (1, \'Some Name\') ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"',
     );
   }
 
