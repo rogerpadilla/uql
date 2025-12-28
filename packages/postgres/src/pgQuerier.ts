@@ -13,17 +13,17 @@ export class PgQuerier extends AbstractSqlQuerier {
     super(new PostgresDialect());
   }
 
-  override async internalAll<T>(query: string) {
-    this.extra?.logger?.(query);
+  override async internalAll<T>(query: string, values?: unknown[]) {
+    this.extra?.logger?.(query, values);
     await this.lazyConnect();
-    const res = await this.conn.query<T>(query);
+    const res = await this.conn.query<T>(query, values);
     return res.rows;
   }
 
-  override async internalRun(query: string) {
-    this.extra?.logger?.(query);
+  override async internalRun(query: string, values?: unknown[]) {
+    this.extra?.logger?.(query, values);
     await this.lazyConnect();
-    const { rowCount: changes, rows = [] }: any = await this.conn.query(query);
+    const { rowCount: changes, rows = [] }: any = await this.conn.query(query, values);
     const ids = rows.map((r: any) => r.id);
     return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }

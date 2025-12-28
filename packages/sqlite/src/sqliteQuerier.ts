@@ -12,14 +12,14 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     super(new SqliteDialect());
   }
 
-  override async internalAll<T>(query: string) {
-    this.extra?.logger?.(query);
-    return this.db.prepare(query).all() as T[];
+  override async internalAll<T>(query: string, values?: unknown[]) {
+    this.extra?.logger?.(query, values);
+    return this.db.prepare(query).all(values || []) as T[];
   }
 
-  override async internalRun(query: string) {
-    this.extra?.logger?.(query);
-    const { changes, lastInsertRowid } = this.db.prepare(query).run();
+  override async internalRun(query: string, values?: unknown[]) {
+    this.extra?.logger?.(query, values);
+    const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
     const firstId = lastInsertRowid ? Number(lastInsertRowid) - (changes - 1) : undefined;
     const ids = firstId
       ? Array(changes)
@@ -31,13 +31,16 @@ export class SqliteQuerier extends AbstractSqlQuerier {
 
   override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
-    const upsert = this.dialect.upsert(entity, conflictPaths, payload);
-    const [insertOrIgnore, update] = upsert.split(';');
-    const resInsert = await this.run(insertOrIgnore);
+    const valuesInsert: unknown[] = [];
+    const insert = this.dialect.insert(entity, payload, undefined, valuesInsert);
+    const insertOrIgnore = insert.replace(/^INSERT/, 'INSERT OR IGNORE');
+    const resInsert = await this.run(insertOrIgnore, valuesInsert);
     if (resInsert.changes) {
       return resInsert;
     }
-    return this.run(update);
+    const valuesUpdate: unknown[] = [];
+    const update = this.dialect.update(entity, conflictPaths, payload, undefined, valuesUpdate);
+    return this.run(update, valuesUpdate);
   }
 
   override async internalRelease() {

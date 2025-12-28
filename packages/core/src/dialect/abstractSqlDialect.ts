@@ -53,23 +53,33 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
+  addValue(values: unknown[], value: unknown, include = true): string {
+    if (values) {
+      if (include) {
+        values.push(value ?? null);
+      }
+      return '?';
+    }
+    return this.escape(value);
+  }
+
   returningId<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
     const idName = meta.fields[meta.id].name;
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): string {
+  search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, values?: unknown[]): string {
     const meta = getMeta(entity);
     const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? meta.name : undefined;
     opts = { ...opts, prefix };
-    const where = this.where<E>(entity, q.$where, opts);
+    const where = this.where<E>(entity, q.$where, opts, values);
     const sort = this.sort<E>(entity, q.$sort, opts);
     const pager = this.pager(q);
     return where + sort + pager;
   }
 
-  selectFields<E>(entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions): string {
+  selectFields<E>(entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions, values?: unknown[]): string {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -101,6 +111,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
             prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
+            values,
           });
         }
 
@@ -112,6 +123,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
             prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
+            values,
           });
         }
 
@@ -128,6 +140,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     entity: Type<E>,
     select: QuerySelect<E> = {},
     { prefix }: { prefix?: string } = {},
+    values?: unknown[],
   ): { fields: string; tables: string } {
     const meta = getMeta(entity);
     const relKeys = filterRelationKeys(meta, select);
@@ -148,16 +161,26 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const relSelect = select[relKey as string];
       const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
-      const relColumns = this.selectFields(relEntity, relQuery.$select, {
-        prefix: joinRelAlias,
-        autoPrefixAlias: true,
-      });
+      const relColumns = this.selectFields(
+        relEntity,
+        relQuery.$select,
+        {
+          prefix: joinRelAlias,
+          autoPrefixAlias: true,
+        },
+        values,
+      );
 
       fields += ', ' + relColumns;
 
-      const { fields: subColumns, tables: subTables } = this.selectRelations(relEntity, relQuery.$select, {
-        prefix: joinRelAlias,
-      });
+      const { fields: subColumns, tables: subTables } = this.selectRelations(
+        relEntity,
+        relQuery.$select,
+        {
+          prefix: joinRelAlias,
+        },
+        values,
+      );
 
       fields += subColumns;
 
@@ -173,7 +196,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         .join(' AND ');
 
       if (relQuery.$where) {
-        const where = this.where(relEntity, relQuery.$where, { prefix: relKey, clause: false });
+        const where = this.where(relEntity, relQuery.$where, { prefix: relKey, clause: false }, values);
         tables += ` AND ${where}`;
       }
 
@@ -183,17 +206,17 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return { fields, tables };
   }
 
-  select<E>(entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}): string {
+  select<E>(entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}, values?: unknown[]): string {
     const meta = getMeta(entity);
     const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? meta.name : undefined;
 
-    const fields = this.selectFields(entity, select, { prefix });
-    const { fields: relationFields, tables } = this.selectRelations(entity, select);
+    const fields = this.selectFields(entity, select, { prefix }, values);
+    const { fields: relationFields, tables } = this.selectRelations(entity, select, undefined, values);
 
     return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
   }
 
-  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): string {
+  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}, values?: unknown[]): string {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -212,7 +235,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const options = { ...opts, usePrecedence: entries.length > 1 };
 
     let sql = entries
-      .map(([key, val]) => this.compare(entity, key as keyof QueryWhereMap<E>, val as any, options))
+      .map(([key, val]) => this.compare(entity, key as keyof QueryWhereMap<E>, val as any, options, values))
       .join(` AND `);
 
     if (usePrecedence) {
@@ -227,6 +250,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     key: K,
     val: QueryWhereMap<E>[K],
     opts: QueryComparisonOptions = {},
+    values?: unknown[],
   ): string {
     const meta = getMeta(entity);
 
@@ -237,17 +261,18 @@ export abstract class AbstractSqlDialect implements QueryDialect {
           value,
           prefix: meta.name,
           escapedPrefix: this.escapeId(meta.name, false, true),
+          values,
         });
         return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
       }
-      const comparisonKey = this.getComparisonKey(entity, key as FieldKey<E>, opts);
+      const comparisonKey = this.getComparisonKey(entity, key as FieldKey<E>, opts, values);
       return `${String(comparisonKey)} = ${String(val.value)}`;
     }
 
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field].name));
-      return `MATCH(${fields.join(', ')}) AGAINST(${this.escape(search.$value)})`;
+      return `MATCH(${fields.join(', ')}) AGAINST(${this.addValue(values, search.$value)})`;
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {
@@ -259,22 +284,28 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
       const negate = key in negateOperatorMap ? 'NOT ' : '';
 
-      const values = val as QueryWhereArray<E>;
-      const hasManyItems = values.length > 1;
-      const logicalComparison = values
+      const valArr = val as QueryWhereArray<E>;
+      const hasManyItems = valArr.length > 1;
+      const logicalComparison = valArr
         .map((whereEntry) => {
           if (whereEntry instanceof QueryRaw) {
             return this.getRawValue({
               value: whereEntry,
               prefix: opts.prefix,
               escapedPrefix: this.escapeId(opts.prefix, true, true),
+              values,
             });
           }
-          return this.where(entity, whereEntry, {
-            prefix: opts.prefix,
-            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
-            clause: false,
-          });
+          return this.where(
+            entity,
+            whereEntry,
+            {
+              prefix: opts.prefix,
+              usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
+              clause: false,
+            },
+            values,
+          );
         })
         .join(op === '$or' ? ' OR ' : ' AND ');
 
@@ -286,7 +317,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
     const operators = getKeys(value) as (keyof QueryWhereFieldOperatorMap<E>)[];
     const comparisons = operators
-      .map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts))
+      .map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts, values))
       .join(' AND ');
 
     return operators.length > 1 ? `(${comparisons})` : comparisons;
@@ -298,53 +329,56 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     op: K,
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
+    values?: unknown[],
   ): string {
-    const comparisonKey = this.getComparisonKey(entity, key, opts);
+    const comparisonKey = this.getComparisonKey(entity, key, opts, values);
     switch (op) {
       case '$eq':
-        return val === null ? `${String(comparisonKey)} IS NULL` : `${String(comparisonKey)} = ${this.escape(val)}`;
+        return val === null
+          ? `${String(comparisonKey)} IS NULL`
+          : `${String(comparisonKey)} = ${this.addValue(values, val)}`;
       case '$ne':
         return val === null
           ? `${String(comparisonKey)} IS NOT NULL`
-          : `${String(comparisonKey)} <> ${this.escape(val)}`;
+          : `${String(comparisonKey)} <> ${this.addValue(values, val)}`;
       case '$not':
-        return this.compare(entity, '$not', [{ [key]: val }] as any, opts);
+        return this.compare(entity, '$not', [{ [key]: val }] as any, opts, values);
       case '$gt':
-        return `${String(comparisonKey)} > ${this.escape(val)}`;
+        return `${String(comparisonKey)} > ${this.addValue(values, val)}`;
       case '$gte':
-        return `${String(comparisonKey)} >= ${this.escape(val)}`;
+        return `${String(comparisonKey)} >= ${this.addValue(values, val)}`;
       case '$lt':
-        return `${String(comparisonKey)} < ${this.escape(val)}`;
+        return `${String(comparisonKey)} < ${this.addValue(values, val)}`;
       case '$lte':
-        return `${String(comparisonKey)} <= ${this.escape(val)}`;
+        return `${String(comparisonKey)} <= ${this.addValue(values, val)}`;
       case '$startsWith':
-        return `${String(comparisonKey)} LIKE ${this.escape(`${val}%`)}`;
+        return `${String(comparisonKey)} LIKE ${this.addValue(values, `${val}%`)}`;
       case '$istartsWith':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape((val as string).toLowerCase() + '%')}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, (val as string).toLowerCase() + '%')}`;
       case '$endsWith':
-        return `${String(comparisonKey)} LIKE ${this.escape(`%${val}`)}`;
+        return `${String(comparisonKey)} LIKE ${this.addValue(values, `%${val}`)}`;
       case '$iendsWith':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape('%' + (val as string).toLowerCase())}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, '%' + (val as string).toLowerCase())}`;
       case '$includes':
-        return `${String(comparisonKey)} LIKE ${this.escape(`%${val}%`)}`;
+        return `${String(comparisonKey)} LIKE ${this.addValue(values, `%${val}%`)}`;
       case '$iincludes':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape('%' + (val as string).toLowerCase() + '%')}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, '%' + (val as string).toLowerCase() + '%')}`;
       case '$ilike':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.escape((val as string).toLowerCase())}`;
+        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, (val as string).toLowerCase())}`;
       case '$like':
-        return `${String(comparisonKey)} LIKE ${this.escape(val)}`;
+        return `${String(comparisonKey)} LIKE ${this.addValue(values, val)}`;
       case '$in':
-        return `${String(comparisonKey)} IN (${this.escape(val)})`;
+        return `${String(comparisonKey)} IN (${this.addValue(values, val)})`;
       case '$nin':
-        return `${String(comparisonKey)} NOT IN (${this.escape(val)})`;
+        return `${String(comparisonKey)} NOT IN (${this.addValue(values, val)})`;
       case '$regex':
-        return `${String(comparisonKey)} REGEXP ${this.escape(val)}`;
+        return `${String(comparisonKey)} REGEXP ${this.addValue(values, val)}`;
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
   }
 
-  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): Scalar {
+  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}, values?: unknown[]): Scalar {
     const meta = getMeta(entity);
     const escapedPrefix = this.escapeId(prefix, true, true);
     const field = meta.fields[key];
@@ -354,6 +388,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         value: field.virtual,
         prefix,
         escapedPrefix,
+        values,
       });
     }
 
@@ -389,44 +424,44 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return sql;
   }
 
-  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string {
+  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions, values?: unknown[]): string {
     const search: Query<E> = {
       ...q,
     };
     delete search.$sort;
-    const select = this.select<E>(entity, [raw('COUNT(*)', 'count')]);
-    const criteria = this.search(entity, search, opts);
+    const select = this.select<E>(entity, [raw('COUNT(*)', 'count')], undefined, values);
+    const criteria = this.search(entity, search, opts, values);
     return select + criteria;
   }
 
-  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): string {
-    const select = this.select(entity, q.$select, opts);
-    const criteria = this.search(entity, q, opts);
+  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions, values?: unknown[]): string {
+    const select = this.select(entity, q.$select, opts, values);
+    const criteria = this.search(entity, q, opts, values);
     return select + criteria;
   }
 
-  insert<E>(entity: Type<E>, payload: E | E[]): string {
+  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions, values?: unknown[]): string {
     const meta = getMeta(entity);
-    const records = this.getPersistables(meta, payload, 'onInsert');
+    const records = this.getPersistables(meta, payload, 'onInsert', values);
     const keys = getKeys(records[0]);
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
-    const values = records.map((record) => keys.map((key) => record[key]).join(', ')).join('), (');
-    return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${values})`;
+    const val = records.map((record) => keys.map((key) => record[key]).join(', ')).join('), (');
+    return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${val})`;
   }
 
-  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string {
+  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions, values?: unknown[]): string {
     const meta = getMeta(entity);
-    const record = this.getPersistable(meta, payload, 'onUpdate');
+    const record = this.getPersistable(meta, payload, 'onUpdate', values);
     const keys = getKeys(record);
     const entries = keys.map((key) => `${this.escapeId(meta.fields[key].name)} = ${record[key]}`).join(', ');
-    const criteria = this.search(entity, q, opts);
+    const criteria = this.search(entity, q, opts, values);
     return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
   }
 
-  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string {
-    const insert = this.insert(entity, payload);
+  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E, values?: unknown[]): string {
+    const insert = this.insert(entity, payload, undefined, values);
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `VALUES(${name})`);
+    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `VALUES(${name})`, values);
     return update ? `${insert} ON DUPLICATE KEY UPDATE ${update}` : insert.replace(/^INSERT/, 'INSERT IGNORE');
   }
 
@@ -435,6 +470,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     conflictPaths: QueryConflictPaths<E>,
     payload: E,
     callback: (columnName: string) => string,
+    values?: unknown[],
   ): string {
     fillOnFields(meta, payload, 'onUpdate');
     const fields = filterFieldKeys(meta, payload, 'onUpdate');
@@ -453,23 +489,22 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       .join(', ');
   }
 
-  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): string {
+  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}, values?: unknown[]): string {
     const meta = getMeta(entity);
 
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
-        const criteria = this.search(entity, q, opts);
         const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
-        return `UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(meta.softDelete)} = ${this.escape(
-          value,
-        )}${criteria}`;
+        const setClause = `${this.escapeId(meta.softDelete)} = ${this.addValue(values, value)}`;
+        const criteria = this.search(entity, q, opts, values);
+        return `UPDATE ${this.escapeId(meta.name)} SET ${setClause}${criteria}`;
       }
       if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }
     }
 
-    const criteria = this.search(entity, q, opts);
+    const criteria = this.search(entity, q, opts, values);
 
     return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
   }
@@ -495,11 +530,11 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escaped + suffix;
   }
 
-  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
-    return this.getPersistables(meta, payload, callbackKey)[0];
+  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey, values?: unknown[]): E {
+    return this.getPersistables(meta, payload, callbackKey, values)[0];
   }
 
-  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey, values?: unknown[]): E[] {
     const payloads = fillOnFields(meta, payload, callbackKey);
     const fieldKeys = filterFieldKeys(meta, payloads[0], callbackKey);
     return payloads.map((it) =>
@@ -507,9 +542,9 @@ export abstract class AbstractSqlDialect implements QueryDialect {
         const { type } = meta.fields[key];
         let value = it[key];
         if (value instanceof QueryRaw) {
-          value = this.getRawValue({ value }) as E[FieldKey<E>];
+          value = this.getRawValue({ value, values }) as E[FieldKey<E>];
         } else {
-          value = this.formatPersistableValue(value, type) as E[FieldKey<E>];
+          value = this.formatPersistableValue(value, type, values) as E[FieldKey<E>];
         }
         acc[key] = value;
         return acc;
@@ -517,15 +552,15 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     );
   }
 
-  protected formatPersistableValue(value: any, type: string): string {
+  protected formatPersistableValue(value: any, type: string, values?: unknown[]): string {
     if (type === 'json' || type === 'jsonb') {
-      return this.escape(JSON.stringify(value));
+      return this.addValue(values, JSON.stringify(value));
     }
     if (type === 'vector') {
       const vector = (value as number[]).map((num) => +num).join(',');
       return `'[${vector}]'`;
     }
-    return this.escape(value);
+    return this.addValue(values, value);
   }
 
   getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {

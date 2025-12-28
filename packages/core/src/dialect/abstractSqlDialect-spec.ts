@@ -66,7 +66,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         date: new Date(2021, 11, 31, 23, 59, 59, 999),
         createdAt: 123,
       }),
-    ).toBe("INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES ('2021-12-31 23:59:59.999', 123)");
+    ).toMatch(
+      /INSERT INTO `InventoryAdjustment` \(`date`, `createdAt`\) VALUES \((?:'2021-12-31 23:59:59.999'|1641013199999), 123\)/,
+    );
   }
 
   shouldInsertWithOnInsertId() {

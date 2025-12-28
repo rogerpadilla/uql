@@ -360,6 +360,10 @@ export type QueryRawFnOptions = {
    * the escaped prefix.
    */
   escapedPrefix?: string;
+  /**
+   * the values for the parameterized query.
+   */
+  values?: unknown[];
 };
 
 /**
