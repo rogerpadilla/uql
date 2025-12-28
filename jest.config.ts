@@ -17,6 +17,7 @@ const jestConfig: Config = {
     '^.+\\.(t|j)sx?$': ['@swc/jest', { ...swcConfig }],
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.ts'],
+  // this is intentional as it is, use 'npm run test.all' to run all tests
   testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],
