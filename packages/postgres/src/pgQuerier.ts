@@ -1,4 +1,4 @@
-import { AbstractSqlQuerier } from 'nukak/querier';
+import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import type { PoolClient } from 'pg';
 import { PostgresDialect } from './postgresDialect.js';
@@ -13,6 +13,7 @@ export class PgQuerier extends AbstractSqlQuerier {
     super(new PostgresDialect());
   }
 
+  @Serialized()
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
@@ -24,6 +25,7 @@ export class PgQuerier extends AbstractSqlQuerier {
     }
   }
 
+  @Serialized()
   override async run(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();

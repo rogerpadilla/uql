@@ -18,7 +18,18 @@ import type {
 } from '../type/index.js';
 import { augmentWhere, clone, filterPersistableRelationKeys, filterRelationKeys, getKeys } from '../util/index.js';
 
+/**
+ * Base class for all database queriers.
+ * It provides a standardized way to execute tasks serially to prevent race conditions on database connections.
+ */
 export abstract class AbstractQuerier implements Querier {
+  /**
+   * Internal promise used to queue database operations.
+   * This ensures that each operation is executed serially, preventing race conditions
+   * and ensuring that the database connection is used safely across concurrent calls.
+   */
+  private taskQueue: Promise<unknown> = Promise.resolve();
+
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q: QueryOne<E> = {}) {
     const meta = getMeta(entity);
     q.$where = augmentWhere(meta, q.$where, id);
@@ -311,6 +322,19 @@ export abstract class AbstractQuerier implements Querier {
     if (!this.hasOpenTransaction) {
       await this.release();
     }
+  }
+
+  /**
+   * Schedules a task to be executed serially in the querier instance.
+   * This is used by the @Serialized decorator to protect database-level operations.
+   *
+   * @param task - The async task to execute.
+   * @returns A promise that resolves with the task's result.
+   */
+  protected async serialize<T>(task: () => Promise<T>): Promise<T> {
+    const res = this.taskQueue.then(task);
+    this.taskQueue = res.catch(() => {});
+    return res;
   }
 
   abstract beginTransaction(): Promise<void>;

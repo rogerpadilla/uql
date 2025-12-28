@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import { AbstractSqlQuerier } from 'nukak/querier';
+import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
 import type { ExtraOptions, QueryConflictPaths, QueryUpdateResult, Type } from 'nukak/type';
 import { clone } from 'nukak/util';
 import { SqliteDialect } from './sqliteDialect.js';
@@ -12,14 +12,16 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     super(new SqliteDialect());
   }
 
+  @Serialized()
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
-    return this.db.prepare<T, T>(query).all();
+    return this.db.prepare(query).all() as T[];
   }
 
+  @Serialized()
   override async run(query: string) {
     this.extra?.logger?.(query);
-    const { changes, lastInsertRowid } = await this.db.prepare(query).run();
+    const { changes, lastInsertRowid } = this.db.prepare(query).run();
     const firstId = lastInsertRowid ? Number(lastInsertRowid) - (changes - 1) : undefined;
     const ids = firstId
       ? Array(changes)

@@ -1,5 +1,5 @@
 import type { PoolConnection } from 'mariadb';
-import { AbstractSqlQuerier } from 'nukak/querier';
+import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MariaDialect } from './mariaDialect.js';
 
@@ -13,6 +13,7 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     super(new MariaDialect());
   }
 
+  @Serialized()
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
@@ -24,6 +25,7 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     }
   }
 
+  @Serialized()
   override async run(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();

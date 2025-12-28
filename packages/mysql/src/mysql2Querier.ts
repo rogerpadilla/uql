@@ -1,5 +1,5 @@
 import type { PoolConnection } from 'mysql2/promise';
-import { AbstractSqlQuerier } from 'nukak/querier';
+import { AbstractSqlQuerier, Serialized } from 'nukak/querier';
 import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { MySqlDialect } from './mysqlDialect.js';
 
@@ -13,6 +13,7 @@ export class MySql2Querier extends AbstractSqlQuerier {
     super(new MySqlDialect());
   }
 
+  @Serialized()
   override async all<T>(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();
@@ -24,6 +25,7 @@ export class MySql2Querier extends AbstractSqlQuerier {
     }
   }
 
+  @Serialized()
   override async run(query: string) {
     this.extra?.logger?.(query);
     await this.lazyConnect();

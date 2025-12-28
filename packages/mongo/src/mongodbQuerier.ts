@@ -1,6 +1,6 @@
 import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { getMeta } from 'nukak/entity';
-import { AbstractQuerier } from 'nukak/querier';
+import { AbstractQuerier, Serialized } from 'nukak/querier';
 import type {
   ExtraOptions,
   IdValue,
@@ -26,6 +26,11 @@ export class MongodbQuerier extends AbstractQuerier {
     super();
   }
 
+  @Serialized()
+  private async execute<T>(task: (session: ClientSession) => Promise<T>): Promise<T> {
+    return task(this.session);
+  }
+
   override async findMany<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
 
@@ -35,7 +40,9 @@ export class MongodbQuerier extends AbstractQuerier {
     if (hasSelectedRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, q);
       this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
-      documents = await this.collection(entity).aggregate<E>(pipeline, { session: this.session }).toArray();
+      documents = await this.execute((session) =>
+        this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
+      );
       documents = this.dialect.normalizeIds(meta, documents) as E[];
       await this.fillToManyRelations(entity, documents, q.$select);
     } else {
@@ -62,7 +69,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
       this.extra?.logger?.('findMany', entity.name, q);
 
-      documents = (await cursor.toArray()) as E[];
+      documents = await this.execute(() => cursor.toArray() as Promise<E[]>);
       documents = this.dialect.normalizeIds(meta, documents) as E[];
     }
 
@@ -72,9 +79,11 @@ export class MongodbQuerier extends AbstractQuerier {
   override count<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.where(entity, qm.$where);
     this.extra?.logger?.('count', entity.name, filter);
-    return this.collection(entity).countDocuments(filter, {
-      session: this.session,
-    });
+    return this.execute((session) =>
+      this.collection(entity).countDocuments(filter, {
+        session,
+      }),
+    );
   }
 
   override async insertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
@@ -89,7 +98,9 @@ export class MongodbQuerier extends AbstractQuerier {
 
     this.extra?.logger?.('insertMany', entity.name, persistables);
 
-    const { insertedIds } = await this.collection(entity).insertMany(persistables, { session: this.session });
+    const { insertedIds } = await this.execute((session) =>
+      this.collection(entity).insertMany(persistables, { session }),
+    );
 
     const ids = Object.values(insertedIds) as unknown as IdValue<E>[];
 
@@ -111,9 +122,11 @@ export class MongodbQuerier extends AbstractQuerier {
 
     this.extra?.logger?.('updateMany', entity.name, where, update);
 
-    const { matchedCount } = await this.collection(entity).updateMany(where, update, {
-      session: this.session,
-    });
+    const { matchedCount } = await this.execute((session) =>
+      this.collection(entity).updateMany(where, update, {
+        session,
+      }),
+    );
 
     await this.updateRelations(entity, qm, payload);
 
@@ -140,7 +153,12 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const update = { $set: persistable } as UpdateFilter<E>;
 
-    const res = await this.collection(entity).findOneAndUpdate(filter, update, { upsert: true, session: this.session });
+    const res = await this.execute((session) =>
+      this.collection(entity).findOneAndUpdate(filter, update, {
+        upsert: true,
+        session,
+      }),
+    );
 
     const firstId = res?._id as unknown as string;
 
@@ -151,12 +169,14 @@ export class MongodbQuerier extends AbstractQuerier {
     const meta = getMeta(entity);
     const where = this.dialect.where(entity, qm.$where);
     this.extra?.logger?.('deleteMany', entity.name, where, opts);
-    const founds = await this.collection(entity)
-      .find(where, {
-        projection: { _id: true },
-        session: this.session,
-      })
-      .toArray();
+    const founds = await this.execute((session) =>
+      this.collection(entity)
+        .find(where, {
+          projection: { _id: true },
+          session,
+        })
+        .toArray(),
+    );
     if (!founds.length) {
       return 0;
     }
@@ -164,20 +184,19 @@ export class MongodbQuerier extends AbstractQuerier {
     let changes: number;
     if (meta.softDelete && !opts.softDelete) {
       const onDeleteValue = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
-      const updateResult = await this.collection(entity).updateMany(
-        { _id: { $in: ids } },
-        { $set: { [meta.softDelete]: onDeleteValue } } as UpdateFilter<E>,
-        {
-          session: this.session,
-        },
+      const updateResult = await this.execute((session) =>
+        this.collection(entity).updateMany(
+          { _id: { $in: ids } },
+          { $set: { [meta.softDelete]: onDeleteValue } } as UpdateFilter<E>,
+          {
+            session,
+          },
+        ),
       );
       changes = updateResult.matchedCount;
     } else {
-      const deleteResult = await this.collection(entity).deleteMany(
-        { _id: { $in: ids } },
-        {
-          session: this.session,
-        },
+      const deleteResult = await this.execute((session) =>
+        this.collection(entity).deleteMany({ _id: { $in: ids } }, { session }),
       );
       changes = deleteResult.deletedCount;
     }

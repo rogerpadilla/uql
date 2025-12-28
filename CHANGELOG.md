@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [1.4.16] - 2025-12-28
+
+- Implement a "Serialized Task Queue" at the core of the framework to ensure database connections are thread-safe and race-condition free.
+- Introduce `@Serialized()` decorator to simplify the serialization of database operations across all drivers.
+
 ## [1.4.14] - 2025-12-28
 
 - Robust `upsert` implementation across all SQL dialects (PostgreSQL, MySQL, MariaDB, SQLite).
