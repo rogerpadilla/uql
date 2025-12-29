@@ -62,6 +62,35 @@ export type EntityOptions = {
 };
 
 /**
+ * SQL column types supported by nukak migrations
+ */
+export type ColumnType =
+  | 'int'
+  | 'smallint'
+  | 'bigint'
+  | 'float'
+  | 'double'
+  | 'decimal'
+  | 'numeric'
+  | 'real'
+  | 'boolean'
+  | 'char'
+  | 'varchar'
+  | 'text'
+  | 'uuid'
+  | 'date'
+  | 'time'
+  | 'timestamp'
+  | 'timestamptz'
+  | 'json'
+  | 'jsonb'
+  | 'blob'
+  | 'bytea'
+  | 'vector'
+  | 'serial'
+  | 'bigserial';
+
+/**
  * Configurable options for a field
  */
 export type FieldOptions = {
@@ -76,11 +105,47 @@ export type FieldOptions = {
   readonly onUpdate?: OnFieldCallback;
   readonly onDelete?: OnFieldCallback;
 
-  // TODO implemente support for following fields
-  // readonly allowNull?: boolean;
-  // readonly defaultValue?: Scalar;
-  // readonly isAutoIncrement?: boolean;
-  // readonly comment?: string;
+  // Schema/migration properties
+  /**
+   * SQL column type for migrations. If not specified, inferred from TypeScript type.
+   */
+  readonly columnType?: ColumnType;
+  /**
+   * Column length (e.g., VARCHAR(100)). Defaults to 255 for varchar.
+   */
+  readonly length?: number;
+  /**
+   * Precision for decimal/numeric types.
+   */
+  readonly precision?: number;
+  /**
+   * Scale for decimal/numeric types.
+   */
+  readonly scale?: number;
+  /**
+   * Whether the column allows NULL values. Defaults to true except for ID fields.
+   */
+  readonly nullable?: boolean;
+  /**
+   * Whether the column has a UNIQUE constraint.
+   */
+  readonly unique?: boolean;
+  /**
+   * Default value for the column.
+   */
+  readonly defaultValue?: Scalar | null;
+  /**
+   * Whether the column is auto-incrementing (for integer IDs).
+   */
+  readonly autoIncrement?: boolean;
+  /**
+   * Index configuration. true for simple index, string for named index.
+   */
+  readonly index?: boolean | string;
+  /**
+   * Column comment/description for database documentation.
+   */
+  readonly comment?: string;
 };
 
 export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);

@@ -1,6 +1,6 @@
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { QuerySortMap } from '../type/index.js';
-import { flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
+import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
   expect(flatObject(undefined)).toEqual({});
@@ -190,4 +190,18 @@ it('obtainAttrsPaths - object', () => {
     'prop1.a.b': ['prop1', 'a', 'b'],
     'prop2.c.d': ['prop2', 'c', 'd'],
   });
+});
+
+it('escapeSqlId', () => {
+  expect(escapeSqlId('table')).toBe('`table`');
+  expect(escapeSqlId('table', '"')).toBe('"table"');
+  expect(escapeSqlId('table', '`')).toBe('`table`');
+  expect(escapeSqlId('my"table', '"')).toBe('"my""table"');
+  expect(escapeSqlId('my`table', '`')).toBe('`my``table`');
+  expect(escapeSqlId('schema.table')).toBe('`schema`.`table`');
+  expect(escapeSqlId('schema.table', '"')).toBe('"schema"."table"');
+  expect(escapeSqlId('schema.table', '"', true)).toBe('"schema.table"');
+  expect(escapeSqlId('table', '`', false, true)).toBe('`table`.');
+  expect(escapeSqlId('')).toBe('');
+  expect(escapeSqlId(undefined)).toBe('');
 });

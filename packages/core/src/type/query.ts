@@ -488,3 +488,19 @@ export interface QueryDialect {
    */
   createContext(): QueryContext;
 }
+
+/**
+ * Minimal dialect interface exposing escapeIdChar for SQL operations
+ */
+export interface SqlQueryDialect extends QueryDialect {
+  /**
+   * the escape character for identifiers.
+   */
+  readonly escapeIdChar: '"' | '`';
+
+  /**
+   * Get the placeholder for a parameter at the given index (1-based).
+   * Default: '?' for MySQL/MariaDB/SQLite, '$n' for PostgreSQL.
+   */
+  placeholder(index: number): string;
+}

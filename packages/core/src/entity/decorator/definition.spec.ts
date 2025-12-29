@@ -1,3 +1,4 @@
+import { expect, it } from '@jest/globals';
 import {
   Company,
   InventoryAdjustment,
@@ -15,14 +16,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import {
-  type EntityGetter,
-  type EntityMeta,
-  type IdKey,
-  type OnFieldCallback,
-  QueryRaw,
-  type QueryRawFn,
-} from '../../type/index.js';
+import { type IdKey, QueryRaw } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Field } from './field.js';
@@ -38,7 +32,7 @@ it('User', () => {
   expect(meta.relations.creator.entity()).toBe(User);
   expect(meta.relations.creator.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
-  const expectedMeta: EntityMeta<User> = {
+  const expectedMeta = {
     entity: User,
     name: 'User',
     id: 'id',
@@ -48,15 +42,15 @@ it('User', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       name: { name: 'name', type: String },
       email: { name: 'email', type: String, updatable: false },
       password: { name: 'password', eager: false, type: String },
@@ -64,24 +58,24 @@ it('User', () => {
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       users: {
         cardinality: '1m',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         mappedBy: 'creator',
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
       profile: {
         cardinality: '11',
         cascade: true,
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         mappedBy: 'creator',
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
@@ -93,7 +87,7 @@ it('User', () => {
 
 it('Profile', () => {
   const meta = getMeta(Profile);
-  const expectedMeta: EntityMeta<Profile> = {
+  const expectedMeta = {
     entity: Profile,
     name: 'user_profile',
     id: 'pk' as IdKey<Profile>,
@@ -103,26 +97,26 @@ it('Profile', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       picture: { name: 'image', type: String },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: '11',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -132,7 +126,7 @@ it('Profile', () => {
 
 it('Item', () => {
   const meta = getMeta(Item);
-  const expectedMeta: EntityMeta<Item> = {
+  const expectedMeta = {
     entity: Item,
     name: 'Item',
     id: 'id',
@@ -142,37 +136,37 @@ it('Item', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
       code: { name: 'code', type: String },
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       taxId: {
         name: 'taxId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       measureUnitId: {
         name: 'measureUnitId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
@@ -185,39 +179,39 @@ it('Item', () => {
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       buyLedgerAccount: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'buyLedgerAccountId', foreign: 'id' }],
       },
       saleLedgerAccount: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'saleLedgerAccountId', foreign: 'id' }],
       },
       tax: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'taxId', foreign: 'id' }],
       },
       measureUnit: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'measureUnitId', foreign: 'id' }],
       },
       tags: {
         cardinality: 'mm',
         cascade: true,
-        entity: expect.any(Function) as EntityGetter,
-        through: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
+        through: expect.any(Function),
         references: [
           { local: 'itemId', foreign: 'id' },
           { local: 'tagId', foreign: 'id' },
@@ -230,7 +224,7 @@ it('Item', () => {
 
 it('Tag', () => {
   const meta = getMeta(Tag);
-  const expectedMeta: EntityMeta<Tag> = {
+  const expectedMeta = {
     entity: Tag,
     id: 'id',
     name: 'Tag',
@@ -243,12 +237,12 @@ it('Tag', () => {
       },
       companyId: {
         name: 'companyId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: Number,
       },
       createdAt: {
         name: 'createdAt',
-        onInsert: expect.any(Function) as OnFieldCallback,
+        onInsert: expect.any(Function),
         type: Number,
       },
       name: {
@@ -259,32 +253,32 @@ it('Tag', () => {
         name: 'itemsCount',
         type: Number,
         virtual: {
-          alias: undefined,
-          value: expect.any(Function) as QueryRawFn,
+          alias: undefined as string,
+          value: expect.any(Function),
         },
       },
       updatedAt: {
         name: 'updatedAt',
-        onUpdate: expect.any(Function) as OnFieldCallback,
+        onUpdate: expect.any(Function),
         type: Number,
       },
       creatorId: {
         name: 'creatorId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: Number,
       },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       items: {
         cardinality: 'mm',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         mappedBy: 'tags',
-        through: expect.any(Function) as EntityGetter,
+        through: expect.any(Function),
         references: [
           { local: 'tagId', foreign: 'id' },
           { local: 'itemId', foreign: 'id' },
@@ -292,7 +286,7 @@ it('Tag', () => {
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -302,7 +296,7 @@ it('Tag', () => {
 
 it('ItemTag', () => {
   const meta = getMeta(ItemTag);
-  const expectedMeta: EntityMeta<ItemTag> = {
+  const expectedMeta = {
     entity: ItemTag,
     name: 'ItemTag',
     id: 'id',
@@ -312,23 +306,23 @@ it('ItemTag', () => {
       itemId: {
         name: 'itemId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       tagId: {
         name: 'tagId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
     },
     relations: {
       item: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'itemId', foreign: 'id' }],
       },
       tag: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'tagId', foreign: 'id' }],
       },
     },
@@ -338,37 +332,37 @@ it('ItemTag', () => {
 
 it('TaxCategory', () => {
   const meta = getMeta(TaxCategory);
-  const expectedMeta: EntityMeta<TaxCategory> = {
+  const expectedMeta = {
     entity: TaxCategory,
     name: 'TaxCategory',
     id: 'pk',
     processed: true,
     fields: {
-      pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) as OnFieldCallback },
+      pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -378,7 +372,7 @@ it('TaxCategory', () => {
 
 it('Tax', () => {
   const meta = getMeta(Tax);
-  const expectedMeta: EntityMeta<Tax> = {
+  const expectedMeta = {
     entity: Tax,
     name: 'Tax',
     id: 'id',
@@ -387,7 +381,7 @@ it('Tax', () => {
       id: { name: 'id', type: Number, isId: true },
       categoryId: {
         name: 'categoryId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: String,
       },
       percentage: {
@@ -397,22 +391,22 @@ it('Tax', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
     relations: {
       category: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [
           {
             local: 'categoryId',
@@ -422,12 +416,12 @@ it('Tax', () => {
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -437,7 +431,7 @@ it('Tax', () => {
 
 it('ItemAdjustment', () => {
   const meta = getMeta(ItemAdjustment);
-  const expectedMeta: EntityMeta<ItemAdjustment> = {
+  const expectedMeta = {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
     id: 'id',
@@ -450,12 +444,12 @@ it('ItemAdjustment', () => {
       },
       inventoryAdjustmentId: {
         name: 'inventoryAdjustmentId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: Number,
       },
       itemId: {
         name: 'itemId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: Number,
       },
       number: {
@@ -464,46 +458,46 @@ it('ItemAdjustment', () => {
       },
       storehouseId: {
         name: 'storehouseId',
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
         type: Number,
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
     },
     relations: {
       storehouse: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'storehouseId', foreign: 'id' }],
       },
       item: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'itemId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       inventoryAdjustment: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [
           {
             local: 'inventoryAdjustmentId',
@@ -518,7 +512,7 @@ it('ItemAdjustment', () => {
 
 it('InventoryAdjustment', () => {
   const meta = getMeta(InventoryAdjustment);
-  const expectedMeta: EntityMeta<InventoryAdjustment> = {
+  const expectedMeta = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
     id: 'id',
@@ -528,15 +522,15 @@ it('InventoryAdjustment', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
       description: { name: 'description', type: String },
       date: { name: 'date', type: Date },
     },
@@ -544,18 +538,18 @@ it('InventoryAdjustment', () => {
       itemAdjustments: {
         cardinality: '1m',
         cascade: true,
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         mappedBy: 'inventoryAdjustment',
         references: [{ local: 'id', foreign: 'inventoryAdjustmentId' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -565,7 +559,7 @@ it('InventoryAdjustment', () => {
 
 it('MeasureUnitCategory', () => {
   const meta = getMeta(MeasureUnitCategory);
-  const expectedMeta: EntityMeta<MeasureUnitCategory> = {
+  const expectedMeta = {
     entity: MeasureUnitCategory,
     name: 'MeasureUnitCategory',
     id: 'id',
@@ -577,32 +571,32 @@ it('MeasureUnitCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
     },
     relations: {
       measureUnits: {
         cardinality: '1m',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         mappedBy: 'categoryId',
         references: [{ local: 'id', foreign: 'categoryId' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -612,7 +606,7 @@ it('MeasureUnitCategory', () => {
 
 it('MeasureUnit', () => {
   const meta = getMeta(MeasureUnit);
-  const expectedMeta: EntityMeta<MeasureUnit> = {
+  const expectedMeta = {
     entity: MeasureUnit,
     name: 'MeasureUnit',
     id: 'id',
@@ -624,37 +618,37 @@ it('MeasureUnit', () => {
       categoryId: {
         name: 'categoryId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function) as EntityGetter,
+        reference: expect.any(Function),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) as OnFieldCallback },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) as OnFieldCallback },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) as OnFieldCallback },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
     },
     relations: {
       category: {
         cardinality: 'm1',
         cascade: 'persist',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'categoryId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function) as EntityGetter,
+        entity: expect.any(Function),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },

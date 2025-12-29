@@ -24,6 +24,7 @@ import {
   type QueryWhereFieldOperatorMap,
   type QueryWhereMap,
   type QueryWhereOptions,
+  type SqlQueryDialect,
   type Type,
 } from '../type/index.js';
 
@@ -31,6 +32,7 @@ import {
   buildSortMap,
   buldQueryWhereAsMap,
   type CallbackKey,
+  escapeSqlId,
   fillOnFields,
   filterFieldKeys,
   filterRelationKeys,
@@ -45,17 +47,13 @@ import {
 
 import { SqlQueryContext } from './queryContext.js';
 
-export abstract class AbstractSqlDialect implements QueryDialect {
-  readonly escapeIdRegex: RegExp;
-
+export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialect {
   constructor(
     readonly escapeIdChar: '`' | '"' = '`',
     readonly beginTransactionCommand: string = 'START TRANSACTION',
     readonly commitTransactionCommand: string = 'COMMIT',
     readonly rollbackTransactionCommand: string = 'ROLLBACK',
-  ) {
-    this.escapeIdRegex = RegExp(escapeIdChar, 'g');
-  }
+  ) {}
 
   createContext(): QueryContext {
     return new SqlQueryContext(this);
@@ -63,6 +61,10 @@ export abstract class AbstractSqlDialect implements QueryDialect {
 
   addValue(values: unknown[], value: unknown): string {
     values.push(value ?? null);
+    return this.placeholder(values.length);
+  }
+
+  placeholder(_index: number): string {
     return '?';
   }
 
@@ -685,25 +687,7 @@ export abstract class AbstractSqlDialect implements QueryDialect {
   }
 
   escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {
-    if (!val) {
-      return '';
-    }
-
-    if (!forbidQualified && val.includes('.')) {
-      const result = val
-        .split('.')
-        .map((it) => this.escapeId(it))
-        .join('.');
-      return addDot ? result + '.' : result;
-    }
-
-    // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
-    const escaped =
-      this.escapeIdChar + val.replace(this.escapeIdRegex, this.escapeIdChar + this.escapeIdChar) + this.escapeIdChar;
-
-    const suffix = addDot ? '.' : '';
-
-    return escaped + suffix;
+    return escapeSqlId(val, this.escapeIdChar, forbidQualified, addDot);
   }
 
   protected getPersistables<E>(

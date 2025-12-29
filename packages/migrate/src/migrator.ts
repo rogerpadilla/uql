@@ -1,0 +1,482 @@
+import { readdir } from 'node:fs/promises';
+import { basename, extname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { getEntities } from 'nukak/entity';
+import type { QuerierPool, Type } from 'nukak/type';
+import { isSqlQuerier } from 'nukak/type';
+import type { AbstractSchemaGenerator } from './schemaGenerator.js';
+import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
+import type {
+  Migration,
+  MigrationDefinition,
+  MigrationResult,
+  MigrationStorage,
+  MigratorOptions,
+  SqlDialect,
+} from './type.js';
+
+/**
+ * Main class for managing database migrations
+ */
+export class Migrator {
+  private readonly storage: MigrationStorage;
+  private readonly migrationsPath: string;
+  private readonly logger: (message: string) => void;
+  private readonly entities: Type<unknown>[];
+  private readonly dialect: SqlDialect;
+  private schemaGenerator?: AbstractSchemaGenerator;
+
+  constructor(
+    private readonly querierPool: QuerierPool,
+    options: MigratorOptions & { dialect?: SqlDialect } = {},
+  ) {
+    this.dialect = options.dialect ?? 'postgres';
+    this.storage =
+      options.storage ??
+      new DatabaseMigrationStorage(querierPool, {
+        tableName: options.tableName,
+      });
+    this.migrationsPath = options.migrationsPath ?? './migrations';
+    this.logger = options.logger ?? (() => {});
+    this.entities = options.entities ?? [];
+  }
+
+  /**
+   * Set the schema generator for DDL operations
+   */
+  setSchemaGenerator(generator: AbstractSchemaGenerator): void {
+    this.schemaGenerator = generator;
+  }
+
+  /**
+   * Get the SQL dialect
+   */
+  getDialect(): SqlDialect {
+    return this.dialect;
+  }
+
+  /**
+   * Get all discovered migrations from the migrations directory
+   */
+  async getMigrations(): Promise<Migration[]> {
+    const files = await this.getMigrationFiles();
+    const migrations: Migration[] = [];
+
+    for (const file of files) {
+      const migration = await this.loadMigration(file);
+      if (migration) {
+        migrations.push(migration);
+      }
+    }
+
+    // Sort by name (which typically includes timestamp)
+    return migrations.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Get list of pending migrations (not yet executed)
+   */
+  async pending(): Promise<Migration[]> {
+    const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
+
+    const executedSet = new Set(executed);
+    return migrations.filter((m) => !executedSet.has(m.name));
+  }
+
+  /**
+   * Get list of executed migrations
+   */
+  async executed(): Promise<string[]> {
+    return this.storage.executed();
+  }
+
+  /**
+   * Run all pending migrations
+   */
+  async up(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
+    const pendingMigrations = await this.pending();
+    const results: MigrationResult[] = [];
+
+    let migrationsToRun = pendingMigrations;
+
+    if (options.to) {
+      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
+      if (toIndex === -1) {
+        throw new Error(`Migration '${options.to}' not found`);
+      }
+      migrationsToRun = migrationsToRun.slice(0, toIndex + 1);
+    }
+
+    if (options.step !== undefined) {
+      migrationsToRun = migrationsToRun.slice(0, options.step);
+    }
+
+    for (const migration of migrationsToRun) {
+      const result = await this.runMigration(migration, 'up');
+      results.push(result);
+
+      if (!result.success) {
+        break; // Stop on first failure
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Rollback migrations
+   */
+  async down(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
+    const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
+
+    const executedSet = new Set(executed);
+    const executedMigrations = migrations.filter((m) => executedSet.has(m.name)).reverse(); // Rollback in reverse order
+
+    const results: MigrationResult[] = [];
+    let migrationsToRun = executedMigrations;
+
+    if (options.to) {
+      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
+      if (toIndex === -1) {
+        throw new Error(`Migration '${options.to}' not found`);
+      }
+      migrationsToRun = migrationsToRun.slice(0, toIndex + 1);
+    }
+
+    if (options.step !== undefined) {
+      migrationsToRun = migrationsToRun.slice(0, options.step);
+    }
+
+    for (const migration of migrationsToRun) {
+      const result = await this.runMigration(migration, 'down');
+      results.push(result);
+
+      if (!result.success) {
+        break; // Stop on first failure
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Run a single migration within a transaction
+   */
+  private async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
+    const startTime = Date.now();
+    const querier = await this.querierPool.getQuerier();
+
+    if (!isSqlQuerier(querier)) {
+      await querier.release();
+      throw new Error('Migrator requires a SQL-based querier');
+    }
+
+    try {
+      this.logger(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
+
+      await querier.beginTransaction();
+
+      if (direction === 'up') {
+        await migration.up(querier);
+        // Log within the same transaction
+        await this.storage.logWithQuerier(querier, migration.name);
+      } else {
+        await migration.down(querier);
+        // Unlog within the same transaction
+        await this.storage.unlogWithQuerier(querier, migration.name);
+      }
+
+      await querier.commitTransaction();
+
+      const duration = Date.now() - startTime;
+      this.logger(`Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`);
+
+      return {
+        name: migration.name,
+        direction,
+        duration,
+        success: true,
+      };
+    } catch (error) {
+      await querier.rollbackTransaction();
+
+      const duration = Date.now() - startTime;
+      this.logger(`Migration ${migration.name} failed: ${(error as Error).message}`);
+
+      return {
+        name: migration.name,
+        direction,
+        duration,
+        success: false,
+        error: error as Error,
+      };
+    } finally {
+      await querier.release();
+    }
+  }
+
+  /**
+   * Generate a new migration file
+   */
+  async generate(name: string): Promise<string> {
+    const timestamp = this.getTimestamp();
+    const fileName = `${timestamp}_${this.slugify(name)}.ts`;
+    const filePath = join(this.migrationsPath, fileName);
+
+    const content = this.generateMigrationContent(name);
+
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    await mkdir(this.migrationsPath, { recursive: true });
+    await writeFile(filePath, content, 'utf-8');
+
+    this.logger(`Created migration: ${filePath}`);
+    return filePath;
+  }
+
+  /**
+   * Generate a migration based on entity schema differences
+   */
+  async generateFromEntities(name: string): Promise<string> {
+    if (!this.schemaGenerator) {
+      throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
+    }
+
+    const entities = this.entities.length > 0 ? this.entities : getEntities();
+    const upStatements: string[] = [];
+    const downStatements: string[] = [];
+
+    for (const entity of entities) {
+      // Generate CREATE TABLE for all entities
+      // In a full implementation, we'd introspect the DB and generate diff
+      upStatements.push(this.schemaGenerator.generateCreateTable(entity));
+      downStatements.push(this.schemaGenerator.generateDropTable(entity));
+    }
+
+    const timestamp = this.getTimestamp();
+    const fileName = `${timestamp}_${this.slugify(name)}.ts`;
+    const filePath = join(this.migrationsPath, fileName);
+
+    const content = this.generateMigrationContentWithStatements(name, upStatements, downStatements.reverse());
+
+    const { writeFile, mkdir } = await import('node:fs/promises');
+    await mkdir(this.migrationsPath, { recursive: true });
+    await writeFile(filePath, content, 'utf-8');
+
+    this.logger(`Created migration from entities: ${filePath}`);
+    return filePath;
+  }
+
+  /**
+   * Sync schema directly (for development only - not for production!)
+   */
+  async sync(options: { force?: boolean } = {}): Promise<void> {
+    if (!this.schemaGenerator) {
+      throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
+    }
+
+    const entities = this.entities.length > 0 ? this.entities : getEntities();
+    const querier = await this.querierPool.getQuerier();
+
+    if (!isSqlQuerier(querier)) {
+      await querier.release();
+      throw new Error('Migrator requires a SQL-based querier');
+    }
+
+    try {
+      await querier.beginTransaction();
+
+      if (options.force) {
+        // Drop all tables first (in reverse order for foreign keys)
+        for (const entity of [...entities].reverse()) {
+          const dropSql = this.schemaGenerator.generateDropTable(entity);
+          this.logger(`Executing: ${dropSql}`);
+          await querier.run(dropSql);
+        }
+      }
+
+      // Create all tables
+      for (const entity of entities) {
+        // Use IF NOT EXISTS when not forcing (safer for existing tables)
+        const createSql = this.schemaGenerator.generateCreateTable(entity, { ifNotExists: !options.force });
+        this.logger(`Executing: ${createSql}`);
+        await querier.run(createSql);
+      }
+
+      await querier.commitTransaction();
+      this.logger('Schema sync completed');
+    } catch (error) {
+      await querier.rollbackTransaction();
+      throw error;
+    } finally {
+      await querier.release();
+    }
+  }
+
+  /**
+   * Get migration status
+   */
+  async status(): Promise<{ pending: string[]; executed: string[] }> {
+    const [pending, executed] = await Promise.all([this.pending().then((m) => m.map((x) => x.name)), this.executed()]);
+
+    return { pending, executed };
+  }
+
+  /**
+   * Get migration files from the migrations directory
+   */
+  private async getMigrationFiles(): Promise<string[]> {
+    try {
+      const files = await readdir(this.migrationsPath);
+      return files
+        .filter((f) => /\.(ts|js|mjs)$/.test(f))
+        .filter((f) => !f.endsWith('.d.ts'))
+        .sort();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Load a migration from a file
+   */
+  private async loadMigration(fileName: string): Promise<Migration | null> {
+    const filePath = join(this.migrationsPath, fileName);
+    const fileUrl = pathToFileURL(filePath).href;
+
+    try {
+      const module = await import(fileUrl);
+      const migration = module.default ?? module;
+
+      if (this.isMigration(migration)) {
+        return {
+          name: this.getMigrationName(fileName),
+          up: migration.up.bind(migration),
+          down: migration.down.bind(migration),
+        };
+      }
+
+      this.logger(`Warning: ${fileName} is not a valid migration`);
+      return null;
+    } catch (error) {
+      this.logger(`Error loading migration ${fileName}: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Check if an object is a valid migration
+   */
+  private isMigration(obj: unknown): obj is MigrationDefinition {
+    return (
+      typeof obj === 'object' &&
+      obj !== null &&
+      typeof (obj as MigrationDefinition).up === 'function' &&
+      typeof (obj as MigrationDefinition).down === 'function'
+    );
+  }
+
+  /**
+   * Extract migration name from filename
+   */
+  private getMigrationName(fileName: string): string {
+    return basename(fileName, extname(fileName));
+  }
+
+  /**
+   * Generate timestamp string for migration names
+   */
+  private getTimestamp(): string {
+    const now = new Date();
+    return [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+      String(now.getHours()).padStart(2, '0'),
+      String(now.getMinutes()).padStart(2, '0'),
+      String(now.getSeconds()).padStart(2, '0'),
+    ].join('');
+  }
+
+  /**
+   * Convert a string to a slug for filenames
+   */
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  /**
+   * Generate migration file content
+   */
+  private generateMigrationContent(name: string): string {
+    return /*ts*/ `import type { SqlQuerier } from 'nukak-migrate';
+
+/**
+ * Migration: ${name}
+ * Created: ${new Date().toISOString()}
+ */
+export default {
+  async up(querier: SqlQuerier): Promise<void> {
+    // Add your migration logic here
+    // Example:
+    // await querier.run(\`
+    //   CREATE TABLE "users" (
+    //     "id" SERIAL PRIMARY KEY,
+    //     "name" VARCHAR(255) NOT NULL,
+    //     "email" VARCHAR(255) UNIQUE NOT NULL,
+    //     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    //   )
+    // \`);
+  },
+
+  async down(querier: SqlQuerier): Promise<void> {
+    // Add your rollback logic here
+    // Example:
+    // await querier.run(\`DROP TABLE IF EXISTS "users"\`);
+  },
+};
+`;
+  }
+
+  /**
+   * Generate migration file content with SQL statements
+   */
+  private generateMigrationContentWithStatements(
+    name: string,
+    upStatements: string[],
+    downStatements: string[],
+  ): string {
+    const upSql = upStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
+    const downSql = downStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
+
+    return /*ts*/ `import type { SqlQuerier } from 'nukak-migrate';
+
+/**
+ * Migration: ${name}
+ * Created: ${new Date().toISOString()}
+ * Generated from entity definitions
+ */
+export default {
+  async up(querier: SqlQuerier): Promise<void> {
+${upSql}
+  },
+
+  async down(querier: SqlQuerier): Promise<void> {
+${downSql}
+  },
+};
+`;
+  }
+}
+
+/**
+ * Helper function to define a migration with proper typing
+ */
+export function defineMigration(migration: MigrationDefinition): MigrationDefinition {
+  return migration;
+}

@@ -1,11 +1,19 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import type { Query, QueryConflictPaths, QueryOptions, QuerySearch, QueryUpdateResult, Type } from '../type/index.js';
+import type {
+  Query,
+  QueryConflictPaths,
+  QueryOptions,
+  QuerySearch,
+  QueryUpdateResult,
+  SqlQuerier,
+  Type,
+} from '../type/index.js';
 import { clone, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { Serialized } from './decorator/index.js';
 
-export abstract class AbstractSqlQuerier extends AbstractQuerier {
+export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
 
   constructor(readonly dialect: AbstractSqlDialect) {
