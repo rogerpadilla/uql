@@ -2,7 +2,7 @@
   "name": "nukak-browser",
   "description": "flexible and efficient ORM, with declarative JSON syntax and smart type-safety",
   "license": "MIT",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "type": "module",
   "main": "./nukak-browser.min.js",
   "types": "./nukak-browser.min.d.ts",
@@ -16,7 +16,7 @@
   "devDependencies": {
     "bunchee": "^6.8.1",
     "copyfiles": "^2.4.1",
-    "nukak": "^1.7.0",
+    "nukak": "^1.7.1",
     "rimraf": "^6.1.2",
     "typescript": "~5.4.5"
   },
@@ -53,5 +53,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "956fcfd338655e97717df8bc8460c9050fe6f817"
+  "gitHead": "3243bae3502a1175eb354040642bc6e22d8a6be7"
 }

@@ -3,7 +3,7 @@
   "homepage": "https://nukak.org",
   "description": "Database migration system for nukak ORM",
   "license": "MIT",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -22,7 +22,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "nukak": "^1.7.0",
+    "nukak": "^1.7.1",
     "tslib": "^2.8.1"
   },
   "devDependencies": {
@@ -52,5 +52,6 @@
   ],
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "gitHead": "3243bae3502a1175eb354040642bc6e22d8a6be7"
 }
