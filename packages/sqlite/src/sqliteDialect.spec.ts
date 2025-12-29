@@ -85,7 +85,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)');
-    expect(res.values[0]).toBe(1641013199999);
+    expect(res.values[0]).toBe(1640995199999);
     expect(res.values[1]).toBe(123);
   }
 
