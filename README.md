@@ -90,9 +90,11 @@ import type { Relation } from 'nukak/type';
 
 @Entity()
 export class User {
-  @Id() id?: string;
+  @Id()
+  id?: string;
 
-  @Field() name?: string;
+  @Field()
+  name?: string;
 
   @OneToOne({ entity: () => Profile, mappedBy: 'user', cascade: true })
   profile?: Relation<Profile>; // Relation<T> handles circular dependencies
@@ -103,9 +105,11 @@ export class User {
 
 @Entity()
 export class Profile {
-  @Id() id?: string;
+  @Id()
+  id?: string;
 
-  @Field() bio?: string;
+  @Field()
+  bio?: string;
 
   @Field({ reference: () => User })
   userId?: string;
@@ -116,9 +120,11 @@ export class Profile {
 
 @Entity()
 export class Post {
-  @Id() id?: number;
+  @Id()
+  id?: number;
 
-  @Field() title?: string;
+  @Field()
+  title?: string;
 
   @Field({ reference: () => User })
   authorId?: string;
@@ -132,15 +138,23 @@ export class Post {
 
 @Entity()
 export class Tag {
-  @Id() id?: string;
-  @Field() name?: string;
+  @Id()
+  id?: string;
+
+  @Field()
+  name?: string;
 }
 
 @Entity()
 export class PostTag {
-  @Id() id?: string;
-  @Field({ reference: () => Post }) postId?: number;
-  @Field({ reference: () => Tag }) tagId?: string;
+  @Id()
+  id?: string;
+
+  @Field({ reference: () => Post })
+  postId?: number;
+
+  @Field({ reference: () => Tag })
+  tagId?: string;
 }
 ```
 
@@ -257,8 +271,11 @@ import { ItemTag } from './shared/models/index.js';
 
 @Entity()
 export class Item {
-  @Id() id: number;
-  @Field() name: string;
+  @Id()
+  id: number;
+
+  @Field()
+  name: string;
 
   @Field({
     virtual: raw(({ ctx, dialect, escapedPrefix }) => {
