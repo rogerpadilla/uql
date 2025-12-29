@@ -1,4 +1,5 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
+import { AbstractDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import type {
   EntityMeta,
@@ -23,14 +24,15 @@ import {
   hasKeys,
 } from 'nukak/util';
 
-export class MongoDialect {
+export class MongoDialect extends AbstractDialect {
   where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
 
     where = buldQueryWhereAsMap(meta, where);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
-      where[meta.softDelete as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete]) {
+      const field = meta.fields[meta.softDelete];
+      where[this.resolveColumnName(meta.softDelete, field)] = null;
     }
 
     return getKeys(where).reduce(
@@ -39,10 +41,14 @@ export class MongoDialect {
         if (key === '$and' || key === '$or') {
           acc[key] = value.map((filterIt: QueryWhere<E>) => this.where(entity, filterIt));
         } else {
+          const field = meta.fields[key];
           if (key === '_id' || key === meta.id) {
             key = '_id';
             value = this.getIdValue(value);
-          } else if (Array.isArray(value)) {
+          } else if (field) {
+            key = this.resolveColumnName(key, field);
+          }
+          if (Array.isArray(value)) {
             value = {
               $in: value,
             };
@@ -106,27 +112,29 @@ export class MongoDialect {
       const relMeta = getMeta(relEntity);
 
       if (relOpts.cardinality === 'm1') {
+        const localField = meta.fields[relOpts.references[0].local];
         pipeline.push({
           $lookup: {
-            from: relMeta.name,
-            localField: relOpts.references[0].local,
+            from: this.resolveTableName(relEntity, relMeta),
+            localField: this.resolveColumnName(relOpts.references[0].local, localField),
             foreignField: '_id',
             as: relKey,
           },
         });
       } else {
-        const foreignField = relOpts.references[0].foreign;
+        const foreignField = relMeta.fields[relOpts.references[0].foreign];
+        const foreignFieldName = this.resolveColumnName(relOpts.references[0].foreign, foreignField);
         const referenceWhere = this.where(relEntity, where);
         const referenceSort = this.sort(relEntity, q.$sort);
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
-          $match: { [foreignField]: referenceWhere._id },
+          $match: { [foreignFieldName]: referenceWhere._id },
         };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
         }
         pipeline.push({
           $lookup: {
-            from: relMeta.name,
+            from: this.resolveTableName(relEntity, relMeta),
             pipeline: [referencePipelineEntry],
             as: relKey,
           },
@@ -148,14 +156,25 @@ export class MongoDialect {
       return;
     }
 
-    const res = doc as E & { _id: any };
+    const res = doc as any;
 
     if (res._id) {
       res[meta.id] = res._id;
-      delete res._id;
+      if (meta.id !== '_id') {
+        delete res._id;
+      }
     }
 
-    const relKeys = getKeys(meta.relations).filter((key) => doc[key]) as RelationKey<E>[];
+    for (const key of getKeys(meta.fields)) {
+      const field = meta.fields[key];
+      const dbName = this.resolveColumnName(key, field);
+      if (dbName !== key && res[dbName] !== undefined) {
+        res[key] = res[dbName];
+        delete res[dbName];
+      }
+    }
+
+    const relKeys = getKeys(meta.relations).filter((key) => res[key]) as RelationKey<E>[];
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
@@ -188,7 +207,8 @@ export class MongoDialect {
     const persistableKeys = filterFieldKeys(meta, payloads[0], callbackKey);
     return payloads.map((it) =>
       persistableKeys.reduce((acc, key) => {
-        acc[key] = it[key];
+        const field = meta.fields[key];
+        acc[this.resolveColumnName(key, field)] = it[key];
         return acc;
       }, {} as E),
     );

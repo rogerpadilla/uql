@@ -1,4 +1,5 @@
 import type { IdValue } from './entity.js';
+import type { NamingStrategy } from './namingStrategy.js';
 import type {
   Query,
   QueryConflictPaths,
@@ -125,4 +126,5 @@ export type Logger = (message: unknown, ...args: unknown[]) => unknown;
 
 export type ExtraOptions = {
   readonly logger?: Logger;
+  readonly namingStrategy?: NamingStrategy;
 };

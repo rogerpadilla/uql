@@ -1,7 +1,7 @@
-import type { SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'nukak/type';
+import type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'nukak/type';
 
 // Re-export from core for convenience
-export type { SqlDialect, SqlQuerier, SqlQueryDialect };
+export type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect };
 export { isSqlQuerier } from 'nukak/type';
 
 /**
@@ -76,6 +76,11 @@ export interface MigratorOptions {
    * Entities to use for schema generation
    */
   readonly entities?: Type<unknown>[];
+
+  /**
+   * Naming strategy for database tables and columns
+   */
+  readonly namingStrategy?: NamingStrategy;
 }
 
 /**

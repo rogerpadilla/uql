@@ -2,6 +2,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { NamingStrategy } from 'nukak/type';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
@@ -14,6 +15,7 @@ interface CliConfig {
   tableName?: string;
   dialect?: SqlDialect;
   entities?: unknown[];
+  namingStrategy?: NamingStrategy;
 }
 
 async function loadConfig(): Promise<CliConfig> {
@@ -36,15 +38,15 @@ async function loadConfig(): Promise<CliConfig> {
   );
 }
 
-function getSchemaGenerator(dialect: SqlDialect) {
+function getSchemaGenerator(dialect: SqlDialect, namingStrategy?: NamingStrategy) {
   switch (dialect) {
     case 'postgres':
-      return new PostgresSchemaGenerator();
+      return new PostgresSchemaGenerator(namingStrategy);
     case 'mysql':
     case 'mariadb':
-      return new MysqlSchemaGenerator();
+      return new MysqlSchemaGenerator(namingStrategy);
     case 'sqlite':
-      return new SqliteSchemaGenerator();
+      return new SqliteSchemaGenerator(namingStrategy);
     default:
       throw new TypeError(`Unknown dialect: ${dialect}`);
   }
@@ -74,10 +76,11 @@ async function main() {
       logger: console.log,
       entities: config.entities as MigratorOptions['entities'],
       dialect,
+      namingStrategy: config.namingStrategy,
     };
 
     const migrator = new Migrator(config.querierPool as any, options);
-    migrator.setSchemaGenerator(getSchemaGenerator(dialect));
+    migrator.setSchemaGenerator(getSchemaGenerator(dialect, config.namingStrategy));
 
     switch (command) {
       case 'up':

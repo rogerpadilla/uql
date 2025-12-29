@@ -3,6 +3,7 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
+  type NamingStrategy,
   type Query,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -45,15 +46,19 @@ import {
   raw,
 } from '../util/index.js';
 
+import { AbstractDialect } from './abstractDialect.js';
 import { SqlQueryContext } from './queryContext.js';
 
-export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialect {
+export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
   constructor(
+    namingStrategy?: NamingStrategy,
     readonly escapeIdChar: '`' | '"' = '`',
     readonly beginTransactionCommand: string = 'START TRANSACTION',
     readonly commitTransactionCommand: string = 'COMMIT',
     readonly rollbackTransactionCommand: string = 'ROLLBACK',
-  ) {}
+  ) {
+    super(namingStrategy);
+  }
 
   createContext(): QueryContext {
     return new SqlQueryContext(this);
@@ -70,13 +75,14 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
 
   returningId<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
-    const idName = meta.fields[meta.id].name;
+    const idName = this.resolveColumnName(meta.id, meta.fields[meta.id]);
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
   search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? meta.name : undefined;
+    const tableName = this.resolveTableName(entity, meta);
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? tableName : undefined;
     opts = { ...opts, prefix };
     this.where<E>(ctx, entity, q.$where, opts);
     this.sort<E>(ctx, entity, q.$sort, opts);
@@ -123,6 +129,7 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
         });
       } else {
         const field = meta.fields[key as FieldKey<E>];
+        const columnName = this.resolveColumnName(key, field);
         if (field.virtual) {
           this.getRawValue(ctx, {
             value: raw(field.virtual.value, key as string),
@@ -131,9 +138,9 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
             autoPrefixAlias: opts.autoPrefixAlias,
           });
         } else {
-          ctx.append(escapedPrefix + this.escapeId(field.name));
+          ctx.append(escapedPrefix + this.escapeId(columnName));
         }
-        if (!field.virtual && (field.name !== key || opts.autoPrefixAlias)) {
+        if (!field.virtual && (columnName !== key || opts.autoPrefixAlias)) {
           const aliasStr = (prefix + key) as string;
           // Replace dots with underscores for alias to avoid syntax errors
           const safeAlias = aliasStr.replace(/\./g, '_');
@@ -145,13 +152,14 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
 
   select<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? meta.name : undefined;
+    const tableName = this.resolveTableName(entity, meta);
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? tableName : undefined;
 
     ctx.append('SELECT ');
     this.selectFields(ctx, entity, select, { prefix });
     // Add related fields BEFORE FROM clause
     this.selectRelationFields(ctx, entity, select, { prefix });
-    ctx.append(` FROM ${this.escapeId(meta.name)}`);
+    ctx.append(` FROM ${this.escapeId(tableName)}`);
     // Add JOINs AFTER FROM clause
     this.selectRelationJoins(ctx, entity, select, { prefix });
   }
@@ -167,6 +175,7 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
     }
 
     const meta = getMeta(entity);
+    const tableName = this.resolveTableName(entity, meta);
     const relKeys = filterRelationKeys(meta, select);
     const isSelectArray = Array.isArray(select);
     const prefix = opts.prefix;
@@ -178,8 +187,8 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
         continue;
       }
 
-      const isFirstLevel = prefix === meta.name;
-      const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
+      const isFirstLevel = prefix === tableName;
+      const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
       const relSelect = select[relKey as string];
       const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
@@ -208,6 +217,7 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
     }
 
     const meta = getMeta(entity);
+    const tableName = this.resolveTableName(entity, meta);
     const relKeys = filterRelationKeys(meta, select);
     const isSelectArray = Array.isArray(select);
     const prefix = opts.prefix;
@@ -219,22 +229,27 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
         continue;
       }
 
-      const isFirstLevel = prefix === meta.name;
+      const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
       const relEntity = relOpts.entity();
       const relSelect = select[relKey as string];
       const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
       const relMeta = getMeta(relEntity);
-      const relEntityName = this.escapeId(relMeta.name);
-      const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(meta.name);
+      const relTableName = this.resolveTableName(relEntity, relMeta);
+      const relEntityName = this.escapeId(relTableName);
+      const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(tableName);
       const joinType = relQuery.$required ? 'INNER' : 'LEFT';
       const joinAlias = this.escapeId(joinRelAlias, true);
 
       ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
       ctx.append(
         relOpts.references
-          .map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`)
+          .map((it) => {
+            const foreignColumnName = this.resolveColumnName(it.foreign, relMeta.fields[it.foreign]);
+            const localColumnName = this.resolveColumnName(it.local, meta.fields[it.local]);
+            return `${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`;
+          })
           .join(' AND '),
       );
 
@@ -301,10 +316,11 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
     if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
         ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
+        const tableName = this.resolveTableName(entity, meta);
         this.getRawValue(ctx, {
           value: val,
-          prefix: meta.name,
-          escapedPrefix: this.escapeId(meta.name, false, true),
+          prefix: tableName,
+          escapedPrefix: this.escapeId(tableName, false, true),
         });
         ctx.append(')');
         return;
@@ -317,7 +333,11 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
 
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field].name));
+      const fields = search.$fields.map((fKey) => {
+        const field = meta.fields[fKey];
+        const columnName = this.resolveColumnName(fKey, field);
+        return this.escapeId(columnName);
+      });
       ctx.append(`MATCH(${fields.join(', ')}) AGAINST(`);
       ctx.addValue(search.$value);
       ctx.append(')');
@@ -531,7 +551,8 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
       return;
     }
 
-    ctx.append(escapedPrefix + this.escapeId(field?.name ?? (key as string)));
+    const columnName = this.resolveColumnName(key, field);
+    ctx.append(escapedPrefix + this.escapeId(columnName));
   }
 
   sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): void {
@@ -549,7 +570,8 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
       if (index > 0) {
         ctx.append(', ');
       }
-      const name = meta.fields[key]?.name ?? key;
+      const field = meta.fields[key];
+      const name = this.resolveColumnName(key, field);
       const direction = directionMap[sort as QuerySortDirection];
       ctx.append(this.escapeId(name) + direction);
     });
@@ -581,8 +603,12 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = filterFieldKeys(meta, payloads[0], 'onInsert');
 
-    const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
-    ctx.append(`INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (`);
+    const columns = keys.map((key) => {
+      const field = meta.fields[key];
+      return this.escapeId(this.resolveColumnName(key, field));
+    });
+    const tableName = this.resolveTableName(entity, meta);
+    ctx.append(`INSERT INTO ${this.escapeId(tableName)} (${columns.join(', ')}) VALUES (`);
 
     payloads.forEach((it, recordIndex) => {
       if (recordIndex > 0) {
@@ -604,13 +630,15 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
     const [filledPayload] = fillOnFields(meta, payload, 'onUpdate');
     const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
 
-    ctx.append(`UPDATE ${this.escapeId(meta.name)} SET `);
+    const tableName = this.resolveTableName(entity, meta);
+    ctx.append(`UPDATE ${this.escapeId(tableName)} SET `);
     keys.forEach((key, index) => {
       if (index > 0) {
         ctx.append(', ');
       }
       const field = meta.fields[key];
-      ctx.append(`${this.escapeId(field.name)} = `);
+      const columnName = this.resolveColumnName(key, field);
+      ctx.append(`${this.escapeId(columnName)} = `);
       this.formatPersistableValue(ctx, field, filledPayload[key]);
     });
 
@@ -647,42 +675,50 @@ export abstract class AbstractSqlDialect implements QueryDialect, SqlQueryDialec
       .filter((col) => !conflictPaths[col])
       .map((col) => {
         const field = meta.fields[col];
+        const columnName = this.resolveColumnName(col, field);
         if (callback) {
-          return `${this.escapeId(field.name)} = ${callback(this.escapeId(field.name))}`;
+          return `${this.escapeId(columnName)} = ${callback(this.escapeId(columnName))}`;
         }
         const valCtx = this.createContext();
         this.formatPersistableValue(valCtx, field, filledPayload[col]);
         valCtx.values.forEach((val) => {
           ctx.pushValue(val);
         });
-        return `${this.escapeId(field.name)} = ${valCtx.sql}`;
+        return `${this.escapeId(columnName)} = ${valCtx.sql}`;
       })
       .join(', ');
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
     return getKeys(conflictPaths)
-      .map((key) => this.escapeId(meta.fields[key]?.name ?? key))
+      .map((key) => {
+        const field = meta.fields[key];
+        const columnName = this.resolveColumnName(key, field);
+        return this.escapeId(columnName);
+      })
       .join(', ');
   }
 
   delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
+    const tableName = this.resolveTableName(entity, meta);
 
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
-        const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
-        ctx.append(`UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(String(meta.softDelete))} = `);
+        const field = meta.fields[meta.softDelete];
+        const value = getFieldCallbackValue(field.onDelete);
+        const columnName = this.resolveColumnName(meta.softDelete, field);
+        ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
         ctx.addValue(value);
         this.search(ctx, entity, q, opts);
         return;
       }
       if (opts.softDelete) {
-        throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
+        throw TypeError(`'${tableName}' has not enabled 'softDelete'`);
       }
     }
 
-    ctx.append(`DELETE FROM ${this.escapeId(meta.name)}`);
+    ctx.append(`DELETE FROM ${this.escapeId(tableName)}`);
     this.search(ctx, entity, q, opts);
   }
 

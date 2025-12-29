@@ -10,7 +10,7 @@ export class MySql2Querier extends AbstractSqlQuerier {
     readonly connect: () => Promise<PoolConnection>,
     readonly extra?: ExtraOptions,
   ) {
-    super(new MySqlDialect());
+    super(new MySqlDialect(extra?.namingStrategy));
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {

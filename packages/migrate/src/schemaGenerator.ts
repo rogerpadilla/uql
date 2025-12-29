@@ -1,18 +1,24 @@
+import { AbstractDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
-import type { ColumnType, EntityMeta, FieldKey, FieldOptions, Type } from 'nukak/type';
+import type { ColumnType, EntityMeta, FieldKey, FieldOptions, NamingStrategy, Type } from 'nukak/type';
 import { escapeSqlId, getKeys } from 'nukak/util';
 import type { ColumnSchema, IndexSchema, SchemaDiff, SchemaGenerator, TableSchema } from './type.js';
 
 /**
  * Abstract base class for SQL schema generation
  */
-export abstract class AbstractSchemaGenerator implements SchemaGenerator {
+export abstract class AbstractSchemaGenerator extends AbstractDialect implements SchemaGenerator {
   /**
    * Primary key type for auto-increment integer IDs
    */
   protected abstract readonly serialPrimaryKeyType: string;
 
-  constructor(protected readonly escapeIdChar: '`' | '"' = '`') {}
+  constructor(
+    namingStrategy?: NamingStrategy,
+    protected readonly escapeIdChar: '`' | '"' = '`',
+  ) {
+    super(namingStrategy);
+  }
 
   /**
    * Escape an identifier (table name, column name, etc.)
@@ -23,11 +29,12 @@ export abstract class AbstractSchemaGenerator implements SchemaGenerator {
 
   generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string {
     const meta = getMeta(entity);
+    const tableName = this.resolveTableName(entity, meta);
     const columns = this.generateColumnDefinitions(meta);
     const constraints = this.generateTableConstraints(meta);
 
     const ifNotExists = options.ifNotExists ? 'IF NOT EXISTS ' : '';
-    let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(meta.name)} (\n`;
+    let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(tableName)} (\n`;
     sql += columns.map((col) => `  ${col}`).join(',\n');
 
     if (constraints.length > 0) {
@@ -44,7 +51,8 @@ export abstract class AbstractSchemaGenerator implements SchemaGenerator {
 
   generateDropTable<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
-    return `DROP TABLE IF EXISTS ${this.escapeId(meta.name)};`;
+    const tableName = this.resolveTableName(entity, meta);
+    return `DROP TABLE IF EXISTS ${this.escapeId(tableName)};`;
   }
 
   generateAlterTable(diff: SchemaDiff): string[] {
@@ -123,7 +131,7 @@ export abstract class AbstractSchemaGenerator implements SchemaGenerator {
    * Generate a single column definition
    */
   protected generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
-    const columnName = this.escapeId(field.name ?? fieldKey);
+    const columnName = this.escapeId(this.resolveColumnName(fieldKey, field));
     const isId = field.isId === true;
     const isPrimaryKey = isId && meta.id === fieldKey;
 
@@ -213,13 +221,15 @@ export abstract class AbstractSchemaGenerator implements SchemaGenerator {
   protected generateTableConstraints<E>(meta: EntityMeta<E>): string[] {
     const constraints: string[] = [];
     const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
+    const tableName = this.resolveTableName(meta.entity, meta);
 
     // Generate indexes from field options
     for (const key of fieldKeys) {
       const field = meta.fields[key];
       if (field?.index) {
-        const indexName = typeof field.index === 'string' ? field.index : `idx_${meta.name}_${field.name ?? key}`;
-        constraints.push(`INDEX ${this.escapeId(indexName)} (${this.escapeId(field.name ?? key)})`);
+        const columnName = this.resolveColumnName(key as string, field);
+        const indexName = typeof field.index === 'string' ? field.index : `idx_${tableName}_${columnName}`;
+        constraints.push(`INDEX ${this.escapeId(indexName)} (${this.escapeId(columnName)})`);
       }
     }
 
@@ -230,11 +240,14 @@ export abstract class AbstractSchemaGenerator implements SchemaGenerator {
         const refEntity = field.reference();
         const refMeta = getMeta(refEntity);
         const refIdField = refMeta.fields[refMeta.id];
-        const fkName = `fk_${meta.name}_${field.name ?? key}`;
+        const columnName = this.resolveColumnName(key as string, field);
+        const refTableName = this.resolveTableName(refEntity, refMeta);
+        const refColumnName = this.resolveColumnName(refMeta.id, refIdField);
+        const fkName = `fk_${tableName}_${columnName}`;
 
         constraints.push(
-          `CONSTRAINT ${this.escapeId(fkName)} FOREIGN KEY (${this.escapeId(field.name ?? key)}) ` +
-            `REFERENCES ${this.escapeId(refMeta.name)} (${this.escapeId(refIdField?.name ?? refMeta.id)})`,
+          `CONSTRAINT ${this.escapeId(fkName)} FOREIGN KEY (${this.escapeId(columnName)}) ` +
+            `REFERENCES ${this.escapeId(refTableName)} (${this.escapeId(refColumnName)})`,
         );
       }
     }
