@@ -20,9 +20,7 @@
     "test:coverage": "jest --coverage",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
-    "container": "docker compose up",
-    "container:down": "docker compose down"
+    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'"
   },
   "commitlint": {
     "extends": [

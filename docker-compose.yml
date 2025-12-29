@@ -10,6 +10,10 @@ services:
     ports:
       - 3316:3306
     container_name: nukak-mysql-9
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 5s
+      retries: 10
 
   mariadb:
     image: mariadb:11.8
@@ -22,6 +26,10 @@ services:
     ports:
       - 3326:3306
     container_name: nukak-mariadb-11
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      timeout: 5s
+      retries: 10
 
   postgres:
     image: postgres:18.1-alpine
@@ -33,3 +41,8 @@ services:
     ports:
       - 5442:5432
     container_name: nukak-postgres-18
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
