@@ -24,9 +24,9 @@ export function snakeCase(val: string): string {
   let resp = val.charAt(0).toLowerCase();
   for (let i = 1; i < val.length; ++i) {
     const char = val[i];
-    const chatLower = char.toLowerCase();
-    if (char !== chatLower && char === char.toUpperCase()) {
-      resp += '_' + chatLower;
+    const charLower = char.toLowerCase();
+    if (char !== charLower && char === char.toUpperCase()) {
+      resp += '_' + charLower;
     } else {
       resp += char;
     }

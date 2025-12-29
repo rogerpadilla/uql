@@ -7,7 +7,7 @@ export class MariadbQuerierPool extends AbstractQuerierPool<MariadbQuerier> {
   readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(extra);
+    super('mariadb', extra);
     this.pool = createPool(opts);
   }
 

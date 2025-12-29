@@ -8,7 +8,7 @@ export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier> {
   private readonly client: MongoClient;
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
-    super(extra);
+    super('mongodb', extra);
     this.client = new MongoClient(uri, opts);
   }
 

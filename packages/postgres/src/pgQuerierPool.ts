@@ -7,7 +7,7 @@ export class PgQuerierPool extends AbstractQuerierPool<PgQuerier> {
   readonly pool: pg.Pool;
 
   constructor(opts: pg.PoolConfig, extra?: ExtraOptions) {
-    super(extra);
+    super('postgres', extra);
     this.pool = new pg.Pool(opts);
   }
 

@@ -1,5 +1,6 @@
-import type { ColumnType, EntityMeta, FieldOptions } from 'nukak/type';
+import type { ColumnType, FieldOptions } from 'nukak/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
+import type { ColumnSchema } from '../type.js';
 
 /**
  * MySQL/MariaDB-specific schema generator
@@ -7,7 +8,7 @@ import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
   protected readonly serialPrimaryKeyType = 'INT AUTO_INCREMENT PRIMARY KEY';
 
-  protected mapColumnType(columnType: ColumnType, field: FieldOptions): string {
+  public override mapColumnType(columnType: ColumnType, field: FieldOptions): string {
     switch (columnType) {
       case 'int':
         return 'INT';
@@ -64,20 +65,24 @@ export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
     }
   }
 
-  protected getBooleanType(): string {
+  public override getBooleanType(): string {
     return 'TINYINT(1)';
   }
 
-  protected generateAlterColumnStatement(tableName: string, columnName: string, newDefinition: string): string {
-    return `ALTER TABLE ${this.escapeId(tableName)} MODIFY COLUMN ${newDefinition};`;
+  public override generateAlterColumnStatements(
+    tableName: string,
+    column: ColumnSchema,
+    newDefinition: string,
+  ): string[] {
+    return [`ALTER TABLE ${this.escapeId(tableName)} MODIFY COLUMN ${newDefinition};`];
   }
 
-  protected override generateColumnComment(comment: string): string {
+  public override generateColumnComment(tableName: string, columnName: string, comment: string): string {
     const escapedComment = comment.replace(/'/g, "''");
     return ` COMMENT '${escapedComment}'`;
   }
 
-  protected override getTableOptions<E>(meta: EntityMeta<E>): string {
+  override getTableOptions<E>(): string {
     return ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
   }
 

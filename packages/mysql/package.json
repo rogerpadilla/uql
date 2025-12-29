@@ -16,7 +16,7 @@
   },
   "peerDependencies": {
     "mysql2": "^2.3.3",
-    "nukak": "^1.4.0"
+    "nukak": "^1.8.1"
   },
   "dependencies": {
     "sqlstring": "^2.3.3"

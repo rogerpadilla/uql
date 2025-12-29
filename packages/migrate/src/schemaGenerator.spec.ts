@@ -119,6 +119,24 @@ describe('PostgresSchemaGenerator', () => {
     expect(sql[0]).toContain('ADD COLUMN "profile_data" JSONB');
     expect(sql[0]).not.toContain('JSONB(');
   });
+
+  it('should generate ALTER TABLE DOWN statements', () => {
+    const sql = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      columnsToAdd: [
+        {
+          name: 'profile_data',
+          type: 'JSONB',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+        },
+      ],
+    });
+    expect(sql[0]).toBe('ALTER TABLE "users" DROP COLUMN "profile_data";');
+  });
 });
 
 describe('MysqlSchemaGenerator', () => {

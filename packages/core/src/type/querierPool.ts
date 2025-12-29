@@ -1,9 +1,14 @@
-import type { ExtraOptions, Querier } from './querier.js';
+import type { Dialect, ExtraOptions, Querier } from './querier.js';
 
 /**
  * querier pool.
  */
 export type QuerierPool<Q extends Querier = Querier> = {
+  /**
+   * the database dialect.
+   */
+  readonly dialect: Dialect;
+
   /**
    * extra options
    */

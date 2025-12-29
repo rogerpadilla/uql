@@ -11,7 +11,7 @@ export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
     readonly opts?: Options,
     extra?: ExtraOptions,
   ) {
-    super(extra);
+    super('sqlite', extra);
   }
 
   async getQuerier() {

@@ -14,14 +14,13 @@ describe('transactional', () => {
     setQuerierPool({
       getQuerier: async () => querierSingleton,
       end: async () => undefined,
-      transaction: async (): Promise<void> => {
-        return undefined;
-      },
+      dialect: 'postgres',
     });
 
     anotherQuerierPool = {
       getQuerier: async () => anotherQuerierSingleton,
       end: async () => undefined,
+      dialect: 'postgres',
     };
   });
 

@@ -71,7 +71,8 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     if (diff.columnsToAlter?.length) {
       for (const { to } of diff.columnsToAlter) {
         const colDef = this.generateColumnDefinitionFromSchema(to);
-        statements.push(this.generateAlterColumnStatement(diff.tableName, to.name, colDef));
+        const colStatements = this.generateAlterColumnStatements(diff.tableName, to, colDef);
+        statements.push(...colStatements);
       }
     }
 
@@ -99,6 +100,20 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     return statements;
   }
 
+  generateAlterTableDown(diff: SchemaDiff): string[] {
+    const statements: string[] = [];
+    const tableName = this.escapeId(diff.tableName);
+
+    // Rollback additions by dropping columns
+    if (diff.columnsToAdd?.length) {
+      for (const column of diff.columnsToAdd) {
+        statements.push(`ALTER TABLE ${tableName} DROP COLUMN ${this.escapeId(column.name)};`);
+      }
+    }
+
+    return statements;
+  }
+
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     const unique = index.unique ? 'UNIQUE ' : '';
     const columns = index.columns.map((c) => this.escapeId(c)).join(', ');
@@ -112,7 +127,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Generate column definitions from entity metadata
    */
-  protected generateColumnDefinitions<E>(meta: EntityMeta<E>): string[] {
+  public generateColumnDefinitions<E>(meta: EntityMeta<E>): string[] {
     const columns: string[] = [];
     const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
 
@@ -130,7 +145,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Generate a single column definition
    */
-  protected generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
+  public generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
     const columnName = this.escapeId(this.resolveColumnName(fieldKey, field));
     const isId = field.isId === true;
     const isPrimaryKey = isId && meta.id === fieldKey;
@@ -171,7 +186,11 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     // COMMENT (if supported)
     if (field.comment) {
-      definition += this.generateColumnComment(field.comment);
+      definition += this.generateColumnComment(
+        this.resolveTableName(meta.entity, meta),
+        this.resolveColumnName(fieldKey, field),
+        field.comment,
+      );
     }
 
     return definition;
@@ -180,7 +199,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Generate column definition from a ColumnSchema object
    */
-  protected generateColumnDefinitionFromSchema(column: ColumnSchema): string {
+  public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
     const columnName = this.escapeId(column.name);
     let type = column.type;
 
@@ -218,7 +237,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Generate table constraints (indexes, foreign keys, etc.)
    */
-  protected generateTableConstraints<E>(meta: EntityMeta<E>): string[] {
+  public generateTableConstraints<E>(meta: EntityMeta<E>): string[] {
     const constraints: string[] = [];
     const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
     const tableName = this.resolveTableName(meta.entity, meta);
@@ -301,36 +320,38 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Map nukak column type to database-specific SQL type
    */
-  protected abstract mapColumnType(columnType: ColumnType, field: FieldOptions): string;
+  public abstract mapColumnType(columnType: ColumnType, field: FieldOptions): string;
 
   /**
    * Get the boolean type for this database
    */
-  protected abstract getBooleanType(): string;
+  public abstract getBooleanType(): string;
 
   /**
-   * Generate ALTER COLUMN statement (database-specific)
+   * Generate ALTER COLUMN statements (database-specific)
    */
-  protected abstract generateAlterColumnStatement(tableName: string, columnName: string, newDefinition: string): string;
+  public abstract generateAlterColumnStatements(
+    tableName: string,
+    column: ColumnSchema,
+    newDefinition: string,
+  ): string[];
 
   /**
    * Get table options (e.g., ENGINE for MySQL)
    */
-  protected getTableOptions<E>(meta: EntityMeta<E>): string {
+  getTableOptions<E>(meta: EntityMeta<E>): string {
     return '';
   }
 
   /**
    * Generate column comment clause (if supported)
    */
-  protected generateColumnComment(comment: string): string {
-    return '';
-  }
+  public abstract generateColumnComment(tableName: string, columnName: string, comment: string): string;
 
   /**
    * Format a default value for SQL
    */
-  protected formatDefaultValue(value: unknown): string {
+  public formatDefaultValue(value: unknown): string {
     if (value === null) {
       return 'NULL';
     }
@@ -352,13 +373,13 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Compare two schemas and return the differences
    */
-  diffSchema<E>(entity: Type<E>, currentSchema: TableSchema | null): SchemaDiff | null {
+  diffSchema<E>(entity: Type<E>, currentSchema: TableSchema | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
 
     if (!currentSchema) {
       // Table doesn't exist, need to create
       return {
-        tableName: meta.name,
+        tableName: this.resolveTableName(entity, meta),
         type: 'create',
       };
     }
@@ -375,7 +396,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       const field = meta.fields[key];
       if (field?.virtual) continue;
 
-      const columnName = field.name ?? key;
+      const columnName = this.resolveColumnName(key as string, field);
       const currentColumn = currentColumns.get(columnName);
 
       if (!currentColumn) {
@@ -397,11 +418,11 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     }
 
     if (columnsToAdd.length === 0 && columnsToAlter.length === 0 && columnsToDrop.length === 0) {
-      return null; // No changes needed
+      return undefined; // No changes needed
     }
 
     return {
-      tableName: meta.name,
+      tableName: this.resolveTableName(entity, meta),
       type: 'alter',
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
@@ -417,7 +438,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const isPrimaryKey = isId && meta.id === fieldKey;
 
     return {
-      name: field.name ?? fieldKey,
+      name: this.resolveColumnName(fieldKey, field),
       type: this.getSqlType(field, field.type),
       nullable: field.nullable ?? !isPrimaryKey,
       defaultValue: field.defaultValue,

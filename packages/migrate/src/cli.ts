@@ -2,18 +2,19 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { NamingStrategy } from 'nukak/type';
+import type { Dialect, NamingStrategy, QuerierPool } from 'nukak/type';
+import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
 import { Migrator } from './migrator.js';
-import type { MigratorOptions, SqlDialect } from './type.js';
+import type { MigratorOptions } from './type.js';
 
 interface CliConfig {
-  querierPool?: unknown;
+  querierPool?: QuerierPool;
   migrationsPath?: string;
   tableName?: string;
-  dialect?: SqlDialect;
+  dialect?: Dialect;
   entities?: unknown[];
   namingStrategy?: NamingStrategy;
 }
@@ -38,7 +39,7 @@ async function loadConfig(): Promise<CliConfig> {
   );
 }
 
-function getSchemaGenerator(dialect: SqlDialect, namingStrategy?: NamingStrategy) {
+function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStrategy) {
   switch (dialect) {
     case 'postgres':
       return new PostgresSchemaGenerator(namingStrategy);
@@ -47,6 +48,8 @@ function getSchemaGenerator(dialect: SqlDialect, namingStrategy?: NamingStrategy
       return new MysqlSchemaGenerator(namingStrategy);
     case 'sqlite':
       return new SqliteSchemaGenerator(namingStrategy);
+    case 'mongodb':
+      return new MongoSchemaGenerator(namingStrategy);
     default:
       throw new TypeError(`Unknown dialect: ${dialect}`);
   }
@@ -70,7 +73,7 @@ async function main() {
 
     const dialect = config.dialect ?? 'postgres';
 
-    const options: MigratorOptions & { dialect: SqlDialect } = {
+    const options: MigratorOptions & { dialect: Dialect } = {
       migrationsPath: config.migrationsPath ?? './migrations',
       tableName: config.tableName,
       logger: console.log,
@@ -79,7 +82,7 @@ async function main() {
       namingStrategy: config.namingStrategy,
     };
 
-    const migrator = new Migrator(config.querierPool as any, options);
+    const migrator = new Migrator(config.querierPool, options);
     migrator.setSchemaGenerator(getSchemaGenerator(dialect, config.namingStrategy));
 
     switch (command) {

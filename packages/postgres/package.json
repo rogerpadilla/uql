@@ -15,7 +15,7 @@
     "clean": "rimraf dist"
   },
   "peerDependencies": {
-    "nukak": "^1.4.0",
+    "nukak": "^1.8.1",
     "pg": "^8.8.0"
   },
   "dependencies": {

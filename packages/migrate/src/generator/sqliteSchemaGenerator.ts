@@ -1,5 +1,6 @@
 import type { ColumnType, FieldOptions } from 'nukak/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
+import type { ColumnSchema } from '../type.js';
 
 /**
  * SQLite-specific schema generator
@@ -7,7 +8,7 @@ import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 export class SqliteSchemaGenerator extends AbstractSchemaGenerator {
   protected readonly serialPrimaryKeyType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
 
-  protected mapColumnType(columnType: ColumnType, field: FieldOptions): string {
+  public override mapColumnType(columnType: ColumnType, field: FieldOptions): string {
     // SQLite has dynamic typing, but we use type affinity
     switch (columnType) {
       case 'int':
@@ -47,25 +48,32 @@ export class SqliteSchemaGenerator extends AbstractSchemaGenerator {
     }
   }
 
-  protected getBooleanType(): string {
+  public override getBooleanType(): string {
     return 'INTEGER';
   }
 
-  protected generateAlterColumnStatement(tableName: string, columnName: string, newDefinition: string): string {
+  public override generateAlterColumnStatements(
+    tableName: string,
+    column: ColumnSchema,
+    newDefinition: string,
+  ): string[] {
     // SQLite has very limited ALTER TABLE support
     // Column type changes require recreating the table
-    // This is a simplified version that may not work for all cases
     throw new Error(
-      'SQLite does not support altering column definitions. ' +
+      `SQLite does not support altering column '${column.name}' in table '${tableName}'. ` +
         'You need to recreate the table to change column types.',
     );
+  }
+
+  public override generateColumnComment(tableName: string, columnName: string, comment: string): string {
+    return '';
   }
 
   override generateDropIndex(tableName: string, indexName: string): string {
     return `DROP INDEX IF EXISTS ${this.escapeId(indexName)};`;
   }
 
-  protected override formatDefaultValue(value: unknown): string {
+  override formatDefaultValue(value: unknown): string {
     if (typeof value === 'boolean') {
       return value ? '1' : '0';
     }

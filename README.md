@@ -85,7 +85,7 @@ npm install pg nukak-postgres --save
 
 ## 2. Define the entities
 
-Take any class and annotate it with decorators from `nukak/entity`. Nukak supports complex relationships with full type-safety.
+Annotate your classes with decorators from `nukak/entity`. Nukak supports detailed schema metadata for precise DDL generation.
 
 ```ts
 import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from 'nukak/entity';
@@ -96,8 +96,11 @@ export class User {
   @Id()
   id?: string;
 
-  @Field()
+  @Field({ length: 100, index: true })
   name?: string;
+
+  @Field({ unique: true, comment: 'User login email' })
+  email?: string;
 
   @OneToOne({ entity: () => Profile, mappedBy: 'user', cascade: true })
   profile?: Relation<Profile>; // Relation<T> handles circular dependencies
@@ -185,10 +188,8 @@ export const querierPool = new PgQuerierPool(
   {
     // Optional, any custom logger function can be passed here (optional).
     logger: console.debug,
-    // Optional, default to use same names as in the entities.
-    // Nukak allows you to automatically translate your TypeScript entity and property names to database identifiers.
-    // You can also create your own one by implementing the interface `NamingStrategy`.
-    // Automatically convert UserProfile -> user_profile and firstName -> first_name
+    // Automatically translate between TypeScript camelCase and database snake_case.
+    // This affects both queries and schema generation.
     namingStrategy: new SnakeCaseNamingStrategy()
   },
 );
@@ -323,9 +324,9 @@ const result = await querierPool.transaction(async (querier) => {
 
 &nbsp;
 
-## 5. Migrations
+## 5. Migrations & Synchronization
 
-Nukak provides a robust migration system to manage your database schema changes over time.
+Nukak provides a robust migration system and an "Entity-First" synchronization engine to manage your database schema changes.
 
 1. Install the migration package:
 
@@ -333,28 +334,49 @@ Nukak provides a robust migration system to manage your database schema changes 
    npm install nukak-migrate --save
    ```
 
-2. Create a `nukak.config.ts` file:
+2. Create a `nukak.config.ts` for the CLI:
 
    ```ts
    import { PgQuerierPool } from 'nukak-postgres';
-   import { User, Post } from './src/entities/index.js';
+   import { User, Post, Profile } from './src/entities/index.js';
+   import { SnakeCaseNamingStrategy } from 'nukak';
 
    export default {
      querierPool: new PgQuerierPool({ /* config */ }),
      dialect: 'postgres',
-     entities: [User, Post],
+     entities: [User, Post, Profile],
+     namingStrategy: new SnakeCaseNamingStrategy(),
+     migrationsPath: './migrations'
    };
    ```
 
-3. Generate and run migrations:
+3. Manage your schema via CLI:
 
    ```sh
-   # Generate migration from entities
+   # Generate a migration by comparing entities vs database
    npx nukak-migrate generate:entities initial_schema
 
    # Run pending migrations
    npx nukak-migrate up
+
+   # Rollback the last migration
+   npx nukak-migrate down
    ```
+
+### Entity-First Synchronization (Development)
+
+In development, you can use `autoSync` to automatically keep your database in sync with your entities without manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
+
+```ts
+import { Migrator } from 'nukak-migrate';
+import { querierPool } from './shared/orm.js';
+
+const migrator = new Migrator(querierPool);
+
+// Automatically sync changes on your entities with the DB tables/columns (recommended for development only)
+const migrator = new Migrator(querierPool);
+await migrator.autoSync({ logging: true });
+```
 
 Check out the full [nukak-migrate README](packages/migrate/README.md) for detailed CLI commands and advanced usage.
 

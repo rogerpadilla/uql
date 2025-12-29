@@ -7,7 +7,7 @@ export class MySql2QuerierPool extends AbstractQuerierPool<MySql2Querier> {
   readonly pool: Pool;
 
   constructor(opts: PoolOptions, extra?: ExtraOptions) {
-    super(extra);
+    super('mysql', extra);
     this.pool = createPool(opts);
   }
 
