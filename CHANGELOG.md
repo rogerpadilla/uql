@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+## [2.0.0] - 2025-12-29
+- **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - this was the original name!).
+  - New Slogan: **"One Language. Frontend to Backend."**
+  - Project homepage: [uql.app](https://uql.app).
+- **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `@uql/core`.
+- **Scoped Naming**:
+  - `@uql/core`: The main ORM engine and all database adapters.
+  - `@uql/migrate`: The database migration system (formerly `nukak-migrate`).
+- **Improved API Surface**:
+  - Database-specific logic is now accessible via sub-paths (e.g., `import { ... } from '@uql/core/postgres'`).
+  - Unified `NamingStrategy` and `QueryContext` across all unified adapters.
+- **Build & Distribution**:
+  - Integrated `bunchee` for high-performance browser bundle generation (`@uql/core/browser`).
+  - Minimized core dependency footprint by moving database drivers to optional `peerDependencies`.
+- **Enhanced Type Safety**: Fully updated internal type resolution to support the unified package structure.
+
 ## [1.8.0] - 2025-12-29
 - **New Feature**: Added support for **Naming Strategies**.
   - Automatically translate TypeScript entity and property names to database-specific identifiers (e.g., camelCase to snake_case).
