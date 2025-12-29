@@ -6,9 +6,9 @@
 
 [nukak](https://nukak.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
-[nukak](https://nukak.org) can run in Node.js, Browser, Cordova, PhoneGap, Ionic, React Native, NativeScript, Expo, Electron, Bun and Deno.
+It can run in Node.js, Browser, React Native, NativeScript, Expo, Electron, Deno, Bun, and much more!
 
-[nukak](https://nukak.org) has a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, and SQLite.
+Uses a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, and SQLite (inspired by MongoDB glorious syntax).
 
 &nbsp;
 
