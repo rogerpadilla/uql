@@ -1,6 +1,6 @@
 {
   "name": "uql-migrate",
-  "homepage": "https://uql.org",
+  "homepage": "https://uql.app",
   "description": "Database migration system for UQL",
   "license": "MIT",
   "version": "1.9.2",

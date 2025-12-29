@@ -1,8 +1,8 @@
-import { MySqlDialect } from '../../../mysql/src/mysqlDialect.js';
-import { PostgresDialect } from '../../../postgres/src/postgresDialect.js';
-import { SqliteDialect } from '../../../sqlite/src/sqliteDialect.js';
 import { Entity, Field, Id } from '../entity/index.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 
 @Entity()
 class UserProfile {

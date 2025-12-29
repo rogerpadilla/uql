@@ -1,6 +1,6 @@
 # uql-migrate
 
-Database migration system for [uql](https://uql.org) ORM.
+Database migration system for [uql](https://uql.app) ORM.
 
 ## Features
 

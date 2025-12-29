@@ -1,6 +1,6 @@
 {
   "name": "uql",
-  "homepage": "https://uql.org",
+  "homepage": "https://uql.app",
   "description": "One Language. Frontend to Backend.",
   "license": "MIT",
   "version": "1.9.2",
@@ -15,6 +15,9 @@
     "./repository": "./repository/index.js",
     "./type": "./type/index.js",
     "./util": "./util/index.js",
+    "./namingStrategy": "./namingStrategy/index.js",
+    "./options": "./options.js",
+    "./test": "./test/index.js",
     "./mysql": "./mysql/index.js",
     "./postgres": "./postgres/index.js",
     "./maria": "./maria/index.js",
@@ -38,6 +41,7 @@
   "dependencies": {
     "reflect-metadata": "^0.2.2",
     "sqlstring": "^2.3.3",
+    "sqlstring-sqlite": "^0.1.1",
     "tslib": "^2.8.1"
   },
   "peerDependencies": {

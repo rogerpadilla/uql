@@ -1,10 +1,10 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-[![uql maku](https://uql.org/uql-maku.jpg)](https://uql.org)
+[![uql maku](https://uql.app/uql-maku.jpg)](https://uql.app)
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
-[uql](https://uql.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
+[uql](https://uql.app) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
 It can run in Node.js, Browser, React Native, NativeScript, Expo, Electron, Deno, Bun, and much more!
 
@@ -40,7 +40,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 - **Database Migrations**: Integrated migration system for version-controlled schema management and auto-generation from entities.
 - **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
 - **Modern Architecture**: Pure `ESM` support, designed for `Node.js`, `Bun`, `Deno`, and even mobile/browser environments.
-- **Rich Feature Set**: [Soft-delete](https://uql.org/docs/entities-soft-delete), [virtual fields](https://uql.org/docs/entities-virtual-fields), [repositories](https://uql.org/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
+- **Rich Feature Set**: [Soft-delete](https://uql.app/docs/entities-soft-delete), [virtual fields](https://uql.app/docs/entities-virtual-fields), [repositories](https://uql.app/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
 
 &nbsp;
 
@@ -382,11 +382,11 @@ Check out the full [uql-migrate README](packages/uql-migrate/README.md) for deta
 
 &nbsp;
 
-Check out the full documentation at [uql.org](https://uql.org) for details on:
-- [Complex Logical Operators](https://uql.org/docs/querying-logical-operators)
-- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.org/docs/querying-relations)
-- [Soft Deletes & Auditing](https://uql.org/docs/entities-soft-delete)
-- [Database Migration & Syncing](https://uql.org/docs/migrations)
+Check out the full documentation at [uql.org](https://uql.app) for details on:
+- [Complex Logical Operators](https://uql.app/docs/querying-logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/docs/querying-relations)
+- [Soft Deletes & Auditing](https://uql.app/docs/entities-soft-delete)
+- [Database Migration & Syncing](https://uql.app/docs/migrations)
 
 ---
 
