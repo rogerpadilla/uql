@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { SqlQuerier } from 'uql/type';
+import type { SqlQuerier } from '@uql/core/type';
 import type { MigrationStorage } from '../type.js';
 
 /**

@@ -1,5 +1,5 @@
 {
-  "name": "uql-migrate",
+  "name": "@uql/migrate",
   "homepage": "https://uql.app",
   "description": "Database migration system for UQL",
   "license": "MIT",
@@ -22,7 +22,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "uql": "^1.9.2",
+    "@uql/core": "^1.9.2",
     "tslib": "^2.8.1"
   },
   "devDependencies": {
@@ -32,7 +32,7 @@
     "typescript": "~5.4.5"
   },
   "peerDependencies": {
-    "uql": ">=1.9.2"
+    "@uql/core": ">=1.9.2"
   },
   "author": "Roger Padilla",
   "repository": {
@@ -43,7 +43,7 @@
     "url": "https://github.com/rogerpadilla/uql/issues"
   },
   "keywords": [
-    "uql",
+    "@uql/core",
     "orm",
     "migrations",
     "database-migrations",

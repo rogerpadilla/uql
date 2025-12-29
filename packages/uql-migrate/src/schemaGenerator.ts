@@ -1,7 +1,7 @@
-import { AbstractDialect } from 'uql/dialect';
-import { getMeta } from 'uql/entity';
-import type { ColumnType, EntityMeta, FieldKey, FieldOptions, NamingStrategy, Type } from 'uql/type';
-import { escapeSqlId, getKeys } from 'uql/util';
+import { AbstractDialect } from '@uql/core/dialect';
+import { getMeta } from '@uql/core/entity';
+import type { ColumnType, EntityMeta, FieldKey, FieldOptions, NamingStrategy, Type } from '@uql/core/type';
+import { escapeSqlId, getKeys } from '@uql/core/util';
 import type { ColumnSchema, IndexSchema, SchemaDiff, SchemaGenerator, TableSchema } from './type.js';
 
 /**

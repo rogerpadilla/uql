@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { Entity, Field, Id, ManyToOne } from 'uql/entity';
+import { Entity, Field, Id, ManyToOne } from '@uql/core/entity';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { SnakeCaseNamingStrategy } from 'uql';
-import { Entity, Field, Id } from 'uql/entity';
+import { SnakeCaseNamingStrategy } from '@uql/core';
+import { Entity, Field, Id } from '@uql/core/entity';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 
 @Entity()

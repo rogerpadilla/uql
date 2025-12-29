@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Entity, Id } from 'uql/entity';
-import type { QuerierPool, SqlQuerier } from 'uql/type';
+import { Entity, Id } from '@uql/core/entity';
+import type { QuerierPool, SqlQuerier } from '@uql/core/type';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';

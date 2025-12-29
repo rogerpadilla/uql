@@ -1,8 +1,8 @@
 // Core types
 
 // Re-export core types for convenience
-export type { Dialect, MongoQuerier, SqlDialect, SqlQuerier, SqlQueryDialect } from 'uql/type';
-export { isSqlQuerier } from 'uql/type';
+export type { Dialect, MongoQuerier, SqlDialect, SqlQuerier, SqlQueryDialect } from '@uql/core/type';
+export { isSqlQuerier } from '@uql/core/type';
 export {
   MysqlSchemaGenerator,
   MysqlSchemaGenerator as MariadbSchemaGenerator,

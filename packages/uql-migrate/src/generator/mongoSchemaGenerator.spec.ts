@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { Entity, Field, Id } from 'uql/entity';
+import { Entity, Field, Id } from '@uql/core/entity';
 import type { IndexSchema, TableSchema } from '../type.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 

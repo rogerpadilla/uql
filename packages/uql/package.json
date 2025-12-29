@@ -1,5 +1,5 @@
 {
-  "name": "uql",
+  "name": "@uql/core",
   "homepage": "https://uql.app",
   "description": "One Language. Frontend to Backend.",
   "license": "MIT",

@@ -1,5 +1,5 @@
-import type { QuerierPool, SqlQuerier } from 'uql/type';
-import { isSqlQuerier } from 'uql/type';
+import type { QuerierPool, SqlQuerier } from '@uql/core/type';
+import { isSqlQuerier } from '@uql/core/type';
 import type { MigrationStorage } from '../type.js';
 
 /**

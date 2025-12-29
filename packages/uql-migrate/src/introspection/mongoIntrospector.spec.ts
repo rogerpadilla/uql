@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import type { MongoQuerier, QuerierPool } from 'uql/type';
+import type { MongoQuerier, QuerierPool } from '@uql/core/type';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
 describe('MongoSchemaIntrospector', () => {

@@ -11,9 +11,9 @@ const jestConfig: Config = {
   watchPathIgnorePatterns: ['node_modules', '\\/data\\/', 'coverage', 'dist'],
   testPathIgnorePatterns: ['node_modules', '\\/data\\/', 'coverage', 'dist'],
   moduleNameMapper: {
-    '^uql/(.+)\\.js$': '<rootDir>/packages/uql/src/$1',
-    '^uql/(.+)(?<!\\.js)$': '<rootDir>/packages/uql/src/$1',
-    '^uql$': '<rootDir>/packages/uql/src/index.ts',
+    '^@uql/core/(.+)\\.js$': '<rootDir>/packages/uql/src/$1',
+    '^@uql/core/(.+)(?<!\\.js)$': '<rootDir>/packages/uql/src/$1',
+    '^@uql/core$': '<rootDir>/packages/uql/src/index.ts',
     '(\\.+/.+)\\.js$': '$1',
   },
   transform: {

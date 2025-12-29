@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import type { QuerierPool, SqlQuerier } from 'uql/type';
+import type { QuerierPool, SqlQuerier } from '@uql/core/type';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
 describe('PostgresSchemaIntrospector', () => {

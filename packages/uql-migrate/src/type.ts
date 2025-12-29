@@ -1,8 +1,16 @@
-import type { Dialect, EntityMeta, NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'uql/type';
+import type {
+  Dialect,
+  EntityMeta,
+  NamingStrategy,
+  SqlDialect,
+  SqlQuerier,
+  SqlQueryDialect,
+  Type,
+} from '@uql/core/type';
 
 // Re-export from core for convenience
 export type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect };
-export { isSqlQuerier } from 'uql/type';
+export { isSqlQuerier } from '@uql/core/type';
 
 /**
  * Defines a migration using a simple object literal
@@ -206,7 +214,7 @@ export interface SchemaGenerator {
   /**
    * Get the SQL type for a field based on its options
    */
-  getSqlType(fieldOptions: import('uql/type').FieldOptions, fieldType?: unknown): string;
+  getSqlType(fieldOptions: import('@uql/core/type').FieldOptions, fieldType?: unknown): string;
 
   /**
    * Compare two schemas and return the differences
@@ -221,7 +229,7 @@ export interface SchemaGenerator {
   /**
    * Resolve column name using field options and naming strategy
    */
-  resolveColumnName(key: string, field: import('uql/type').FieldOptions): string;
+  resolveColumnName(key: string, field: import('@uql/core/type').FieldOptions): string;
 }
 
 /**

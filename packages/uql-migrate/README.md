@@ -1,4 +1,4 @@
-# uql-migrate
+# @uql/migrate
 
 Database migration system for [uql](https://uql.app) ORM.
 
@@ -14,7 +14,7 @@ Database migration system for [uql](https://uql.app) ORM.
 ## Installation
 
 ```bash
-npm install uql-migrate uql
+npm install @uql/migrate uql
 # Plus your database adapter
 npm install uql-postgres pg
 ```
@@ -46,10 +46,10 @@ export default {
 
 ```bash
 # Create an empty migration
-npx uql-migrate generate add_users_table
+npx @uql/migrate generate add_users_table
 
 # Or generate from entity definitions
-npx uql-migrate generate:entities initial_schema
+npx @uql/migrate generate:entities initial_schema
 ```
 
 ### 3. Write Migration Logic
@@ -57,7 +57,7 @@ npx uql-migrate generate:entities initial_schema
 Edit the generated file in `./migrations/`:
 
 ```typescript
-import type { Querier } from 'uql/type';
+import type { Querier } from '@uql/core/type';
 
 export default {
   async up(querier: Querier): Promise<void> {
@@ -81,13 +81,13 @@ export default {
 
 ```bash
 # Run all pending migrations
-npx uql-migrate up
+npx @uql/migrate up
 
 # Check status
-npx uql-migrate status
+npx @uql/migrate status
 
 # Rollback last migration
-npx uql-migrate down
+npx @uql/migrate down
 ```
 
 ## CLI Commands
@@ -110,7 +110,7 @@ npx uql-migrate down
 ## Programmatic Usage
 
 ```typescript
-import { Migrator, PostgresSchemaGenerator } from 'uql-migrate';
+import { Migrator, PostgresSchemaGenerator } from '@uql/migrate';
 import { PgQuerierPool } from 'uql-postgres';
 
 const pool = new PgQuerierPool({ /* ... */ });
@@ -138,7 +138,7 @@ await migrator.generate('add_users_table');
 Use the new schema properties in your entity definitions:
 
 ```typescript
-import { Entity, Field, Id } from 'uql/entity';
+import { Entity, Field, Id } from '@uql/core/entity';
 
 @Entity()
 export class User {

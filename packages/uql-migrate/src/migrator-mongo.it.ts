@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Entity, Field, Id } from 'uql/entity';
-import type { QuerierPool } from 'uql/type';
+import { Entity, Field, Id } from '@uql/core/entity';
+import type { QuerierPool } from '@uql/core/type';
 import { Migrator } from './migrator.js';
 
 @Entity()

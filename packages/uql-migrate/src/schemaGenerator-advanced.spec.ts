@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { Entity, Field, Id } from 'uql/entity';
+import { Entity, Field, Id } from '@uql/core/entity';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import type { TableSchema } from './type.js';
 

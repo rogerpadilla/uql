@@ -88,8 +88,8 @@ npm install pg uql-postgres --save
 Annotate your classes with decorators from `uql/entity`. UQL supports detailed schema metadata for precise DDL generation.
 
 ```ts
-import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from 'uql/entity';
-import type { Relation } from 'uql/type';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from '@uql/core/entity';
+import type { Relation } from '@uql/core/type';
 
 @Entity()
 export class User {
@@ -172,7 +172,7 @@ A querier-pool can be set in any of the bootstrap files of your app (e.g. in the
 
 ```ts
 // file: ./shared/orm.ts
-import { SnakeCaseNamingStrategy } from 'uql';
+import { SnakeCaseNamingStrategy } from '@uql/core';
 import { PgQuerierPool } from 'uql-postgres';
 
 export const querierPool = new PgQuerierPool(
@@ -206,7 +206,7 @@ UQL provides multiple ways to interact with your data, from low-level `Queriers`
 Repositories provide a clean, Data-Mapper style interface for your entities.
 
 ```ts
-import { GenericRepository } from 'uql/repository';
+import { GenericRepository } from '@uql/core/repository';
 import { User } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
 
@@ -225,7 +225,7 @@ try {
       tagsCount: true       // Virtual field (calculated at runtime)
     },
     $where: {
-      email: { $iincludes: 'uql' }, // Case-insensitive search
+      email: { $iincludes: '@uql/core' }, // Case-insensitive search
       status: 'active'
     },
     $sort: { createdAt: -1 },
@@ -242,7 +242,7 @@ try {
 UQL's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
 
 ```ts
-import { GenericRepository } from 'uql/repository';
+import { GenericRepository } from '@uql/core/repository';
 import { User } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
 
@@ -279,8 +279,8 @@ const authorsWithPopularPosts = await querierPool.transaction(async (querier) =>
 Define complex logic directly in your entities using `raw` functions from `uql/util`. These are highly efficient as they are resolved during SQL generation.
 
 ```ts
-import { Entity, Id, Field } from 'uql/entity';
-import { raw } from 'uql/util';
+import { Entity, Id, Field } from '@uql/core/entity';
+import { raw } from '@uql/core/util';
 import { ItemTag } from './shared/models/index.js';
 
 @Entity()
@@ -331,7 +331,7 @@ UQL provides a robust migration system and an "Entity-First" synchronization eng
 1. Install the migration package:
 
    ```sh
-   npm install uql-migrate --save
+   npm install @uql/migrate --save
    ```
 
 2. Create a `uql.config.ts` for the CLI:
@@ -339,7 +339,7 @@ UQL provides a robust migration system and an "Entity-First" synchronization eng
    ```ts
    import { PgQuerierPool } from 'uql-postgres';
    import { User, Post, Profile } from './src/entities/index.js';
-   import { SnakeCaseNamingStrategy } from 'uql';
+   import { SnakeCaseNamingStrategy } from '@uql/core';
 
    export default {
      querierPool: new PgQuerierPool({ /* config */ }),
@@ -354,13 +354,13 @@ UQL provides a robust migration system and an "Entity-First" synchronization eng
 
    ```sh
    # Generate a migration by comparing entities vs database
-   npx uql-migrate generate:entities initial_schema
+   npx @uql/migrate generate:entities initial_schema
 
    # Run pending migrations
-   npx uql-migrate up
+   npx @uql/migrate up
 
    # Rollback the last migration
-   npx uql-migrate down
+   npx @uql/migrate down
    ```
 
 ### Entity-First Synchronization (Development)
@@ -368,7 +368,7 @@ UQL provides a robust migration system and an "Entity-First" synchronization eng
 In development, you can use `autoSync` to automatically keep your database in sync with your entities without manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
 
 ```ts
-import { Migrator } from 'uql-migrate';
+import { Migrator } from '@uql/migrate';
 import { querierPool } from './shared/orm.js';
 
 const migrator = new Migrator(querierPool);
@@ -378,7 +378,7 @@ const migrator = new Migrator(querierPool);
 await migrator.autoSync({ logging: true });
 ```
 
-Check out the full [uql-migrate README](packages/uql-migrate/README.md) for detailed CLI commands and advanced usage.
+Check out the full [@uql/migrate README](packages/@uql/migrate/README.md) for detailed CLI commands and advanced usage.
 
 &nbsp;
 

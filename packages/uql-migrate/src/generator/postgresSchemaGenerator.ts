@@ -1,4 +1,4 @@
-import type { ColumnType, FieldOptions, NamingStrategy } from 'uql/type';
+import type { ColumnType, FieldOptions, NamingStrategy } from '@uql/core/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 import type { ColumnSchema } from '../type.js';
 

@@ -2,7 +2,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Dialect, NamingStrategy, QuerierPool } from 'uql/type';
+import type { Dialect, NamingStrategy, QuerierPool } from '@uql/core/type';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
@@ -250,9 +250,9 @@ async function runSync(migrator: Migrator, args: string[]) {
 
 function printHelp() {
   console.log(`
-uql-migrate - Database migration tool for uql ORM
+@uql/migrate - Database migration tool for uql ORM
 
-Usage: uql-migrate <command> [options]
+Usage: @uql/migrate <command> [options]
 
 Commands:
   up                    Run all pending migrations
@@ -289,13 +289,13 @@ Configuration:
   };
 
 Examples:
-  uql-migrate up
-  uql-migrate up --step 1
-  uql-migrate down
-  uql-migrate down --step 3
-  uql-migrate status
-  uql-migrate generate add_users_table
-  uql-migrate generate:entities initial_schema
+  @uql/migrate up
+  @uql/migrate up --step 1
+  @uql/migrate down
+  @uql/migrate down --step 3
+  @uql/migrate status
+  @uql/migrate generate add_users_table
+  @uql/migrate generate:entities initial_schema
 `);
 }
 
