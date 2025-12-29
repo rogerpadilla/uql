@@ -1,6 +1,6 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
-import { AbstractDialect } from 'nukak/dialect';
-import { getMeta } from 'nukak/entity';
+import { AbstractDialect } from '../dialect/index.js';
+import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
   FieldValue,
@@ -12,7 +12,7 @@ import type {
   QueryWhere,
   RelationKey,
   Type,
-} from 'nukak/type';
+} from '../type/index.js';
 import {
   buildSortMap,
   buldQueryWhereAsMap,
@@ -22,7 +22,7 @@ import {
   filterRelationKeys,
   getKeys,
   hasKeys,
-} from 'nukak/util';
+} from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
   where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {

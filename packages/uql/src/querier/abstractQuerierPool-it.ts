@@ -1,4 +1,4 @@
-import { AbstractQuerier } from 'nukak/querier';
+import { AbstractQuerier } from '../querier/index.js';
 import type { Spec } from '../test/index.js';
 import type { Querier } from '../type/index.js';
 import type { AbstractQuerierPool } from './abstractQuerierPool.js';

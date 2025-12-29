@@ -1,4 +1,4 @@
-import type { MongoQuerier, QuerierPool } from 'nukak/type';
+import type { MongoQuerier, QuerierPool } from 'uql/type';
 import type { SchemaIntrospector, TableSchema } from '../type.js';
 
 export class MongoSchemaIntrospector implements SchemaIntrospector {

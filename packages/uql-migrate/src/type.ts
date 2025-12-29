@@ -1,8 +1,8 @@
-import type { Dialect, EntityMeta, NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'nukak/type';
+import type { Dialect, EntityMeta, NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'uql/type';
 
 // Re-export from core for convenience
 export type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect };
-export { isSqlQuerier } from 'nukak/type';
+export { isSqlQuerier } from 'uql/type';
 
 /**
  * Defines a migration using a simple object literal
@@ -68,7 +68,7 @@ export interface MigratorOptions {
   readonly storage?: MigrationStorage;
 
   /**
-   * Table name for storing migration state. Defaults to 'nukak_migrations'.
+   * Table name for storing migration state. Defaults to 'uql_migrations'.
    */
   readonly tableName?: string;
 
@@ -206,7 +206,7 @@ export interface SchemaGenerator {
   /**
    * Get the SQL type for a field based on its options
    */
-  getSqlType(fieldOptions: import('nukak/type').FieldOptions, fieldType?: unknown): string;
+  getSqlType(fieldOptions: import('uql/type').FieldOptions, fieldType?: unknown): string;
 
   /**
    * Compare two schemas and return the differences
@@ -221,7 +221,7 @@ export interface SchemaGenerator {
   /**
    * Resolve column name using field options and naming strategy
    */
-  resolveColumnName(key: string, field: import('nukak/type').FieldOptions): string;
+  resolveColumnName(key: string, field: import('uql/type').FieldOptions): string;
 }
 
 /**

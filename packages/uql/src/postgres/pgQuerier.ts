@@ -1,6 +1,6 @@
-import { AbstractSqlQuerier } from 'nukak/querier';
-import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import type { PoolClient } from 'pg';
+import { AbstractSqlQuerier } from '../querier/index.js';
+import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 export class PgQuerier extends AbstractSqlQuerier {

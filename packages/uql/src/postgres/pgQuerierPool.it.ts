@@ -1,6 +1,6 @@
-import { AbstractQuerierPoolIt } from 'nukak/querier/abstractQuerierPool-it.js';
-import { createSpec } from 'nukak/test';
 import { types } from 'pg';
+import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-it.js';
+import { createSpec } from '../test/index.js';
 import type { PgQuerier } from './pgQuerier.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 

@@ -1,6 +1,6 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { AbstractQuerierPoolIt } from 'nukak/querier/abstractQuerierPool-it.js';
-import { createSpec } from 'nukak/test';
+import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-it.js';
+import { createSpec } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 

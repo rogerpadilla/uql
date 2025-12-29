@@ -62,7 +62,7 @@ export type EntityOptions = {
 };
 
 /**
- * SQL column types supported by nukak migrations
+ * SQL column types supported by uql migrations
  */
 export type ColumnType =
   | 'int'

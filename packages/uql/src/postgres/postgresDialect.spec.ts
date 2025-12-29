@@ -1,5 +1,14 @@
-import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User, UserWithNonUpdatableId } from 'nukak/test';
-import { raw } from 'nukak/util';
+import {
+  Company,
+  createSpec,
+  Item,
+  ItemTag,
+  Profile,
+  TaxCategory,
+  User,
+  UserWithNonUpdatableId,
+} from '../test/index.js';
+import { raw } from '../util/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 class PostgresDialectSpec {

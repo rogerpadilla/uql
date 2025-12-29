@@ -1,4 +1,4 @@
-import type { ColumnType, FieldOptions } from 'nukak/type';
+import type { ColumnType, FieldOptions } from 'uql/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 import type { ColumnSchema } from '../type.js';
 

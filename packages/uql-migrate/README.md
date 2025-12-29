@@ -1,6 +1,6 @@
-# nukak-migrate
+# uql-migrate
 
-Database migration system for [nukak](https://nukak.org) ORM.
+Database migration system for [uql](https://uql.org) ORM.
 
 ## Features
 
@@ -14,19 +14,19 @@ Database migration system for [nukak](https://nukak.org) ORM.
 ## Installation
 
 ```bash
-npm install nukak-migrate nukak
+npm install uql-migrate uql
 # Plus your database adapter
-npm install nukak-postgres pg
+npm install uql-postgres pg
 ```
 
 ## Quick Start
 
 ### 1. Create Configuration
 
-Create a `nukak.config.ts` file in your project root:
+Create a `uql.config.ts` file in your project root:
 
 ```typescript
-import { PgQuerierPool } from 'nukak-postgres';
+import { PgQuerierPool } from 'uql-postgres';
 import { User, Post } from './src/entities/index.js';
 
 export default {
@@ -46,10 +46,10 @@ export default {
 
 ```bash
 # Create an empty migration
-npx nukak-migrate generate add_users_table
+npx uql-migrate generate add_users_table
 
 # Or generate from entity definitions
-npx nukak-migrate generate:entities initial_schema
+npx uql-migrate generate:entities initial_schema
 ```
 
 ### 3. Write Migration Logic
@@ -57,7 +57,7 @@ npx nukak-migrate generate:entities initial_schema
 Edit the generated file in `./migrations/`:
 
 ```typescript
-import type { Querier } from 'nukak/type';
+import type { Querier } from 'uql/type';
 
 export default {
   async up(querier: Querier): Promise<void> {
@@ -81,13 +81,13 @@ export default {
 
 ```bash
 # Run all pending migrations
-npx nukak-migrate up
+npx uql-migrate up
 
 # Check status
-npx nukak-migrate status
+npx uql-migrate status
 
 # Rollback last migration
-npx nukak-migrate down
+npx uql-migrate down
 ```
 
 ## CLI Commands
@@ -110,8 +110,8 @@ npx nukak-migrate down
 ## Programmatic Usage
 
 ```typescript
-import { Migrator, PostgresSchemaGenerator } from 'nukak-migrate';
-import { PgQuerierPool } from 'nukak-postgres';
+import { Migrator, PostgresSchemaGenerator } from 'uql-migrate';
+import { PgQuerierPool } from 'uql-postgres';
 
 const pool = new PgQuerierPool({ /* ... */ });
 const migrator = new Migrator(pool, {
@@ -138,7 +138,7 @@ await migrator.generate('add_users_table');
 Use the new schema properties in your entity definitions:
 
 ```typescript
-import { Entity, Field, Id } from 'nukak/entity';
+import { Entity, Field, Id } from 'uql/entity';
 
 @Entity()
 export class User {

@@ -1,5 +1,5 @@
-import type { QuerierPool, SqlQuerier } from 'nukak/type';
-import { isSqlQuerier } from 'nukak/type';
+import type { QuerierPool, SqlQuerier } from 'uql/type';
+import { isSqlQuerier } from 'uql/type';
 import type { MigrationStorage } from '../type.js';
 
 /**
@@ -24,7 +24,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       tableName?: string;
     } = {},
   ) {
-    this.tableName = options.tableName ?? 'nukak_migrations';
+    this.tableName = options.tableName ?? 'uql_migrations';
   }
 
   async ensureStorage(): Promise<void> {

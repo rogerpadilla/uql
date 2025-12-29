@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import type { QuerierPool, SqlQuerier } from 'nukak/type';
+import type { QuerierPool, SqlQuerier } from 'uql/type';
 import { DatabaseMigrationStorage } from './databaseStorage.js';
 
 describe('DatabaseMigrationStorage', () => {
@@ -29,7 +29,7 @@ describe('DatabaseMigrationStorage', () => {
   it('ensureStorage should create table', async () => {
     await storage.ensureStorage();
 
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS "nukak_migrations"'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS "uql_migrations"'));
     expect(querier.release).toHaveBeenCalled();
   });
 
@@ -42,14 +42,14 @@ describe('DatabaseMigrationStorage', () => {
     const executed = await storage.executed();
 
     expect(executed).toEqual(['m1', 'm2']);
-    expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('SELECT "name" FROM "nukak_migrations"'));
+    expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('SELECT "name" FROM "uql_migrations"'));
   });
 
   it('logWithQuerier should insert record', async () => {
     await storage.logWithQuerier(querier, 'm3');
 
     expect(querier.run).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO "nukak_migrations" ("name") VALUES ($1)'),
+      expect.stringContaining('INSERT INTO "uql_migrations" ("name") VALUES ($1)'),
       ['m3'],
     );
   });
@@ -58,7 +58,7 @@ describe('DatabaseMigrationStorage', () => {
     await storage.unlogWithQuerier(querier, 'm3');
 
     expect(querier.run).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM "nukak_migrations" WHERE "name" = $1'),
+      expect.stringContaining('DELETE FROM "uql_migrations" WHERE "name" = $1'),
       ['m3'],
     );
   });

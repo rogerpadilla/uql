@@ -1,8 +1,8 @@
 import { Router as expressRouter, type Request } from 'express';
-import { getQuerier } from 'nukak';
-import { getEntities, getMeta } from 'nukak/entity';
-import type { EntityMeta, IdValue, Query, Type } from 'nukak/type';
-import { kebabCase } from 'nukak/util';
+import { getEntities, getMeta } from '../entity/index.js';
+import { getQuerier } from '../index.js';
+import type { EntityMeta, IdValue, Query, Type } from '../type/index.js';
+import { kebabCase } from '../util/index.js';
 import { parseQuery } from './query.util.js';
 
 export function querierMiddleware(opts: MiddlewareOptions = {}) {
@@ -17,7 +17,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   }
 
   if (!entities.length) {
-    throw new TypeError('no entities for the nukak express middleware');
+    throw new TypeError('no entities for the uql express middleware');
   }
 
   for (const entity of entities) {

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { SqlQuerier } from 'nukak/type';
+import type { SqlQuerier } from 'uql/type';
 import type { MigrationStorage } from '../type.js';
 
 /**
@@ -10,7 +10,7 @@ export class JsonMigrationStorage implements MigrationStorage {
   private readonly filePath: string;
   private cache: string[] | null = null;
 
-  constructor(filePath = './migrations/.nukak-migrations.json') {
+  constructor(filePath = './migrations/.uql-migrations.json') {
     this.filePath = filePath;
   }
 

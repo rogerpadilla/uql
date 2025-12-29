@@ -1,6 +1,6 @@
 import type { PoolConnection } from 'mariadb';
-import { AbstractSqlQuerier } from 'nukak/querier';
-import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
+import { AbstractSqlQuerier } from '../querier/index.js';
+import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractSqlQuerier {

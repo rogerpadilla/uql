@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3';
-import { AbstractSqlQuerier } from 'nukak/querier';
-import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
+import { AbstractSqlQuerier } from '../querier/index.js';
+import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqlQuerier {

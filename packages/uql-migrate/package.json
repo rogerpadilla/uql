@@ -1,14 +1,14 @@
 {
-  "name": "nukak-migrate",
-  "homepage": "https://nukak.org",
-  "description": "Database migration system for nukak ORM",
+  "name": "uql-migrate",
+  "homepage": "https://uql.org",
+  "description": "Database migration system for UQL",
   "license": "MIT",
   "version": "1.9.2",
   "type": "module",
   "main": "./index.js",
   "types": "./index.d.ts",
   "bin": {
-    "nukak-migrate": "./cli.js"
+    "uql-migrate": "./cli.js"
   },
   "exports": {
     ".": "./index.js",
@@ -22,7 +22,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "nukak": "^1.9.2",
+    "uql": "^1.9.2",
     "tslib": "^2.8.1"
   },
   "devDependencies": {
@@ -32,18 +32,18 @@
     "typescript": "~5.4.5"
   },
   "peerDependencies": {
-    "nukak": "^1.6.1"
+    "uql": ">=1.9.2"
   },
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/nukak.git"
+    "url": "https://github.com/rogerpadilla/uql.git"
   },
   "bugs": {
-    "url": "https://github.com/rogerpadilla/nukak/issues"
+    "url": "https://github.com/rogerpadilla/uql/issues"
   },
   "keywords": [
-    "nukak",
+    "uql",
     "orm",
     "migrations",
     "database-migrations",

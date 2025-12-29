@@ -1,4 +1,4 @@
-import { getKeys } from 'nukak/util';
+import { getKeys } from '../../util/index.js';
 
 export function stringifyQueryParameter(key: string, value?: unknown, useQuestionMark?: boolean): string {
   const valStr = typeof value === 'object' && value !== null ? JSON.stringify(value) : value;

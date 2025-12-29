@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { Entity, Field, Id } from 'nukak/entity';
+import { Entity, Field, Id } from 'uql/entity';
 import { SnakeCaseNamingStrategy } from '../../core/src/namingStrategy/index.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 

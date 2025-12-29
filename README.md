@@ -1,10 +1,10 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-[![nukak maku](https://nukak.org/nukak-maku.jpg)](https://nukak.org)
+[![uql maku](https://uql.org/uql-maku.jpg)](https://uql.org)
 
-[![tests](https://github.com/rogerpadilla/nukak/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/nukak) [![coverage status](https://coveralls.io/repos/rogerpadilla/nukak/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/nukak?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/nukak/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/nukak.svg)](https://badge.fury.io/js/nukak)
+[![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
-[nukak](https://nukak.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
+[uql](https://uql.org) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
 It can run in Node.js, Browser, React Native, NativeScript, Expo, Electron, Deno, Bun, and much more!
 
@@ -23,7 +23,7 @@ const companyUsers = await userRepository.findMany({
 
 &nbsp;
 
-## Why nukak?
+## Why uql?
 
 See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) in medium.com.
 
@@ -31,7 +31,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 ## Features
 
-- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
+- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.org/docs/querying-relations).
 - **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
 - **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
@@ -40,7 +40,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 - **Database Migrations**: Integrated migration system for version-controlled schema management and auto-generation from entities.
 - **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
 - **Modern Architecture**: Pure `ESM` support, designed for `Node.js`, `Bun`, `Deno`, and even mobile/browser environments.
-- **Rich Feature Set**: [Soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
+- **Rich Feature Set**: [Soft-delete](https://uql.org/docs/entities-soft-delete), [virtual fields](https://uql.org/docs/entities-virtual-fields), [repositories](https://uql.org/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
 
 &nbsp;
 
@@ -49,24 +49,24 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 1. Install the core package:
 
    ```sh
-   npm install nukak --save
+   npm install uql --save
    ```
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | Nukak Adapter    |
+| Database     | Driver           | UQL Adapter    |
 | ------------ | ---------------- | ---------------- |
-| `PostgreSQL` | `pg`             | `nukak-postgres` |
-| `SQLite`     | `sqlite sqlite3` | `nukak-sqlite`   |
-| `MariaDB`    | `mariadb`        | `nukak-maria`    |
-| `MySQL`      | `mysql2`         | `nukak-mysql`    |
+| `PostgreSQL` | `pg`             | `uql-postgres` |
+| `SQLite`     | `sqlite sqlite3` | `uql-sqlite`   |
+| `MariaDB`    | `mariadb`        | `uql-maria`    |
+| `MySQL`      | `mysql2`         | `uql-mysql`    |
 
 &nbsp;
 
-For example, for `Postgres` install the `pg` driver and the `nukak-postgres` adapter:
+For example, for `Postgres` install the `pg` driver and the `uql-postgres` adapter:
 
 ```sh
-npm install pg nukak-postgres --save
+npm install pg uql-postgres --save
 ```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
@@ -85,11 +85,11 @@ npm install pg nukak-postgres --save
 
 ## 2. Define the entities
 
-Annotate your classes with decorators from `nukak/entity`. Nukak supports detailed schema metadata for precise DDL generation.
+Annotate your classes with decorators from `uql/entity`. UQL supports detailed schema metadata for precise DDL generation.
 
 ```ts
-import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from 'nukak/entity';
-import type { Relation } from 'nukak/type';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from 'uql/entity';
+import type { Relation } from 'uql/type';
 
 @Entity()
 export class User {
@@ -172,8 +172,8 @@ A querier-pool can be set in any of the bootstrap files of your app (e.g. in the
 
 ```ts
 // file: ./shared/orm.ts
-import { SnakeCaseNamingStrategy } from 'nukak';
-import { PgQuerierPool } from 'nukak-postgres';
+import { SnakeCaseNamingStrategy } from 'uql';
+import { PgQuerierPool } from 'uql-postgres';
 
 export const querierPool = new PgQuerierPool(
   {
@@ -199,14 +199,14 @@ export const querierPool = new PgQuerierPool(
 
 ## 4. Manipulate the data
 
-Nukak provides multiple ways to interact with your data, from low-level `Queriers` to high-level `Repositories`.
+UQL provides multiple ways to interact with your data, from low-level `Queriers` to high-level `Repositories`.
 
 ### Using Repositories (Recommended)
 
 Repositories provide a clean, Data-Mapper style interface for your entities.
 
 ```ts
-import { GenericRepository } from 'nukak/repository';
+import { GenericRepository } from 'uql/repository';
 import { User } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
 
@@ -225,7 +225,7 @@ try {
       tagsCount: true       // Virtual field (calculated at runtime)
     },
     $where: {
-      email: { $iincludes: 'nukak' }, // Case-insensitive search
+      email: { $iincludes: 'uql' }, // Case-insensitive search
       status: 'active'
     },
     $sort: { createdAt: -1 },
@@ -239,10 +239,10 @@ try {
 
 ### Advanced: Deep Selection & Filtering
 
-Nukak's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
+UQL's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
 
 ```ts
-import { GenericRepository } from 'nukak/repository';
+import { GenericRepository } from 'uql/repository';
 import { User } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
 
@@ -276,11 +276,11 @@ const authorsWithPopularPosts = await querierPool.transaction(async (querier) =>
 
 ### Advanced: Virtual Fields & Raw SQL
 
-Define complex logic directly in your entities using `raw` functions from `nukak/util`. These are highly efficient as they are resolved during SQL generation.
+Define complex logic directly in your entities using `raw` functions from `uql/util`. These are highly efficient as they are resolved during SQL generation.
 
 ```ts
-import { Entity, Id, Field } from 'nukak/entity';
-import { raw } from 'nukak/util';
+import { Entity, Id, Field } from 'uql/entity';
+import { raw } from 'uql/util';
 import { ItemTag } from './shared/models/index.js';
 
 @Entity()
@@ -308,7 +308,7 @@ export class Item {
 
 ### Thread-Safe Transactions
 
-Nukak ensures your operations are serialized and thread-safe.
+UQL ensures your operations are serialized and thread-safe.
 
 ```ts
 import { User, Profile } from './shared/models/index.js';
@@ -326,20 +326,20 @@ const result = await querierPool.transaction(async (querier) => {
 
 ## 5. Migrations & Synchronization
 
-Nukak provides a robust migration system and an "Entity-First" synchronization engine to manage your database schema changes.
+UQL provides a robust migration system and an "Entity-First" synchronization engine to manage your database schema changes.
 
 1. Install the migration package:
 
    ```sh
-   npm install nukak-migrate --save
+   npm install uql-migrate --save
    ```
 
-2. Create a `nukak.config.ts` for the CLI:
+2. Create a `uql.config.ts` for the CLI:
 
    ```ts
-   import { PgQuerierPool } from 'nukak-postgres';
+   import { PgQuerierPool } from 'uql-postgres';
    import { User, Post, Profile } from './src/entities/index.js';
-   import { SnakeCaseNamingStrategy } from 'nukak';
+   import { SnakeCaseNamingStrategy } from 'uql';
 
    export default {
      querierPool: new PgQuerierPool({ /* config */ }),
@@ -354,13 +354,13 @@ Nukak provides a robust migration system and an "Entity-First" synchronization e
 
    ```sh
    # Generate a migration by comparing entities vs database
-   npx nukak-migrate generate:entities initial_schema
+   npx uql-migrate generate:entities initial_schema
 
    # Run pending migrations
-   npx nukak-migrate up
+   npx uql-migrate up
 
    # Rollback the last migration
-   npx nukak-migrate down
+   npx uql-migrate down
    ```
 
 ### Entity-First Synchronization (Development)
@@ -368,7 +368,7 @@ Nukak provides a robust migration system and an "Entity-First" synchronization e
 In development, you can use `autoSync` to automatically keep your database in sync with your entities without manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
 
 ```ts
-import { Migrator } from 'nukak-migrate';
+import { Migrator } from 'uql-migrate';
 import { querierPool } from './shared/orm.js';
 
 const migrator = new Migrator(querierPool);
@@ -378,15 +378,15 @@ const migrator = new Migrator(querierPool);
 await migrator.autoSync({ logging: true });
 ```
 
-Check out the full [nukak-migrate README](packages/migrate/README.md) for detailed CLI commands and advanced usage.
+Check out the full [uql-migrate README](packages/uql-migrate/README.md) for detailed CLI commands and advanced usage.
 
 &nbsp;
 
-Check out the full documentation at [nukak.org](https://nukak.org) for details on:
-- [Complex Logical Operators](https://nukak.org/docs/querying-logical-operators)
-- [Relationship Mapping (1-1, 1-M, M-M)](https://nukak.org/docs/querying-relations)
-- [Soft Deletes & Auditing](https://nukak.org/docs/entities-soft-delete)
-- [Database Migration & Syncing](https://nukak.org/docs/migrations)
+Check out the full documentation at [uql.org](https://uql.org) for details on:
+- [Complex Logical Operators](https://uql.org/docs/querying-logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.org/docs/querying-relations)
+- [Soft Deletes & Auditing](https://uql.org/docs/entities-soft-delete)
+- [Database Migration & Syncing](https://uql.org/docs/migrations)
 
 ---
 
@@ -394,9 +394,9 @@ Check out the full documentation at [nukak.org](https://nukak.org) for details o
 
 For those who want to see the "engine under the hood," check out these resources in the source code:
 
-- **Entity Mocks**: See how complex entities and virtual fields are defined in [entityMock.ts](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/test/entityMock.ts).
-- **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/dialect/abstractSqlDialect.ts).
+- **Entity Mocks**: See how complex entities and virtual fields are defined in [entityMock.ts](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/test/entityMock.ts).
+- **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect.ts).
 - **Comprehensive Test Suite**:
-  - [Abstract SQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
-  - [PostgreSQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/postgres/src/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/mysql/src/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/sqlite/src/sqliteDialect.spec.ts).
-  - [Querier Integration Tests](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
+  - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
+  - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/postgres/src/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/mysql/src/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/sqlite/src/sqliteDialect.spec.ts).
+  - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.

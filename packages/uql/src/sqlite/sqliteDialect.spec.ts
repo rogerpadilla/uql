@@ -1,5 +1,5 @@
-import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
-import { Company, createSpec, InventoryAdjustment, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
+import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import { Company, createSpec, InventoryAdjustment, Item, ItemTag, Profile, TaxCategory, User } from '../test/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {

@@ -1,5 +1,5 @@
-import type { Item, User } from 'nukak/test';
-import type { Query } from 'nukak/type';
+import type { Item, User } from '../../test/index.js';
+import type { Query } from '../../type/index.js';
 import { stringifyQuery, stringifyQueryParameter } from './querier.util.js';
 
 it('stringifyQuery -- empty', () => {

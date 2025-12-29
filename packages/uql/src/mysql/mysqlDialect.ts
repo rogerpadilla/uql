@@ -1,5 +1,5 @@
-import { AbstractSqlDialect } from 'nukak/dialect';
 import SqlString from 'sqlstring';
+import { AbstractSqlDialect } from '../dialect/index.js';
 
 export class MySqlDialect extends AbstractSqlDialect {
   override addValue(values: unknown[], value: unknown): string {

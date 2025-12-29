@@ -1,5 +1,5 @@
-import type { QuerierPool, SqlQuerier } from 'nukak/type';
-import { isSqlQuerier } from 'nukak/type';
+import type { QuerierPool, SqlQuerier } from 'uql/type';
+import { isSqlQuerier } from 'uql/type';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, SchemaIntrospector, TableSchema } from '../type.js';
 
 /**

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import type { Item } from 'nukak/test';
-import type { Query, QueryStringified } from 'nukak/type';
+import type { Item } from '../test/index.js';
+import type { Query, QueryStringified } from '../type/index.js';
 import { parseQuery } from './query.util.js';
 
 it('parseQuery -- empty', () => {

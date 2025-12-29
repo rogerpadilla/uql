@@ -1,6 +1,6 @@
-import { getMeta } from 'nukak/entity';
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from 'nukak/type';
-import { kebabCase } from 'nukak/util';
+import { getMeta } from '../../entity/index.js';
+import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from '../../type/index.js';
+import { kebabCase } from '../../util/index.js';
 import { get, patch, post, remove } from '../http/index.js';
 import type { ClientQuerier, ClientRepository, RequestFindOptions, RequestOptions } from '../type/index.js';
 import { GenericClientRepository } from './genericClientRepository.js';

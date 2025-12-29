@@ -14,7 +14,7 @@ import type {
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
 const holder = globalThis;
-const metaKey = 'nukak/entity/decorator';
+const metaKey = 'uql/entity/decorator';
 const metas: Map<Type<unknown>, EntityMeta<any>> = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 

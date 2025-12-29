@@ -1,6 +1,6 @@
 import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
-import { getMeta } from 'nukak/entity';
-import { AbstractQuerier, Serialized } from 'nukak/querier';
+import { getMeta } from '../entity/index.js';
+import { AbstractQuerier, Serialized } from '../querier/index.js';
 import type {
   ExtraOptions,
   IdValue,
@@ -10,8 +10,8 @@ import type {
   QuerySearch,
   QueryWhere,
   Type,
-} from 'nukak/type';
-import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from 'nukak/util';
+} from '../type/index.js';
+import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from '../util/index.js';
 
 import type { MongoDialect } from './mongoDialect.js';
 

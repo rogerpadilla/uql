@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { Entity, Field, Id } from 'nukak/entity';
-import type { QuerierPool, SqlQuerier } from 'nukak/type';
+import { Entity, Field, Id } from 'uql/entity';
+import type { QuerierPool, SqlQuerier } from 'uql/type';
 import { Migrator } from './migrator.js';
 import type { TableSchema } from './type.js';
 

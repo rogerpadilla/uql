@@ -1,7 +1,7 @@
-import { AbstractDialect } from 'nukak/dialect';
-import { getMeta } from 'nukak/entity';
-import type { ColumnType, EntityMeta, FieldKey, FieldOptions, NamingStrategy, Type } from 'nukak/type';
-import { escapeSqlId, getKeys } from 'nukak/util';
+import { AbstractDialect } from 'uql/dialect';
+import { getMeta } from 'uql/entity';
+import type { ColumnType, EntityMeta, FieldKey, FieldOptions, NamingStrategy, Type } from 'uql/type';
+import { escapeSqlId, getKeys } from 'uql/util';
 import type { ColumnSchema, IndexSchema, SchemaDiff, SchemaGenerator, TableSchema } from './type.js';
 
 /**
@@ -318,7 +318,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   }
 
   /**
-   * Map nukak column type to database-specific SQL type
+   * Map uql column type to database-specific SQL type
    */
   public abstract mapColumnType(columnType: ColumnType, field: FieldOptions): string;
 

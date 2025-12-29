@@ -1,8 +1,8 @@
 // Core types
 
 // Re-export core types for convenience
-export type { Dialect, MongoQuerier, SqlDialect, SqlQuerier, SqlQueryDialect } from 'nukak/type';
-export { isSqlQuerier } from 'nukak/type';
+export type { Dialect, MongoQuerier, SqlDialect, SqlQuerier, SqlQueryDialect } from 'uql/type';
+export { isSqlQuerier } from 'uql/type';
 export {
   MysqlSchemaGenerator,
   MysqlSchemaGenerator as MariadbSchemaGenerator,

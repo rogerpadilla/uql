@@ -1,5 +1,6 @@
-import { AbstractSqlDialect } from 'nukak/dialect';
-import { getMeta } from 'nukak/entity';
+import sqlstring from 'sqlstring-sqlite';
+import { AbstractSqlDialect } from '../dialect/index.js';
+import { getMeta } from '../entity/index.js';
 import type {
   FieldKey,
   NamingStrategy,
@@ -10,8 +11,7 @@ import type {
   QueryWhereFieldOperatorMap,
   QueryWhereMap,
   Type,
-} from 'nukak/type';
-import sqlstring from 'sqlstring-sqlite';
+} from '../type/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {

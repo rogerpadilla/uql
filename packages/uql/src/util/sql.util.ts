@@ -1,4 +1,4 @@
-import type { FieldValue, Key } from 'nukak/type';
+import type { FieldValue, Key } from '../type/index.js';
 import { getKeys, hasKeys } from './object.util.js';
 
 export function flatObject<E>(obj: E, pre?: string): E {

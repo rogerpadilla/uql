@@ -2,7 +2,7 @@
 
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Dialect, NamingStrategy, QuerierPool } from 'nukak/type';
+import type { Dialect, NamingStrategy, QuerierPool } from 'uql/type';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
@@ -20,7 +20,7 @@ interface CliConfig {
 }
 
 async function loadConfig(): Promise<CliConfig> {
-  const configPaths = ['nukak.config.ts', 'nukak.config.js', 'nukak.config.mjs', '.nukakrc.ts', '.nukakrc.js'];
+  const configPaths = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
 
   for (const configPath of configPaths) {
     try {
@@ -34,8 +34,7 @@ async function loadConfig(): Promise<CliConfig> {
   }
 
   throw new Error(
-    'Could not find nukak configuration file. ' +
-      'Create a nukak.config.ts or nukak.config.js file in your project root.',
+    'Could not find uql configuration file. ' + 'Create a uql.config.ts or uql.config.js file in your project root.',
   );
 }
 
@@ -251,9 +250,9 @@ async function runSync(migrator: Migrator, args: string[]) {
 
 function printHelp() {
   console.log(`
-nukak-migrate - Database migration tool for nukak ORM
+uql-migrate - Database migration tool for uql ORM
 
-Usage: nukak-migrate <command> [options]
+Usage: uql-migrate <command> [options]
 
 Commands:
   up                    Run all pending migrations
@@ -279,24 +278,24 @@ Commands:
     --force             Drop and recreate all tables
 
 Configuration:
-  Create a nukak.config.ts or nukak.config.js file in your project root:
+  Create a uql.config.ts or uql.config.js file in your project root:
 
   export default {
     querierPool: new PgQuerierPool({ ... }),
     migrationsPath: './migrations',
-    tableName: 'nukak_migrations',
+    tableName: 'uql_migrations',
     dialect: 'postgres', // 'postgres' | 'mysql' | 'mariadb' | 'sqlite'
     entities: [User, Post, ...],
   };
 
 Examples:
-  nukak-migrate up
-  nukak-migrate up --step 1
-  nukak-migrate down
-  nukak-migrate down --step 3
-  nukak-migrate status
-  nukak-migrate generate add_users_table
-  nukak-migrate generate:entities initial_schema
+  uql-migrate up
+  uql-migrate up --step 1
+  uql-migrate down
+  uql-migrate down --step 3
+  uql-migrate status
+  uql-migrate generate add_users_table
+  uql-migrate generate:entities initial_schema
 `);
 }
 

@@ -1,6 +1,6 @@
-import { AbstractDialect } from 'nukak/dialect';
-import { getMeta } from 'nukak/entity';
-import type { Type } from 'nukak/type';
+import { AbstractDialect } from 'uql/dialect';
+import { getMeta } from 'uql/entity';
+import type { Type } from 'uql/type';
 import type { IndexSchema, SchemaDiff, SchemaGenerator, TableSchema } from '../type.js';
 
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {

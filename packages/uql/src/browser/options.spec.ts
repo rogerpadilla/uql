@@ -1,4 +1,4 @@
-import { User } from 'nukak/test';
+import { User } from '../test/index.js';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { GenericClientRepository, HttpQuerier } from './querier/index.js';
 import type { ClientQuerierPool } from './type/clientQuerierPool.js';

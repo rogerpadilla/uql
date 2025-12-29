@@ -1,7 +1,7 @@
-import { AbstractSqlDialect } from 'nukak/dialect';
-import { getMeta } from 'nukak/entity';
-import type { QueryConflictPaths, QueryContext, QueryOptions, Type } from 'nukak/type';
 import SqlString from 'sqlstring';
+import { AbstractSqlDialect } from '../dialect/index.js';
+import { getMeta } from '../entity/index.js';
+import type { QueryConflictPaths, QueryContext, QueryOptions, Type } from '../type/index.js';
 
 export class MariaDialect extends AbstractSqlDialect {
   override addValue(values: unknown[], value: unknown): string {

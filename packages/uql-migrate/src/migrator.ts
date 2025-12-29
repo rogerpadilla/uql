@@ -1,9 +1,9 @@
 import { readdir } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { getEntities, getMeta } from 'nukak/entity';
-import type { Dialect, MongoQuerier, Querier, QuerierPool, Type } from 'nukak/type';
-import { isSqlQuerier } from 'nukak/type';
+import { getEntities, getMeta } from 'uql/entity';
+import type { Dialect, MongoQuerier, Querier, QuerierPool, Type } from 'uql/type';
+import { isSqlQuerier } from 'uql/type';
 import {
   MariadbSchemaGenerator,
   MongoSchemaGenerator,
@@ -647,7 +647,7 @@ export class Migrator {
    * Generate migration file content
    */
   private generateMigrationContent(name: string): string {
-    return /*ts*/ `import type { SqlQuerier } from 'nukak-migrate';
+    return /*ts*/ `import type { SqlQuerier } from 'uql-migrate';
 
 /**
  * Migration: ${name}
@@ -687,7 +687,7 @@ export default {
     const upSql = upStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
     const downSql = downStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
 
-    return /*ts*/ `import type { SqlQuerier } from 'nukak-migrate';
+    return /*ts*/ `import type { SqlQuerier } from 'uql-migrate';
 
 /**
  * Migration: ${name}

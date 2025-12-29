@@ -1,4 +1,4 @@
-import type { Dialect, ExtraOptions, Querier, QuerierPool } from 'nukak/type';
+import type { Dialect, ExtraOptions, Querier, QuerierPool } from '../type/index.js';
 
 export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierPool<Q> {
   constructor(

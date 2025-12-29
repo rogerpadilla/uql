@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
-import { AbstractSqlQuerierSpec } from 'nukak/querier/abstractSqlQuerier-spec.js';
-import { createSpec } from 'nukak/test';
+import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
+import { createSpec } from '../test/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {

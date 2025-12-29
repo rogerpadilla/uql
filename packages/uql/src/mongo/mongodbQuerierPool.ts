@@ -1,6 +1,6 @@
 import { MongoClient, type MongoClientOptions } from 'mongodb';
-import { AbstractQuerierPool } from 'nukak/querier';
-import type { ExtraOptions } from 'nukak/type';
+import { AbstractQuerierPool } from '../querier/index.js';
+import type { ExtraOptions } from '../type/index.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 

@@ -1,8 +1,20 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "dist"
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "uql": ["../uql/src/index.ts"],
+      "uql/dialect": ["../uql/src/dialect/index.ts"],
+      "uql/entity": ["../uql/src/entity/index.ts"],
+      "uql/querier": ["../uql/src/querier/index.ts"],
+      "uql/repository": ["../uql/src/repository/index.ts"],
+      "uql/test": ["../uql/src/test/index.ts"],
+      "uql/type": ["../uql/src/type/index.ts"],
+      "uql/util": ["../uql/src/util/index.ts"],
+      "uql/*": ["../uql/src/*"]
+    }
   },
-  "references": [{ "path": "../core" }],
+  "references": [{ "path": "../uql" }],
   "exclude": ["node_modules", "dist"]
 }

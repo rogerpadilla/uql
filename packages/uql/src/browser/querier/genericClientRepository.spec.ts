@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { User } from 'nukak/test';
+import { User } from '../../test/index.js';
 import { GenericClientRepository } from './genericClientRepository.js';
 import { HttpQuerier } from './httpQuerier.js';
 
