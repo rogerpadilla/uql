@@ -47,7 +47,7 @@ export class Migrator {
     private readonly querierPool: QuerierPool,
     options: MigratorOptions = {},
   ) {
-    this.dialect = options.dialect ?? 'postgres';
+    this.dialect = options.dialect ?? querierPool.dialect ?? 'postgres';
     this.storage =
       options.storage ??
       new DatabaseMigrationStorage(querierPool, {

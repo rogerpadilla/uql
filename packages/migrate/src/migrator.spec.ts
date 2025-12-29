@@ -39,6 +39,7 @@ describe('Migrator Core Methods', () => {
 
     pool = {
       getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      dialect: 'postgres',
     } as any;
 
     storage = {
@@ -215,27 +216,35 @@ describe('Migrator Core Methods', () => {
 
   describe('Dialect Auto-Inference', () => {
     it('should infer Postgres generator and introspector', () => {
-      const m = new Migrator(pool, { dialect: 'postgres' });
+      const m = new Migrator(pool);
       expect((m as any).schemaGenerator).toBeInstanceOf(PostgresSchemaGenerator);
       expect((m as any).schemaIntrospector).toBeInstanceOf(PostgresSchemaIntrospector);
     });
 
     it('should infer MySQL generator and introspector', () => {
-      const m = new Migrator(pool, { dialect: 'mysql' });
+      const mysqlPool = { ...pool, dialect: 'mysql' };
+      const m = new Migrator(mysqlPool as any);
       expect((m as any).schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
       expect((m as any).schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', () => {
-      const m = new Migrator(pool, { dialect: 'sqlite' });
+      const sqlitePool = { ...pool, dialect: 'sqlite' };
+      const m = new Migrator(sqlitePool as any);
       expect((m as any).schemaGenerator).toBeInstanceOf(SqliteSchemaGenerator);
       expect((m as any).schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
     it('should infer MongoDB generator and introspector', () => {
-      const m = new Migrator(pool, { dialect: 'mongodb' });
+      const mongoPool = { ...pool, dialect: 'mongodb' };
+      const m = new Migrator(mongoPool as any);
       expect((m as any).schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
       expect((m as any).schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
+    });
+
+    it('should allow overriding dialect in options', () => {
+      const m = new Migrator(pool, { dialect: 'mysql' });
+      expect((m as any).schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
     });
 
     it('should allow overriding generator in options', () => {

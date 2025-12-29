@@ -24,9 +24,7 @@ describe('options', () => {
     setQuerierPool({
       getQuerier: async () => querierMock,
       end: async () => {},
-      transaction: async (callback: (querier: Querier) => void): Promise<void> => {
-        return undefined;
-      },
+      dialect: 'postgres',
     });
 
     const querier1 = await getQuerierPool().getQuerier();

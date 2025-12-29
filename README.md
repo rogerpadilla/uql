@@ -369,12 +369,12 @@ In development, you can use `autoSync` to automatically keep your database in sy
 
 ```ts
 import { Migrator } from 'nukak-migrate';
-import { PostgresSchemaGenerator } from 'nukak-migrate';
 import { querierPool } from './shared/orm.js';
 
-const migrator = new Migrator(querierPool, { dialect: 'postgres' });
+const migrator = new Migrator(querierPool);
 
-// Safely add missing tables/columns on (development) startup
+// Automatically sync changes on your entities with the DB tables/columns (recommended for development only)
+const migrator = new Migrator(querierPool);
 await migrator.autoSync({ logging: true });
 ```
 

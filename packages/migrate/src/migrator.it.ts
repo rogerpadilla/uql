@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Entity, Field, Id } from 'nukak/entity';
 import type { QuerierPool, SqlQuerier } from 'nukak/type';
-import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { Migrator } from './migrator.js';
 import type { TableSchema } from './type.js';
 
@@ -38,10 +37,10 @@ describe('Migrator autoSync Integration', () => {
     };
     pool = {
       getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      dialect: 'postgres',
     } as unknown as QuerierPool;
 
     migrator = new Migrator(pool, {
-      dialect: 'postgres',
       entities: [SyncUser, SyncProfile],
     });
   });

@@ -33,10 +33,10 @@ describe('Migrator autoSync MongoDB Integration', () => {
 
     pool = {
       getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      dialect: 'mongodb',
     } as unknown as QuerierPool;
 
     migrator = new Migrator(pool, {
-      dialect: 'mongodb',
       entities: [SyncMongoUser],
     });
   });
