@@ -1,13 +1,15 @@
 {
   "private": true,
-  "version": "1.4.16",
+  "version": "1.7.0",
   "type": "module",
   "sideEffects": false,
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "release": "npm run build && lerna publish patch && git pull && git push",
+    "release.patch": "npm run build && lerna publish patch && git pull && git push",
+    "release.minor": "npm run build && lerna publish minor && git pull && git push",
+    "release.major": "npm run build && lerna publish major && git pull && git push",
     "check.ts": "tsc --noEmit",
     "build": "lerna run build",
     "lint": "biome check .",
