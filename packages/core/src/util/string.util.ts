@@ -13,3 +13,23 @@ export function upperFirst(text: string): string {
 export function lowerFirst(text: string): string {
   return text[0].toLowerCase() + text.slice(1);
 }
+
+export function snakeCase(val: string): string {
+  if (val === undefined || val === null) {
+    return val;
+  }
+  if (!val) {
+    return '';
+  }
+  let resp = val.charAt(0).toLowerCase();
+  for (let i = 1; i < val.length; ++i) {
+    const char = val[i];
+    const chatLower = char.toLowerCase();
+    if (char !== chatLower && char === char.toUpperCase()) {
+      resp += '_' + chatLower;
+    } else {
+      resp += char;
+    }
+  }
+  return resp;
+}

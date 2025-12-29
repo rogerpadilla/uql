@@ -8,7 +8,7 @@ export class SqliteQuerier extends AbstractSqlQuerier {
     readonly db: Database,
     readonly extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect());
+    super(new SqliteDialect(extra?.namingStrategy));
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {

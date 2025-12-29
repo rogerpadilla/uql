@@ -10,7 +10,7 @@ export class PgQuerier extends AbstractSqlQuerier {
     readonly connect: () => Promise<PoolClient>,
     readonly extra?: ExtraOptions,
   ) {
-    super(new PostgresDialect());
+    super(new PostgresDialect(extra?.namingStrategy));
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {

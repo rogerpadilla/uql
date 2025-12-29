@@ -3,6 +3,7 @@ import { getMeta } from 'nukak/entity';
 import {
   type FieldKey,
   type FieldOptions,
+  type NamingStrategy,
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
@@ -16,8 +17,8 @@ import {
 import sqlstring from 'sqlstring-sqlite';
 
 export class PostgresDialect extends AbstractSqlDialect {
-  constructor() {
-    super('"', 'BEGIN TRANSACTION');
+  constructor(namingStrategy?: NamingStrategy) {
+    super(namingStrategy, '"', 'BEGIN TRANSACTION');
   }
 
   override addValue(values: unknown[], value: unknown): string {
@@ -54,7 +55,11 @@ export class PostgresDialect extends AbstractSqlDialect {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields
-        .map((field) => this.escapeId(meta.fields[field]?.name ?? field))
+        .map((fKey) => {
+          const field = meta.fields[fKey];
+          const columnName = this.resolveColumnName(fKey as string, field);
+          return this.escapeId(columnName);
+        })
         .join(` || ' ' || `);
       ctx.append(`to_tsvector(${fields}) @@ to_tsquery(`);
       ctx.addValue(search.$value);

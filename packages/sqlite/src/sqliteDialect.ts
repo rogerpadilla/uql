@@ -2,6 +2,7 @@ import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
 import type {
   FieldKey,
+  NamingStrategy,
   QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
@@ -13,8 +14,8 @@ import type {
 import sqlstring from 'sqlstring-sqlite';
 
 export class SqliteDialect extends AbstractSqlDialect {
-  constructor() {
-    super('`', 'BEGIN TRANSACTION');
+  constructor(namingStrategy?: NamingStrategy) {
+    super(namingStrategy, '`', 'BEGIN TRANSACTION');
   }
 
   override addValue(values: unknown[], value: unknown): string {
@@ -36,8 +37,13 @@ export class SqliteDialect extends AbstractSqlDialect {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
-      ctx.append(`${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : `);
+      const fields = search.$fields.map((fKey) => {
+        const field = meta.fields[fKey];
+        const columnName = this.resolveColumnName(fKey as string, field);
+        return this.escapeId(columnName);
+      });
+      const tableName = this.resolveTableName(entity, meta);
+      ctx.append(`${this.escapeId(tableName)} MATCH {${fields.join(' ')}} : `);
       ctx.addValue(search.$value);
       return;
     }

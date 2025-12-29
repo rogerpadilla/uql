@@ -35,6 +35,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 - **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
 - **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
+- **Naming Strategies**: Effortlessly translate between TypeScript `CamelCase` and database `snake_case` (or any custom format) with a pluggable system.
 - **Built-in Serialization**: A centralized task queue and `@Serialized()` decorator ensure database operations are thread-safe and race-condition free by default.
 - **Database Migrations**: Integrated migration system for version-controlled schema management and auto-generation from entities.
 - **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
@@ -344,6 +345,27 @@ Nukak provides a robust migration system to manage your database schema changes 
    ```
 
 Check out the full [nukak-migrate README](packages/migrate/README.md) for detailed CLI commands and advanced usage.
+
+&nbsp;
+
+## 6. Naming Strategies
+
+Nukak allows you to automatically translate your TypeScript entity and property names to database identifiers.
+
+```ts
+import { PgQuerierPool } from 'nukak-postgres';
+import { SnakeCaseNamingStrategy } from 'nukak';
+
+export const querierPool = new PgQuerierPool(
+  { /* db config */ },
+  {
+    // Automatically convert UserProfile -> user_profile and firstName -> first_name
+    namingStrategy: new SnakeCaseNamingStrategy()
+  },
+);
+```
+
+You can also implement your own by extending `NamingStrategy`.
 
 &nbsp;
 

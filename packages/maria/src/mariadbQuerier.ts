@@ -10,7 +10,7 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     readonly connect: () => Promise<PoolConnection>,
     readonly extra?: ExtraOptions,
   ) {
-    super(new MariaDialect());
+    super(new MariaDialect(extra?.namingStrategy));
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {

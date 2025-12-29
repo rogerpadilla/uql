@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+## [1.8.0] - 2025-12-29
+- **New Feature**: Added support for **Naming Strategies**.
+  - Automatically translate TypeScript entity and property names to database-specific identifiers (e.g., camelCase to snake_case).
+  - Built-in `DefaultNamingStrategy` and `SnakeCaseNamingStrategy`.
+  - Comprehensive support across all SQL dialects and MongoDB.
+- **Refactoring**:
+  - Unified naming and metadata resolution logic into a new `AbstractDialect` base class shared by both DML (Dialects) and DDL (Schema Generators).
+  - Improved `MongoDialect` to respect naming strategies for collection and field names on both read and write operations.
+
 ## [1.7.0] - 2025-12-29
 - **New Package**: Introduced `nukak-migrate` for database migrations.
   - Supports version-controlled schema changes via local migration files.
@@ -10,7 +19,7 @@ date format is [yyyy-mm-dd]
   - Full support for PostgreSQL, MySQL, MariaDB, and SQLite.
   - CLI tool for managing migrations (`up`, `down`, `status`, `generate`, `sync`).
   - Database-backed migration tracking (Database or JSON storage).
-- **Core Improvements**: 
+- **Core Improvements**:
   - Expanded `@Field()` decorator with schema metadata: `length`, `precision`, `scale`, `unique`, `index`, `columnType`, `defaultValue`, and `comment`.
   - Added schema generation and introspection capabilities to SQL dialects.
 

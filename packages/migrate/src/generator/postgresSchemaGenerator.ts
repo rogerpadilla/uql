@@ -1,4 +1,4 @@
-import type { ColumnType, FieldOptions } from 'nukak/type';
+import type { ColumnType, FieldOptions, NamingStrategy } from 'nukak/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 
 /**
@@ -7,8 +7,8 @@ import { AbstractSchemaGenerator } from '../schemaGenerator.js';
 export class PostgresSchemaGenerator extends AbstractSchemaGenerator {
   protected readonly serialPrimaryKeyType = 'SERIAL PRIMARY KEY';
 
-  constructor() {
-    super('"');
+  constructor(namingStrategy?: NamingStrategy) {
+    super(namingStrategy, '"');
   }
 
   protected mapColumnType(columnType: ColumnType, field: FieldOptions): string {
