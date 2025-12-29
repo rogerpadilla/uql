@@ -1,5 +1,13 @@
 import type { IdValue } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type {
+  Query,
+  QueryConflictPaths,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  QueryUpdateResult,
+  SqlQueryDialect,
+} from './query.js';
 import type { Repository } from './repository.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
@@ -8,6 +16,11 @@ import type { Type } from './utility.js';
  * Isolation levels for transactions.
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
+
+/**
+ * Supported SQL dialect identifiers.
+ */
+export type SqlDialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite';
 
 export interface Querier extends UniversalQuerier {
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
@@ -69,6 +82,40 @@ export interface Querier extends UniversalQuerier {
    * release the querier to the pool.
    */
   release(): Promise<void>;
+}
+
+/**
+ * Extended querier interface for raw SQL execution.
+ * Implemented by AbstractSqlQuerier and all SQL-based queriers.
+ */
+export interface SqlQuerier extends Querier {
+  /**
+   * The SQL dialect (provides escapeIdChar and other dialect-specific info)
+   */
+  readonly dialect: SqlQueryDialect;
+
+  /**
+   * Execute a raw SQL query and return results
+   */
+  all<T>(query: string, values?: unknown[]): Promise<T[]>;
+
+  /**
+   * Execute a raw SQL command (INSERT, UPDATE, DELETE, DDL)
+   */
+  run(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
+}
+
+/**
+ * Type guard to check if a querier supports raw SQL execution
+ */
+export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
+  const q = querier as SqlQuerier;
+  return (
+    typeof q.all === 'function' &&
+    typeof q.run === 'function' &&
+    q.dialect !== undefined &&
+    typeof q.dialect.escapeIdChar === 'string'
+  );
 }
 
 /**

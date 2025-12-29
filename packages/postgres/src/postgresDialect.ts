@@ -22,7 +22,11 @@ export class PostgresDialect extends AbstractSqlDialect {
 
   override addValue(values: unknown[], value: unknown): string {
     values.push(value);
-    return `$${values.length}`;
+    return this.placeholder(values.length);
+  }
+
+  override placeholder(index: number): string {
+    return `$${index}`;
   }
 
   override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {

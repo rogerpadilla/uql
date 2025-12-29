@@ -36,6 +36,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 - **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
 - **Built-in Serialization**: A centralized task queue and `@Serialized()` decorator ensure database operations are thread-safe and race-condition free by default.
+- **Database Migrations**: Integrated migration system for version-controlled schema management and auto-generation from entities.
 - **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
 - **Modern Architecture**: Pure `ESM` support, designed for `Node.js`, `Bun`, `Deno`, and even mobile/browser environments.
 - **Rich Feature Set**: [Soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
@@ -289,6 +290,43 @@ const result = await querierPool.transaction(async (querier) => {
 });
 // Connection is automatically released after transaction
 ```
+
+&nbsp;
+
+## 5. Migrations
+
+Nukak provides a robust migration system to manage your database schema changes over time.
+
+1. Install the migration package:
+
+   ```sh
+   npm install nukak-migrate --save
+   ```
+
+2. Create a `nukak.config.ts` file:
+
+   ```ts
+   import { PgQuerierPool } from 'nukak-postgres';
+   import { User, Post } from './src/entities/index.js';
+
+   export default {
+     querierPool: new PgQuerierPool({ /* config */ }),
+     dialect: 'postgres',
+     entities: [User, Post],
+   };
+   ```
+
+3. Generate and run migrations:
+
+   ```sh
+   # Generate migration from entities
+   npx nukak-migrate generate:entities initial_schema
+
+   # Run pending migrations
+   npx nukak-migrate up
+   ```
+
+Check out the full [nukak-migrate README](packages/migrate/README.md) for detailed CLI commands and advanced usage.
 
 &nbsp;
 

@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import type { Config } from 'jest';
 
+process.env.TZ = 'UTC';
+
 const swcConfig = JSON.parse(readFileSync(`.swcrc`, 'utf-8'));
 
 const jestConfig: Config = {

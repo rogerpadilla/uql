@@ -70,3 +70,35 @@ export function obtainAttrsPaths<T>(row: T) {
     {} as { [k: string]: string[] },
   );
 }
+
+/**
+ * Escape a SQL identifier (table name, column name, etc.)
+ * @param val the identifier to escape
+ * @param escapeIdChar the escape character to use (e.g. ` or ")
+ * @param forbidQualified whether to forbid qualified identifiers (containing dots)
+ * @param addDot whether to add a dot suffix
+ */
+export function escapeSqlId(
+  val: string,
+  escapeIdChar: '`' | '"' = '`',
+  forbidQualified?: boolean,
+  addDot?: boolean,
+): string {
+  if (!val) {
+    return '';
+  }
+
+  if (!forbidQualified && val.includes('.')) {
+    const result = val
+      .split('.')
+      .map((it) => escapeSqlId(it, escapeIdChar, true))
+      .join('.');
+    return addDot ? result + '.' : result;
+  }
+
+  const escaped = escapeIdChar + val.replace(new RegExp(escapeIdChar, 'g'), escapeIdChar + escapeIdChar) + escapeIdChar;
+
+  const suffix = addDot ? '.' : '';
+
+  return escaped + suffix;
+}
