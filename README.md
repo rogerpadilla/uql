@@ -31,7 +31,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 ## Features
 
-- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.org/docs/querying-relations).
+- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.app/docs/querying-relations).
 - **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
 - **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
@@ -382,7 +382,7 @@ Check out the full [uql-migrate README](packages/uql-migrate/README.md) for deta
 
 &nbsp;
 
-Check out the full documentation at [uql.org](https://uql.app) for details on:
+Check out the full documentation at [uql.app](https://uql.app) for details on:
 - [Complex Logical Operators](https://uql.app/docs/querying-logical-operators)
 - [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/docs/querying-relations)
 - [Soft Deletes & Auditing](https://uql.app/docs/entities-soft-delete)
