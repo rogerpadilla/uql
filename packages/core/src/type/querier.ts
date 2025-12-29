@@ -1,3 +1,4 @@
+import type { Db } from 'mongodb';
 import type { IdValue } from './entity.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
@@ -22,6 +23,8 @@ export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable
  * Supported SQL dialect identifiers.
  */
 export type SqlDialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite';
+
+export type Dialect = SqlDialect | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
@@ -117,6 +120,16 @@ export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
     q.dialect !== undefined &&
     typeof q.dialect.escapeIdChar === 'string'
   );
+}
+
+/**
+ * Extended querier interface for MongoDB execution.
+ */
+export interface MongoQuerier extends Querier {
+  /**
+   * The MongoDB database instance.
+   */
+  readonly db: Db;
 }
 
 /**

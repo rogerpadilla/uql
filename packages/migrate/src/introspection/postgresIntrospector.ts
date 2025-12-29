@@ -8,13 +8,13 @@ import type { ColumnSchema, ForeignKeySchema, IndexSchema, SchemaIntrospector, T
 export class PostgresSchemaIntrospector implements SchemaIntrospector {
   constructor(private readonly querierPool: QuerierPool) {}
 
-  async getTableSchema(tableName: string): Promise<TableSchema | null> {
+  async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
 
     try {
       const exists = await this.tableExistsInternal(querier, tableName);
       if (!exists) {
-        return null;
+        return undefined;
       }
 
       const [columns, indexes, foreignKeys, primaryKey] = await Promise.all([

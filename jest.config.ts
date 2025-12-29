@@ -8,8 +8,8 @@ const swcConfig = JSON.parse(readFileSync(`.swcrc`, 'utf-8'));
 const jestConfig: Config = {
   verbose: true,
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
-  watchPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
-  testPathIgnorePatterns: ['node_modules', 'data', 'coverage', 'dist'],
+  watchPathIgnorePatterns: ['node_modules', '\\/data\\/', 'coverage', 'dist'],
+  testPathIgnorePatterns: ['node_modules', '\\/data\\/', 'coverage', 'dist'],
   moduleNameMapper: {
     '^nukak/(.+)\\.js$': '<rootDir>/packages/core/src/$1',
     '^nukak/(.+)(?<!\\.js)$': '<rootDir>/packages/core/src/$1',
@@ -20,7 +20,7 @@ const jestConfig: Config = {
   },
   setupFilesAfterEnv: ['<rootDir>/config/test-setup-after-env.ts'],
   // this is intentional as it is, use 'npm run test.all' to run all tests
-  testMatch: ['**/*.spec.ts', '**/sqlite/**/*.it.ts'],
+  testMatch: ['**/*.spec.ts', '**/*.it.ts'],
   collectCoverage: true,
   coverageReporters: ['html', 'text-summary', 'lcov'],
   coverageDirectory: 'coverage',

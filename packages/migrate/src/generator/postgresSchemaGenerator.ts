@@ -1,5 +1,6 @@
 import type { ColumnType, FieldOptions, NamingStrategy } from 'nukak/type';
 import { AbstractSchemaGenerator } from '../schemaGenerator.js';
+import type { ColumnSchema } from '../type.js';
 
 /**
  * PostgreSQL-specific schema generator
@@ -11,7 +12,7 @@ export class PostgresSchemaGenerator extends AbstractSchemaGenerator {
     super(namingStrategy, '"');
   }
 
-  protected mapColumnType(columnType: ColumnType, field: FieldOptions): string {
+  public override mapColumnType(columnType: ColumnType, field: FieldOptions): string {
     switch (columnType) {
       case 'int':
         return 'INTEGER';
@@ -71,16 +72,43 @@ export class PostgresSchemaGenerator extends AbstractSchemaGenerator {
     }
   }
 
-  protected getBooleanType(): string {
+  public override getBooleanType(): string {
     return 'BOOLEAN';
   }
 
-  protected generateAlterColumnStatement(tableName: string, columnName: string, newDefinition: string): string {
-    // PostgreSQL uses ALTER COLUMN ... TYPE for type changes
-    return `ALTER TABLE ${this.escapeId(tableName)} ALTER COLUMN ${newDefinition};`;
+  public override generateAlterColumnStatements(
+    tableName: string,
+    column: ColumnSchema,
+    newDefinition: string,
+  ): string[] {
+    const statements: string[] = [];
+    const escapedTableName = this.escapeId(tableName);
+    const escapedColumnName = this.escapeId(column.name);
+
+    // PostgreSQL uses separate ALTER COLUMN clauses for different changes
+    // 1. Change type
+    statements.push(`ALTER TABLE ${escapedTableName} ALTER COLUMN ${escapedColumnName} TYPE ${column.type};`);
+
+    // 2. Change nullability
+    if (column.nullable) {
+      statements.push(`ALTER TABLE ${escapedTableName} ALTER COLUMN ${escapedColumnName} DROP NOT NULL;`);
+    } else {
+      statements.push(`ALTER TABLE ${escapedTableName} ALTER COLUMN ${escapedColumnName} SET NOT NULL;`);
+    }
+
+    // 3. Change default value
+    if (column.defaultValue !== undefined) {
+      statements.push(
+        `ALTER TABLE ${escapedTableName} ALTER COLUMN ${escapedColumnName} SET DEFAULT ${this.formatDefaultValue(column.defaultValue)};`,
+      );
+    } else {
+      statements.push(`ALTER TABLE ${escapedTableName} ALTER COLUMN ${escapedColumnName} DROP DEFAULT;`);
+    }
+
+    return statements;
   }
 
-  protected override generateColumnComment(comment: string): string {
+  public override generateColumnComment(tableName: string, columnName: string, comment: string): string {
     // PostgreSQL handles comments separately via COMMENT ON COLUMN
     return '';
   }

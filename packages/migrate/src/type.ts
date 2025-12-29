@@ -1,4 +1,4 @@
-import type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'nukak/type';
+import type { Dialect, EntityMeta, NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect, Type } from 'nukak/type';
 
 // Re-export from core for convenience
 export type { NamingStrategy, SqlDialect, SqlQuerier, SqlQueryDialect };
@@ -53,7 +53,12 @@ export interface MigrationStorage {
  */
 export interface MigratorOptions {
   /**
-   * Directory containing migration files
+   * The database dialect. Defaults to 'postgres'.
+   */
+  readonly dialect?: Dialect;
+
+  /**
+   * Directory containing migration files. Defaults to './migrations'.
    */
   readonly migrationsPath?: string;
 
@@ -81,6 +86,12 @@ export interface MigratorOptions {
    * Naming strategy for database tables and columns
    */
   readonly namingStrategy?: NamingStrategy;
+
+  /**
+   * Custom schema generator for DDL operations.
+   * If not provided, it will be inferred from the dialect.
+   */
+  readonly schemaGenerator?: SchemaGenerator;
 }
 
 /**
@@ -178,6 +189,11 @@ export interface SchemaGenerator {
   generateAlterTable(diff: SchemaDiff): string[];
 
   /**
+   * Generate rollback (down) statements for ALTER TABLE based on schema diff
+   */
+  generateAlterTableDown(diff: SchemaDiff): string[];
+
+  /**
    * Generate CREATE INDEX statement
    */
   generateCreateIndex(tableName: string, index: IndexSchema): string;
@@ -191,6 +207,21 @@ export interface SchemaGenerator {
    * Get the SQL type for a field based on its options
    */
   getSqlType(fieldOptions: import('nukak/type').FieldOptions, fieldType?: unknown): string;
+
+  /**
+   * Compare two schemas and return the differences
+   */
+  diffSchema<E>(entity: Type<E>, currentSchema: TableSchema | undefined): SchemaDiff | undefined;
+
+  /**
+   * Resolve table name using entity and naming strategy
+   */
+  resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string;
+
+  /**
+   * Resolve column name using field options and naming strategy
+   */
+  resolveColumnName(key: string, field: import('nukak/type').FieldOptions): string;
 }
 
 /**
@@ -200,7 +231,7 @@ export interface SchemaIntrospector {
   /**
    * Get the schema of a specific table
    */
-  getTableSchema(tableName: string): Promise<TableSchema | null>;
+  getTableSchema(tableName: string): Promise<TableSchema | undefined>;
 
   /**
    * Get all table names in the database
