@@ -1,4 +1,4 @@
-Copyright (c) 2015-present nukak Contributors
+Copyright (c) 2015-present UQL Contributors
 
 MIT License
 
