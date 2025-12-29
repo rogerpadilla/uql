@@ -31,17 +31,14 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 ## Features
 
-- **Type-safe and Context-aware queries**: squeeze the powers of `TypeScript` so it auto-completes and validates, the appropriate operators on any level of the queries, [including the relations and their fields](https://www.nukak.org/docs/querying-relations).
-- **Serializable queries**: its [syntax](https://nukak.org/docs/querying-logical-operators) can be `100%` valid `JSON` allowing the queries to be transported across platforms with ease.
-- **Unified API across Databases**: same query is transparently transformed according to the configured database.
-- **FP + OOP**: Combines the best elements of `FP` (Functional Programming) and `OOP` (Object Oriented Programming).
-- [Declarative](https://nukak.org/docs/transactions-declarative) and [imperative](https://nukak.org/docs/transactions-imperative) `transactions` for flexibility, and `connection pooling` for scalability.
-- Transparent support for [inheritance between entities](https://nukak.org/docs/entities-inheritance) for reusability and consistency.
-- Modern [Pure ESM](https://gist.github.com/sindresorhus/a39789f98801d908bbc7ff3ecc99d99c): `ESM` is natively supported by Node.js 16 and later.
-- **High performance**: the [generated queries](https://www.nukak.org/docs/querying-logical-operators) are fast, safe, and human-readable.
-- Supports the [Data Mapper](https://en.wikipedia.org/wiki/Data_mapper_pattern) pattern for maintainability.
-- [soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository).
-- Automatic handing of `json`, `jsonb` and `vector` fields.
+- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.nukak.org/docs/querying-relations).
+- **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
+- **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
+- **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
+- **Built-in Serialization**: A centralized task queue and `@Serialized()` decorator ensure database operations are thread-safe and race-condition free by default.
+- **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
+- **Modern Architecture**: Pure `ESM` support, designed for `Node.js`, `Bun`, `Deno`, and even mobile/browser environments.
+- **Rich Feature Set**: [Soft-delete](https://nukak.org/docs/entities-soft-delete), [virtual fields](https://nukak.org/docs/entities-virtual-fields), [repositories](https://nukak.org/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
 
 &nbsp;
 
@@ -84,44 +81,65 @@ npm install pg nukak-postgres --save
 
 ## 2. Define the entities
 
-Take any dump class (aka DTO) and annotate it with the decorators from `nukak/entity`.
+Take any class and annotate it with decorators from `nukak/entity`. Nukak supports complex relationships with full type-safety.
 
 ```ts
-import { randomUUID } from 'node:crypto';
-import { Id, Field, Entity } from 'nukak/entity';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from 'nukak/entity';
+import type { Relation } from 'nukak/type';
 
-/**
- * any class can be annotated with this decorator to make it works as
- * an entity.
- */
 @Entity()
 export class User {
-  /**
-   * an entity must specify an ID Field, its name and type are automatically detected.
-   * the `onInsert` property can be used to specify a custom mechanism for
-   * auto-generating the primary-key's value when inserting.
-   */
-  @Id({ onInsert: () => randomUUID })
-  id?: string;
+  @Id() id?: string;
 
-  /**
-   * the properties of the class can be annotated with this decorator so they
-   * are interpreted as a column, its name and type are automatically detected.
-   */
-  @Field()
-  name?: string;
+  @Field() name?: string;
 
-  /**
-   * fields are `updatable: true` by default but can also be marked as `updatable: false` so they can only be inserted and read after.
-   */
-  @Field({ updatable: false })
-  email?: string;
+  @OneToOne({ entity: () => Profile, mappedBy: 'user', cascade: true })
+  profile?: Relation<Profile>; // Relation<T> handles circular dependencies
 
-  /**
-   * by default, fields are `eager: true`, but they can also be marked as `eager: false` (aka lazy fields).
-   */
-  @Field({ eager: false })
-  password?: string;
+  @OneToMany({ entity: () => Post, mappedBy: 'author' })
+  posts?: Relation<Post>[];
+}
+
+@Entity()
+export class Profile {
+  @Id() id?: string;
+
+  @Field() bio?: string;
+
+  @Field({ reference: () => User })
+  userId?: string;
+
+  @OneToOne({ entity: () => User })
+  user?: User;
+}
+
+@Entity()
+export class Post {
+  @Id() id?: number;
+
+  @Field() title?: string;
+
+  @Field({ reference: () => User })
+  authorId?: string;
+
+  @ManyToOne({ entity: () => User })
+  author?: User;
+
+  @ManyToMany({ entity: () => Tag, through: () => PostTag })
+  tags?: Tag[];
+}
+
+@Entity()
+export class Tag {
+  @Id() id?: string;
+  @Field() name?: string;
+}
+
+@Entity()
+export class PostTag {
+  @Id() id?: string;
+  @Field({ reference: () => Post }) postId?: number;
+  @Field({ reference: () => Tag }) tagId?: string;
 }
 ```
 
@@ -152,37 +170,143 @@ export const querierPool = new PgQuerierPool(
 
 ## 4. Manipulate the data
 
+Nukak provides multiple ways to interact with your data, from low-level `Queriers` to high-level `Repositories`.
+
+### Using Repositories (Recommended)
+
+Repositories provide a clean, Data-Mapper style interface for your entities.
+
 ```ts
-import { querierPool } from './shared/orm.js';
+import { GenericRepository } from 'nukak/repository';
 import { User } from './shared/models/index.js';
+import { querierPool } from './shared/orm.js';
 
-async function findLastUsers(limit = 100) {
-  const querier = await querierPool.getQuerier();
-  try {
-    const users = await querier.findMany(User, {
-      $select: { id: true, name: true, email: true },
-      $sort: { createdAt: 'desc' },
-      $limit: limit,
-    });
-    return users;
-  } finally {
-    // ensure the connection is released back to the pool
-    await querier.release();
-  }
-}
+// Get a querier from the pool
+const querier = await querierPool.getQuerier();
 
-async function createUser(data: User) {
-  const querier = await querierPool.getQuerier();
-  try {
-    const id = await querier.insertOne(User, data);
-    return id;
-  } finally {
-    // ensure the connection is released back to the pool
-    await querier.release();
-  }
+try {
+  const userRepository = new GenericRepository(User, querier);
+
+  // Advanced querying with relations and virtual fields
+  const users = await userRepository.findMany({
+    $select: {
+      id: true,
+      name: true,
+      profile: ['picture'], // Select specific fields from a 1-1 relation
+      tagsCount: true       // Virtual field (calculated at runtime)
+    },
+    $where: {
+      email: { $iincludes: 'nukak' }, // Case-insensitive search
+      status: 'active'
+    },
+    $sort: { createdAt: -1 },
+    $limit: 50
+  });
+} finally {
+  // Always release the querier to the pool
+  await querier.release();
 }
+```
+
+### Advanced: Deep Selection & Filtering
+
+Nukak's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
+
+```ts
+import { GenericRepository } from 'nukak/repository';
+import { User } from './shared/models/index.js';
+import { querierPool } from './shared/orm.js';
+
+const authorsWithPopularPosts = await querierPool.transaction(async (querier) => {
+  const userRepository = new GenericRepository(User, querier);
+
+  return userRepository.findMany({
+    $select: {
+      id: true,
+      name: true,
+      profile: {
+        $select: ['bio'],
+        // Filter related record and enforce INNER JOIN
+        $where: { bio: { $ne: null } },
+        $required: true
+      },
+      posts: {
+        $select: ['title', 'createdAt'],
+        // Filter the related collection directly
+        $where: { title: { $iincludes: 'typescript' } },
+        $sort: { createdAt: -1 },
+        $limit: 5
+      }
+    },
+    $where: {
+      name: { $istartsWith: 'a' }
+    }
+  });
+});
+```
+
+### Advanced: Virtual Fields & Raw SQL
+
+Define complex logic directly in your entities using `raw` functions from `nukak/util`. These are highly efficient as they are resolved during SQL generation.
+
+```ts
+import { Entity, Id, Field } from 'nukak/entity';
+import { raw } from 'nukak/util';
+import { ItemTag } from './shared/models/index.js';
+
+@Entity()
+export class Item {
+  @Id() id: number;
+  @Field() name: string;
+
+  @Field({
+    virtual: raw(({ ctx, dialect, escapedPrefix }) => {
+      ctx.append('(');
+      dialect.count(ctx, ItemTag, {
+        $where: {
+          itemId: raw(({ ctx }) => ctx.append(`${escapedPrefix}.id`))
+        }
+      }, { autoPrefix: true });
+      ctx.append(')');
+    })
+  })
+  tagsCount?: number;
+}
+```
+
+### Thread-Safe Transactions
+
+Nukak ensures your operations are serialized and thread-safe.
+
+```ts
+import { User, Profile } from './shared/models/index.js';
+import { querierPool } from './shared/orm.js';
+
+const result = await querierPool.transaction(async (querier) => {
+  const user = await querier.findOne(User, { $where: { email: '...' } });
+  const profileId = await querier.insertOne(Profile, { userId: user.id, ... });
+  return { userId: user.id, profileId };
+});
+// Connection is automatically released after transaction
 ```
 
 &nbsp;
 
-Learn more about `nukak` at its website https://nukak.org
+Check out the full documentation at [nukak.org](https://nukak.org) for details on:
+- [Complex Logical Operators](https://nukak.org/docs/querying-logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://nukak.org/docs/querying-relations)
+- [Soft Deletes & Auditing](https://nukak.org/docs/entities-soft-delete)
+- [Database Migration & Syncing](https://nukak.org/docs/migrations)
+
+---
+
+## 🛠 Deep Dive: Tests & Technical Resources
+
+For those who want to see the "engine under the hood," check out these resources in the source code:
+
+- **Entity Mocks**: See how complex entities and virtual fields are defined in [entityMock.ts](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/test/entityMock.ts).
+- **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/dialect/abstractSqlDialect.ts).
+- **Comprehensive Test Suite**:
+  - [Abstract SQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
+  - [PostgreSQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/postgres/src/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/mysql/src/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/nukak/blob/main/packages/sqlite/src/sqliteDialect.spec.ts).
+  - [Querier Integration Tests](https://github.com/rogerpadilla/nukak/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
