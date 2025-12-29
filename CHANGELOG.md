@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+## [1.6.0] - 2025-12-28
+- **Architectural Change**: Migrated from "Values as Parameter" to "Context Object" pattern for SQL generation.
+  - This pattern centralizes query parameters and SQL fragments into a `QueryContext`, ensuring robust placeholder management and preventing out-of-sync parameter indices.
+  - Improved compatibility with PostgreSQL's indexed placeholders ($1, $2, etc.) and complex sub-queries.
+  - Standardized dialect interfaces to operate directly on the `QueryContext` for higher performance and cleaner code.
+- Fixed linter issues and unified type safety for `raw()` SQL snippets across all drivers.
+
 ## [1.5.0] - 2025-12-28
 - **BREAKING CHANGE**: Implemented "Sticky Connections" for performance. `Querier` instances now hold their connection until `release()` is explicitly called.
   - If you manually retrieve a querier via `pool.getQuerier()`, you **MUST** call `await querier.release()` when finished, otherwise connections will leak.
