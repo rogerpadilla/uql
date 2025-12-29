@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+## [1.7.0] - 2025-12-29
+- **New Package**: Introduced `nukak-migrate` for database migrations.
+  - Supports version-controlled schema changes via local migration files.
+  - Automatic migration generation from entity definitions using schema introspection.
+  - Full support for PostgreSQL, MySQL, MariaDB, and SQLite.
+  - CLI tool for managing migrations (`up`, `down`, `status`, `generate`, `sync`).
+  - Database-backed migration tracking (Database or JSON storage).
+- **Core Improvements**: 
+  - Expanded `@Field()` decorator with schema metadata: `length`, `precision`, `scale`, `unique`, `index`, `columnType`, `defaultValue`, and `comment`.
+  - Added schema generation and introspection capabilities to SQL dialects.
+
 ## [1.6.0] - 2025-12-28
 - **Architectural Change**: Migrated from "Values as Parameter" to "Context Object" pattern for SQL generation.
   - This pattern centralizes query parameters and SQL fragments into a `QueryContext`, ensuring robust placeholder management and preventing out-of-sync parameter indices.
