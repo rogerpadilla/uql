@@ -41,7 +41,6 @@ jobs:
         run: npm run check.ts
 
   tests:
-    needs: lint # Only run tests if linting passes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
