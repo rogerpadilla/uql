@@ -14,9 +14,9 @@
 
 ```ts
 const companyUsers = await userRepository.findMany({
-  $select: { email: true, profile: ['picture'] },
-  $where: { email: { $endsWith: '@example.com' } },
-  $sort: { createdAt: -1 },
+  $select: { email: true, profile: { $select: { picture: true } } },
+  $where: { email: { $endsWith: '@domain.com' } },
+  $sort: { createdAt: 'desc' },
   $limit: 100,
 });
 ```
@@ -167,7 +167,7 @@ A querier-pool can be set in any of the bootstrap files of your app (e.g. in the
 
 ```ts
 // file: ./shared/orm.ts
-
+import { SnakeCaseNamingStrategy } from 'nukak';
 import { PgQuerierPool } from 'nukak-postgres';
 
 export const querierPool = new PgQuerierPool(
@@ -178,7 +178,15 @@ export const querierPool = new PgQuerierPool(
     database: 'theDatabase',
   },
   // optionally, a logger can be passed to log the generated SQL queries
-  { logger: console.debug },
+  {
+    // Optional, any custom logger function can be passed here (optional).
+    logger: console.debug,
+    // Optional, default to use same names as in the entities.
+    // Nukak allows you to automatically translate your TypeScript entity and property names to database identifiers.
+    // You can also create your own one by implementing the interface `NamingStrategy`.
+    // Automatically convert UserProfile -> user_profile and firstName -> first_name
+    namingStrategy: new SnakeCaseNamingStrategy()
+  },
 );
 ```
 
@@ -345,27 +353,6 @@ Nukak provides a robust migration system to manage your database schema changes 
    ```
 
 Check out the full [nukak-migrate README](packages/migrate/README.md) for detailed CLI commands and advanced usage.
-
-&nbsp;
-
-## 6. Naming Strategies
-
-Nukak allows you to automatically translate your TypeScript entity and property names to database identifiers.
-
-```ts
-import { PgQuerierPool } from 'nukak-postgres';
-import { SnakeCaseNamingStrategy } from 'nukak';
-
-export const querierPool = new PgQuerierPool(
-  { /* db config */ },
-  {
-    // Automatically convert UserProfile -> user_profile and firstName -> first_name
-    namingStrategy: new SnakeCaseNamingStrategy()
-  },
-);
-```
-
-You can also implement your own by extending `NamingStrategy`.
 
 &nbsp;
 
