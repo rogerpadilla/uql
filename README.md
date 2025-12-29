@@ -61,7 +61,9 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 | `MariaDB`    | `mariadb`        | `nukak-maria`    |
 | `MySQL`      | `mysql2`         | `nukak-mysql`    |
 
-For example, for `Postgres`:
+&nbsp;
+
+For example, for `Postgres` install the `pg` driver and the `nukak-postgres` adapter:
 
 ```sh
 npm install pg nukak-postgres --save
