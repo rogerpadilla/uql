@@ -176,8 +176,10 @@ export const querierPool = new PgQuerierPool(
     user: 'theUser',
     password: 'thePassword',
     database: 'theDatabase',
+    min: 1,
+    max: 10,
   },
-  // optionally: extra configuration.
+  // Optional extra options.
   {
     // Optional, any custom logger function can be passed here (optional).
     logger: console.debug,
