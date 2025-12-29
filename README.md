@@ -177,7 +177,7 @@ export const querierPool = new PgQuerierPool(
     password: 'thePassword',
     database: 'theDatabase',
   },
-  // optionally, a logger can be passed to log the generated SQL queries
+  // optionally: extra configuration.
   {
     // Optional, any custom logger function can be passed here (optional).
     logger: console.debug,
