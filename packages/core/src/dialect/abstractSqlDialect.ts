@@ -2,9 +2,11 @@ import { getMeta } from '../entity/index.js';
 import {
   type EntityMeta,
   type FieldKey,
+  type FieldOptions,
   type Query,
   type QueryComparisonOptions,
   type QueryConflictPaths,
+  type QueryContext,
   type QueryDialect,
   type QueryOptions,
   type QueryPager,
@@ -22,9 +24,9 @@ import {
   type QueryWhereFieldOperatorMap,
   type QueryWhereMap,
   type QueryWhereOptions,
-  type Scalar,
   type Type,
 } from '../type/index.js';
+
 import {
   buildSortMap,
   buldQueryWhereAsMap,
@@ -41,6 +43,8 @@ import {
   raw,
 } from '../util/index.js';
 
+import { SqlQueryContext } from './queryContext.js';
+
 export abstract class AbstractSqlDialect implements QueryDialect {
   readonly escapeIdRegex: RegExp;
 
@@ -53,14 +57,13 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     this.escapeIdRegex = RegExp(escapeIdChar, 'g');
   }
 
-  addValue(values: unknown[], value: unknown, include = true): string {
-    if (values) {
-      if (include) {
-        values.push(value ?? null);
-      }
-      return '?';
-    }
-    return this.escape(value);
+  createContext(): QueryContext {
+    return new SqlQueryContext(this);
+  }
+
+  addValue(values: unknown[], value: unknown): string {
+    values.push(value ?? null);
+    return '?';
   }
 
   returningId<E>(entity: Type<E>): string {
@@ -69,17 +72,16 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  search<E>(entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, values?: unknown[]): string {
+  search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? meta.name : undefined;
     opts = { ...opts, prefix };
-    const where = this.where<E>(entity, q.$where, opts, values);
-    const sort = this.sort<E>(entity, q.$sort, opts);
-    const pager = this.pager(q);
-    return where + sort + pager;
+    this.where<E>(ctx, entity, q.$where, opts);
+    this.sort<E>(ctx, entity, q.$sort, opts);
+    this.pager(ctx, q);
   }
 
-  selectFields<E>(entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions, values?: unknown[]): string {
+  selectFields<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions = {}): void {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix, true, true);
@@ -103,86 +105,123 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       selectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
     }
 
-    return selectArr
-      .map((key) => {
-        if (key instanceof QueryRaw) {
-          return this.getRawValue({
-            value: key,
-            prefix,
-            escapedPrefix,
-            autoPrefixAlias: opts.autoPrefixAlias,
-            values,
-          });
-        }
+    if (!selectArr.length) {
+      ctx.append(escapedPrefix + '*');
+      return;
+    }
 
+    selectArr.forEach((key, index) => {
+      if (index > 0) ctx.append(', ');
+      if (key instanceof QueryRaw) {
+        this.getRawValue(ctx, {
+          value: key,
+          prefix: opts.prefix,
+          escapedPrefix,
+          autoPrefixAlias: opts.autoPrefixAlias,
+        });
+      } else {
         const field = meta.fields[key as FieldKey<E>];
-
         if (field.virtual) {
-          return this.getRawValue({
-            value: raw(field.virtual.value, key),
-            prefix,
+          this.getRawValue(ctx, {
+            value: raw(field.virtual.value, key as string),
+            prefix: opts.prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
-            values,
           });
+        } else {
+          ctx.append(escapedPrefix + this.escapeId(field.name));
         }
-
-        const fieldPath = `${escapedPrefix}${this.escapeId(field.name)}`;
-
-        return !opts.autoPrefixAlias && field.name === key
-          ? fieldPath
-          : `${fieldPath} ${this.escapeId((prefix + key) as FieldKey<E>, true)}`;
-      })
-      .join(', ');
+        if (!field.virtual && (field.name !== key || opts.autoPrefixAlias)) {
+          const aliasStr = (prefix + key) as string;
+          // Replace dots with underscores for alias to avoid syntax errors
+          const safeAlias = aliasStr.replace(/\./g, '_');
+          ctx.append(' ' + this.escapeId(safeAlias, true));
+        }
+      }
+    });
   }
 
-  selectRelations<E>(
+  select<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}): void {
+    const meta = getMeta(entity);
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? meta.name : undefined;
+
+    ctx.append('SELECT ');
+    this.selectFields(ctx, entity, select, { prefix });
+    // Add related fields BEFORE FROM clause
+    this.selectRelationFields(ctx, entity, select, { prefix });
+    ctx.append(` FROM ${this.escapeId(meta.name)}`);
+    // Add JOINs AFTER FROM clause
+    this.selectRelationJoins(ctx, entity, select, { prefix });
+  }
+
+  protected selectRelationFields<E>(
+    ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E> = {},
-    { prefix }: { prefix?: string } = {},
-    values?: unknown[],
-  ): { fields: string; tables: string } {
+    select: QuerySelect<E>,
+    opts: { prefix?: string } = {},
+  ): void {
+    if (Array.isArray(select)) {
+      return;
+    }
+
     const meta = getMeta(entity);
     const relKeys = filterRelationKeys(meta, select);
     const isSelectArray = Array.isArray(select);
-    let fields = '';
-    let tables = '';
+    const prefix = opts.prefix;
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
-        // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
 
-      const joinRelAlias = prefix ? prefix + '.' + relKey : relKey;
+      const isFirstLevel = prefix === meta.name;
+      const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
       const relEntity = relOpts.entity();
       const relSelect = select[relKey as string];
       const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
-      const relColumns = this.selectFields(
-        relEntity,
-        relQuery.$select,
-        {
-          prefix: joinRelAlias,
-          autoPrefixAlias: true,
-        },
-        values,
-      );
+      ctx.append(', ');
+      this.selectFields(ctx, relEntity, relQuery.$select, {
+        prefix: joinRelAlias,
+        autoPrefixAlias: true,
+      });
 
-      fields += ', ' + relColumns;
+      // Recursively add nested relation fields
+      this.selectRelationFields(ctx, relEntity, relQuery.$select, {
+        prefix: joinRelAlias,
+      });
+    }
+  }
 
-      const { fields: subColumns, tables: subTables } = this.selectRelations(
-        relEntity,
-        relQuery.$select,
-        {
-          prefix: joinRelAlias,
-        },
-        values,
-      );
+  protected selectRelationJoins<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    select: QuerySelect<E>,
+    opts: { prefix?: string } = {},
+  ): void {
+    if (Array.isArray(select)) {
+      return;
+    }
 
-      fields += subColumns;
+    const meta = getMeta(entity);
+    const relKeys = filterRelationKeys(meta, select);
+    const isSelectArray = Array.isArray(select);
+    const prefix = opts.prefix;
+
+    for (const relKey of relKeys) {
+      const relOpts = meta.relations[relKey];
+
+      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+        continue;
+      }
+
+      const isFirstLevel = prefix === meta.name;
+      const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
+      const relEntity = relOpts.entity();
+      const relSelect = select[relKey as string];
+      const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
 
       const relMeta = getMeta(relEntity);
       const relEntityName = this.escapeId(relMeta.name);
@@ -190,33 +229,26 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       const joinType = relQuery.$required ? 'INNER' : 'LEFT';
       const joinAlias = this.escapeId(joinRelAlias, true);
 
-      tables += ` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `;
-      tables += relOpts.references
-        .map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`)
-        .join(' AND ');
+      ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
+      ctx.append(
+        relOpts.references
+          .map((it) => `${joinAlias}.${this.escapeId(it.foreign)} = ${relPath}.${this.escapeId(it.local)}`)
+          .join(' AND '),
+      );
 
       if (relQuery.$where) {
-        const where = this.where(relEntity, relQuery.$where, { prefix: relKey, clause: false }, values);
-        tables += ` AND ${where}`;
+        ctx.append(' AND ');
+        this.where(ctx, relEntity, relQuery.$where, { prefix: joinRelAlias, clause: false });
       }
 
-      tables += subTables;
+      // Recursively add nested relation JOINs
+      this.selectRelationJoins(ctx, relEntity, relQuery.$select, {
+        prefix: joinRelAlias,
+      });
     }
-
-    return { fields, tables };
   }
 
-  select<E>(entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}, values?: unknown[]): string {
-    const meta = getMeta(entity);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? meta.name : undefined;
-
-    const fields = this.selectFields(entity, select, { prefix }, values);
-    const { fields: relationFields, tables } = this.selectRelations(entity, select, undefined, values);
-
-    return `SELECT ${fields}${relationFields} FROM ${this.escapeId(meta.name)}${tables}`;
-  }
-
-  where<E>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}, values?: unknown[]): string {
+  where<E>(ctx: QueryContext, entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
@@ -229,50 +261,65 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     const entries = Object.entries(where);
 
     if (!entries.length) {
-      return '';
+      return;
     }
 
-    const options = { ...opts, usePrecedence: entries.length > 1 };
-
-    let sql = entries
-      .map(([key, val]) => this.compare(entity, key as keyof QueryWhereMap<E>, val as any, options, values))
-      .join(` AND `);
+    if (clause) {
+      ctx.append(` ${clause} `);
+    }
 
     if (usePrecedence) {
-      sql = `(${sql})`;
+      ctx.append('(');
     }
 
-    return clause ? ` ${clause} ${sql}` : sql;
+    entries.forEach(([key, val], index) => {
+      if (index > 0) {
+        ctx.append(' AND ');
+      }
+      this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as any, {
+        ...opts,
+        usePrecedence: entries.length > 1,
+      });
+    });
+
+    if (usePrecedence) {
+      ctx.append(')');
+    }
   }
 
   compare<E, K extends keyof QueryWhereMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: K,
     val: QueryWhereMap<E>[K],
     opts: QueryComparisonOptions = {},
-    values?: unknown[],
-  ): string {
+  ): void {
     const meta = getMeta(entity);
 
     if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
-        const value = val as QueryRaw;
-        const query = this.getRawValue({
-          value,
+        ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
+        this.getRawValue(ctx, {
+          value: val,
           prefix: meta.name,
           escapedPrefix: this.escapeId(meta.name, false, true),
-          values,
         });
-        return `${key === '$exists' ? 'EXISTS' : 'NOT EXISTS'} (${query})`;
+        ctx.append(')');
+        return;
       }
-      const comparisonKey = this.getComparisonKey(entity, key as FieldKey<E>, opts, values);
-      return `${String(comparisonKey)} = ${String(val.value)}`;
+      this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
+      ctx.append(' = ');
+      this.getRawValue(ctx, { value: val });
+      return;
     }
 
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field].name));
-      return `MATCH(${fields.join(', ')}) AGAINST(${this.addValue(values, search.$value)})`;
+      ctx.append(`MATCH(${fields.join(', ')}) AGAINST(`);
+      ctx.addValue(search.$value);
+      ctx.append(')');
+      return;
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {
@@ -282,203 +329,331 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       } as const;
 
       const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
-      const negate = key in negateOperatorMap ? 'NOT ' : '';
+      const negate = key in negateOperatorMap ? 'NOT' : '';
 
       const valArr = val as QueryWhereArray<E>;
       const hasManyItems = valArr.length > 1;
-      const logicalComparison = valArr
-        .map((whereEntry) => {
-          if (whereEntry instanceof QueryRaw) {
-            return this.getRawValue({
-              value: whereEntry,
-              prefix: opts.prefix,
-              escapedPrefix: this.escapeId(opts.prefix, true, true),
-              values,
-            });
-          }
-          return this.where(
-            entity,
-            whereEntry,
-            {
-              prefix: opts.prefix,
-              usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
-              clause: false,
-            },
-            values,
-          );
-        })
-        .join(op === '$or' ? ' OR ' : ' AND ');
 
-      return (opts.usePrecedence || negate) && hasManyItems
-        ? `${negate}(${logicalComparison})`
-        : `${negate}${logicalComparison}`;
+      if ((opts.usePrecedence || negate) && hasManyItems) {
+        ctx.append((negate ? negate + ' ' : '') + '(');
+      } else if (negate) {
+        ctx.append(negate + ' ');
+      }
+
+      valArr.forEach((whereEntry, index) => {
+        if (index > 0) {
+          ctx.append(op === '$or' ? ' OR ' : ' AND ');
+        }
+        if (whereEntry instanceof QueryRaw) {
+          this.getRawValue(ctx, {
+            value: whereEntry,
+            prefix: opts.prefix,
+            escapedPrefix: this.escapeId(opts.prefix, true, true),
+          });
+        } else {
+          this.where(ctx, entity, whereEntry, {
+            prefix: opts.prefix,
+            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
+            clause: false,
+          });
+        }
+      });
+
+      if ((opts.usePrecedence || negate) && hasManyItems) {
+        ctx.append(')');
+      }
+      return;
     }
 
     const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
     const operators = getKeys(value) as (keyof QueryWhereFieldOperatorMap<E>)[];
-    const comparisons = operators
-      .map((op) => this.compareFieldOperator(entity, key as FieldKey<E>, op, value[op], opts, values))
-      .join(' AND ');
 
-    return operators.length > 1 ? `(${comparisons})` : comparisons;
+    if (operators.length > 1) {
+      ctx.append('(');
+    }
+
+    operators.forEach((op, index) => {
+      if (index > 0) {
+        ctx.append(' AND ');
+      }
+      this.compareFieldOperator(ctx, entity, key as FieldKey<E>, op, value[op], opts);
+    });
+
+    if (operators.length > 1) {
+      ctx.append(')');
+    }
   }
 
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: FieldKey<E>,
     op: K,
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
-    values?: unknown[],
-  ): string {
-    const comparisonKey = this.getComparisonKey(entity, key, opts, values);
+  ): void {
     switch (op) {
       case '$eq':
-        return val === null
-          ? `${String(comparisonKey)} IS NULL`
-          : `${String(comparisonKey)} = ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        if (val === null) {
+          ctx.append(' IS NULL');
+        } else {
+          ctx.append(' = ');
+          ctx.addValue(val);
+        }
+        break;
       case '$ne':
-        return val === null
-          ? `${String(comparisonKey)} IS NOT NULL`
-          : `${String(comparisonKey)} <> ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        if (val === null) {
+          ctx.append(' IS NOT NULL');
+        } else {
+          ctx.append(' <> ');
+          ctx.addValue(val);
+        }
+        break;
       case '$not':
-        return this.compare(entity, '$not', [{ [key]: val }] as any, opts, values);
+        ctx.append('NOT (');
+        this.compare(ctx, entity, key as any, val as any, opts);
+        ctx.append(')');
+        break;
       case '$gt':
-        return `${String(comparisonKey)} > ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' > ');
+        ctx.addValue(val);
+        break;
       case '$gte':
-        return `${String(comparisonKey)} >= ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' >= ');
+        ctx.addValue(val);
+        break;
       case '$lt':
-        return `${String(comparisonKey)} < ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' < ');
+        ctx.addValue(val);
+        break;
       case '$lte':
-        return `${String(comparisonKey)} <= ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' <= ');
+        ctx.addValue(val);
+        break;
       case '$startsWith':
-        return `${String(comparisonKey)} LIKE ${this.addValue(values, `${val}%`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`${val}%`);
+        break;
       case '$istartsWith':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, (val as string).toLowerCase() + '%')}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`${(val as string).toLowerCase()}%`);
+        break;
       case '$endsWith':
-        return `${String(comparisonKey)} LIKE ${this.addValue(values, `%${val}`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`%${val}`);
+        break;
       case '$iendsWith':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, '%' + (val as string).toLowerCase())}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`%${(val as string).toLowerCase()}`);
+        break;
       case '$includes':
-        return `${String(comparisonKey)} LIKE ${this.addValue(values, `%${val}%`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`%${val}%`);
+        break;
       case '$iincludes':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, '%' + (val as string).toLowerCase() + '%')}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(`%${(val as string).toLowerCase()}%`);
+        break;
       case '$ilike':
-        return `LOWER(${String(comparisonKey)}) LIKE ${this.addValue(values, (val as string).toLowerCase())}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue((val as string).toLowerCase());
+        break;
       case '$like':
-        return `${String(comparisonKey)} LIKE ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' LIKE ');
+        ctx.addValue(val);
+        break;
       case '$in':
-        return `${String(comparisonKey)} IN (${this.addValue(values, val)})`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        if (Array.isArray(val) && val.length > 0) {
+          ctx.append(' IN (');
+          this.addValues(ctx, val as any[]);
+          ctx.append(')');
+        } else {
+          ctx.append(' IN (NULL)');
+        }
+        break;
       case '$nin':
-        return `${String(comparisonKey)} NOT IN (${this.addValue(values, val)})`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        if (Array.isArray(val) && val.length > 0) {
+          ctx.append(' NOT IN (');
+          this.addValues(ctx, val as any[]);
+          ctx.append(')');
+        } else {
+          ctx.append(' NOT IN (NULL)');
+        }
+        break;
       case '$regex':
-        return `${String(comparisonKey)} REGEXP ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' REGEXP ');
+        ctx.addValue(val);
+        break;
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
   }
 
-  getComparisonKey<E>(entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}, values?: unknown[]): Scalar {
+  protected addValues(ctx: QueryContext, vals: unknown[]): void {
+    vals.forEach((val, index) => {
+      if (index > 0) {
+        ctx.append(', ');
+      }
+      ctx.addValue(val);
+    });
+  }
+
+  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const escapedPrefix = this.escapeId(prefix, true, true);
     const field = meta.fields[key];
 
     if (field?.virtual) {
-      return this.getRawValue({
+      this.getRawValue(ctx, {
         value: field.virtual,
         prefix,
         escapedPrefix,
-        values,
       });
+      return;
     }
 
-    return escapedPrefix + this.escapeId(field?.name ?? key);
+    ctx.append(escapedPrefix + this.escapeId(field?.name ?? (key as string)));
   }
 
-  sort<E>(entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): string {
+  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): void {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
-      return '';
+      return;
     }
     const meta = getMeta(entity);
     const flattenedSort = flatObject(sortMap, prefix);
     const directionMap = { 1: '', asc: '', '-1': ' DESC', desc: ' DESC' } as const;
-    const order = Object.entries(flattenedSort)
-      .map(([key, sort]) => {
-        const name = meta.fields[key]?.name ?? key;
-        const direction = directionMap[sort as QuerySortDirection];
-        return this.escapeId(name) + direction;
-      })
-      .join(', ');
-    return ` ORDER BY ${order}`;
+
+    ctx.append(' ORDER BY ');
+
+    Object.entries(flattenedSort).forEach(([key, sort], index) => {
+      if (index > 0) {
+        ctx.append(', ');
+      }
+      const name = meta.fields[key]?.name ?? key;
+      const direction = directionMap[sort as QuerySortDirection];
+      ctx.append(this.escapeId(name) + direction);
+    });
   }
 
-  pager(opts: QueryPager): string {
-    let sql = '';
+  pager(ctx: QueryContext, opts: QueryPager): void {
     if (opts.$limit) {
-      sql += ` LIMIT ${Number(opts.$limit)}`;
+      ctx.append(` LIMIT ${Number(opts.$limit)}`);
     }
     if (opts.$skip !== undefined) {
-      sql += ` OFFSET ${Number(opts.$skip)}`;
+      ctx.append(` OFFSET ${Number(opts.$skip)}`);
     }
-    return sql;
   }
 
-  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions, values?: unknown[]): string {
-    const search: Query<E> = {
-      ...q,
-    };
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void {
+    const search: Query<E> = { ...q };
     delete search.$sort;
-    const select = this.select<E>(entity, [raw('COUNT(*)', 'count')], undefined, values);
-    const criteria = this.search(entity, search, opts, values);
-    return select + criteria;
+    this.select<E>(ctx, entity, [raw('COUNT(*)', 'count')], undefined);
+    this.search(ctx, entity, search, opts);
   }
 
-  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions, values?: unknown[]): string {
-    const select = this.select(entity, q.$select, opts, values);
-    const criteria = this.search(entity, q, opts, values);
-    return select + criteria;
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
+    this.select(ctx, entity, q.$select, opts);
+    this.search(ctx, entity, q, opts);
   }
 
-  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions, values?: unknown[]): string {
+  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
     const meta = getMeta(entity);
-    const records = this.getPersistables(meta, payload, 'onInsert', values);
-    const keys = getKeys(records[0]);
+    const payloads = fillOnFields(meta, payload, 'onInsert');
+    const keys = filterFieldKeys(meta, payloads[0], 'onInsert');
+
     const columns = keys.map((key) => this.escapeId(meta.fields[key].name));
-    const val = records.map((record) => keys.map((key) => record[key]).join(', ')).join('), (');
-    return `INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (${val})`;
+    ctx.append(`INSERT INTO ${this.escapeId(meta.name)} (${columns.join(', ')}) VALUES (`);
+
+    payloads.forEach((it, recordIndex) => {
+      if (recordIndex > 0) {
+        ctx.append('), (');
+      }
+      keys.forEach((key, keyIndex) => {
+        if (keyIndex > 0) {
+          ctx.append(', ');
+        }
+        const field = meta.fields[key];
+        this.formatPersistableValue(ctx, field, it[key]);
+      });
+    });
+    ctx.append(')');
   }
 
-  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions, values?: unknown[]): string {
+  update<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): void {
     const meta = getMeta(entity);
-    const record = this.getPersistable(meta, payload, 'onUpdate', values);
-    const keys = getKeys(record);
-    const entries = keys.map((key) => `${this.escapeId(meta.fields[key].name)} = ${record[key]}`).join(', ');
-    const criteria = this.search(entity, q, opts, values);
-    return `UPDATE ${this.escapeId(meta.name)} SET ${entries}${criteria}`;
+    const [filledPayload] = fillOnFields(meta, payload, 'onUpdate');
+    const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
+
+    ctx.append(`UPDATE ${this.escapeId(meta.name)} SET `);
+    keys.forEach((key, index) => {
+      if (index > 0) {
+        ctx.append(', ');
+      }
+      const field = meta.fields[key];
+      ctx.append(`${this.escapeId(field.name)} = `);
+      this.formatPersistableValue(ctx, field, filledPayload[key]);
+    });
+
+    this.search(ctx, entity, q, opts);
   }
 
-  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E, values?: unknown[]): string {
-    const insert = this.insert(entity, payload, undefined, values);
+  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `VALUES(${name})`, values);
-    return update ? `${insert} ON DUPLICATE KEY UPDATE ${update}` : insert.replace(/^INSERT/, 'INSERT IGNORE');
+    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `VALUES(${name})`);
+
+    if (update) {
+      this.insert(ctx, entity, payload);
+      ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
+    } else {
+      const insertCtx = this.createContext();
+      this.insert(insertCtx, entity, payload);
+      ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
+      insertCtx.values.forEach((val) => {
+        ctx.pushValue(val);
+      });
+    }
   }
 
   protected getUpsertUpdateAssignments<E>(
+    ctx: QueryContext,
     meta: EntityMeta<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E,
-    callback: (columnName: string) => string,
-    values?: unknown[],
+    callback?: (columnName: string) => string,
   ): string {
-    fillOnFields(meta, payload, 'onUpdate');
-    const fields = filterFieldKeys(meta, payload, 'onUpdate');
+    const [filledPayload] = fillOnFields(meta, payload, 'onUpdate');
+    const fields = filterFieldKeys(meta, filledPayload, 'onUpdate');
     return fields
       .filter((col) => !conflictPaths[col])
       .map((col) => {
-        const columnName = this.escapeId(meta.fields[col].name);
-        return `${columnName} = ${callback(columnName)}`;
+        const field = meta.fields[col];
+        if (callback) {
+          return `${this.escapeId(field.name)} = ${callback(this.escapeId(field.name))}`;
+        }
+        const valCtx = this.createContext();
+        this.formatPersistableValue(valCtx, field, filledPayload[col]);
+        valCtx.values.forEach((val) => {
+          ctx.pushValue(val);
+        });
+        return `${this.escapeId(field.name)} = ${valCtx.sql}`;
       })
       .join(', ');
   }
@@ -489,24 +664,24 @@ export abstract class AbstractSqlDialect implements QueryDialect {
       .join(', ');
   }
 
-  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}, values?: unknown[]): string {
+  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
 
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
         const value = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
-        const setClause = `${this.escapeId(meta.softDelete)} = ${this.addValue(values, value)}`;
-        const criteria = this.search(entity, q, opts, values);
-        return `UPDATE ${this.escapeId(meta.name)} SET ${setClause}${criteria}`;
+        ctx.append(`UPDATE ${this.escapeId(meta.name)} SET ${this.escapeId(String(meta.softDelete))} = `);
+        ctx.addValue(value);
+        this.search(ctx, entity, q, opts);
+        return;
       }
       if (opts.softDelete) {
         throw TypeError(`'${meta.name}' has not enabled 'softDelete'`);
       }
     }
 
-    const criteria = this.search(entity, q, opts, values);
-
-    return `DELETE FROM ${this.escapeId(meta.name)}${criteria}`;
+    ctx.append(`DELETE FROM ${this.escapeId(meta.name)}`);
+    this.search(ctx, entity, q, opts);
   }
 
   escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {
@@ -515,10 +690,11 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     }
 
     if (!forbidQualified && val.includes('.')) {
-      return val
+      const result = val
         .split('.')
         .map((it) => this.escapeId(it))
         .join('.');
+      return addDot ? result + '.' : result;
     }
 
     // sourced from 'escapeId' function here https://github.com/mysqljs/sqlstring/blob/master/lib/SqlString.js
@@ -530,50 +706,79 @@ export abstract class AbstractSqlDialect implements QueryDialect {
     return escaped + suffix;
   }
 
-  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey, values?: unknown[]): E {
-    return this.getPersistables(meta, payload, callbackKey, values)[0];
+  protected getPersistables<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    payload: E | E[],
+    callbackKey: CallbackKey,
+  ): Record<string, unknown>[] {
+    const payloads = fillOnFields(meta, payload, callbackKey);
+    return payloads.map((it) => this.getPersistable(ctx, meta, it, callbackKey));
   }
 
-  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey, values?: unknown[]): E[] {
-    const payloads = fillOnFields(meta, payload, callbackKey);
-    const fieldKeys = filterFieldKeys(meta, payloads[0], callbackKey);
-    return payloads.map((it) =>
-      fieldKeys.reduce((acc, key) => {
-        const { type } = meta.fields[key];
-        let value = it[key];
-        if (value instanceof QueryRaw) {
-          value = this.getRawValue({ value, values }) as E[FieldKey<E>];
-        } else {
-          value = this.formatPersistableValue(value, type, values) as E[FieldKey<E>];
-        }
-        acc[key] = value;
+  protected getPersistable<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    payload: E,
+    callbackKey: CallbackKey,
+  ): Record<string, unknown> {
+    const filledPayload = fillOnFields(meta, payload, callbackKey)[0];
+    const keys = filterFieldKeys(meta, filledPayload, callbackKey);
+    return keys.reduce(
+      (acc, key) => {
+        const field = meta.fields[key];
+        const valCtx = this.createContext();
+        this.formatPersistableValue(valCtx, field, filledPayload[key]);
+        valCtx.values.forEach((val) => {
+          ctx.pushValue(val);
+        });
+        acc[key as string] = valCtx.sql;
         return acc;
-      }, {} as E),
+      },
+      {} as Record<string, unknown>,
     );
   }
 
-  protected formatPersistableValue(value: any, type: string, values?: unknown[]): string {
-    if (type === 'json' || type === 'jsonb') {
-      return this.addValue(values, JSON.stringify(value));
+  protected formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {
+    if (value instanceof QueryRaw) {
+      this.getRawValue(ctx, { value });
+      return;
     }
-    if (type === 'vector') {
-      const vector = (value as number[]).map((num) => +num).join(',');
-      return `'[${vector}]'`;
+    if (field?.type === 'json' || field?.type === 'jsonb') {
+      ctx.addValue(value ? JSON.stringify(value) : null);
+      return;
     }
-    return this.addValue(values, value);
+    if (field?.type === 'vector' && Array.isArray(value)) {
+      ctx.addValue(`[${value.join(',')}]`);
+      return;
+    }
+    ctx.addValue(value);
   }
 
-  getRawValue(opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
-    const { value, prefix = '', autoPrefixAlias } = opts;
-    const val =
-      typeof value.value === 'function' ? value.value({ ...opts, dialect: this }) : prefix + String(value.value);
+  getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
+    const { value, prefix = '', escapedPrefix, autoPrefixAlias } = opts;
+    if (typeof value.value === 'function') {
+      const res = value.value({
+        ...opts,
+        ctx,
+        dialect: this,
+        prefix,
+        escapedPrefix: escapedPrefix ?? this.escapeId(prefix, true, true),
+      });
+      if (typeof res === 'string' || (typeof res === 'number' && !Number.isNaN(res))) {
+        ctx.append(String(res));
+      }
+    } else {
+      ctx.append(prefix + String(value.value));
+    }
     const alias = value.alias;
     if (alias) {
       const fullAlias = autoPrefixAlias ? prefix + alias : alias;
-      const escapedFullAlias = this.escapeId(fullAlias, true);
-      return `${val} ${escapedFullAlias}`;
+      // Replace dots with underscores for alias to avoid syntax errors
+      const safeAlias = fullAlias.replace(/\./g, '_');
+      const escapedFullAlias = this.escapeId(safeAlias, true);
+      ctx.append(' ' + escapedFullAlias);
     }
-    return val;
   }
 
   abstract escape(value: unknown): string;

@@ -10,12 +10,18 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { FieldKey } from '../type/index.js';
+import type { FieldKey, QueryContext } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}
+
+  protected exec(fn: (ctx: QueryContext) => void): { sql: string; values: unknown[] } {
+    const ctx = this.dialect.createContext();
+    fn(ctx);
+    return { sql: ctx.sql, values: ctx.values };
+  }
 
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('`');
@@ -26,8 +32,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldInsertMany() {
-    expect(
-      this.dialect.insert(User, [
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
         {
           name: 'Some name 1',
           email: 'someemail1@example.com',
@@ -44,45 +50,60 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           createdAt: 789,
         },
       ]),
-    ).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES' +
-        " ('Some name 1', 'someemail1@example.com', 123)" +
-        ", ('Some name 2', 'someemail2@example.com', 456)" +
-        ", ('Some name 3', 'someemail3@example.com', 789)",
     );
+    expect(sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)');
+    expect(values).toEqual([
+      'Some name 1',
+      'someemail1@example.com',
+      123,
+      'Some name 2',
+      'someemail2@example.com',
+      456,
+      'Some name 3',
+      'someemail3@example.com',
+      789,
+    ]);
   }
 
   shouldInsertOne() {
-    expect(
-      this.dialect.insert(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
       }),
-    ).toBe("INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123)");
+    );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)');
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
-    expect(
-      this.dialect.insert(InventoryAdjustment, {
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, InventoryAdjustment, {
         date: new Date(2021, 11, 31, 23, 59, 59, 999),
         createdAt: 123,
       }),
-    ).toMatch(
-      /INSERT INTO `InventoryAdjustment` \(`date`, `createdAt`\) VALUES \((?:'2021-12-31 23:59:59.999'|1641013199999), 123\)/,
     );
+    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)');
+    expect(res.values[0]).toBeInstanceOf(Date);
+    expect(res.values[1]).toBe(123);
   }
 
   shouldInsertWithOnInsertId() {
-    expect(
-      this.dialect.insert(TaxCategory, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),
-    ).toMatch(/^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name', 123, '.+'\)$/);
+    );
+    expect(sql).toMatch(/^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\)$/);
+    expect(values[0]).toBe('Some Name');
+    expect(values[1]).toBe(123);
+    expect(values[2]).toMatch(/.+/);
   }
 
   shouldUpdateWithRawString() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Company,
         { $where: { id: 1 } },
         {
@@ -90,12 +111,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 123,
         },
       ),
-    ).toBe("UPDATE `Company` SET `kind` = 'value', `updatedAt` = 123 WHERE `id` = 1");
+    );
+    expect(sql).toBe("UPDATE `Company` SET `kind` = 'value', `updatedAt` = ? WHERE `id` = ?");
+    expect(values).toEqual([123, 1]);
   }
 
   shouldUpdateWithJsonbField() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Company,
         { $where: { id: 1 } },
         {
@@ -103,12 +127,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE `Company` SET `kind` = \'{\\"private\\":1}\', `updatedAt` = 123 WHERE `id` = 1');
+    );
+    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
+    expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
   shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
-    expect(
-      this.dialect.insert(TaxCategory, [
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, [
         {
           name: 'Some Name A',
         },
@@ -124,14 +150,20 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           name: 'Some Name D',
         },
       ]),
-    ).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name A', \d+, '.+'\), \('Some Name B', \d+, '50'\), \('Some Name C', \d+, '.+'\), \('Some Name D', \d+, '70'\)$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\)$/,
+    );
+    expect(values[0]).toBe('Some Name A');
+    expect(values[2]).toMatch(/.+/);
+    expect(values[3]).toBe('Some Name B');
+    expect(values[5]).toBe('50');
   }
 
   shouldUpsert() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { email: true },
         {
@@ -140,14 +172,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           createdAt: 123,
         },
       ),
-    ).toMatch(
-      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(.*'Some Name'.*'someemail@example\.com'.*123.*\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = VALUES\(`updatedAt`\).*$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = VALUES\(`updatedAt`\).*$/,
+    );
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }
 
   shouldUpdate() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         User,
         { $where: { name: 'some', creatorId: 123 } },
         {
@@ -156,12 +191,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 321,
         },
       ),
-    ).toBe("UPDATE `User` SET `name` = 'Some Text', `updatedAt` = 321 WHERE `name` = 'some' AND `creatorId` = 123");
+    );
+    expect(sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `name` = ? AND `creatorId` = ?');
+    expect(values).toEqual(['Some Text', 321, 'some', 123]);
   }
 
   shouldUpdateWithAlias() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Profile,
         { $where: { pk: 123 } },
         {
@@ -169,35 +207,45 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 321,
         },
       ),
-    ).toBe("UPDATE `user_profile` SET `image` = 'a base64 image', `updatedAt` = 321 WHERE `pk` = 123");
+    );
+    expect(sql).toBe('UPDATE `user_profile` SET `image` = ?, `updatedAt` = ? WHERE `pk` = ?');
+    expect(values).toEqual(['a base64 image', 321, 123]);
   }
 
   shouldFind() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { id: 123, name: { $ne: 'abc' } },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` <> 'abc'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` <> ?');
+    expect(res.values).toEqual([123, 'abc']);
 
-    expect(
-      this.dialect.find(Profile, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Profile, {
         $select: ['pk', 'picture', 'companyId'],
         $where: { pk: 123, picture: 'abc' },
       }),
-    ).toBe("SELECT `pk`, `image` `picture`, `companyId` FROM `user_profile` WHERE `pk` = 123 AND `image` = 'abc'");
+    );
+    expect(res.sql).toBe(
+      'SELECT `pk`, `image` `picture`, `companyId` FROM `user_profile` WHERE `pk` = ? AND `image` = ?',
+    );
+    expect(res.values).toEqual([123, 'abc']);
 
-    expect(
-      this.dialect.find(MeasureUnit, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnit, {
         $select: ['id'],
         $where: { id: 123, name: 'abc' },
       }),
-    ).toBe("SELECT `id` FROM `MeasureUnit` WHERE `id` = 123 AND `name` = 'abc' AND `deletedAt` IS NULL");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `MeasureUnit` WHERE `id` = ? AND `name` = ? AND `deletedAt` IS NULL');
+    expect(res.values).toEqual([123, 'abc']);
   }
 
   shouldBeSecure() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id', 'something' as FieldKey<User>],
         $where: {
           id: 1,
@@ -208,18 +256,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           something: 1,
         } as any,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `id` = 1 AND `something` = 1 ORDER BY `id`, `something`');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
+    expect(res.values).toEqual([1, 1]);
 
-    expect(
-      this.dialect.insert(User, {
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         something: 'anything',
         createdAt: 1,
       } as any),
-    ).toBe("INSERT INTO `User` (`name`, `createdAt`) VALUES ('Some Name', 1)");
+    );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?)');
+    expect(res.values).toEqual(['Some Name', 1]);
 
-    expect(
+    res = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         User,
         {
           $where: { something: 'anything' },
@@ -230,156 +283,194 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           updatedAt: 1,
         } as any,
       ),
-    ).toBe("UPDATE `User` SET `name` = 'Some Name', `updatedAt` = 1 WHERE `something` = 'anything'");
+    );
+    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
+    expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
-    expect(
-      this.dialect.delete(User, {
+    res = this.exec((ctx) =>
+      this.dialect.delete(ctx, User, {
         $where: { something: 'anything' } as any,
       }),
-    ).toBe("DELETE FROM `User` WHERE `something` = 'anything'");
+    );
+    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
+    expect(res.values).toEqual(['anything']);
   }
 
   shouldFind$and() {
-    const sql = "SELECT `id` FROM `User` WHERE `id` = 123 AND `name` = 'abc'";
-
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $and: [{ id: 123, name: 'abc' }] },
       }),
-    ).toBe(sql);
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` = ?');
+    expect(res.values).toEqual([123, 'abc']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: { $and: [{ id: 123 }], name: 'abc' },
       }),
-    ).toBe(sql);
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` = ?');
+    expect(res.values).toEqual([123, 'abc']);
   }
 
   shouldFind$or() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $or: [{ id: 123 }, { name: 'abc' }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 OR `name` = 'abc'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? OR `name` = ?');
+    expect(res.values).toEqual([123, 'abc']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $or: [{ id: 123 }] },
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `id` = 123');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ?');
+    expect(res.values).toEqual([123]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: { $or: [{ id: 123, name: 'abc' }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` = ?');
+    expect(res.values).toEqual([123, 'abc']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $or: [{ id: 123 }], name: 'abc' },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `id` = 123 AND `name` = 'abc'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` = ?');
+    expect(res.values).toEqual([123, 'abc']);
   }
 
   shouldFind$not() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $not: [{ name: 'Some' }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT `name` = 'Some'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT `name` = ?');
+    expect(res.values).toEqual(['Some']);
 
-    expect(
-      this.dialect.find(Company, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
         $select: ['id'],
         $where: { id: { $not: 123 } },
       }),
-    ).toBe('SELECT `id` FROM `Company` WHERE NOT `id` = 123');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` = ?)');
+    expect(res.values).toEqual([123]);
 
-    expect(
-      this.dialect.find(Company, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
         $select: ['id'],
         $where: { id: { $not: [123, 456] } },
       }),
-    ).toBe('SELECT `id` FROM `Company` WHERE NOT `id` IN (123, 456)');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` IN (?, ?))');
+    expect(res.values).toEqual([123, 456]);
 
-    expect(
-      this.dialect.find(Company, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
         $select: ['id'],
         $where: { id: 123, name: { $not: { $startsWith: 'a' } } },
       }),
-    ).toBe("SELECT `id` FROM `Company` WHERE `id` = 123 AND NOT `name` LIKE 'a%'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE `id` = ? AND NOT (`name` LIKE ?)');
+    expect(res.values).toEqual([123, 'a%']);
 
-    expect(
-      this.dialect.find(Company, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
         $select: ['id'],
         $where: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
       }),
-    ).toBe("SELECT `id` FROM `Company` WHERE NOT (`name` LIKE 'a%' AND `name` LIKE '%z')");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT ((`name` LIKE ? AND `name` LIKE ?))');
+    expect(res.values).toEqual(['a%', '%z']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT (`name` LIKE 'Some' AND `name` <> 'Something')");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` LIKE ? AND `name` <> ?)');
+    expect(res.values).toEqual(['Some', 'Something']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { $not: [{ name: 'abc' }, { creatorId: 1 }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT (`name` = 'abc' AND `creatorId` = 1)");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` = ? AND `creatorId` = ?)');
+    expect(res.values).toEqual(['abc', 1]);
 
-    expect(
-      this.dialect.find(Tax, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Tax, {
         $select: ['id'],
         $where: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
       }),
-    ).toBe("SELECT `id` FROM `Tax` WHERE `companyId` = 1 AND NOT `name` LIKE 'a%'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Tax` WHERE `companyId` = ? AND NOT (`name` LIKE ?)');
+    expect(res.values).toEqual([1, 'a%']);
   }
 
   shouldFind$nor() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $nor: [{ name: 'Some' }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT `name` = 'Some'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT `name` = ?');
+    expect(res.values).toEqual(['Some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { $nor: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT (`name` LIKE 'Some' AND `name` <> 'Something')");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` LIKE ? AND `name` <> ?)');
+    expect(res.values).toEqual(['Some', 'Something']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { $nor: [{ name: 'abc' }, { creatorId: 1 }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE NOT (`name` = 'abc' OR `creatorId` = 1)");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` = ? OR `creatorId` = ?)');
+    expect(res.values).toEqual(['abc', 1]);
   }
 
   shouldFind$orAnd$and() {
-    expect(
-      this.dialect.find(User, {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { creatorId: 1, $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: 1 },
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE `creatorId` = 1 AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE `creatorId` = ? AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ?',
+    );
+    expect(res.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1]);
 
-    expect(
-      this.dialect.find(User, {
+    const res2 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: {
           creatorId: 1,
@@ -388,13 +479,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           email: 'e',
         },
       }),
-    ).toBe(
-      'SELECT `id` FROM `User` WHERE `creatorId` = 1' +
-        " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com') AND `id` = 1 AND `email` = 'e'",
     );
+    expect(res2.sql).toBe(
+      'SELECT `id` FROM `User` WHERE `creatorId` = ?' +
+        ' AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ? AND `email` = ?',
+    );
+    expect(res2.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1, 'e']);
 
-    expect(
-      this.dialect.find(User, {
+    const res3 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: {
           creatorId: 1,
@@ -406,15 +499,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $skip: 50,
         $limit: 10,
       }),
-    ).toBe(
-      'SELECT `id` FROM `User` WHERE `creatorId` = 1' +
-        " AND (`name` IN ('a', 'b', 'c') OR `email` = 'abc@example.com')" +
-        " AND `id` = 1 AND `email` = 'e'" +
+    );
+    expect(res3.sql).toBe(
+      'SELECT `id` FROM `User` WHERE `creatorId` = ?' +
+        ' AND (`name` IN (?, ?, ?) OR `email` = ?)' +
+        ' AND `id` = ? AND `email` = ?' +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
     );
+    expect(res3.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1, 'e']);
 
-    expect(
-      this.dialect.find(User, {
+    const res4 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: {
           $or: [
@@ -433,131 +528,158 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $skip: 50,
         $limit: 10,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (`creatorId` = 1 AND `id` = 1 AND `email` = 'e')" +
-        " OR (`name` IN ('a', 'b', 'c') AND `email` = 'abc@example.com')" +
+    );
+    expect(res4.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`creatorId` = ? AND `id` = ? AND `email` = ?)' +
+        ' OR (`name` IN (?, ?, ?) AND `email` = ?)' +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
     );
+    expect(res4.values).toEqual([1, 1, 'e', 'a', 'b', 'c', 'abc@example.com']);
   }
 
   shouldFindSingle$where() {
-    expect(
-      this.dialect.find(User, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'some' },
         $limit: 3,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` = 'some' LIMIT 3");
+    );
+    expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? LIMIT 3');
+    expect(values).toEqual(['some']);
   }
 
   shouldFindMultipleComparisonOperators() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { companyId: 1 }] },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE (`name` = 'other' AND `name` <> 'other unwanted') OR `companyId` = 1");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE (`name` = ? AND `name` <> ?) OR `companyId` = ?');
+    expect(res.values).toEqual(['other', 'other unwanted', 1]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { createdAt: { $gte: 123, $lte: 999 } },
         $limit: 10,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE (`createdAt` >= 123 AND `createdAt` <= 999) LIMIT 10');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE (`createdAt` >= ? AND `createdAt` <= ?) LIMIT 10');
+    expect(res.values).toEqual([123, 999]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { createdAt: { $gt: 123, $lt: 999 } },
         $limit: 10,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE (`createdAt` > 123 AND `createdAt` < 999) LIMIT 10');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE (`createdAt` > ? AND `createdAt` < ?) LIMIT 10');
+    expect(res.values).toEqual([123, 999]);
   }
 
   shouldFind$ne() {
-    expect(
-      this.dialect.find(User, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'some', companyId: { $ne: 5 } },
         $limit: 20,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` = 'some' AND `companyId` <> 5 LIMIT 20");
+    );
+    expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` <> ? LIMIT 20');
+    expect(values).toEqual(['some', 5]);
   }
 
   shouldFindIsNull() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { creatorId: 123, companyId: null },
         $limit: 5,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `creatorId` = 123 AND `companyId` IS NULL LIMIT 5');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `creatorId` = ? AND `companyId` IS NULL LIMIT 5');
+    expect(res.values).toEqual([123]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { creatorId: 123, companyId: { $ne: null } },
         $limit: 5,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `creatorId` = 123 AND `companyId` IS NOT NULL LIMIT 5');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `creatorId` = ? AND `companyId` IS NOT NULL LIMIT 5');
+    expect(res.values).toEqual([123]);
   }
 
   shouldFind$in() {
-    const sql = "SELECT `id` FROM `User` WHERE `name` = 'some' AND `companyId` IN (1, 2, 3) LIMIT 10";
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'some', companyId: [1, 2, 3] },
         $limit: 10,
       }),
-    ).toBe(sql);
-    expect(
-      this.dialect.find(User, {
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
+    expect(res.values).toEqual(['some', 1, 2, 3]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'some', companyId: { $in: [1, 2, 3] } },
         $limit: 10,
       }),
-    ).toBe(sql);
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
+    expect(res.values).toEqual(['some', 1, 2, 3]);
   }
 
   shouldFind$nin() {
-    expect(
-      this.dialect.find(User, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'some', companyId: { $nin: [1, 2, 3] } },
         $limit: 10,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` = 'some' AND `companyId` NOT IN (1, 2, 3) LIMIT 10");
+    );
+    expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` NOT IN (?, ?, ?) LIMIT 10');
+    expect(values).toEqual(['some', 1, 2, 3]);
   }
 
   shouldFind$selectFields() {
-    expect(this.dialect.find(User, { $select: { id: true, company: true } })).toBe(
-      'SELECT `User`.`id`, `company`.`id` `company.id`, `company`.`companyId` `company.companyId`, `company`.`creatorId` `company.creatorId`' +
-        ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`' +
-        ', `company`.`name` `company.name`, `company`.`description` `company.description`, `company`.`kind` `company.kind`' +
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true, company: true } }));
+    expect(sql).toBe(
+      'SELECT `User`.`id`, `company`.`id` `company_id`, `company`.`companyId` `company_companyId`, `company`.`creatorId` `company_creatorId`' +
+        ', `company`.`createdAt` `company_createdAt`, `company`.`updatedAt` `company_updatedAt`' +
+        ', `company`.`name` `company_name`, `company`.`description` `company_description`, `company`.`kind` `company_kind`' +
         ' FROM `User` LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`companyId`',
     );
   }
 
   shouldFind$selectOneToOne() {
-    expect(this.dialect.find(User, { $select: { id: true, name: true, profile: ['id', 'picture'] } })).toBe(
-      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture` FROM `User`' +
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true, name: true, profile: ['id', 'picture'] } }),
+    );
+    expect(res.sql).toBe(
+      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture` FROM `User`' +
         ' LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`',
     );
 
-    expect(this.dialect.find(User, { $select: { profile: true } })).toBe(
-      'SELECT `User`.`id`, `profile`.`companyId` `profile.companyId`' +
-        ', `profile`.`creatorId` `profile.creatorId`, `profile`.`createdAt` `profile.createdAt`' +
-        ', `profile`.`updatedAt` `profile.updatedAt`' +
-        ', `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture`' +
+    res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { profile: true } }));
+    expect(res.sql).toBe(
+      'SELECT `User`.`id`, `profile`.`companyId` `profile_companyId`' +
+        ', `profile`.`creatorId` `profile_creatorId`, `profile`.`createdAt` `profile_createdAt`' +
+        ', `profile`.`updatedAt` `profile_updatedAt`' +
+        ', `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture`' +
         ' FROM `User` LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`',
     );
   }
 
   shouldFind$selectManyToOne() {
-    expect(
-      this.dialect.find(Item, {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: true,
           name: true,
@@ -567,10 +689,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 100,
       }),
-    ).toBe(
+    );
+    expect(sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
-        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `tax`.`id` `tax_id`, `tax`.`name` `tax_name`' +
+        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
         ' FROM `Item`' +
         ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
         ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
@@ -579,8 +702,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$selectWithAllFieldsAndSpecificFieldsAndWhere() {
-    expect(
-      this.dialect.find(Item, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: true,
           name: true,
@@ -591,21 +714,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $sort: { tax: { name: 1 }, measureUnit: { name: 1 }, createdAt: -1 },
         $limit: 100,
       }),
-    ).toBe(
+    );
+    expect(sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`' +
-        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
-        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
+        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`' +
+        ', `tax`.`id` `tax_id`, `tax`.`name` `tax_name`' +
         ' FROM `Item`' +
-        " INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> 'unidad' AND `measureUnit`.`deletedAt` IS NULL" +
+        ' INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> ? AND `measureUnit`.`deletedAt` IS NULL' +
         ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
-        " WHERE `Item`.`salePrice` >= 1000 AND LOWER(`Item`.`name`) LIKE 'a%'" +
+        ' WHERE `Item`.`salePrice` >= ? AND `Item`.`name` LIKE ?' +
         ' ORDER BY `tax`.`name`, `measureUnit`.`name`, `Item`.`createdAt` DESC LIMIT 100',
     );
+    expect(values).toEqual(['unidad', 1000, 'a%']);
   }
 
   shouldVirtualField() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: 1,
         },
@@ -613,12 +738,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           tagsCount: { $gte: 10 },
         },
       }),
-    ).toBe(
-      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= 10',
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= ?',
+    );
+    expect(res.values).toEqual([10]);
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: 1,
           name: 1,
@@ -630,11 +757,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 100,
       }),
-    ).toBe(
+    );
+    expect(res.sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
-        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -642,8 +770,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$selectDeep() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: 1,
           name: 1,
@@ -654,18 +782,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 100,
       }),
-    ).toBe(
+    );
+    expect(res.sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', `measureUnit`.`id` `measureUnit.id`' +
-        ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ', `measureUnit`.`id` `measureUnit_id`' +
+        ', `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
     );
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: {
           id: true,
           name: true,
@@ -676,17 +805,18 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 100,
       }),
-    ).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit.id`' +
-        ', `measureUnit`.`name` `measureUnit.name`, `measureUnit.category`.`id` `measureUnit.category.id`' +
-        ', `measureUnit.category`.`name` `measureUnit.category.name`' +
+    );
+    expect(res.sql).toBe(
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit_id`' +
+        ', `measureUnit`.`name` `measureUnit_name`, `measureUnit.category`.`id` `measureUnit_category_id`' +
+        ', `measureUnit.category`.`name` `measureUnit_category_name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
     );
 
-    expect(
-      this.dialect.find(ItemAdjustment, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, ItemAdjustment, {
         $select: {
           id: true,
           buyPrice: true,
@@ -704,11 +834,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 100,
       }),
-    ).toBe(
+    );
+    expect(res.sql).toBe(
       'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`buyPrice`, `ItemAdjustment`.`number`' +
-        ', `item`.`id` `item.id`, `item`.`name` `item.name`' +
-        ', `item.measureUnit`.`id` `item.measureUnit.id`, `item.measureUnit`.`name` `item.measureUnit.name`' +
-        ', `item.measureUnit.category`.`id` `item.measureUnit.category.id`, `item.measureUnit.category`.`name` `item.measureUnit.category.name`' +
+        ', `item`.`id` `item_id`, `item`.`name` `item_name`' +
+        ', `item.measureUnit`.`id` `item_measureUnit_id`, `item.measureUnit`.`name` `item_measureUnit_name`' +
+        ', `item.measureUnit.category`.`id` `item_measureUnit_category_id`, `item.measureUnit.category`.`name` `item_measureUnit_category_name`' +
         ' FROM `ItemAdjustment`' +
         ' INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId`' +
         ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnitId`' +
@@ -718,163 +849,196 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$limit() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: 9,
         $limit: 1,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `id` = 9 LIMIT 1');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? LIMIT 1');
+    expect(res.values).toEqual([9]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1, name: 1, creatorId: 1 },
         $where: 9,
         $limit: 1,
       }),
-    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` WHERE `id` = 9 LIMIT 1');
+    );
+    expect(res.sql).toBe('SELECT `id`, `name`, `creatorId` FROM `User` WHERE `id` = ? LIMIT 1');
+    expect(res.values).toEqual([9]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: 'something', creatorId: 123 },
         $limit: 1,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` = 'something' AND `creatorId` = 123 LIMIT 1");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `creatorId` = ? LIMIT 1');
+    expect(res.values).toEqual(['something', 123]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id', 'name', 'creatorId'],
         $limit: 25,
       }),
-    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` LIMIT 25');
+    );
+    expect(res.sql).toBe('SELECT `id`, `name`, `creatorId` FROM `User` LIMIT 25');
   }
 
   shouldFind$skip() {
-    expect(
-      this.dialect.find(User, {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1, name: 1, creatorId: 1 },
         $skip: 30,
       }),
-    ).toBe('SELECT `id`, `name`, `creatorId` FROM `User` OFFSET 30');
+    );
+    expect(res.sql).toBe('SELECT `id`, `name`, `creatorId` FROM `User` OFFSET 30');
   }
 
   shouldFind$select() {
-    expect(this.dialect.find(User, { $select: { password: false } })).toBe(
+    let res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { password: false } }));
+    expect(res.sql).toBe(
       'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `name`, `email` FROM `User`',
     );
 
-    expect(this.dialect.find(User, { $select: { name: 0, password: 0 } })).toBe(
-      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `email` FROM `User`',
-    );
+    res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { name: 0, password: 0 } }));
+    expect(res.sql).toBe('SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `email` FROM `User`');
 
-    expect(this.dialect.find(User, { $select: { id: 1, name: 1, password: 0 } })).toBe(
-      'SELECT `id`, `name` FROM `User`',
-    );
+    res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: 1, name: 1, password: 0 } }));
+    expect(res.sql).toBe('SELECT `id`, `name` FROM `User`');
 
-    expect(this.dialect.find(User, { $select: { id: 1, name: 0, password: 0 } })).toBe('SELECT `id` FROM `User`');
+    res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: 1, name: 0, password: 0 } }));
+    expect(res.sql).toBe('SELECT `id` FROM `User`');
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
-    ).toBe(
-      "SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = 'something'",
     );
+    expect(res.sql).toBe(
+      'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = ?',
+    );
+    expect(res.values).toEqual(['something']);
   }
 
   shouldDelete() {
-    expect(this.dialect.delete(User, { $where: 123 })).toBe('DELETE FROM `User` WHERE `id` = 123');
-    expect(() => this.dialect.delete(User, { $where: 123 }, { softDelete: true })).toThrow(
+    let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }));
+    expect(res.sql).toBe('DELETE FROM `User` WHERE `id` = ?');
+    expect(res.values).toEqual([123]);
+
+    expect(() => this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { softDelete: true }))).toThrow(
       "'User' has not enabled 'softDelete'",
     );
-    expect(this.dialect.delete(User, { $where: 123 }, { softDelete: false })).toBe(
-      'DELETE FROM `User` WHERE `id` = 123',
-    );
-    expect(this.dialect.delete(MeasureUnit, { $where: 123 })).toMatch(
-      /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/,
-    );
-    expect(this.dialect.delete(MeasureUnit, { $where: 123 }, { softDelete: true })).toMatch(
-      /^UPDATE `MeasureUnit` SET `deletedAt` = \d+ WHERE `id` = 123 AND `deletedAt` IS NULL$/,
-    );
-    expect(this.dialect.delete(MeasureUnit, { $where: 123 }, { softDelete: false })).toBe(
-      'DELETE FROM `MeasureUnit` WHERE `id` = 123',
-    );
+
+    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { softDelete: false }));
+    expect(res.sql).toBe('DELETE FROM `User` WHERE `id` = ?');
+    expect(res.values).toEqual([123]);
+
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }));
+    expect(res.sql).toMatch(/^UPDATE `MeasureUnit` SET `deletedAt` = \? WHERE `id` = \? AND `deletedAt` IS NULL$/);
+    expect(res.values).toEqual([expect.any(Number), 123]);
+
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { softDelete: true }));
+    expect(res.sql).toMatch(/^UPDATE `MeasureUnit` SET `deletedAt` = \? WHERE `id` = \? AND `deletedAt` IS NULL$/);
+    expect(res.values).toEqual([expect.any(Number), 123]);
+
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { softDelete: false }));
+    expect(res.sql).toBe('DELETE FROM `MeasureUnit` WHERE `id` = ?');
+    expect(res.values).toEqual([123]);
   }
 
   shouldFind$selectRaw() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: [raw(() => 'createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
-    ).toBe("SELECT createdAt `hotness` FROM `User` WHERE `name` = 'something'");
+    );
+    expect(res.sql).toBe('SELECT createdAt `hotness` FROM `User` WHERE `name` = ?');
+    expect(res.values).toEqual(['something']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
-    ).toBe(
-      "SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = 'something'",
     );
+    expect(res.sql).toBe(
+      'SELECT *, LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt `hotness` FROM `User` WHERE `name` = ?',
+    );
+    expect(res.values).toEqual(['something']);
   }
 
   shouldFind$whereRaw() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['creatorId'],
         $where: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
       }),
-    ).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = 1 AND SUM(salePrice) > 500');
+    );
+    expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = ? AND SUM(salePrice) > 500');
+    expect(res.values).toEqual([1]);
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['id'],
         $where: { $or: [{ companyId: 1 }, 5, raw('SUM(salePrice) > 500')] },
       }),
-    ).toBe('SELECT `id` FROM `Item` WHERE `companyId` = 1 OR `id` = 5 OR SUM(salePrice) > 500');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `companyId` = ? OR `id` = ? OR SUM(salePrice) > 500');
+    expect(res.values).toEqual([1, 5]);
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['id'],
         $where: { $or: [1, raw('SUM(salePrice) > 500')] },
       }),
-    ).toBe('SELECT `id` FROM `Item` WHERE `id` = 1 OR SUM(salePrice) > 500');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `id` = ? OR SUM(salePrice) > 500');
+    expect(res.values).toEqual([1]);
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['id'],
         $where: { $or: [raw('SUM(salePrice) > 500'), 1, { companyId: 1 }] },
       }),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = 1 OR `companyId` = 1');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = ? OR `companyId` = ?');
+    expect(res.values).toEqual([1, 1]);
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['id'],
         $where: { $and: [raw('SUM(salePrice) > 500')] },
       }),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['id'],
         $where: raw('SUM(salePrice) > 500'),
       }),
-    ).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
 
-    expect(
-      this.dialect.find(Item, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: ['creatorId'],
         $where: { $or: [[1, 2], { code: 'abc' }] },
       }),
-    ).toBe("SELECT `creatorId` FROM `Item` WHERE `id` IN (1, 2) OR `code` = 'abc'");
+    );
+    expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `id` IN (?, ?) OR `code` = ?');
+    expect(res.values).toEqual([1, 2, 'abc']);
   }
 
   shouldFind$startsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $startsWith: 'Some' } },
         $sort: [
@@ -884,211 +1048,249 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE 'Some%' ORDER BY `name`, `createdAt` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `createdAt` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['Some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $startsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (`name` LIKE 'Some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['Some%', 'Something']);
   }
 
   shouldFind$istartsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $istartsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['some%', 'Something']);
   }
 
   shouldFind$endsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $endsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE '%Some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%Some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $endsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (`name` LIKE '%Some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%Some', 'Something']);
   }
 
   shouldFind$iendsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%some', 'Something']);
   }
 
   shouldFind$includes() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $includes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE '%Some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%Some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $includes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (`name` LIKE '%Some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%Some%', 'Something']);
   }
 
   shouldFind$iincludes() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iincludes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE '%some%' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iincludes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE '%some%' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%some%', 'Something']);
   }
 
   shouldFind$like() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $like: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` LIKE 'Some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['Some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $like: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (`name` LIKE 'Some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['Some', 'Something']);
   }
 
   shouldFind$ilike() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $ilike: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE LOWER(`name`) LIKE 'some' ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: { name: { $ilike: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE (LOWER(`name`) LIKE 'some' AND `name` <> 'Something') ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['some', 'Something']);
   }
 
   shouldFind$regex() {
-    expect(
-      this.dialect.find(User, {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $regex: '^some' } },
       }),
-    ).toBe("SELECT `id` FROM `User` WHERE `name` REGEXP '^some'");
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` REGEXP ?');
+    expect(res.values).toEqual(['^some']);
   }
 
   shouldFind$text() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: { id: true },
         $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
         $limit: 30,
       }),
-    ).toBe(
-      "SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST('some text') AND `companyId` = 1 LIMIT 30",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST(?) AND `companyId` = ? LIMIT 30',
+    );
+    expect(res.values).toEqual(['some text', 1]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
@@ -1097,8 +1299,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
         $limit: 10,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST('something') AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST(?) AND `name` <> ? AND `companyId` = ? LIMIT 10',
+    );
+    expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 }

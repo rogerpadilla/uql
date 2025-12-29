@@ -9,19 +9,19 @@ describe('repository', () => {
 
   beforeEach(() => {
     querier = {
-      count: jest.fn(),
-      findOneById: jest.fn(),
-      findOne: jest.fn(),
-      findMany: jest.fn(),
-      findManyAndCount: jest.fn(),
-      insertOne: jest.fn(),
-      insertMany: jest.fn(),
-      updateOneById: jest.fn(),
-      updateMany: jest.fn(),
-      saveOne: jest.fn(),
-      saveMany: jest.fn(),
-      deleteOneById: jest.fn(),
-      deleteMany: jest.fn(),
+      count: jest.fn() as any,
+      findOneById: jest.fn() as any,
+      findOne: jest.fn() as any,
+      findMany: jest.fn() as any,
+      findManyAndCount: jest.fn() as any,
+      insertOne: jest.fn() as any,
+      insertMany: jest.fn() as any,
+      updateOneById: jest.fn() as any,
+      updateMany: jest.fn() as any,
+      saveOne: jest.fn() as any,
+      saveMany: jest.fn() as any,
+      deleteOneById: jest.fn() as any,
+      deleteMany: jest.fn() as any,
     };
     repository = new GenericRepository(User, querier as Querier);
   });

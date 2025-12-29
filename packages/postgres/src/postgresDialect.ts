@@ -1,14 +1,17 @@
 import { AbstractSqlDialect } from 'nukak/dialect';
 import { getMeta } from 'nukak/entity';
-import type {
-  FieldKey,
-  QueryComparisonOptions,
-  QueryConflictPaths,
-  QueryOptions,
-  QueryTextSearchOptions,
-  QueryWhereFieldOperatorMap,
-  QueryWhereMap,
-  Type,
+import {
+  type FieldKey,
+  type FieldOptions,
+  type QueryComparisonOptions,
+  type QueryConflictPaths,
+  type QueryContext,
+  type QueryOptions,
+  QueryRaw,
+  type QueryTextSearchOptions,
+  type QueryWhereFieldOperatorMap,
+  type QueryWhereMap,
+  type Type,
 } from 'nukak/type';
 import sqlstring from 'sqlstring-sqlite';
 
@@ -17,88 +20,113 @@ export class PostgresDialect extends AbstractSqlDialect {
     super('"', 'BEGIN TRANSACTION');
   }
 
-  override addValue(values: unknown[], value: unknown, include = true): string {
-    if (values) {
-      if (include) {
-        values.push(value);
-      }
-      return `$${values.length}`;
-    }
-    return this.escape(value);
+  override addValue(values: unknown[], value: unknown): string {
+    values.push(value);
+    return `$${values.length}`;
   }
 
-  override insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions, values?: unknown[]): string {
-    const sql = super.insert(entity, payload, opts, values);
-    const returning = this.returningId(entity);
-    return `${sql} ${returning}`;
+  override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+    super.insert(ctx, entity, payload, opts);
+    ctx.append(' ' + this.returningId(entity));
   }
 
-  override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E, values?: unknown[]): string {
-    const insert = super.insert(entity, payload, undefined, values);
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`, values);
+    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const returning = this.returningId(entity);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    return `${insert} ON CONFLICT (${keysStr}) ${onConflict} ${returning}`;
+    super.insert(ctx, entity, payload);
+    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
   }
 
   override compare<E, K extends keyof QueryWhereMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: K,
     val: QueryWhereMap<E>[K],
     opts: QueryComparisonOptions = {},
-    values?: unknown[],
-  ): string {
+  ): void {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields
         .map((field) => this.escapeId(meta.fields[field]?.name ?? field))
         .join(` || ' ' || `);
-      return `to_tsvector(${fields}) @@ to_tsquery(${this.addValue(values, search.$value)})`;
+      ctx.append(`to_tsvector(${fields}) @@ to_tsquery(`);
+      ctx.addValue(search.$value);
+      ctx.append(')');
+      return;
     }
-    return super.compare(entity, key, val, opts, values);
+    super.compare(ctx, entity, key, val, opts);
   }
 
   override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: FieldKey<E>,
     op: K,
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
-    values?: unknown[],
-  ): string {
-    const comparisonKey = this.getComparisonKey(entity, key, opts, values);
+  ): void {
     switch (op) {
       case '$istartsWith':
-        return `${String(comparisonKey)} ILIKE ${this.addValue(values, `${val}%`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' ILIKE ');
+        ctx.addValue(`${val}%`);
+        break;
       case '$iendsWith':
-        return `${String(comparisonKey)} ILIKE ${this.addValue(values, `%${val}`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' ILIKE ');
+        ctx.addValue(`%${val}`);
+        break;
       case '$iincludes':
-        return `${String(comparisonKey)} ILIKE ${this.addValue(values, `%${val}%`)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' ILIKE ');
+        ctx.addValue(`%${val}%`);
+        break;
       case '$ilike':
-        return `${String(comparisonKey)} ILIKE ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' ILIKE ');
+        ctx.addValue(val);
+        break;
       case '$in':
-        return `${String(comparisonKey)} = ANY(${this.addValue(values, val)})`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' = ANY(');
+        ctx.addValue(val);
+        ctx.append(')');
+        break;
       case '$nin':
-        return `${String(comparisonKey)} <> ALL(${this.addValue(values, val)})`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' <> ALL(');
+        ctx.addValue(val);
+        ctx.append(')');
+        break;
       case '$regex':
-        return `${String(comparisonKey)} ~ ${this.addValue(values, val)}`;
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' ~ ');
+        ctx.addValue(val);
+        break;
       default:
-        return super.compareFieldOperator(entity, key, op, val, opts, values);
+        super.compareFieldOperator(ctx, entity, key, op, val, opts);
     }
   }
 
-  override formatPersistableValue(value: any, type: string, values?: unknown[]): string {
-    if (type === 'json' || type === 'jsonb') {
-      return this.addValue(values, JSON.stringify(value)) + `::${type}`;
+  protected override formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {
+    if (value instanceof QueryRaw) {
+      super.formatPersistableValue(ctx, field, value);
+      return;
     }
-    if (type === 'vector') {
-      const vector = (value as number[]).map((num) => +num).join(',');
-      return `'[${vector}]'::vector`;
+    if (field.type === 'json' || field.type === 'jsonb') {
+      ctx.addValue(value ? JSON.stringify(value) : null);
+      ctx.append(`::${field.type}`);
+      return;
     }
-    return super.formatPersistableValue(value, type, values);
+    if (field.type === 'vector' && Array.isArray(value)) {
+      ctx.addValue(`[${value.join(',')}]`);
+      ctx.append('::vector');
+      return;
+    }
+    super.formatPersistableValue(ctx, field, value);
   }
 
   override escape(value: unknown): string {

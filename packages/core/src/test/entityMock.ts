@@ -270,17 +270,21 @@ export class Item extends BaseEntity {
      * be used in `$select` and `$where` as a common field whose value is
      * replaced is replaced at runtime.
      */
-    virtual: raw(({ escapedPrefix, dialect }) => {
-      const query = dialect.count(
+    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+      ctx.append('(');
+      dialect.count(
+        ctx,
         ItemTag,
         {
           $where: {
-            itemId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
+            itemId: raw(({ ctx }) => {
+              ctx.append(escapedPrefix + dialect.escapeId('id'));
+            }),
           },
         },
         { autoPrefix: true },
       );
-      return `(${query})`;
+      ctx.append(')');
     }),
   })
   tagsCount?: number;
@@ -295,23 +299,21 @@ export class Tag extends BaseEntity {
   items?: Item[];
 
   @Field({
-    virtual: raw(({ escapedPrefix, dialect }) => {
-      /**
-       * `virtual` property allows defining the value for a non-persistent field,
-       * such value might be a scalar or a (`raw`) function. Virtual-fields can
-       * be used in `$select` and `$where` as a common field whose value is
-       * replaced at runtime.
-       */
-      const query = dialect.count(
+    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+      ctx.append('(');
+      dialect.count(
+        ctx,
         ItemTag,
         {
           $where: {
-            tagId: raw(`${escapedPrefix}${dialect.escapeId('id')}`),
+            tagId: raw(({ ctx }) => {
+              ctx.append(escapedPrefix + dialect.escapeId('id'));
+            }),
           },
         },
         { autoPrefix: true },
       );
-      return `(${query})`;
+      ctx.append(')');
     }),
   })
   itemsCount?: number;

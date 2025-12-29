@@ -1,7 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import { AbstractSqlQuerier } from 'nukak/querier';
-import type { ExtraOptions, QueryConflictPaths, QueryUpdateResult, Type } from 'nukak/type';
-import { clone } from 'nukak/util';
+import type { ExtraOptions, QueryUpdateResult } from 'nukak/type';
 import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqlQuerier {
@@ -27,20 +26,6 @@ export class SqliteQuerier extends AbstractSqlQuerier {
           .map((i, index) => i + index)
       : [];
     return { changes, ids, firstId } satisfies QueryUpdateResult;
-  }
-
-  override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
-    payload = clone(payload);
-    const valuesInsert: unknown[] = [];
-    const insert = this.dialect.insert(entity, payload, undefined, valuesInsert);
-    const insertOrIgnore = insert.replace(/^INSERT/, 'INSERT OR IGNORE');
-    const resInsert = await this.run(insertOrIgnore, valuesInsert);
-    if (resInsert.changes) {
-      return resInsert;
-    }
-    const valuesUpdate: unknown[] = [];
-    const update = this.dialect.update(entity, conflictPaths, payload, undefined, valuesUpdate);
-    return this.run(update, valuesUpdate);
   }
 
   override async internalRelease() {

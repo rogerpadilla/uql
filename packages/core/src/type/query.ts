@@ -361,15 +361,15 @@ export type QueryRawFnOptions = {
    */
   escapedPrefix?: string;
   /**
-   * the values for the parameterized query.
+   * the query context.
    */
-  values?: unknown[];
+  ctx?: QueryContext;
 };
 
 /**
  * a `raw` function
  */
-export type QueryRawFn = (opts?: QueryRawFnOptions) => string;
+export type QueryRawFn = (opts?: QueryRawFnOptions) => void | Scalar;
 
 export class QueryRaw {
   constructor(
@@ -398,55 +398,69 @@ export type QueryWhereOptions = QueryComparisonOptions & {
   clause?: 'WHERE' | false;
 };
 
+export interface QueryContext {
+  append(sql: string): this;
+  addValue(value: unknown): this;
+  pushValue(value: unknown): this;
+  readonly sql: string;
+  readonly values: unknown[];
+}
+
 export interface QueryDialect {
   /**
    * obtains the records matching the given search parameters.
+   * @param ctx the query context
    * @param entity the target entity
    * @param q the criteria options
    * @param opts the query options
    */
-  find<E>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): string;
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions): void;
 
   /**
    * counts the number of records matching the given search parameters.
+   * @param ctx the query context
    * @param entity the target entity
    * @param q the criteria options
    * @param opts the query options
    */
-  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string;
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void;
 
   /**
    * insert records.
+   * @param ctx the query context
    * @param entity the target entity
-   * @param qm the criteria options
+   * @param payload the payload
    * @param opts the query options
    */
-  insert<E>(entity: Type<E>, payload: E | E[], opts?: QueryOptions): string;
+  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void;
 
   /**
    * update records.
+   * @param ctx the query context
    * @param entity the target entity
    * @param q the criteria options
    * @param payload
    * @param opts the query options
    */
-  update<E>(entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): string;
+  update<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): void;
 
   /**
    * upsert records.
+   * @param ctx the query context
    * @param entity the target entity
    * @param conflictPaths the conflict paths
    * @param payload
    */
-  upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): string;
+  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void;
 
   /**
    * delete records.
+   * @param ctx the query context
    * @param entity the target entity
    * @param q the criteria options
    * @param opts the query options
    */
-  delete<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): string;
+  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void;
 
   /**
    * escape an identifier.
@@ -461,4 +475,16 @@ export interface QueryDialect {
    * @param val the value to escape
    */
   escape(val: unknown): string;
+
+  /**
+   * add a value to the query.
+   * @param values the values array
+   * @param value the value to add
+   */
+  addValue(values: unknown[], value: unknown): string;
+
+  /**
+   * create a new query context.
+   */
+  createContext(): QueryContext;
 }

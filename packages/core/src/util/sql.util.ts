@@ -57,8 +57,13 @@ export function unflatObjects<T>(objects: T[]): T[] {
 export function obtainAttrsPaths<T>(row: T) {
   return getKeys(row).reduce(
     (acc, col) => {
+      // Support both dot notation (legacy) and underscore notation (new)
       if (col.includes('.')) {
         acc[col] = col.split('.');
+      } else if (col.includes('_') && col !== col.toUpperCase()) {
+        // Convert underscore to dot notation for nested paths
+        // Skip all-uppercase (like UPPER_CASE constants)
+        acc[col] = col.split('_');
       }
       return acc;
     },

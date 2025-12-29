@@ -16,14 +16,7 @@ import type {
   Repository,
   Type,
 } from '../type/index.js';
-import {
-  augmentWhere,
-  clone,
-  filterPersistableRelationKeys,
-  filterRelationKeys,
-  getKeys,
-  hasKeys,
-} from '../util/index.js';
+import { augmentWhere, clone, filterPersistableRelationKeys, filterRelationKeys, getKeys } from '../util/index.js';
 import { Serialized } from './decorator/index.js';
 
 /**

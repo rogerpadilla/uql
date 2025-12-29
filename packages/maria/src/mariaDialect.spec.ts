@@ -10,8 +10,8 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   override shouldInsertMany() {
-    expect(
-      this.dialect.insert(User, [
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
         {
           name: 'Some name 1',
           email: 'someemail1@example.com',
@@ -28,17 +28,26 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           createdAt: 789,
         },
       ]),
-    ).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES' +
-        " ('Some name 1', 'someemail1@example.com', 123)" +
-        ", ('Some name 2', 'someemail2@example.com', 456)" +
-        ", ('Some name 3', 'someemail3@example.com', 789) RETURNING `id` `id`",
     );
+    expect(sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
+    );
+    expect(values).toEqual([
+      'Some name 1',
+      'someemail1@example.com',
+      123,
+      'Some name 2',
+      'someemail2@example.com',
+      456,
+      'Some name 3',
+      'someemail3@example.com',
+      789,
+    ]);
   }
 
   override shouldBeSecure() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id', 'something' as FieldKey<User>],
         $where: {
           id: 1,
@@ -49,18 +58,23 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           something: 1,
         } as any,
       }),
-    ).toBe('SELECT `id` FROM `User` WHERE `id` = 1 AND `something` = 1 ORDER BY `id`, `something`');
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
+    expect(res.values).toEqual([1, 1]);
 
-    expect(
-      this.dialect.insert(User, {
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         something: 'anything',
         createdAt: 1,
       } as any),
-    ).toBe("INSERT INTO `User` (`name`, `createdAt`) VALUES ('Some Name', 1) RETURNING `id` `id`");
+    );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
+    expect(res.values).toEqual(['Some Name', 1]);
 
-    expect(
+    res = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         User,
         {
           $where: { something: 'anything' },
@@ -71,18 +85,23 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           updatedAt: 1,
         } as any,
       ),
-    ).toBe("UPDATE `User` SET `name` = 'Some Name', `updatedAt` = 1 WHERE `something` = 'anything'");
+    );
+    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
+    expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
-    expect(
-      this.dialect.delete(User, {
+    res = this.exec((ctx) =>
+      this.dialect.delete(ctx, User, {
         $where: { something: 'anything' } as any,
       }),
-    ).toBe("DELETE FROM `User` WHERE `something` = 'anything'");
+    );
+    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
+    expect(res.values).toEqual(['anything']);
   }
 
   override shouldUpsert() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { email: true },
         {
@@ -91,14 +110,16 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           createdAt: 123,
         },
       ),
-    ).toBe(
-      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = VALUES(`updatedAt`) RETURNING `id` `id`",
     );
+    expect(sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = VALUES(`updatedAt`) RETURNING `id` `id`',
+    );
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }
 
   override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
-    expect(
-      this.dialect.insert(TaxCategory, [
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, [
         {
           name: 'Some Name A',
         },
@@ -114,41 +135,58 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           name: 'Some Name D',
         },
       ]),
-    ).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name A', \d+, '.+'\), \('Some Name B', \d+, '50'\), \('Some Name C', \d+, '.+'\), \('Some Name D', \d+, '70'\) RETURNING `pk` `id`$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\) RETURNING `pk` `id`$/,
+    );
+    expect(values).toEqual([
+      'Some Name A',
+      expect.any(Number),
+      expect.any(String),
+      'Some Name B',
+      expect.any(Number),
+      '50',
+      'Some Name C',
+      expect.any(Number),
+      expect.any(String),
+      'Some Name D',
+      expect.any(Number),
+      '70',
+    ]);
   }
 
   override shouldInsertOne() {
-    expect(
-      this.dialect.insert(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
       }),
-    ).toBe(
-      "INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES ('Some Name', 'someemail@example.com', 123) RETURNING `id` `id`",
     );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`');
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
-    expect(
-      this.dialect.insert(InventoryAdjustment, {
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, InventoryAdjustment, {
         date: new Date(2021, 11, 31, 23, 59, 59, 999),
         createdAt: 123,
       }),
-    ).toBe(
-      "INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES ('2021-12-31 23:59:59.999', 123) RETURNING `id` `id`",
     );
+    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
+    expect(res.values).toEqual([new Date(2021, 11, 31, 23, 59, 59, 999), 123]);
   }
 
   override shouldInsertWithOnInsertId() {
-    expect(
-      this.dialect.insert(TaxCategory, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),
-    ).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \('Some Name', 123, '.+'\) RETURNING `pk` `id`$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\) RETURNING `pk` `id`$/,
+    );
+    expect(values).toEqual(['Some Name', 123, expect.any(String)]);
   }
 }
 

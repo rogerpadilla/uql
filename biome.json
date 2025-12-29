@@ -89,7 +89,7 @@
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": {
-            "maxAllowedComplexity": 31
+            "maxAllowedComplexity": 32
           }
         },
         "noForEach": "off",
@@ -155,6 +155,7 @@
         }
       },
       "suspicious": {
+        "noConfusingVoidType": "off",
         "noTemplateCurlyInString": "off",
         "noAsyncPromiseExecutor": "error",
         "noCatchAssign": "error",

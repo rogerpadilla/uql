@@ -5,6 +5,12 @@ import { PostgresDialect } from './postgresDialect.js';
 class PostgresDialectSpec {
   readonly dialect = new PostgresDialect();
 
+  protected exec(fn: (ctx: any) => void): { sql: string; values: unknown[] } {
+    const ctx = this.dialect.createContext();
+    fn(ctx);
+    return { sql: ctx.sql, values: ctx.values };
+  }
+
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
   }
@@ -14,8 +20,8 @@ class PostgresDialectSpec {
   }
 
   shouldInsertMany() {
-    expect(
-      this.dialect.insert(User, [
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
         {
           name: 'Some name 1',
           email: 'someemail1@example.com',
@@ -32,41 +38,56 @@ class PostgresDialectSpec {
           createdAt: 789,
         },
       ]),
-    ).toBe(
+    );
+    expect(sql).toBe(
       'INSERT INTO "User" ("name", "email", "createdAt") VALUES' +
-        " ('Some name 1', 'someemail1@example.com', 123)" +
-        ", ('Some name 2', 'someemail2@example.com', 456)" +
-        ", ('Some name 3', 'someemail3@example.com', 789)" +
+        ' ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)' +
         ' RETURNING "id" "id"',
     );
+    expect(values).toEqual([
+      'Some name 1',
+      'someemail1@example.com',
+      123,
+      'Some name 2',
+      'someemail2@example.com',
+      456,
+      'Some name 3',
+      'someemail3@example.com',
+      789,
+    ]);
   }
 
   shouldInsertOne() {
-    expect(
-      this.dialect.insert(User, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
       }),
-    ).toBe(
-      `INSERT INTO "User" ("name", "email", "createdAt") VALUES ('Some Name', 'someemail@example.com', 123) RETURNING "id" "id"`,
     );
+    expect(sql).toBe('INSERT INTO "User" ("name", "email", "createdAt") VALUES ($1, $2, $3) RETURNING "id" "id"');
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123]);
   }
 
   shouldInsertWithOnInsertId() {
-    expect(
-      this.dialect.insert(TaxCategory, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),
-    ).toMatch(
-      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \('Some Name', 123, '.+'\) RETURNING "pk" "id"$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \(\$1, \$2, \$3\) RETURNING "pk" "id"$/,
+    );
+    expect(values[0]).toBe('Some Name');
+    expect(values[1]).toBe(123);
+    expect(values[2]).toMatch(/.+/);
   }
 
   shouldUpsert() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { id: true },
         {
@@ -75,14 +96,17 @@ class PostgresDialectSpec {
           createdAt: 123,
         },
       ),
-    ).toMatch(
-      /^INSERT INTO "User" \("id", "name", "createdAt"\) VALUES \(1, 'Some Name', 123\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "User" \("id", "name", "createdAt", "updatedAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+    expect(values).toEqual([1, 'Some Name', 123, expect.any(Number)]);
   }
 
   shouldUpsertWithDifferentColumnNames() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         Profile,
         { pk: true },
         {
@@ -90,14 +114,17 @@ class PostgresDialectSpec {
           picture: 'image.jpg',
         },
       ),
-    ).toMatch(
-      /^INSERT INTO "user_profile" \("pk", "image", "createdAt"\) VALUES \(1, 'image.jpg', .+\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id"$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "user_profile" \("pk", "image", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id"$/,
+    );
+    expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { id: true },
         {
@@ -105,14 +132,17 @@ class PostgresDialectSpec {
           email: 'a@b.com',
         },
       ),
-    ).toMatch(
-      /^INSERT INTO "User" \("id", "email", "createdAt"\) VALUES \(1, 'a@b.com', .+\) ON CONFLICT \("id"\) DO UPDATE SET "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "User" \("id", "email", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+    expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableId() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         UserWithNonUpdatableId,
         { id: true },
         {
@@ -120,26 +150,32 @@ class PostgresDialectSpec {
           name: 'Some Name',
         },
       ),
-    ).toBe(
-      'INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES (1, \'Some Name\') ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"',
     );
+    expect(sql).toBe(
+      'INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"',
+    );
+    expect(values).toEqual([1, 'Some Name']);
   }
 
   shouldUpsertWithDoNothing() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         ItemTag,
         { id: true },
         {
           id: 1,
         },
       ),
-    ).toBe('INSERT INTO "ItemTag" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"');
+    );
+    expect(sql).toBe('INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"');
+    expect(values).toEqual([1]);
   }
 
   shouldUpsertWithCompositeKeys() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         ItemTag,
         { itemId: true, tagId: true },
         {
@@ -147,14 +183,17 @@ class PostgresDialectSpec {
           tagId: 2,
         },
       ),
-    ).toBe(
-      'INSERT INTO "ItemTag" ("itemId", "tagId") VALUES (1, 2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"',
     );
+    expect(sql).toBe(
+      'INSERT INTO "ItemTag" ("itemId", "tagId") VALUES ($1, $2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"',
+    );
+    expect(values).toEqual([1, 2]);
   }
 
   shouldUpsertWithOnUpdateField() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { id: true },
         {
@@ -162,14 +201,17 @@ class PostgresDialectSpec {
           name: 'Some Name',
         },
       ),
-    ).toMatch(
-      /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*1.*'Some Name'.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = EXCLUDED."updatedAt".*$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "User" \(.*"id".*"name".*"updatedAt".*"createdAt".*\) VALUES \(.*\$1, \$2, \$3, \$4.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = EXCLUDED."updatedAt".*$/,
+    );
+    expect(values).toEqual([1, 'Some Name', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithVirtualField() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         Item,
         { id: true },
         {
@@ -178,129 +220,151 @@ class PostgresDialectSpec {
           tagsCount: 5,
         },
       ),
-    ).toMatch(
-      /^INSERT INTO "Item" \("id", "name", "createdAt"\) VALUES \(1, 'Some Item', .+\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO "Item" \("id", "name", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+    );
+    expect(values).toEqual([1, 'Some Item', expect.any(Number), expect.any(Number)]);
   }
 
   shouldFind$istartsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['Some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $istartsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['Some%', 'Something']);
   }
 
   shouldFind$iendsWith() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%Some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%Some', 'Something']);
   }
 
   shouldFind$iincludes() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $iincludes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE '%Some%' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['%Some%']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $iincludes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE '%Some%' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['%Some%', 'Something']);
   }
 
   shouldFind$ilike() {
-    expect(
-      this.dialect.find(User, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $ilike: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(`SELECT "id" FROM "User" WHERE "name" ILIKE 'Some' ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`);
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
+    expect(res.values).toEqual(['Some']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $ilike: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
         $limit: 50,
       }),
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE ("name" ILIKE 'Some' AND "name" <> 'Something') ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+    );
+    expect(res.values).toEqual(['Some', 'Something']);
   }
 
   shouldFind$regex() {
-    expect(
-      this.dialect.find(User, {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { name: { $regex: '^some' } },
       }),
-    ).toBe(`SELECT "id" FROM "User" WHERE "name" ~ '^some'`);
+    );
+    expect(sql).toBe('SELECT "id" FROM "User" WHERE "name" ~ $1');
+    expect(values).toEqual(['^some']);
   }
 
   shouldFind$text() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: { id: true },
         $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
         $limit: 30,
       }),
-    ).toBe(
-      `SELECT "id" FROM "Item" WHERE to_tsvector("name" || ' ' || "description") @@ to_tsquery('some text') AND "code" = '1' LIMIT 30`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ to_tsquery($1) AND "code" = $2 LIMIT 30',
+    );
+    expect(res.values).toEqual(['some text', '1']);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
@@ -309,14 +373,17 @@ class PostgresDialectSpec {
         },
         $limit: 10,
       }),
-    ).toBe(
-      `SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery('something') AND "name" <> 'other unwanted' AND "creatorId" = 1 LIMIT 10`,
     );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" <> $2 AND "creatorId" = $3 LIMIT 10',
+    );
+    expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 
   shouldUpdateWithRawString() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Company,
         { $where: { id: 1 } },
         {
@@ -324,12 +391,17 @@ class PostgresDialectSpec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE "Company" SET "kind" = jsonb_set(kind, \'{open}\', to_jsonb(1)), "updatedAt" = 123 WHERE "id" = 1');
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set(kind, \'{open}\', to_jsonb(1)), "updatedAt" = $1 WHERE "id" = $2',
+    );
+    expect(values).toEqual([123, 1]);
   }
 
   shouldUpdateWithJsonbField() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Company,
         { $where: { id: 1 } },
         {
@@ -337,7 +409,9 @@ class PostgresDialectSpec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE "Company" SET "kind" = \'{"private":1}\'::jsonb, "updatedAt" = 123 WHERE "id" = 1');
+    );
+    expect(sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
+    expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 }
 

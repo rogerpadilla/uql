@@ -33,18 +33,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
   }
 
   override async findMany<E>(entity: Type<E>, q: Query<E>) {
-    const values: unknown[] = [];
-    const query = this.dialect.find(entity, q, undefined, values);
-    const res = await this.all<E>(query, values);
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, entity, q);
+    const res = await this.all<E>(ctx.sql, ctx.values);
     const founds = unflatObjects(res);
     await this.fillToManyRelations(entity, founds, q.$select);
     return founds;
   }
 
   override async count<E>(entity: Type<E>, q: QuerySearch<E> = {}) {
-    const values: unknown[] = [];
-    const query = this.dialect.count(entity, q, undefined, values);
-    const res = await this.all<{ count: number }>(query, values);
+    const ctx = this.dialect.createContext();
+    this.dialect.count(ctx, entity, q);
+    const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
     return Number(res[0].count);
   }
 
@@ -53,9 +53,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
       return [];
     }
     payload = clone(payload);
-    const values: unknown[] = [];
-    const query = this.dialect.insert(entity, payload, undefined, values);
-    const { ids } = await this.run(query, values);
+    const ctx = this.dialect.createContext();
+    this.dialect.insert(ctx, entity, payload);
+    const { ids } = await this.run(ctx.sql, ctx.values);
     const meta = getMeta(entity);
     const payloadIds = payload.map((it, index) => {
       it[meta.id as string] ??= ids[index];
@@ -67,33 +67,32 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier {
 
   override async updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
     payload = clone(payload);
-    const values: unknown[] = [];
-    const query = this.dialect.update(entity, q, payload, undefined, values);
-    const { changes } = await this.run(query, values);
+    const ctx = this.dialect.createContext();
+    this.dialect.update(ctx, entity, q, payload);
+    const { changes } = await this.run(ctx.sql, ctx.values);
     await this.updateRelations(entity, q, payload);
     return changes;
   }
 
   override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
-    const values: unknown[] = [];
-    const query = this.dialect.upsert(entity, conflictPaths, payload, values);
-    return this.run(query, values);
+    const ctx = this.dialect.createContext();
+    this.dialect.upsert(ctx, entity, conflictPaths, payload);
+    return this.run(ctx.sql, ctx.values);
   }
 
   override async deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const values: unknown[] = [];
-    // TODO: select ID should be automatic unless specified to be ommited
-    const findQuery = this.dialect.find(entity, { ...q, $select: [meta.id] }, undefined, values);
-    const founds = await this.all<E>(findQuery, values);
+    const findCtx = this.dialect.createContext();
+    this.dialect.find(findCtx, entity, { ...q, $select: [meta.id] });
+    const founds = await this.all<E>(findCtx.sql, findCtx.values);
     if (!founds.length) {
       return 0;
     }
     const ids = founds.map((it) => it[meta.id]);
-    const valuesDelete: unknown[] = [];
-    const query = this.dialect.delete(entity, { $where: ids }, opts, valuesDelete);
-    const { changes } = await this.run(query, valuesDelete);
+    const deleteCtx = this.dialect.createContext();
+    this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
+    const { changes } = await this.run(deleteCtx.sql, deleteCtx.values);
     await this.deleteRelations(entity, ids, opts);
     return changes;
   }

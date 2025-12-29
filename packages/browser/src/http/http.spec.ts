@@ -3,7 +3,8 @@ import { get, patch, post, put, remove } from './http.js';
 
 describe('http', () => {
   beforeEach(() => {
-    globalThis.fetch = jest.fn().mockImplementation(setupFetchStub({}));
+    globalThis.fetch = jest.fn() as any;
+    (globalThis.fetch as jest.Mock).mockImplementation(setupFetchStub({}));
   });
 
   afterEach(() => {
@@ -48,20 +49,21 @@ describe('http', () => {
   });
 
   it('error', async () => {
-    globalThis.fetch = jest.fn().mockImplementation(setupFetchStubError(new Error('some error')));
+    globalThis.fetch = jest.fn() as any;
+    (globalThis.fetch as jest.Mock).mockImplementation(setupFetchStubError(new Error('some error')));
     await expect(remove('/?a=1')).rejects.toThrow('some error');
   });
 });
 
 function setupFetchStub(data: object) {
-  return async (_url: string) => ({
+  return async (_url: any) => ({
     status: 200,
     json: async () => ({ data }),
   });
 }
 
 function setupFetchStubError(error: Error) {
-  return async (_url: string) => ({
+  return async (_url: any) => ({
     status: 500,
     json: async () => ({ error }),
   });

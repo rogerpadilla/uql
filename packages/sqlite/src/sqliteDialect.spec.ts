@@ -1,5 +1,5 @@
 import { AbstractSqlDialectSpec } from 'nukak/dialect/abstractSqlDialect-spec.js';
-import { Company, createSpec, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
+import { Company, createSpec, InventoryAdjustment, Item, ItemTag, Profile, TaxCategory, User } from 'nukak/test';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
@@ -12,8 +12,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   }
 
   override shouldUpsert() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         TaxCategory,
         { pk: true },
         {
@@ -23,14 +24,17 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           updatedAt: 1,
         },
       ),
-    ).toMatch(
-      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \('a', 'Some Name D', 1, 1\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+    );
+    expect(values).toEqual(['a', 'Some Name D', 1, 1]);
   }
 
   shouldUpsertWithDifferentColumnNames() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         Profile,
         { pk: true },
         {
@@ -38,14 +42,17 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           picture: 'image.jpg',
         },
       ),
-    ).toMatch(
-      /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*\) VALUES \(.*1.*'image.jpg'.*\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`createdAt` = EXCLUDED.`createdAt`.*$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*`updatedAt`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+    );
+    expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         User,
         { id: true },
         {
@@ -53,36 +60,65 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           email: 'a@b.com',
         },
       ),
-    ).toMatch(
-      /^INSERT INTO `User` \(.*`id`.*`email`.*\) VALUES \(.*1.*'a@b.com'.*\) ON CONFLICT \(`id`\) DO UPDATE SET .*`createdAt` = EXCLUDED.`createdAt`.*$/,
     );
+    expect(sql).toMatch(
+      /^INSERT INTO `User` \(.*`id`.*`email`.*`updatedAt`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`id`\) DO UPDATE SET .*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+    );
+    expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
+  }
+
+  override shouldInsertOne() {
+    let res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
+        name: 'Some Name',
+        email: 'someemail@example.com',
+        createdAt: 123,
+      }),
+    );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)');
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
+
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, InventoryAdjustment, {
+        date: new Date(2021, 11, 31, 23, 59, 59, 999),
+        createdAt: 123,
+      }),
+    );
+    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)');
+    expect(res.values[0]).toBe(1641013199999);
+    expect(res.values[1]).toBe(123);
   }
 
   shouldUpsertWithDoNothing() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
+        ctx,
         ItemTag,
         { id: true },
         {
           id: 1,
         },
       ),
-    ).toBe('INSERT INTO `ItemTag` (`id`) VALUES (1) ON CONFLICT (`id`) DO NOTHING');
+    );
+    expect(sql).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING');
+    expect(values).toEqual([1]);
   }
 
   override shouldFind$text() {
-    expect(
-      this.dialect.find(Item, {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
         $select: { id: true },
         $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
         $limit: 30,
       }),
-    ).toBe(
-      "SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : 'some text' AND `companyId` = 1 LIMIT 30",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : ? AND `companyId` = ? LIMIT 30',
+    );
+    expect(res.values).toEqual(['some text', 1]);
 
-    expect(
-      this.dialect.find(User, {
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
@@ -91,14 +127,17 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
         $limit: 10,
       }),
-    ).toBe(
-      "SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : 'something' AND `name` <> 'other unwanted' AND `companyId` = 1 LIMIT 10",
     );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` <> ? AND `companyId` = ? LIMIT 10',
+    );
+    expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 
   override shouldUpdateWithJsonbField() {
-    expect(
+    const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
+        ctx,
         Company,
         { $where: { id: 1 } },
         {
@@ -106,7 +145,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           updatedAt: 123,
         },
       ),
-    ).toBe('UPDATE `Company` SET `kind` = \'{"private":1}\', `updatedAt` = 123 WHERE `id` = 1');
+    );
+    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
+    expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 }
 

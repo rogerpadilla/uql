@@ -8,7 +8,8 @@ describe('repository', () => {
   const querier = new HttpQuerier('');
 
   beforeEach(() => {
-    globalThis.fetch = jest.fn().mockImplementation(setupFetchStub({}));
+    globalThis.fetch = jest.fn() as any;
+    (globalThis.fetch as jest.Mock).mockImplementation(setupFetchStub({}));
     repository = new GenericClientRepository(User, querier);
   });
 
@@ -97,7 +98,7 @@ describe('repository', () => {
 });
 
 function setupFetchStub(data: object) {
-  return async (_url: string) => ({
+  return async (_url: any) => ({
     status: 200,
     json: async () => ({ data }),
   });

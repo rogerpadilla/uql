@@ -28,8 +28,9 @@ export async function clearTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
   await Promise.all(
     entities.map((entity) => {
-      const sql = querier.dialect.delete(entity, {});
-      return querier.run(sql);
+      const ctx = querier.dialect.createContext();
+      querier.dialect.delete(ctx, entity, {});
+      return querier.run(ctx.sql, ctx.values);
     }),
   );
 }

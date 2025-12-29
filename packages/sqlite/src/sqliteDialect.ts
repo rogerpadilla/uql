@@ -4,6 +4,7 @@ import type {
   FieldKey,
   QueryComparisonOptions,
   QueryConflictPaths,
+  QueryContext,
   QueryTextSearchOptions,
   QueryWhereFieldOperatorMap,
   QueryWhereMap,
@@ -16,63 +17,51 @@ export class SqliteDialect extends AbstractSqlDialect {
     super('`', 'BEGIN TRANSACTION');
   }
 
-  override addValue(values: unknown[], value: unknown, include = true): string {
+  override addValue(values: unknown[], value: unknown): string {
     if (value instanceof Date) {
       value = value.getTime();
     } else if (typeof value === 'boolean') {
       value = value ? 1 : 0;
     }
-    return super.addValue(values, value, include);
+    return super.addValue(values, value);
   }
 
   override compare<E, K extends keyof QueryWhereMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: K,
     val: QueryWhereMap<E>[K],
     opts?: QueryComparisonOptions,
-    values?: unknown[],
-  ): string {
+  ): void {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
       const fields = search.$fields.map((field) => this.escapeId(meta.fields[field]?.name ?? field));
-      return `${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : ${this.addValue(values, search.$value)}`;
+      ctx.append(`${this.escapeId(meta.name)} MATCH {${fields.join(' ')}} : `);
+      ctx.addValue(search.$value);
+      return;
     }
-    return super.compare(entity, key, val, opts, values);
+    super.compare(ctx, entity, key, val, opts);
   }
 
   override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: FieldKey<E>,
     op: K,
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryComparisonOptions = {},
-    values?: unknown[],
-  ): string {
-    const comparisonKey = this.getComparisonKey(entity, key, opts, values);
-    switch (op) {
-      case '$in':
-        if (Array.isArray(val) && val.length > 0) {
-          return `${String(comparisonKey)} IN (${val.map((v) => this.addValue(values, v)).join(', ')})`;
-        }
-        return `${String(comparisonKey)} IN (NULL)`;
-      case '$nin':
-        if (Array.isArray(val) && val.length > 0) {
-          return `${String(comparisonKey)} NOT IN (${val.map((v) => this.addValue(values, v)).join(', ')})`;
-        }
-        return `${String(comparisonKey)} NOT IN (NULL)`;
-      default:
-        return super.compareFieldOperator(entity, key, op, val, opts, values);
-    }
+  ): void {
+    super.compareFieldOperator(ctx, entity, key, op, val, opts);
   }
 
-  override upsert<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E, values?: unknown[]): string {
-    const insert = super.insert(entity, payload, undefined, values);
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`, values);
+    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    return `${insert} ON CONFLICT (${keysStr}) ${onConflict}`;
+    this.insert(ctx, entity, payload);
+    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict}`);
   }
 
   override escape(value: unknown): string {

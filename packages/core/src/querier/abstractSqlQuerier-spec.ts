@@ -135,8 +135,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
-        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
+        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -170,21 +170,21 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         id: 1,
       },
       $where: {
-        $exists: raw(({ escapedPrefix, dialect }) =>
-          dialect.find(
-            User,
-            {
-              $select: ['id'],
-              $where: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
+        $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+          dialect.find(ctx, User, {
+            $select: ['id'],
+            $where: {
+              companyId: raw(({ ctx: innerCtx }) => {
+                innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
+              }),
             },
-            { autoPrefix: true },
-          ),
-        ),
+          });
+        }),
       },
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)',
+      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT `id` FROM `User` WHERE `companyId` = `Item`.`companyId`)',
       [],
     );
 
@@ -196,21 +196,21 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(Item, {
       $select: { id: 1 },
       $where: {
-        $nexists: raw(({ escapedPrefix, dialect }) =>
-          dialect.find(
-            User,
-            {
-              $select: ['id'],
-              $where: { companyId: raw(escapedPrefix + dialect.escapeId(`companyId`)) },
+        $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+          dialect.find(ctx, User, {
+            $select: ['id'],
+            $where: {
+              companyId: raw(({ ctx: innerCtx }) => {
+                innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
+              }),
             },
-            { autoPrefix: true },
-          ),
-        ),
+          });
+        }),
       },
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `User`.`id` FROM `User` WHERE `User`.`companyId` = `Item`.`companyId`)',
+      'SELECT `id` FROM `Item` WHERE NOT EXISTS (SELECT `id` FROM `User` WHERE `companyId` = `Item`.`companyId`)',
       [],
     );
 
@@ -368,7 +368,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
+      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag_id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (?)',
       [123],
@@ -398,7 +398,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
+      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag_id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (?)',
       [123],
