@@ -9,13 +9,8 @@ on:
       - '.gitignore'
   pull_request:
     branches: ['**']
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - '.gitignore'
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
 
-# Limit GITHUB_TOKEN permissions
 permissions:
   contents: read
 
@@ -29,22 +24,21 @@ jobs:
     name: Lint & Typecheck
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          bun-version: latest
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Lint
-        run: npm run lint
+        run: bun run lint
       - name: Typecheck
-        run: npm run check.ts
+        run: bun run check.ts
 
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
-      fail-fast: false # Keep running other matrix jobs even if one fails
+      fail-fast: false
       matrix:
         node-version: [20, 22, 24, 25]
 
@@ -54,11 +48,15 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
 
       - name: Install OS dependencies
         run: |
@@ -66,16 +64,16 @@ jobs:
           sudo apt-get -y install libkrb5-dev
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Start services
         run: docker compose up -d --wait
 
       - name: Run Tests
-        run: npm run test.all
+        run: bun run test.all
 
       - name: Submit coverage
-        if: matrix.node-version == 24
+        if: matrix.node-version == 22
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-        run: cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js
+        run: cat ./coverage/lcov.info | ./node_modules/.bin/coveralls
