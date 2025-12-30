@@ -13,5 +13,6 @@
       "gitRemote": "origin"
     }
   },
+  "npmClient": "bun",
   "packages": ["packages/*"]
 }

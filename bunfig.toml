@@ -1,0 +1,7 @@
+[install]
+# Prefer Bun's lockfile
+lockfile = true
+
+[test]
+# Default timeout for bun test
+timeout = 15000

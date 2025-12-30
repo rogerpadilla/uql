@@ -20,7 +20,8 @@
     "test:coverage": "jest --coverage",
     "test.all": "jest --clearCache && jest --testMatch '**/*.{it,spec}.ts'",
     "test.all.watch": "jest --watchAll --testMatch '**/*.{it,spec}.ts'",
-    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'"
+    "test.focus": "jest --watchAll --testMatch '**/mongodbQuerier.{it,spec}.ts' --t 'shouldInsertOneAndCascadeOneToOne'",
+    "test.fast": "bun test"
   },
   "commitlint": {
     "extends": [
@@ -37,12 +38,10 @@
     "@types/jest": "30.0.0",
     "concurrently": "9.2.1",
     "coveralls": "3.1.1",
-    "cross-env": "10.1.0",
     "jest": "30.2.0",
     "lerna": "^9.0.3",
     "mongodb-memory-server": "11.0.1",
     "rimraf": "6.1.2",
-    "ts-node": "10.9.2",
     "typescript": "~5.4.5"
   },
   "author": "Roger Padilla"
