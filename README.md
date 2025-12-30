@@ -23,7 +23,7 @@ const companyUsers = await userRepository.findMany({
 
 &nbsp;
 
-## Why uql?
+## Why UQL?
 
 See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) in medium.com.
 
