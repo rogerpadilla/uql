@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.1.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.0...@uql/core@3.1.1) (2025-12-30)
+### Bug Fixes
+* adjust relative paths for README and CHANGELOG in copyfiles script ([741c2ee](https://github.com/rogerpadilla/uql/commit/741c2ee8839376ca89a860a53950ef6b6d234596))
+
+## [3.1.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.0.0...@uql/core@3.1.0) (2025-12-30)
+### Bug Fixes
+
+* adjust relative paths for README and CHANGELOG in copyfiles script ([7a61a01](https://github.com/rogerpadilla/uql/commit/7a61a0135da2d0459e588cda7d94f324bb9eebca))
+
+## [3.0.0](https://github.com/rogerpadilla/uql/compare/@uql/core@2.0.0...@uql/core@3.0.0) (2025-12-30)
+Reflect major changes in the package structure and dependencies.
+
 ## [2.0.0] - 2025-12-29
 - **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - this was the original name!).
   - New Slogan: **"One Language. Frontend to Backend."**

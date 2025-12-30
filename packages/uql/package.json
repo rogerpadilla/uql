@@ -5,38 +5,43 @@
   "license": "MIT",
   "version": "3.1.1",
   "type": "module",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
-    "uql-migrate": "./migrate/cli.js"
+    "uql-migrate": "./dist/migrate/cli.js"
   },
   "exports": {
-    ".": "./index.js",
-    "./dialect": "./dialect/index.js",
-    "./entity": "./entity/index.js",
-    "./querier": "./querier/index.js",
-    "./repository": "./repository/index.js",
-    "./type": "./type/index.js",
-    "./util": "./util/index.js",
-    "./namingStrategy": "./namingStrategy/index.js",
-    "./migrate": "./migrate/index.js",
-    "./options": "./options.js",
-    "./test": "./test/index.js",
-    "./mysql": "./mysql/index.js",
-    "./postgres": "./postgres/index.js",
-    "./maria": "./maria/index.js",
-    "./sqlite": "./sqlite/index.js",
-    "./mongo": "./mongo/index.js",
-    "./express": "./express/index.js",
+    ".": "./dist/index.js",
+    "./dialect": "./dist/dialect/index.js",
+    "./entity": "./dist/entity/index.js",
+    "./querier": "./dist/querier/index.js",
+    "./repository": "./dist/repository/index.js",
+    "./type": "./dist/type/index.js",
+    "./util": "./dist/util/index.js",
+    "./namingStrategy": "./dist/namingStrategy/index.js",
+    "./migrate": "./dist/migrate/index.js",
+    "./options": "./dist/options.js",
+    "./test": "./dist/test/index.js",
+    "./mysql": "./dist/mysql/index.js",
+    "./postgres": "./dist/postgres/index.js",
+    "./maria": "./dist/maria/index.js",
+    "./sqlite": "./dist/sqlite/index.js",
+    "./mongo": "./dist/mongo/index.js",
+    "./express": "./dist/express/index.js",
     "./browser": {
-      "types": "./browser/index.d.ts",
-      "import": "./browser/index.js",
-      "default": "./browser/uql-browser.min.js"
+      "types": "./dist/browser/index.d.ts",
+      "import": "./dist/browser/index.js",
+      "default": "./dist/browser/uql-browser.min.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "sideEffects": false,
   "scripts": {
-    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "copyfiles": "copyfiles -f ../../README.md ../../CHANGELOG.md .",
     "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run copyfiles",
     "start": "tsc --watch",
@@ -126,6 +131,5 @@
   ],
   "publishConfig": {
     "access": "public"
-  },
-  "gitHead": "e866a829b6d8c55457c2708e53aa758c08280a37"
+  }
 }
