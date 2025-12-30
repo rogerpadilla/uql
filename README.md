@@ -81,8 +81,6 @@ bun add pg
    "emitDecoratorMetadata": true
    ```
 
-&nbsp;
-
 > **Note**: `"ES2022"`, `"ES2023"`, or `"ESNext"` will also work fine for `target`.
 
 ---
