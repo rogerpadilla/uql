@@ -1,7 +1,7 @@
 import { expect, jest } from '@jest/globals';
 
 expect.extend({
-  toMatch(received, expected) {
+  toMatch(received: string, expected: RegExp) {
     const fits = expected.test(received);
     const pass = !!fits && !this.isNot;
     return {

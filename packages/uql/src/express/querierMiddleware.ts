@@ -1,11 +1,11 @@
-import { Router as expressRouter, type Request } from 'express';
+import { Router as expressRouter, type Request, type Router } from 'express';
 import { getEntities, getMeta } from '../entity/index.js';
 import { getQuerier } from '../index.js';
 import type { EntityMeta, IdValue, Query, Type } from '../type/index.js';
 import { kebabCase } from '../util/index.js';
 import { parseQuery } from './query.util.js';
 
-export function querierMiddleware(opts: MiddlewareOptions = {}) {
+export function querierMiddleware(opts: MiddlewareOptions = {}): Router {
   const router = expressRouter();
 
   const { include, exclude, ...extra } = opts;
@@ -29,7 +29,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}) {
   return router;
 }
 
-export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions) {
+export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Router {
   const meta = getMeta(entity);
   const router = expressRouter();
 

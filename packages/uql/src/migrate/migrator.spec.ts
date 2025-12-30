@@ -152,9 +152,7 @@ describe('Migrator Core Methods', () => {
     migrator.setSchemaGenerator(generator as any);
 
     const introspector = {
-      getTableSchema: jest
-        .fn<any>()
-        .mockResolvedValue({ name: 'DiffUser', columns: [] } as import(../type/index.js').TableSchema),
+      getTableSchema: jest.fn<any>().mockResolvedValue({ name: 'DiffUser', columns: [] }),
       getTableNames: jest.fn<any>().mockResolvedValue([]),
       tableExists: jest.fn<any>().mockResolvedValue(true),
     };

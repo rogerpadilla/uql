@@ -1,12 +1,8 @@
 import { AbstractDialect } from '../../dialect/index.js';
 import { getMeta } from '../../entity/index.js';
-import type { IndexSchema, NamingStrategy, SchemaDiff, SchemaGenerator, TableSchema, Type } from '../../type/index.js';
+import type { IndexSchema, SchemaDiff, SchemaGenerator, TableSchema, Type } from '../../type/index.js';
 
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
-  constructor(namingStrategy?: NamingStrategy) {
-    super(namingStrategy);
-  }
-
   generateCreateTable<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(entity, meta);

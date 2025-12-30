@@ -6,7 +6,7 @@
 
 [uql](https://uql.app) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
-It can run in Node.js, Browser, React Native, NativeScript, Expo, Electron, Deno, Bun, and much more!
+It can run in Node.js, Browser, React Native, Expo, Electron, Deno, Bun, and many more!
 
 Uses a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, and SQLite (inspired by MongoDB glorious syntax).
 
@@ -49,24 +49,24 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 1. Install the core package:
 
    ```sh
-   npm install uql --save
+   npm install @uql/core
    ```
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | UQL Adapter    |
-| ------------ | ---------------- | ---------------- |
-| `PostgreSQL` | `pg`             | `uql-postgres` |
-| `SQLite`     | `sqlite sqlite3` | `uql-sqlite`   |
-| `MariaDB`    | `mariadb`        | `uql-maria`    |
-| `MySQL`      | `mysql2`         | `uql-mysql`    |
+| Database     | Driver
+| ------------ | ----------------
+| `PostgreSQL` | `pg`
+| `SQLite`     | `better-sqlite3`
+| `MariaDB`    | `mariadb`
+| `MySQL`      | `mysql2`
 
 &nbsp;
 
-For example, for `Postgres` install the `pg` driver and the `uql-postgres` adapter:
+For example, for `Postgres` install the `pg` driver:
 
 ```sh
-npm install pg uql-postgres --save
+npm install pg
 ```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
@@ -326,59 +326,55 @@ const result = await querierPool.transaction(async (querier) => {
 
 ## 5. Migrations & Synchronization
 
-UQL provides a robust migration system and an "Entity-First" synchronization engine to manage your database schema changes.
+UQL includes a robust migration system and an "Entity-First" synchronization engine built directly into the core.
 
-1. Install the migration package:
+### 1. Create Configuration
 
-   ```sh
-   npm install @uql/migrate --save
-   ```
+Create a `uql.config.ts` file in your project root:
 
-2. Create a `uql.config.ts` for the CLI:
+```typescript
+import { PgQuerierPool } from 'uql-postgres';
+import { User, Post } from './src/entities/index.js';
 
-   ```ts
-   import { PgQuerierPool } from 'uql-postgres';
-   import { User, Post, Profile } from './src/entities/index.js';
-   import { SnakeCaseNamingStrategy } from '@uql/core';
+export default {
+  querierPool: new PgQuerierPool({ /* config */ }),
+  dialect: 'postgres',
+  entities: [User, Post],
+  migrationsPath: './migrations',
+};
+```
 
-   export default {
-     querierPool: new PgQuerierPool({ /* config */ }),
-     dialect: 'postgres',
-     entities: [User, Post, Profile],
-     namingStrategy: new SnakeCaseNamingStrategy(),
-     migrationsPath: './migrations'
-   };
-   ```
+### 2. Manage via CLI
 
-3. Manage your schema via CLI:
+UQL provides a dedicated CLI tool for migrations.
 
-   ```sh
-   # Generate a migration by comparing entities vs database
-   npx @uql/migrate generate:entities initial_schema
+```bash
+# Generate a migration by comparing entities vs database
+npx uql-migrate generate:entities initial_schema
 
-   # Run pending migrations
-   npx @uql/migrate up
+# Run pending migrations
+npx uql-migrate up
 
-   # Rollback the last migration
-   npx @uql/migrate down
-   ```
+# Rollback the last migration
+npx uql-migrate down
 
-### Entity-First Synchronization (Development)
+# Check status
+npx uql-migrate status
+```
+
+### 3. Entity-First Synchronization (Development)
 
 In development, you can use `autoSync` to automatically keep your database in sync with your entities without manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
 
 ```ts
-import { Migrator } from '@uql/migrate';
+import { Migrator } from '@uql/core/migrate';
 import { querierPool } from './shared/orm.js';
 
-const migrator = new Migrator(querierPool);
-
-// Automatically sync changes on your entities with the DB tables/columns (recommended for development only)
 const migrator = new Migrator(querierPool);
 await migrator.autoSync({ logging: true });
 ```
 
-Check out the full [@uql/migrate README](packages/@uql/migrate/README.md) for detailed CLI commands and advanced usage.
+Check out the full [documentation](https://uql.app/docs/migrations) for detailed CLI commands and advanced usage.
 
 &nbsp;
 
