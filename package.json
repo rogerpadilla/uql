@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "release.patch": "npm run build && lerna publish patch && git pull && git push",
-    "release.minor": "npm run build && lerna publish minor && git pull && git push",
-    "release.major": "npm run build && lerna publish major && git pull && git push",
-    "check": "concurrently 'npm run check.ts' 'npm run lint.fix'",
+    "release.patch": "bun run build && lerna publish patch && git pull && git push",
+    "release.minor": "bun run build && lerna publish minor && git pull && git push",
+    "release.major": "bun run build && lerna publish major && git pull && git push",
+    "check": "concurrently 'bun run check.ts' 'bun run lint.fix'",
     "check.ts": "tsc --noEmit",
     "build": "lerna run build",
     "lint": "biome check .",
@@ -38,6 +38,7 @@
     "coveralls": "3.1.1",
     "cross-env": "10.1.0",
     "jest": "30.2.0",
+    "lerna": "^9.0.3",
     "mongodb-memory-server": "11.0.1",
     "rimraf": "6.1.2",
     "ts-node": "10.9.2",

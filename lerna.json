@@ -1,16 +1,17 @@
 {
-  "version": "2.0.0",
+  "$schema": "https://lerna.js.org/schemas/2.0.0/lerna-schema.json",
+  "version": "independent",
   "command": {
     "publish": {
-      "contents": "dist",
       "conventionalCommits": true,
-      "changelog": false,
-      "yes": true,
-      "forceGitTag": true,
-      "forcePublish": true
-    },
-    "version": {
-      "yes": true
+      "message": "chore(release): publish",
+      "createChangelog": true,
+      "allowBranch": "uql-unification",
+      "ignoreChanges": ["**/*.spec.ts", "**/*.it.ts", "**/test/**"],
+      "forcePublish": true,
+      "push": false,
+      "gitRemote": "origin"
     }
-  }
+  },
+  "packages": ["packages/*"]
 }

@@ -1,4 +1,5 @@
 export * from './entity.js';
+export * from './migration.js';
 export * from './namingStrategy.js';
 export * from './querier.js';
 export * from './querierPool.js';
