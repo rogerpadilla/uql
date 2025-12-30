@@ -6,7 +6,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 
 @Entity()
-class UserProfile {
+class UserProfileDialect {
   @Id() id?: number;
   @Field() firstName?: string;
   @Field() lastName?: string;
@@ -19,13 +19,13 @@ describe('Naming Strategy SQL Generation', () => {
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();
-      dialect.insert(ctx, UserProfile, { firstName: 'John', lastName: 'Doe' });
-      expect(ctx.sql).toContain('INSERT INTO "user_profile" ("first_name", "last_name")');
+      dialect.insert(ctx, UserProfileDialect, { firstName: 'John', lastName: 'Doe' });
+      expect(ctx.sql).toContain('INSERT INTO "user_profile_dialect" ("first_name", "last_name")');
     });
 
     it('should respect explicit names', () => {
       const ctx = dialect.createContext();
-      dialect.insert(ctx, UserProfile, { explicitField: 'value' });
+      dialect.insert(ctx, UserProfileDialect, { explicitField: 'value' });
       expect(ctx.sql).toContain('"explicit_name"');
     });
   });
@@ -35,8 +35,8 @@ describe('Naming Strategy SQL Generation', () => {
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();
-      dialect.insert(ctx, UserProfile, { firstName: 'John', lastName: 'Doe' });
-      expect(ctx.sql).toContain('INSERT INTO `user_profile` (`first_name`, `last_name`)');
+      dialect.insert(ctx, UserProfileDialect, { firstName: 'John', lastName: 'Doe' });
+      expect(ctx.sql).toContain('INSERT INTO `user_profile_dialect` (`first_name`, `last_name`)');
     });
   });
 
@@ -45,8 +45,8 @@ describe('Naming Strategy SQL Generation', () => {
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();
-      dialect.insert(ctx, UserProfile, { firstName: 'John', lastName: 'Doe' });
-      expect(ctx.sql).toContain('INSERT INTO `user_profile` (`first_name`, `last_name`)');
+      dialect.insert(ctx, UserProfileDialect, { firstName: 'John', lastName: 'Doe' });
+      expect(ctx.sql).toContain('INSERT INTO `user_profile_dialect` (`first_name`, `last_name`)');
     });
   });
 });
