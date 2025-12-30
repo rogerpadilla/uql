@@ -92,11 +92,12 @@ bun add pg
 Annotate your classes with decorators from `@uql/core`. UQL supports detailed schema metadata for precise DDL generation.
 
 ```ts
+import { v7 as uuidv7 } from 'uuid';
 import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation } from '@uql/core';
 
 @Entity()
 export class User {
-  @Id()
+  @Id({ onInsert: () => uuidv7() })
   id?: string;
 
   @Field({ length: 100, index: true })
@@ -114,7 +115,7 @@ export class User {
 
 @Entity()
 export class Profile {
-  @Id()
+  @Id({ onInsert: () => uuidv7() })
   id?: string;
 
   @Field()
@@ -147,7 +148,7 @@ export class Post {
 
 @Entity()
 export class Tag {
-  @Id()
+  @Id({ onInsert: () => uuidv7() })
   id?: string;
 
   @Field()
@@ -156,7 +157,7 @@ export class Tag {
 
 @Entity()
 export class PostTag {
-  @Id()
+  @Id({ onInsert: () => uuidv7() })
   id?: string;
 
   @Field({ reference: () => Post })
@@ -282,6 +283,7 @@ const authorsWithPopularPosts = await pool.transaction(async (querier) => {
 Define complex logic directly in your entities using `raw` functions from `uql/util`. These are highly efficient as they are resolved during SQL generation.
 
 ```ts
+import { v7 as uuidv7 } from 'uuid';
 import { Entity, Id, Field, raw } from '@uql/core';
 import { ItemTag } from './shared/models/index.js';
 
