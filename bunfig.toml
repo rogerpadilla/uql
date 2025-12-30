@@ -3,11 +3,7 @@
 lockfile = true
 
 [test]
-# Default timeout for bun test
 timeout = 10000
 coverage = true
 coverageDirectory = "coverage"
-# "lcov" is required for Coveralls and our custom summary script.
-# We omit "text" to avoid the huge table in the console.
-coverageReporter = ["lcov"]
-# The reporter format for tests (e.g. dots) is better set in package.json or CLI.
+coverageReporter = ["lcov", "text"]

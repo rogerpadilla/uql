@@ -246,7 +246,6 @@ function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
-    console.log('****', entity, key, inferredType);
     throw TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
   }
   return inferredType;

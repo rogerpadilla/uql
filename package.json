@@ -15,7 +15,7 @@
     "build": "lerna run build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",
-    "test": "bun test --dots && node scripts/coverage-report.js",
+    "test": "bun test && node scripts/coverage-report.js",
     "test.watch": "bun test --watch",
     "test.focus": "bun test -t 'shouldInsertOneAndCascadeOneToOne' mongodbQuerier"
   },
