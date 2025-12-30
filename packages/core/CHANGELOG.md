@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [3.2.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.4...@uql/core@3.2.0) (2025-12-30)
-
-
-### Features
-
-* add funding configuration and sponsorship details to README ([3607dec](https://github.com/rogerpadilla/uql/commit/3607dec6f5e82ca8270577a7fb9d364747c00a91))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
