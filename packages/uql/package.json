@@ -36,7 +36,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "copyfiles": "copyfiles -f package.json ../README.md ../CHANGELOG.md dist",
     "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run copyfiles",
     "start": "tsc --watch",
