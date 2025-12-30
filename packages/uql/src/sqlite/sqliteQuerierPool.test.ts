@@ -1,4 +1,4 @@
-import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-it.js';
+import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-test.js';
 import { createSpec } from '../test/index.js';
 import type { SqliteQuerier } from './sqliteQuerier.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';

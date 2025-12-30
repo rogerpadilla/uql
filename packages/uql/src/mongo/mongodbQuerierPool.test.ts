@@ -1,5 +1,5 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-it.js';
+import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-test.js';
 import { createSpec } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';

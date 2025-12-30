@@ -4,4 +4,7 @@ lockfile = true
 
 [test]
 # Default timeout for bun test
-timeout = 15000
+timeout = 10000
+coverage = true
+coverageDirectory = "coverage"
+coverageThreshold = 0.9

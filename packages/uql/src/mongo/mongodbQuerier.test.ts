@@ -1,6 +1,6 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { getEntities, getMeta } from '../entity/index.js';
-import { AbstractQuerierIt } from '../querier/abstractQuerier-it.js';
+import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';

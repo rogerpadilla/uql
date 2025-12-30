@@ -1,8 +1,9 @@
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-it.js';
+import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-test.js';
 import { createSpec } from '../test/index.js';
+import type { MariadbQuerier } from './mariadbQuerier.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
-export class MariadbQuerierIt extends AbstractSqlQuerierIt {
+export class MariadbQuerierPoolIt extends AbstractQuerierPoolIt<MariadbQuerier> {
   constructor() {
     super(
       new MariadbQuerierPool({
@@ -15,9 +16,8 @@ export class MariadbQuerierIt extends AbstractSqlQuerierIt {
         trace: true,
         bigIntAsNumber: true,
       }),
-      'INT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }
 
-createSpec(new MariadbQuerierIt());
+createSpec(new MariadbQuerierPoolIt());

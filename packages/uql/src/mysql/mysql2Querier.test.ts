@@ -1,4 +1,4 @@
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-it.js';
+import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
