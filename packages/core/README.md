@@ -406,3 +406,13 @@ For those who want to see the "engine under the hood," check out these resources
   - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts).
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
   - [MongoDB Migration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/migrate/migrator-mongo.it.ts): Integration tests ensuring correct collection and index synchronization for MongoDB.
+
+---
+
+## Built with ❤️ and supported by
+
+UQL is an open-source project driven by the community and proudly sponsored by **[Variability.ai](https://variability.ai)**.
+
+> "Intelligence in Every Fluctuation"
+
+Their support helps us maintain and evolve the "Smartest ORM" for developers everywhere. Thank you for being part of our journey!
