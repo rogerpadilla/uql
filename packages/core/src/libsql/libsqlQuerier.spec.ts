@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from 'bun:test';
-import type { Client, ResultSet, Transaction } from '@libsql/client';
+import type { Client, ResultSet } from '@libsql/client';
 import { LibsqlQuerier } from './libsqlQuerier.js';
 
 describe('LibsqlQuerier', () => {
@@ -38,7 +38,7 @@ describe('LibsqlQuerier', () => {
       columnTypes: ['INTEGER'],
       rowsAffected: 0,
       lastInsertRowid: undefined,
-    } satisfies ResultSet);
+    } as unknown as ResultSet);
 
     const res = await querier.internalAll('SELECT 1');
 
@@ -53,7 +53,7 @@ describe('LibsqlQuerier', () => {
       columnTypes: [],
       rowsAffected: 1,
       lastInsertRowid: 100n, // LibSQL uses bigint for rowid
-    } satisfies ResultSet);
+    } as unknown as ResultSet);
 
     const res = await querier.internalRun('INSERT INTO ...');
 
@@ -70,7 +70,12 @@ describe('LibsqlQuerier', () => {
     expect(querier.hasOpenTransaction).toBe(true);
 
     // Queries should now go through tx
-    mockTx.execute.mockResolvedValue({ rows: [], columns: [], columnTypes: [], rowsAffected: 0 } satisfies ResultSet);
+    mockTx.execute.mockResolvedValue({
+      rows: [],
+      columns: [],
+      columnTypes: [],
+      rowsAffected: 0,
+    } as unknown as ResultSet);
     await querier.internalAll('SELECT 1');
     expect(mockTx.execute).toHaveBeenCalled();
     expect(mockClient.execute).not.toHaveBeenCalled();

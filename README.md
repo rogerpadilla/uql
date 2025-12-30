@@ -8,7 +8,7 @@
 
 It can run in Node.js, Browser, React Native, Expo, Electron, Deno, Bun, and many more!
 
-Uses a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, and SQLite (inspired by MongoDB glorious syntax).
+Uses a consistent API for distinct databases, including PostgreSQL, MySQL, MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, and even MongoDB (inspired by MongoDB glorious syntax).
 
 &nbsp;
 
@@ -33,7 +33,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 - **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.app/docs/querying-relations).
 - **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
-- **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, and even `MongoDB`.
+- **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, `LibSQL`, `Neon`, `Cloudflare D1`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
 - **Naming Strategies**: Effortlessly translate between TypeScript `CamelCase` and database `snake_case` (or any custom format) with a pluggable system.
 - **Built-in Serialization**: A centralized task queue and `@Serialized()` decorator ensure database operations are thread-safe and race-condition free by default.
