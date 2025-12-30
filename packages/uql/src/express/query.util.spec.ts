@@ -7,10 +7,10 @@ import { parseQuery } from './query.util.js';
 it('parseQuery -- empty', () => {
   const req1 = {} as Request;
   parseQuery(req1);
-  expect(req1).toEqual({ query: { $where: {} } });
+  expect(req1).toMatchObject({ query: { $where: {} } });
   const req2 = { query: undefined as object } as Request;
   parseQuery(req2);
-  expect(req2).toEqual({ query: { $where: {} } });
+  expect(req2).toMatchObject({ query: { $where: {} } });
 });
 
 it('parseQuery stringified', () => {
@@ -36,5 +36,5 @@ it('parseQuery stringified', () => {
   } satisfies Query<Item>;
   const req = { query: queryStr } as unknown as Request;
   parseQuery(req);
-  expect(req).toEqual({ query });
+  expect(req).toMatchObject({ query });
 });

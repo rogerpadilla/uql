@@ -15,7 +15,7 @@ it('flatObject', () => {
     name: 1,
     'measureUnit.name': -1,
     'measureUnit.category.creator.profile.picture': 1,
-  });
+  } as any);
 });
 
 it('unflatObjects - empty', () => {

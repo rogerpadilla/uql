@@ -491,7 +491,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      expect.toMatch(
+      expect.stringMatching(
         /^UPDATE `MeasureUnit` SET `categoryId` = \?, `updatedAt` = \? WHERE `id` = \? AND `deletedAt` IS NULL$/,
       ),
       [1, expect.any(Number), 1],

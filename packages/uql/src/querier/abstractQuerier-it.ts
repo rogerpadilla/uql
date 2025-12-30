@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'bun:test';
+import { expect } from 'bun:test';
 import { getEntities } from '../entity/index.js';
 import {
   Company,
