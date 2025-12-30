@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [3.1.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.0...@uql/core@3.1.1) (2025-12-30)
+
+
+### Bug Fixes
+
+* adjust relative paths for README and CHANGELOG in copyfiles script ([741c2ee](https://github.com/rogerpadilla/uql/commit/741c2ee8839376ca89a860a53950ef6b6d234596))
+
+
+
+
+
 # [3.1.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.0.0...@uql/core@3.1.0) (2025-12-30)
 
 
