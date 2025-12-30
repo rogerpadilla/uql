@@ -3,13 +3,9 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.1.3](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.2...@uql/core@3.1.3) (2025-12-30)
+## [3.1.4](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.3...@uql/core@3.1.4) (2025-12-30)
 
-
-### Features
-
-* add migration CLI and update core package build configuration with new build config and declaration maps while removing old path aliases. ([2b87dd4](https://github.com/rogerpadilla/uql/commit/2b87dd411d05c9844b3e3a6b0a7c74d120b9c362))
-* Implement custom test coverage reporting and simplify README database adapter table. ([837fadf](https://github.com/rogerpadilla/uql/commit/837fadf2cfc27be3a16efc2c489f83c047cc24e1))
+**Note:** Version bump only for package @uql/core
 
 
 
