@@ -32,7 +32,10 @@
       "types": "./dist/browser/index.d.ts",
       "import": "./dist/browser/index.js",
       "default": "./dist/browser/uql-browser.min.js"
-    }
+    },
+    "./libsql": "./dist/libsql/index.js",
+    "./neon": "./dist/neon/index.js",
+    "./d1": "./dist/d1/index.js"
   },
   "files": [
     "dist",
@@ -59,7 +62,9 @@
     "mariadb": ">=3.0.0",
     "mongodb": ">=6.0.0",
     "mysql2": ">=3.0.0",
-    "pg": ">=8.0.0"
+    "pg": ">=8.0.0",
+    "@libsql/client": ">=0.6.0",
+    "@neondatabase/serverless": ">=0.9.0"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -79,6 +84,12 @@
     },
     "better-sqlite3": {
       "optional": true
+    },
+    "@libsql/client": {
+      "optional": true
+    },
+    "@neondatabase/serverless": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -87,6 +98,8 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.3",
     "@types/pg": "^8.16.0",
+    "@libsql/client": "latest",
+    "@neondatabase/serverless": "latest",
     "@types/sqlstring": "^2.3.2",
     "better-sqlite3": "^12.5.0",
     "bunchee": "^6.9.1",
