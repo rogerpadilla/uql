@@ -18,6 +18,18 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(values[0]).toBeInstanceOf(Date);
   }
 
+  shouldEscape() {
+    const dialect = new MariaDialect();
+    expect(dialect.escape("va'lue")).toBe("'va\\'lue'");
+  }
+
+  shouldHandleOtherValues() {
+    const dialect = new MariaDialect();
+    const values: unknown[] = [];
+    expect(dialect.addValue(values, 123)).toBe('?');
+    expect(values[0]).toBe(123);
+  }
+
   shouldUpsertWithNoUpdateFields() {
     const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
     expect(sql).toContain('INSERT IGNORE');

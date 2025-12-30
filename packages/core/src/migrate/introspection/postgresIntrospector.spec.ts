@@ -109,4 +109,60 @@ describe('PostgresSchemaIntrospector', () => {
 
     expect(schema).toBeUndefined();
   });
+
+  it('tableExists should return true if table exists', async () => {
+    mockAll.mockResolvedValueOnce([{ exists: true }]);
+    const exists = await introspector.tableExists('users');
+    expect(exists).toBe(true);
+  });
+
+  it('getTableSchema should include foreign keys with referential actions', async () => {
+    // tableExists
+    mockAll.mockResolvedValueOnce([{ exists: true }]);
+    // getColumns
+    mockAll.mockResolvedValueOnce([]);
+    // getIndexes
+    mockAll.mockResolvedValueOnce([]);
+    // getForeignKeys
+    mockAll.mockResolvedValueOnce([
+      {
+        constraint_name: 'fk_posts_user_id',
+        columns: ['user_id'],
+        referenced_table: 'users',
+        referenced_columns: ['id'],
+        delete_rule: 'CASCADE',
+        update_rule: 'NO ACTION',
+      },
+    ]);
+    // getPrimaryKey
+    mockAll.mockResolvedValueOnce([]);
+
+    const schema = await introspector.getTableSchema('posts');
+
+    expect(schema?.foreignKeys).toHaveLength(1);
+    expect(schema?.foreignKeys?.[0]).toMatchObject({
+      name: 'fk_posts_user_id',
+      columns: ['user_id'],
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: 'NO ACTION',
+    });
+  });
+
+  it('normalizeType should handle user-defined and array types', () => {
+    const normalize = (introspector as any).normalizeType.bind(introspector);
+    expect(normalize('USER-DEFINED', 'my_enum')).toBe('MY_ENUM');
+    expect(normalize('ARRAY', '_int4')).toBe('int4[]');
+    expect(normalize('integer', 'int4')).toBe('INTEGER');
+  });
+
+  it('normalizeReferentialAction should handle various cases', () => {
+    const normalize = (introspector as any).normalizeReferentialAction.bind(introspector);
+    expect(normalize('CASCADE')).toBe('CASCADE');
+    expect(normalize('SET NULL')).toBe('SET NULL');
+    expect(normalize('RESTRICT')).toBe('RESTRICT');
+    expect(normalize('NO ACTION')).toBe('NO ACTION');
+    expect(normalize('UNKNOWN')).toBeUndefined();
+  });
 });

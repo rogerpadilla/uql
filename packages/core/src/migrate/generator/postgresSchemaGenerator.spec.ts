@@ -41,4 +41,18 @@ describe('PostgresSchemaGenerator Specifics', () => {
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET NOT NULL;');
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET DEFAULT 18;');
   });
+
+  it('should get boolean type', () => {
+    expect(generator.getBooleanType()).toBe('BOOLEAN');
+  });
+
+  it('should return empty string for generateColumnComment', () => {
+    expect(generator.generateColumnComment('users', 'name', 'comment')).toBe('');
+  });
+
+  it('should generate column comment statement', () => {
+    expect(generator.generateColumnCommentStatement('users', 'name', "user's name")).toBe(
+      'COMMENT ON COLUMN "users"."name" IS \'user\'\'s name\';',
+    );
+  });
 });

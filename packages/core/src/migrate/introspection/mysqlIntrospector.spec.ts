@@ -110,4 +110,54 @@ describe('MysqlSchemaIntrospector', () => {
 
     expect(schema).toBeUndefined();
   });
+
+  it('tableExists should return true if table exists', async () => {
+    mockAll.mockResolvedValueOnce([{ count: 1 }]);
+    const exists = await introspector.tableExists('users');
+    expect(exists).toBe(true);
+  });
+
+  it('getTableSchema should include foreign keys with referential actions', async () => {
+    // tableExists
+    mockAll.mockResolvedValueOnce([{ count: 1 }]);
+    // getColumns
+    mockAll.mockResolvedValueOnce([]);
+    // getIndexes
+    mockAll.mockResolvedValueOnce([]);
+    // getForeignKeys
+    mockAll.mockResolvedValueOnce([
+      {
+        constraint_name: 'fk_posts_user_id',
+        columns: 'user_id',
+        referenced_table: 'users',
+        referenced_columns: 'id',
+        delete_rule: 'CASCADE',
+        update_rule: 'NO ACTION',
+      },
+    ]);
+    // getPrimaryKey
+    mockAll.mockResolvedValueOnce([]);
+
+    const schema = await introspector.getTableSchema('posts');
+
+    expect(schema?.foreignKeys).toHaveLength(1);
+    expect(schema?.foreignKeys?.[0]).toMatchObject({
+      name: 'fk_posts_user_id',
+      columns: ['user_id'],
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: 'NO ACTION',
+    });
+  });
+
+  it('normalizeReferentialAction should handle various cases', async () => {
+    // Using any to access private members
+    const normalize = (introspector as any).normalizeReferentialAction.bind(introspector);
+    expect(normalize('CASCADE')).toBe('CASCADE');
+    expect(normalize('SET NULL')).toBe('SET NULL');
+    expect(normalize('RESTRICT')).toBe('RESTRICT');
+    expect(normalize('NO ACTION')).toBe('NO ACTION');
+    expect(normalize('UNKNOWN')).toBeUndefined();
+  });
 });

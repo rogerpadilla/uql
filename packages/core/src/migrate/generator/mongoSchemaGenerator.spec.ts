@@ -109,4 +109,30 @@ describe('MongoSchemaGenerator', () => {
     const diff = generator.diffSchema(MongoUser, currentSchema);
     expect(diff).toBeUndefined();
   });
+
+  it('should generate alter statements', () => {
+    const diff = {
+      tableName: 'MongoUser',
+      type: 'alter' as const,
+      indexesToAdd: [{ name: 'idx_test', columns: ['test'], unique: false }],
+    };
+    const statements = generator.generateAlterTable(diff);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain('"action":"createIndex"');
+  });
+
+  it('should generate alter down statements', () => {
+    const diff = {
+      tableName: 'MongoUser',
+      type: 'alter' as const,
+      indexesToAdd: [{ name: 'idx_test', columns: ['test'], unique: false }],
+    };
+    const statements = generator.generateAlterTableDown(diff);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toContain('"action":"dropIndex"');
+  });
+
+  it('should return empty string for getSqlType', () => {
+    expect(generator.getSqlType()).toBe('');
+  });
 });

@@ -252,4 +252,45 @@ describe('Migrator Core Methods', () => {
       expect((m as any).schemaGenerator).toBe(customGenerator);
     });
   });
+
+  it('generate should create a new migration file content', async () => {
+    const filePath = await migrator.generate('initial_schema');
+    expect(filePath).toContain('initial_schema.ts');
+    const { writeFile } = await import('node:fs/promises');
+    expect(writeFile).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('export default {'), 'utf-8');
+  });
+
+  it('getDialect should return the dialect', () => {
+    expect(migrator.getDialect()).toBe('postgres');
+  });
+
+  it('status should return pending and executed migrations', async () => {
+    mockExecuted.mockResolvedValue(['20250101000000_m1']);
+    const status = await migrator.status();
+    expect(status.pending).toEqual(['20250102000000_m2', '20250103000000_m3']);
+    expect(status.executed).toEqual(['20250101000000_m1']);
+  });
+
+  it('up should stop on first failure', async () => {
+    const migrations = (await migrator.getMigrations()) as any[];
+    migrations[1].up = jest.fn().mockRejectedValue(new Error('Migration failed'));
+
+    const results = await migrator.up();
+
+    expect(results).toHaveLength(2);
+    expect(results[0].success).toBe(true);
+    expect(results[1].success).toBe(false);
+    expect(results).not.toContainEqual(expect.objectContaining({ name: '20250103000000_m3' }));
+  });
+
+  it('down should stop on first failure', async () => {
+    mockExecuted.mockResolvedValue(['20250101000000_m1', '20250102000000_m2']);
+    const migrations = (await migrator.getMigrations()) as any[];
+    migrations[1].down = jest.fn().mockRejectedValue(new Error('Rollback failed'));
+
+    const results = await migrator.down();
+
+    expect(results).toHaveLength(1);
+    expect(results[0].success).toBe(false);
+  });
 });

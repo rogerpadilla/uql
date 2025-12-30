@@ -30,4 +30,12 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(generator.formatDefaultValue(true)).toBe('1');
     expect(generator.formatDefaultValue(false)).toBe('0');
   });
+
+  it('should return boolean type', () => {
+    expect(generator.getBooleanType()).toBe('INTEGER');
+  });
+
+  it('should return empty string for column comment', () => {
+    expect(generator.generateColumnComment('users', 'name', 'comment')).toBe('');
+  });
 });

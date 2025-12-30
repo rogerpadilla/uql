@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/@uql/core.svg)](https://www.npmjs.com/package/@uql/core)
 
-[uql](https://uql.app) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
+[UQL](https://uql.app) is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript, it is designed to be fast, safe, and easy to integrate into any application.
 
 It can run in Node.js, Browser, React Native, Expo, Electron, Deno, Bun, and many more!
 
@@ -58,10 +58,10 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 | Database     | Driver           | UQL Adapter    |
 | ------------ | ---------------- | ---------------- |
-| `PostgreSQL` | `pg`             | `uql-postgres` |
-| `SQLite`     | `better-sqlite3` | `uql-sqlite`   |
-| `MariaDB`    | `mariadb`        | `uql-maria`    |
-| `MySQL`      | `mysql2`         | `uql-mysql`    |
+| `PostgreSQL` | `pg`             | `@uql/core/postgres` |
+| `SQLite`     | `better-sqlite3` | `@uql/core/sqlite`   |
+| `MariaDB`    | `mariadb`        | `@uql/core/maria`    |
+| `MySQL`      | `mysql2`         | `@uql/core/mysql`    |
 
 &nbsp;
 
@@ -76,14 +76,14 @@ bun add pg
 3. Additionally, your `tsconfig.json` may need the following flags:
 
    ```json
-   "target": "es2022",
+   "target": "ES2024",
    "experimentalDecorators": true,
    "emitDecoratorMetadata": true
    ```
 
 &nbsp;
 
-> **Note**: UQL provides first-class support for **Bun**. It is recommended to use Bun for a significantly faster developer experience.
+> **Note**: `"ES2022"`, `"ES2023"`, or `"ESNext"` will also work fine for `target`.
 
 ---
 
@@ -91,11 +91,10 @@ bun add pg
 
 ## 2. Define the entities
 
-Annotate your classes with decorators from `uql/entity`. UQL supports detailed schema metadata for precise DDL generation.
+Annotate your classes with decorators from `@uql/core`. UQL supports detailed schema metadata for precise DDL generation.
 
 ```ts
-import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany } from '@uql/core/entity';
-import type { Relation } from '@uql/core/type';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation } from '@uql/core';
 
 @Entity()
 export class User {
@@ -179,7 +178,7 @@ A querier-pool can be set in any of the bootstrap files of your app (e.g. in the
 ```ts
 // file: ./shared/orm.ts
 import { SnakeCaseNamingStrategy } from '@uql/core';
-import { PgQuerierPool } from 'uql-postgres';
+import { PgQuerierPool } from '@uql/core/postgres';
 
 export const querierPool = new PgQuerierPool(
   {
@@ -212,7 +211,7 @@ UQL provides multiple ways to interact with your data, from low-level `Queriers`
 Repositories provide a clean, Data-Mapper style interface for your entities.
 
 ```ts
-import { GenericRepository } from '@uql/core/repository';
+import { GenericRepository } from '@uql/core';
 import { User } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
 
@@ -248,9 +247,9 @@ try {
 UQL's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
 
 ```ts
-import { GenericRepository } from '@uql/core/repository';
-import { User } from './shared/models/index.js';
+import { GenericRepository } from '@uql/core';
 import { querierPool } from './shared/orm.js';
+import { User } from './shared/models/index.js';
 
 const authorsWithPopularPosts = await querierPool.transaction(async (querier) => {
   const userRepository = new GenericRepository(User, querier);
@@ -285,8 +284,7 @@ const authorsWithPopularPosts = await querierPool.transaction(async (querier) =>
 Define complex logic directly in your entities using `raw` functions from `uql/util`. These are highly efficient as they are resolved during SQL generation.
 
 ```ts
-import { Entity, Id, Field } from '@uql/core/entity';
-import { raw } from '@uql/core/util';
+import { Entity, Id, Field, raw } from '@uql/core';
 import { ItemTag } from './shared/models/index.js';
 
 @Entity()
@@ -317,8 +315,8 @@ export class Item {
 UQL ensures your operations are serialized and thread-safe.
 
 ```ts
-import { User, Profile } from './shared/models/index.js';
 import { querierPool } from './shared/orm.js';
+import { User, Profile } from './shared/models/index.js';
 
 const result = await querierPool.transaction(async (querier) => {
   const user = await querier.findOne(User, { $where: { email: '...' } });
@@ -339,12 +337,11 @@ UQL includes a robust migration system and an "Entity-First" synchronization eng
 Create a `uql.config.ts` file in your project root:
 
 ```typescript
-import { PgQuerierPool } from 'uql-postgres';
-import { User, Post } from './src/entities/index.js';
+import { PgQuerierPool } from '@uql/core/postgres';
+import { User, Post } from './shared/models/index.js';
 
 export default {
   querierPool: new PgQuerierPool({ /* config */ }),
-  dialect: 'postgres',
   entities: [User, Post],
   migrationsPath: './migrations',
 };
@@ -408,6 +405,6 @@ For those who want to see the "engine under the hood," check out these resources
 - **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect.ts).
 - **Comprehensive Test Suite**:
   - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
-  - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/postgres/src/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/mysql/src/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/sqlite/src/sqliteDialect.spec.ts).
+  - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts).
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
-  - [MongoDB Migration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/uql/src/migrate/migrator-mongo.it.ts): Integration tests ensuring correct collection and index synchronization for MongoDB.
+  - [MongoDB Migration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/migrate/migrator-mongo.it.ts): Integration tests ensuring correct collection and index synchronization for MongoDB.

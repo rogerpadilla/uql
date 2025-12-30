@@ -69,7 +69,7 @@ async function main() {
       throw new Error('querierPool is required in configuration');
     }
 
-    const dialect = config.dialect ?? 'postgres';
+    const dialect = config.dialect ?? config.querierPool.dialect ?? 'postgres';
 
     const options: MigratorOptions & { dialect: Dialect } = {
       migrationsPath: config.migrationsPath ?? './migrations',
@@ -281,9 +281,9 @@ Configuration:
 
   export default {
     querierPool: new PgQuerierPool({ ... }),
+    // dialect: 'postgres', // optional, inferred from querierPool
     migrationsPath: './migrations',
     tableName: 'uql_migrations',
-    dialect: 'postgres', // 'postgres' | 'mysql' | 'mariadb' | 'sqlite'
     entities: [User, Post, ...],
   };
 

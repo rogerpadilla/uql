@@ -31,4 +31,16 @@ describe('MysqlSchemaGenerator Specifics', () => {
   it('should get table options', () => {
     expect(generator.getTableOptions()).toContain('ENGINE=InnoDB');
   });
+
+  it('should get boolean type', () => {
+    expect(generator.getBooleanType()).toBe('TINYINT(1)');
+  });
+
+  it('should generate column comment', () => {
+    expect(generator.generateColumnComment('users', 'name', "user's name")).toBe(" COMMENT 'user''s name'");
+  });
+
+  it('should generate DROP INDEX statement', () => {
+    expect(generator.generateDropIndex('users', 'idx_test')).toBe('DROP INDEX `idx_test` ON `users`;');
+  });
 });
