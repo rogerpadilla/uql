@@ -50,16 +50,18 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
    ```sh
    npm install @uql/core
+   # or
+   bun add @uql/core
    ```
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver
-| ------------ | ----------------
-| `PostgreSQL` | `pg`
-| `SQLite`     | `better-sqlite3`
-| `MariaDB`    | `mariadb`
-| `MySQL`      | `mysql2`
+| Database     | Driver           | UQL Adapter    |
+| ------------ | ---------------- | ---------------- |
+| `PostgreSQL` | `pg`             | `uql-postgres` |
+| `SQLite`     | `better-sqlite3` | `uql-sqlite`   |
+| `MariaDB`    | `mariadb`        | `uql-maria`    |
+| `MySQL`      | `mysql2`         | `uql-mysql`    |
 
 &nbsp;
 
@@ -67,6 +69,8 @@ For example, for `Postgres` install the `pg` driver:
 
 ```sh
 npm install pg
+# or
+bun add pg
 ```
 
 3. Additionally, your `tsconfig.json` may need the following flags:
@@ -78,6 +82,8 @@ npm install pg
    ```
 
 &nbsp;
+
+> **Note**: UQL provides first-class support for **Bun**. It is recommended to use Bun for a significantly faster developer experience.
 
 ---
 
@@ -351,15 +357,23 @@ UQL provides a dedicated CLI tool for migrations.
 ```bash
 # Generate a migration by comparing entities vs database
 npx uql-migrate generate:entities initial_schema
+# or
+bunx uql-migrate generate:entities initial_schema
 
 # Run pending migrations
 npx uql-migrate up
+# or
+bunx uql-migrate up
 
 # Rollback the last migration
 npx uql-migrate down
+# or
+bunx uql-migrate down
 
 # Check status
 npx uql-migrate status
+# or
+bunx uql-migrate status
 ```
 
 ### 3. Entity-First Synchronization (Development)
