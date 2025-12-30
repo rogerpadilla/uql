@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import { User } from '../test/index.js';
 import type { Querier, Repository } from '../type/index.js';
 import { GenericRepository } from './genericRepository.js';

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import { Entity, Field, Id } from '../entity/index.js';
 import type { QuerierPool } from '../type/index.js';
 import { Migrator } from './migrator.js';

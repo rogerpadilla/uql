@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { jest } from 'bun:test';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { createSpec } from '../test/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';

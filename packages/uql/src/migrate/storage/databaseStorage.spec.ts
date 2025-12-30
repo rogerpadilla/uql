@@ -1,16 +1,20 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { describe, expect, it, jest } from 'bun:test';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { DatabaseMigrationStorage } from './databaseStorage.js';
 
 describe('DatabaseMigrationStorage', () => {
   let storage: DatabaseMigrationStorage;
   let pool: QuerierPool;
-  let querier: jest.Mocked<SqlQuerier>;
+  let querier: SqlQuerier;
+  let mockAll: ReturnType<typeof jest.fn>;
+  let mockRun: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
+    mockAll = jest.fn<any>().mockResolvedValue([]);
+    mockRun = jest.fn<any>().mockResolvedValue({});
     querier = {
-      all: jest.fn<any>().mockResolvedValue([]),
-      run: jest.fn<any>().mockResolvedValue({}),
+      all: mockAll,
+      run: mockRun,
       release: jest.fn<any>().mockResolvedValue(undefined),
       dialect: {
         escapeId: (id: string) => `"${id}"`,
@@ -20,7 +24,7 @@ describe('DatabaseMigrationStorage', () => {
     } as any;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
     } as any;
 
     storage = new DatabaseMigrationStorage(pool);
@@ -35,9 +39,9 @@ describe('DatabaseMigrationStorage', () => {
 
   it('executed should return migration names', async () => {
     // 1. ensureStorage
-    querier.run.mockResolvedValueOnce({} as any);
+    mockRun.mockResolvedValueOnce({} as any);
     // 2. executed query
-    querier.all.mockResolvedValueOnce([{ name: 'm1' }, { name: 'm2' }]);
+    mockAll.mockResolvedValueOnce([{ name: 'm1' }, { name: 'm2' }]);
 
     const executed = await storage.executed();
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from 'bun:test';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';

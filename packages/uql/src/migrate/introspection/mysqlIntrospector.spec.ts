@@ -1,29 +1,39 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { MysqlSchemaIntrospector } from './mysqlIntrospector.js';
 
 describe('MysqlSchemaIntrospector', () => {
   let introspector: MysqlSchemaIntrospector;
   let pool: QuerierPool;
-  let querier: jest.Mocked<SqlQuerier>;
+  let querier: SqlQuerier;
+
+  let mockAll: ReturnType<typeof jest.fn>;
+  let mockRun: ReturnType<typeof jest.fn>;
+  let mockRelease: ReturnType<typeof jest.fn>;
+  let mockGetQuerier: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
+    mockAll = jest.fn<any>().mockResolvedValue([]);
+    mockRun = jest.fn<any>().mockResolvedValue({});
+    mockRelease = jest.fn<any>().mockResolvedValue(undefined);
+
     querier = {
-      all: jest.fn<any>().mockResolvedValue([]),
-      run: jest.fn<any>().mockResolvedValue({}),
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      all: mockAll,
+      run: mockRun,
+      release: mockRelease,
       dialect: { escapeIdChar: '`' },
     } as any;
 
+    mockGetQuerier = jest.fn<any>().mockResolvedValue(querier);
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: mockGetQuerier,
     } as any;
 
     introspector = new MysqlSchemaIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
-    querier.all.mockResolvedValueOnce([{ table_name: 'users' }, { table_name: 'posts' }]);
+    mockAll.mockResolvedValueOnce([{ table_name: 'users' }, { table_name: 'posts' }]);
 
     const names = await introspector.getTableNames();
 
@@ -33,9 +43,9 @@ describe('MysqlSchemaIntrospector', () => {
 
   it('getTableSchema should return table details', async () => {
     // 1. tableExists check
-    querier.all.mockResolvedValueOnce([{ count: 1 }]);
+    mockAll.mockResolvedValueOnce([{ count: 1 }]);
     // 2. getColumns
-    querier.all.mockResolvedValueOnce([
+    mockAll.mockResolvedValueOnce([
       {
         column_name: 'id',
         data_type: 'int',
@@ -64,7 +74,7 @@ describe('MysqlSchemaIntrospector', () => {
       },
     ]);
     // 3. getIndexes
-    querier.all.mockResolvedValueOnce([
+    mockAll.mockResolvedValueOnce([
       {
         index_name: 'email_unique',
         columns: 'email',
@@ -72,9 +82,9 @@ describe('MysqlSchemaIntrospector', () => {
       },
     ]);
     // 4. getForeignKeys
-    querier.all.mockResolvedValueOnce([]);
+    mockAll.mockResolvedValueOnce([]);
     // 5. getPrimaryKey
-    querier.all.mockResolvedValueOnce([{ column_name: 'id' }]);
+    mockAll.mockResolvedValueOnce([{ column_name: 'id' }]);
 
     const schema = await introspector.getTableSchema('users');
 
@@ -94,7 +104,7 @@ describe('MysqlSchemaIntrospector', () => {
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {
-    querier.all.mockResolvedValueOnce([{ count: 0 }]);
+    mockAll.mockResolvedValueOnce([{ count: 0 }]);
 
     const schema = await introspector.getTableSchema('non_existent');
 

@@ -1,29 +1,34 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
 describe('PostgresSchemaIntrospector', () => {
   let introspector: PostgresSchemaIntrospector;
   let pool: QuerierPool;
-  let querier: jest.Mocked<SqlQuerier>;
+  let querier: SqlQuerier;
+
+  let mockAll: ReturnType<typeof jest.fn>;
+  let mockRun: ReturnType<typeof jest.fn>;
+  let mockRelease: ReturnType<typeof jest.fn>;
+  let mockGetQuerier: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
     querier = {
-      all: jest.fn<any>().mockResolvedValue([]),
-      run: jest.fn<any>().mockResolvedValue({}),
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      all: jest.fn<any>().mockResolvedValue([]) as any,
+      run: jest.fn<any>().mockResolvedValue({}) as any,
+      release: jest.fn<any>().mockResolvedValue(undefined) as any,
       dialect: { escapeIdChar: '"' },
     } as any;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
     } as any;
 
     introspector = new PostgresSchemaIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
-    querier.all.mockResolvedValueOnce([{ table_name: 'users' }, { table_name: 'posts' }]);
+    mockAll.mockResolvedValueOnce([{ table_name: 'users' }, { table_name: 'posts' }]);
 
     const names = await introspector.getTableNames();
 
@@ -33,9 +38,9 @@ describe('PostgresSchemaIntrospector', () => {
 
   it('getTableSchema should return table details', async () => {
     // 1. tableExists check
-    querier.all.mockResolvedValueOnce([{ exists: true }]);
+    mockAll.mockResolvedValueOnce([{ exists: true }]);
     // 2. getColumns
-    querier.all.mockResolvedValueOnce([
+    mockAll.mockResolvedValueOnce([
       {
         column_name: 'id',
         data_type: 'integer',
@@ -64,7 +69,7 @@ describe('PostgresSchemaIntrospector', () => {
       },
     ]);
     // 3. getIndexes
-    querier.all.mockResolvedValueOnce([
+    mockAll.mockResolvedValueOnce([
       {
         index_name: 'idx_users_name',
         columns: ['name'],
@@ -72,9 +77,9 @@ describe('PostgresSchemaIntrospector', () => {
       },
     ]);
     // 4. getForeignKeys
-    querier.all.mockResolvedValueOnce([]);
+    mockAll.mockResolvedValueOnce([]);
     // 5. getPrimaryKey
-    querier.all.mockResolvedValueOnce([{ column_name: 'id' }]);
+    mockAll.mockResolvedValueOnce([{ column_name: 'id' }]);
 
     const schema = await introspector.getTableSchema('users');
 
@@ -93,7 +98,7 @@ describe('PostgresSchemaIntrospector', () => {
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {
-    querier.all.mockResolvedValueOnce([{ exists: false }]);
+    mockAll.mockResolvedValueOnce([{ exists: false }]);
 
     const schema = await introspector.getTableSchema('non_existent');
 

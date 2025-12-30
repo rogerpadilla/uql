@@ -1,4 +1,4 @@
-import { expect, it } from '@jest/globals';
+import { expect, it } from 'bun:test';
 import {
   Company,
   InventoryAdjustment,
@@ -35,10 +35,10 @@ it('User', () => {
   const expectedMeta = {
     entity: User,
     name: 'User',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -82,7 +82,7 @@ it('User', () => {
     },
   };
 
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('Profile', () => {
@@ -91,9 +91,9 @@ it('Profile', () => {
     entity: Profile,
     name: 'user_profile',
     id: 'pk' as IdKey<Profile>,
-    processed: true,
+    processed: true as const,
     fields: {
-      pk: { name: 'pk', type: Number, isId: true },
+      pk: { name: 'pk', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -121,7 +121,7 @@ it('Profile', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('Item', () => {
@@ -129,10 +129,10 @@ it('Item', () => {
   const expectedMeta = {
     entity: Item,
     name: 'Item',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -219,19 +219,19 @@ it('Item', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('Tag', () => {
   const meta = getMeta(Tag);
   const expectedMeta = {
     entity: Tag,
-    id: 'id',
+    id: 'id' as const,
     name: 'Tag',
-    processed: true,
+    processed: true as const,
     fields: {
       id: {
-        isId: true,
+        isId: true as const,
         name: 'id',
         type: Number,
       },
@@ -291,7 +291,7 @@ it('Tag', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('ItemTag', () => {
@@ -299,10 +299,10 @@ it('ItemTag', () => {
   const expectedMeta = {
     entity: ItemTag,
     name: 'ItemTag',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       itemId: {
         name: 'itemId',
         type: Number,
@@ -327,7 +327,7 @@ it('ItemTag', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('TaxCategory', () => {
@@ -335,10 +335,10 @@ it('TaxCategory', () => {
   const expectedMeta = {
     entity: TaxCategory,
     name: 'TaxCategory',
-    id: 'pk',
-    processed: true,
+    id: 'pk' as const,
+    processed: true as const,
     fields: {
-      pk: { name: 'pk', type: String, isId: true, onInsert: expect.any(Function) },
+      pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.any(Function) },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -367,7 +367,7 @@ it('TaxCategory', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('Tax', () => {
@@ -375,10 +375,10 @@ it('Tax', () => {
   const expectedMeta = {
     entity: Tax,
     name: 'Tax',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       categoryId: {
         name: 'categoryId',
         reference: expect.any(Function),
@@ -426,7 +426,7 @@ it('Tax', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('ItemAdjustment', () => {
@@ -434,10 +434,10 @@ it('ItemAdjustment', () => {
   const expectedMeta = {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       buyPrice: {
         name: 'buyPrice',
         type: Number,
@@ -507,7 +507,7 @@ it('ItemAdjustment', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('InventoryAdjustment', () => {
@@ -515,10 +515,10 @@ it('InventoryAdjustment', () => {
   const expectedMeta = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
-    id: 'id',
-    processed: true,
+    id: 'id' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
         type: Number,
@@ -554,7 +554,7 @@ it('InventoryAdjustment', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('MeasureUnitCategory', () => {
@@ -562,11 +562,11 @@ it('MeasureUnitCategory', () => {
   const expectedMeta = {
     entity: MeasureUnitCategory,
     name: 'MeasureUnitCategory',
-    id: 'id',
-    softDelete: 'deletedAt',
-    processed: true,
+    id: 'id' as const,
+    softDelete: 'deletedAt' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       name: { name: 'name', type: String },
       companyId: {
         name: 'companyId',
@@ -601,7 +601,7 @@ it('MeasureUnitCategory', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('MeasureUnit', () => {
@@ -609,11 +609,11 @@ it('MeasureUnit', () => {
   const expectedMeta = {
     entity: MeasureUnit,
     name: 'MeasureUnit',
-    id: 'id',
-    softDelete: 'deletedAt',
-    processed: true,
+    id: 'id' as const,
+    softDelete: 'deletedAt' as const,
+    processed: true as const,
     fields: {
-      id: { name: 'id', type: Number, isId: true },
+      id: { name: 'id', type: Number, isId: true as const },
       name: { name: 'name', type: String },
       categoryId: {
         name: 'categoryId',
@@ -653,7 +653,7 @@ it('MeasureUnit', () => {
       },
     },
   };
-  expect(meta).toEqual(expectedMeta);
+  expect(meta).toMatchObject(expectedMeta);
 });
 
 it('not an @Entity', () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import { getQuerier, setQuerierPool } from '../../options.js';
 import type { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';

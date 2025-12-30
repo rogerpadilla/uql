@@ -1,29 +1,34 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
 describe('SqliteSchemaIntrospector', () => {
   let introspector: SqliteSchemaIntrospector;
   let pool: QuerierPool;
-  let querier: jest.Mocked<SqlQuerier>;
+  let querier: SqlQuerier;
+
+  let mockAll: ReturnType<typeof jest.fn>;
+  let mockRun: ReturnType<typeof jest.fn>;
+  let mockRelease: ReturnType<typeof jest.fn>;
+  let mockGetQuerier: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
     querier = {
-      all: jest.fn<any>().mockResolvedValue([]),
-      run: jest.fn<any>().mockResolvedValue({}),
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      all: jest.fn<any>().mockResolvedValue([]) as any,
+      run: jest.fn<any>().mockResolvedValue({}) as any,
+      release: jest.fn<any>().mockResolvedValue(undefined) as any,
       dialect: { escapeIdChar: '`' },
     } as any;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
     } as any;
 
     introspector = new SqliteSchemaIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
-    querier.all.mockResolvedValueOnce([{ name: 'users' }, { name: 'posts' }]);
+    mockAll.mockResolvedValueOnce([{ name: 'users' }, { name: 'posts' }]);
 
     const names = await introspector.getTableNames();
 
@@ -32,7 +37,7 @@ describe('SqliteSchemaIntrospector', () => {
   });
 
   it('getTableSchema should return table details', async () => {
-    querier.all.mockImplementation((async (sql: string, _values?: unknown[]) => {
+    mockAll.mockImplementation((async (sql: string, _values?: unknown[]) => {
       const normalizedSql = sql.replace(/\s+/g, ' ').trim();
       if (normalizedSql.includes('SELECT COUNT(*) as count FROM sqlite_master')) {
         return [{ count: 1 }];
@@ -93,7 +98,7 @@ describe('SqliteSchemaIntrospector', () => {
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {
-    querier.all.mockResolvedValueOnce([{ count: 0 }]);
+    mockAll.mockResolvedValueOnce([{ count: 0 }]);
 
     const schema = await introspector.getTableSchema('non_existent');
 

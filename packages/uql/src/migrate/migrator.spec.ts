@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest, mock } from 'bun:test';
 import { Entity, Id } from '../entity/index.js';
 import type { Migration, MigrationStorage, QuerierPool, SqlQuerier } from '../type/index.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
@@ -11,17 +11,18 @@ import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
 
-jest.mock('node:fs/promises', () => ({
-  readdir: jest.fn<any>().mockResolvedValue([]),
-  mkdir: jest.fn<any>().mockResolvedValue(undefined),
-  writeFile: jest.fn<any>().mockResolvedValue(undefined),
+mock.module('node:fs/promises', () => ({
+  readdir: jest.fn<any>().mockResolvedValue([]) as any,
+  mkdir: jest.fn<any>().mockResolvedValue(undefined) as any,
+  writeFile: jest.fn<any>().mockResolvedValue(undefined) as any,
 }));
 
 describe('Migrator Core Methods', () => {
   let migrator: Migrator;
-  let storage: jest.Mocked<MigrationStorage>;
+  let storage: MigrationStorage;
   let pool: QuerierPool;
-  let querier: jest.Mocked<SqlQuerier>;
+  let querier: SqlQuerier;
+  let mockExecuted: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
     querier = {
@@ -41,8 +42,9 @@ describe('Migrator Core Methods', () => {
       dialect: 'postgres',
     } as any;
 
+    mockExecuted = jest.fn<any>().mockResolvedValue([]);
     storage = {
-      executed: jest.fn<any>().mockResolvedValue([]),
+      executed: mockExecuted,
       logWithQuerier: jest.fn<any>().mockResolvedValue(undefined),
       unlogWithQuerier: jest.fn<any>().mockResolvedValue(undefined),
       ensureStorage: jest.fn<any>().mockResolvedValue(undefined),
@@ -72,7 +74,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('pending should return non-executed migrations', async () => {
-    storage.executed.mockResolvedValue(['20250101000000_m1']);
+    mockExecuted.mockResolvedValue(['20250101000000_m1']);
 
     const pending = await migrator.pending();
 
@@ -82,7 +84,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('up should run all pending migrations', async () => {
-    storage.executed.mockResolvedValue(['20250101000000_m1']);
+    mockExecuted.mockResolvedValue(['20250101000000_m1']);
 
     const results = await migrator.up();
 
@@ -97,7 +99,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('up to a specific migration', async () => {
-    storage.executed.mockResolvedValue([]);
+    mockExecuted.mockResolvedValue([]);
 
     const results = await migrator.up({ to: '20250102000000_m2' });
 
@@ -107,7 +109,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('down should rollback the last migration', async () => {
-    storage.executed.mockResolvedValue(['20250101000000_m1', '20250102000000_m2']);
+    mockExecuted.mockResolvedValue(['20250101000000_m1', '20250102000000_m2']);
 
     const results = await migrator.down({ step: 1 });
 
@@ -120,7 +122,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('down to a specific migration', async () => {
-    storage.executed.mockResolvedValue(['20250101000000_m1', '20250102000000_m2', '20250103000000_m3']);
+    mockExecuted.mockResolvedValue(['20250101000000_m1', '20250102000000_m2', '20250103000000_m3']);
 
     // From current state to m1 (inclusive), so roll back m3 and m2
     const results = await migrator.down({ to: '20250102000000_m2' });
@@ -173,7 +175,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('status should return pending and executed migrations', async () => {
-    storage.executed.mockResolvedValue(['20250101000000_m1']);
+    mockExecuted.mockResolvedValue(['20250101000000_m1']);
 
     const status = await migrator.status();
 

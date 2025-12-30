@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test';
 import { User } from '../../test/index.js';
 import { GenericClientRepository } from './genericClientRepository.js';
 import { HttpQuerier } from './httpQuerier.js';
@@ -9,7 +9,7 @@ describe('repository', () => {
 
   beforeEach(() => {
     globalThis.fetch = jest.fn() as any;
-    (globalThis.fetch as jest.Mock).mockImplementation(setupFetchStub({}));
+    (globalThis.fetch as unknown as jest.Mock).mockImplementation(setupFetchStub({}));
     repository = new GenericClientRepository(User, querier);
   });
 

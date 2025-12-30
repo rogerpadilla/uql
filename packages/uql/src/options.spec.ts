@@ -1,4 +1,4 @@
-import { jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { User } from './test/index.js';
 import type { Querier, Repository } from './type/index.js';

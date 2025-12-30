@@ -1,4 +1,4 @@
-import { expect, test } from '@jest/globals';
+import { expect, test } from 'bun:test';
 import { AbstractQuerier } from '../abstractQuerier.js';
 import { Serialized } from './serialized.js';
 

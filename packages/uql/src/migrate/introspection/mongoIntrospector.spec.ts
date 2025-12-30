@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { MongoQuerier, QuerierPool } from '../../type/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
 describe('MongoSchemaIntrospector', () => {
   let introspector: MongoSchemaIntrospector;
   let pool: QuerierPool;
-  let querier: jest.Mocked<MongoQuerier>;
+  let querier: MongoQuerier;
   let db: any;
 
   beforeEach(() => {
@@ -20,11 +20,11 @@ describe('MongoSchemaIntrospector', () => {
 
     querier = {
       db,
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      release: jest.fn<any>().mockResolvedValue(undefined) as any,
     } as any;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
     } as any;
 
     introspector = new MongoSchemaIntrospector(pool);

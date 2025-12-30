@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from 'bun:test';
 import { Entity, Field, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../index.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';

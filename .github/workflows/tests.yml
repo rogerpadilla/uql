@@ -70,7 +70,7 @@ jobs:
         run: docker compose up -d --wait
 
       - name: Run Tests
-        run: bun run test.all
+        run: bun run test
 
       - name: Submit coverage
         if: matrix.node-version == 22
