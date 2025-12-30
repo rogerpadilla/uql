@@ -6,8 +6,8 @@
       "conventionalCommits": true,
       "message": "chore(release): publish",
       "createChangelog": true,
-      "allowBranch": "uql-unification",
-      "ignoreChanges": ["**/*.spec.ts", "**/*.it.ts", "**/test/**"],
+      "allowBranch": "main",
+      "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"],
       "forcePublish": true,
       "push": false,
       "gitRemote": "origin"
