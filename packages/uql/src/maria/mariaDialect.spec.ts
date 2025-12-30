@@ -19,14 +19,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldUpsertWithNoUpdateFields() {
-    const { sql } = this.exec((ctx) =>
-      this.dialect.upsert(
-        ctx,
-        ItemTag,
-        { id: true },
-        { id: 123 }
-      )
-    );
+    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
     expect(sql).toContain('INSERT IGNORE');
   }
 
