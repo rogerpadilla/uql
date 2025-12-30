@@ -186,7 +186,6 @@ it('obtainAttrsPaths - object', () => {
     'prop1.a.b': 1,
     'prop2.c.d': 2,
   });
-  console.log('***** res1', res1);
   expect(res1).toEqual({
     'prop1.a.b': ['prop1', 'a', 'b'],
     'prop2.c.d': ['prop2', 'c', 'd'],

@@ -15,7 +15,7 @@
     "build": "lerna run build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",
-    "test": "bun test",
+    "test": "bun test --dots && node scripts/coverage-report.js",
     "test.watch": "bun test --watch",
     "test.focus": "bun test -t 'shouldInsertOneAndCascadeOneToOne' mongodbQuerier"
   },
@@ -30,7 +30,6 @@
     "@commitlint/config-conventional": "20.2.0",
     "@types/bun": "^1.3.5",
     "concurrently": "9.2.1",
-    "coveralls": "3.1.1",
     "lerna": "^9.0.3",
     "mongodb-memory-server": "11.0.1",
     "rimraf": "6.1.2",

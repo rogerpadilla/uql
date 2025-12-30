@@ -7,4 +7,7 @@ lockfile = true
 timeout = 10000
 coverage = true
 coverageDirectory = "coverage"
-coverageReporter = ["lcov", "text"]
+# "lcov" is required for Coveralls and our custom summary script.
+# We omit "text" to avoid the huge table in the console.
+coverageReporter = ["lcov"]
+# The reporter format for tests (e.g. dots) is better set in package.json or CLI.

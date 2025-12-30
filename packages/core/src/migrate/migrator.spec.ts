@@ -293,4 +293,67 @@ describe('Migrator Core Methods', () => {
     expect(results).toHaveLength(1);
     expect(results[0].success).toBe(false);
   });
+
+  describe('Schema Sync', () => {
+    @Entity()
+    class MigratorUser {
+      @Id()
+      id: number;
+    }
+
+    it('syncForce should drop and create tables', async () => {
+      const migratorSync = new Migrator(pool, { entities: [MigratorUser] });
+      await migratorSync.sync({ force: true });
+      expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE'));
+      expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE'));
+    });
+
+    it('sync should call autoSync', async () => {
+      const migratorSync = new Migrator(pool, { entities: [MigratorUser] });
+      const autoSyncSpy = jest.spyOn(migratorSync, 'autoSync').mockResolvedValue(undefined);
+      await migratorSync.sync();
+      expect(autoSyncSpy).toHaveBeenCalledWith({ safe: true });
+    });
+
+    it('autoSync should execute statements from diffs', async () => {
+      const generator = new PostgresSchemaGenerator();
+      const introspector = { getTableSchema: jest.fn<any>().mockResolvedValue(undefined) };
+      const migratorSync = new Migrator(pool, {
+        entities: [MigratorUser],
+        schemaGenerator: generator,
+      });
+      (migratorSync as any).schemaIntrospector = introspector;
+
+      await migratorSync.autoSync({ logging: true });
+      expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
+    });
+  });
+
+  describe('Internal file methods', () => {
+    it('getMigrationFiles should return sorted list of files', async () => {
+      const { readdir } = await import('node:fs/promises');
+      (readdir as any).mockResolvedValue(['b.ts', 'a.ts', 'c.txt', 'd.d.ts']);
+
+      const files = await (migrator as any).getMigrationFiles();
+      expect(files).toEqual(['a.ts', 'b.ts']);
+    });
+
+    it('getMigrationFiles should return empty array on ENOENT', async () => {
+      const { readdir } = await import('node:fs/promises');
+      (readdir as any).mockRejectedValue({ code: 'ENOENT' });
+
+      const files = await (migrator as any).getMigrationFiles();
+      expect(files).toEqual([]);
+    });
+
+    it('getMigrationName should strip extension', () => {
+      expect((migrator as any).getMigrationName('20250101_init.ts')).toBe('20250101_init');
+    });
+
+    it('isMigration should validate objects', () => {
+      expect((migrator as any).isMigration({ up: () => {}, down: () => {} })).toBe(true);
+      expect((migrator as any).isMigration({ up: () => {} })).toBe(false);
+      expect((migrator as any).isMigration(null)).toBe(false);
+    });
+  });
 });
