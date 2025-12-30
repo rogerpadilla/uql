@@ -1,17 +1,24 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.4.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.3.0...@uql/core@3.4.0) (2025-12-30)
+
+
+### Features
+
+* add support for Neon, LibSQL, and D1 database queriers, including new querier pools, implementations, tests, and updated documentation. ([aad1df0](https://github.com/rogerpadilla/uql/commit/aad1df0f6bab112b2a0eb0fdffee15dcbc6b0824))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
-
-## [3.4.0] (2025-12-30)
-- **New Database Support**: Explicit support for Tier 2 databases (using shared logic + new drivers):
-  - **Neon (Postgres Serverless)**: Added `@uql/core/neon` with `NeonQuerierPool` optimized for the default `@neondatabase/serverless` WebSocket/HTTP driver.
-  - **Turso (LibSQL)**: Added `@uql/core/libsql` with `LibsqlQuerierPool` for the `@libsql/client` HTTP driver.
-  - **Cloudflare D1**: Added `@uql/core/d1` with `D1QuerierPool` for the native Cloudflare Worker bindings.
-- **Enhanced Type Safety**:
-  - Full TypeScript support for all new drivers.
-  - Strict type checking for D1 metadata and ID extraction.
 
 ## [3.1.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.0...@uql/core@3.1.1) (2025-12-30)
 ### Bug Fixes
