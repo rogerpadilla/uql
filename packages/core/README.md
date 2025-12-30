@@ -56,12 +56,12 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver           | UQL Adapter    |
-| ------------ | ---------------- | ---------------- |
-| `PostgreSQL` | `pg`             | `@uql/core/postgres` |
-| `SQLite`     | `better-sqlite3` | `@uql/core/sqlite`   |
-| `MariaDB`    | `mariadb`        | `@uql/core/maria`    |
-| `MySQL`      | `mysql2`         | `@uql/core/mysql`    |
+| Database     | Driver
+| ------------ | ----------------
+| `PostgreSQL` | `pg`
+| `SQLite`     | `better-sqlite3`
+| `MariaDB`    | `mariadb`
+| `MySQL`      | `mysql2`
 
 &nbsp;
 
