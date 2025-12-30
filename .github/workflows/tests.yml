@@ -73,7 +73,7 @@ jobs:
         run: bun run test
 
       - name: Submit coverage
-        if: matrix.node-version == 22
+        if: matrix.node-version == 24
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         run: cat ./coverage/lcov.info | ./node_modules/.bin/coveralls

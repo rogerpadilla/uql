@@ -7,3 +7,4 @@ lockfile = true
 timeout = 10000
 coverage = true
 coverageDirectory = "coverage"
+coverageReporter = ["lcov", "text"]
