@@ -56,12 +56,15 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 2. Install one of the specific adapters for your database:
 
-| Database     | Driver
-| ------------ | ----------------
-| `PostgreSQL` | `pg`
-| `SQLite`     | `better-sqlite3`
-| `MariaDB`    | `mariadb`
-| `MySQL`      | `mysql2`
+| Database | Driver
+| :--- | :---
+| `PostgreSQL` (incl. CockroachDB, YugabyteDB) | `pg`
+| `MySQL` (incl. TiDB, Aurora) | `mysql2`
+| `MariaDB` | `mariadb`
+| `SQLite` | `better-sqlite3`
+| `Cloudflare D1` | `Native Binding`
+| `LibSQL` (Turso) | `@libsql/client`
+| `Neon` (Serverless Postgres) | `@neondatabase/serverless`
 
 &nbsp;
 
