@@ -1,6 +1,6 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-[![uql maku](https://uql.app/uql-maku.jpg)](https://uql.app)
+[![uql maku](assets/logo.svg)](https://uql.app)
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![coverage status](https://coveralls.io/repos/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/r/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://badge.fury.io/js/uql.svg)](https://badge.fury.io/js/uql)
 
@@ -410,3 +410,4 @@ For those who want to see the "engine under the hood," check out these resources
   - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
   - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/postgres/src/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/mysql/src/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/sqlite/src/sqliteDialect.spec.ts).
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
+  - [MongoDB Migration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/uql/src/migrate/migrator-mongo.it.ts): Integration tests ensuring correct collection and index synchronization for MongoDB.

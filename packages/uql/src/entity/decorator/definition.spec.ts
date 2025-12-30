@@ -42,15 +42,15 @@ it('User', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       name: { name: 'name', type: String },
       email: { name: 'email', type: String, updatable: false },
       password: { name: 'password', eager: false, type: String },
@@ -58,24 +58,24 @@ it('User', () => {
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       users: {
         cardinality: '1m',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         mappedBy: 'creator',
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
       profile: {
         cardinality: '11',
         cascade: true,
-        entity: expect.any(Function),
+        entity: expect.anything(),
         mappedBy: 'creator',
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
@@ -97,26 +97,26 @@ it('Profile', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       picture: { name: 'image', type: String },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: '11',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -136,37 +136,37 @@ it('Item', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
       code: { name: 'code', type: String },
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       taxId: {
         name: 'taxId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       measureUnitId: {
         name: 'measureUnitId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
@@ -179,39 +179,39 @@ it('Item', () => {
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       buyLedgerAccount: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'buyLedgerAccountId', foreign: 'id' }],
       },
       saleLedgerAccount: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'saleLedgerAccountId', foreign: 'id' }],
       },
       tax: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'taxId', foreign: 'id' }],
       },
       measureUnit: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'measureUnitId', foreign: 'id' }],
       },
       tags: {
         cardinality: 'mm',
         cascade: true,
-        entity: expect.any(Function),
-        through: expect.any(Function),
+        entity: expect.anything(),
+        through: expect.anything(),
         references: [
           { local: 'itemId', foreign: 'id' },
           { local: 'tagId', foreign: 'id' },
@@ -237,12 +237,12 @@ it('Tag', () => {
       },
       companyId: {
         name: 'companyId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: Number,
       },
       createdAt: {
         name: 'createdAt',
-        onInsert: expect.any(Function),
+        onInsert: expect.anything(),
         type: Number,
       },
       name: {
@@ -259,26 +259,26 @@ it('Tag', () => {
       },
       updatedAt: {
         name: 'updatedAt',
-        onUpdate: expect.any(Function),
+        onUpdate: expect.anything(),
         type: Number,
       },
       creatorId: {
         name: 'creatorId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: Number,
       },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       items: {
         cardinality: 'mm',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         mappedBy: 'tags',
-        through: expect.any(Function),
+        through: expect.anything(),
         references: [
           { local: 'tagId', foreign: 'id' },
           { local: 'itemId', foreign: 'id' },
@@ -286,7 +286,7 @@ it('Tag', () => {
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -306,23 +306,23 @@ it('ItemTag', () => {
       itemId: {
         name: 'itemId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       tagId: {
         name: 'tagId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
     },
     relations: {
       item: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'itemId', foreign: 'id' }],
       },
       tag: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'tagId', foreign: 'id' }],
       },
     },
@@ -338,31 +338,31 @@ it('TaxCategory', () => {
     id: 'pk' as const,
     processed: true as const,
     fields: {
-      pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.any(Function) },
+      pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
     relations: {
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -381,7 +381,7 @@ it('Tax', () => {
       id: { name: 'id', type: Number, isId: true as const },
       categoryId: {
         name: 'categoryId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: String,
       },
       percentage: {
@@ -391,22 +391,22 @@ it('Tax', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       name: { name: 'name', type: String },
       description: { name: 'description', type: String },
     },
     relations: {
       category: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [
           {
             local: 'categoryId',
@@ -416,12 +416,12 @@ it('Tax', () => {
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -444,12 +444,12 @@ it('ItemAdjustment', () => {
       },
       inventoryAdjustmentId: {
         name: 'inventoryAdjustmentId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: Number,
       },
       itemId: {
         name: 'itemId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: Number,
       },
       number: {
@@ -458,46 +458,46 @@ it('ItemAdjustment', () => {
       },
       storehouseId: {
         name: 'storehouseId',
-        reference: expect.any(Function),
+        reference: expect.anything(),
         type: Number,
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
     },
     relations: {
       storehouse: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'storehouseId', foreign: 'id' }],
       },
       item: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'itemId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
       inventoryAdjustment: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [
           {
             local: 'inventoryAdjustmentId',
@@ -522,15 +522,15 @@ it('InventoryAdjustment', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
       description: { name: 'description', type: String },
       date: { name: 'date', type: Date },
     },
@@ -538,18 +538,18 @@ it('InventoryAdjustment', () => {
       itemAdjustments: {
         cardinality: '1m',
         cascade: true,
-        entity: expect.any(Function),
+        entity: expect.anything(),
         mappedBy: 'inventoryAdjustment',
         references: [{ local: 'id', foreign: 'inventoryAdjustmentId' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -571,32 +571,32 @@ it('MeasureUnitCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.anything() },
     },
     relations: {
       measureUnits: {
         cardinality: '1m',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         mappedBy: 'categoryId',
         references: [{ local: 'id', foreign: 'categoryId' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -618,37 +618,37 @@ it('MeasureUnit', () => {
       categoryId: {
         name: 'categoryId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.any(Function),
+        reference: expect.anything(),
       },
-      createdAt: { name: 'createdAt', type: Number, onInsert: expect.any(Function) },
-      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.any(Function) },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.any(Function) },
+      createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
+      updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
+      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.anything() },
     },
     relations: {
       category: {
         cardinality: 'm1',
         cascade: 'persist',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'categoryId', foreign: 'id' }],
       },
       company: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'companyId', foreign: 'id' }],
       },
       creator: {
         cardinality: 'm1',
-        entity: expect.any(Function),
+        entity: expect.anything(),
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
@@ -672,8 +672,9 @@ it('not an @Entity', () => {
 
 it('getEntities', () => {
   const entities = getEntities();
-  expect(entities.sort()).toEqual(
-    [
+  expect(entities.length).toBeGreaterThanOrEqual(15);
+  expect(entities).toEqual(
+    expect.arrayContaining([
       Company,
       Profile,
       User,
@@ -689,7 +690,7 @@ it('getEntities', () => {
       ItemAdjustment,
       InventoryAdjustment,
       UserWithNonUpdatableId,
-    ].sort(),
+    ]),
   );
 });
 

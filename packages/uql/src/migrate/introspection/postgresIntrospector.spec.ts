@@ -13,15 +13,20 @@ describe('PostgresSchemaIntrospector', () => {
   let mockGetQuerier: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
+    mockAll = jest.fn<any>().mockResolvedValue([]);
+    mockRun = jest.fn<any>().mockResolvedValue({});
+    mockRelease = jest.fn<any>().mockResolvedValue(undefined);
+
     querier = {
-      all: jest.fn<any>().mockResolvedValue([]) as any,
-      run: jest.fn<any>().mockResolvedValue({}) as any,
-      release: jest.fn<any>().mockResolvedValue(undefined) as any,
+      all: mockAll,
+      run: mockRun,
+      release: mockRelease,
       dialect: { escapeIdChar: '"' },
     } as any;
 
+    mockGetQuerier = jest.fn<any>().mockResolvedValue(querier);
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
+      getQuerier: mockGetQuerier,
     } as any;
 
     introspector = new PostgresSchemaIntrospector(pool);
