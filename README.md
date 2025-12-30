@@ -179,7 +179,7 @@ A querier-pool can be set in any of the bootstrap files of your app (e.g. in the
 import { SnakeCaseNamingStrategy } from '@uql/core';
 import { PgQuerierPool } from '@uql/core/postgres';
 
-export const querierPool = new PgQuerierPool(
+export const pool = new PgQuerierPool(
   {
     host: 'localhost',
     user: 'theUser',
@@ -212,10 +212,10 @@ Repositories provide a clean, Data-Mapper style interface for your entities.
 ```ts
 import { GenericRepository } from '@uql/core';
 import { User } from './shared/models/index.js';
-import { querierPool } from './shared/orm.js';
+import { pool } from './shared/orm.js';
 
 // Get a querier from the pool
-const querier = await querierPool.getQuerier();
+const querier = await pool.getQuerier();
 
 try {
   const userRepository = new GenericRepository(User, querier);
@@ -247,10 +247,10 @@ UQL's query syntax is context-aware. When you query a relation, the available fi
 
 ```ts
 import { GenericRepository } from '@uql/core';
-import { querierPool } from './shared/orm.js';
+import { pool } from './shared/orm.js';
 import { User } from './shared/models/index.js';
 
-const authorsWithPopularPosts = await querierPool.transaction(async (querier) => {
+const authorsWithPopularPosts = await pool.transaction(async (querier) => {
   const userRepository = new GenericRepository(User, querier);
 
   return userRepository.findMany({
@@ -315,10 +315,10 @@ export class Item {
 UQL ensures your operations are serialized and thread-safe.
 
 ```ts
-import { querierPool } from './shared/orm.js';
+import { pool } from './shared/orm.js';
 import { User, Profile } from './shared/models/index.js';
 
-const result = await querierPool.transaction(async (querier) => {
+const result = await pool.transaction(async (querier) => {
   const user = await querier.findOne(User, { $where: { email: '...' } });
   const profileId = await querier.insertOne(Profile, { userId: user.id, ... });
   return { userId: user.id, profileId };
@@ -341,7 +341,7 @@ import { PgQuerierPool } from '@uql/core/postgres';
 import { User, Post } from './shared/models/index.js';
 
 export default {
-  querierPool: new PgQuerierPool({ /* config */ }),
+  pool: new PgQuerierPool({ /* config */ }),
   entities: [User, Post],
   migrationsPath: './migrations',
 };
@@ -379,9 +379,9 @@ In development, you can use `autoSync` to automatically keep your database in sy
 
 ```ts
 import { Migrator } from '@uql/core/migrate';
-import { querierPool } from './shared/orm.js';
+import { pool } from './shared/orm.js';
 
-const migrator = new Migrator(querierPool);
+const migrator = new Migrator(pool);
 await migrator.autoSync({ logging: true });
 ```
 

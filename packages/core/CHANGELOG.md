@@ -192,7 +192,7 @@ Reflect major changes in the package structure and dependencies.
 - Update dependencies.
 
   ```ts
-  const ids = await querierPool.transaction(async (querier) => {
+  const ids = await pool.transaction(async (querier) => {
     const data = await querier.findMany(...);
     const ids = await querier.insertMany(...);
     return ids;

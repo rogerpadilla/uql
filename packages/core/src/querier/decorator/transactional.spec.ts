@@ -96,9 +96,9 @@ describe('transactional', () => {
     expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
-  it('injectQuerier another querierPool', async () => {
+  it('injectQuerier another pool', async () => {
     class ServiceA {
-      @Transactional({ querierPool: anotherQuerierPool })
+      @Transactional({ pool: anotherQuerierPool })
       async save(@InjectQuerier() querier?: Querier) {}
     }
 
@@ -131,7 +131,7 @@ describe('transactional', () => {
     }
 
     class ServiceB extends ServiceA {
-      @Transactional({ querierPool: anotherQuerierPool })
+      @Transactional({ pool: anotherQuerierPool })
       override async delete(id: string, @InjectQuerier() querier?: Querier) {
         return super.delete(id, querier);
       }

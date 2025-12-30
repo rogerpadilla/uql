@@ -13,7 +13,7 @@ import { isSqlQuerier } from '../../type/index.js';
  * SQLite schema introspector
  */
 export class SqliteSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly querierPool: QuerierPool) {}
+  constructor(private readonly pool: QuerierPool) {}
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -85,7 +85,7 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
   }
 
   private async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();

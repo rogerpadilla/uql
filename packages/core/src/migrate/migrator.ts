@@ -48,13 +48,13 @@ export class Migrator {
   public schemaIntrospector?: SchemaIntrospector;
 
   constructor(
-    private readonly querierPool: QuerierPool,
+    private readonly pool: QuerierPool,
     options: MigratorOptions = {},
   ) {
-    this.dialect = options.dialect ?? querierPool.dialect ?? 'postgres';
+    this.dialect = options.dialect ?? pool.dialect ?? 'postgres';
     this.storage =
       options.storage ??
-      new DatabaseMigrationStorage(querierPool, {
+      new DatabaseMigrationStorage(pool, {
         tableName: options.tableName,
       });
     this.migrationsPath = options.migrationsPath ?? './migrations';
@@ -74,15 +74,15 @@ export class Migrator {
   private createIntrospector(): SchemaIntrospector | undefined {
     switch (this.dialect) {
       case 'postgres':
-        return new PostgresSchemaIntrospector(this.querierPool);
+        return new PostgresSchemaIntrospector(this.pool);
       case 'mysql':
-        return new MysqlSchemaIntrospector(this.querierPool);
+        return new MysqlSchemaIntrospector(this.pool);
       case 'mariadb':
-        return new MariadbSchemaIntrospector(this.querierPool);
+        return new MariadbSchemaIntrospector(this.pool);
       case 'sqlite':
-        return new SqliteSchemaIntrospector(this.querierPool);
+        return new SqliteSchemaIntrospector(this.pool);
       case 'mongodb':
-        return new MongoSchemaIntrospector(this.querierPool);
+        return new MongoSchemaIntrospector(this.pool);
       default:
         return undefined;
     }
@@ -221,7 +221,7 @@ export class Migrator {
    */
   private async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -392,7 +392,7 @@ export class Migrator {
     }
 
     const entities = this.entities.length > 0 ? this.entities : getEntities();
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -473,7 +473,7 @@ export class Migrator {
   }
 
   private async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
     try {
       if (this.dialect === 'mongodb') {
         await this.executeMongoSyncStatements(statements, options, querier as MongoQuerier);

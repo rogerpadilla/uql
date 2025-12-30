@@ -13,7 +13,7 @@ import { isSqlQuerier } from '../../type/index.js';
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly querierPool: QuerierPool) {}
+  constructor(private readonly pool: QuerierPool) {}
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -86,7 +86,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
   }
 
   private async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();

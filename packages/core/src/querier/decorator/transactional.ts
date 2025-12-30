@@ -4,10 +4,10 @@ import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({
   propagation = 'required',
-  querierPool,
+  pool,
 }: {
   readonly propagation?: 'supported' | 'required';
-  readonly querierPool?: QuerierPool;
+  readonly pool?: QuerierPool;
 } = {}) {
   return (target: object, key: string, propDescriptor: PropertyDescriptor): void => {
     const theClass = target.constructor as Type<any>;
@@ -27,7 +27,7 @@ export function Transactional({
         querier = params[injectedQuerierIndex];
       } else {
         isOwnTransaction = true;
-        const pool = querierPool ?? getQuerierPool();
+        pool ??= getQuerierPool();
         querier = await pool.getQuerier();
         params[injectedQuerierIndex] = querier;
       }

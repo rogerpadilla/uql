@@ -10,18 +10,18 @@ describe('options', () => {
     expect(querier).toBeInstanceOf(HttpQuerier);
   });
 
-  it('default querierPool', () => {
+  it('default pool', () => {
     expect(getQuerierPool()).toBeDefined();
   });
 
-  it('custom querierPool', () => {
+  it('custom pool', () => {
     const querierMock = new HttpQuerier('/');
 
-    const querierPool: ClientQuerierPool = {
+    const pool: ClientQuerierPool = {
       getQuerier: () => querierMock,
     };
 
-    setQuerierPool(querierPool);
+    setQuerierPool(pool);
 
     const querier1 = getQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);

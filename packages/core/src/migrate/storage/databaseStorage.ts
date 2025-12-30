@@ -18,7 +18,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   private storageInitialized = false;
 
   constructor(
-    private readonly querierPool: QuerierPool,
+    private readonly pool: QuerierPool,
     options: {
       tableName?: string;
     } = {},
@@ -31,7 +31,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       return;
     }
 
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -61,7 +61,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   async executed(): Promise<string[]> {
     await this.ensureStorage();
 
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();

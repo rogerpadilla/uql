@@ -10,7 +10,7 @@ import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
 import { Migrator } from './migrator.js';
 
 interface CliConfig {
-  querierPool?: QuerierPool;
+  pool?: QuerierPool;
   migrationsPath?: string;
   tableName?: string;
   dialect?: Dialect;
@@ -65,11 +65,11 @@ async function main() {
   try {
     const config = await loadConfig();
 
-    if (!config.querierPool) {
-      throw new Error('querierPool is required in configuration');
+    if (!config.pool) {
+      throw new TypeError('pool is required in configuration');
     }
 
-    const dialect = config.dialect ?? config.querierPool.dialect ?? 'postgres';
+    const dialect = config.dialect ?? config.pool.dialect ?? 'postgres';
 
     const options: MigratorOptions & { dialect: Dialect } = {
       migrationsPath: config.migrationsPath ?? './migrations',
@@ -80,7 +80,7 @@ async function main() {
       namingStrategy: config.namingStrategy,
     };
 
-    const migrator = new Migrator(config.querierPool, options);
+    const migrator = new Migrator(config.pool, options);
     migrator.setSchemaGenerator(getSchemaGenerator(dialect, config.namingStrategy));
 
     switch (command) {
@@ -114,7 +114,7 @@ async function main() {
     }
 
     // Close the connection pool
-    const pool = config.querierPool as { end?: () => Promise<void> };
+    const pool = config.pool;
     if (pool.end) {
       await pool.end();
     }
@@ -280,8 +280,8 @@ Configuration:
   Create a uql.config.ts or uql.config.js file in your project root:
 
   export default {
-    querierPool: new PgQuerierPool({ ... }),
-    // dialect: 'postgres', // optional, inferred from querierPool
+    pool: new PgQuerierPool({ ... }),
+    // dialect: 'postgres', // optional, inferred from pool
     migrationsPath: './migrations',
     tableName: 'uql_migrations',
     entities: [User, Post, ...],

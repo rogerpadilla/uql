@@ -14,7 +14,7 @@ import { isSqlQuerier } from '../../type/index.js';
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
 export class MysqlSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly querierPool: QuerierPool) {}
+  constructor(private readonly pool: QuerierPool) {}
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -86,7 +86,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
   }
 
   private async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
       await querier.release();

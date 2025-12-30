@@ -1,10 +1,10 @@
 import type { MongoQuerier, QuerierPool, SchemaIntrospector, TableSchema } from '../../type/index.js';
 
 export class MongoSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly querierPool: QuerierPool) {}
+  constructor(private readonly pool: QuerierPool) {}
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
     try {
       const { db } = querier as MongoQuerier;
       const collections = await db.listCollections({ name: tableName }).toArray();
@@ -30,7 +30,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   }
 
   async getTableNames(): Promise<string[]> {
-    const querier = await this.querierPool.getQuerier();
+    const querier = await this.pool.getQuerier();
     try {
       const { db } = querier as MongoQuerier;
       const collections = await db.listCollections().toArray();
