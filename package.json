@@ -15,8 +15,8 @@
     "build": "lerna run build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",
-    "test": "bun test --coverage --coverage-dir=./temp/coverage",
-    "test.watch": "bun test --coverage --coverage-dir=./temp/coverage --watch",
+    "test": "bun test --coverage --coverage-dir=./coverage",
+    "test.watch": "bun test --coverage --coverage-dir=./coverage --watch",
     "test.focus": "bun test -t 'shouldInsertOneAndCascadeOneToOne' mongodbQuerier",
     "test.fast": "bun test"
   },
