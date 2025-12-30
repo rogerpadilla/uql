@@ -81,8 +81,6 @@ bun add pg
    "emitDecoratorMetadata": true
    ```
 
-&nbsp;
-
 > **Note**: `"ES2022"`, `"ES2023"`, or `"ESNext"` will also work fine for `target`.
 
 ---
@@ -230,7 +228,7 @@ try {
       tagsCount: true       // Virtual field (calculated at runtime)
     },
     $where: {
-      email: { $iincludes: '@uql/core' }, // Case-insensitive search
+      email: { $iincludes: '@example.com' }, // Case-insensitive search
       status: 'active'
     },
     $sort: { createdAt: -1 },
