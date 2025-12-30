@@ -1,4 +1,4 @@
-import { jest } from 'bun:test';
+import { expect, jest } from 'bun:test';
 import {
   clearTables,
   createTables,

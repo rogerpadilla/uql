@@ -1,6 +1,8 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
+
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  let describeFn: jest.Describe;
+  let describeFn: typeof describe;
   const specName = proto.constructor.name;
 
   if (specName.startsWith('fff')) {
@@ -26,7 +28,7 @@ function createTestCases(spec: object) {
       if (isProcessed || key === 'constructor' || typeof spec[key] !== 'function') {
         continue;
       }
-      const callback: jest.Func = spec[key].bind(spec);
+      const callback: () => void | Promise<void> = spec[key].bind(spec);
       if (hooks[key]) {
         hooks[key](callback);
       } else if (key.startsWith('should')) {
@@ -51,5 +53,5 @@ const hooks = {
 type SpecHooks = Partial<typeof hooks>;
 
 export type Spec = SpecHooks & {
-  readonly [k: string]: jest.It | any;
+  readonly [k: string]: (() => void | Promise<void>) | any;
 };

@@ -1,3 +1,4 @@
+import { expect, it } from 'bun:test';
 import type { RequestNotification } from '../type/index.js';
 import { notify, on } from './bus.js';
 

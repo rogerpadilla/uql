@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'bun:test';
 import { obtainAttrsPaths } from './sql.util.js';
 
 describe('sql.util extras', () => {

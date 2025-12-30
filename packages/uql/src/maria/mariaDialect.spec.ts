@@ -1,3 +1,4 @@
+import { expect } from 'bun:test';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { InventoryAdjustment, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';

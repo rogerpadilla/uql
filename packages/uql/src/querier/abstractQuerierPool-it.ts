@@ -1,3 +1,4 @@
+import { afterAll, expect } from 'bun:test';
 import { AbstractQuerier } from '../querier/index.js';
 import type { Spec } from '../test/index.js';
 import type { Querier } from '../type/index.js';

@@ -1,3 +1,4 @@
+import { expect, it } from 'bun:test';
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { QuerySortMap } from '../type/index.js';
 import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';

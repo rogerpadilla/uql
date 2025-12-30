@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'bun:test';
 import { DefaultNamingStrategy, SnakeCaseNamingStrategy } from './index.js';
 
 describe('NamingStrategy', () => {

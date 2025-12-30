@@ -1,3 +1,4 @@
+import { expect, it } from 'bun:test';
 import { clone, getKeys, hasKeys } from './object.util.js';
 
 it('clone', () => {

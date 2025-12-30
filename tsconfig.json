@@ -3,6 +3,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
+    "types": ["@types/bun"],
     "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,

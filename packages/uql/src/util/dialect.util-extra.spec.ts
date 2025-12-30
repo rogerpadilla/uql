@@ -1,3 +1,4 @@
+import { describe, expect, it } from 'bun:test';
 import { Entity, Field, getMeta, Id, OneToMany } from '../entity/index.js';
 import { QueryRaw } from '../type/index.js';
 import {

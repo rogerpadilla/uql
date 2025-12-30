@@ -1,3 +1,4 @@
+import { expect, it } from 'bun:test';
 import type { Request } from 'express';
 import type { Item } from '../test/index.js';
 import type { Query, QueryStringified } from '../type/index.js';
