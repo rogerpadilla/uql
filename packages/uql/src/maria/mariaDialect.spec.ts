@@ -1,6 +1,6 @@
 import { expect } from 'bun:test';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
-import { InventoryAdjustment, TaxCategory, User } from '../test/index.js';
+import { InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import type { FieldKey } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -8,6 +8,26 @@ import { MariaDialect } from './mariaDialect.js';
 export class MariaDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
     super(new MariaDialect());
+  }
+
+  shouldHandleDate() {
+    const dialect = new MariaDialect();
+    const values: unknown[] = [];
+    expect(dialect.addValue(values, new Date())).toBe('?');
+    expect(values).toHaveLength(1);
+    expect(values[0]).toBeInstanceOf(Date);
+  }
+
+  shouldUpsertWithNoUpdateFields() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        ItemTag,
+        { id: true },
+        { id: 123 }
+      )
+    );
+    expect(sql).toContain('INSERT IGNORE');
   }
 
   override shouldInsertMany() {
