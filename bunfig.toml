@@ -1,0 +1,10 @@
+[install]
+# Prefer Bun's lockfile
+lockfile = true
+
+[test]
+# Default timeout for bun test
+timeout = 10000
+coverage = true
+coverageDirectory = "coverage"
+coverageReporter = ["lcov", "text"]

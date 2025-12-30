@@ -1,0 +1,33 @@
+<svg width="400" height="180" viewBox="0 0 400 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="mainGradient" x1="0" y1="90" x2="400" y2="90" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#4F46E5" /> <stop offset="1" stop-color="#06B6D4" /> </linearGradient>
+
+        <linearGradient id="tailGradient" x1="200" y1="100" x2="260" y2="140" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#F43F5E" /> <stop offset="1" stop-color="#FB923C" /> </linearGradient>
+    </defs>
+
+    <path d="M50 40 V100 C50 127.614 72.3858 150 100 150 C127.614 150 150 127.614 150 100 V40"
+          stroke="url(#mainGradient)"
+          stroke-width="28"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <path d="M290 40 V150 H350"
+          stroke="url(#mainGradient)"
+          stroke-width="28"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <circle cx="220" cy="95" r="55"
+            stroke="url(#mainGradient)"
+            stroke-width="28"/>
+
+    <path d="M240 115 L265 140"
+          stroke="url(#tailGradient)"
+          stroke-width="28"
+          stroke-linecap="round"/>
+
+    <circle cx="265" cy="140" r="14" fill="url(#tailGradient)"/>
+
+</svg>

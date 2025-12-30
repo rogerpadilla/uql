@@ -1,16 +1,18 @@
 {
-  "version": "1.9.2",
+  "$schema": "https://json.schemastore.org/lerna.json",
+  "version": "independent",
   "command": {
     "publish": {
-      "contents": "dist",
       "conventionalCommits": true,
-      "changelog": false,
-      "yes": true,
-      "forceGitTag": true,
-      "forcePublish": true
-    },
-    "version": {
-      "yes": true
+      "message": "chore(release): publish",
+      "createChangelog": true,
+      "allowBranch": "uql-unification",
+      "ignoreChanges": ["**/*.spec.ts", "**/*.it.ts", "**/test/**"],
+      "forcePublish": true,
+      "push": false,
+      "gitRemote": "origin"
     }
-  }
+  },
+  "npmClient": "bun",
+  "packages": ["packages/*"]
 }

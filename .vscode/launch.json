@@ -23,7 +23,7 @@
         "--runInBand",
         "--collectCoverage=false",
         "--watchAll",
-        "packages/core/src/repository/genericServerRepository.spec.ts"
+        "packages/uql/src/repository/genericRepository.spec.ts"
       ],
       "restart": true,
       "console": "integratedTerminal",

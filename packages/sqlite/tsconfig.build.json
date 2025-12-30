@@ -1,6 +1,0 @@
-{
-  "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "./tsconfig.json",
-  "references": [{ "path": "../core/tsconfig.build.json" }],
-  "exclude": ["node_modules", "dist", "**/*/*.spec.ts", "**/*/*-spec.ts", "**/*/*.it.ts", "**/*/*-it.ts", "**/*/test"]
-}

@@ -1,0 +1,130 @@
+{
+  "name": "@uql/core",
+  "homepage": "https://uql.app",
+  "description": "One Language. Frontend to Backend.",
+  "license": "MIT",
+  "version": "1.9.2",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "bin": {
+    "uql-migrate": "./migrate/cli.js"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./dialect": "./dialect/index.js",
+    "./entity": "./entity/index.js",
+    "./querier": "./querier/index.js",
+    "./repository": "./repository/index.js",
+    "./type": "./type/index.js",
+    "./util": "./util/index.js",
+    "./namingStrategy": "./namingStrategy/index.js",
+    "./migrate": "./migrate/index.js",
+    "./options": "./options.js",
+    "./test": "./test/index.js",
+    "./mysql": "./mysql/index.js",
+    "./postgres": "./postgres/index.js",
+    "./maria": "./maria/index.js",
+    "./sqlite": "./sqlite/index.js",
+    "./mongo": "./mongo/index.js",
+    "./express": "./express/index.js",
+    "./browser": {
+      "types": "./browser/index.d.ts",
+      "import": "./browser/index.js",
+      "default": "./browser/uql-browser.min.js"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "copyfiles": "copyfiles -f package.json ../../README.md ../../CHANGELOG.md dist",
+    "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js",
+    "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run copyfiles",
+    "start": "tsc --watch",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.2.2",
+    "sqlstring": "^2.3.3",
+    "sqlstring-sqlite": "^0.1.1",
+    "tslib": "^2.8.1"
+  },
+  "peerDependencies": {
+    "express": ">=5.0.0",
+    "mariadb": ">=3.0.0",
+    "mongodb": ">=6.0.0",
+    "mysql2": ">=3.0.0",
+    "pg": ">=8.0.0",
+    "better-sqlite3": ">=9.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "mariadb": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.3",
+    "@types/pg": "^8.16.0",
+    "@types/sqlstring": "^2.3.2",
+    "better-sqlite3": "^12.5.0",
+    "bunchee": "^6.9.1",
+    "copyfiles": "^2.4.1",
+    "express": "^5.2.1",
+    "mariadb": "^3.4.5",
+    "mongodb": "^7.0.0",
+    "mysql2": "^3.16.0",
+    "pg": "^8.16.3",
+    "rimraf": "^6.1.2",
+    "typescript": "~5.4.5"
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogerpadilla/uql.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rogerpadilla/uql/issues"
+  },
+  "keywords": [
+    "orm",
+    "data-mapper",
+    "persistence",
+    "typescript-orm",
+    "javascript-orm",
+    "mariadb",
+    "mariadb-orm",
+    "mysql",
+    "mysql-orm",
+    "postgresql",
+    "postgresql-orm",
+    "sqlite",
+    "sqlite-orm",
+    "mongodb",
+    "mongodb-orm",
+    "entity",
+    "dao",
+    "transaction",
+    "repository",
+    "service",
+    "migrations"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
