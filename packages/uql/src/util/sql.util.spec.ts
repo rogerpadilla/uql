@@ -11,11 +11,11 @@ it('flatObject', () => {
     name: 1,
     measureUnit: { name: -1, category: { creator: { profile: { picture: 1 } } } },
   };
-  expect(flatObject(sort)).toEqual({
+  expect(flatObject(sort)).toEqual<Record<string, number>>({
     name: 1,
     'measureUnit.name': -1,
     'measureUnit.category.creator.profile.picture': 1,
-  } as any);
+  });
 });
 
 it('unflatObjects - empty', () => {
