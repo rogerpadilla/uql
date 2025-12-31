@@ -3,12 +3,9 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-# [3.4.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.3.0...@uql/core@3.4.0) (2025-12-30)
+## [3.4.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.0...@uql/core@3.4.1) (2025-12-31)
 
-
-### Features
-
-* add support for Neon, LibSQL, and D1 database queriers, including new querier pools, implementations, tests, and updated documentation. ([aad1df0](https://github.com/rogerpadilla/uql/commit/aad1df0f6bab112b2a0eb0fdffee15dcbc6b0824))
+**Note:** Version bump only for package @uql/core
 
 
 
