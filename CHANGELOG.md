@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.4.1]
+### Improve documentation
+
+- Update examples in docs
+
 ## [3.1.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.0...@uql/core@3.1.1) (2025-12-30)
 ### Bug Fixes
 * adjust relative paths for README and CHANGELOG in copyfiles script ([741c2ee](https://github.com/rogerpadilla/uql/commit/741c2ee8839376ca89a860a53950ef6b6d234596))

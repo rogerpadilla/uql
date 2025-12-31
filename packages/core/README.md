@@ -12,7 +12,7 @@
 &nbsp;
 
 ```ts
-const companyUsers = await userRepository.findMany({
+const users = await querier.findMany(User, {
   $select: { email: true, profile: { $select: { picture: true } } },
   $where: { email: { $endsWith: '@domain.com' } },
   $sort: { createdAt: 'desc' },
@@ -24,22 +24,22 @@ const companyUsers = await userRepository.findMany({
 
 ## Why UQL?
 
-See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) in medium.com.
+See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) on medium.com.
 
 &nbsp;
 
 ## Features
 
-- **Type-safe and Context-aware queries**: Squeeze the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.app/docs/querying-relations).
+- **Type-safe and Context-aware queries**: Squeeze all the power of `TypeScript` for auto-completion and validation of operators at any depth, [including relations and their fields](https://www.uql.app/querying/relations).
 - **Context-Object SQL Generation**: Uses a sophisticated `QueryContext` pattern to ensure perfectly indexed placeholders ($1, $2, etc.) and robust SQL fragment management, even in the most complex sub-queries.
 - **Unified API across Databases**: Write once, run anywhere. Seamlessly switch between `PostgreSQL`, `MySQL`, `MariaDB`, `SQLite`, `LibSQL`, `Neon`, `Cloudflare D1`, and even `MongoDB`.
 - **Serializable JSON Syntax**: Queries can be expressed as `100%` valid `JSON`, allowing them to be easily transported from frontend to backend.
 - **Naming Strategies**: Effortlessly translate between TypeScript `CamelCase` and database `snake_case` (or any custom format) with a pluggable system.
-- **Built-in Serialization**: A centralized task queue and `@Serialized()` decorator ensure database operations are thread-safe and race-condition free by default.
+- **Built-in Serialization**: A centralized task queue and the `@Serialized()` decorator ensure that database operations are thread-safe and race-condition-free by default.
 - **Database Migrations**: Integrated migration system for version-controlled schema management and auto-generation from entities.
 - **High Performance**: Optimized "Sticky Connections" and human-readable, minimal SQL generation.
 - **Modern Architecture**: Pure `ESM` support, designed for `Node.js`, `Bun`, `Deno`, and even mobile/browser environments.
-- **Rich Feature Set**: [Soft-delete](https://uql.app/docs/entities-soft-delete), [virtual fields](https://uql.app/docs/entities-virtual-fields), [repositories](https://uql.app/docs/querying-repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
+- **Rich Feature Set**: [Soft-delete](https://www.uql.app/entities/soft-delete/), [virtual fields](https://uql.app/entities/virtual-fields), [repositories](https://uql.app/querying/repository), and automatic handling of `JSON`, `JSONB`, and `Vector` types.
 
 &nbsp;
 
@@ -67,7 +67,7 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 
 &nbsp;
 
-For example, for `Postgres` install the `pg` driver:
+For example, for `Postgres`, install the `pg` driver:
 
 ```sh
 npm install pg
@@ -83,7 +83,7 @@ bun add pg
    "emitDecoratorMetadata": true
    ```
 
-> **Note**: `"ES2022"`, `"ES2023"`, or `"ESNext"` will also work fine for `target`.
+> **Note**: `"ES2022"`, `"ES2023"`, or `"ESNext"` will also work fine for the `target`.
 
 ---
 
@@ -172,9 +172,25 @@ export class PostTag {
 
 &nbsp;
 
-## 3. Setup a querier-pool
+## 3. Set up a pool (of queriers)
 
-A querier-pool can be set in any of the bootstrap files of your app (e.g. in the `server.ts`).
+A pool is an abstraction that manages connections (queriers) to your database. A querier is an abstraction that represents a connection to the database.
+
+The pool can be set in any of the bootstrap files of your app (e.g., in `server.ts`).
+
+### Available built-in QuerierPool classes per database
+
+| Database | QuerierPool class
+| :--- | :---
+| `PostgreSQL` (incl. CockroachDB, YugabyteDB) | `@uql/core/postgres/PgQuerierPool`
+| `MySQL` (incl. TiDB, Aurora) | `@uql/core/mysql/Mysql2QuerierPool`
+| `MariaDB` | `@uql/core/maria/MariadbQuerierPool`
+| `SQLite` | `@uql/core/sqlite/SqliteQuerierPool`
+| `Cloudflare D1` | `@uql/core/d1/D1QuerierPool`
+| `LibSQL` (Turso) | `@uql/core/libsql/LibsqlQuerierPool`
+| `Neon` (Serverless Postgres) | `@uql/core/neon/NeonQuerierPool`
+
+### Example of setting up a pool for PostgreSQL
 
 ```ts
 // file: ./shared/orm.ts
@@ -190,12 +206,13 @@ export const pool = new PgQuerierPool(
     min: 1,
     max: 10,
   },
-  // Optional extra options.
+  // Extra options (optional).
   {
-    // Optional, any custom logger function can be passed here (optional).
+    // Pass any custom logger function here (optional).
     logger: console.debug,
-    // Automatically translate between TypeScript camelCase and database snake_case.
+    // Pass a naming strategy here (optional, by default no automatic names translation).
     // This affects both queries and schema generation.
+    // E.g. `SnakeCaseNamingStrategy` automatically translate between TypeScript camelCase and database snake_case.
     namingStrategy: new SnakeCaseNamingStrategy()
   },
 );
@@ -205,14 +222,9 @@ export const pool = new PgQuerierPool(
 
 ## 4. Manipulate the data
 
-UQL provides multiple ways to interact with your data, from low-level `Queriers` to high-level `Repositories`.
-
-### Using Repositories (Recommended)
-
-Repositories provide a clean, Data-Mapper style interface for your entities.
+UQL provides multiple ways to interact with your data, from generic `Queriers` (that work with any entity) to entity-specific `Repositories`.
 
 ```ts
-import { GenericRepository } from '@uql/core';
 import { User } from './shared/models/index.js';
 import { pool } from './shared/orm.js';
 
@@ -220,10 +232,8 @@ import { pool } from './shared/orm.js';
 const querier = await pool.getQuerier();
 
 try {
-  const userRepository = new GenericRepository(User, querier);
-
   // Advanced querying with relations and virtual fields
-  const users = await userRepository.findMany({
+  const users = await querier.findMany(User, {
     $select: {
       id: true,
       name: true,
@@ -248,14 +258,13 @@ try {
 UQL's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
 
 ```ts
-import { GenericRepository } from '@uql/core';
 import { pool } from './shared/orm.js';
 import { User } from './shared/models/index.js';
 
-const authorsWithPopularPosts = await pool.transaction(async (querier) => {
-  const userRepository = new GenericRepository(User, querier);
+const querier = await pool.getQuerier();
 
-  return userRepository.findMany({
+try {
+  const authorsWithPopularPosts = await querier.findMany(User, {
     $select: {
       id: true,
       name: true,
@@ -277,7 +286,9 @@ const authorsWithPopularPosts = await pool.transaction(async (querier) => {
       name: { $istartsWith: 'a' }
     }
   });
-});
+} finally {
+  await querier.release();
+}
 ```
 
 ### Advanced: Virtual Fields & Raw SQL
@@ -325,7 +336,7 @@ const result = await pool.transaction(async (querier) => {
   const profileId = await querier.insertOne(Profile, { userId: user.id, ... });
   return { userId: user.id, profileId };
 });
-// Connection is automatically released after transaction
+// Connection is automatically released after the transaction.
 ```
 
 &nbsp;
@@ -377,7 +388,7 @@ bunx uql-migrate status
 
 ### 3. Entity-First Synchronization (Development)
 
-In development, you can use `autoSync` to automatically keep your database in sync with your entities without manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
+In development, you can use `autoSync` to automatically keep your database in sync with your entities, eliminating the need for manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
 
 ```ts
 import { Migrator } from '@uql/core/migrate';
@@ -387,15 +398,15 @@ const migrator = new Migrator(pool);
 await migrator.autoSync({ logging: true });
 ```
 
-Check out the full [documentation](https://uql.app/docs/migrations) for detailed CLI commands and advanced usage.
+Check out the full [documentation](https://uql.app/migrations) for detailed CLI commands and advanced usage.
 
 &nbsp;
 
-Check out the full documentation at [uql.app](https://uql.app) for details on:
-- [Complex Logical Operators](https://uql.app/docs/querying-logical-operators)
-- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/docs/querying-relations)
-- [Soft Deletes & Auditing](https://uql.app/docs/entities-soft-delete)
-- [Database Migration & Syncing](https://uql.app/docs/migrations)
+Learn more about UQL at [uql.app](https://uql.app) for details on:
+- [Complex Logical Operators](https://uql.app/querying-logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying-relations)
+- [Soft Deletes & Auditing](https://uql.app/entities-soft-delete)
+- [Database Migration & Syncing](https://uql.app/migrations)
 
 ---
 
