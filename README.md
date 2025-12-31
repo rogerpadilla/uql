@@ -65,7 +65,6 @@ See [this article](https://medium.com/@rogerpadillac/in-search-of-the-perfect-or
 | `LibSQL` (Turso) | `@libsql/client`
 | `Neon` (Serverless Postgres) | `@neondatabase/serverless`
 
-&nbsp;
 
 For example, for `Postgres`, install the `pg` driver:
 
@@ -244,8 +243,9 @@ try {
       email: { $iincludes: '@example.com' }, // Case-insensitive search
       status: 'active'
     },
-    $sort: { createdAt: -1 },
-    $limit: 50
+    $sort: { createdAt: 'desc' },
+    $skip: 10
+    $limit: 10,
   });
 } finally {
   // Always release the querier to the pool
@@ -278,8 +278,7 @@ try {
         $select: ['title', 'createdAt'],
         // Filter the related collection directly
         $where: { title: { $iincludes: 'typescript' } },
-        $sort: { createdAt: -1 },
-        $limit: 5
+        $sort: { createdAt: 'desc' },
       }
     },
     $where: {
@@ -336,14 +335,14 @@ const result = await pool.transaction(async (querier) => {
   const profileId = await querier.insertOne(Profile, { userId: user.id, ... });
   return { userId: user.id, profileId };
 });
-// Connection is automatically released after the transaction.
+// Connection is automatically released after a transaction.
 ```
 
 &nbsp;
 
 ## 5. Migrations & Synchronization
 
-UQL includes a robust migration system and an "Entity-First" synchronization engine built directly into the core.
+UQL includes a robust *migration system* and an *Entity-First auto-synchronization* engine built directly into the core.
 
 ### 1. Create Configuration
 
@@ -386,9 +385,9 @@ npx uql-migrate status
 bunx uql-migrate status
 ```
 
-### 3. Entity-First Synchronization (Development)
+### 3. Entity-First Synchronization (recommended for development)
 
-In development, you can use `autoSync` to automatically keep your database in sync with your entities, eliminating the need for manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
+We recommend using `autoSync` (in development) to automatically keep your database in sync with your entities, eliminating the need for manual migrations. It is **safe by default**, meaning it only adds missing tables and columns.
 
 ```ts
 import { Migrator } from '@uql/core/migrate';
@@ -403,9 +402,9 @@ Check out the full [documentation](https://uql.app/migrations) for detailed CLI 
 &nbsp;
 
 Learn more about UQL at [uql.app](https://uql.app) for details on:
-- [Complex Logical Operators](https://uql.app/querying-logical-operators)
-- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying-relations)
-- [Soft Deletes & Auditing](https://uql.app/entities-soft-delete)
+- [Complex Logical Operators](https://uql.app/querying/logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying/relations)
+- [Soft Deletes & Auditing](https://uql.app/entities/soft-delete)
 - [Database Migration & Syncing](https://uql.app/migrations)
 
 ---
@@ -420,7 +419,6 @@ For those who want to see the "engine under the hood," check out these resources
   - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): The base test suite shared by all dialects.
   - [PostgreSQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) | [MySQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) | [SQLite Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts).
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): Testing the interaction between SQL generation and connection management.
-  - [MongoDB Migration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/migrate/migrator-mongo.it.ts): Integration tests ensuring correct collection and index synchronization for MongoDB.
 
 ---
 
