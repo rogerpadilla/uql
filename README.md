@@ -205,14 +205,9 @@ export const pool = new PgQuerierPool(
 
 ## 4. Manipulate the data
 
-UQL provides multiple ways to interact with your data, from low-level `Queriers` to high-level `Repositories`.
-
-### Using Repositories (Recommended)
-
-Repositories provide a clean, Data-Mapper style interface for your entities.
+UQL provides multiple ways to interact with your data, from generic `Queriers` (that works with any entity) to entity-specific `Repositories`.
 
 ```ts
-import { GenericRepository } from '@uql/core';
 import { User } from './shared/models/index.js';
 import { pool } from './shared/orm.js';
 
@@ -220,10 +215,8 @@ import { pool } from './shared/orm.js';
 const querier = await pool.getQuerier();
 
 try {
-  const userRepository = new GenericRepository(User, querier);
-
   // Advanced querying with relations and virtual fields
-  const users = await userRepository.findMany({
+  const users = await querier.findMany(User, {
     $select: {
       id: true,
       name: true,
@@ -248,14 +241,13 @@ try {
 UQL's query syntax is context-aware. When you query a relation, the available fields and operators are automatically suggested and validated based on that related entity.
 
 ```ts
-import { GenericRepository } from '@uql/core';
 import { pool } from './shared/orm.js';
 import { User } from './shared/models/index.js';
 
-const authorsWithPopularPosts = await pool.transaction(async (querier) => {
-  const userRepository = new GenericRepository(User, querier);
+const querier = await pool.getQuerier();
 
-  return userRepository.findMany({
+try {
+  const authorsWithPopularPosts = await querier.findMany(User, {
     $select: {
       id: true,
       name: true,
@@ -277,7 +269,9 @@ const authorsWithPopularPosts = await pool.transaction(async (querier) => {
       name: { $istartsWith: 'a' }
     }
   });
-});
+} finally {
+  await querier.release();
+}
 ```
 
 ### Advanced: Virtual Fields & Raw SQL
