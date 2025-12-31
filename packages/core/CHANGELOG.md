@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.4.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.0...@uql/core@3.4.1) (2025-12-31)
+## [3.4.2](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.1...@uql/core@3.4.2) (2025-12-31)
 
 **Note:** Version bump only for package @uql/core
 

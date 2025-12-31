@@ -3,7 +3,7 @@
   "homepage": "https://uql.app",
   "description": "One Language. Frontend to Backend.",
   "license": "MIT",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -146,5 +146,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "be036e9602d7642190ae824c7e8c63ac71ef4231"
+  "gitHead": "53984c0b5d6d9809f421cab71824ef18d6c4a348"
 }
