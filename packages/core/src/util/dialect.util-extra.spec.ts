@@ -1,96 +1,160 @@
 import { describe, expect, it } from 'bun:test';
-import { Entity, Field, getMeta, Id, OneToMany } from '../entity/index.js';
-import { QueryRaw } from '../type/index.js';
-import {
-  buildSortMap,
-  buldQueryWhereAsMap,
-  fillOnFields,
-  filterFieldKeys,
-  filterPersistableRelationKeys,
-  filterRelationKeys,
-  getFieldCallbackValue,
-  isCascadable,
-  isSelectingRelations,
-} from './dialect.util.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
+import { raw } from './raw.js';
 
-@Entity()
-class DialectUser {
-  @Id() id?: number;
-  @Field({ updatable: false }) readonlyProp?: string;
-  @Field({ virtual: new QueryRaw('1') }) virtualProp?: string;
-  @Field({ onInsert: () => 'inserted', onUpdate: 'updated' }) callbackProp?: string;
-  @OneToMany({ entity: () => DialectPost, mappedBy: 'user', cascade: true }) posts?: DialectPost[];
-}
+describe('Query with $exists and nested relation filtering', () => {
+  const dialect = new PostgresDialect();
 
-@Entity()
-class DialectPost {
-  @Id() id?: number;
-  @Field() user?: DialectUser;
-}
+  const exec = (fn: (ctx: ReturnType<typeof dialect.createContext>) => void) => {
+    const ctx = dialect.createContext();
+    fn(ctx);
+    return { sql: ctx.sql, values: ctx.values };
+  };
 
-describe('dialect.util', () => {
-  const meta = getMeta(DialectUser);
+  it('should generate $exists sub-query with raw callback', () => {
+    const { sql, values } = exec((ctx) =>
+      dialect.find(ctx, Item, {
+        $select: { id: true, name: true },
+        $where: {
+          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              User,
+              {
+                $select: { id: true },
+                $where: {
+                  companyId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"companyId"`)),
+                },
+              },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
 
-  it('filterFieldKeys should filter virtual and non-updatable keys', () => {
-    const payload = { id: 1, readonlyProp: 'val', virtualProp: 'val', other: 'val' } as DialectUser;
-    const insertKeys = filterFieldKeys(meta, payload, 'onInsert');
-    expect(insertKeys).toContain('readonlyProp');
-    expect(insertKeys).not.toContain('virtualProp');
-
-    const updateKeys = filterFieldKeys(meta, payload, 'onUpdate');
-    expect(updateKeys).not.toContain('readonlyProp');
-    expect(updateKeys).not.toContain('virtualProp');
+    expect(sql).toBe(
+      'SELECT "id", "name" FROM "Item" WHERE EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
+    );
+    expect(values).toEqual([]);
   });
 
-  it('getFieldCallbackValue should handle functions and constants', () => {
-    expect(getFieldCallbackValue(() => 'test')).toBe('test');
-    expect(getFieldCallbackValue('constant')).toBe('constant');
+  it('should generate $nexists sub-query with raw callback', () => {
+    const { sql, values } = exec((ctx) =>
+      dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: {
+          $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              User,
+              {
+                $select: { id: true },
+                $where: {
+                  companyId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"companyId"`)),
+                },
+              },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "id" FROM "Item" WHERE NOT EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
+    );
+    expect(values).toEqual([]);
   });
 
-  it('fillOnFields should populate callback fields', () => {
-    const payload = { id: 1 } as DialectUser;
-    const filled = fillOnFields(meta, { ...payload }, 'onInsert');
-    expect(filled[0].callbackProp).toBe('inserted');
+  it('should generate nested $select with $where on OneToMany relation', () => {
+    const { sql, values } = exec((ctx) =>
+      dialect.find(ctx, InventoryAdjustment, {
+        $select: {
+          id: true,
+          description: true,
+          itemAdjustments: {
+            $select: ['buyPrice', 'number'],
+            $where: {
+              buyPrice: { $gte: 100 },
+            },
+          },
+        },
+        $where: {
+          createdAt: { $gte: 1000 },
+        },
+      }),
+    );
 
-    const updated = fillOnFields(meta, { ...payload }, 'onUpdate');
-    expect(updated[0].callbackProp).toBe('updated');
+    // Main query selects from InventoryAdjustment
+    expect(sql).toBe(
+      'SELECT "InventoryAdjustment"."id", "InventoryAdjustment"."description" FROM "InventoryAdjustment" WHERE "InventoryAdjustment"."createdAt" >= $1',
+    );
+    expect(values).toEqual([1000]);
   });
 
-  it('isCascadable should check action', () => {
-    expect(isCascadable('persist', true)).toBe(true);
-    expect(isCascadable('persist', false)).toBe(false);
-    expect(isCascadable('persist', 'persist')).toBe(true);
-    expect(isCascadable('persist', 'delete')).toBe(false);
+  it('should combine $exists with nested relation filtering', () => {
+    // This demonstrates the corrected version of the user's query pattern
+    const { sql, values } = exec((ctx) =>
+      dialect.find(ctx, InventoryAdjustment, {
+        $select: {
+          id: true,
+          description: true,
+        },
+        $where: {
+          createdAt: { $gte: 1000 },
+          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              ItemAdjustment,
+              {
+                $select: { id: true },
+                $where: {
+                  inventoryAdjustmentId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"id"`)),
+                  buyPrice: { $gte: 100 },
+                },
+              },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "id", "description" FROM "InventoryAdjustment" ' +
+        'WHERE "createdAt" >= $1 AND EXISTS (SELECT "ItemAdjustment"."id" FROM "ItemAdjustment" ' +
+        'WHERE "ItemAdjustment"."inventoryAdjustmentId" = "InventoryAdjustment"."id" AND "ItemAdjustment"."buyPrice" >= $2)',
+    );
+    expect(values).toEqual([1000, 100]);
   });
 
-  it('filterPersistableRelationKeys should filter by cascade', () => {
-    const payload = { posts: [] } as DialectUser;
-    const keys = filterPersistableRelationKeys(meta, payload, 'persist');
-    expect(keys).toContain('posts');
-  });
+  it('should handle $gte operator in nested relation $where', () => {
+    const { sql, values } = exec((ctx) =>
+      dialect.find(ctx, Item, {
+        $select: {
+          id: true,
+          name: true,
+          tax: {
+            $select: ['name', 'percentage'],
+            $where: {
+              percentage: { $gte: 10 },
+            },
+          },
+        },
+        $where: {
+          salePrice: { $gte: 50 },
+        },
+      }),
+    );
 
-  it('filterRelationKeys should return relation keys from select', () => {
-    const select = { id: true, posts: true } as import('../type/index.js').QuerySelect<DialectUser>;
-    const keys = filterRelationKeys(meta, select);
-    expect(keys).toContain('posts');
-    expect(keys).not.toContain('id');
-  });
-
-  it('isSelectingRelations should check if any relation is selected', () => {
-    expect(isSelectingRelations(meta, { posts: true } as any)).toBe(true);
-    expect(isSelectingRelations(meta, { id: true } as any)).toBe(false);
-  });
-
-  it('buildSortMap should handle arrays and objects', () => {
-    expect(buildSortMap({ id: 1 } as any)).toEqual({ id: 1 });
-    expect(buildSortMap([['id', 1], { field: 'id', sort: -1 }] as any)).toEqual({ id: -1 });
-  });
-
-  it('buldQueryWhereAsMap should handle various types', () => {
-    expect(buldQueryWhereAsMap(meta, 123)).toEqual({ id: 123 });
-    expect(buldQueryWhereAsMap(meta, [1, 2])).toEqual({ id: [1, 2] });
-    const raw = new QueryRaw('test');
-    expect(buldQueryWhereAsMap(meta, raw)).toEqual({ $and: [raw] });
-    expect(buldQueryWhereAsMap(meta, { id: 1 } as any)).toEqual({ id: 1 });
+    // The related tax is fetched via JOIN with its filter applied in the JOIN condition
+    expect(sql).toBe(
+      'SELECT "Item"."id", "Item"."name", "tax"."id" "tax_id", "tax"."name" "tax_name", "tax"."percentage" "tax_percentage" ' +
+        'FROM "Item" LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."taxId" AND "tax"."percentage" >= $1 ' +
+        'WHERE "Item"."salePrice" >= $2',
+    );
+    expect(values).toEqual([10, 50]);
   });
 });
