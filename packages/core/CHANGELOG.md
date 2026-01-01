@@ -1,21 +1,15 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.4.4](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.3...@uql/core@3.4.4) (2025-12-31)
-
-**Note:** Version bump only for package @uql/core
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.4.5]
+### Improve dependencies and docs
+
+- Stablish dependencies versions
+- Remove unnecessary dependencies from subpackages
+- Improve docs
 
 ## [3.4.1]
 ### Improve documentation
