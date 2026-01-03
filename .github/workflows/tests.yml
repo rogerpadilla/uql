@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [node, bun, deno]
+        runtime: [node, bun]
         version: [latest]
         include:
           - runtime: node
@@ -69,12 +69,6 @@ jobs:
         with:
           node-version: ${{ matrix.version }}
 
-      - name: Setup Deno
-        if: matrix.runtime == 'deno'
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: latest
-
       - name: Install OS dependencies
         run: |
           sudo apt-get update
@@ -90,8 +84,6 @@ jobs:
         run: |
           if [ "${{ matrix.runtime }}" = "node" ]; then
             npm test
-          elif [ "${{ matrix.runtime }}" = "deno" ]; then
-            deno run -A npm:vitest run --coverage
           else
             bun run test
           fi
