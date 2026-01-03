@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { User } from './test/index.js';
 import type { Querier, Repository } from './type/index.js';
 
 describe('options', () => {
   beforeEach(() => {
-    jest.spyOn(console, 'log');
+    vi.spyOn(console, 'log');
   });
 
   it('getQuerierPool unset', () => {

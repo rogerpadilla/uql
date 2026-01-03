@@ -38,13 +38,21 @@ jobs:
 
   tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24, 25]
+        runtime: [node, bun, deno]
+        version: [latest]
+        include:
+          - runtime: node
+            version: 20
+          - runtime: node
+            version: 22
+          - runtime: node
+            version: 24
 
-    name: Test (Node ${{ matrix.node-version }})
+    name: Test (${{ matrix.runtime }} ${{ matrix.version }})
 
     steps:
       - name: Check out repository code
@@ -55,10 +63,17 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Setup Node.js ${{ matrix.node-version }}
+      - name: Setup Node.js
+        if: matrix.runtime == 'node'
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ matrix.version }}
+
+      - name: Setup Deno
+        if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: latest
 
       - name: Install OS dependencies
         run: |
@@ -72,10 +87,17 @@ jobs:
         run: docker compose up -d --wait
 
       - name: Run Tests
-        run: bun run test
+        run: |
+          if [ "${{ matrix.runtime }}" = "node" ]; then
+            npm test
+          elif [ "${{ matrix.runtime }}" = "deno" ]; then
+            deno run -A npm:vitest run --coverage
+          else
+            bun run test
+          fi
 
       - name: Submit coverage
-        if: matrix.node-version == 24
+        if: matrix.runtime == 'node' && matrix.version == 24
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

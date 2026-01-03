@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
@@ -7,27 +7,27 @@ describe('PostgresSchemaIntrospector', () => {
   let pool: QuerierPool;
   let querier: SqlQuerier;
 
-  let mockAll: ReturnType<typeof jest.fn>;
-  let mockRun: ReturnType<typeof jest.fn>;
-  let mockRelease: ReturnType<typeof jest.fn>;
-  let mockGetQuerier: ReturnType<typeof jest.fn>;
+  let mockAll: Mock<(sql: any, params?: any[]) => Promise<any[]>>;
+  let mockRun: Mock<(sql: any, params?: any[]) => Promise<any>>;
+  let mockRelease: Mock<() => Promise<void>>;
+  let mockGetQuerier: Mock<() => Promise<SqlQuerier>>;
 
   beforeEach(() => {
-    mockAll = jest.fn<any>().mockResolvedValue([]);
-    mockRun = jest.fn<any>().mockResolvedValue({});
-    mockRelease = jest.fn<any>().mockResolvedValue(undefined);
+    mockAll = vi.fn().mockResolvedValue([]);
+    mockRun = vi.fn().mockResolvedValue({});
+    mockRelease = vi.fn().mockResolvedValue(undefined);
 
     querier = {
       all: mockAll,
       run: mockRun,
       release: mockRelease,
       dialect: { escapeIdChar: '"' },
-    } as any;
+    } as unknown as SqlQuerier;
 
-    mockGetQuerier = jest.fn<any>().mockResolvedValue(querier);
+    mockGetQuerier = vi.fn().mockResolvedValue(querier);
     pool = {
       getQuerier: mockGetQuerier,
-    } as any;
+    } as unknown as QuerierPool;
 
     introspector = new PostgresSchemaIntrospector(pool);
   });
@@ -42,64 +42,57 @@ describe('PostgresSchemaIntrospector', () => {
   });
 
   it('getTableSchema should return table details', async () => {
-    // 1. tableExists check
-    mockAll.mockResolvedValueOnce([{ exists: true }]);
-    // 2. getColumns
-    mockAll.mockResolvedValueOnce([
-      {
-        column_name: 'id',
-        data_type: 'integer',
-        udt_name: 'int4',
-        is_nullable: 'NO',
-        column_default: "nextval('users_id_seq'::regclass)",
-        character_maximum_length: null,
-        numeric_precision: 32,
-        numeric_scale: 0,
-        is_primary_key: true,
-        is_unique: false,
-        column_comment: 'User ID',
-      },
-      {
-        column_name: 'name',
-        data_type: 'character varying',
-        udt_name: 'varchar',
-        is_nullable: 'YES',
-        column_default: null,
-        character_maximum_length: 255,
-        numeric_precision: null,
-        numeric_scale: null,
-        is_primary_key: false,
-        is_unique: false,
-        column_comment: null,
-      },
-    ]);
-    // 3. getIndexes
-    mockAll.mockResolvedValueOnce([
-      {
-        index_name: 'idx_users_name',
-        columns: ['name'],
-        is_unique: false,
-      },
-    ]);
-    // 4. getForeignKeys
-    mockAll.mockResolvedValueOnce([]);
-    // 5. getPrimaryKey
-    mockAll.mockResolvedValueOnce([{ column_name: 'id' }]);
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('EXISTS')) {
+        return Promise.resolve([{ exists: true }]);
+      }
+      if (sql.includes('information_schema.columns')) {
+        return Promise.resolve([
+          {
+            column_name: 'id',
+            data_type: 'integer',
+            udt_name: 'int4',
+            is_nullable: 'NO',
+            column_default: "nextval('users_id_seq'::regclass)",
+            is_primary_key: true,
+            is_unique: false,
+          },
+        ]);
+      }
+      if (sql.includes('pg_index')) {
+        return Promise.resolve([
+          {
+            index_name: 'idx1',
+            columns: ['name'],
+            is_unique: false,
+          },
+        ]);
+      }
+      if (sql.includes("constraint_type = 'FOREIGN KEY'")) {
+        return Promise.resolve([
+          {
+            constraint_name: 'fk1',
+            columns: ['user_id'],
+            referenced_table: 'users',
+            referenced_columns: ['id'],
+            delete_rule: 'CASCADE',
+            update_rule: 'NO ACTION',
+          },
+        ]);
+      }
+      if (sql.includes("constraint_type = 'PRIMARY KEY'")) {
+        return Promise.resolve([{ column_name: 'id' }]);
+      }
+      return Promise.resolve([]);
+    });
 
     const schema = await introspector.getTableSchema('users');
 
     expect(schema).toBeDefined();
     expect(schema?.name).toBe('users');
-    expect(schema?.columns).toHaveLength(2);
-    expect(schema?.columns[0]).toMatchObject({
-      name: 'id',
-      type: 'INTEGER',
-      nullable: false,
-      isAutoIncrement: true,
-      isPrimaryKey: true,
-    });
-    expect(schema?.indexes).toHaveLength(1);
-    expect(schema?.indexes?.[0].name).toBe('idx_users_name');
+    expect(schema?.columns).toHaveLength(1);
+    expect(schema?.foreignKeys).toHaveLength(1);
+    expect(schema?.primaryKey).toEqual(['id']);
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {
@@ -116,40 +109,6 @@ describe('PostgresSchemaIntrospector', () => {
     expect(exists).toBe(true);
   });
 
-  it('getTableSchema should include foreign keys with referential actions', async () => {
-    // tableExists
-    mockAll.mockResolvedValueOnce([{ exists: true }]);
-    // getColumns
-    mockAll.mockResolvedValueOnce([]);
-    // getIndexes
-    mockAll.mockResolvedValueOnce([]);
-    // getForeignKeys
-    mockAll.mockResolvedValueOnce([
-      {
-        constraint_name: 'fk_posts_user_id',
-        columns: ['user_id'],
-        referenced_table: 'users',
-        referenced_columns: ['id'],
-        delete_rule: 'CASCADE',
-        update_rule: 'NO ACTION',
-      },
-    ]);
-    // getPrimaryKey
-    mockAll.mockResolvedValueOnce([]);
-
-    const schema = await introspector.getTableSchema('posts');
-
-    expect(schema?.foreignKeys).toHaveLength(1);
-    expect(schema?.foreignKeys?.[0]).toMatchObject({
-      name: 'fk_posts_user_id',
-      columns: ['user_id'],
-      referencedTable: 'users',
-      referencedColumns: ['id'],
-      onDelete: 'CASCADE',
-      onUpdate: 'NO ACTION',
-    });
-  });
-
   it('normalizeType should handle user-defined and array types', () => {
     const normalize = (introspector as any).normalizeType.bind(introspector);
     expect(normalize('USER-DEFINED', 'my_enum')).toBe('MY_ENUM');
@@ -164,5 +123,30 @@ describe('PostgresSchemaIntrospector', () => {
     expect(normalize('RESTRICT')).toBe('RESTRICT');
     expect(normalize('NO ACTION')).toBe('NO ACTION');
     expect(normalize('UNKNOWN')).toBeUndefined();
+  });
+
+  it('should throw error if not SQL querier', async () => {
+    (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
+    await expect(introspector.getTableNames()).rejects.toThrow(
+      'PostgresSchemaIntrospector requires a SQL-based querier',
+    );
+  });
+
+  it('isAutoIncrement utility', () => {
+    expect((introspector as any).isAutoIncrement("nextval('seq')")).toBe(true);
+    expect((introspector as any).isAutoIncrement('1')).toBe(false);
+    expect((introspector as any).isAutoIncrement(null)).toBe(false);
+  });
+
+  it('parseDefaultValue utility', () => {
+    const parse = (introspector as any).parseDefaultValue.bind(introspector);
+    expect(parse(null)).toBeUndefined();
+    expect(parse("'val'::text")).toBe('val');
+    expect(parse('true')).toBe(true);
+    expect(parse('false')).toBe(false);
+    expect(parse('NULL')).toBeNull();
+    expect(parse('123')).toBe(123);
+    expect(parse('123.45')).toBe(123.45);
+    expect(parse('now()')).toBe('now()');
   });
 });

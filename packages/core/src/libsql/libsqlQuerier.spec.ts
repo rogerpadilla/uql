@@ -1,32 +1,32 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { Client, ResultSet } from '@libsql/client';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { LibsqlQuerier } from './libsqlQuerier.js';
 
 describe('LibsqlQuerier', () => {
   let mockClient: {
-    execute: jest.Mock;
-    transaction: jest.Mock;
-    close: jest.Mock;
+    execute: Mock<any>;
+    transaction: Mock<any>;
+    close: Mock<any>;
   };
   let mockTx: {
-    execute: jest.Mock;
-    commit: jest.Mock;
-    rollback: jest.Mock;
-    close: jest.Mock;
+    execute: Mock<any>;
+    commit: Mock<any>;
+    rollback: Mock<any>;
+    close: Mock<any>;
   };
   let querier: LibsqlQuerier;
 
   beforeEach(() => {
     mockTx = {
-      execute: jest.fn(),
-      commit: jest.fn(),
-      rollback: jest.fn(),
-      close: jest.fn(),
+      execute: vi.fn(),
+      commit: vi.fn(),
+      rollback: vi.fn(),
+      close: vi.fn(),
     };
     mockClient = {
-      execute: jest.fn(),
-      transaction: jest.fn().mockResolvedValue(mockTx),
-      close: jest.fn(),
+      execute: vi.fn(),
+      transaction: vi.fn().mockResolvedValue(mockTx),
+      close: vi.fn(),
     };
     querier = new LibsqlQuerier(mockClient as unknown as Client);
   });

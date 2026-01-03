@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
 import { raw } from './raw.js';

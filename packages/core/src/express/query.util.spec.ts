@@ -1,5 +1,5 @@
-import { expect, it } from 'bun:test';
 import type { Request } from 'express';
+import { expect, it } from 'vitest';
 import type { Item } from '../test/index.js';
 import type { Query, QueryStringified } from '../type/index.js';
 import { parseQuery } from './query.util.js';

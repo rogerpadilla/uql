@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
-import type { QuerierPool, SqlQuerier, TableSchema } from '../type/index.js';
+import type { QuerierPool, SchemaIntrospector, SqlQuerier, TableSchema } from '../type/index.js';
 import { Migrator } from './migrator.js';
 
 @Entity()
@@ -23,19 +23,19 @@ describe('Migrator autoSync Integration', () => {
   beforeEach(() => {
     // Mock pool and querier for testing
     const querier = {
-      run: jest.fn<any>().mockResolvedValue({}),
-      all: jest.fn<any>().mockResolvedValue([]),
-      beginTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      commitTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      rollbackTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      run: vi.fn().mockResolvedValue({}),
+      all: vi.fn().mockResolvedValue([]),
+      beginTransaction: vi.fn().mockResolvedValue(undefined),
+      commitTransaction: vi.fn().mockResolvedValue(undefined),
+      rollbackTransaction: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue(undefined),
       dialect: {
         escapeIdChar: '"',
-        placeholder: jest.fn<any>().mockReturnValue('?'),
+        placeholder: vi.fn().mockReturnValue('?'),
       },
-    };
+    } as unknown as SqlQuerier;
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: vi.fn().mockResolvedValue(querier),
       dialect: 'postgres',
     } as unknown as QuerierPool;
 
@@ -47,11 +47,11 @@ describe('Migrator autoSync Integration', () => {
   it('should generate create statements for new tables', async () => {
     // Mock introspector to return nothing
     const introspector = {
-      getTableSchema: jest.fn<any>().mockResolvedValue(undefined),
-      getTableNames: jest.fn<any>().mockResolvedValue([]),
-      tableExists: jest.fn<any>().mockResolvedValue(false),
-    };
-    migrator.schemaIntrospector = introspector as any;
+      getTableSchema: vi.fn().mockResolvedValue(undefined),
+      getTableNames: vi.fn().mockResolvedValue([]),
+      tableExists: vi.fn().mockResolvedValue(false),
+    } as unknown as SchemaIntrospector;
+    migrator.schemaIntrospector = introspector;
 
     await migrator.autoSync({ logging: true });
 
@@ -63,7 +63,7 @@ describe('Migrator autoSync Integration', () => {
   it('should generate alter statements for missing columns', async () => {
     // Mock introspector to return existing table with one column missing
     const introspector = {
-      getTableSchema: jest.fn<any>().mockImplementation((name: any) => {
+      getTableSchema: vi.fn().mockImplementation((name: string) => {
         if (name === 'SyncUser') {
           return Promise.resolve({
             name: 'SyncUser',
@@ -81,8 +81,8 @@ describe('Migrator autoSync Integration', () => {
         }
         return Promise.resolve(undefined);
       }),
-    };
-    migrator.schemaIntrospector = introspector as any;
+    } as unknown as SchemaIntrospector;
+    migrator.schemaIntrospector = introspector;
 
     await migrator.autoSync({ logging: true });
 

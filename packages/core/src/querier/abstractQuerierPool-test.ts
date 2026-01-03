@@ -1,4 +1,4 @@
-import { expect } from 'bun:test';
+import { expect } from 'vitest';
 import { AbstractQuerier } from '../querier/index.js';
 import type { Spec } from '../test/index.js';
 import type { Querier } from '../type/index.js';

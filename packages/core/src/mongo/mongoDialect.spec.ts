@@ -1,5 +1,5 @@
-import { expect } from 'bun:test';
 import { ObjectId } from 'mongodb';
+import { expect } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
 import { MongoDialect } from './mongoDialect.js';

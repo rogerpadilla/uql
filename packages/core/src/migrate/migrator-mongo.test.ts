@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import type { QuerierPool } from '../type/index.js';
 import { Migrator } from './migrator.js';
@@ -16,23 +16,23 @@ describe('Migrator autoSync MongoDB Integration', () => {
 
   beforeEach(() => {
     db = {
-      listCollections: jest.fn<any>().mockReturnValue({
-        toArray: jest.fn<any>().mockResolvedValue([]),
+      listCollections: vi.fn<any>().mockReturnValue({
+        toArray: vi.fn<any>().mockResolvedValue([]),
       }),
-      createCollection: jest.fn<any>().mockResolvedValue({}),
-      collection: jest.fn<any>().mockReturnValue({
-        indexes: jest.fn<any>().mockResolvedValue([]),
-        createIndex: jest.fn<any>().mockResolvedValue({}),
+      createCollection: vi.fn<any>().mockResolvedValue({}),
+      collection: vi.fn<any>().mockReturnValue({
+        indexes: vi.fn<any>().mockResolvedValue([]),
+        createIndex: vi.fn<any>().mockResolvedValue({}),
       }),
     };
 
     const querier = {
       db,
-      release: jest.fn<any>().mockResolvedValue(undefined),
+      release: vi.fn<any>().mockResolvedValue(undefined),
     };
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: vi.fn<any>().mockResolvedValue(querier),
       dialect: 'mongodb',
     } as unknown as QuerierPool;
 

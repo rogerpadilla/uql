@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import { AbstractQuerier } from '../abstractQuerier.js';
 import { Serialized } from './serialized.js';
 

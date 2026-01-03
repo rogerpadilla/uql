@@ -1,4 +1,4 @@
-import { expect } from 'bun:test';
+import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { createSpec } from '../test/index.js';
 import { MySqlDialect } from './mysqlDialect.js';

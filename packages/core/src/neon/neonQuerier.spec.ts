@@ -1,21 +1,21 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
 import type { PoolClient, QueryResult } from '@neondatabase/serverless';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { NeonQuerier } from './neonQuerier.js';
 
 describe('NeonQuerier', () => {
   let mockConn: {
-    query: jest.Mock;
-    release: jest.Mock;
+    query: Mock<(sql: string, params?: any[]) => Promise<QueryResult<any>>>;
+    release: Mock<() => void>;
   };
-  let connect: jest.Mock;
+  let connect: Mock<() => Promise<PoolClient>>;
   let querier: NeonQuerier;
 
   beforeEach(() => {
     mockConn = {
-      query: jest.fn().mockResolvedValue({ rowCount: 0, rows: [], command: '', oid: 0, fields: [] }),
-      release: jest.fn(),
+      query: vi.fn().mockResolvedValue({ rowCount: 0, rows: [], command: '', oid: 0, fields: [] }),
+      release: vi.fn(),
     };
-    connect = jest.fn().mockResolvedValue(mockConn as unknown as PoolClient);
+    connect = vi.fn().mockResolvedValue(mockConn as unknown as PoolClient);
     querier = new NeonQuerier(connect);
   });
 
@@ -53,7 +53,7 @@ describe('NeonQuerier', () => {
   });
 
   it('should release connection', async () => {
-    await querier.lazyConnect();
+    await (querier as any).lazyConnect();
     await querier.internalRelease();
     expect(mockConn.release).toHaveBeenCalled();
   });
@@ -65,6 +65,6 @@ describe('NeonQuerier', () => {
 
   it('should throw if releasing with pending transaction', async () => {
     await querier.beginTransaction();
-    expect(querier.internalRelease()).rejects.toThrow('pending transaction');
+    await expect(querier.internalRelease()).rejects.toThrow('pending transaction');
   });
 });

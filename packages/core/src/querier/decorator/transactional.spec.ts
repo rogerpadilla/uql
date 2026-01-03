@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getQuerier, setQuerierPool } from '../../options.js';
 import type { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';
@@ -121,7 +121,7 @@ describe('transactional', () => {
   });
 
   it('injectQuerier and call super', async () => {
-    const deleteStub = jest.fn((id: string, querier: Querier) => {});
+    const deleteStub = vi.fn((id: string, querier: Querier) => {});
 
     class ServiceA {
       @Transactional()
@@ -225,16 +225,16 @@ describe('transactional', () => {
 
 function buildQuerierMock(): Querier {
   const querier = {
-    beginTransaction: jest.fn(async () => {
+    beginTransaction: vi.fn(async () => {
       querier.hasOpenTransaction = true;
     }),
-    commitTransaction: jest.fn(async () => {
+    commitTransaction: vi.fn(async () => {
       querier.hasOpenTransaction = undefined;
     }),
-    rollbackTransaction: jest.fn(async () => {
+    rollbackTransaction: vi.fn(async () => {
       querier.hasOpenTransaction = undefined;
     }),
-    release: jest.fn(async () => {}),
+    release: vi.fn(async () => {}),
   } as Partial<Querier> as Writable<Querier>;
   return querier;
 }

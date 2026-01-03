@@ -1,4 +1,4 @@
-import { expect, jest } from 'bun:test';
+import { expect, vi } from 'vitest';
 import {
   clearTables,
   createTables,
@@ -31,8 +31,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async beforeEach() {
     this.querier = await this.pool.getQuerier();
     await clearTables(this.querier);
-    jest.spyOn(this.querier, 'all');
-    jest.spyOn(this.querier, 'run');
+    vi.spyOn(this.querier, 'all');
+    vi.spyOn(this.querier, 'run');
   }
 
   async afterEach() {
@@ -40,7 +40,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       await this.querier.rollbackTransaction();
     }
     await this.querier.release();
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   }
 
   async afterAll() {
@@ -117,7 +117,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     await this.querier.findMany(Item, {
       $select: {
@@ -146,7 +146,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
 
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     await this.querier.findMany(Tag, {
       $select: {
@@ -813,7 +813,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldDeleteOneAndCascadeManyToManyDeletes() {
     await this.shouldInsertOneAndCascadeManyToManyInserts();
 
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     await this.querier.deleteOneById(Item, 1);
 
@@ -829,7 +829,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldDeleteOneAndNoCascadeManyToManyDeletes() {
     await this.shouldInsertOneAndCascadeManyToManyInserts();
 
-    jest.clearAllMocks();
+    vi.clearAllMocks();
 
     await this.querier.deleteOneById(Tag, 1);
 

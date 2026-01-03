@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { MysqlSchemaIntrospector } from './mysqlIntrospector.js';
 
@@ -7,27 +7,27 @@ describe('MysqlSchemaIntrospector', () => {
   let pool: QuerierPool;
   let querier: SqlQuerier;
 
-  let mockAll: ReturnType<typeof jest.fn>;
-  let mockRun: ReturnType<typeof jest.fn>;
-  let mockRelease: ReturnType<typeof jest.fn>;
-  let mockGetQuerier: ReturnType<typeof jest.fn>;
+  let mockAll: Mock<(sql: any, params?: any[]) => Promise<any[]>>;
+  let mockRun: Mock<(sql: any, params?: any[]) => Promise<any>>;
+  let mockRelease: Mock<() => Promise<void>>;
+  let mockGetQuerier: Mock<() => Promise<SqlQuerier>>;
 
   beforeEach(() => {
-    mockAll = jest.fn<any>().mockResolvedValue([]);
-    mockRun = jest.fn<any>().mockResolvedValue({});
-    mockRelease = jest.fn<any>().mockResolvedValue(undefined);
+    mockAll = vi.fn().mockResolvedValue([]);
+    mockRun = vi.fn().mockResolvedValue({});
+    mockRelease = vi.fn().mockResolvedValue(undefined);
 
     querier = {
       all: mockAll,
       run: mockRun,
       release: mockRelease,
       dialect: { escapeIdChar: '`' },
-    } as any;
+    } as unknown as SqlQuerier;
 
-    mockGetQuerier = jest.fn<any>().mockResolvedValue(querier);
+    mockGetQuerier = vi.fn().mockResolvedValue(querier);
     pool = {
       getQuerier: mockGetQuerier,
-    } as any;
+    } as unknown as QuerierPool;
 
     introspector = new MysqlSchemaIntrospector(pool);
   });

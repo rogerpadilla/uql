@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it } from 'vitest';
 import type { Item, User } from '../../test/index.js';
 import type { Query } from '../../type/index.js';
 import { stringifyQuery, stringifyQueryParameter } from './querier.util.js';

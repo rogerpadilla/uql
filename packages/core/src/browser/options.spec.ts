@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import { User } from '../test/index.js';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { GenericClientRepository, HttpQuerier } from './querier/index.js';

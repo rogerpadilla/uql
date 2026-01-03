@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MongoQuerier, QuerierPool } from '../../type/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
@@ -6,33 +6,36 @@ describe('MongoSchemaIntrospector', () => {
   let introspector: MongoSchemaIntrospector;
   let pool: QuerierPool;
   let querier: MongoQuerier;
-  let db: any;
+  let db: {
+    listCollections: Mock;
+    collection: Mock;
+  };
 
   beforeEach(() => {
     db = {
-      listCollections: jest.fn<any>().mockReturnValue({
-        toArray: jest.fn<any>().mockResolvedValue([]),
+      listCollections: vi.fn().mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([]),
       }),
-      collection: jest.fn<any>().mockReturnValue({
-        indexes: jest.fn<any>().mockResolvedValue([]),
+      collection: vi.fn().mockReturnValue({
+        indexes: vi.fn().mockResolvedValue([]),
       }),
     };
 
     querier = {
       db,
-      release: jest.fn<any>().mockResolvedValue(undefined) as any,
-    } as any;
+      release: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MongoQuerier;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier) as any,
-    } as any;
+      getQuerier: vi.fn().mockResolvedValue(querier),
+    } as unknown as QuerierPool;
 
     introspector = new MongoSchemaIntrospector(pool);
   });
 
   it('getTableNames should return collection names', async () => {
     db.listCollections.mockReturnValueOnce({
-      toArray: jest.fn<any>().mockResolvedValue([{ name: 'users' }, { name: 'posts' }]),
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }, { name: 'posts' }]),
     });
 
     const names = await introspector.getTableNames();
@@ -42,10 +45,10 @@ describe('MongoSchemaIntrospector', () => {
 
   it('getTableSchema should return collection details', async () => {
     db.listCollections.mockReturnValueOnce({
-      toArray: jest.fn<any>().mockResolvedValue([{ name: 'users' }]),
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }]),
     });
     db.collection.mockReturnValueOnce({
-      indexes: jest.fn<any>().mockResolvedValue([
+      indexes: vi.fn().mockResolvedValue([
         { name: '_id_', key: { _id: 1 } },
         { name: 'idx_username', key: { username: 1 }, unique: true },
       ]),
@@ -65,7 +68,7 @@ describe('MongoSchemaIntrospector', () => {
 
   it('getTableSchema should return undefined for non-existent collection', async () => {
     db.listCollections.mockReturnValueOnce({
-      toArray: jest.fn<any>().mockResolvedValue([]),
+      toArray: vi.fn().mockResolvedValue([]),
     });
 
     const schema = await introspector.getTableSchema('non_existent');

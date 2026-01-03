@@ -1,8 +1,8 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'vitest';
 
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  let describeFn: typeof describe;
+  let describeFn: typeof describe | typeof describe.only | typeof describe.skip;
   const specName = proto.constructor.name;
 
   if (specName.startsWith('fff')) {

@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it } from 'vitest';
 import { ManyToOne } from './relation.js';
 
 it('invalid auto-inferred type', () => {

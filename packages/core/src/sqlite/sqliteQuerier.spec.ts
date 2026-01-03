@@ -1,17 +1,21 @@
-import { jest, mock } from 'bun:test';
+import { vi } from 'vitest';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { createSpec } from '../test/index.js';
 
-mock.module('better-sqlite3', () => {
-  const { Database } = require('bun:sqlite');
-  class BetterSqlite3 extends Database {
-    pragma(source: string) {
-      return this.query(`PRAGMA ${source}`).all();
+vi.mock('better-sqlite3', async () => {
+  try {
+    const { Database } = await import('bun:sqlite');
+    class BetterSqlite3 extends Database {
+      pragma(source: string) {
+        return (this as any).query(`PRAGMA ${source}`).all();
+      }
     }
+    return {
+      default: BetterSqlite3,
+    };
+  } catch (e) {
+    return await vi.importActual('better-sqlite3');
   }
-  return {
-    default: BetterSqlite3,
-  };
 });
 
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
@@ -29,7 +33,7 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
       this.querier.run('PRAGMA synchronous = normal'),
       this.querier.run('PRAGMA temp_store = memory'),
     ]);
-    jest.spyOn(this.querier, 'run').mockClear();
+    vi.spyOn(this.querier, 'run').mockClear();
   }
 }
 

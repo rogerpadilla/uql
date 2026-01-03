@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
 import type { IndexSchema, TableSchema } from '../../type/index.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';

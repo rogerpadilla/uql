@@ -1,10 +1,10 @@
 import type { Client, InValue, Transaction } from '@libsql/client';
 import { Serialized } from '../querier/decorator/index.js';
-import { AbstractSqlQuerier } from '../querier/index.js';
+import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import { SqliteDialect } from '../sqlite/index.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
 
-export class LibsqlQuerier extends AbstractSqlQuerier {
+export class LibsqlQuerier extends AbstractSqliteQuerier {
   private tx?: Transaction;
 
   constructor(
@@ -25,15 +25,7 @@ export class LibsqlQuerier extends AbstractSqlQuerier {
     this.extra?.logger?.(query, values);
     const target = this.tx || this.client;
     const res = await target.execute({ sql: query, args: values as InValue[] });
-    const changes = res.rowsAffected;
-    const lastInsertRowid = res.lastInsertRowid;
-    const firstId = lastInsertRowid ? Number(lastInsertRowid) - (changes - 1) : undefined;
-    const ids = firstId
-      ? Array(changes)
-          .fill(firstId)
-          .map((i, index) => i + index)
-      : [];
-    return { changes, ids, firstId } satisfies QueryUpdateResult;
+    return this.buildUpdateResult(res.rowsAffected, res.lastInsertRowid);
   }
 
   override get hasOpenTransaction() {

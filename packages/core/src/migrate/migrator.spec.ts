@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, jest, mock } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { Entity, Id } from '../entity/index.js';
 import type { Migration, MigrationStorage, QuerierPool, SqlQuerier } from '../type/index.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
@@ -11,10 +11,10 @@ import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
 
-mock.module('node:fs/promises', () => ({
-  readdir: jest.fn<any>().mockResolvedValue([]) as any,
-  mkdir: jest.fn<any>().mockResolvedValue(undefined) as any,
-  writeFile: jest.fn<any>().mockResolvedValue(undefined) as any,
+vi.mock('node:fs/promises', () => ({
+  readdir: vi.fn().mockResolvedValue([]),
+  mkdir: vi.fn().mockResolvedValue(undefined),
+  writeFile: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('Migrator Core Methods', () => {
@@ -22,33 +22,33 @@ describe('Migrator Core Methods', () => {
   let storage: MigrationStorage;
   let pool: QuerierPool;
   let querier: SqlQuerier;
-  let mockExecuted: ReturnType<typeof jest.fn>;
+  let mockExecuted: Mock<any>;
 
   beforeEach(() => {
     querier = {
-      beginTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      commitTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      rollbackTransaction: jest.fn<any>().mockResolvedValue(undefined),
-      release: jest.fn<any>().mockResolvedValue(undefined),
-      all: jest.fn<any>().mockResolvedValue([]),
-      run: jest.fn<any>().mockResolvedValue({}),
+      beginTransaction: vi.fn().mockResolvedValue(undefined),
+      commitTransaction: vi.fn().mockResolvedValue(undefined),
+      rollbackTransaction: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue(undefined),
+      all: vi.fn().mockResolvedValue([]),
+      run: vi.fn().mockResolvedValue({}),
       dialect: {
         escapeIdChar: '"',
       },
-    } as any;
+    } as unknown as SqlQuerier;
 
     pool = {
-      getQuerier: jest.fn<any>().mockResolvedValue(querier),
+      getQuerier: vi.fn().mockResolvedValue(querier),
       dialect: 'postgres',
-    } as any;
+    } as unknown as QuerierPool;
 
-    mockExecuted = jest.fn<any>().mockResolvedValue([]);
+    mockExecuted = vi.fn().mockResolvedValue([]);
     storage = {
       executed: mockExecuted,
-      logWithQuerier: jest.fn<any>().mockResolvedValue(undefined),
-      unlogWithQuerier: jest.fn<any>().mockResolvedValue(undefined),
-      ensureStorage: jest.fn<any>().mockResolvedValue(undefined),
-    } as any;
+      logWithQuerier: vi.fn().mockResolvedValue(undefined),
+      unlogWithQuerier: vi.fn().mockResolvedValue(undefined),
+      ensureStorage: vi.fn().mockResolvedValue(undefined),
+    } as unknown as MigrationStorage;
 
     migrator = new Migrator(pool, { storage });
 
@@ -56,21 +56,21 @@ describe('Migrator Core Methods', () => {
     const mockMigrations: Migration[] = [
       {
         name: '20250101000000_m1',
-        up: jest.fn<any>().mockResolvedValue(undefined),
-        down: jest.fn<any>().mockResolvedValue(undefined),
+        up: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
+        down: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
       },
       {
         name: '20250102000000_m2',
-        up: jest.fn<any>().mockResolvedValue(undefined),
-        down: jest.fn<any>().mockResolvedValue(undefined),
+        up: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
+        down: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
       },
       {
         name: '20250103000000_m3',
-        up: jest.fn<any>().mockResolvedValue(undefined),
-        down: jest.fn<any>().mockResolvedValue(undefined),
+        up: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
+        down: vi.fn().mockResolvedValue(undefined) as unknown as (querier: SqlQuerier) => Promise<void>,
       },
     ];
-    jest.spyOn(migrator, 'getMigrations').mockResolvedValue(mockMigrations);
+    vi.spyOn(migrator, 'getMigrations').mockResolvedValue(mockMigrations);
   });
 
   it('pending should return non-executed migrations', async () => {
@@ -139,24 +139,24 @@ describe('Migrator Core Methods', () => {
     }
 
     migrator = new Migrator(pool, { entities: [DummyEntity] });
-    jest.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
+    vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
 
     const generator = {
-      resolveTableName: jest.fn<any>().mockReturnValue('DiffUser'),
-      diffSchema: jest.fn<any>().mockReturnValue({
+      resolveTableName: vi.fn().mockReturnValue('DiffUser'),
+      diffSchema: vi.fn().mockReturnValue({
         tableName: 'DiffUser',
         type: 'alter',
         columnsToAdd: [{ name: 'age', type: 'INTEGER' }],
       }),
-      generateAlterTable: jest.fn<any>().mockReturnValue(['ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;']),
-      generateAlterTableDown: jest.fn<any>().mockReturnValue(['ALTER TABLE "DiffUser" DROP COLUMN "age";']),
+      generateAlterTable: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;']),
+      generateAlterTableDown: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" DROP COLUMN "age";']),
     };
     migrator.setSchemaGenerator(generator as any);
 
     const introspector = {
-      getTableSchema: jest.fn<any>().mockResolvedValue({ name: 'DiffUser', columns: [] }),
-      getTableNames: jest.fn<any>().mockResolvedValue([]),
-      tableExists: jest.fn<any>().mockResolvedValue(true),
+      getTableSchema: vi.fn().mockResolvedValue({ name: 'DiffUser', columns: [] }),
+      getTableNames: vi.fn().mockResolvedValue([]),
+      tableExists: vi.fn().mockResolvedValue(true),
     };
     migrator.schemaIntrospector = introspector as any;
 
@@ -184,7 +184,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('sync should call autoSync by default', async () => {
-    const autoSyncSpy = jest.spyOn(migrator, 'autoSync').mockResolvedValue(undefined);
+    const autoSyncSpy = vi.spyOn(migrator, 'autoSync').mockResolvedValue(undefined);
     await migrator.sync();
     expect(autoSyncSpy).toHaveBeenCalledWith({ safe: true });
   });
@@ -197,12 +197,12 @@ describe('Migrator Core Methods', () => {
     migrator = new Migrator(pool, { entities: [SyncEntity] });
 
     const generator = {
-      resolveTableName: jest.fn<any>().mockReturnValue('SyncEntity'),
-      generateDropTable: jest.fn<any>().mockReturnValue('DROP TABLE "SyncEntity"'),
-      generateCreateTable: jest.fn<any>().mockReturnValue('CREATE TABLE "SyncEntity"'),
-      generateAlterTable: jest.fn<any>(),
-      generateAlterTableDown: jest.fn<any>(),
-      diffSchema: jest.fn<any>(),
+      resolveTableName: vi.fn().mockReturnValue('SyncEntity'),
+      generateDropTable: vi.fn().mockReturnValue('DROP TABLE "SyncEntity"'),
+      generateCreateTable: vi.fn().mockReturnValue('CREATE TABLE "SyncEntity"'),
+      generateAlterTable: vi.fn(),
+      generateAlterTableDown: vi.fn(),
+      diffSchema: vi.fn(),
     };
     migrator.setSchemaGenerator(generator as any);
 
@@ -273,7 +273,7 @@ describe('Migrator Core Methods', () => {
 
   it('up should stop on first failure', async () => {
     const migrations = (await migrator.getMigrations()) as any[];
-    migrations[1].up = jest.fn().mockRejectedValue(new Error('Migration failed'));
+    migrations[1].up = vi.fn().mockRejectedValue(new Error('Migration failed')) as any;
 
     const results = await migrator.up();
 
@@ -286,7 +286,7 @@ describe('Migrator Core Methods', () => {
   it('down should stop on first failure', async () => {
     mockExecuted.mockResolvedValue(['20250101000000_m1', '20250102000000_m2']);
     const migrations = (await migrator.getMigrations()) as any[];
-    migrations[1].down = jest.fn().mockRejectedValue(new Error('Rollback failed'));
+    migrations[1].down = vi.fn().mockRejectedValue(new Error('Rollback failed')) as any;
 
     const results = await migrator.down();
 
@@ -310,19 +310,19 @@ describe('Migrator Core Methods', () => {
 
     it('sync should call autoSync', async () => {
       const migratorSync = new Migrator(pool, { entities: [MigratorUser] });
-      const autoSyncSpy = jest.spyOn(migratorSync, 'autoSync').mockResolvedValue(undefined);
+      const autoSyncSpy = vi.spyOn(migratorSync, 'autoSync').mockResolvedValue(undefined);
       await migratorSync.sync();
       expect(autoSyncSpy).toHaveBeenCalledWith({ safe: true });
     });
 
     it('autoSync should execute statements from diffs', async () => {
       const generator = new PostgresSchemaGenerator();
-      const introspector = { getTableSchema: jest.fn<any>().mockResolvedValue(undefined) };
+      const introspector = { getTableSchema: vi.fn().mockResolvedValue(undefined) };
       const migratorSync = new Migrator(pool, {
         entities: [MigratorUser],
         schemaGenerator: generator,
       });
-      (migratorSync as any).schemaIntrospector = introspector;
+      (migratorSync as any).schemaIntrospector = introspector as any;
 
       await migratorSync.autoSync({ logging: true });
       expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));

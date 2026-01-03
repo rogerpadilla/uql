@@ -1,4 +1,4 @@
-import { expect } from 'bun:test';
+import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { Company, createSpec, InventoryAdjustment, Item, ItemTag, Profile, TaxCategory, User } from '../test/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
@@ -81,7 +81,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
-        date: new Date(2021, 11, 31, 23, 59, 59, 999),
+        date: new Date(Date.UTC(2021, 11, 31, 23, 59, 59, 999)),
         createdAt: 123,
       }),
     );

@@ -1,9 +1,9 @@
 import type { Database } from 'better-sqlite3';
-import { AbstractSqlQuerier } from '../querier/index.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
+import { AbstractSqliteQuerier } from './abstractSqliteQuerier.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
-export class SqliteQuerier extends AbstractSqlQuerier {
+export class SqliteQuerier extends AbstractSqliteQuerier {
   constructor(
     readonly db: Database,
     readonly extra?: ExtraOptions,
@@ -19,13 +19,7 @@ export class SqliteQuerier extends AbstractSqlQuerier {
   override async internalRun(query: string, values?: unknown[]) {
     this.extra?.logger?.(query, values);
     const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
-    const firstId = lastInsertRowid ? Number(lastInsertRowid) - (changes - 1) : undefined;
-    const ids = firstId
-      ? Array(changes)
-          .fill(firstId)
-          .map((i, index) => i + index)
-      : [];
-    return { changes, ids, firstId } satisfies QueryUpdateResult;
+    return this.buildUpdateResult(changes, lastInsertRowid);
   }
 
   override async internalRelease() {

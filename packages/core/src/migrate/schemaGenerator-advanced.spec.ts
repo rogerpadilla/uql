@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import type { TableSchema } from '../type/index.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';

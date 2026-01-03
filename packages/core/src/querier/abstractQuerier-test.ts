@@ -1,4 +1,4 @@
-import { expect } from 'bun:test';
+import { expect } from 'vitest';
 import { getEntities } from '../entity/index.js';
 import {
   Company,

@@ -1,16 +1,11 @@
 import type { PoolConnection } from 'mariadb';
-import { AbstractSqlQuerier } from '../querier/index.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
+import type { QueryUpdateResult } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
-export class MariadbQuerier extends AbstractSqlQuerier {
-  conn: PoolConnection;
-
-  constructor(
-    readonly connect: () => Promise<PoolConnection>,
-    readonly extra?: ExtraOptions,
-  ) {
-    super(new MariaDialect(extra?.namingStrategy));
+export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
+  constructor(connect: () => Promise<PoolConnection>, extra?: any) {
+    super(new MariaDialect(extra?.namingStrategy), connect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -28,18 +23,7 @@ export class MariadbQuerier extends AbstractSqlQuerier {
     return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
-  async lazyConnect() {
-    this.conn ??= await this.connect();
-  }
-
-  override async internalRelease() {
-    if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
-    }
-    if (!this.conn) {
-      return;
-    }
-    await this.conn.release();
-    this.conn = undefined;
+  protected override async releaseConn(conn: PoolConnection) {
+    await conn.release();
   }
 }

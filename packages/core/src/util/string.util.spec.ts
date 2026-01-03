@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it } from 'vitest';
 import { kebabCase, lowerFirst, snakeCase, upperFirst } from './string.util.js';
 
 it('kebabCase', () => {

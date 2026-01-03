@@ -1,4 +1,4 @@
-import { expect, it } from 'bun:test';
+import { expect, it } from 'vitest';
 import { getMeta } from '../entity/decorator/index.js';
 import { User } from '../test/entityMock.js';
 import { augmentWhere } from './dialect.util.js';

@@ -1,58 +1,50 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import * as fs from 'node:fs/promises';
 import type { MigrationStorage, SqlQuerier } from '../../type/index.js';
 
 /**
- * Stores migration state in a JSON file (useful for development/testing)
+ * Stores migration state in a JSON file.
+ * Useful for development or environments without a database.
  */
 export class JsonMigrationStorage implements MigrationStorage {
+  private executedMigrations: string[] = [];
   private readonly filePath: string;
-  private cache: string[] | null = null;
 
   constructor(filePath = './migrations/.uql-migrations.json') {
     this.filePath = filePath;
   }
 
   async ensureStorage(): Promise<void> {
-    try {
-      await this.load();
-    } catch {
-      // File doesn't exist, create it
-      await this.save([]);
-    }
+    const content = await fs.readFile(this.filePath, 'utf-8').catch(async (error) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        const initial = '[]';
+        await fs.writeFile(this.filePath, initial, 'utf-8');
+        return initial;
+      }
+      throw error;
+    });
+    this.executedMigrations = JSON.parse(content);
   }
 
   async executed(): Promise<string[]> {
     await this.ensureStorage();
-    return this.cache ?? [];
+    return this.executedMigrations;
   }
 
   async logWithQuerier(_querier: SqlQuerier, migrationName: string): Promise<void> {
-    const executed = await this.executed();
-    if (!executed.includes(migrationName)) {
-      executed.push(migrationName);
-      executed.sort();
-      await this.save(executed);
+    await this.ensureStorage();
+    if (!this.executedMigrations.includes(migrationName)) {
+      this.executedMigrations.push(migrationName);
+      await this.save();
     }
   }
 
   async unlogWithQuerier(_querier: SqlQuerier, migrationName: string): Promise<void> {
-    const executed = await this.executed();
-    const index = executed.indexOf(migrationName);
-    if (index !== -1) {
-      executed.splice(index, 1);
-      await this.save(executed);
-    }
+    await this.ensureStorage();
+    this.executedMigrations = this.executedMigrations.filter((m) => m !== migrationName);
+    await this.save();
   }
 
-  private async load(): Promise<void> {
-    const content = await readFile(this.filePath, 'utf-8');
-    this.cache = JSON.parse(content);
-  }
-
-  private async save(migrations: string[]): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(migrations, null, 2), 'utf-8');
-    this.cache = migrations;
+  private async save(): Promise<void> {
+    await fs.writeFile(this.filePath, JSON.stringify(this.executedMigrations, null, 2), 'utf-8');
   }
 }

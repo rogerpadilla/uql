@@ -1,6 +1,6 @@
-import { AbstractSqlQuerier } from '../querier/index.js';
+import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import { SqliteDialect } from '../sqlite/index.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
 
 export interface D1Meta {
   duration?: number;
@@ -41,7 +41,7 @@ export interface D1Database {
   exec(query: string): Promise<D1ExecResult>;
 }
 
-export class D1Querier extends AbstractSqlQuerier {
+export class D1Querier extends AbstractSqliteQuerier {
   constructor(
     readonly db: D1Database,
     readonly extra?: ExtraOptions,
@@ -64,18 +64,9 @@ export class D1Querier extends AbstractSqlQuerier {
     const res = await bound.run();
     // D1ExecResult doesn't reliably return lastRowId in the type definition,
     // though the runtime meta often has it.
-    // For now, we return 0 for firstId if not explicitly available, relying on UUIDs or RETURNING in future.
     const changes = res.meta?.changes ?? res.count ?? 0;
-    const lastId = res.meta?.last_row_id;
-    let firstId: number | undefined;
-    let ids: number[] = [];
-
-    if (lastId && changes > 0) {
-      firstId = lastId - (changes - 1);
-      ids = Array.from({ length: changes }, (_, i) => (firstId as number) + i);
-    }
-
-    return { changes, ids, firstId } satisfies QueryUpdateResult;
+    const lastInsertRowid = res.meta?.last_row_id;
+    return this.buildUpdateResult(changes, lastInsertRowid);
   }
 
   override async internalRelease() {

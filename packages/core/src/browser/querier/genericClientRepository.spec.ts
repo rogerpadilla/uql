@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, jest } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { User } from '../../test/index.js';
 import { GenericClientRepository } from './genericClientRepository.js';
 import { HttpQuerier } from './httpQuerier.js';
@@ -8,13 +8,12 @@ describe('repository', () => {
   const querier = new HttpQuerier('');
 
   beforeEach(() => {
-    globalThis.fetch = jest.fn() as any;
-    (globalThis.fetch as unknown as jest.Mock).mockImplementation(setupFetchStub({}));
+    globalThis.fetch = vi.fn().mockImplementation(setupFetchStub({})) as unknown as typeof fetch;
     repository = new GenericClientRepository(User, querier);
   });
 
   afterEach(() => {
-    delete globalThis.fetch;
+    vi.restoreAllMocks();
   });
 
   it('count', async () => {

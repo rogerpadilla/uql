@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import { MysqlSchemaGenerator } from './mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './sqliteSchemaGenerator.js';

@@ -1,36 +1,36 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { User } from '../test/index.js';
 import type { Querier, Repository } from '../type/index.js';
 import { GenericRepository } from './genericRepository.js';
 
 describe('repository', () => {
   let repository: Repository<User>;
-  let querier: Record<keyof Querier, jest.Mock>;
+  let querier: Record<keyof Querier, Mock>;
 
   beforeEach(() => {
     querier = {
-      count: jest.fn(),
-      findOneById: jest.fn(),
-      findOne: jest.fn(),
-      findMany: jest.fn(),
-      findManyAndCount: jest.fn(),
-      insertOne: jest.fn(),
-      insertMany: jest.fn(),
-      updateOneById: jest.fn(),
-      updateMany: jest.fn(),
-      saveOne: jest.fn(),
-      saveMany: jest.fn(),
-      deleteOneById: jest.fn(),
-      deleteMany: jest.fn(),
-      upsertOne: jest.fn(),
-      getRepository: jest.fn(),
+      count: vi.fn(),
+      findOneById: vi.fn(),
+      findOne: vi.fn(),
+      findMany: vi.fn(),
+      findManyAndCount: vi.fn(),
+      insertOne: vi.fn(),
+      insertMany: vi.fn(),
+      updateOneById: vi.fn(),
+      updateMany: vi.fn(),
+      saveOne: vi.fn(),
+      saveMany: vi.fn(),
+      deleteOneById: vi.fn(),
+      deleteMany: vi.fn(),
+      upsertOne: vi.fn(),
+      getRepository: vi.fn(),
       hasOpenTransaction: undefined,
-      transaction: jest.fn(),
-      beginTransaction: jest.fn(),
-      commitTransaction: jest.fn(),
-      rollbackTransaction: jest.fn(),
-      release: jest.fn(),
-    };
+      transaction: vi.fn(),
+      beginTransaction: vi.fn(),
+      commitTransaction: vi.fn(),
+      rollbackTransaction: vi.fn(),
+      release: vi.fn(),
+    } as unknown as Record<keyof Querier, Mock>;
     repository = new GenericRepository(User, querier as unknown as Querier);
   });
 

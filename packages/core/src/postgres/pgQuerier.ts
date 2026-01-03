@@ -1,16 +1,11 @@
 import type { PoolClient } from 'pg';
-import { AbstractSqlQuerier } from '../querier/index.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
+import type { QueryUpdateResult } from '../type/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
-export class PgQuerier extends AbstractSqlQuerier {
-  conn: PoolClient;
-
-  constructor(
-    readonly connect: () => Promise<PoolClient>,
-    readonly extra?: ExtraOptions,
-  ) {
-    super(new PostgresDialect(extra?.namingStrategy));
+export class PgQuerier extends AbstractPoolQuerier<PoolClient> {
+  constructor(connect: () => Promise<PoolClient>, extra?: any) {
+    super(new PostgresDialect(extra?.namingStrategy), connect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -28,18 +23,7 @@ export class PgQuerier extends AbstractSqlQuerier {
     return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
-  async lazyConnect() {
-    this.conn ??= await this.connect();
-  }
-
-  override async internalRelease() {
-    if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
-    }
-    if (!this.conn) {
-      return;
-    }
-    await this.conn.release();
-    this.conn = undefined;
+  protected override async releaseConn(conn: PoolClient) {
+    await conn.release();
   }
 }

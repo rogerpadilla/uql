@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import type { Querier } from '../../type/index.js';
 import { getInjectedQuerierIndex, InjectQuerier } from './injectQuerier.js';
 

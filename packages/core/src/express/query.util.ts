@@ -1,10 +1,15 @@
 import type { Request } from 'express';
 import type { Query, QueryStringified } from '../type/index.js';
 
-export function parseQuery(req: Request) {
+/**
+ * Parse query string parameters and store on request object.
+ * Call this in middleware before handling requests.
+ */
+export function parseQuery(req: Request): void {
   req.query ??= {};
   const qmsSrc: QueryStringified = req.query;
   const qm = qmsSrc as unknown as Query<unknown>;
+
   if (qmsSrc.$select) {
     qm.$select = JSON.parse(qmsSrc.$select);
   }

@@ -1,25 +1,25 @@
-import { beforeEach, describe, expect, it, jest } from 'bun:test';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { type D1Database, type D1ExecResult, D1Querier, type D1Result } from './d1Querier.js';
 
 describe('D1Querier', () => {
   let mockDb: {
-    prepare: jest.Mock;
+    prepare: Mock<any>;
   };
   let mockStmt: {
-    bind: jest.Mock;
-    all: jest.Mock;
-    run: jest.Mock;
+    bind: Mock<any>;
+    all: Mock<any>;
+    run: Mock<any>;
   };
   let querier: D1Querier;
 
   beforeEach(() => {
     mockStmt = {
-      bind: jest.fn().mockReturnThis(),
-      all: jest.fn(),
-      run: jest.fn(),
+      bind: vi.fn().mockReturnThis(),
+      all: vi.fn(),
+      run: vi.fn(),
     };
     mockDb = {
-      prepare: jest.fn().mockReturnValue(mockStmt),
+      prepare: vi.fn().mockReturnValue(mockStmt),
     };
     querier = new D1Querier(mockDb as unknown as D1Database);
   });

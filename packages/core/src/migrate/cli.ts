@@ -1,43 +1,15 @@
 #!/usr/bin/env node
 
-import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Dialect, MigratorOptions, NamingStrategy, QuerierPool } from '../type/index.js';
+import type { Dialect, MigratorOptions, NamingStrategy } from '../type/index.js';
+import { loadConfig } from './cli-config.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
 import { Migrator } from './migrator.js';
 
-interface CliConfig {
-  pool?: QuerierPool;
-  migrationsPath?: string;
-  tableName?: string;
-  dialect?: Dialect;
-  entities?: unknown[];
-  namingStrategy?: NamingStrategy;
-}
-
-async function loadConfig(): Promise<CliConfig> {
-  const configPaths = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
-
-  for (const configPath of configPaths) {
-    try {
-      const fullPath = resolve(process.cwd(), configPath);
-      const fileUrl = pathToFileURL(fullPath).href;
-      const module = await import(fileUrl);
-      return module.default ?? module;
-    } catch {
-      // Config file not found, try next one
-    }
-  }
-
-  throw new Error(
-    'Could not find uql configuration file. ' + 'Create a uql.config.ts or uql.config.js file in your project root.',
-  );
-}
-
-function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStrategy) {
+export function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStrategy) {
   switch (dialect) {
     case 'postgres':
       return new PostgresSchemaGenerator(namingStrategy);
@@ -53,8 +25,7 @@ function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStrategy) {
   }
 }
 
-async function main() {
-  const args = process.argv.slice(2);
+export async function main(args = process.argv.slice(2)) {
   const command = args[0];
 
   if (!command || command === '--help' || command === '-h') {
@@ -124,7 +95,7 @@ async function main() {
   }
 }
 
-async function runUp(migrator: Migrator, args: string[]) {
+export async function runUp(migrator: Migrator, args: string[]) {
   const options: { to?: string; step?: number } = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -152,7 +123,7 @@ async function runUp(migrator: Migrator, args: string[]) {
   }
 }
 
-async function runDown(migrator: Migrator, args: string[]) {
+export async function runDown(migrator: Migrator, args: string[]) {
   const options: { to?: string; step?: number } = { step: 1 }; // Default to 1 step
 
   for (let i = 0; i < args.length; i++) {
@@ -183,7 +154,7 @@ async function runDown(migrator: Migrator, args: string[]) {
   }
 }
 
-async function runStatus(migrator: Migrator) {
+export async function runStatus(migrator: Migrator) {
   const status = await migrator.status();
 
   console.log('\n=== Migration Status ===\n');
@@ -209,7 +180,7 @@ async function runStatus(migrator: Migrator) {
   console.log('');
 }
 
-async function runPending(migrator: Migrator) {
+export async function runPending(migrator: Migrator) {
   const pending = await migrator.pending();
 
   if (pending.length === 0) {
@@ -223,19 +194,19 @@ async function runPending(migrator: Migrator) {
   }
 }
 
-async function runGenerate(migrator: Migrator, args: string[]) {
+export async function runGenerate(migrator: Migrator, args: string[]) {
   const name = args.join('_') || 'migration';
   const filePath = await migrator.generate(name);
   console.log(`\nCreated migration: ${filePath}`);
 }
 
-async function runGenerateFromEntities(migrator: Migrator, args: string[]) {
+export async function runGenerateFromEntities(migrator: Migrator, args: string[]) {
   const name = args.join('_') || 'schema';
   const filePath = await migrator.generateFromEntities(name);
   console.log(`\nCreated migration from entities: ${filePath}`);
 }
 
-async function runSync(migrator: Migrator, args: string[]) {
+export async function runSync(migrator: Migrator, args: string[]) {
   const force = args.includes('--force');
 
   if (force) {
@@ -247,7 +218,7 @@ async function runSync(migrator: Migrator, args: string[]) {
   console.log('\nSchema sync completed.');
 }
 
-function printHelp() {
+export function printHelp() {
   console.log(`
 @uql/migrate - Database migration tool for uql ORM
 
@@ -297,5 +268,3 @@ Examples:
   @uql/migrate generate:entities initial_schema
 `);
 }
-
-main().catch(console.error);
