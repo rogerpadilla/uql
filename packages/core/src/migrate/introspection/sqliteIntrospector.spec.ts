@@ -2,8 +2,23 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
+class TestSqliteIntrospector extends SqliteSchemaIntrospector {
+  public override normalizeType(type: string) {
+    return super.normalizeType(type);
+  }
+  public override extractLength(type: string) {
+    return super.extractLength(type);
+  }
+  public override parseDefaultValue(defaultValue: string | null) {
+    return super.parseDefaultValue(defaultValue);
+  }
+  public override normalizeReferentialAction(action: string) {
+    return super.normalizeReferentialAction(action);
+  }
+}
+
 describe('SqliteSchemaIntrospector', () => {
-  let introspector: SqliteSchemaIntrospector;
+  let introspector: TestSqliteIntrospector;
   let pool: QuerierPool;
   let querier: SqlQuerier;
 
@@ -29,7 +44,7 @@ describe('SqliteSchemaIntrospector', () => {
       getQuerier: mockGetQuerier,
     } as unknown as QuerierPool;
 
-    introspector = new SqliteSchemaIntrospector(pool);
+    introspector = new TestSqliteIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
@@ -153,32 +168,28 @@ describe('SqliteSchemaIntrospector', () => {
   });
 
   it('normalizeType and extractLength', () => {
-    const normalize = (introspector as any).normalizeType.bind(introspector);
-    const extract = (introspector as any).extractLength.bind(introspector);
-    expect(normalize('VARCHAR(255)')).toBe('VARCHAR');
-    expect(normalize('INTEGER')).toBe('INTEGER');
-    expect(extract('VARCHAR(255)')).toBe(255);
-    expect(extract('INTEGER')).toBeUndefined();
+    expect(introspector.normalizeType('VARCHAR(255)')).toBe('VARCHAR');
+    expect(introspector.normalizeType('INTEGER')).toBe('INTEGER');
+    expect(introspector.extractLength('VARCHAR(255)')).toBe(255);
+    expect(introspector.extractLength('INTEGER')).toBeUndefined();
   });
 
   it('parseDefaultValue utility', () => {
-    const parse = (introspector as any).parseDefaultValue.bind(introspector);
-    expect(parse(null)).toBeUndefined();
-    expect(parse('NULL')).toBeNull();
-    expect(parse('CURRENT_TIMESTAMP')).toBe('CURRENT_TIMESTAMP');
-    expect(parse("'val'")).toBe('val');
-    expect(parse('123')).toBe(123);
-    expect(parse('123.45')).toBe(123.45);
-    expect(parse('random')).toBe('random');
+    expect(introspector.parseDefaultValue(null)).toBeUndefined();
+    expect(introspector.parseDefaultValue('NULL')).toBeNull();
+    expect(introspector.parseDefaultValue('CURRENT_TIMESTAMP')).toBe('CURRENT_TIMESTAMP');
+    expect(introspector.parseDefaultValue("'val'")).toBe('val');
+    expect(introspector.parseDefaultValue('123')).toBe(123);
+    expect(introspector.parseDefaultValue('123.45')).toBe(123.45);
+    expect(introspector.parseDefaultValue('random')).toBe('random');
   });
 
   it('normalizeReferentialAction utility', () => {
-    const normalize = (introspector as any).normalizeReferentialAction.bind(introspector);
-    expect(normalize('CASCADE')).toBe('CASCADE');
-    expect(normalize('SET NULL')).toBe('SET NULL');
-    expect(normalize('RESTRICT')).toBe('RESTRICT');
-    expect(normalize('NO ACTION')).toBe('NO ACTION');
-    expect(normalize('UNKNOWN')).toBeUndefined();
+    expect(introspector.normalizeReferentialAction('CASCADE')).toBe('CASCADE');
+    expect(introspector.normalizeReferentialAction('SET NULL')).toBe('SET NULL');
+    expect(introspector.normalizeReferentialAction('RESTRICT')).toBe('RESTRICT');
+    expect(introspector.normalizeReferentialAction('NO ACTION')).toBe('NO ACTION');
+    expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
   });
 
   it('should throw error if not SQL querier', async () => {

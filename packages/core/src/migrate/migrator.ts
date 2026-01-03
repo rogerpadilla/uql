@@ -39,12 +39,18 @@ import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
  * Main class for managing database migrations
  */
 export class Migrator {
-  private readonly storage: MigrationStorage;
-  private readonly migrationsPath: string;
-  private readonly logger: (message: string) => void;
-  private readonly entities: Type<unknown>[];
-  private readonly dialect: Dialect;
-  private schemaGenerator?: SchemaGenerator;
+  public readonly storage: MigrationStorage;
+  public readonly migrationsPath: string;
+  private _logger: (message: string) => void;
+  public get logger(): (message: string) => void {
+    return this._logger;
+  }
+  public set logger(value: (message: string) => void) {
+    this._logger = value;
+  }
+  public readonly entities: Type<unknown>[];
+  public readonly dialect: Dialect;
+  public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector?: SchemaIntrospector;
 
   constructor(
@@ -71,7 +77,7 @@ export class Migrator {
     this.schemaGenerator = generator;
   }
 
-  private createIntrospector(): SchemaIntrospector | undefined {
+  protected createIntrospector(): SchemaIntrospector | undefined {
     switch (this.dialect) {
       case 'postgres':
         return new PostgresSchemaIntrospector(this.pool);
@@ -88,7 +94,7 @@ export class Migrator {
     }
   }
 
-  private createGenerator(namingStrategy?: NamingStrategy): SchemaGenerator | undefined {
+  protected createGenerator(namingStrategy?: NamingStrategy): SchemaGenerator | undefined {
     switch (this.dialect) {
       case 'postgres':
         return new PostgresSchemaGenerator(namingStrategy);
@@ -219,7 +225,7 @@ export class Migrator {
   /**
    * Run a single migration within a transaction
    */
-  private async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
+  public async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
     const querier = await this.pool.getQuerier();
 
@@ -361,7 +367,7 @@ export class Migrator {
     return diffs;
   }
 
-  private findEntityForTable(tableName: string): Type<unknown> | undefined {
+  protected findEntityForTable(tableName: string): Type<unknown> | undefined {
     const entities = this.entities.length > 0 ? this.entities : getEntities();
     for (const entity of entities) {
       const meta = getMeta(entity);
@@ -458,7 +464,7 @@ export class Migrator {
     await this.executeSyncStatements(statements, options);
   }
 
-  private filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
+  protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
     const filteredDiff = { ...diff } as { -readonly [K in keyof SchemaDiff]: SchemaDiff[K] };
     if (options.safe !== false) {
       // In safe mode, we only allow additions
@@ -472,7 +478,7 @@ export class Migrator {
     return filteredDiff;
   }
 
-  private async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
+  public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
     const querier = await this.pool.getQuerier();
     try {
       if (this.dialect === 'mongodb') {
@@ -491,7 +497,7 @@ export class Migrator {
     }
   }
 
-  private async executeMongoSyncStatements(
+  protected async executeMongoSyncStatements(
     statements: string[],
     options: { logging?: boolean },
     querier: MongoQuerier,
@@ -532,7 +538,7 @@ export class Migrator {
     }
   }
 
-  private async executeSqlSyncStatements(
+  public async executeSqlSyncStatements(
     statements: string[],
     options: { logging?: boolean },
     querier: Querier,
@@ -560,7 +566,7 @@ export class Migrator {
   /**
    * Get migration files from the migrations directory
    */
-  private async getMigrationFiles(): Promise<string[]> {
+  public async getMigrationFiles(): Promise<string[]> {
     try {
       const files = await readdir(this.migrationsPath);
       return files
@@ -578,7 +584,7 @@ export class Migrator {
   /**
    * Load a migration from a file
    */
-  private async loadMigration(fileName: string): Promise<Migration | undefined> {
+  public async loadMigration(fileName: string): Promise<Migration | undefined> {
     const filePath = join(this.migrationsPath, fileName);
     const fileUrl = pathToFileURL(filePath).href;
 
@@ -605,7 +611,7 @@ export class Migrator {
   /**
    * Check if an object is a valid migration
    */
-  private isMigration(obj: unknown): obj is MigrationDefinition {
+  public isMigration(obj: unknown): obj is MigrationDefinition {
     return (
       typeof obj === 'object' &&
       obj !== undefined &&
@@ -618,14 +624,14 @@ export class Migrator {
   /**
    * Extract migration name from filename
    */
-  private getMigrationName(fileName: string): string {
+  public getMigrationName(fileName: string): string {
     return basename(fileName, extname(fileName));
   }
 
   /**
    * Generate timestamp string for migration names
    */
-  private getTimestamp(): string {
+  protected getTimestamp(): string {
     const now = new Date();
     return [
       now.getFullYear(),
@@ -640,7 +646,7 @@ export class Migrator {
   /**
    * Convert a string to a slug for filenames
    */
-  private slugify(text: string): string {
+  protected slugify(text: string): string {
     return text
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
@@ -650,7 +656,7 @@ export class Migrator {
   /**
    * Generate migration file content
    */
-  private generateMigrationContent(name: string): string {
+  protected generateMigrationContent(name: string): string {
     return /*ts*/ `import type { SqlQuerier } from '@uql/migrate';
 
 /**
@@ -683,7 +689,7 @@ export default {
   /**
    * Generate migration file content with SQL statements
    */
-  private generateMigrationContentWithStatements(
+  protected generateMigrationContentWithStatements(
     name: string,
     upStatements: string[],
     downStatements: string[],

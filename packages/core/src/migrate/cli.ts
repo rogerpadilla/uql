@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from 'node:url';
 import type { Dialect, MigratorOptions, NamingStrategy } from '../type/index.js';
 import { loadConfig } from './cli-config.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
@@ -46,7 +45,7 @@ export async function main(args = process.argv.slice(2)) {
       migrationsPath: config.migrationsPath ?? './migrations',
       tableName: config.tableName,
       logger: console.log,
-      entities: config.entities as MigratorOptions['entities'],
+      entities: config.entities,
       dialect,
       namingStrategy: config.namingStrategy,
     };
@@ -113,8 +112,8 @@ export async function runUp(migrator: Migrator, args: string[]) {
     return;
   }
 
-  const successful = results.filter((r: any) => r.success).length;
-  const failed = results.filter((r: any) => !r.success).length;
+  const successful = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
   console.log(`\nMigrations complete: ${successful} successful, ${failed} failed`);
 
@@ -144,8 +143,8 @@ export async function runDown(migrator: Migrator, args: string[]) {
     return;
   }
 
-  const successful = results.filter((r: any) => r.success).length;
-  const failed = results.filter((r: any) => !r.success).length;
+  const successful = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
   console.log(`\nRollback complete: ${successful} successful, ${failed} failed`);
 

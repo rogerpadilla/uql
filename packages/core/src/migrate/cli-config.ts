@@ -1,13 +1,13 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { Dialect, NamingStrategy, QuerierPool } from '../type/index.js';
+import type { Dialect, NamingStrategy, QuerierPool, Type } from '../type/index.js';
 
 export interface CliConfig {
   pool?: QuerierPool;
   migrationsPath?: string;
   tableName?: string;
   dialect?: Dialect;
-  entities?: unknown[];
+  entities?: Type<unknown>[];
   namingStrategy?: NamingStrategy;
 }
 

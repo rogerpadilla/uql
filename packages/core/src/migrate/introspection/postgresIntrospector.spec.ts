@@ -2,8 +2,23 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
+class TestPostgresIntrospector extends PostgresSchemaIntrospector {
+  public override normalizeType(dataType: string, udtName: string) {
+    return super.normalizeType(dataType, udtName);
+  }
+  public override normalizeReferentialAction(action: string) {
+    return super.normalizeReferentialAction(action);
+  }
+  public override isAutoIncrement(defaultValue: string | null) {
+    return super.isAutoIncrement(defaultValue);
+  }
+  public override parseDefaultValue(defaultValue: string | null) {
+    return super.parseDefaultValue(defaultValue);
+  }
+}
+
 describe('PostgresSchemaIntrospector', () => {
-  let introspector: PostgresSchemaIntrospector;
+  let introspector: TestPostgresIntrospector;
   let pool: QuerierPool;
   let querier: SqlQuerier;
 
@@ -29,7 +44,7 @@ describe('PostgresSchemaIntrospector', () => {
       getQuerier: mockGetQuerier,
     } as unknown as QuerierPool;
 
-    introspector = new PostgresSchemaIntrospector(pool);
+    introspector = new TestPostgresIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
@@ -110,19 +125,17 @@ describe('PostgresSchemaIntrospector', () => {
   });
 
   it('normalizeType should handle user-defined and array types', () => {
-    const normalize = (introspector as any).normalizeType.bind(introspector);
-    expect(normalize('USER-DEFINED', 'my_enum')).toBe('MY_ENUM');
-    expect(normalize('ARRAY', '_int4')).toBe('int4[]');
-    expect(normalize('integer', 'int4')).toBe('INTEGER');
+    expect(introspector.normalizeType('USER-DEFINED', 'my_enum')).toBe('MY_ENUM');
+    expect(introspector.normalizeType('ARRAY', '_int4')).toBe('int4[]');
+    expect(introspector.normalizeType('integer', 'int4')).toBe('INTEGER');
   });
 
   it('normalizeReferentialAction should handle various cases', () => {
-    const normalize = (introspector as any).normalizeReferentialAction.bind(introspector);
-    expect(normalize('CASCADE')).toBe('CASCADE');
-    expect(normalize('SET NULL')).toBe('SET NULL');
-    expect(normalize('RESTRICT')).toBe('RESTRICT');
-    expect(normalize('NO ACTION')).toBe('NO ACTION');
-    expect(normalize('UNKNOWN')).toBeUndefined();
+    expect(introspector.normalizeReferentialAction('CASCADE')).toBe('CASCADE');
+    expect(introspector.normalizeReferentialAction('SET NULL')).toBe('SET NULL');
+    expect(introspector.normalizeReferentialAction('RESTRICT')).toBe('RESTRICT');
+    expect(introspector.normalizeReferentialAction('NO ACTION')).toBe('NO ACTION');
+    expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
   });
 
   it('should throw error if not SQL querier', async () => {
@@ -133,20 +146,19 @@ describe('PostgresSchemaIntrospector', () => {
   });
 
   it('isAutoIncrement utility', () => {
-    expect((introspector as any).isAutoIncrement("nextval('seq')")).toBe(true);
-    expect((introspector as any).isAutoIncrement('1')).toBe(false);
-    expect((introspector as any).isAutoIncrement(null)).toBe(false);
+    expect(introspector.isAutoIncrement("nextval('seq')")).toBe(true);
+    expect(introspector.isAutoIncrement('1')).toBe(false);
+    expect(introspector.isAutoIncrement(null)).toBe(false);
   });
 
   it('parseDefaultValue utility', () => {
-    const parse = (introspector as any).parseDefaultValue.bind(introspector);
-    expect(parse(null)).toBeUndefined();
-    expect(parse("'val'::text")).toBe('val');
-    expect(parse('true')).toBe(true);
-    expect(parse('false')).toBe(false);
-    expect(parse('NULL')).toBeNull();
-    expect(parse('123')).toBe(123);
-    expect(parse('123.45')).toBe(123.45);
-    expect(parse('now()')).toBe('now()');
+    expect(introspector.parseDefaultValue(null)).toBeUndefined();
+    expect(introspector.parseDefaultValue("'val'::text")).toBe('val');
+    expect(introspector.parseDefaultValue('true')).toBe(true);
+    expect(introspector.parseDefaultValue('false')).toBe(false);
+    expect(introspector.parseDefaultValue('NULL')).toBeNull();
+    expect(introspector.parseDefaultValue('123')).toBe(123);
+    expect(introspector.parseDefaultValue('123.45')).toBe(123.45);
+    expect(introspector.parseDefaultValue('now()')).toBe('now()');
   });
 });

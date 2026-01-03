@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { Entity, Id } from '../entity/index.js';
-import type { Migration, MigrationStorage, QuerierPool, SqlQuerier } from '../type/index.js';
+import type {
+  Migration,
+  MigrationStorage,
+  QuerierPool,
+  SchemaGenerator,
+  SchemaIntrospector,
+  SqlQuerier,
+} from '../type/index.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
@@ -11,6 +18,18 @@ import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
 
+class TestMigrator extends Migrator {
+  public override getMigrationFiles() {
+    return super.getMigrationFiles();
+  }
+  public override getMigrationName(fileName: string) {
+    return super.getMigrationName(fileName);
+  }
+  public override isMigration(obj: unknown): obj is any {
+    return super.isMigration(obj);
+  }
+}
+
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn().mockResolvedValue([]),
   mkdir: vi.fn().mockResolvedValue(undefined),
@@ -18,7 +37,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 describe('Migrator Core Methods', () => {
-  let migrator: Migrator;
+  let migrator: TestMigrator;
   let storage: MigrationStorage;
   let pool: QuerierPool;
   let querier: SqlQuerier;
@@ -50,7 +69,7 @@ describe('Migrator Core Methods', () => {
       ensureStorage: vi.fn().mockResolvedValue(undefined),
     } as unknown as MigrationStorage;
 
-    migrator = new Migrator(pool, { storage });
+    migrator = new TestMigrator(pool, { storage });
 
     // Mock getMigrations to return some dummy migrations
     const mockMigrations: Migration[] = [
@@ -138,7 +157,7 @@ describe('Migrator Core Methods', () => {
       @Id() id?: number;
     }
 
-    migrator = new Migrator(pool, { entities: [DummyEntity] });
+    migrator = new TestMigrator(pool, { entities: [DummyEntity] });
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
 
     const generator = {
@@ -151,14 +170,14 @@ describe('Migrator Core Methods', () => {
       generateAlterTable: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;']),
       generateAlterTableDown: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" DROP COLUMN "age";']),
     };
-    migrator.setSchemaGenerator(generator as any);
+    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
 
     const introspector = {
       getTableSchema: vi.fn().mockResolvedValue({ name: 'DiffUser', columns: [] }),
       getTableNames: vi.fn().mockResolvedValue([]),
       tableExists: vi.fn().mockResolvedValue(true),
     };
-    migrator.schemaIntrospector = introspector as any;
+    migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
     const { mkdir, writeFile } = await import('node:fs/promises');
 
@@ -194,7 +213,7 @@ describe('Migrator Core Methods', () => {
     class SyncEntity {
       @Id() id?: number;
     }
-    migrator = new Migrator(pool, { entities: [SyncEntity] });
+    migrator = new TestMigrator(pool, { entities: [SyncEntity] });
 
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('SyncEntity'),
@@ -204,7 +223,7 @@ describe('Migrator Core Methods', () => {
       generateAlterTableDown: vi.fn(),
       diffSchema: vi.fn(),
     };
-    migrator.setSchemaGenerator(generator as any);
+    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
 
     await migrator.syncForce();
 
@@ -216,40 +235,40 @@ describe('Migrator Core Methods', () => {
   describe('Dialect Auto-Inference', () => {
     it('should infer Postgres generator and introspector', () => {
       const m = new Migrator(pool);
-      expect((m as any).schemaGenerator).toBeInstanceOf(PostgresSchemaGenerator);
-      expect((m as any).schemaIntrospector).toBeInstanceOf(PostgresSchemaIntrospector);
+      expect(m.schemaGenerator).toBeInstanceOf(PostgresSchemaGenerator);
+      expect(m.schemaIntrospector).toBeInstanceOf(PostgresSchemaIntrospector);
     });
 
     it('should infer MySQL generator and introspector', () => {
       const mysqlPool = { ...pool, dialect: 'mysql' };
       const m = new Migrator(mysqlPool as any);
-      expect((m as any).schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
-      expect((m as any).schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
+      expect(m.schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
+      expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', () => {
       const sqlitePool = { ...pool, dialect: 'sqlite' };
       const m = new Migrator(sqlitePool as any);
-      expect((m as any).schemaGenerator).toBeInstanceOf(SqliteSchemaGenerator);
-      expect((m as any).schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
+      expect(m.schemaGenerator).toBeInstanceOf(SqliteSchemaGenerator);
+      expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
     it('should infer MongoDB generator and introspector', () => {
       const mongoPool = { ...pool, dialect: 'mongodb' };
       const m = new Migrator(mongoPool as any);
-      expect((m as any).schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
-      expect((m as any).schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
+      expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
+      expect(m.schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
     });
 
     it('should allow overriding dialect in options', () => {
       const m = new Migrator(pool, { dialect: 'mysql' });
-      expect((m as any).schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
+      expect(m.schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
     });
 
     it('should allow overriding generator in options', () => {
-      const customGenerator = {} as any;
+      const customGenerator = {} as unknown as SchemaGenerator;
       const m = new Migrator(pool, { dialect: 'postgres', schemaGenerator: customGenerator });
-      expect((m as any).schemaGenerator).toBe(customGenerator);
+      expect(m.schemaGenerator).toBe(customGenerator);
     });
   });
 
@@ -272,8 +291,8 @@ describe('Migrator Core Methods', () => {
   });
 
   it('up should stop on first failure', async () => {
-    const migrations = (await migrator.getMigrations()) as any[];
-    migrations[1].up = vi.fn().mockRejectedValue(new Error('Migration failed')) as any;
+    const migrations = await migrator.getMigrations();
+    (migrations[1] as any).up = vi.fn().mockRejectedValue(new Error('Migration failed'));
 
     const results = await migrator.up();
 
@@ -285,8 +304,8 @@ describe('Migrator Core Methods', () => {
 
   it('down should stop on first failure', async () => {
     mockExecuted.mockResolvedValue(['20250101000000_m1', '20250102000000_m2']);
-    const migrations = (await migrator.getMigrations()) as any[];
-    migrations[1].down = vi.fn().mockRejectedValue(new Error('Rollback failed')) as any;
+    const migrations = await migrator.getMigrations();
+    (migrations[1] as any).down = vi.fn().mockRejectedValue(new Error('Rollback failed'));
 
     const results = await migrator.down();
 
@@ -322,7 +341,7 @@ describe('Migrator Core Methods', () => {
         entities: [MigratorUser],
         schemaGenerator: generator,
       });
-      (migratorSync as any).schemaIntrospector = introspector as any;
+      migratorSync.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
       await migratorSync.autoSync({ logging: true });
       expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
@@ -332,28 +351,28 @@ describe('Migrator Core Methods', () => {
   describe('Internal file methods', () => {
     it('getMigrationFiles should return sorted list of files', async () => {
       const { readdir } = await import('node:fs/promises');
-      (readdir as any).mockResolvedValue(['b.ts', 'a.ts', 'c.txt', 'd.d.ts']);
+      (readdir as Mock).mockResolvedValue(['b.ts', 'a.ts', 'c.txt', 'd.d.ts']);
 
-      const files = await (migrator as any).getMigrationFiles();
+      const files = await migrator.getMigrationFiles();
       expect(files).toEqual(['a.ts', 'b.ts']);
     });
 
     it('getMigrationFiles should return empty array on ENOENT', async () => {
       const { readdir } = await import('node:fs/promises');
-      (readdir as any).mockRejectedValue({ code: 'ENOENT' });
+      (readdir as Mock).mockRejectedValue({ code: 'ENOENT' });
 
-      const files = await (migrator as any).getMigrationFiles();
+      const files = await migrator.getMigrationFiles();
       expect(files).toEqual([]);
     });
 
     it('getMigrationName should strip extension', () => {
-      expect((migrator as any).getMigrationName('20250101_init.ts')).toBe('20250101_init');
+      expect(migrator.getMigrationName('20250101_init.ts')).toBe('20250101_init');
     });
 
     it('isMigration should validate objects', () => {
-      expect((migrator as any).isMigration({ up: () => {}, down: () => {} })).toBe(true);
-      expect((migrator as any).isMigration({ up: () => {} })).toBe(false);
-      expect((migrator as any).isMigration(null)).toBe(false);
+      expect(migrator.isMigration({ up: () => {}, down: () => {} })).toBe(true);
+      expect(migrator.isMigration({ up: () => {} })).toBe(false);
+      expect(migrator.isMigration(null)).toBe(false);
     });
   });
 });

@@ -2,8 +2,14 @@ import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { MysqlSchemaIntrospector } from './mysqlIntrospector.js';
 
+class TestMysqlIntrospector extends MysqlSchemaIntrospector {
+  public override normalizeReferentialAction(action: string) {
+    return super.normalizeReferentialAction(action);
+  }
+}
+
 describe('MysqlSchemaIntrospector', () => {
-  let introspector: MysqlSchemaIntrospector;
+  let introspector: TestMysqlIntrospector;
   let pool: QuerierPool;
   let querier: SqlQuerier;
 
@@ -29,7 +35,7 @@ describe('MysqlSchemaIntrospector', () => {
       getQuerier: mockGetQuerier,
     } as unknown as QuerierPool;
 
-    introspector = new MysqlSchemaIntrospector(pool);
+    introspector = new TestMysqlIntrospector(pool);
   });
 
   it('getTableNames should return a list of tables', async () => {
@@ -152,12 +158,10 @@ describe('MysqlSchemaIntrospector', () => {
   });
 
   it('normalizeReferentialAction should handle various cases', async () => {
-    // Using any to access private members
-    const normalize = (introspector as any).normalizeReferentialAction.bind(introspector);
-    expect(normalize('CASCADE')).toBe('CASCADE');
-    expect(normalize('SET NULL')).toBe('SET NULL');
-    expect(normalize('RESTRICT')).toBe('RESTRICT');
-    expect(normalize('NO ACTION')).toBe('NO ACTION');
-    expect(normalize('UNKNOWN')).toBeUndefined();
+    expect(introspector.normalizeReferentialAction('CASCADE')).toBe('CASCADE');
+    expect(introspector.normalizeReferentialAction('SET NULL')).toBe('SET NULL');
+    expect(introspector.normalizeReferentialAction('RESTRICT')).toBe('RESTRICT');
+    expect(introspector.normalizeReferentialAction('NO ACTION')).toBe('NO ACTION');
+    expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
   });
 });

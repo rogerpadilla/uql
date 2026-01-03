@@ -243,18 +243,18 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
     return `\`${identifier.replace(/`/g, '``')}\``;
   }
 
-  private normalizeType(type: string): string {
+  protected normalizeType(type: string): string {
     // Extract base type without length/precision
     const match = type.match(/^([A-Za-z]+)/);
     return match ? match[1].toUpperCase() : type.toUpperCase();
   }
 
-  private extractLength(type: string): number | undefined {
+  protected extractLength(type: string): number | undefined {
     const match = type.match(/\((\d+)\)/);
     return match ? Number.parseInt(match[1], 10) : undefined;
   }
 
-  private parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): unknown {
     if (defaultValue === null) {
       return undefined;
     }
@@ -279,7 +279,7 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
     return defaultValue;
   }
 
-  private normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
+  protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
     switch (action.toUpperCase()) {
       case 'CASCADE':
         return 'CASCADE';

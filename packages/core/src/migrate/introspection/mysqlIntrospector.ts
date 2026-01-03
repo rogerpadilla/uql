@@ -73,7 +73,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     }
   }
 
-  private async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
+  protected async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
     const sql = `
       SELECT COUNT(*) as count
       FROM information_schema.TABLES
@@ -85,7 +85,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     return (results[0]?.count ?? 0) > 0;
   }
 
-  private async getQuerier(): Promise<SqlQuerier> {
+  protected async getQuerier(): Promise<SqlQuerier> {
     const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
@@ -96,7 +96,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     return querier;
   }
 
-  private async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
+  protected async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
     const sql = `
       SELECT
         COLUMN_NAME as column_name,
@@ -145,7 +145,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
+  protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
     const sql = `
       SELECT
         INDEX_NAME as index_name,
@@ -172,7 +172,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
+  protected async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
     const sql = `
       SELECT
         kcu.CONSTRAINT_NAME as constraint_name,
@@ -211,7 +211,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
+  protected async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
     const sql = `
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
@@ -230,7 +230,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     return results.map((r: any) => r.column_name);
   }
 
-  private parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): unknown {
     if (defaultValue === null) {
       return undefined;
     }
@@ -255,7 +255,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
     return defaultValue;
   }
 
-  private normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
+  protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
     switch (action.toUpperCase()) {
       case 'CASCADE':
         return 'CASCADE';

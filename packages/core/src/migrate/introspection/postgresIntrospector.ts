@@ -72,7 +72,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     }
   }
 
-  private async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
+  protected async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
     const sql = `
       SELECT EXISTS (
         SELECT FROM information_schema.tables
@@ -85,7 +85,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     return results[0]?.exists ?? false;
   }
 
-  private async getQuerier(): Promise<SqlQuerier> {
+  protected async getQuerier(): Promise<SqlQuerier> {
     const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
@@ -96,7 +96,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     return querier;
   }
 
-  private async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
+  protected async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
     const sql = /*sql*/ `
       SELECT
         c.column_name,
@@ -166,7 +166,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
+  protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
     const sql = /*sql*/ `
       SELECT
         i.relname AS index_name,
@@ -198,7 +198,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
+  protected async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
     const sql = /*sql*/ `
       SELECT
         tc.constraint_name,
@@ -243,7 +243,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     }));
   }
 
-  private async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
+  protected async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
     const sql = /*sql*/ `
       SELECT kcu.column_name
       FROM information_schema.table_constraints tc
@@ -265,7 +265,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     return results.map((r: any) => r.column_name);
   }
 
-  private normalizeType(dataType: string, udtName: string): string {
+  protected normalizeType(dataType: string, udtName: string): string {
     // Handle user-defined types and arrays
     if (dataType === 'USER-DEFINED') {
       return udtName.toUpperCase();
@@ -276,7 +276,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     return dataType.toUpperCase();
   }
 
-  private parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null): unknown {
     if (!defaultValue) {
       return undefined;
     }
@@ -305,14 +305,14 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
     return defaultValue;
   }
 
-  private isAutoIncrement(defaultValue: string | null): boolean {
+  protected isAutoIncrement(defaultValue: string | null): boolean {
     if (!defaultValue) {
       return false;
     }
     return defaultValue.includes('nextval(');
   }
 
-  private normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
+  protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
     switch (action.toUpperCase()) {
       case 'CASCADE':
         return 'CASCADE';

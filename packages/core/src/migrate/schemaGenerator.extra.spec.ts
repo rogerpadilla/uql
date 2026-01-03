@@ -86,18 +86,18 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
 
   it('generateTableConstraints with index', () => {
     const meta = getMeta(TestEntity);
-    (meta.fields.name as any).index = true;
+    (meta.fields.name as { index?: boolean | string }).index = true;
     const constraints = generator.generateTableConstraints(meta);
     expect(constraints.some((c) => c.includes('INDEX') && c.includes('idx_test_entity_name'))).toBe(true);
 
-    (meta.fields.name as any).index = 'custom_idx';
+    (meta.fields.name as { index?: boolean | string }).index = 'custom_idx';
     const constraints2 = generator.generateTableConstraints(meta);
     expect(constraints2.some((c) => c.includes('INDEX') && c.includes('custom_idx'))).toBe(true);
-    delete (meta.fields.name as any).index;
+    delete (meta.fields.name as { index?: boolean | string }).index;
   });
 
   it('getSqlType with vector', () => {
-    const field = { type: 'vector' as any };
+    const field: FieldOptions = { type: 'vector' as ColumnType };
     expect(generator.getSqlType(field)).toBe('VECTOR');
   });
 
@@ -106,7 +106,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
     expect(generator.getSqlType({ type: Boolean })).toBe('BOOLEAN');
     expect(generator.getSqlType({ type: Date })).toBe('TIMESTAMP');
     expect(generator.getSqlType({ type: BigInt })).toBe('BIGINT');
-    expect(generator.getSqlType({ type: 'unknown' as any })).toBe('VARCHAR(255)');
+    expect(generator.getSqlType({ type: 'unknown' as ColumnType })).toBe('VARCHAR(255)');
   });
 
   it('formatDefaultValue with boolean and Date', () => {
@@ -114,6 +114,6 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
     expect(generator.formatDefaultValue(false)).toBe('FALSE');
     const date = new Date('2023-01-01');
     expect(generator.formatDefaultValue(date)).toBe(`'${date.toISOString()}'`);
-    expect(generator.formatDefaultValue({} as any)).toBe('[object Object]');
+    expect(generator.formatDefaultValue({} as unknown as object)).toBe('[object Object]');
   });
 });

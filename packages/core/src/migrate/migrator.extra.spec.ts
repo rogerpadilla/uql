@@ -10,10 +10,38 @@ vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+class TestMigrator extends Migrator {
+  public override runMigration(migration: any, direction: 'up' | 'down') {
+    return super.runMigration(migration, direction);
+  }
+  public override executeSyncStatements(statements: string[], options: { logging?: boolean }) {
+    return super.executeSyncStatements(statements, options);
+  }
+  public override getMigrationFiles() {
+    return super.getMigrationFiles();
+  }
+  public override loadMigration(fileName: string) {
+    return super.loadMigration(fileName);
+  }
+  public override isMigration(obj: unknown): obj is any {
+    return super.isMigration(obj);
+  }
+  public override executeSqlSyncStatements(statements: string[], options: { logging?: boolean }, querier: any) {
+    return super.executeSqlSyncStatements(statements, options, querier);
+  }
+  public override get logger(): (message: string) => void {
+    return super.logger;
+  }
+  public override set logger(logger: (message: string) => void) {
+    super.logger = logger;
+  }
+}
+
 describe('Migrator (extra coverage)', () => {
   let pool: QuerierPool;
   let mockQuerier: SqlQuerier;
   let mockStorage: MigrationStorage;
+  let migrator: TestMigrator;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -40,32 +68,34 @@ describe('Migrator (extra coverage)', () => {
       unlogWithQuerier: vi.fn(),
       ensureStorage: vi.fn(),
     } as unknown as MigrationStorage;
+
+    migrator = new TestMigrator(pool, { storage: mockStorage });
   });
 
   it('defineMigration', () => {
-    const migration = { up: () => {}, down: () => {} };
-    expect(defineMigration(migration as any)).toBe(migration);
+    const migration = { up: vi.fn(), down: vi.fn() };
+    expect(defineMigration(migration)).toBe(migration);
   });
 
   it('createIntrospector and createGenerator for mariadb', () => {
-    const migrator = new Migrator(pool, { dialect: 'mariadb' });
+    const migrator = new TestMigrator(pool, { dialect: 'mariadb' });
     expect(migrator.getDialect()).toBe('mariadb');
     expect(migrator.schemaIntrospector).toBeDefined();
   });
 
   it('createIntrospector and createGenerator default case', () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any });
+    const migrator = new TestMigrator(pool, { dialect: 'invalid' as any });
     expect(migrator.schemaIntrospector).toBeUndefined();
   });
 
   it('up should throw if migration to is not found', async () => {
-    const migrator = new Migrator(pool, { storage: mockStorage });
+    const migrator = new TestMigrator(pool, { storage: mockStorage });
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
     await expect(migrator.up({ to: 'missing' })).rejects.toThrow("Migration 'missing' not found");
   });
 
   it('down should throw if migration to is not found', async () => {
-    const migrator = new Migrator(pool, { storage: mockStorage });
+    const migrator = new TestMigrator(pool, { storage: mockStorage });
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
     await expect(migrator.down({ to: 'missing' })).rejects.toThrow("Migration 'missing' not found");
   });
@@ -73,21 +103,19 @@ describe('Migrator (extra coverage)', () => {
   it('runMigration should throw if not a SQL querier', async () => {
     const mongoQuerier = { release: vi.fn() } as unknown as MongoQuerier;
     (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
-    const migrator = new Migrator(pool, { storage: mockStorage });
+    const migrator = new TestMigrator(pool, { storage: mockStorage });
     const migration = { name: 'm1', up: vi.fn(), down: vi.fn() };
-    await expect((migrator as any).runMigration(migration, 'up')).rejects.toThrow(
-      'Migrator requires a SQL-based querier',
-    );
+    await expect(migrator['runMigration'](migration, 'up')).rejects.toThrow('Migrator requires a SQL-based querier');
     expect(mongoQuerier.release).toHaveBeenCalled();
   });
 
   it('generateFromEntities should throw if no schema generator', async () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any });
+    const migrator = new TestMigrator(pool, { dialect: 'invalid' as any });
     await expect(migrator.generateFromEntities('test')).rejects.toThrow('Schema generator not set');
   });
 
   it('generateFromEntities should return empty if no changes', async () => {
-    const migrator = new Migrator(pool);
+    const migrator = new TestMigrator(pool);
     vi.spyOn(migrator, 'getDiffs').mockResolvedValue([]);
     const res = await migrator.generateFromEntities('test');
     expect(res).toBe('');
@@ -96,35 +124,32 @@ describe('Migrator (extra coverage)', () => {
   it('syncForce should throw if not a SQL querier', async () => {
     const mongoQuerier = { release: vi.fn() } as unknown as MongoQuerier;
     (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
-    const migrator = new Migrator(pool);
+    const migrator = new TestMigrator(pool);
     await expect(migrator.syncForce()).rejects.toThrow('Migrator requires a SQL-based querier');
   });
 
   it('autoSync should throw if no generator/introspector', async () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any });
+    const migrator = new TestMigrator(pool, { dialect: 'invalid' as any });
     await expect(migrator.autoSync()).rejects.toThrow('Schema generator and introspector must be set');
   });
 
   it('autoSync should return if no statements and logging is enabled', async () => {
-    const migrator = new Migrator(pool);
     const logger = vi.fn();
-    (migrator as any).logger = logger;
+    migrator.logger = logger;
     vi.spyOn(migrator, 'getDiffs').mockResolvedValue([]);
     await migrator.autoSync({ logging: true });
     expect(logger).toHaveBeenCalledWith('Schema is already in sync.');
   });
 
   it('executeMongoSyncStatements should throw if collection name is missing', async () => {
-    const migrator = new Migrator(pool, { dialect: 'mongodb' });
+    const migrator = new TestMigrator(pool, { dialect: 'mongodb' });
     const mongoQuerier = { db: { collection: vi.fn() }, release: vi.fn() } as unknown as MongoQuerier;
     (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
-    await expect((migrator as any).executeSyncStatements(['{}'], {})).rejects.toThrow(
-      'MongoDB command missing collection name',
-    );
+    await expect(migrator.executeSyncStatements(['{}'], {})).rejects.toThrow('MongoDB command missing collection name');
   });
 
   it('executeMongoSyncStatements should handle various actions', async () => {
-    const migrator = new Migrator(pool, { dialect: 'mongodb' });
+    const migrator = new TestMigrator(pool, { dialect: 'mongodb' });
     const createCollection = vi.fn();
     const dropCollection = vi.fn();
     const createIndex = vi.fn();
@@ -145,7 +170,7 @@ describe('Migrator (extra coverage)', () => {
       JSON.stringify({ action: 'dropIndex', collection: 'users', name: 'idx2' }),
     ];
 
-    await (migrator as any).executeSyncStatements(stmts, { logging: true });
+    await migrator.executeSyncStatements(stmts, { logging: true });
 
     expect(createCollection).toHaveBeenCalled();
     expect(createIndex).toHaveBeenCalledTimes(2);
@@ -155,32 +180,28 @@ describe('Migrator (extra coverage)', () => {
 
   it('getMigrationFiles should throw error other than ENOENT', async () => {
     (readdir as Mock).mockRejectedValue(new Error('Other error'));
-    const migrator = new Migrator(pool);
-    await expect((migrator as any).getMigrationFiles()).rejects.toThrow('Other error');
+    await expect(migrator.getMigrationFiles()).rejects.toThrow('Other error');
   });
 
   it('loadMigration should return undefined on invalid migration', async () => {
-    const migrator = new Migrator(pool, { storage: mockStorage });
     const logger = vi.fn();
-    (migrator as any).logger = logger;
-    vi.spyOn(migrator as any, 'getMigrationFiles').mockResolvedValue(['m1.ts']);
-    const res = await (migrator as any).loadMigration('m1.ts');
+    migrator.logger = logger;
+    vi.spyOn(migrator, 'getMigrationFiles').mockResolvedValue(['m1.ts']);
+    const res = await migrator.loadMigration('m1.ts');
     expect(res).toBeUndefined();
     expect(logger).toHaveBeenCalledWith(expect.stringContaining('Error loading migration m1.ts'));
   });
 
   it('isMigration utility', () => {
-    const migrator = new Migrator(pool);
-    expect((migrator as any).isMigration({})).toBe(false);
-    expect((migrator as any).isMigration(null)).toBe(false);
-    expect((migrator as any).isMigration({ up: () => {} })).toBe(false);
-    expect((migrator as any).isMigration({ up: () => {}, down: () => {} })).toBe(true);
+    expect(migrator.isMigration({})).toBe(false);
+    expect(migrator.isMigration(null)).toBe(false);
+    expect(migrator.isMigration({ up: () => {} })).toBe(false);
+    expect(migrator.isMigration({ up: () => {}, down: () => {} })).toBe(true);
   });
 
   it('executeSqlSyncStatements should throw if not a SQL querier', async () => {
     const mongoQuerier = { release: vi.fn() } as unknown as MongoQuerier;
-    const migrator = new Migrator(pool);
-    await expect((migrator as any).executeSqlSyncStatements(['sql'], {}, mongoQuerier)).rejects.toThrow(
+    await expect(migrator.executeSqlSyncStatements(['sql'], {}, mongoQuerier as any)).rejects.toThrow(
       'Migrator requires a SQL-based querier for this dialect',
     );
   });

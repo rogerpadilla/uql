@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ColumnSchema, ColumnType } from '../../type/index.js';
 import { PostgresSchemaGenerator } from './postgresSchemaGenerator.js';
 
 describe('PostgresSchemaGenerator (extra coverage)', () => {
@@ -23,17 +24,17 @@ describe('PostgresSchemaGenerator (extra coverage)', () => {
     expect(generator.mapColumnType('vector', {})).toBe('VECTOR');
     expect(generator.mapColumnType('serial', {})).toBe('SERIAL');
     expect(generator.mapColumnType('bigserial', {})).toBe('BIGSERIAL');
-    expect(generator.mapColumnType('unknown' as any, {})).toBe('TEXT');
+    expect(generator.mapColumnType('unknown' as ColumnType, {})).toBe('TEXT');
   });
 
   it('generateAlterColumnStatements nullability and default', () => {
     const col = { name: 'c', type: 'TEXT', nullable: true, defaultValue: 'val' };
-    const stmts = generator.generateAlterColumnStatements('t', col as any, '');
+    const stmts = generator.generateAlterColumnStatements('t', col as unknown as ColumnSchema, '');
     expect(stmts).toContain('ALTER TABLE "t" ALTER COLUMN "c" DROP NOT NULL;');
     expect(stmts).toContain('ALTER TABLE "t" ALTER COLUMN "c" SET DEFAULT \'val\';');
 
     const col2 = { name: 'c', type: 'TEXT', nullable: false, defaultValue: undefined as string };
-    const stmts2 = generator.generateAlterColumnStatements('t', col2 as any, '');
+    const stmts2 = generator.generateAlterColumnStatements('t', col2 as unknown as ColumnSchema, '');
     expect(stmts2).toContain('ALTER TABLE "t" ALTER COLUMN "c" SET NOT NULL;');
     expect(stmts2).toContain('ALTER TABLE "t" ALTER COLUMN "c" DROP DEFAULT;');
   });
