@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.5.0] - 2026-01-03
+### Refactor
+- **Dialect-Aware String Defaults**: Optimized default column types for TypeScript `string` fields across all supported databases.
+  - **PostgreSQL**: Defaults to `TEXT` (idiomatic, no length limits, slightly faster).
+  - **SQLite**: Defaults to `TEXT` (matches internal type affinity).
+  - **MySQL / MariaDB**: Defaults to `VARCHAR(255)` (ensures out-of-the-box compatibility for indices and unique constraints).
+  - Automatically transitions to `VARCHAR(n)` when an explicit `length` is provided in the `@Field()` decorator.
+
 ## [3.4.1]
 ### Improve documentation
 

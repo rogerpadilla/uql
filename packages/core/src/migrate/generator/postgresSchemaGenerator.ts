@@ -37,7 +37,7 @@ export class PostgresSchemaGenerator extends AbstractSchemaGenerator {
       case 'char':
         return `CHAR(${field.length ?? 1})`;
       case 'varchar':
-        return `VARCHAR(${field.length ?? 255})`;
+        return field.length !== undefined ? `VARCHAR(${field.length})` : 'TEXT';
       case 'text':
         return 'TEXT';
       case 'uuid':

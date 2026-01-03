@@ -53,8 +53,8 @@ describe('PostgresSchemaGenerator', () => {
     expect(sql).toContain('CREATE TABLE "TestUser"');
     expect(sql).toContain('"id" SERIAL PRIMARY KEY');
     expect(sql).toContain('"name" VARCHAR(100)');
-    expect(sql).toContain('"email" VARCHAR(255) UNIQUE');
-    expect(sql).toContain('"password" VARCHAR(255) NOT NULL');
+    expect(sql).toContain('"email" TEXT UNIQUE');
+    expect(sql).toContain('"password" TEXT NOT NULL');
     expect(sql).toContain('"createdAt"');
   });
 
@@ -63,7 +63,7 @@ describe('PostgresSchemaGenerator', () => {
 
     expect(sql).toContain('CREATE TABLE "blog_posts"');
     expect(sql).toContain('"id" VARCHAR(36) PRIMARY KEY');
-    expect(sql).toContain('"title" VARCHAR(255)');
+    expect(sql).toContain('"title" TEXT');
     expect(sql).toContain('"content" TEXT');
     expect(sql).toContain('"metadata" JSONB');
     expect(sql).toContain('"authorId"');
@@ -172,8 +172,8 @@ describe('SqliteSchemaGenerator', () => {
     expect(sql).toContain('CREATE TABLE `TestUser`');
     expect(sql).toContain('`id` INTEGER PRIMARY KEY AUTOINCREMENT');
     // SQLite uses VARCHAR when length is specified, which is fine as SQLite has dynamic typing
-    expect(sql).toContain('`name` VARCHAR(100)');
-    expect(sql).toContain('`email` VARCHAR(255) UNIQUE');
+    expect(sql).toContain('`name` TEXT');
+    expect(sql).toContain('`email` TEXT UNIQUE');
   });
 
   it('should use TEXT for most types (SQLite dynamic typing)', () => {
