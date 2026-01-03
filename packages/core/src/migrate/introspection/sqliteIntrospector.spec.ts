@@ -192,6 +192,104 @@ describe('SqliteSchemaIntrospector', () => {
     expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
   });
 
+  it('getTableSchema should return undefined for non-existent table', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        return Promise.resolve([{ count: 0 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('non_existent');
+    expect(schema).toBeUndefined();
+  });
+
+  it('getColumns should identify single-column unique constraints', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        return Promise.resolve([{ count: 1 }]);
+      }
+      if (sql.includes('table_info')) {
+        return Promise.resolve([{ name: 'email', type: 'TEXT', notnull: 0, pk: 0 }]);
+      }
+      if (sql.includes('index_list')) {
+        return Promise.resolve([{ name: 'idx_email', unique: 1, origin: 'u' }]);
+      }
+      if (sql.includes('index_info')) {
+        return Promise.resolve([{ name: 'email' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('users');
+    expect(schema?.columns[0].isUnique).toBe(true);
+  });
+
+  it('getIndexes should skip auto-generated indexes', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        return Promise.resolve([{ count: 1 }]);
+      }
+      if (sql.includes('table_info')) {
+        return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 1, pk: 1 }]);
+      }
+      if (sql.includes('index_list')) {
+        return Promise.resolve([
+          { name: 'sqlite_autoindex_users_1', unique: 1, origin: 'pk' },
+          { name: 'idx_custom', unique: 0, origin: 'c' },
+        ]);
+      }
+      if (sql.includes('index_info')) {
+        return Promise.resolve([{ name: 'name' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('users');
+    expect(schema?.indexes).toHaveLength(1);
+    expect(schema?.indexes?.[0].name).toBe('idx_custom');
+  });
+
+  it('getColumns should skip multi-column unique constraints', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        return Promise.resolve([{ count: 1 }]);
+      }
+      if (sql.includes('table_info')) {
+        return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 0, pk: 0 }]);
+      }
+      if (sql.includes('index_list')) {
+        return Promise.resolve([{ name: 'idx_multi', unique: 1, origin: 'u' }]);
+      }
+      if (sql.includes('index_info')) {
+        return Promise.resolve([{ name: 'col1' }, { name: 'col2' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('users');
+    expect(schema?.columns[0].isUnique).toBe(false);
+  });
+
+  it('normalizeType should handle non-matching strings', () => {
+    expect(introspector.normalizeType('123')).toBe('123');
+  });
+
+  it('escapeId should handle backticks', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('sqlite_master')) return Promise.resolve([{ count: 1 }]);
+      return Promise.resolve([]);
+    });
+    await introspector.getTableSchema('my`table');
+    expect(mockAll).toHaveBeenCalledWith(expect.stringContaining('`my``table`'));
+  });
+
+  it('tableExists should return false if results are empty', async () => {
+    mockAll.mockResolvedValue([]);
+    const exists = await introspector.tableExists('users');
+    expect(exists).toBe(false);
+  });
+
   it('should throw error if not SQL querier', async () => {
     (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
     await expect(introspector.getTableNames()).rejects.toThrow('SqliteSchemaIntrospector requires a SQL-based querier');

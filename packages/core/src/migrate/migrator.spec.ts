@@ -18,18 +18,6 @@ import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
 
-class TestMigrator extends Migrator {
-  public override getMigrationFiles() {
-    return super.getMigrationFiles();
-  }
-  public override getMigrationName(fileName: string) {
-    return super.getMigrationName(fileName);
-  }
-  public override isMigration(obj: unknown): obj is any {
-    return super.isMigration(obj);
-  }
-}
-
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn().mockResolvedValue([]),
   mkdir: vi.fn().mockResolvedValue(undefined),
@@ -37,7 +25,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 describe('Migrator Core Methods', () => {
-  let migrator: TestMigrator;
+  let migrator: Migrator;
   let storage: MigrationStorage;
   let pool: QuerierPool;
   let querier: SqlQuerier;
@@ -69,7 +57,7 @@ describe('Migrator Core Methods', () => {
       ensureStorage: vi.fn().mockResolvedValue(undefined),
     } as unknown as MigrationStorage;
 
-    migrator = new TestMigrator(pool, { storage });
+    migrator = new Migrator(pool, { storage });
 
     // Mock getMigrations to return some dummy migrations
     const mockMigrations: Migration[] = [
@@ -157,7 +145,7 @@ describe('Migrator Core Methods', () => {
       @Id() id?: number;
     }
 
-    migrator = new TestMigrator(pool, { entities: [DummyEntity] });
+    migrator = new Migrator(pool, { entities: [DummyEntity] });
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
 
     const generator = {
@@ -213,7 +201,7 @@ describe('Migrator Core Methods', () => {
     class SyncEntity {
       @Id() id?: number;
     }
-    migrator = new TestMigrator(pool, { entities: [SyncEntity] });
+    migrator = new Migrator(pool, { entities: [SyncEntity] });
 
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('SyncEntity'),
@@ -240,22 +228,22 @@ describe('Migrator Core Methods', () => {
     });
 
     it('should infer MySQL generator and introspector', () => {
-      const mysqlPool = { ...pool, dialect: 'mysql' };
-      const m = new Migrator(mysqlPool as any);
+      const mysqlPool = { ...pool, dialect: 'mysql' } as QuerierPool;
+      const m = new Migrator(mysqlPool);
       expect(m.schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', () => {
-      const sqlitePool = { ...pool, dialect: 'sqlite' };
-      const m = new Migrator(sqlitePool as any);
+      const sqlitePool = { ...pool, dialect: 'sqlite' } as QuerierPool;
+      const m = new Migrator(sqlitePool);
       expect(m.schemaGenerator).toBeInstanceOf(SqliteSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
     it('should infer MongoDB generator and introspector', () => {
-      const mongoPool = { ...pool, dialect: 'mongodb' };
-      const m = new Migrator(mongoPool as any);
+      const mongoPool = { ...pool, dialect: 'mongodb' } as QuerierPool;
+      const m = new Migrator(mongoPool);
       expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
     });
