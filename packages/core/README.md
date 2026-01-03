@@ -354,6 +354,7 @@ import { User, Post } from './shared/models/index.js';
 
 export default {
   pool: new PgQuerierPool({ /* config */ }),
+  // Optional: defaults to all entities decorated with @Entity
   entities: [User, Post],
   migrationsPath: './migrations',
 };

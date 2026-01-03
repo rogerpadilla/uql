@@ -48,7 +48,11 @@ export class Migrator {
   public set logger(value: (message: string) => void) {
     this._logger = value;
   }
-  public readonly entities: Type<unknown>[];
+  private readonly _entities?: Type<unknown>[];
+
+  public get entities(): Type<unknown>[] {
+    return this._entities ?? getEntities();
+  }
   public readonly dialect: Dialect;
   public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector?: SchemaIntrospector;
@@ -65,7 +69,7 @@ export class Migrator {
       });
     this.migrationsPath = options.migrationsPath ?? './migrations';
     this.logger = options.logger ?? (() => {});
-    this.entities = options.entities ?? [];
+    this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
     this.schemaGenerator = options.schemaGenerator ?? this.createGenerator(options.namingStrategy);
   }
@@ -351,10 +355,9 @@ export class Migrator {
       throw new Error('Schema generator and introspector must be set');
     }
 
-    const entities = this.entities.length > 0 ? this.entities : getEntities();
     const diffs: SchemaDiff[] = [];
 
-    for (const entity of entities) {
+    for (const entity of this.entities) {
       const meta = getMeta(entity);
       const tableName = this.schemaGenerator.resolveTableName(entity, meta);
       const currentSchema = await this.schemaIntrospector.getTableSchema(tableName);
@@ -368,8 +371,7 @@ export class Migrator {
   }
 
   protected findEntityForTable(tableName: string): Type<unknown> | undefined {
-    const entities = this.entities.length > 0 ? this.entities : getEntities();
-    for (const entity of entities) {
+    for (const entity of this.entities) {
       const meta = getMeta(entity);
       const name = this.schemaGenerator.resolveTableName(entity, meta);
       if (name === tableName) {
@@ -397,7 +399,6 @@ export class Migrator {
       throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
     }
 
-    const entities = this.entities.length > 0 ? this.entities : getEntities();
     const querier = await this.pool.getQuerier();
 
     if (!isSqlQuerier(querier)) {
@@ -409,14 +410,14 @@ export class Migrator {
       await querier.beginTransaction();
 
       // Drop all tables first (in reverse order for foreign keys)
-      for (const entity of [...entities].reverse()) {
+      for (const entity of [...this.entities].reverse()) {
         const dropSql = this.schemaGenerator.generateDropTable(entity);
         this.logger(`Executing: ${dropSql}`);
         await querier.run(dropSql);
       }
 
       // Create all tables
-      for (const entity of entities) {
+      for (const entity of this.entities) {
         const createSql = this.schemaGenerator.generateCreateTable(entity);
         this.logger(`Executing: ${createSql}`);
         await querier.run(createSql);

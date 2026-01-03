@@ -334,6 +334,26 @@ describe('Migrator Core Methods', () => {
       await migratorSync.autoSync({ logging: true });
       expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
     });
+
+    it('should default to all entities if none provided', async () => {
+      const generator = new PostgresSchemaGenerator();
+      const introspector = { getTableSchema: vi.fn().mockResolvedValue(undefined) };
+      const migratorDefault = new Migrator(pool, {
+        schemaGenerator: generator,
+      });
+      migratorDefault.schemaIntrospector = introspector as unknown as SchemaIntrospector;
+
+      // MigratorUser is decorated with @Entity, so it should be included by default
+      expect(migratorDefault.entities).toContain(MigratorUser);
+
+      await migratorDefault.autoSync();
+      expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
+    });
+
+    it('should respect explicit empty entities array', () => {
+      const migratorEmpty = new Migrator(pool, { entities: [] });
+      expect(migratorEmpty.entities).toEqual([]);
+    });
   });
 
   describe('Internal file methods', () => {
