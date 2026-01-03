@@ -308,8 +308,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     }
 
     if (type === String || type === 'string') {
-      const length = field.length ?? 255;
-      return `VARCHAR(${length})`;
+      return this.mapColumnType('varchar', field);
     }
 
     if (type === Boolean || type === 'boolean') {
@@ -324,8 +323,8 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       return 'BIGINT';
     }
 
-    // Default to VARCHAR
-    return `VARCHAR(${field.length ?? 255})`;
+    // Default to varchar
+    return this.mapColumnType('varchar', field);
   }
 
   /**

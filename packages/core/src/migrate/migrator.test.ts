@@ -87,8 +87,6 @@ describe('Migrator autoSync Integration', () => {
     await migrator.autoSync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
-    expect(querier.run).toHaveBeenCalledWith(
-      expect.stringContaining('ALTER TABLE "SyncUser" ADD COLUMN "name" VARCHAR(255)'),
-    );
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE "SyncUser" ADD COLUMN "name" TEXT'));
   });
 });

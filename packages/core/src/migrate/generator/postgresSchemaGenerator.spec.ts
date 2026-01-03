@@ -13,7 +13,10 @@ describe('PostgresSchemaGenerator Specifics', () => {
   });
 
   it('should map column types correctly', () => {
+    expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({}, String)).toBe('TEXT');
     expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('TEXT');
     expect(generator.getSqlType({ columnType: 'text' }, String)).toBe('TEXT');
     expect(generator.getSqlType({ columnType: 'int' }, Number)).toBe('INTEGER');
     expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');

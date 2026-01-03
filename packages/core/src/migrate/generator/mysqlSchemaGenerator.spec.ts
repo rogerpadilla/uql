@@ -5,7 +5,10 @@ describe('MysqlSchemaGenerator Specifics', () => {
   const generator = new MysqlSchemaGenerator();
 
   it('should map column types correctly', () => {
+    expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({}, String)).toBe('VARCHAR(255)');
     expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('VARCHAR(255)');
     expect(generator.getSqlType({ columnType: 'text' }, String)).toBe('TEXT');
     expect(generator.getSqlType({ columnType: 'int' }, Number)).toBe('INT');
     expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
