@@ -26,4 +26,3 @@ describe('Schema Generator Defaults', () => {
     expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('VARCHAR(255)');
   });
 });
-
