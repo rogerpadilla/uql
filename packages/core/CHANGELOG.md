@@ -3,9 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.4.5](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.4...@uql/core@3.4.5) (2026-01-01)
+# [3.5.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.5...@uql/core@3.5.0) (2026-01-03)
 
-**Note:** Version bump only for package @uql/core
+
+### Features
+
+* Add support for various databases and environments, update dependencies, and refine README.md. ([f6ba7c2](https://github.com/rogerpadilla/uql/commit/f6ba7c2de8dc97ab7c7cecfbe5da808fc2db55fb))
 
 
 
@@ -16,6 +19,14 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.5.0] - 2026-01-03
+### Refactor
+- **Dialect-Aware String Defaults**: Optimized default column types for TypeScript `string` fields across all supported databases.
+  - **PostgreSQL**: Defaults to `TEXT` (idiomatic, no length limits, slightly faster).
+  - **SQLite**: Defaults to `TEXT` (matches internal type affinity).
+  - **MySQL / MariaDB**: Defaults to `VARCHAR(255)` (ensures out-of-the-box compatibility for indices and unique constraints).
+  - Automatically transitions to `VARCHAR(n)` when an explicit `length` is provided in the `@Field()` decorator.
 
 ## [3.4.1]
 ### Improve documentation
