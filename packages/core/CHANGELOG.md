@@ -3,12 +3,17 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.5.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.5.0...@uql/core@3.5.1) (2026-01-03)
+## [3.5.2](https://github.com/rogerpadilla/uql/compare/@uql/core@3.5.1...@uql/core@3.5.2) (2026-01-03)
+
+
+### Bug Fixes
+
+* Enhance Type<T> definition to support both concrete and abstract constructors. ([3e6e322](https://github.com/rogerpadilla/uql/commit/3e6e322df4d86a1249bd7139a6791c0975d76abf))
 
 
 ### Features
 
-* Improve type safety and testability of database introspectors and schema generators. ([9df84a6](https://github.com/rogerpadilla/uql/commit/9df84a6112bc947a2c1b5c683e4b1bf5966c20fe))
+* Implement default entity handling in Migrator class and update documentation ([d7f34e0](https://github.com/rogerpadilla/uql/commit/d7f34e016e500544f4d8fb3795059e5c4bdaeee7))
 
 
 
