@@ -1,4 +1,4 @@
-export type Type<T> = new (...args: unknown[]) => T;
+export type Type<T> = (new (...args: unknown[]) => T) | (abstract new (...args: unknown[]) => T);
 
 export type BooleanLike = boolean | 0 | 1;
 
