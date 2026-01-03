@@ -3,12 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-# [3.5.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.4.5...@uql/core@3.5.0) (2026-01-03)
+## [3.5.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.5.0...@uql/core@3.5.1) (2026-01-03)
 
 
 ### Features
 
-* Add support for various databases and environments, update dependencies, and refine README.md. ([f6ba7c2](https://github.com/rogerpadilla/uql/commit/f6ba7c2de8dc97ab7c7cecfbe5da808fc2db55fb))
+* Improve type safety and testability of database introspectors and schema generators. ([9df84a6](https://github.com/rogerpadilla/uql/commit/9df84a6112bc947a2c1b5c683e4b1bf5966c20fe))
 
 
 
