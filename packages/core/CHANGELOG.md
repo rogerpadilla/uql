@@ -11,6 +11,7 @@ date format is [yyyy-mm-dd]
  - **Deterministic Constraint Naming**: Standardized default foreign key naming to `` `fk_${tableName}_${columnName}` ``, ensuring uniqueness and predictability across the database.
  - **Enhanced Schema Robustness**: Improved the schema generator's resilience against entities using circular dependencies or deep inheritance chains.
  - **Express Middleware Fix**: Resolved an issue in `query.util.ts` where the query parser could crash when receiving array-based query parameters (e.g., `$where[]=1`), preventing correct filtering in Express applications.
+ - **Field Utility Optimization**: Refactored `isNumericType` to use a `Set` for O(1) lookups and resolved strict type checking issues in `field.util.ts`.
 
  ## [3.7.5] - 2026-01-04
  ### Enhanced Type Inference & Default Value Comparison
