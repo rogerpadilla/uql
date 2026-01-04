@@ -14,6 +14,8 @@ describe('MysqlSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
     expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('TINYINT(1)');
     expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 }, Number)).toBe('DECIMAL(10, 2)');
+    expect(generator.mapColumnType('serial', {})).toBe('INT UNSIGNED AUTO_INCREMENT');
+    expect(generator.mapColumnType('bigserial', {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
   });
 
   it('should generate ALTER COLUMN statements', () => {
@@ -28,7 +30,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
     };
     const statements = generator.generateAlterColumnStatements('users', col, 'INT NOT NULL DEFAULT 18');
 
-    expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN INT NOT NULL DEFAULT 18;']);
+    expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN `age` INT NOT NULL DEFAULT 18;']);
   });
 
   it('should get table options', () => {

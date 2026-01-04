@@ -102,7 +102,7 @@ describe('MysqlSchemaIntrospector', () => {
     expect(schema?.columns).toHaveLength(2);
     expect(schema?.columns[0]).toMatchObject({
       name: 'id',
-      type: 'INT',
+      type: 'INT(11)',
       nullable: false,
       isAutoIncrement: true,
       isPrimaryKey: true,

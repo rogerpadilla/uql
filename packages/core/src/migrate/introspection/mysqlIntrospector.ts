@@ -132,7 +132,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
 
     return results.map((row: any) => ({
       name: row.column_name,
-      type: row.data_type.toUpperCase(),
+      type: row.column_type.toUpperCase(),
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.column_key === 'PRI',

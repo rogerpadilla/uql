@@ -210,7 +210,11 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   /**
    * Generate column definition from a ColumnSchema object
    */
-  public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
+  public generateColumnDefinitionFromSchema(
+    column: ColumnSchema,
+    options: { includePrimaryKey?: boolean; includeUnique?: boolean } = {},
+  ): string {
+    const { includePrimaryKey = true, includeUnique = true } = options;
     const columnName = this.escapeId(column.name);
     let type = column.type;
 
@@ -226,7 +230,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     let definition = `${columnName} ${type}`;
 
-    if (column.isPrimaryKey) {
+    if (includePrimaryKey && column.isPrimaryKey) {
       definition += ' PRIMARY KEY';
     }
 
@@ -234,7 +238,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       definition += ' NOT NULL';
     }
 
-    if (column.isUnique && !column.isPrimaryKey) {
+    if (includeUnique && column.isUnique && !column.isPrimaryKey) {
       definition += ' UNIQUE';
     }
 
@@ -304,7 +308,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const type = fieldType ?? field.type;
 
     if (type === Number || type === 'number') {
-      return field.precision ? this.mapColumnType('decimal', field) : 'BIGINT';
+      return field.precision ? this.mapColumnType('decimal', field) : this.mapColumnType('bigint', field);
     }
 
     if (type === String || type === 'string') {
@@ -316,11 +320,11 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     }
 
     if (type === Date || type === 'date') {
-      return 'TIMESTAMP';
+      return this.mapColumnType('timestamp', field);
     }
 
     if (type === BigInt || type === 'bigint') {
-      return 'BIGINT';
+      return this.mapColumnType('bigint', field);
     }
 
     // Default to varchar
@@ -466,12 +470,87 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
    * Check if two columns differ enough to require alteration
    */
   protected columnsNeedAlteration(current: ColumnSchema, desired: ColumnSchema): boolean {
-    // Compare relevant properties
-    return (
-      current.type.toLowerCase() !== desired.type.toLowerCase() ||
-      current.nullable !== desired.nullable ||
-      current.isUnique !== desired.isUnique ||
-      JSON.stringify(current.defaultValue) !== JSON.stringify(desired.defaultValue)
-    );
+    // If both are primary keys, we skip alteration by default.
+    // Altering primary keys is complex, dangerous, and often requires
+    // dropping and recreating foreign keys.
+    if (current.isPrimaryKey && desired.isPrimaryKey) {
+      return false;
+    }
+
+    if (current.isPrimaryKey !== desired.isPrimaryKey) return true;
+    if (current.nullable !== desired.nullable) return true;
+    if (current.isUnique !== desired.isUnique) return true;
+
+    if (!this.isTypeEqual(current, desired)) return true;
+    if (!this.isDefaultValueEqual(current.defaultValue, desired.defaultValue)) return true;
+
+    return false;
+  }
+
+  /**
+   * Compare two column types for equality, accounting for dialect-specific differences
+   */
+  protected isTypeEqual(current: ColumnSchema, desired: ColumnSchema): boolean {
+    const cType = this.normalizeType(current);
+    const dType = this.normalizeType(desired);
+    return cType === dType;
+  }
+
+  /**
+   * Normalize a column type string for comparison
+   */
+  protected normalizeType(column: ColumnSchema): string {
+    let type = column.type.toLowerCase();
+
+    // Strip display width/length for integer types as they are often
+    // inconsistent between introspection and generation (e.g. BIGINT(20) vs BIGINT)
+    if (type.includes('int')) {
+      type = type.replace(/\(\d+\)$/, '');
+    }
+
+    // Add length if it's not already in the type string
+    if (column.length && !type.includes('(')) {
+      type = `${type}(${column.length})`;
+    } else if (column.precision !== undefined && !type.includes('(')) {
+      if (column.scale !== undefined) {
+        type = `${type}(${column.precision},${column.scale})`;
+      } else {
+        type = `${type}(${column.precision})`;
+      }
+    }
+
+    // Remove any extra spaces and standardize common aliases
+    return type
+      .replace(/\s+/g, '')
+      .replace(/^integer$/, 'int')
+      .replace(/^boolean$/, 'tinyint(1)') // Common in MySQL
+      .replace(/^doubleprecision$/, 'double') // Postgres vs MySQL
+      .replace(/^characterany$/, 'varchar')
+      .replace(/^charactervarying$/, 'varchar')
+      .replace(/generated(always|bydefault)asidentity$/, '') // Ignore identity keywords
+      .replace(/unsigned$/, ''); // Ignore unsigned for type comparison
+  }
+
+  /**
+   * Compare two default values for equality
+   */
+  protected isDefaultValueEqual(current: unknown, desired: unknown): boolean {
+    if (current === desired) return true;
+    if (current === undefined || desired === undefined) return current === desired;
+
+    const normalize = (val: unknown): string => {
+      if (val === null) return 'null';
+      if (typeof val === 'string') {
+        // Remove type casts first (common in Postgres like ::text, ::character varying, ::timestamp without time zone)
+        let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
+        // Remove surrounding quotes
+        s = s.replace(/^'(.*)'$/, '$1');
+        if (s.toLowerCase() === 'null') return 'null';
+        return s;
+      }
+      return String(val);
+    };
+
+    return normalize(current) === normalize(desired);
   }
 }

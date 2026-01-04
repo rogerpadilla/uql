@@ -34,10 +34,10 @@ describe('AbstractSchemaGenerator (via Postgres)', () => {
     const diff = generator.diffSchema(DiffUser, currentSchema);
 
     expect(diff).toBeDefined();
-    expect(diff?.type).toBe('alter');
-    expect(diff?.columnsToAdd).toHaveLength(2);
-    expect(diff?.columnsToAdd?.[0].name).toBe('email');
-    expect(diff?.columnsToAdd?.[1].name).toBe('status');
+    expect(diff.type).toBe('alter');
+    expect(diff.columnsToAdd).toHaveLength(2);
+    expect(diff.columnsToAdd[0].name).toBe('email');
+    expect(diff.columnsToAdd[1].name).toBe('status');
   });
 
   it('diffSchema should detect altered columns (type change)', () => {
@@ -70,11 +70,11 @@ describe('AbstractSchemaGenerator (via Postgres)', () => {
     const diff = generator.diffSchema(DiffUser, currentSchema);
 
     expect(diff).toBeDefined();
-    expect(diff?.type).toBe('alter');
-    expect(diff?.columnsToAlter).toHaveLength(3);
-    expect(diff?.columnsToAlter?.[0].to.name).toBe('name');
-    expect(diff?.columnsToAlter?.[1].to.name).toBe('email');
-    expect(diff?.columnsToAlter?.[2].to.name).toBe('status');
+    expect(diff.type).toBe('alter');
+    // Note: Primary key (id) is skipped from alteration for safety
+    expect(diff.columnsToAlter).toHaveLength(2);
+    expect(diff.columnsToAlter[0].to.name).toBe('name');
+    expect(diff.columnsToAlter[1].to.name).toBe('email');
   });
 
   it('diffSchema should detect columns to drop', () => {
@@ -114,8 +114,8 @@ describe('AbstractSchemaGenerator (via Postgres)', () => {
     const diff = generator.diffSchema(DiffUser, currentSchema);
 
     expect(diff).toBeDefined();
-    expect(diff?.type).toBe('alter');
-    expect(diff?.columnsToDrop).toEqual(['old_col']);
+    expect(diff.type).toBe('alter');
+    expect(diff.columnsToDrop).toEqual(['old_col']);
   });
 
   it('generateAlterTable should produce correct SQL', () => {

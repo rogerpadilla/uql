@@ -5,7 +5,7 @@ import { AbstractSchemaGenerator } from '../schemaGenerator.js';
  * MySQL/MariaDB-specific schema generator
  */
 export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
-  protected readonly serialPrimaryKeyType = 'INT AUTO_INCREMENT PRIMARY KEY';
+  protected readonly serialPrimaryKeyType = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
 
   public override mapColumnType(columnType: ColumnType, field: FieldOptions): string {
     switch (columnType) {
@@ -56,9 +56,9 @@ export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
         // MySQL doesn't have native vector support, use JSON
         return 'JSON';
       case 'serial':
-        return 'INT AUTO_INCREMENT';
+        return 'INT UNSIGNED AUTO_INCREMENT';
       case 'bigserial':
-        return 'BIGINT AUTO_INCREMENT';
+        return 'BIGINT UNSIGNED AUTO_INCREMENT';
       default:
         return 'TEXT';
     }
@@ -71,9 +71,13 @@ export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
   public override generateAlterColumnStatements(
     tableName: string,
     column: ColumnSchema,
-    newDefinition: string,
+    _newDefinition: string,
   ): string[] {
-    return [`ALTER TABLE ${this.escapeId(tableName)} MODIFY COLUMN ${newDefinition};`];
+    const definition = this.generateColumnDefinitionFromSchema(column, {
+      includePrimaryKey: false,
+      includeUnique: false,
+    });
+    return [`ALTER TABLE ${this.escapeId(tableName)} MODIFY COLUMN ${definition};`];
   }
 
   public override generateColumnComment(tableName: string, columnName: string, comment: string): string {

@@ -116,4 +116,260 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
     expect(generator.formatDefaultValue(date)).toBe(`'${date.toISOString()}'`);
     expect(generator.formatDefaultValue({} as unknown as object)).toBe('[object Object]');
   });
+
+  describe('columnsNeedAlteration type normalization', () => {
+    it('should normalize precision and scale in type comparison', () => {
+      // Create an entity with a decimal field
+      @Entity()
+      class DecimalEntity {
+        @Id() id?: number;
+        @Field({ columnType: 'decimal', precision: 10, scale: 2 }) price?: number;
+      }
+
+      // Current schema has DECIMAL without precision in type string but with precision/scale properties
+      const currentSchema = {
+        name: 'DecimalEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'price',
+            type: 'DECIMAL',
+            precision: 10,
+            scale: 2,
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(DecimalEntity, currentSchema);
+      // Should not detect alteration since types match after normalization
+      // diff can be undefined (no changes at all) or have no columnsToAlter
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+
+    it('should normalize precision-only types', () => {
+      @Entity()
+      class PrecisionEntity {
+        @Id() id?: number;
+        @Field({ columnType: 'numeric', precision: 5 }) count?: number;
+      }
+
+      const currentSchema = {
+        name: 'PrecisionEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'count',
+            type: 'NUMERIC',
+            precision: 5,
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(PrecisionEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+  });
+
+  describe('columnsNeedAlteration default value comparison', () => {
+    it('should treat null and string "NULL" as equal', () => {
+      @Entity()
+      class NullDefaultEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: null }) status?: string;
+      }
+
+      const currentSchema = {
+        name: 'NullDefaultEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'status',
+            type: 'VARCHAR(255)',
+            nullable: true,
+            defaultValue: null as string,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(NullDefaultEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+
+    it('should handle Postgres type casts in default values', () => {
+      @Entity()
+      class TypeCastEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: 'active' }) status?: string;
+      }
+
+      const currentSchema = {
+        name: 'TypeCastEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'status',
+            type: 'VARCHAR(255)',
+            nullable: true,
+            defaultValue: "'active'::character varying",
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(TypeCastEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+
+    it('should handle quoted string defaults', () => {
+      @Entity()
+      class QuotedDefaultEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: 'hello' }) greeting?: string;
+      }
+
+      const currentSchema = {
+        name: 'QuotedDefaultEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'greeting',
+            type: 'VARCHAR(255)',
+            nullable: true,
+            defaultValue: "'hello'",
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(QuotedDefaultEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+
+    it('should detect actual default value changes', () => {
+      @Entity()
+      class ChangedDefaultEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: 'new_value' }) status?: string;
+      }
+
+      const currentSchema = {
+        name: 'ChangedDefaultEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'status',
+            type: 'VARCHAR(255)',
+            nullable: true,
+            defaultValue: 'old_value',
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(ChangedDefaultEntity, currentSchema);
+      expect(diff).toBeDefined();
+      expect(diff.columnsToAlter).toHaveLength(1);
+      expect(diff.columnsToAlter[0].to.name).toBe('status');
+    });
+
+    it('should handle numeric default values', () => {
+      @Entity()
+      class NumericDefaultEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: 42 }) count?: number;
+      }
+
+      const currentSchema = {
+        name: 'NumericDefaultEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'count',
+            type: 'BIGINT',
+            nullable: true,
+            defaultValue: 42,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(NumericDefaultEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+  });
+
+  describe('normalizeType edge cases', () => {
+    it('should strip display width from integer types', () => {
+      @Entity()
+      class IntDisplayWidthEntity {
+        @Id() id?: number;
+        @Field({ columnType: 'int' }) count?: number;
+      }
+
+      const currentSchema = {
+        name: 'IntDisplayWidthEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'count',
+            type: 'INT(11)',
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(IntDisplayWidthEntity, currentSchema);
+      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+    });
+  });
+
+  describe('generateColumnDefinitionFromSchema options', () => {
+    it('should include PRIMARY KEY when includePrimaryKey is true', () => {
+      const col: ColumnSchema = {
+        name: 'id',
+        type: 'INTEGER',
+        nullable: false,
+        isPrimaryKey: true,
+        isAutoIncrement: true,
+        isUnique: false,
+      };
+      const sql = generator.generateColumnDefinitionFromSchema(col, { includePrimaryKey: true });
+      expect(sql).toContain('PRIMARY KEY');
+    });
+
+    it('should exclude PRIMARY KEY when includePrimaryKey is false', () => {
+      const col: ColumnSchema = {
+        name: 'id',
+        type: 'INTEGER',
+        nullable: false,
+        isPrimaryKey: true,
+        isAutoIncrement: true,
+        isUnique: false,
+      };
+      const sql = generator.generateColumnDefinitionFromSchema(col, { includePrimaryKey: false });
+      expect(sql).not.toContain('PRIMARY KEY');
+    });
+  });
 });

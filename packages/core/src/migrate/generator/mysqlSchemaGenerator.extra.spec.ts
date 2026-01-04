@@ -22,8 +22,8 @@ describe('MysqlSchemaGenerator (extra coverage)', () => {
     expect(generator.mapColumnType('blob', {})).toBe('BLOB');
     expect(generator.mapColumnType('bytea', {})).toBe('BLOB');
     expect(generator.mapColumnType('vector', {})).toBe('JSON');
-    expect(generator.mapColumnType('serial', {})).toBe('INT AUTO_INCREMENT');
-    expect(generator.mapColumnType('bigserial', {})).toBe('BIGINT AUTO_INCREMENT');
+    expect(generator.mapColumnType('serial', {})).toBe('INT UNSIGNED AUTO_INCREMENT');
+    expect(generator.mapColumnType('bigserial', {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
     expect(generator.mapColumnType('unknown' as any, {})).toBe('TEXT');
   });
 

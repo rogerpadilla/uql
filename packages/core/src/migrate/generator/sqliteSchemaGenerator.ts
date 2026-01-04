@@ -78,4 +78,8 @@ export class SqliteSchemaGenerator extends AbstractSchemaGenerator {
     }
     return super.formatDefaultValue(value);
   }
+
+  override getTableOptions(): string {
+    return ' STRICT';
+  }
 }
