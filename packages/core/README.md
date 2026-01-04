@@ -37,7 +37,7 @@ const users = await querier.findMany(User, {
 
 | Feature                                                                  | Description                                                                                                                     |
 | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                  |
+| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                   |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
 | **Naming Strategies**                                              | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
@@ -58,7 +58,7 @@ Install the core package and the driver for your database:
 npm install @uql/core       # or bun add / pnpm add
 ```
 
-### Potential Drivers (choose according to your database)
+### Supported Drivers (choose according to your database)
 
 | Database | Command |
 | :--- | :--- |
@@ -97,8 +97,8 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | :-------------- | :----------------------------------------------------------------------------- |
 | `@Entity()`   | Marks a class as a database table/collection.                                  |
 | `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()`    | Standard column with options for indexing, uniqueness, and custom comments.    |
-| `@Relation()` | (OneToOne, OneToMany, ManyToOne, ManyToMany) Defines type-safe relationships.  |
+| `@Field()`    | Standard column. Use `{ reference: ... }` for Foreign Keys.                    |
+| `@OneToOne`.. | (`@OneToOne`, `@OneToMany`, etc) Defines type-safe relationships.              |
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -201,7 +201,7 @@ export class PostTag {
 A pool manages connections (queriers). Initialize it once at application bootstrap (e.g., in `server.ts`).
 
 ```ts
-import { PgQuerierPool } from '@uql/core/postgres';
+import { PgQuerierPool } from '@uql/core/postgres'; // or mysql2, sqlite, etc.
 import { SnakeCaseNamingStrategy, type Config } from '@uql/core';
 import { User, Profile, Post } from './entities';
 
