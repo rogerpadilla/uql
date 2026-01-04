@@ -41,7 +41,7 @@ const users = await querier.findMany(User, {
 | **Serializable JSON** | 100% valid JSON queries for easy transport over HTTP/Websockets. |
 | **Unified Dialects** | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more. |
 | **Naming Strategies** | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`. |
-| **Smart SQL Engine** | Optimized sub-queries, placeholders ($1, $2) and minimal SQL generation via `QueryContext`. |
+| **Smart SQL Engine** | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`. |
 | **Thread-Safe by Design** | Centralized task queue and `@Serialized()` decorator prevent race conditions. |
 | **Declarative Transactions** | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI. |
 | **[Modern & Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
@@ -276,9 +276,9 @@ import { Transactional, InjectQuerier, type Querier } from '@uql/core';
 
 export class UserService {
   @Transactional()
-  async register(data: any, @InjectQuerier() querier?: Querier) {
-    const user = await querier.insertOne(User, data);
-    await querier.insertOne(Profile, { userId: user.id });
+  async register({picture, ...user}: UserProfile, @InjectQuerier() querier?: Querier) {
+    const userId = await querier.insertOne(User, user);
+    await querier.insertOne(Profile, { userId, picture });
   }
 }
 ```
