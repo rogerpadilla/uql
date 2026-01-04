@@ -502,10 +502,21 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   protected normalizeType(column: ColumnSchema): string {
     let type = column.type.toLowerCase();
 
+    // Remove any extra spaces and standardize common aliases
+    type = type
+      .replace(/\s+/g, '')
+      .replace(/^integer$/, 'int')
+      .replace(/^boolean$/, 'tinyint(1)') // Common in MySQL
+      .replace(/^doubleprecision$/, 'double') // Postgres vs MySQL
+      .replace(/^characterany$/, 'varchar')
+      .replace(/^charactervarying$/, 'varchar')
+      .replace(/generated(always|bydefault)asidentity$/, '') // Ignore identity keywords
+      .replace(/unsigned$/, ''); // Ignore unsigned for type comparison
+
     // Strip display width/length for integer types as they are often
-    // inconsistent between introspection and generation (e.g. BIGINT(20) vs BIGINT)
+    // inconsistent between introspection and generation (e.g. bigint(20) vs bigint)
     if (type.includes('int')) {
-      type = type.replace(/\(\d+\)$/, '');
+      type = type.replace(/\(\d+\)/, '');
     }
 
     // Add length if it's not already in the type string
@@ -519,16 +530,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       }
     }
 
-    // Remove any extra spaces and standardize common aliases
-    return type
-      .replace(/\s+/g, '')
-      .replace(/^integer$/, 'int')
-      .replace(/^boolean$/, 'tinyint(1)') // Common in MySQL
-      .replace(/^doubleprecision$/, 'double') // Postgres vs MySQL
-      .replace(/^characterany$/, 'varchar')
-      .replace(/^charactervarying$/, 'varchar')
-      .replace(/generated(always|bydefault)asidentity$/, '') // Ignore identity keywords
-      .replace(/unsigned$/, ''); // Ignore unsigned for type comparison
+    return type;
   }
 
   /**

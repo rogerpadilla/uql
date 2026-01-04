@@ -92,8 +92,9 @@ describe('MongoSchemaGenerator', () => {
       tableName: 'MongoUser',
       type: 'alter',
     });
-    expect(diff?.indexesToAdd).toHaveLength(1);
-    expect(diff?.indexesToAdd?.[0].name).toBe('idx_email');
+    expect(diff).toBeDefined();
+    expect(diff.indexesToAdd).toHaveLength(1);
+    expect(diff.indexesToAdd[0].name).toBe('idx_email');
   });
 
   it('diffSchema should return undefined if in sync', () => {

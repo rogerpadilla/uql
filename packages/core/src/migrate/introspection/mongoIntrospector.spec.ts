@@ -57,9 +57,9 @@ describe('MongoSchemaIntrospector', () => {
     const schema = await introspector.getTableSchema('users');
 
     expect(schema).toBeDefined();
-    expect(schema?.name).toBe('users');
-    expect(schema?.indexes).toHaveLength(2);
-    expect(schema?.indexes?.[1]).toMatchObject({
+    expect(schema.name).toBe('users');
+    expect(schema.indexes).toHaveLength(2);
+    expect(schema.indexes[1]).toMatchObject({
       name: 'idx_username',
       columns: ['username'],
       unique: true,

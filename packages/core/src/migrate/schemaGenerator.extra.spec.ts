@@ -146,8 +146,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
 
       const diff = generator.diffSchema(DecimalEntity, currentSchema);
       // Should not detect alteration since types match after normalization
-      // diff can be undefined (no changes at all) or have no columnsToAlter
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
 
     it('should normalize precision-only types', () => {
@@ -174,7 +173,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(PrecisionEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
   });
 
@@ -203,7 +202,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(NullDefaultEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
 
     it('should handle Postgres type casts in default values', () => {
@@ -230,7 +229,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(TypeCastEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
 
     it('should handle quoted string defaults', () => {
@@ -257,7 +256,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(QuotedDefaultEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
 
     it('should detect actual default value changes', () => {
@@ -313,7 +312,7 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(NumericDefaultEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
     });
   });
 
@@ -341,7 +340,101 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(IntDisplayWidthEntity, currentSchema);
-      expect(diff === undefined || diff.columnsToAlter === undefined).toBe(true);
+      expect(diff).toBeUndefined();
+    });
+
+    it('should handle MySQL UNSIGNED with display width', () => {
+      @Entity()
+      class UnsignedEntity {
+        @Id() id?: number;
+        @Field({ columnType: 'bigint' }) count?: number;
+      }
+
+      const currentSchema = {
+        name: 'UnsignedEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'count',
+            type: 'BIGINT(20) UNSIGNED',
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(UnsignedEntity, currentSchema);
+      expect(diff).toBeUndefined();
+    });
+
+    it('should handle Postgres IDENTITY variations', () => {
+      @Entity()
+      class IdentityEntity {
+        @Id() id?: number;
+      }
+
+      const currentSchema = {
+        name: 'IdentityEntity',
+        columns: [
+          {
+            name: 'id',
+            type: 'BIGINT GENERATED ALWAYS AS IDENTITY',
+            nullable: false,
+            isPrimaryKey: true,
+            isAutoIncrement: true,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(IdentityEntity, currentSchema);
+      expect(diff).toBeUndefined();
+    });
+  });
+
+  describe('isDefaultValueEqual advanced casts', () => {
+    it('should handle multi-word Postgres type casts', () => {
+      @Entity()
+      class MultiWordCastEntity {
+        @Id() id?: number;
+        @Field({ defaultValue: '2023-01-01' }) created?: Date;
+      }
+
+      const currentSchema = {
+        name: 'MultiWordCastEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'created',
+            type: 'TIMESTAMP',
+            nullable: true,
+            defaultValue: "'2023-01-01'::timestamp without time zone",
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(MultiWordCastEntity, currentSchema);
+      expect(diff).toBeUndefined();
+    });
+  });
+
+  describe('polymorphic type mapping', () => {
+    it('should map Date to dialect-specific types', () => {
+      expect(generator.getSqlType({ type: Date })).toBe('TIMESTAMP');
+
+      const typeMap: Record<string, string> = { timestamp: 'TEXT' };
+      class SqliteTestGenerator extends TestSchemaGenerator {
+        override mapColumnType(columnType: ColumnType): string {
+          return typeMap[columnType] ?? columnType.toUpperCase();
+        }
+      }
+      const sqliteGen = new SqliteTestGenerator();
+      expect(sqliteGen.getSqlType({ type: Date })).toBe('TEXT');
     });
   });
 

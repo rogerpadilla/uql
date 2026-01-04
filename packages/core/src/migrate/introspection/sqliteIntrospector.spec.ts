@@ -118,20 +118,19 @@ describe('SqliteSchemaIntrospector', () => {
     });
 
     const schema = await introspector.getTableSchema('users');
-
     expect(schema).toBeDefined();
-    expect(schema?.name).toBe('users');
-    expect(schema?.columns).toHaveLength(2);
-    expect(schema?.columns[0]).toMatchObject({
+    expect(schema.name).toBe('users');
+    expect(schema.columns).toHaveLength(2);
+    expect(schema.columns[0]).toMatchObject({
       name: 'id',
       type: 'INTEGER',
       nullable: false,
       isPrimaryKey: true,
     });
-    expect(schema?.columns[1].defaultValue).toBe('Guest');
-    expect(schema?.indexes).toHaveLength(1);
-    expect(schema?.indexes?.[0].name).toBe('idx_users_name');
-    expect(schema?.indexes?.[0].columns).toEqual(['name']);
+    expect(schema.columns[1].defaultValue).toBe('Guest');
+    expect(schema.indexes).toHaveLength(1);
+    expect(schema.indexes[0].name).toBe('idx_users_name');
+    expect(schema.indexes[0].columns).toEqual(['name']);
   });
 
   it('getTableSchema with foreign keys and empty primary key', async () => {
@@ -158,13 +157,14 @@ describe('SqliteSchemaIntrospector', () => {
     });
 
     const schema = await introspector.getTableSchema('posts');
-    expect(schema?.foreignKeys).toHaveLength(1);
-    expect(schema?.foreignKeys?.[0]).toMatchObject({
+    expect(schema).toBeDefined();
+    expect(schema.foreignKeys).toHaveLength(1);
+    expect(schema.foreignKeys[0]).toMatchObject({
       referencedTable: 'users',
       onUpdate: 'CASCADE',
       onDelete: 'RESTRICT',
     });
-    expect(schema?.primaryKey).toBeUndefined();
+    expect(schema.primaryKey).toBeUndefined();
   });
 
   it('normalizeType and extractLength', () => {
@@ -222,7 +222,8 @@ describe('SqliteSchemaIntrospector', () => {
     });
 
     const schema = await introspector.getTableSchema('users');
-    expect(schema?.columns[0].isUnique).toBe(true);
+    expect(schema).toBeDefined();
+    expect(schema.columns[0].isUnique).toBe(true);
   });
 
   it('getIndexes should skip auto-generated indexes', async () => {
@@ -246,8 +247,9 @@ describe('SqliteSchemaIntrospector', () => {
     });
 
     const schema = await introspector.getTableSchema('users');
-    expect(schema?.indexes).toHaveLength(1);
-    expect(schema?.indexes?.[0].name).toBe('idx_custom');
+    expect(schema).toBeDefined();
+    expect(schema.indexes).toHaveLength(1);
+    expect(schema.indexes[0].name).toBe('idx_custom');
   });
 
   it('getColumns should skip multi-column unique constraints', async () => {
@@ -268,7 +270,8 @@ describe('SqliteSchemaIntrospector', () => {
     });
 
     const schema = await introspector.getTableSchema('users');
-    expect(schema?.columns[0].isUnique).toBe(false);
+    expect(schema).toBeDefined();
+    expect(schema.columns[0].isUnique).toBe(false);
   });
 
   it('normalizeType should handle non-matching strings', () => {

@@ -98,18 +98,18 @@ describe('MysqlSchemaIntrospector', () => {
     const schema = await introspector.getTableSchema('users');
 
     expect(schema).toBeDefined();
-    expect(schema?.name).toBe('users');
-    expect(schema?.columns).toHaveLength(2);
-    expect(schema?.columns[0]).toMatchObject({
+    expect(schema.name).toBe('users');
+    expect(schema.columns).toHaveLength(2);
+    expect(schema.columns[0]).toMatchObject({
       name: 'id',
       type: 'INT(11)',
       nullable: false,
       isAutoIncrement: true,
       isPrimaryKey: true,
     });
-    expect(schema?.indexes).toHaveLength(1);
-    expect(schema?.indexes?.[0].name).toBe('email_unique');
-    expect(schema?.indexes?.[0].unique).toBe(true);
+    expect(schema.indexes).toHaveLength(1);
+    expect(schema.indexes[0].name).toBe('email_unique');
+    expect(schema.indexes[0].unique).toBe(true);
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {
@@ -149,8 +149,9 @@ describe('MysqlSchemaIntrospector', () => {
 
     const schema = await introspector.getTableSchema('posts');
 
-    expect(schema?.foreignKeys).toHaveLength(1);
-    expect(schema?.foreignKeys?.[0]).toMatchObject({
+    expect(schema).toBeDefined();
+    expect(schema.foreignKeys).toHaveLength(1);
+    expect(schema.foreignKeys[0]).toMatchObject({
       name: 'fk_posts_user_id',
       columns: ['user_id'],
       referencedTable: 'users',

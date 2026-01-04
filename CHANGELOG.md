@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [3.7.2] - 2026-01-04
+## [3.7.3] - 2026-01-04
 ### Robust Schema Synchronization
 - **Safe AutoSync**: Primary keys are now immune to automated alterations, preventing dangerous schema changes and ensuring database stability.
 - **Modern Primary Keys**: Standardized on **64-bit** auto-increment primary keys across all SQL dialects to align with TypeScript's `number` type:
@@ -17,6 +17,10 @@ date format is [yyyy-mm-dd]
 - **Fixed ALTER Syntax**: Resolved "Duplicate primary key" errors in MySQL/MariaDB by ensuring `MODIFY COLUMN` statements omit existing constraints during type or nullability updates.
 - **Improved Postgres Introspection**: Enhanced default value comparison to correctly handle complex Postgres type casts (e.g., `::timestamp without time zone`) and quoted strings.
 - **Expanded Testing**: Added **SQLite**, **LibSQL**, and **Cloudflare D1** scenarios to the integration test suite, ensuring 100% behavioral consistency across all 8 supported databases.
+- **Predictable Test Assertions**: Refactored all schema synchronization and introspection tests to use direct, non-conditional assertions, improving test reliability and failure clarity by removing optional chaining and non-null assertions.
+- **Clean Test Logic**: Removed imperative conditionals from test generators, replacing them with declarative mapping objects for dialect-specific type verification.
+
+## [3.7.2] - 2026-01-04
 ### Improve documentation
 - **AutoSync**: Clarified that entities must be imported/loaded before calling `autoSync()`. Added examples for both explicit entity passing (recommended) and auto-discovery approaches, plus debugging tips
 

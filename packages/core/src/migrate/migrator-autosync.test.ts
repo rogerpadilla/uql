@@ -125,16 +125,16 @@ for (const db of databases) {
 
         let schema = await introspector.getTableSchema(tableName);
         expect(schema).toBeDefined();
-        expect(schema?.columns).toHaveLength(2);
-        expect(schema?.columns.map((c) => c.name).sort()).toEqual(['id', 'name']);
+        expect(schema.columns).toHaveLength(2);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'name']);
 
         const migrator = new Migrator(db.pool, { entities: [AutoSyncUserTest1] });
         await migrator.autoSync({ logging: true });
 
         schema = await introspector.getTableSchema(tableName);
         expect(schema).toBeDefined();
-        expect(schema?.columns).toHaveLength(3);
-        expect(schema?.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'name']);
+        expect(schema.columns).toHaveLength(3);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'name']);
 
         await cleanupTable(tableName);
       });
@@ -161,8 +161,8 @@ for (const db of databases) {
 
         const schema = await introspector.getTableSchema(tableName);
         expect(schema).toBeDefined();
-        expect(schema?.columns).toHaveLength(5);
-        expect(schema?.columns.map((c) => c.name).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
+        expect(schema.columns).toHaveLength(5);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
 
         await cleanupTable(tableName);
       });
@@ -183,11 +183,13 @@ for (const db of databases) {
 
         const migrator = new Migrator(db.pool, { entities: [AutoSyncCategoryTest1] });
         const schemaBefore = await introspector.getTableSchema(tableName);
+        expect(schemaBefore).toBeDefined();
 
         await migrator.autoSync({ logging: true });
 
         const schemaAfter = await introspector.getTableSchema(tableName);
-        expect(schemaAfter?.columns.length).toBe(schemaBefore?.columns.length);
+        expect(schemaAfter).toBeDefined();
+        expect(schemaAfter.columns.length).toBe(schemaBefore.columns.length);
 
         await cleanupTable(tableName);
       });
@@ -214,7 +216,8 @@ for (const db of databases) {
         expect(exists).toBe(true);
 
         const schema = await introspector.getTableSchema(tableName);
-        expect(schema?.columns).toHaveLength(3);
+        expect(schema).toBeDefined();
+        expect(schema.columns).toHaveLength(3);
 
         await cleanupTable(tableName);
       });
@@ -239,8 +242,8 @@ for (const db of databases) {
 
         const schema = await introspector.getTableSchema(tableName);
         expect(schema).toBeDefined();
-        expect(schema?.columns).toHaveLength(3);
-        expect(schema?.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'username']);
+        expect(schema.columns).toHaveLength(3);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'username']);
 
         await cleanupTable(tableName);
       });
@@ -262,7 +265,7 @@ for (const db of databases) {
 
         const schema = await introspector.getTableSchema(tableName);
         expect(schema).toBeDefined();
-        expect(schema?.columns.map((c) => c.name).sort()).toEqual(['id', 'user_email']);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'user_email']);
 
         await cleanupTable(tableName);
       });
