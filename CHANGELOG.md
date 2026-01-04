@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.1] - 2026-01-04
+### Improve documentation
+- Update examples in docs and improve formatting of README
+
 ## [3.7.0] - 2026-01-04
 ### Improvements
 - **Repository Pattern Removal**: Removed the built-in Repository pattern implementation (`GenericRepository`, etc.) to simplify the framework architecture (KISS). Users should rely on the `Querier` interface or implement custom layers if needed.
