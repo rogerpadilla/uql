@@ -93,12 +93,15 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 
 ### Core Decorators
 
-| Decorator       | Purpose                                                                        |
-| :-------------- | :----------------------------------------------------------------------------- |
-| `@Entity()`   | Marks a class as a database table/collection.                                  |
-| `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()`    | Standard column. Use `{ reference: ... }` for Foreign Keys.                    |
-| `@OneToOne`.. | (`@OneToOne`, `@OneToMany`, etc) Defines type-safe relationships.              |
+| Decorator        | Purpose                                                                        |
+| :--------------- | :----------------------------------------------------------------------------- |
+| `@Entity()`    | Marks a class as a database table/collection.                                  |
+| `@Id()`        | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
+| `@Field()`     | Standard column. Use `{ reference: ... }` for Foreign Keys.                    |
+| `@OneToOne`    | Defines a one-to-one relationship.                                             |
+| `@OneToMany`   | Defines a one-to-many relationship.                                            |
+| `@ManyToOne`   | Defines a many-to-one relationship.                                            |
+| `@ManyToMany`  | Defines a many-to-many relationship.                                           |
 
 &nbsp;
 
