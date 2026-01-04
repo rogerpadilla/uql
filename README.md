@@ -37,7 +37,7 @@ const users = await querier.findMany(User, {
 
 | Feature                                                                  | Description                                                                                                                     |
 | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                  |
+| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and[relations](https://uql.app/querying/relations) at any depth.                                    |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
 | **Naming Strategies**                                              | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
@@ -58,17 +58,17 @@ Install the core package and the driver for your database:
 npm install @uql/core       # or bun add / pnpm add
 ```
 
-### Potential Drivers (choose according to your database)
+### Potential Drivers (pick according to your database)
 
-| Database | Command |
-| :--- | :--- |
-| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg` |
-| **MySQL** (incl. TiDB, Aurora) | `npm install mysql2` |
-| **MariaDB** | `npm install mariadb` |
-| **SQLite** | `npm install better-sqlite3` |
-| **LibSQL** (incl. Turso) | `npm install @libsql/client` |
-| **MongoDB** | `npm install mongodb` |
-| **Cloudflare D1** | _Native (no driver needed)_ |
+| Database                                               | Command                        |
+| :----------------------------------------------------- | :----------------------------- |
+| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg`             |
+| **MySQL** (incl. TiDB, Aurora)                   | `npm install mysql2`         |
+| **MariaDB**                                      | `npm install mariadb`        |
+| **SQLite**                                       | `npm install better-sqlite3` |
+| **LibSQL** (incl. Turso)                         | `npm install @libsql/client` |
+| **MongoDB**                                      | `npm install mongodb`        |
+| **Cloudflare D1**                                | _Native (no driver needed)_  |
 
 ### TypeScript Configuration
 
@@ -100,6 +100,8 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | `@Field()`    | Standard column with options for indexing, uniqueness, and custom comments.    |
 | `@Relation()` | (OneToOne, OneToMany, ManyToOne, ManyToMany) Defines type-safe relationships.  |
 
+&nbsp;
+
 ```ts
 import { v7 as uuidv7 } from 'uuid';
 import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation } from '@uql/core';
@@ -109,16 +111,28 @@ export class User {
   @Id({ onInsert: () => uuidv7() })
   id?: string;
 
-  @Field({ length: 100, index: true })
+  @Field({
+    index: true,
+  })
   name?: string;
 
-  @Field({ unique: true, comment: 'User login email' })
+  @Field({
+    unique: true,
+    comment: 'User login email',
+  })
   email?: string;
 
-  @OneToOne({ entity: () => Profile, mappedBy: 'user', cascade: true })
+  @OneToOne({
+    entity: () => Profile,
+    mappedBy: 'user',
+    cascade: true,
+  })
   profile?: Relation<Profile>; // Relation<T> handles circular dependencies
 
-  @OneToMany({ entity: () => Post, mappedBy: 'author' })
+  @OneToMany({
+    entity: () => Post,
+    mappedBy: 'author',
+  })
   posts?: Relation<Post>[];
 }
 
@@ -151,7 +165,10 @@ export class Post {
   @ManyToOne({ entity: () => User })
   author?: User;
 
-  @ManyToMany({ entity: () => Tag, through: () => PostTag })
+  @ManyToMany({
+    entity: () => Tag,
+    through: () => PostTag,
+  })
   tags?: Tag[];
 }
 
@@ -186,8 +203,8 @@ export class PostTag {
 A pool manages connections (queriers). Initialize it once at application bootstrap (e.g., in `server.ts`).
 
 ```ts
-import { PgQuerierPool } from '@uql/core/postgres';
 import { SnakeCaseNamingStrategy, type Config } from '@uql/core';
+import { PgQuerierPool } from '@uql/core/postgres';
 import { User, Profile, Post } from './entities';
 
 export const pool = new PgQuerierPool(
@@ -301,9 +318,6 @@ export class UserService {
 
 &nbsp;
 
-
-&nbsp;
-
 ## 5. Migrations & Synchronization
 
 ### 1. Unified Configuration
@@ -382,7 +396,7 @@ Learn more about UQL at [uql.app](https://uql.app) for details on:
 - [Soft Deletes &amp; Auditing](https://uql.app/entities/soft-delete)
 - [Database Migration &amp; Syncing](https://uql.app/migrations)
 
----
+&nbsp;
 
 ## 🛠 Deep Dive: Tests & Technical Resources
 
@@ -395,7 +409,7 @@ For those who want to see the "engine under the hood," check out these resources
   - [PostgreSQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) \| [MySQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) \| [SQLite](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts) specs.
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): SQL generation & connection management tests.
 
----
+&nbsp;
 
 ## Built with ❤️ and supported by
 

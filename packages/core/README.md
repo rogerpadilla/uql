@@ -109,16 +109,28 @@ export class User {
   @Id({ onInsert: () => uuidv7() })
   id?: string;
 
-  @Field({ length: 100, index: true })
+  @Field({
+    index: true,
+  })
   name?: string;
 
-  @Field({ unique: true, comment: 'User login email' })
+  @Field({
+    unique: true,
+    comment: 'User login email',
+  })
   email?: string;
 
-  @OneToOne({ entity: () => Profile, mappedBy: 'user', cascade: true })
+  @OneToOne({
+    entity: () => Profile,
+    mappedBy: 'user',
+    cascade: true,
+  })
   profile?: Relation<Profile>; // Relation<T> handles circular dependencies
 
-  @OneToMany({ entity: () => Post, mappedBy: 'author' })
+  @OneToMany({
+    entity: () => Post,
+    mappedBy: 'author',
+  })
   posts?: Relation<Post>[];
 }
 
@@ -151,7 +163,10 @@ export class Post {
   @ManyToOne({ entity: () => User })
   author?: User;
 
-  @ManyToMany({ entity: () => Tag, through: () => PostTag })
+  @ManyToMany({
+    entity: () => Tag,
+    through: () => PostTag,
+  })
   tags?: Tag[];
 }
 
