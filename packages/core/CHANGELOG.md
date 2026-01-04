@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.7.7](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.6...@uql/core@3.7.7) (2026-01-04)
+
+
+### Bug Fixes
+
+* downgrade package version to 3.7.5 ([0083c0e](https://github.com/rogerpadilla/uql/commit/0083c0e0d5fef0b7e80c9bc7beb03cba5b420dcf))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
