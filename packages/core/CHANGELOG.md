@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.7.9](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.8...@uql/core@3.7.9) (2026-01-04)
+
+
+### Features
+
+* Disable chat input and show loading state during message send and update operations. ([06b824b](https://github.com/rogerpadilla/uql/commit/06b824b79e2ab1f771ec79481e8d9cb1db159982))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
