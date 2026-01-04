@@ -58,17 +58,17 @@ Install the core package and the driver for your database:
 npm install @uql/core       # or bun add / pnpm add
 ```
 
-### Supported Drivers (choose according to your database)
+### Supported Drivers (pick according to your database)
 
-| Database | Command |
-| :--- | :--- |
-| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg` |
-| **MySQL** (incl. TiDB, Aurora) | `npm install mysql2` |
-| **MariaDB** | `npm install mariadb` |
-| **SQLite** | `npm install better-sqlite3` |
-| **LibSQL** (incl. Turso) | `npm install @libsql/client` |
-| **MongoDB** | `npm install mongodb` |
-| **Cloudflare D1** | _Native (no driver needed)_ |
+| Database                                               | Command                        |
+| :----------------------------------------------------- | :----------------------------- |
+| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg`             |
+| **MySQL** (incl. TiDB, Aurora)                   | `npm install mysql2`         |
+| **MariaDB**                                      | `npm install mariadb`        |
+| **SQLite**                                       | `npm install better-sqlite3` |
+| **LibSQL** (incl. Turso)                         | `npm install @libsql/client` |
+| **MongoDB**                                      | `npm install mongodb`        |
+| **Cloudflare D1**                                | _Native (no driver needed)_  |
 
 ### TypeScript Configuration
 
@@ -102,6 +102,8 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | `@OneToMany`   | Defines a one-to-many relationship.                                            |
 | `@ManyToOne`   | Defines a many-to-one relationship.                                            |
 | `@ManyToMany`  | Defines a many-to-many relationship.                                           |
+
+&nbsp;
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -204,8 +206,8 @@ export class PostTag {
 A pool manages connections (queriers). Initialize it once at application bootstrap (e.g., in `server.ts`).
 
 ```ts
-import { PgQuerierPool } from '@uql/core/postgres'; // or mysql2, sqlite, etc.
 import { SnakeCaseNamingStrategy, type Config } from '@uql/core';
+import { PgQuerierPool } from '@uql/core/postgres'; // or mysql2, sqlite, etc.
 import { User, Profile, Post } from './entities';
 
 export const pool = new PgQuerierPool(
@@ -319,9 +321,6 @@ export class UserService {
 
 &nbsp;
 
-
-&nbsp;
-
 ## 5. Migrations & Synchronization
 
 ### 1. Unified Configuration
@@ -400,7 +399,7 @@ Learn more about UQL at [uql.app](https://uql.app) for details on:
 - [Soft Deletes &amp; Auditing](https://uql.app/entities/soft-delete)
 - [Database Migration &amp; Syncing](https://uql.app/migrations)
 
----
+&nbsp;
 
 ## 🛠 Deep Dive: Tests & Technical Resources
 
@@ -413,7 +412,7 @@ For those who want to see the "engine under the hood," check out these resources
   - [PostgreSQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) \| [MySQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) \| [SQLite](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts) specs.
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): SQL generation & connection management tests.
 
----
+&nbsp;
 
 ## Built with ❤️ and supported by
 
