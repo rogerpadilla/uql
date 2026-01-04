@@ -1,5 +1,15 @@
 import type { Logger, LoggerFunction, LoggingOptions, LogLevel } from '../type/logger.js';
 
+const DEFAULT_LOG_LEVELS = [
+  'query',
+  'info',
+  'warn',
+  'error',
+  'schema',
+  'migration',
+  'skippedMigration',
+] as const satisfies LogLevel[];
+
 /**
  * Default implementation of the Logger interface using console methods.
  */
@@ -35,6 +45,10 @@ export class DefaultLogger implements Logger {
   logMigration(message: string): void {
     console.log(`\x1b[32mmigration:\x1b[0m ${message}`);
   }
+
+  logSkippedMigration(message: string): void {
+    console.info(`\x1b[33mskipped migration:\x1b[0m ${message}`);
+  }
 }
 
 /**
@@ -52,16 +66,16 @@ export class LoggerWrapper implements Logger {
     this.levels = new Set();
 
     if (options === true) {
-      this.levels = new Set(['query', 'info', 'warn', 'error', 'schema', 'migration']);
+      this.levels = new Set(DEFAULT_LOG_LEVELS);
       this.logger = new DefaultLogger();
     } else if (Array.isArray(options)) {
       this.levels = new Set(options);
       this.logger = new DefaultLogger();
     } else if (typeof options === 'function') {
-      this.levels = new Set(['query', 'info', 'warn', 'error', 'schema', 'migration']);
+      this.levels = new Set(DEFAULT_LOG_LEVELS);
       this.loggerFunction = options;
     } else if (options && typeof options === 'object') {
-      this.levels = new Set(['query', 'info', 'warn', 'error', 'schema', 'migration']);
+      this.levels = new Set(DEFAULT_LOG_LEVELS);
       this.logger = options;
     }
 
@@ -111,6 +125,10 @@ export class LoggerWrapper implements Logger {
 
   logMigration(message: string): void {
     this.log('migration', message);
+  }
+
+  logSkippedMigration(message: string): void {
+    this.log('skippedMigration', message);
   }
 
   private log(level: LogLevel, message: string, error?: any) {

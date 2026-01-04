@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.8] - 2026-01-04
+### Refined AutoSync Safety
+- **Transparent Safety Feedback**: In safe mode, `autoSync` now explicitly logs detailed messages via the new `skippedMigration` log level for skipped column alterations and drops, providing developers with clear visibility into pending schema changes that require manual intervention or migration.
+
  ## [3.7.7] - 2026-01-04
  ### Refined Foreign Key Handling & Control
  - **Recursive Type Inheritance**: Foreign key columns now automatically inherit the exact SQL type of their referenced primary keys (e.g., `UUID` -> `UUID`), ensuring perfect compatibility even in complex inheritance or self-referencing relationships.

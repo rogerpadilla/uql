@@ -377,7 +377,7 @@ npx uql-migrate up --config ./configs/uql.config.ts
 
 ### 3. AutoSync (Development)
 
-Keep your schema in sync without manual migrations. It safely adds missing tables/columns and uses **semantic type comparison** to avoid unnecessary alterations. Primary keys are immune to automated changes for maximum safety.
+Keep your schema in sync without manual migrations. It is **Safe by Default**: In safe mode (default), it strictly **adds** new tables and columns but **blocks** any destructive operations (column drops or type alterations) to prevent data loss. It provides **Transparent Feedback** by logging detailed warnings for any blocked changes, so you know exactly what remains to be migrated manually.
 
 > **Important**: For `autoSync` to detect your entities, they must be **loaded** (imported) before calling `autoSync`.
 
@@ -423,6 +423,7 @@ UQL features a professional-grade, structured logging system designed for high v
 | `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold.    |
 | `error` / `warn`  | **System Health**: Detailed error traces and potential issue warnings.            |
 | `migration`         | **Audit Trail**: Step-by-step history of schema changes.                          |
+| `skippedMigration`  | **Safety**: Logs blocked unsafe schema changes during autoSync.                   |
 | `schema` / `info` | **Lifecycle**: Informative logs about ORM initialization and sync events.         |
 
 ### Visual Feedback

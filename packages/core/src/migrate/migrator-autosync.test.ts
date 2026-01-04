@@ -1,5 +1,5 @@
 import { types } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariadbQuerierPool } from '../maria/mariadbQuerierPool.js';
 import { MySql2QuerierPool } from '../mysql/mysql2QuerierPool.js';
@@ -22,6 +22,7 @@ interface DatabaseConfig {
   createTableSql: (tableName: string, columns: string) => string;
   serialPrimaryKey: string;
   textType: string;
+  unsafeAlterError?: string;
 }
 
 const databases: DatabaseConfig[] = [
@@ -80,6 +81,7 @@ const databases: DatabaseConfig[] = [
     createTableSql: (tableName, columns) => `CREATE TABLE \`${tableName}\` (${columns})`,
     serialPrimaryKey: '`id` INTEGER PRIMARY KEY AUTOINCREMENT',
     textType: 'TEXT',
+    unsafeAlterError: 'recreate the table',
   },
 ];
 
@@ -326,6 +328,167 @@ for (const db of databases) {
         expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'newName']);
 
         // Verify data loss (implicit, since column is gone)
+
+        await cleanupTable(tableName);
+      });
+
+      it('should NOT alter existing DOUBLE column to BIGINT for number field (Safe Mode)', async () => {
+        @Entity()
+        class AutoSyncFloatTest {
+          @Id() id?: number;
+          @Field() cost?: number;
+        }
+
+        const tableName = 'AutoSyncFloatTest';
+        await cleanupTable(tableName);
+
+        // Create table with "cost" as DOUBLE (valid for number)
+        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncFloatTest] });
+
+        // Run autoSync (safe defaults to true)
+        await migrator.autoSync({ logging: true });
+
+        const schema = await introspector.getTableSchema(tableName);
+        expect(schema).toBeDefined();
+
+        // The column type should REMAIN double/float, not change to bigint
+        const costCol = schema.columns.find((c) => c.name === 'cost');
+        expect(costCol).toBeDefined();
+
+        // We normalize types to lowercase for check
+        const type = costCol.type.toLowerCase();
+        const isFloatCompatible =
+          type.includes('double') || type.includes('float') || type.includes('real') || type.includes('decimal');
+
+        expect(isFloatCompatible).toBe(true);
+        expect(type).not.toContain('bigint');
+        expect(type).not.toContain('int8'); // postgres bigint alias
+
+        await cleanupTable(tableName);
+      });
+
+      it('should block drops even if safe: false (when drop: false)', async () => {
+        @Entity()
+        class AutoSyncNoDropTest {
+          @Id() id?: number;
+          @Field() name?: string;
+        }
+
+        const tableName = 'AutoSyncNoDropTest';
+        await cleanupTable(tableName);
+
+        // Create table with "extraColumn"
+        await querier.run(
+          db.createTableSql(
+            tableName,
+            `${db.serialPrimaryKey}, ${db.escapeId('name')} ${db.textType}, ${db.escapeId('extraColumn')} ${db.textType}`,
+          ),
+        );
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncNoDropTest] });
+
+        // Run autoSync with safe: false (but drop defaults to false)
+        await migrator.autoSync({ logging: true, safe: false });
+
+        const schema = await introspector.getTableSchema(tableName);
+        expect(schema).toBeDefined();
+        // Should STILL have extraColumn because drop is false
+        expect(schema.columns).toHaveLength(3);
+        const colNames = schema.columns.map((c) => c.name).sort();
+        expect(colNames).toContain('extraColumn');
+
+        await cleanupTable(tableName);
+      });
+
+      it('should log skipped migrations when safe mode blocks changes', async () => {
+        @Entity()
+        class AutoSyncLogTest {
+          @Id() id?: number;
+          @Field() name?: string;
+        }
+
+        const tableName = 'AutoSyncLogTest';
+        await cleanupTable(tableName);
+
+        // Create table with "extraColumn"
+        await querier.run(
+          db.createTableSql(
+            tableName,
+            `${db.serialPrimaryKey}, ${db.escapeId('name')} ${db.textType}, ${db.escapeId('extraColumn')} ${db.textType}`,
+          ),
+        );
+
+        const migrator = new Migrator(db.pool, {
+          entities: [AutoSyncLogTest],
+          logger: true,
+        });
+
+        const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+        // Run autoSync with safe: true (default) and logging: true
+        await migrator.autoSync({ logging: true });
+
+        expect(consoleSpy).toHaveBeenCalled();
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('skipped migration:'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped dropping 1 columns'));
+
+        consoleSpy.mockRestore();
+        await cleanupTable(tableName);
+      });
+
+      it.skipIf(!!db.unsafeAlterError)('should alter column type when safe: false', async () => {
+        @Entity()
+        class AutoSyncUnsafeAlterTest {
+          @Id() id?: number;
+          @Field() cost?: number; // Defaults to bigint
+        }
+
+        const tableName = 'AutoSyncUnsafeAlterTest';
+        await cleanupTable(tableName);
+
+        // Create table with "cost" as DOUBLE
+        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterTest] });
+
+        // Run autoSync with safe: false
+        await migrator.autoSync({ logging: true, safe: false });
+
+        const schema = await introspector.getTableSchema(tableName);
+        expect(schema).toBeDefined();
+
+        const costCol = schema.columns.find((c) => c.name === 'cost');
+        expect(costCol).toBeDefined();
+        // Should be converted to bigint (default for number)
+        const type = costCol.type.toLowerCase();
+
+        expect(type).toContain('int');
+        expect(type).not.toContain('double');
+
+        await cleanupTable(tableName);
+      });
+
+      it.runIf(!!db.unsafeAlterError)('should throw error when altering column type (system limitation)', async () => {
+        @Entity()
+        class AutoSyncUnsafeAlterErrorTest {
+          @Id() id?: number;
+          @Field() cost?: number;
+        }
+
+        const tableName = 'AutoSyncUnsafeAlterErrorTest';
+        await cleanupTable(tableName);
+
+        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterErrorTest] });
+
+        // Run autoSync with safe: false - Expect Error
+        await expect(migrator.autoSync({ logging: true, safe: false })).rejects.toThrow(db.unsafeAlterError);
 
         await cleanupTable(tableName);
       });

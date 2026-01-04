@@ -472,14 +472,34 @@ export class Migrator {
   protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
     const filteredDiff = { ...diff } as { -readonly [K in keyof SchemaDiff]: SchemaDiff[K] };
     if (options.safe !== false) {
-      // In safe mode, we only allow additions
-      delete filteredDiff.columnsToDrop;
+      // In safe mode, we only allow additions (creating tables/columns)
+      // We block drops and alterations to prevent accidental data loss
+
+      if (filteredDiff.columnsToDrop?.length) {
+        this.logger.logSkippedMigration(
+          `[AutoSync] Skipped dropping ${filteredDiff.columnsToDrop.length} columns in table '${diff.tableName}': ${filteredDiff.columnsToDrop.join(', ')} (safe mode active)`,
+        );
+        delete filteredDiff.columnsToDrop;
+      }
+
+      if (filteredDiff.columnsToAlter?.length) {
+        this.logger.logSkippedMigration(
+          `[AutoSync] Skipped altering ${filteredDiff.columnsToAlter.length} columns in table '${diff.tableName}': ${filteredDiff.columnsToAlter.map((c) => c.to.name).join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
+        );
+        delete filteredDiff.columnsToAlter;
+      }
+
       delete filteredDiff.indexesToDrop;
       delete filteredDiff.foreignKeysToDrop;
     }
-    if (!options.drop) {
+
+    if (!options.drop && filteredDiff.columnsToDrop?.length) {
+      this.logger.logSkippedMigration(
+        `[AutoSync] Skipped dropping ${filteredDiff.columnsToDrop.length} columns in table '${diff.tableName}' (drop: false). Use { drop: true } to apply.`,
+      );
       delete filteredDiff.columnsToDrop;
     }
+
     return filteredDiff;
   }
 

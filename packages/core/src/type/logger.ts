@@ -1,7 +1,7 @@
 /**
  * Available log levels for the ORM.
  */
-export type LogLevel = 'query' | 'info' | 'warn' | 'error' | 'schema' | 'migration';
+export type LogLevel = 'query' | 'info' | 'warn' | 'error' | 'schema' | 'migration' | 'skippedMigration';
 
 /**
  * Interface for custom logger implementations.
@@ -41,6 +41,10 @@ export interface Logger {
    * Logs migration messages.
    */
   logMigration?(message: string): void;
+  /**
+   * Logs skipped migration messages.
+   */
+  logSkippedMigration?(message: string): void;
 }
 
 /**
