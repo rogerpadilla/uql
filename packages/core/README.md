@@ -355,10 +355,35 @@ npx uql-migrate up --config ./configs/uql.config.ts
 
 ### 3. AutoSync (Development)
 
-Keep your schema in sync without manual migrations. It safely adds missing tables/columns.
+Keep your schema in sync without manual migrations. It safely adds missing tables/columns and uses **semantic type comparison** to avoid unnecessary alterations. Primary keys are immune to automated changes for maximum safety.
+
+> **Important**: For `autoSync` to detect your entities, they must be **loaded** (imported) before calling `autoSync`.
+
+**Using Your Config (Recommended)**
+
+If you follow the [unified configuration](#1-unified-configuration) pattern, your entities are already imported. Simply reuse it:
 
 ```ts
-const migrator = new Migrator(pool);
+import { Migrator } from '@uql/core/migrate';
+import config from './uql.config.js';
+
+const migrator = new Migrator(config.pool, {
+  entities: config.entities,
+});
+await migrator.autoSync({ logging: true });
+```
+
+**Explicit Entities**
+
+Alternatively, pass entities directly if you want to be explicit about which entities to sync:
+
+```ts
+import { Migrator } from '@uql/core/migrate';
+import { User, Profile, Post } from './entities/index.js';
+
+const migrator = new Migrator(pool, {
+  entities: [User, Profile, Post],
+});
 await migrator.autoSync({ logging: true });
 ```
 
