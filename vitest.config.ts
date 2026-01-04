@@ -37,6 +37,12 @@ export default defineConfig({
         'packages/*/src/type/**/*.ts',
         'packages/*/src/browser/type/**/*.ts',
       ],
+      thresholds: {
+        lines: 99,
+        functions: 99,
+        branches: 94,
+        statements: 99,
+      },
     },
     pool: 'threads',
   },

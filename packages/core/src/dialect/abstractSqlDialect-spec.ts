@@ -1306,4 +1306,38 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
+
+  shouldUpdateWithJsonNull() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: null,
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
+    expect(values).toEqual([null, 123, 1]);
+  }
+
+  shouldHandleRawFalsyValues() {
+    const { sql } = this.exec((ctx) => {
+      this.dialect.selectFields(ctx, User, [raw(() => 0, 'zero')]);
+    });
+    expect(sql).toBe('0 `zero`');
+
+    const { sql: sql2 } = this.exec((ctx) => {
+      this.dialect.selectFields(ctx, User, [raw(() => '', 'empty')]);
+    });
+    expect(sql2).toBe(' `empty`');
+  }
+
+  shouldHandleEmptyAppend() {
+    const ctx = this.dialect.createContext();
+    ctx.append('SELECT ').append('').append('*');
+    expect(ctx.sql).toBe('SELECT *');
+  }
 }

@@ -19,6 +19,18 @@ describe('cli-config', () => {
     expect(config.pool.dialect).toBe('sqlite');
   });
 
+  it('loadConfig should load config from custom path', async () => {
+    const customConfigPath = path.resolve(process.cwd(), 'custom-uql.config.js');
+    const configContent = 'export default { pool: { dialect: "mysql" } }';
+    try {
+      await fs.writeFile(customConfigPath, configContent);
+      const config = await loadConfig('custom-uql.config.js');
+      expect(config.pool.dialect).toBe('mysql');
+    } finally {
+      await fs.unlink(customConfigPath).catch(() => {});
+    }
+  });
+
   it('loadConfig should throw if no config found', async () => {
     // Ensure no config file exists
     const configFiles = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
@@ -29,5 +41,11 @@ describe('cli-config', () => {
     }
 
     await expect(loadConfig()).rejects.toThrow('Could not find uql configuration file');
+  });
+
+  it('loadConfig should throw if custom config path not found', async () => {
+    await expect(loadConfig('non-existent.config.js')).rejects.toThrow(
+      'Could not find uql configuration file at non-existent.config.js',
+    );
   });
 });

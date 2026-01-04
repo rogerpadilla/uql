@@ -92,9 +92,25 @@ describe('LibsqlQuerier', () => {
     expect(querier.hasOpenTransaction).toBe(false);
   });
 
-  it('should release transaction resources', async () => {
+  it('should close client on internalRelease', async () => {
     await querier.beginTransaction();
     await querier.internalRelease();
     expect(mockTx.close).toHaveBeenCalled();
+  });
+
+  it('should throw error on double beginTransaction', async () => {
+    await querier.beginTransaction();
+    await expect(querier.beginTransaction()).rejects.toThrow(TypeError);
+    await expect(querier.beginTransaction()).rejects.toThrow('pending transaction');
+  });
+
+  it('should throw error on commitTransaction without transaction', async () => {
+    await expect(querier.commitTransaction()).rejects.toThrow(TypeError);
+    await expect(querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+  });
+
+  it('should throw error on rollbackTransaction without transaction', async () => {
+    await expect(querier.rollbackTransaction()).rejects.toThrow(TypeError);
+    await expect(querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
   });
 });

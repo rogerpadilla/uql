@@ -183,19 +183,29 @@ export class PostTag {
 A pool manages connections (queriers). Initialize it once at application bootstrap (e.g., in `server.ts`).
 
 ```ts
-// file: ./shared/orm.ts
 import { PgQuerierPool } from '@uql/core/postgres';
-import { SnakeCaseNamingStrategy } from '@uql/core';
+import { SnakeCaseNamingStrategy, type Config } from '@uql/core';
+import { User, Profile, Post } from './entities';
 
 export const pool = new PgQuerierPool(
   { host: 'localhost', database: 'uql_app', max: 10 },
   {
     logger: true,
     slowQueryThreshold: 200,
-    namingStrategy: new SnakeCaseNamingStrategy() // CamelCase -> snake_case
+    namingStrategy: new SnakeCaseNamingStrategy()
   }
 );
+
+export default {
+  pool,
+  // entities: [User, Profile, Post], // Optional: inferred from @Entity() decorators
+  migrationsPath: './migrations',
+} satisfies Config;
 ```
+
+> **Pro Tip**: Reusing the same connection pool for both your application and migrations is highly recommended. It reduces connection overhead and ensures consistent query settings (like naming strategies).
+
+&nbsp;
 
 &nbsp;
 
@@ -293,6 +303,7 @@ For better abstraction, use the `GenericRepository`. It encapsulates the querier
 
 ```ts
 import { GenericRepository } from '@uql/core';
+import { pool } from '../uql.config';
 
 export class UserRepository extends GenericRepository<User> {
   constructor() {
@@ -326,15 +337,20 @@ app.get('/users', async (req, res) => {
 
 ## 6. Migrations & Synchronization
 
-### 1. Configure
-Create a `uql.config.ts` in your project root:
+### 1. Unified Configuration
+Ideally, use the same `uql.config.ts` for your application bootstrap and the CLI:
 ```ts
+// uql.config.ts
+import type { Config } from '@uql/core';
+
 export default {
   pool: new PgQuerierPool({ /* ... */ }),
-  entities: [User, Post],
+  // entities: [User, Post], // Optional: inferred from @Entity() decorators
   migrationsPath: './migrations',
-};
+} satisfies Config;
 ```
+
+**Why?** Using a single config for both your app and the CLI is recommended for consistency. It prevents bugs where your runtime uses one naming strategy (e.g. `camelCase`) but your migrations use another (e.g. `snake_case`), or where the CLI isn't aware of all your entities. It enforces a Single Source of Truth for your database connection and schema.
 
 ### 2. Manage via CLI
 ```bash
@@ -344,6 +360,8 @@ npx uql-migrate generate:entities initial_schema
 npx uql-migrate up
 # Rollback last migration
 npx uql-migrate down
+# Using a custom config path
+npx uql-migrate up --config ./configs/uql.config.ts
 ```
 
 ### 3. AutoSync (Development)

@@ -150,6 +150,26 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
+
+  shouldHandleBoolean() {
+    const { values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, Item, {
+        inventoryable: true,
+      }),
+    );
+    expect(values).toContain(1);
+
+    const { values: values2 } = this.exec((ctx) =>
+      this.dialect.insert(ctx, Item, {
+        inventoryable: false,
+      }),
+    );
+    expect(values2).toContain(0);
+  }
+
+  shouldEscape() {
+    expect(this.dialect.escape("it's")).toBe("'it''s'");
+  }
 }
 
 createSpec(new SqliteDialectSpec());

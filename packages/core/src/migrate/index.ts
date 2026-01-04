@@ -21,7 +21,8 @@ export type {
   SqlQueryDialect,
   TableSchema,
 } from '../type/index.js';
-export { isSqlQuerier } from '../type/index.js';
+export { type Config, isSqlQuerier } from '../type/index.js';
+export { loadConfig } from './cli-config.js';
 export {
   MysqlSchemaGenerator,
   MysqlSchemaGenerator as MariadbSchemaGenerator,

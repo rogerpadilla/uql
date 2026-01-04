@@ -374,7 +374,7 @@ export class Migrator {
     return diffs;
   }
 
-  protected findEntityForTable(tableName: string): Type<unknown> | undefined {
+  public findEntityForTable(tableName: string): Type<unknown> | undefined {
     for (const entity of this.entities) {
       const meta = getMeta(entity);
       const name = this.schemaGenerator.resolveTableName(entity, meta);
@@ -502,7 +502,7 @@ export class Migrator {
     }
   }
 
-  protected async executeMongoSyncStatements(
+  public async executeMongoSyncStatements(
     statements: string[],
     options: { logging?: boolean },
     querier: MongoQuerier,

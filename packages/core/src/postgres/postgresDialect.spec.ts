@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
   createSpec,
@@ -422,6 +423,36 @@ class PostgresDialectSpec {
     );
     expect(sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
     expect(values).toEqual(['{"private":1}', 123, 1]);
+  }
+
+  shouldFind$nin() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { id: { $nin: [1, 2] } },
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
+    expect(values).toEqual([[1, 2]]);
+  }
+
+  shouldFormatVector() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, VectorItem, {
+        vec: [1, 2, 3],
+      }),
+    );
+    expect(sql).toBe('INSERT INTO "VectorItem" ("vec") VALUES ($1::vector) RETURNING "id" "id"');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldEscape() {
+    expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
 }
 

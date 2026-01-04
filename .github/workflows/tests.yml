@@ -34,7 +34,7 @@ jobs:
       - name: Lint
         run: bun run lint
       - name: Typecheck
-        run: bun run check.ts
+        run: bun run ts
 
   tests:
     runs-on: ubuntu-latest

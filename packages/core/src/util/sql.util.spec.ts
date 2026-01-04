@@ -202,6 +202,39 @@ it('escapeSqlId', () => {
   expect(escapeSqlId('schema.table', '"')).toBe('"schema"."table"');
   expect(escapeSqlId('schema.table', '"', true)).toBe('"schema.table"');
   expect(escapeSqlId('table', '`', false, true)).toBe('`table`.');
+  expect(escapeSqlId('schema.table', '`', false, true)).toBe('`schema`.`table`.');
   expect(escapeSqlId('')).toBe('');
   expect(escapeSqlId(undefined)).toBe('');
+});
+
+it('obtainAttrsPaths - underscore', () => {
+  const res1 = obtainAttrsPaths({
+    prop1_a_b: 1,
+    USER_ID: 2,
+    user_id: 3,
+  });
+  expect(res1).toEqual({
+    prop1_a_b: ['prop1', 'a', 'b'],
+    user_id: ['user', 'id'],
+  });
+});
+
+it('unflatObjects - underscore', () => {
+  const source = [
+    {
+      user_id: 1,
+      user_name: 'John',
+      USER_ROLE: 'admin',
+    },
+  ];
+  const result = unflatObjects(source);
+  expect(result).toEqual([
+    {
+      user: {
+        id: 1,
+        name: 'John',
+      },
+      USER_ROLE: 'admin',
+    },
+  ]);
 });

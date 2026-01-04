@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { Entity, Id } from '../entity/index.js';
+import { User } from '../test/entityMock.js';
 import type {
   Migration,
   MigrationStorage,
@@ -18,10 +19,15 @@ import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
 
+vi.mock('node:url', () => ({
+  pathToFileURL: vi.fn().mockReturnValue({ href: '' }),
+}));
+
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn().mockResolvedValue([]),
   mkdir: vi.fn().mockResolvedValue(undefined),
   writeFile: vi.fn().mockResolvedValue(undefined),
+  rm: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('Migrator Core Methods', () => {
@@ -32,6 +38,7 @@ describe('Migrator Core Methods', () => {
   let mockExecuted: Mock<any>;
 
   beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     querier = {
       beginTransaction: vi.fn().mockResolvedValue(undefined),
       commitTransaction: vi.fn().mockResolvedValue(undefined),
@@ -381,6 +388,286 @@ describe('Migrator Core Methods', () => {
       expect(migrator.isMigration({ up: () => {}, down: () => {} })).toBe(true);
       expect(migrator.isMigration({ up: () => {} })).toBe(false);
       expect(migrator.isMigration(null)).toBe(false);
+    });
+  });
+
+  describe('Extended coverage', () => {
+    it('up with specific step', async () => {
+      const results = await migrator.up({ step: 1 });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe('20250101000000_m1');
+    });
+
+    it('up with missing to migration should throw', async () => {
+      await expect(migrator.up({ to: 'nonexistent' })).rejects.toThrow("Migration 'nonexistent' not found");
+    });
+
+    it('down with missing to migration should throw', async () => {
+      await expect(migrator.down({ to: 'nonexistent' })).rejects.toThrow("Migration 'nonexistent' not found");
+    });
+
+    it('runMigration should throw if not SQL-based querier', async () => {
+      const nonSqlQuerier = { release: vi.fn() } as any;
+      (pool.getQuerier as Mock).mockResolvedValueOnce(nonSqlQuerier);
+      await expect(migrator.runMigration({ name: 'm1' } as any, 'up')).rejects.toThrow(
+        'Migrator requires a SQL-based querier',
+      );
+      expect(nonSqlQuerier.release).toHaveBeenCalled();
+    });
+
+    it('generateFromEntities should return empty if no diffs', async () => {
+      const generator = {
+        resolveTableName: vi.fn().mockReturnValue('Table'),
+        diffSchema: vi.fn().mockReturnValue(undefined),
+      };
+      migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+      const introspector = { getTableSchema: vi.fn().mockResolvedValue({}) };
+      migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
+
+      const filePath = await migrator.generateFromEntities('test');
+      expect(filePath).toBe('');
+    });
+
+    it('getDiffs should throw if generator/introspector missing', async () => {
+      migrator.schemaGenerator = undefined;
+      await expect(migrator.getDiffs()).rejects.toThrow('Schema generator and introspector must be set');
+    });
+
+    it('syncForce should throw if not SQL-based querier', async () => {
+      const nonSqlQuerier = { release: vi.fn() } as any;
+      (pool.getQuerier as Mock).mockResolvedValueOnce(nonSqlQuerier);
+      await expect(migrator.syncForce()).rejects.toThrow('Migrator requires a SQL-based querier');
+      expect(nonSqlQuerier.release).toHaveBeenCalled();
+    });
+
+    it('executeSyncStatements should throw on error and rollback for SQL', async () => {
+      (querier.run as Mock).mockRejectedValueOnce(new Error('Exec error'));
+      await expect(migrator.executeSyncStatements(['SQL'], { logging: true })).rejects.toThrow('Exec error');
+      expect(querier.rollbackTransaction).toHaveBeenCalled();
+    });
+
+    it('loadMigration should handle various formats and invalid migrations', async () => {
+      const { pathToFileURL } = await import('node:url');
+      const { writeFile, mkdir, rm } = await vi.importActual<any>('node:fs/promises');
+      const { join } = await vi.importActual<any>('node:path');
+
+      const testDir = join(process.cwd(), 'temp-test-migrations');
+      await mkdir(testDir, { recursive: true });
+
+      try {
+        // Default export
+        const m1Path = join(testDir, 'm1.mjs');
+        await writeFile(m1Path, 'export default { up: () => {}, down: () => {} };');
+        vi.mocked(pathToFileURL).mockReturnValueOnce({ href: m1Path } as any);
+        const m1 = await migrator.loadMigration('m1.mjs');
+        expect(m1).toBeDefined();
+
+        // Module export
+        const m2Path = join(testDir, 'm2.mjs');
+        await writeFile(m2Path, 'export const up = () => {}; export const down = () => {};');
+        vi.mocked(pathToFileURL).mockReturnValueOnce({ href: m2Path } as any);
+        const m2 = await migrator.loadMigration('m2.mjs');
+        expect(m2).toBeDefined();
+
+        // Invalid migration
+        const m3Path = join(testDir, 'm3.mjs');
+        await writeFile(m3Path, 'export const up = () => {};');
+        vi.mocked(pathToFileURL).mockReturnValueOnce({ href: m3Path } as any);
+        const m3 = await migrator.loadMigration('m3.mjs');
+        expect(m3).toBeUndefined();
+
+        // Import error
+        vi.mocked(pathToFileURL).mockReturnValueOnce({ href: 'nonexistent-file.mjs' } as any);
+        const m4 = await migrator.loadMigration('m4.mjs');
+        expect(m4).toBeUndefined();
+      } finally {
+        // Cleanup
+        await rm(testDir, { recursive: true, force: true });
+      }
+    });
+
+    it('autoSync should respect safe and drop options in filterDiff', async () => {
+      const diff: any = {
+        type: 'alter',
+        tableName: 'User',
+        columnsToDrop: ['old_col'],
+        indexesToDrop: ['old_idx'],
+      };
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      vi.spyOn(migrator.schemaGenerator, 'generateAlterTable').mockReturnValue([]);
+
+      // Safe mode (default)
+      await migrator.autoSync();
+      expect(migrator.schemaGenerator.generateAlterTable).toHaveBeenCalledWith(
+        expect.not.objectContaining({ columnsToDrop: expect.anything() }),
+      );
+
+      // Unsafe mode with drop
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      await migrator.autoSync({ safe: false, drop: true });
+      expect(migrator.schemaGenerator.generateAlterTable).toHaveBeenCalledWith(
+        expect.objectContaining({ columnsToDrop: ['old_col'] }),
+      );
+    });
+
+    it('autoSync should log and return if no statements', async () => {
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([]);
+      const spy = vi.spyOn(migrator.logger, 'logSchema');
+      await migrator.autoSync({ logging: true });
+      expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
+    });
+
+    it('sync should call syncForce if force is true', async () => {
+      vi.spyOn(migrator, 'syncForce').mockResolvedValueOnce();
+      await migrator.sync({ force: true });
+      expect(migrator.syncForce).toHaveBeenCalled();
+    });
+
+    it('executeMongoSyncStatements should handle various MongoDB commands', async () => {
+      const mockCollection = {
+        createIndex: vi.fn(),
+        drop: vi.fn(),
+        dropIndex: vi.fn(),
+      };
+      const mockDb = {
+        collection: vi.fn().mockReturnValue(mockCollection),
+        createCollection: vi.fn(),
+      };
+      const mockQuerier = { db: mockDb } as any;
+
+      const stmts = [
+        JSON.stringify({ action: 'createCollection', name: 'User', indexes: [{ columns: ['id'], name: 'id_idx' }] }),
+        JSON.stringify({ action: 'dropCollection', name: 'Old' }),
+        JSON.stringify({ action: 'createIndex', collection: 'User', key: { name: 1 }, options: { unique: true } }),
+        JSON.stringify({ action: 'dropIndex', collection: 'User', name: 'old_idx' }),
+      ];
+
+      await migrator.executeMongoSyncStatements(stmts, { logging: true }, mockQuerier);
+
+      expect(mockDb.createCollection).toHaveBeenCalledWith('User');
+      expect(mockCollection.createIndex).toHaveBeenCalled();
+      expect(mockCollection.drop).toHaveBeenCalled();
+      expect(mockCollection.dropIndex).toHaveBeenCalledWith('old_idx');
+    });
+
+    it('executeMongoSyncStatements should throw if collection name is missing', async () => {
+      const mockQuerier = { db: {} } as any;
+      const stmts = [JSON.stringify({ action: 'createIndex' })];
+      await expect(migrator.executeMongoSyncStatements(stmts, {}, mockQuerier)).rejects.toThrow(
+        'MongoDB command missing collection name',
+      );
+    });
+
+    it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
+      const m = new Migrator(pool, { dialect: 'unknown' as any });
+      expect(m.schemaGenerator).toBeUndefined();
+      expect(m.schemaIntrospector).toBeUndefined();
+    });
+
+    it('syncForce should rollback on error', async () => {
+      vi.spyOn(querier, 'run').mockRejectedValueOnce(new Error('Sync error'));
+      await expect(migrator.syncForce()).rejects.toThrow('Sync error');
+      expect(querier.rollbackTransaction).toHaveBeenCalled();
+    });
+
+    it('syncForce should throw if schemaGenerator is missing', async () => {
+      const m = new Migrator(pool, { dialect: 'unknown' as any });
+      await expect(m.syncForce()).rejects.toThrow('Schema generator not set');
+    });
+
+    it('findEntityForTable should return undefined if not found', async () => {
+      const m = new Migrator(pool, { entities: [] });
+      expect(m.findEntityForTable('Unknown')).toBeUndefined();
+    });
+
+    it('getMigrations should load and sort migrations', async () => {
+      const m = new Migrator(pool, { storage });
+      vi.spyOn(m, 'getMigrationFiles').mockResolvedValue(['m2.ts', 'm1.ts']);
+      const m1 = { name: 'm1', up: vi.fn(), down: vi.fn() } as any;
+      const m2 = { name: 'm2', up: vi.fn(), down: vi.fn() } as any;
+      vi.spyOn(m, 'loadMigration').mockResolvedValueOnce(m2).mockResolvedValueOnce(m1);
+
+      const migrations = await m.getMigrations();
+      expect(migrations).toHaveLength(2);
+      expect(migrations[0].name).toBe('m1');
+      expect(migrations[1].name).toBe('m2');
+    });
+
+    it('generateFromEntities should return empty if no statements', async () => {
+      const m = new Migrator(pool, { storage });
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([]);
+      const spy = vi.spyOn(m.logger, 'logInfo');
+      const result = await m.generateFromEntities('test');
+      expect(result).toBe('');
+      expect(spy).toHaveBeenCalledWith('No schema changes detected.');
+    });
+
+    it('generateFromEntities should handle create and alter diffs', async () => {
+      const m = new Migrator(pool, { storage });
+      const diffs: any[] = [
+        { type: 'create', tableName: 'User' },
+        { type: 'alter', tableName: 'Profile' },
+      ];
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
+      vi.spyOn(m, 'findEntityForTable').mockReturnValue(User);
+      vi.spyOn(m.schemaGenerator, 'generateCreateTable').mockReturnValue('CREATE');
+      vi.spyOn(m.schemaGenerator, 'generateDropTable').mockReturnValue('DROP');
+      vi.spyOn(m.schemaGenerator, 'generateAlterTable').mockReturnValue(['ALTER UP']);
+      vi.spyOn(m.schemaGenerator, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);
+
+      const result = await m.generateFromEntities('test-full');
+      expect(result).toContain('test_full');
+    });
+
+    it('generateFromEntities and autoSync should skip table if entity not found', async () => {
+      const m = new Migrator(pool, { storage });
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
+      vi.spyOn(m, 'findEntityForTable').mockReturnValue(undefined);
+
+      const result = await m.generateFromEntities('test-skip');
+      expect(result).toBe('');
+
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
+      const spy = vi.spyOn(m.logger, 'logSchema');
+      await m.autoSync({ logging: true });
+      expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
+    });
+
+    it('executeMongoSyncStatements should handle createCollection without indexes and non-matching action', async () => {
+      const mockCollection = { drop: vi.fn() };
+      const mockDb = { collection: vi.fn().mockReturnValue(mockCollection), createCollection: vi.fn() };
+      const mockQuerier = { db: mockDb } as any;
+
+      const stmts = [
+        JSON.stringify({ action: 'createCollection', name: 'User' }),
+        JSON.stringify({ action: 'unknown', name: 'User' }),
+      ];
+
+      await migrator.executeMongoSyncStatements(stmts, {}, mockQuerier);
+      expect(mockDb.createCollection).toHaveBeenCalledWith('User');
+    });
+
+    it('executeSqlSyncStatements should run statements in transaction', async () => {
+      const mockQuerier = {
+        beginTransaction: vi.fn(),
+        all: vi.fn(),
+        run: vi.fn(),
+        commitTransaction: vi.fn(),
+        dialect: { escapeIdChar: '"' },
+      } as any;
+
+      await migrator.executeSqlSyncStatements(['STMT1', 'STMT2'], { logging: true }, mockQuerier);
+
+      expect(mockQuerier.beginTransaction).toHaveBeenCalled();
+      expect(mockQuerier.run).toHaveBeenCalledTimes(2);
+      expect(mockQuerier.commitTransaction).toHaveBeenCalled();
+    });
+
+    it('executeSqlSyncStatements should throw if not SQL querier', async () => {
+      const mockQuerier = {} as any;
+      await expect(migrator.executeSqlSyncStatements([], {}, mockQuerier)).rejects.toThrow(
+        'Migrator requires a SQL-based querier',
+      );
     });
   });
 });

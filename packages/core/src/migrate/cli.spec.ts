@@ -47,6 +47,19 @@ describe('CLI', () => {
 
   it('main up', async () => {
     await cli.main(['up']);
+    expect(cliConfig.loadConfig).toHaveBeenCalledWith(undefined);
+    expect(mockMigrator.up).toHaveBeenCalled();
+  });
+
+  it('main up with custom config', async () => {
+    await cli.main(['--config', 'custom.config.ts', 'up']);
+    expect(cliConfig.loadConfig).toHaveBeenCalledWith('custom.config.ts');
+    expect(mockMigrator.up).toHaveBeenCalled();
+  });
+
+  it('main up with custom config (short flag)', async () => {
+    await cli.main(['-c', 'custom.config.ts', 'up']);
+    expect(cliConfig.loadConfig).toHaveBeenCalledWith('custom.config.ts');
     expect(mockMigrator.up).toHaveBeenCalled();
   });
 
@@ -161,5 +174,19 @@ describe('CLI', () => {
     expect(cli.getSchemaGenerator('sqlite')).toBeDefined();
     expect(cli.getSchemaGenerator('mongodb')).toBeDefined();
     expect(() => cli.getSchemaGenerator('unknown' as any)).toThrow('Unknown dialect: unknown');
+  });
+
+  it('main should throw if pool is missing', async () => {
+    vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: undefined as any });
+    await cli.main(['up']);
+    expect(console.error).toHaveBeenCalledWith('Error:', 'pool is required in configuration');
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('main should handle migration error', async () => {
+    mockMigrator.up.mockRejectedValue(new Error('Migration failed'));
+    await cli.main(['up']);
+    expect(console.error).toHaveBeenCalledWith('Error:', 'Migration failed');
+    expect(process.exit).toHaveBeenCalledWith(1);
   });
 });

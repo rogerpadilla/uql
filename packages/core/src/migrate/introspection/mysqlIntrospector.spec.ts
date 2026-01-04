@@ -6,6 +6,9 @@ class TestMysqlIntrospector extends MysqlSchemaIntrospector {
   public override normalizeReferentialAction(action: string) {
     return super.normalizeReferentialAction(action);
   }
+  public override parseDefaultValue(defaultValue: string | null) {
+    return super.parseDefaultValue(defaultValue);
+  }
 }
 
 describe('MysqlSchemaIntrospector', () => {
@@ -163,5 +166,22 @@ describe('MysqlSchemaIntrospector', () => {
     expect(introspector.normalizeReferentialAction('RESTRICT')).toBe('RESTRICT');
     expect(introspector.normalizeReferentialAction('NO ACTION')).toBe('NO ACTION');
     expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
+  });
+
+  it('getTableNames should throw if not SQL-based querier', async () => {
+    const mockRel = vi.fn().mockResolvedValue(undefined);
+    mockGetQuerier.mockResolvedValueOnce({ release: mockRel } as any);
+    await expect(introspector.getTableNames()).rejects.toThrow('MysqlSchemaIntrospector requires a SQL-based querier');
+    expect(mockRel).toHaveBeenCalled();
+  });
+
+  it('parseDefaultValue should handle various formats', () => {
+    expect(introspector.parseDefaultValue(null)).toBeUndefined();
+    expect(introspector.parseDefaultValue('NULL')).toBeNull();
+    expect(introspector.parseDefaultValue('CURRENT_TIMESTAMP')).toBe('CURRENT_TIMESTAMP');
+    expect(introspector.parseDefaultValue("'hello'")).toBe('hello');
+    expect(introspector.parseDefaultValue('123')).toBe(123);
+    expect(introspector.parseDefaultValue('12.34')).toBe(12.34);
+    expect(introspector.parseDefaultValue('default')).toBe('default');
   });
 });

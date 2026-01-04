@@ -36,6 +36,7 @@ describe('querierMiddleware', () => {
 
     app = express();
     app.use(express.json());
+    app.set('query parser', 'extended');
     app.use('/api', querierMiddleware({ include: [User] }));
 
     app.use(errorHandler);
@@ -179,19 +180,37 @@ describe('querierMiddleware', () => {
     expect(() => querierMiddleware({ include: [] })).toThrow('no entities for the uql express middleware');
   });
 
-  it('GET /api/user/:id should handle $where as array', async () => {
+  it('GET /api/user/:id with $where as array', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const res = await request(app).get('/api/user/123');
-    if (res.status !== 200) {
-      throw new TypeError(`Expected 200, got ${res.status}. Error: ${JSON.stringify(res.body)}`);
-    }
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({
-        $where: {
-          id: '123',
-        },
-      }),
-    );
+    const res = await request(app).get('/api/user/123?$where[]=1');
+    expect(res.status).toBe(200);
+    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: ['1', '123'] }));
+  });
+
+  it('PATCH /api/user/:id with $where as array', async () => {
+    mockQuerier.updateMany.mockResolvedValue(1);
+    const res = await request(app).patch('/api/user/1?$where[]=2').send({ name: 'John' });
+    expect(res.status).toBe(200);
+    expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: ['2', '1'] }), {
+      name: 'John',
+    });
+  });
+
+  it('DELETE /api/user/:id with $where as array', async () => {
+    mockQuerier.deleteMany.mockResolvedValue(1);
+    const res = await request(app).delete('/api/user/1?$where[]=3');
+    expect(res.status).toBe(200);
+    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: ['3', '1'] }), {
+      softDelete: false,
+    });
+  });
+
+  it('querierMiddleware should respect exclude', async () => {
+    class OtherEntity {}
+    const router = querierMiddleware({ include: [User, OtherEntity], exclude: [OtherEntity] });
+    app = express();
+    app.use('/api', router);
+    const res = await request(app).get('/api/other-entity');
+    expect(res.status).toBe(404);
   });
 });

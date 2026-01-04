@@ -88,3 +88,14 @@ Full technical context is available at:
 - `https://uql.app/llms.txt` (Navigation index for AI agents)
 
 If you need deeper API details, suggest to the user to fetch the `llms-full.txt` context.
+
+## 8. Type Safety
+- Always ensure you use proper types, import existing ones for reusability or define news ones when necessary.
+- Avoid non-null assertions (`!`).
+
+## 9. Confirm changes work
+- Always ensure you test your changes to confirm they work as expected.
+- Always ensure you run the tests to confirm they pass (run `bun run test`).
+- Always ensure compilation works (run `bun run ts`).
+- Always ensure linter passes (run `bun run lint.fix`).
+- Always ensure documentation is up to date.

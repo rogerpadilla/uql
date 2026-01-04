@@ -74,6 +74,13 @@ describe('DefaultLogger', () => {
     const call = stripAnsi(spyLog.mock.calls[0][0]);
     expect(call).toContain('migration: Running migration');
   });
+
+  it('should log query without values', () => {
+    const logger = new DefaultLogger();
+    logger.logQuery('SELECT 1');
+    const call = stripAnsi(spyLog.mock.calls[0][0]);
+    expect(call).not.toContain('--');
+  });
 });
 
 describe('LoggerWrapper', () => {
@@ -166,5 +173,50 @@ describe('LoggerWrapper', () => {
 
     expect(customLogger.logQuery).toHaveBeenCalled();
     expect(customLogger.logError).toHaveBeenCalled();
+  });
+
+  it('should use custom function for slow queries', () => {
+    const customFunc = vi.fn();
+    const wrapper = new LoggerWrapper(customFunc, 100);
+    wrapper.logQuery('SELECT 1', [], 150);
+    expect(customFunc).toHaveBeenCalledWith('SELECT 1', [], 150);
+  });
+
+  it('DefaultLogger should log slow queries with values and duration', () => {
+    const logger = new DefaultLogger();
+    logger.logSlowQuery('SELECT 1', [1], 500);
+    const call = stripAnsi(spyWarn.mock.calls[0][0]);
+    expect(call).toContain('slow query: SELECT 1 -- [1] [500ms]');
+  });
+
+  it('LoggerWrapper should fall back to logQuery if logSlowQuery is missing', () => {
+    const customLogger = { logQuery: vi.fn() } as any;
+    const wrapper = new LoggerWrapper(customLogger, 100);
+    wrapper.logQuery('SELECT 1', [], 150);
+    expect(customLogger.logQuery).toHaveBeenCalled();
+  });
+
+  it('LoggerWrapper should use loggerFunction for other levels if logger method is missing', () => {
+    const customFunc = vi.fn();
+    const wrapper = new LoggerWrapper(customFunc);
+    wrapper.logInfo('test info');
+    wrapper.logError('test error', new Error('fail'));
+    expect(customFunc).toHaveBeenCalledWith('test info');
+    expect(customFunc).toHaveBeenCalledWith('test error', expect.any(Error));
+  });
+
+  it('DefaultLogger should log slow queries without duration', () => {
+    const logger = new DefaultLogger();
+    logger.logSlowQuery('SELECT 1', [1]);
+    const call = stripAnsi(spyWarn.mock.calls[0][0]);
+    expect(call).not.toContain('ms]');
+  });
+
+  it('LoggerWrapper should do nothing if both logger and loggerFunction are missing', () => {
+    const wrapper = new LoggerWrapper({} as any);
+    wrapper.logInfo('test');
+    wrapper.logQuery('SELECT 1');
+    expect(spyInfo).not.toHaveBeenCalled();
+    expect(spyLog).not.toHaveBeenCalled();
   });
 });

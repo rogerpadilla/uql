@@ -74,4 +74,31 @@ describe('D1Querier', () => {
       firstId: undefined,
     });
   });
+
+  it('should execute internalAll without values', async () => {
+    mockStmt.all.mockResolvedValue({
+      results: [{ id: 1 }],
+      success: true,
+      meta: {},
+    });
+
+    await querier.internalAll('SELECT *');
+
+    expect(mockDb.prepare).toHaveBeenCalledWith('SELECT *');
+    expect(mockStmt.bind).not.toHaveBeenCalled();
+    expect(mockStmt.all).toHaveBeenCalled();
+  });
+
+  it('should execute internalRun without values', async () => {
+    mockStmt.run.mockResolvedValue({
+      count: 1,
+      duration: 1,
+    });
+
+    await querier.internalRun('UPDATE ...');
+
+    expect(mockDb.prepare).toHaveBeenCalledWith('UPDATE ...');
+    expect(mockStmt.bind).not.toHaveBeenCalled();
+    expect(mockStmt.run).toHaveBeenCalled();
+  });
 });

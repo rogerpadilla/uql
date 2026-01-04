@@ -25,7 +25,18 @@ export function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStra
 }
 
 export async function main(args = process.argv.slice(2)) {
-  const command = args[0];
+  let customPath: string | undefined;
+  const filteredArgs: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    if ((args[i] === '--config' || args[i] === '-c') && args[i + 1]) {
+      customPath = args[++i];
+    } else {
+      filteredArgs.push(args[i]);
+    }
+  }
+
+  const command = filteredArgs[0];
 
   if (!command || command === '--help' || command === '-h') {
     printHelp();
@@ -33,7 +44,7 @@ export async function main(args = process.argv.slice(2)) {
   }
 
   try {
-    const config = await loadConfig();
+    const config = await loadConfig(customPath);
 
     if (!config.pool) {
       throw new TypeError('pool is required in configuration');
@@ -55,24 +66,24 @@ export async function main(args = process.argv.slice(2)) {
 
     switch (command) {
       case 'up':
-        await runUp(migrator, args.slice(1));
+        await runUp(migrator, filteredArgs.slice(1));
         break;
       case 'down':
-        await runDown(migrator, args.slice(1));
+        await runDown(migrator, filteredArgs.slice(1));
         break;
       case 'status':
         await runStatus(migrator);
         break;
       case 'generate':
       case 'create':
-        await runGenerate(migrator, args.slice(1));
+        await runGenerate(migrator, filteredArgs.slice(1));
         break;
       case 'generate:entities':
       case 'generate-entities':
-        await runGenerateFromEntities(migrator, args.slice(1));
+        await runGenerateFromEntities(migrator, filteredArgs.slice(1));
         break;
       case 'sync':
-        await runSync(migrator, args.slice(1));
+        await runSync(migrator, filteredArgs.slice(1));
         break;
       case 'pending':
         await runPending(migrator);
@@ -247,7 +258,8 @@ Commands:
     --force             Drop and recreate all tables
 
 Configuration:
-  Create a uql.config.ts or uql.config.js file in your project root:
+  Create a uql.config.ts or uql.config.js file in your project root.
+  You can also specify a custom config path using --config or -c.
 
   export default {
     pool: new PgQuerierPool({ ... }),
