@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.6.1] - 2026-01-04
+### New Features
+- **CLI**: Added `--config` / `-c` flag to `uql-migrate` to load a custom configuration file.
+- **CLI**: Improved error handling when loading configuration files (syntax errors are no longer swallowed).
+
+## [3.6.0] - 2026-01-04
+### New Features
+- **CLI**: Added default logger, support to log slow-queries in a parameterized way, and ability to define custom loggers.
+
 ## [3.5.0] - 2026-01-03
 ### Refactor
 - **Dialect-Aware String Defaults**: Optimized default column types for TypeScript `string` fields across all supported databases.

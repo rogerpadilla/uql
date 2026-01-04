@@ -203,7 +203,7 @@ export default {
 } satisfies Config;
 ```
 
-> **Pro Tip**: Reusing the same connection pool for both your application and migrations is highly recommended. It reduces connection overhead and ensures consistent query settings (like naming strategies).
+> **Pro Tip**: Reusing the same connection pool for both your application and migrations is recommended. It reduces connection overhead and ensures consistent query settings (like naming strategies).
 
 &nbsp;
 
