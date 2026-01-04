@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.0] - 2026-01-04
+### Improvements
+- **Repository Pattern Removal**: Removed the built-in Repository pattern implementation (`GenericRepository`, etc.) to simplify the framework architecture (KISS). Users should rely on the `Querier` interface or implement custom layers if needed.
+- **Testing**: Added comprehensive tests for `HttpQuerier` and integration tests for the CLI entry point (`bin.ts`), achieving >99% code coverage.
+
 ## [3.6.1] - 2026-01-04
 ### New Features
 - **CLI**: Added `--config` / `-c` flag to `uql-migrate` to load a custom configuration file.
