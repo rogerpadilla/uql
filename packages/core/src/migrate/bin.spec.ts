@@ -31,7 +31,8 @@ describe('bin', () => {
   });
 
   it('should call main with arguments', async () => {
-    const binPath = new URL('./bin.ts', import.meta.url).pathname;
+    // Arbitrary path, doesn't matter now that we don't check for isMain
+    const binPath = '/any/path/bin.ts';
     process.argv = ['node', binPath, 'arg1', 'arg2'];
     mocks.main.mockResolvedValue(undefined);
 
@@ -51,11 +52,5 @@ describe('bin', () => {
 
     expect(console.error).toHaveBeenCalledWith(error);
     expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should export logic for testing', async () => {
-    const bin = await import('./bin.js');
-    expect(bin._scriptLogic).toBeDefined();
-    expect(bin._scriptLogic.isMain).toBe(true);
   });
 });

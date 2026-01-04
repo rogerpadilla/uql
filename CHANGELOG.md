@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [3.7.8] - 2026-01-04
-### Refined AutoSync Safety
-- **Transparent Safety Feedback**: In safe mode, `autoSync` now explicitly logs detailed messages via the new `skippedMigration` log level for skipped column alterations and drops, providing developers with clear visibility into pending schema changes that require manual intervention or migration.
+## [3.7.9] - 2026-01-04
+- **Manual Migrations**: Updated the root README to explicitly document the `generate` command for creating manual incremental migrations (`npx uql-migrate generate <name>`), ensuring developers know how to create empty migration files efficiently.
+
+### Bug Fixes
+- **CLI Entry Point**: Fixed a critical issue where the `uql-migrate` command would silently fail in certain environments (e.g., when run via `npx` or symlinks) due to brittle entry point detection. The CLI now reliably executes regardless of how it is invoked.
 
  ## [3.7.7] - 2026-01-04
  ### Refined Foreign Key Handling & Control

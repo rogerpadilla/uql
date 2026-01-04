@@ -243,7 +243,7 @@ export const pool = new PgQuerierPool(
 
 export default {
   pool,
-  // entities: [User, Profile, Post], // Optional: inferred from @Entity() decorators
+  entities: [User, Profile, Post],
   migrationsPath: './migrations',
 } satisfies Config;
 ```
@@ -355,7 +355,7 @@ import type { Config } from '@uql/core';
 
 export default {
   pool: new PgQuerierPool({ /* ... */ }),
-  // entities: [User, Post], // Optional: inferred from @Entity() decorators
+  entities: [User, Profile, Post],
   migrationsPath: './migrations',
 } satisfies Config;
 ```
@@ -364,14 +364,33 @@ export default {
 
 ### 2. Manage via CLI
 
+
+Use the CLI to manage your database schema evolution.
+
+| Command | Description |
+| :--- | :--- |
+| `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
+| `generate:entities <name>` | **Auto-generates** a migration by diffing your entities against the current DB schema. |
+| `up` | Applies all pending migrations. |
+| `down` | Rolls back the last applied migration batch. |
+| `status` | Shows which migrations have been executed and which are pending. |
+
+#### Usage Examples
+
 ```bash
-# Generate from entities
-npx uql-migrate generate:entities initial_schema
-# Run pending
+# 1. Create a manual migration
+npx uql-migrate generate seed_default_roles
+
+# 2. Auto-generate schema changes from your code
+npx uql-migrate generate:entities add_profile_table
+
+# 3. Apply changes
 npx uql-migrate up
-# Rollback last migration
+
+# 4. Revert changes if needed
 npx uql-migrate down
-# Using a custom config path
+
+# 5. Run with custom config
 npx uql-migrate up --config ./configs/uql.config.ts
 ```
 

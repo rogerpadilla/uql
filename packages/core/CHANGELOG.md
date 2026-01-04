@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.7.8](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.7...@uql/core@3.7.8) (2026-01-04)
-
-
-### Features
-
-* Enhance `autoSync` safety by logging warnings for skipped column alterations and drops in safe mode. ([0f61662](https://github.com/rogerpadilla/uql/commit/0f61662f5b82a9947c5e3e7651789ee4e731259c))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
@@ -21,8 +5,10 @@ All notable changes to this project will be documented in this file. Please add 
 date format is [yyyy-mm-dd]
 
 ## [3.7.8] - 2026-01-04
-### Refined AutoSync Safety
-- **Transparent Safety Feedback**: In safe mode, `autoSync` now explicitly logs detailed messages via the new `skippedMigration` log level for skipped column alterations and drops, providing developers with clear visibility into pending schema changes that require manual intervention or migration.
+- **Manual Migrations**: Updated the root README to explicitly document the `generate` command for creating manual incremental migrations (`npx uql-migrate generate <name>`), ensuring developers know how to create empty migration files efficiently.
+
+### Bug Fixes
+- **CLI Entry Point**: Fixed a critical issue where the `uql-migrate` command would silently fail in certain environments (e.g., when run via `npx` or symlinks) due to brittle entry point detection. The CLI now reliably executes regardless of how it is invoked.
 
  ## [3.7.7] - 2026-01-04
  ### Refined Foreign Key Handling & Control
