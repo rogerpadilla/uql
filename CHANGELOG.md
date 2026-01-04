@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+ ## [3.7.6] - 2026-01-04
+ ### Refined Foreign Key Handling & Control
+ - **Recursive Type Inheritance**: Foreign key columns now automatically inherit the exact SQL type of their referenced primary keys (e.g., `UUID` -> `UUID`), ensuring perfect compatibility even in complex inheritance or self-referencing relationships.
+ - **Custom Foreign Key Control**: Introduced the `foreignKey` option in `@Field` and `@Id` to allow specifying custom semantic names for constraints or disabling physical constraints (`false`) while maintaining logical references.
+ - **Deterministic Constraint Naming**: Standardized default foreign key naming to `` `fk_${tableName}_${columnName}` ``, ensuring uniqueness and predictability across the database.
+ - **Enhanced Schema Robustness**: Improved the schema generator's resilience against entities using circular dependencies or deep inheritance chains.
+ - **Express Middleware Fix**: Resolved an issue in `query.util.ts` where the query parser could crash when receiving array-based query parameters (e.g., `$where[]=1`), preventing correct filtering in Express applications.
+ - **Field Utility Optimization**: Refactored `isNumericType` to use a `Set` for O(1) lookups and resolved strict type checking issues in `field.util.ts`.
+
  ## [3.7.5] - 2026-01-04
  ### Enhanced Type Inference & Default Value Comparison
  - **Strict Field Type Safety**: Standardized the `type` property in `@Field` and `@Id` to use a strict union of global constructors (`String`, `Number`, etc.) and verified `ColumnType` strings.

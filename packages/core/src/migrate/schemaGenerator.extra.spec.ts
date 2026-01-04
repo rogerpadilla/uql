@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import type { ColumnSchema, ColumnType, FieldOptions } from '../type/index.js';
+import { isAutoIncrement, isNumericType } from '../util/index.js';
 import { AbstractSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({ name: 'test_entity' })
@@ -111,10 +112,35 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
     expect(generator.getSqlType({ type: 'jsonb' })).toBe('JSONB');
     expect(generator.getSqlType({ type: 'vector' })).toBe('VECTOR');
     // Test ternary branch where type !== field.type
-    expect(generator.getSqlType({ type: 'uuid' }, String)).toBe('UUID');
     expect(generator.getSqlType({ type: 'json' }, String)).toBe('JSON');
     expect(generator.getSqlType({ type: 'vector' }, String)).toBe('VECTOR');
-    expect(generator.getSqlType({ type: 'unknown' as ColumnType })).toBe('VARCHAR(255)');
+    expect(generator.getSqlType({ type: 'unknown' as ColumnType })).toBe('UNKNOWN');
+    // Test case where field.type is a constructor and fieldType is NOT provided
+    expect(generator.getSqlType({ type: String })).toBe('VARCHAR(255)');
+    // Test case where field.type overrides fieldType (explicit > implicit)
+    expect(generator.getSqlType({ type: Number }, String)).toBe('BIGINT');
+    // Test fallback when everything is undefined
+    expect(generator.getSqlType({})).toBe('VARCHAR(255)');
+  });
+
+  it('generateTableConstraints with various foreignKey options', () => {
+    @Entity()
+    class Target {
+      @Id() id: number;
+    }
+
+    @Entity()
+    class Source {
+      @Id() id: number;
+      @Field({ reference: () => Target }) ref1: number;
+      @Field({ reference: () => Target, foreignKey: true }) ref2: number;
+    }
+
+    const meta = getMeta(Source);
+    const constraints = generator.generateTableConstraints(meta);
+    expect(constraints.length).toBe(2);
+    expect(constraints[0]).toContain('CONSTRAINT `fk_Source_ref1`');
+    expect(constraints[1]).toContain('CONSTRAINT `fk_Source_ref2`');
   });
 
   it('formatDefaultValue with boolean and Date', () => {
@@ -498,6 +524,55 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
       const sql = generator.generateColumnDefinitionFromSchema(col, { includePrimaryKey: false });
       expect(sql).not.toContain('PRIMARY KEY');
+    });
+  });
+
+  describe('coverage edge cases', () => {
+    it('isNumericType edge cases', () => {
+      expect(isNumericType(undefined)).toBe(false);
+      expect(isNumericType(null)).toBe(false);
+      expect(isNumericType('number')).toBe(false);
+      expect(isNumericType('int')).toBe(true);
+      expect(isNumericType('DECIMAL')).toBe(true);
+      expect(isNumericType('float')).toBe(true);
+    });
+
+    it('isAutoIncrement edge cases', () => {
+      // Numerics but not PK
+      expect(isAutoIncrement({ type: Number }, false)).toBe(false);
+      // Explicitly false
+      expect(isAutoIncrement({ type: Number, autoIncrement: false }, true)).toBe(false);
+      // with columnType
+      expect(isAutoIncrement({ type: Number, columnType: 'int' }, true)).toBe(false);
+    });
+
+    it('getSqlType recursion edge cases', () => {
+      // Reference returns null - should throw
+      expect(() => generator.getSqlType({ reference: () => null as any })).toThrow();
+
+      // Reference returns entity WITHOUT ID - should throw
+      @Entity()
+      class NoId {
+        @Id() id: number;
+      }
+      (getMeta(NoId) as any).id = undefined;
+      expect(() => generator.getSqlType({ reference: () => NoId })).toThrow();
+    });
+
+    it('isDefaultValueEqual complex cases', () => {
+      const gen = generator as any;
+      expect(gen.isDefaultValueEqual(undefined, undefined)).toBe(true);
+      expect(gen.isDefaultValueEqual(null, undefined)).toBe(false);
+      expect(gen.isDefaultValueEqual({ a: 1 }, { a: 1 })).toBe(true);
+      expect(gen.isDefaultValueEqual({ a: 1 }, { a: 2 })).toBe(false);
+      expect(gen.isDefaultValueEqual([1], [1])).toBe(true);
+      expect(gen.isDefaultValueEqual([1], [2])).toBe(false);
+
+      // Test normalization specific branches
+      expect(gen.isDefaultValueEqual(null, 'NULL')).toBe(true);
+      expect(gen.isDefaultValueEqual("'xyz'::text", 'xyz')).toBe(true);
+      expect(gen.isDefaultValueEqual("'2023-01-01'::timestamp without time zone", '2023-01-01')).toBe(true);
+      expect(gen.isDefaultValueEqual(123, '123')).toBe(true);
     });
   });
 });

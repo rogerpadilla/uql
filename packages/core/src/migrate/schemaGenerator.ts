@@ -257,14 +257,14 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     // Generate foreign key constraints from references
     for (const key of fieldKeys) {
       const field = meta.fields[key];
-      if (field?.reference) {
+      if (field?.reference && field.foreignKey !== false) {
         const refEntity = field.reference();
         const refMeta = getMeta(refEntity);
         const refIdField = refMeta.fields[refMeta.id];
         const columnName = this.resolveColumnName(key as string, field);
         const refTableName = this.resolveTableName(refEntity, refMeta);
         const refColumnName = this.resolveColumnName(refMeta.id, refIdField);
-        const fkName = `fk_${tableName}_${columnName}`;
+        const fkName = typeof field.foreignKey === 'string' ? field.foreignKey : `fk_${tableName}_${columnName}`;
 
         constraints.push(
           `CONSTRAINT ${this.escapeId(fkName)} FOREIGN KEY (${this.escapeId(columnName)}) ` +
@@ -286,24 +286,17 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       const refEntity = field.reference();
       const refMeta = getMeta(refEntity);
       const refIdField = refMeta.fields[refMeta.id];
+      // Recursively call getSqlType for the referenced ID field
       return this.getSqlType({ ...refIdField, reference: undefined }, refIdField.type);
     }
 
-    // Infer from TypeScript type
-    const type = fieldType ?? field.type;
+    // Priority: 1. field.type (explicit logical type)
+    //           2. fieldType (inferred TS type)
+    const type = field.type ?? fieldType;
 
-    // Handle special types first
-    if (type === 'uuid' || field.type === 'uuid') {
-      return this.mapColumnType('uuid', field);
-    }
-
-    if (type === 'json' || type === 'jsonb' || field.type === 'json' || field.type === 'jsonb') {
-      const columnType = (type === 'json' || type === 'jsonb' ? type : field.type) as ColumnType;
-      return this.mapColumnType(columnType, field);
-    }
-
-    if (type === 'vector' || field.type === 'vector') {
-      return this.mapColumnType('vector', field);
+    // Handle semantic types (e.g. 'uuid', 'json', 'vector') or any ColumnType string
+    if (typeof type === 'string') {
+      return this.mapColumnType(type as ColumnType, field);
     }
 
     if (isNumericType(type)) {

@@ -133,7 +133,7 @@ import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Rel
 
 @Entity()
 export class User {
-  @Id({ onInsert: () => uuidv7() })
+  @Id({ type: 'uuid', onInsert: () => uuidv7() })
   id?: string;
 
   @Field({
@@ -149,27 +149,27 @@ export class User {
 
   @OneToOne({
     entity: () => Profile,
-    mappedBy: 'user',
+    mappedBy: (profile) => profile.user,
     cascade: true,
   })
-  profile?: Relation<Profile>; // Relation<T> handles circular dependencies
+  profile?: Relation<Profile>;
 
   @OneToMany({
     entity: () => Post,
-    mappedBy: 'author',
+    mappedBy: (post) => post.author,
   })
   posts?: Relation<Post>[];
 }
 
 @Entity()
 export class Profile {
-  @Id({ onInsert: () => uuidv7() })
+  @Id({ type: 'uuid', onInsert: () => uuidv7() })
   id?: string;
 
   @Field()
   bio?: string;
 
-  @Field({ reference: () => User })
+  @Field({ reference: () => User, foreignKey: 'fk_profile_user' })
   userId?: string;
 
   @OneToOne({ entity: () => User })
@@ -199,7 +199,7 @@ export class Post {
 
 @Entity()
 export class Tag {
-  @Id({ onInsert: () => uuidv7() })
+  @Id({ type: 'uuid', onInsert: () => uuidv7() })
   id?: string;
 
   @Field()
@@ -208,7 +208,7 @@ export class Tag {
 
 @Entity()
 export class PostTag {
-  @Id({ onInsert: () => uuidv7() })
+  @Id({ type: 'uuid', onInsert: () => uuidv7() })
   id?: string;
 
   @Field({ reference: () => Post })

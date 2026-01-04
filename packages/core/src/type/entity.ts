@@ -154,6 +154,10 @@ export type FieldOptions = {
    */
   readonly index?: boolean | string;
   /**
+   * Foreign key configuration. true for simple FK (default if reference is set), string for named FK, false to disable.
+   */
+  readonly foreignKey?: boolean | string;
+  /**
    * Column comment/description for database documentation.
    */
   readonly comment?: string;

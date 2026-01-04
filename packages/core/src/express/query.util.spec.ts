@@ -38,3 +38,17 @@ it('parseQuery stringified', () => {
   parseQuery(req);
   expect(req).toMatchObject({ query });
 });
+
+it('parseQuery -- already parsed', () => {
+  const query = {
+    $select: { id: true, name: true },
+    $where: { name: 'lorem' },
+    $sort: { name: -1 },
+    $skip: 50,
+    $limit: 10,
+  } satisfies Query<Item>;
+  const req = { query } as unknown as Request;
+  parseQuery(req);
+  expect(req.query).toEqual(query);
+  expect(req.query.$where).toEqual({ name: 'lorem' });
+});

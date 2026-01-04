@@ -10,13 +10,20 @@ export function parseQuery(req: Request): void {
   const qmsSrc: QueryStringified = req.query;
   const qm = qmsSrc as unknown as Query<unknown>;
 
-  if (qmsSrc.$select) {
+  if (typeof qmsSrc.$select === 'string') {
     qm.$select = JSON.parse(qmsSrc.$select);
   }
-  qm.$where = qmsSrc.$where ? JSON.parse(qmsSrc.$where) : {};
-  if (qmsSrc.$sort) {
+
+  if (typeof qmsSrc.$where === 'string') {
+    qm.$where = JSON.parse(qmsSrc.$where);
+  } else if (!qmsSrc.$where) {
+    qm.$where = {};
+  }
+
+  if (typeof qmsSrc.$sort === 'string') {
     qm.$sort = JSON.parse(qmsSrc.$sort);
   }
+
   if (qmsSrc.$skip) {
     qm.$skip = Number(qmsSrc.$skip);
   }

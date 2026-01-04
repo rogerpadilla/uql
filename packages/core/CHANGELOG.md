@@ -1,25 +1,16 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.7.5](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.4...@uql/core@3.7.5) (2026-01-04)
-
-
-### Features
-
-* enhance type inference for field definitions, improve default value comparison, and standardize field type safety ([1fc8203](https://github.com/rogerpadilla/uql/commit/1fc820393d7d65fcc9e12a127243a46cff83875e))
-* Standardize field type inference with explicit `FieldType` and enhance default value comparison for schema generation. ([5a6bbbd](https://github.com/rogerpadilla/uql/commit/5a6bbbd1ae2e97708df580b89efeb51be41f1649))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+ ## [3.7.6] - 2026-01-04
+ ### Refined Foreign Key Handling & Control
+ - **Recursive Type Inheritance**: Foreign key columns now automatically inherit the exact SQL type of their referenced primary keys (e.g., `UUID` -> `UUID`), ensuring perfect compatibility even in complex inheritance or self-referencing relationships.
+ - **Custom Foreign Key Control**: Introduced the `foreignKey` option in `@Field` and `@Id` to allow specifying custom semantic names for constraints or disabling physical constraints (`false`) while maintaining logical references.
+ - **Deterministic Constraint Naming**: Standardized default foreign key naming to `` `fk_${tableName}_${columnName}` ``, ensuring uniqueness and predictability across the database.
+ - **Enhanced Schema Robustness**: Improved the schema generator's resilience against entities using circular dependencies or deep inheritance chains.
+ - **Express Middleware Fix**: Resolved an issue in `query.util.ts` where the query parser could crash when receiving array-based query parameters (e.g., `$where[]=1`), preventing correct filtering in Express applications.
 
  ## [3.7.5] - 2026-01-04
  ### Enhanced Type Inference & Default Value Comparison
