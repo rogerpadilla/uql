@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
- ## [3.7.6] - 2026-01-04
+ ## [3.7.7] - 2026-01-04
  ### Refined Foreign Key Handling & Control
  - **Recursive Type Inheritance**: Foreign key columns now automatically inherit the exact SQL type of their referenced primary keys (e.g., `UUID` -> `UUID`), ensuring perfect compatibility even in complex inheritance or self-referencing relationships.
  - **Custom Foreign Key Control**: Introduced the `foreignKey` option in `@Field` and `@Id` to allow specifying custom semantic names for constraints or disabling physical constraints (`false`) while maintaining logical references.
