@@ -106,6 +106,14 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
     expect(generator.getSqlType({ type: Boolean })).toBe('BOOLEAN');
     expect(generator.getSqlType({ type: Date })).toBe('TIMESTAMP');
     expect(generator.getSqlType({ type: BigInt })).toBe('BIGINT');
+    expect(generator.getSqlType({ type: 'uuid' })).toBe('UUID');
+    expect(generator.getSqlType({ type: 'json' })).toBe('JSON');
+    expect(generator.getSqlType({ type: 'jsonb' })).toBe('JSONB');
+    expect(generator.getSqlType({ type: 'vector' })).toBe('VECTOR');
+    // Test ternary branch where type !== field.type
+    expect(generator.getSqlType({ type: 'uuid' }, String)).toBe('UUID');
+    expect(generator.getSqlType({ type: 'json' }, String)).toBe('JSON');
+    expect(generator.getSqlType({ type: 'vector' }, String)).toBe('VECTOR');
     expect(generator.getSqlType({ type: 'unknown' as ColumnType })).toBe('VARCHAR(255)');
   });
 
@@ -229,6 +237,33 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       };
 
       const diff = generator.diffSchema(TypeCastEntity, currentSchema);
+      expect(diff).toBeUndefined();
+    });
+
+    it('should handle Postgres array type casts in default values', () => {
+      @Entity()
+      class ArrayCastEntity {
+        @Id() id?: number;
+        @Field({ type: 'jsonb', defaultValue: [] }) tags?: string[];
+      }
+
+      const currentSchema = {
+        name: 'ArrayCastEntity',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false, isPrimaryKey: true, isAutoIncrement: true, isUnique: false },
+          {
+            name: 'tags',
+            type: 'JSONB',
+            nullable: true,
+            defaultValue: "'[]'::jsonb[]",
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+      };
+
+      const diff = generator.diffSchema(ArrayCastEntity, currentSchema);
       expect(diff).toBeUndefined();
     });
 

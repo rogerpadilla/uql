@@ -292,29 +292,34 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     // Infer from TypeScript type
     const type = fieldType ?? field.type;
 
+    // Handle special types first
+    if (type === 'uuid' || field.type === 'uuid') {
+      return this.mapColumnType('uuid', field);
+    }
+
+    if (type === 'json' || type === 'jsonb' || field.type === 'json' || field.type === 'jsonb') {
+      const columnType = (type === 'json' || type === 'jsonb' ? type : field.type) as ColumnType;
+      return this.mapColumnType(columnType, field);
+    }
+
+    if (type === 'vector' || field.type === 'vector') {
+      return this.mapColumnType('vector', field);
+    }
+
     if (isNumericType(type)) {
       return field.precision ? this.mapColumnType('decimal', field) : this.mapColumnType('bigint', field);
     }
 
-    if (type === String || type === 'string') {
+    if (type === String) {
       return this.mapColumnType('varchar', field);
     }
 
-    if (type === Boolean || type === 'boolean') {
+    if (type === Boolean) {
       return this.getBooleanType();
     }
 
-    if (type === Date || type === 'date') {
+    if (type === Date) {
       return this.mapColumnType('timestamp', field);
-    }
-
-    // Handle special types
-    if (field.type === 'json' || field.type === 'jsonb') {
-      return this.mapColumnType(field.type as ColumnType, field);
-    }
-
-    if (field.type === 'vector') {
-      return this.mapColumnType('vector', field);
     }
 
     return this.mapColumnType('varchar', field);
@@ -538,7 +543,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
         if (s.toLowerCase() === 'null') return 'null';
         return s;
       }
-      return String(val);
+      return typeof val === 'object' ? JSON.stringify(val) : String(val);
     };
 
     return normalize(current) === normalize(desired);

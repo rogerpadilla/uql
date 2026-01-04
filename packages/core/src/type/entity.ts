@@ -91,12 +91,23 @@ export type ColumnType =
   | 'bigserial';
 
 /**
+ * Logical types for a field
+ */
+export type FieldType =
+  | StringConstructor
+  | NumberConstructor
+  | BooleanConstructor
+  | DateConstructor
+  | BigIntConstructor
+  | ColumnType;
+
+/**
  * Configurable options for a field
  */
 export type FieldOptions = {
   readonly name?: string;
   readonly isId?: true;
-  readonly type?: any;
+  readonly type?: FieldType;
   readonly reference?: EntityGetter;
   readonly virtual?: QueryRaw;
   readonly updatable?: boolean;
@@ -111,29 +122,29 @@ export type FieldOptions = {
    */
   readonly columnType?: ColumnType;
   /**
-   * Column length (e.g., VARCHAR(100)). Defaults to 255 for varchar.
+   * Field length (e.g. for varchar)
    */
   readonly length?: number;
   /**
-   * Precision for decimal/numeric types.
+   * Field precision (e.g. for decimal)
    */
   readonly precision?: number;
   /**
-   * Scale for decimal/numeric types.
+   * Field scale (e.g. for decimal)
    */
   readonly scale?: number;
   /**
-   * Whether the column allows NULL values. Defaults to true except for ID fields.
+   * Whether the field is nullable
    */
   readonly nullable?: boolean;
   /**
-   * Whether the column has a UNIQUE constraint.
+   * Whether the field is unique
    */
   readonly unique?: boolean;
   /**
-   * Default value for the column.
+   * Default value for the column
    */
-  readonly defaultValue?: Scalar | null;
+  readonly defaultValue?: any;
   /**
    * Whether the column is auto-incrementing (for integer IDs).
    */

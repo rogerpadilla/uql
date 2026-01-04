@@ -102,6 +102,28 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | `@OneToMany`  | Defines a one-to-many relationship.                                            |
 | `@ManyToOne`  | Defines a many-to-one relationship.                                            |
 | `@ManyToMany` | Defines a many-to-many relationship.                                           |
+| `@Virtual()`  | Defines a read-only field calculated via SQL (see Advanced).                    |
+
+### Type Abstraction: Logical vs. Physical
+
+UQL separates the **intent** of your data from its **storage**. Both properties are **optional**; if omitted, UQL performs a *best-effort inference* using the TypeScript types from your class (provided `emitDecoratorMetadata` is enabled).
+
+| Property | Purpose | Values |
+| :--- | :--- | :--- |
+| **`type`** | **Logical Type** (Abstraction). Used for runtime behavior and automatic SQL mapping. | `String`, `Number`, `Boolean`, `Date`, `BigInt`, or semantic strings: `'uuid'`, `'json'`, `'vector'`. |
+| **`columnType`** | **Physical Type** (Implementation). **Highest Priority**. Bypasses UQL's inference for exact SQL control. | Raw SQL types: `'varchar(100)'`, `'decimal(10,2)'`, `'smallint'`, etc. |
+
+```ts
+@Field() // Inference: Maps to TEXT (Postgres) or VARCHAR(255) (MySQL) automatically.
+name?: string;
+
+@Field({ type: 'uuid' }) // Recommended: Cross-database abstraction for UUIDs.
+id?: string;
+
+@Field({ columnType: 'varchar(500)' }) // Control: Explicitly forces a specific SQL type.
+bio?: string;
+```
+
 
 &nbsp;
 

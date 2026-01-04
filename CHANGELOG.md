@@ -4,9 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+ ## [3.7.5] - 2026-01-04
+ ### Enhanced Type Inference & Default Value Comparison
+ - **Strict Field Type Safety**: Standardized the `type` property in `@Field` and `@Id` to use a strict union of global constructors (`String`, `Number`, etc.) and verified `ColumnType` strings.
+ - **Removed String Aliases**: Deprecated and removed support for informal string aliases like `'string'`, `'number'`, `'boolean'`, and `'date'` in the `type` property. Developers should use the corresponding TypeScript constructors for logical mapping.
+ - **Semantic Type Inference**: Added robust support for `'uuid'`, `'json'`, `'jsonb'`, and `'vector'` as valid semantic values for the `type` property. This ensures correct cross-database SQL mapping even when specified as semantic strings.
+
  ## [3.7.4] - 2026-01-04
  ### Enhanced Schema Generation & Type Safety
  - **Fixed Foreign Key Type Mismatch**: Resolved an issue where foreign key columns could default to incompatible types (e.g., `TEXT`) when referencing primary keys of a different type (e.g., `UUID`). Foreign keys now automatically inherit the exact SQL type of the column they reference.
+ - **Improved Default Value Comparison**: Standardized default value normalization to handle complex PostgreSQL type casts (e.g., `'[]'::jsonb[]`) and accurately compare object/array defaults using `JSON.stringify`, effectively eliminating "phantom diffs."
  - **Improved Primary Key Inference**: String-based primary keys (including UUIDs) no longer incorrectly default to `BIGINT` auto-incrementing serials. The ORM now only applies auto-increment logic to numeric types (`number`, `BigInt`) unless explicitly configured via `@Id({ autoIncrement: true })`.
  - **Architectural Refactor**: Consolidated schema generation to use a unified `fieldToColumnSchema` path for both initial creation and synchronization, ensuring perfect structural consistency and eliminating "phantom diffs".
  - **Reusable Field Utilities**: Created `field.util.ts` for centralized logic regarding auto-increment and numeric type checks, improving maintainability across the ORM.

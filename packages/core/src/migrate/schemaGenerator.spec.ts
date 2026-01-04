@@ -195,9 +195,7 @@ describe('SqliteSchemaGenerator', () => {
 describe('AbstractSchemaGenerator.isAutoIncrement', () => {
   it('should return true for numeric primary keys', () => {
     expect(isAutoIncrement({ type: Number }, true)).toBe(true);
-    expect(isAutoIncrement({ type: 'number' }, true)).toBe(true);
     expect(isAutoIncrement({ type: BigInt }, true)).toBe(true);
-    expect(isAutoIncrement({ type: 'bigint' }, true)).toBe(true);
     expect(isAutoIncrement({ type: Number, autoIncrement: true }, true)).toBe(true);
   });
 

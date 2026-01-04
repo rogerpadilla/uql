@@ -4,7 +4,7 @@ import type { FieldOptions } from '../type/index.js';
  * Checks if a field type is numeric (Number or BigInt)
  */
 export function isNumericType(type: any): boolean {
-  return type === Number || type === 'number' || type === BigInt || type === 'bigint';
+  return type === Number || type === BigInt;
 }
 
 /**
