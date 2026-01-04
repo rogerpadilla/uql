@@ -1,3 +1,20 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.7.5](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.4...@uql/core@3.7.5) (2026-01-04)
+
+
+### Features
+
+* enhance type inference for field definitions, improve default value comparison, and standardize field type safety ([1fc8203](https://github.com/rogerpadilla/uql/commit/1fc820393d7d65fcc9e12a127243a46cff83875e))
+* Standardize field type inference with explicit `FieldType` and enhance default value comparison for schema generation. ([5a6bbbd](https://github.com/rogerpadilla/uql/commit/5a6bbbd1ae2e97708df580b89efeb51be41f1649))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
