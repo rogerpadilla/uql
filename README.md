@@ -24,28 +24,28 @@ const users = await querier.findMany(User, {
 
 ## Why UQL?
 
-| Feature | **UQL** | Traditional ORMs |
-| :--- | :--- | :--- |
-| **API** | **Unified & Intuitive**: Same syntax for SQL & NoSQL. | Fragmented: SQL and Mongo feel like different worlds. |
-| **Safety** | **Deep Type-Safety**: Validates relations & operators at any depth. | Surface-level: Often loses types in complex joins. |
-| **Syntax** | **Serializable JSON**: Pure data, perfect for APIs/Websockets. | Method-Chaining: Hard to transport over the wire. |
-| **Efficiency** | **Sticky Connections**: Minimal overhead, human-readable SQL. | Heavy: Often generates "SQL Soup" that's hard to debug. |
+| Feature              | **UQL**                                                             | Traditional ORMs                                        |
+| :------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------ |
+| **API**        | **Unified & Intuitive**: Same syntax for SQL & NoSQL.               | Fragmented: SQL and Mongo feel like different worlds.   |
+| **Safety**     | **Deep Type-Safety**: Validates relations & operators at any depth. | Surface-level: Often loses types in complex joins.      |
+| **Syntax**     | **Serializable JSON**: Pure data, perfect for APIs/Websockets.      | Method-Chaining: Hard to transport over the wire.       |
+| **Efficiency** | **Sticky Connections**: Minimal overhead, human-readable SQL.       | Heavy: Often generates "SQL Soup" that's hard to debug. |
 
 &nbsp;
 
 ## Features
 
-| Feature | Description |
-| :--- | :--- |
-| **[Context-Aware Queries](https://uql.app/querying/relations)** | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth. |
-| **Serializable JSON** | 100% valid JSON queries for easy transport over HTTP/Websockets. |
-| **Unified Dialects** | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more. |
-| **Naming Strategies** | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`. |
-| **Smart SQL Engine** | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`. |
-| **Thread-Safe by Design** | Centralized task queue and `@Serialized()` decorator prevent race conditions. |
-| **Declarative Transactions** | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI. |
-| **[Modern & Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
-| **Structured Logging** | Professional-grade monitoring with slow-query detection and colored output. |
+| Feature                                                                  | Description                                                                                                                     |
+| :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                  |
+| **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
+| **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
+| **Naming Strategies**                                              | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
+| **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
+| **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
+| **Declarative Transactions**                                       | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Modern &amp; Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
+| **Structured Logging**                                             | Professional-grade monitoring with slow-query detection and colored output.                                                     |
 
 &nbsp;
 
@@ -56,16 +56,19 @@ Install the core package and the driver for your database:
 ```sh
 # Core
 npm install @uql/core       # or bun add / pnpm add
-
-# Potential Drivers (choose only ONE!)
-npm install pg              # PostgreSQL / Neon / Cockroach / Yugabyte
-npm install mysql2          # MySQL / TiDB / Aurora
-npm install mariadb         # MariaDB
-npm install better-sqlite3  # SQLite
-npm install @libsql/client  # LibSQL / Turso
-npm install mongodb         # MongoDB
-# Cloudflare D1 uses native bindings (no extra driver needed)
 ```
+
+### Potential Drivers (choose according to your database)
+
+| Database | Command |
+| :--- | :--- |
+| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg` |
+| **MySQL** (incl. TiDB, Aurora) | `npm install mysql2` |
+| **MariaDB** | `npm install mariadb` |
+| **SQLite** | `npm install better-sqlite3` |
+| **LibSQL** (incl. Turso) | `npm install @libsql/client` |
+| **MongoDB** | `npm install mongodb` |
+| **Cloudflare D1** | _Native (no driver needed)_ |
 
 ### TypeScript Configuration
 
@@ -82,7 +85,7 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 }
 ```
 
-&nbsp;
+&nbsp;**Note:** `ES2020+` will work for `target` as well.
 
 ## 2. Define the Entities
 
@@ -90,12 +93,12 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 
 ### Core Decorators
 
-| Decorator | Purpose |
-| :--- | :--- |
-| `@Entity()` | Marks a class as a database table/collection. |
-| `@Id()` | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()` | Standard column with options for indexing, uniqueness, and custom comments. |
-| `@Relation()` | (OneToOne, OneToMany, ManyToOne, ManyToMany) Defines type-safe relationships. |
+| Decorator       | Purpose                                                                        |
+| :-------------- | :----------------------------------------------------------------------------- |
+| `@Entity()`   | Marks a class as a database table/collection.                                  |
+| `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
+| `@Field()`    | Standard column with options for indexing, uniqueness, and custom comments.    |
+| `@Relation()` | (OneToOne, OneToMany, ManyToOne, ManyToMany) Defines type-safe relationships.  |
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -234,6 +237,7 @@ try {
 ```
 
 **Generated SQL (PostgreSQL):**
+
 ```sql
 SELECT "User"."name", "profile"."id" AS "profile_id", "profile"."bio" AS "profile_bio"
 FROM "User"
@@ -271,6 +275,7 @@ export class Item {
 UQL is one of the few ORMs with a **centralized serialization engine**. Transactions are guaranteed to be race-condition free.
 
 #### Option A: Manual (Functional)
+
 ```ts
 const result = await pool.transaction(async (querier) => {
   const user = await querier.findOne(User, { $where: { email: '...' } });
@@ -279,6 +284,7 @@ const result = await pool.transaction(async (querier) => {
 ```
 
 #### Option B: Declarative (Decorators)
+
 Perfect for **NestJS** and other Dependency Injection frameworks. Use `@Transactional()` to wrap a method and `@InjectQuerier()` to access the managed connection.
 
 ```ts
@@ -316,29 +322,14 @@ export class UserRepository extends GenericRepository<User> {
 }
 ```
 
-### Express Middleware
-
-UQL provides built-in middleware to attach a querier to the request lifecycle, ensuring automatic cleanup.
-
-```ts
-import express from 'express';
-import { querierMiddleware } from '@uql/core/express';
-
-const app = express();
-app.use(querierMiddleware(pool));
-
-app.get('/users', async (req, res) => {
-  const users = await req.querier.findMany(User);
-  res.json(users);
-});
-```
-
 &nbsp;
 
 ## 6. Migrations & Synchronization
 
 ### 1. Unified Configuration
+
 Ideally, use the same `uql.config.ts` for your application bootstrap and the CLI:
+
 ```ts
 // uql.config.ts
 import type { Config } from '@uql/core';
@@ -353,6 +344,7 @@ export default {
 **Why?** Using a single config for both your app and the CLI is recommended for consistency. It prevents bugs where your runtime uses one naming strategy (e.g. `camelCase`) but your migrations use another (e.g. `snake_case`), or where the CLI isn't aware of all your entities. It enforces a Single Source of Truth for your database connection and schema.
 
 ### 2. Manage via CLI
+
 ```bash
 # Generate from entities
 npx uql-migrate generate:entities initial_schema
@@ -365,7 +357,9 @@ npx uql-migrate up --config ./configs/uql.config.ts
 ```
 
 ### 3. AutoSync (Development)
+
 Keep your schema in sync without manual migrations. It safely adds missing tables/columns.
+
 ```ts
 const migrator = new Migrator(pool);
 await migrator.autoSync({ logging: true });
@@ -379,13 +373,13 @@ UQL features a professional-grade, structured logging system designed for high v
 
 ### Log Levels
 
-| Level | Description |
-| :--- | :--- |
-| `query` | **Standard Queries**: Beautifully formatted SQL/Command logs with execution time. |
-| `slowQuery` | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold. |
-| `error` / `warn` | **System Health**: Detailed error traces and potential issue warnings. |
-| `migration` | **Audit Trail**: Step-by-step history of schema changes. |
-| `schema` / `info` | **Lifecycle**: Informative logs about ORM initialization and sync events. |
+| Level                 | Description                                                                             |
+| :-------------------- | :-------------------------------------------------------------------------------------- |
+| `query`             | **Standard Queries**: Beautifully formatted SQL/Command logs with execution time. |
+| `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold.    |
+| `error` / `warn`  | **System Health**: Detailed error traces and potential issue warnings.            |
+| `migration`         | **Audit Trail**: Step-by-step history of schema changes.                          |
+| `schema` / `info` | **Lifecycle**: Informative logs about ORM initialization and sync events.         |
 
 ### Visual Feedback
 
@@ -402,10 +396,11 @@ error: Failed to connect to database: Connection timeout
 &nbsp;
 
 Learn more about UQL at [uql.app](https://uql.app) for details on:
+
 - [Complex Logical Operators](https://uql.app/querying/logical-operators)
 - [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying/relations)
-- [Soft Deletes & Auditing](https://uql.app/entities/soft-delete)
-- [Database Migration & Syncing](https://uql.app/migrations)
+- [Soft Deletes &amp; Auditing](https://uql.app/entities/soft-delete)
+- [Database Migration &amp; Syncing](https://uql.app/migrations)
 
 ---
 
