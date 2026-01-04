@@ -3,9 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.7.3](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.2...@uql/core@3.7.3) (2026-01-04)
+## [3.7.4](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.3...@uql/core@3.7.4) (2026-01-04)
 
-**Note:** Version bump only for package @uql/core
+
+### Features
+
+* Enhance schema generation with improved foreign key type inference, refined primary key auto-increment logic, and consolidated field utilities. ([eb78fba](https://github.com/rogerpadilla/uql/commit/eb78fba389eb9f998953eb2ccd9addaa5f825df5))
 
 
 
@@ -17,7 +20,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [3.7.3] - 2026-01-04
+ ## [3.7.4] - 2026-01-04
+ ### Enhanced Schema Generation & Type Safety
+ - **Fixed Foreign Key Type Mismatch**: Resolved an issue where foreign key columns could default to incompatible types (e.g., `TEXT`) when referencing primary keys of a different type (e.g., `UUID`). Foreign keys now automatically inherit the exact SQL type of the column they reference.
+ - **Improved Primary Key Inference**: String-based primary keys (including UUIDs) no longer incorrectly default to `BIGINT` auto-incrementing serials. The ORM now only applies auto-increment logic to numeric types (`number`, `BigInt`) unless explicitly configured via `@Id({ autoIncrement: true })`.
+ - **Architectural Refactor**: Consolidated schema generation to use a unified `fieldToColumnSchema` path for both initial creation and synchronization, ensuring perfect structural consistency and eliminating "phantom diffs".
+ - **Reusable Field Utilities**: Created `field.util.ts` for centralized logic regarding auto-increment and numeric type checks, improving maintainability across the ORM.
+ - **Safety Fix**: Refined `generateColumnDefinitionFromSchema` to safely strip redundant `PRIMARY KEY` constraints during `ALTER TABLE` operations, avoiding "Duplicate Primary Key" errors while maintaining auto-incrementing properties.
+ - **Expanded Unit Tests**: Added comprehensive branch testing for field properties and type inference to ensure long-term stability across all 8 supported databases.
+
+ ## [3.7.3] - 2026-01-04
 ### Robust Schema Synchronization
 - **Safe AutoSync**: Primary keys are now immune to automated alterations, preventing dangerous schema changes and ensuring database stability.
 - **Modern Primary Keys**: Standardized on **64-bit** auto-increment primary keys across all SQL dialects to align with TypeScript's `number` type:
