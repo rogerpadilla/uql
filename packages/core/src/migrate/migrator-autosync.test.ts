@@ -269,6 +269,66 @@ for (const db of databases) {
 
         await cleanupTable(tableName);
       });
+
+      it('should handle field rename safely (add new, keep old)', async () => {
+        @Entity()
+        class AutoSyncRenameTest {
+          @Id() id?: number;
+          @Field() newName?: string;
+        }
+
+        const tableName = 'AutoSyncRenameTest';
+        await cleanupTable(tableName);
+
+        // Create table with "oldName"
+        await querier.run(
+          db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('oldName')} ${db.textType}`),
+        );
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncRenameTest] });
+
+        // Run autoSync (safe mode is default)
+        await migrator.autoSync({ logging: true });
+
+        const schema = await introspector.getTableSchema(tableName);
+        expect(schema).toBeDefined();
+        // Should have 3 columns: id, oldName (kept), newName (added)
+        expect(schema.columns).toHaveLength(3);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'newName', 'oldName']);
+
+        await cleanupTable(tableName);
+      });
+
+      it('should drop old column and add new one when renaming with safe: false', async () => {
+        @Entity()
+        class AutoSyncUnsafeRenameTest {
+          @Id() id?: number;
+          @Field() newName?: string;
+        }
+
+        const tableName = 'AutoSyncUnsafeRenameTest';
+        await cleanupTable(tableName);
+
+        // Create table with "oldName"
+        await querier.run(
+          db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('oldName')} ${db.textType}`),
+        );
+
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeRenameTest] });
+
+        // Run autoSync with safe: false AND drop: true (explicit drop required)
+        await migrator.autoSync({ logging: true, safe: false, drop: true });
+
+        const schema = await introspector.getTableSchema(tableName);
+        expect(schema).toBeDefined();
+        // Should have 2 columns: id, newName. oldName should be GONE.
+        expect(schema.columns).toHaveLength(2);
+        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'newName']);
+
+        // Verify data loss (implicit, since column is gone)
+
+        await cleanupTable(tableName);
+      });
     });
   });
 }
