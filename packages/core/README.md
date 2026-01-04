@@ -106,7 +106,7 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 
 ### Type Abstraction: Logical vs. Physical
 
-UQL separates the **intent** of your data from its **storage**. Both properties are **optional**; if omitted, UQL performs a best-effort inference using the TypeScript types from your class (provided `emitDecoratorMetadata` is enabled).
+UQL separates the **intent** of your data from its **storage**. Both properties are **optional**; if omitted, UQL performs a *best-effort inference* using the TypeScript types from your class (provided `emitDecoratorMetadata` is enabled).
 
 | Property | Purpose | Values |
 | :--- | :--- | :--- |
@@ -123,6 +123,7 @@ id?: string;
 @Field({ columnType: 'varchar(500)' }) // Control: Explicitly forces a specific SQL type.
 bio?: string;
 ```
+
 
 &nbsp;
 
