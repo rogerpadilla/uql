@@ -13,7 +13,7 @@ import type {
   TableSchema,
   Type,
 } from '../type/index.js';
-import { escapeSqlId, getKeys } from '../util/index.js';
+import { escapeSqlId, getKeys, isAutoIncrement, isNumericType } from '../util/index.js';
 
 /**
  * Abstract base class for SQL schema generation
@@ -157,51 +157,31 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
    * Generate a single column definition
    */
   public generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
-    const columnName = this.escapeId(this.resolveColumnName(fieldKey, field));
-    const isId = field.isId === true;
-    const isPrimaryKey = isId && meta.id === fieldKey;
+    const column = this.fieldToColumnSchema(fieldKey, field, meta);
+    const tableName = this.resolveTableName(meta.entity, meta);
 
-    // Determine SQL type
-    let sqlType: string;
-    if (isPrimaryKey && field.autoIncrement !== false && !field.onInsert) {
-      // Auto-increment primary key
-      sqlType = this.serialPrimaryKeyType;
-    } else {
-      sqlType = this.getSqlType(field, field.type);
-    }
-
-    let definition = `${columnName} ${sqlType}`;
+    const sqlType = column.isAutoIncrement ? this.serialPrimaryKeyType : column.type;
+    let definition = `${this.escapeId(column.name)} ${sqlType}`;
 
     // PRIMARY KEY constraint (for non-serial types)
-    if (isPrimaryKey && !sqlType.includes('PRIMARY KEY')) {
+    if (column.isPrimaryKey && !sqlType.includes('PRIMARY KEY')) {
       definition += ' PRIMARY KEY';
     }
 
-    // NULL/NOT NULL
-    if (!isPrimaryKey) {
-      const nullable = field.nullable ?? true;
-      if (!nullable) {
-        definition += ' NOT NULL';
-      }
-    }
-
-    // UNIQUE constraint
-    if (field.unique && !isPrimaryKey) {
-      definition += ' UNIQUE';
+    // NULL/NOT NULL and UNIQUE
+    if (!column.isPrimaryKey) {
+      if (!column.nullable) definition += ' NOT NULL';
+      if (column.isUnique) definition += ' UNIQUE';
     }
 
     // DEFAULT value
-    if (field.defaultValue !== undefined) {
-      definition += ` DEFAULT ${this.formatDefaultValue(field.defaultValue)}`;
+    if (column.defaultValue !== undefined) {
+      definition += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
     }
 
     // COMMENT (if supported)
-    if (field.comment) {
-      definition += this.generateColumnComment(
-        this.resolveTableName(meta.entity, meta),
-        this.resolveColumnName(fieldKey, field),
-        field.comment,
-      );
+    if (column.comment) {
+      definition += this.generateColumnComment(tableName, column.name, column.comment);
     }
 
     return definition;
@@ -215,8 +195,15 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     options: { includePrimaryKey?: boolean; includeUnique?: boolean } = {},
   ): string {
     const { includePrimaryKey = true, includeUnique = true } = options;
-    const columnName = this.escapeId(column.name);
-    let type = column.type;
+    const isAutoIncrement = column.isAutoIncrement && !column.type.includes('IDENTITY');
+
+    let type = isAutoIncrement && this.serialPrimaryKeyType ? this.serialPrimaryKeyType : column.type;
+
+    // Some serial types (e.g. Postgres IDENTITY or MySQL AUTO_INCREMENT) include "PRIMARY KEY"
+    // in their definition string. We strip it if includePrimaryKey is false to avoid double PK errors.
+    if (!includePrimaryKey) {
+      type = type.replace(/\s+PRIMARY\s+KEY/i, '');
+    }
 
     if (column.length && !type.includes('(')) {
       type = `${type}(${column.length})`;
@@ -228,9 +215,9 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       }
     }
 
-    let definition = `${columnName} ${type}`;
+    let definition = `${this.escapeId(column.name)} ${type}`;
 
-    if (includePrimaryKey && column.isPrimaryKey) {
+    if (includePrimaryKey && column.isPrimaryKey && !type.includes('PRIMARY KEY')) {
       definition += ' PRIMARY KEY';
     }
 
@@ -288,26 +275,24 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     return constraints;
   }
-
-  getSqlType(field: FieldOptions, fieldType?: unknown): string {
+  public getSqlType(field: FieldOptions, fieldType?: unknown): string {
     // Use explicit column type if specified
     if (field.columnType) {
       return this.mapColumnType(field.columnType, field);
     }
 
-    // Handle special types
-    if (field.type === 'json' || field.type === 'jsonb') {
-      return this.mapColumnType(field.type as ColumnType, field);
-    }
-
-    if (field.type === 'vector') {
-      return this.mapColumnType('vector', field);
+    // Inherit type from referenced field if applicable
+    if (field.reference) {
+      const refEntity = field.reference();
+      const refMeta = getMeta(refEntity);
+      const refIdField = refMeta.fields[refMeta.id];
+      return this.getSqlType({ ...refIdField, reference: undefined }, refIdField.type);
     }
 
     // Infer from TypeScript type
     const type = fieldType ?? field.type;
 
-    if (type === Number || type === 'number') {
+    if (isNumericType(type)) {
       return field.precision ? this.mapColumnType('decimal', field) : this.mapColumnType('bigint', field);
     }
 
@@ -323,11 +308,15 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       return this.mapColumnType('timestamp', field);
     }
 
-    if (type === BigInt || type === 'bigint') {
-      return this.mapColumnType('bigint', field);
+    // Handle special types
+    if (field.type === 'json' || field.type === 'jsonb') {
+      return this.mapColumnType(field.type as ColumnType, field);
     }
 
-    // Default to varchar
+    if (field.type === 'vector') {
+      return this.mapColumnType('vector', field);
+    }
+
     return this.mapColumnType('varchar', field);
   }
 
@@ -448,8 +437,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
    * Convert field options to ColumnSchema
    */
   protected fieldToColumnSchema<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): ColumnSchema {
-    const isId = field.isId === true;
-    const isPrimaryKey = isId && meta.id === fieldKey;
+    const isPrimaryKey = field.isId === true && meta.id === fieldKey;
 
     return {
       name: this.resolveColumnName(fieldKey, field),
@@ -457,7 +445,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       nullable: field.nullable ?? !isPrimaryKey,
       defaultValue: field.defaultValue,
       isPrimaryKey,
-      isAutoIncrement: isPrimaryKey && field.autoIncrement !== false && !field.onInsert,
+      isAutoIncrement: isAutoIncrement(field, isPrimaryKey),
       isUnique: field.unique ?? false,
       length: field.length,
       precision: field.precision,

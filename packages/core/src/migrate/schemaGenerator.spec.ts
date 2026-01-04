@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
+import type { ColumnType } from '../type/index.js';
+import { isAutoIncrement } from '../util/index.js';
 import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
 import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
 import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
+import { AbstractSchemaGenerator } from './schemaGenerator.js';
 
 // Test entities
 @Entity()
@@ -186,5 +189,148 @@ describe('SqliteSchemaGenerator', () => {
     expect(generator.getSqlType({ columnType: 'int' }, undefined)).toBe('INTEGER');
     expect(generator.getSqlType({ columnType: 'bigint' }, undefined)).toBe('INTEGER');
     expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('INTEGER');
+  });
+});
+
+describe('AbstractSchemaGenerator.isAutoIncrement', () => {
+  it('should return true for numeric primary keys', () => {
+    expect(isAutoIncrement({ type: Number }, true)).toBe(true);
+    expect(isAutoIncrement({ type: 'number' }, true)).toBe(true);
+    expect(isAutoIncrement({ type: BigInt }, true)).toBe(true);
+    expect(isAutoIncrement({ type: 'bigint' }, true)).toBe(true);
+    expect(isAutoIncrement({ type: Number, autoIncrement: true }, true)).toBe(true);
+  });
+
+  it('should return false if not a primary key', () => {
+    expect(isAutoIncrement({ type: Number }, false)).toBe(false);
+  });
+
+  it('should return false for non-numeric types', () => {
+    expect(isAutoIncrement({ type: String }, true)).toBe(false);
+    expect(isAutoIncrement({ type: Date }, true)).toBe(false);
+  });
+
+  it('should return false if autoIncrement is explicitly false', () => {
+    expect(isAutoIncrement({ type: Number, autoIncrement: false }, true)).toBe(false);
+  });
+
+  it('should return false if onInsert is present', () => {
+    expect(isAutoIncrement({ type: Number, onInsert: () => 1 }, true)).toBe(false);
+  });
+
+  it('should return false if columnType is explicitly set', () => {
+    expect(isAutoIncrement({ type: Number, columnType: 'int' }, true)).toBe(false);
+  });
+});
+
+describe('AbstractSchemaGenerator.coverage', () => {
+  class MockGenerator extends AbstractSchemaGenerator {
+    protected serialPrimaryKeyType = 'SERIAL PRIMARY KEY';
+    mapColumnType(columnType: ColumnType): string {
+      return columnType.toUpperCase();
+    }
+    getBooleanType(): string {
+      return 'BOOLEAN';
+    }
+    generateAlterColumnStatements(): string[] {
+      return [];
+    }
+    generateColumnComment(): string {
+      return '';
+    }
+  }
+  const generator = new MockGenerator();
+
+  it('should generate DROP INDEX (base)', () => {
+    expect(generator.generateDropIndex('users', 'idx_email')).toBe('DROP INDEX IF EXISTS `idx_email`;');
+  });
+
+  it('should handle generateColumnDefinitionFromSchema for manual PK', () => {
+    const col: any = { name: 'id', type: 'INT', isPrimaryKey: true, nullable: false };
+    const sql = generator.generateColumnDefinitionFromSchema(col);
+    expect(sql).toContain('INT PRIMARY KEY');
+  });
+
+  it('should handle defaultValue in generateColumnDefinition', () => {
+    @Entity()
+    class TestDefault {
+      @Id() id: number;
+      @Field({ defaultValue: 'active' }) status: string;
+    }
+    const sql = generator.generateCreateTable(TestDefault);
+    expect(sql).toContain("`status` VARCHAR DEFAULT 'active'");
+  });
+
+  it('should normalize non-string defaults', () => {
+    @Entity()
+    class NumberDefault {
+      @Id() id: number;
+      @Field({ defaultValue: 123 }) val: number;
+    }
+    const current = {
+      name: 'NumberDefault',
+      columns: [
+        {
+          name: 'id',
+          type: 'SERIAL PRIMARY KEY',
+          isPrimaryKey: true,
+          isAutoIncrement: true,
+          nullable: false,
+          isUnique: false,
+        },
+        {
+          name: 'val',
+          type: 'BIGINT',
+          defaultValue: 123,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          nullable: true,
+          isUnique: false,
+        },
+      ],
+    };
+    const diff = generator.diffSchema(NumberDefault, current as any);
+    expect(diff).toBeUndefined();
+  });
+
+  it('should normalize boolean defaults', () => {
+    @Entity()
+    class BoolDefault {
+      @Id() id: number;
+      @Field({ defaultValue: true }) val: boolean;
+    }
+    const current = {
+      name: 'BoolDefault',
+      columns: [
+        {
+          name: 'id',
+          type: 'SERIAL PRIMARY KEY',
+          isPrimaryKey: true,
+          isAutoIncrement: true,
+          nullable: false,
+          isUnique: false,
+        },
+        {
+          name: 'val',
+          type: 'BOOLEAN',
+          defaultValue: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          nullable: true,
+          isUnique: false,
+        },
+      ],
+    };
+    const diff = generator.diffSchema(BoolDefault, current as any);
+    expect(diff).toBeUndefined();
+  });
+
+  it('should handle numeric/decimal columnType (Postgres)', () => {
+    const pg = new PostgresSchemaGenerator();
+    expect(pg.mapColumnType('numeric', {})).toBe('NUMERIC');
+    expect(pg.mapColumnType('decimal', { precision: 10 })).toBe('NUMERIC(10)');
+    expect(pg.mapColumnType('decimal', { precision: 10, scale: 2 })).toBe('NUMERIC(10, 2)');
+    expect(pg.mapColumnType('int', {})).toBe('INTEGER');
+    expect(pg.mapColumnType('smallint', {})).toBe('SMALLINT');
   });
 });

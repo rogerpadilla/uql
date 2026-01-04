@@ -37,7 +37,7 @@ const users = await querier.findMany(User, {
 
 | Feature                                                                  | Description                                                                                                                     |
 | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                   |
+| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                    |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
 | **Naming Strategies**                                              | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
@@ -93,15 +93,15 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 
 ### Core Decorators
 
-| Decorator        | Purpose                                                                        |
-| :--------------- | :----------------------------------------------------------------------------- |
-| `@Entity()`    | Marks a class as a database table/collection.                                  |
-| `@Id()`        | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()`     | Standard column. Use `{ reference: ... }` for Foreign Keys.                    |
-| `@OneToOne`    | Defines a one-to-one relationship.                                             |
-| `@OneToMany`   | Defines a one-to-many relationship.                                            |
-| `@ManyToOne`   | Defines a many-to-one relationship.                                            |
-| `@ManyToMany`  | Defines a many-to-many relationship.                                           |
+| Decorator       | Purpose                                                                        |
+| :-------------- | :----------------------------------------------------------------------------- |
+| `@Entity()`   | Marks a class as a database table/collection.                                  |
+| `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
+| `@Field()`    | Standard column. Use `{ reference: ... }` for Foreign Keys.                  |
+| `@OneToOne`   | Defines a one-to-one relationship.                                             |
+| `@OneToMany`  | Defines a one-to-many relationship.                                            |
+| `@ManyToOne`  | Defines a many-to-one relationship.                                            |
+| `@ManyToMany` | Defines a many-to-many relationship.                                           |
 
 &nbsp;
 
@@ -213,8 +213,8 @@ import { User, Profile, Post } from './entities';
 export const pool = new PgQuerierPool(
   { host: 'localhost', database: 'uql_app', max: 10 },
   {
-    logger: true,
-    slowQueryThreshold: 200,
+    logger: ['error', 'warn', 'migration'],
+    slowQueryThreshold: 1000,
     namingStrategy: new SnakeCaseNamingStrategy()
   }
 );
