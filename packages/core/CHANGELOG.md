@@ -3,22 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.7.6](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.5...@uql/core@3.7.6) (2026-01-04)
+## [3.7.6](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.6...@uql/core@3.7.6) (2026-01-04)
 
 
 ### Bug Fixes
 
-* downgrade core package version ([54845fc](https://github.com/rogerpadilla/uql/commit/54845fc2a647846560785e9ac255ee60a3cf2529))
-
-
-### Features
-
-* Add explicit foreign key configuration and improve schema generation with new type utilities and robust query parsing ([c03d8da](https://github.com/rogerpadilla/uql/commit/c03d8da09696d04633022f62a7d1f881b1a67d7a))
-
-
-### Performance Improvements
-
-* Optimize field utility's isNumericType with Set for O(1) lookups and resolve strict type checking issues. ([52fffee](https://github.com/rogerpadilla/uql/commit/52fffee57ac7cde02ac4f1664d9147f3fbf1cdb5))
+* downgrade package version to 3.7.5 ([0083c0e](https://github.com/rogerpadilla/uql/commit/0083c0e0d5fef0b7e80c9bc7beb03cba5b420dcf))
 
 
 
