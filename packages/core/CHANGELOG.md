@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.7.8](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.7...@uql/core@3.7.8) (2026-01-04)
+
+
+### Features
+
+* Enhance `autoSync` safety by logging warnings for skipped column alterations and drops in safe mode. ([0f61662](https://github.com/rogerpadilla/uql/commit/0f61662f5b82a9947c5e3e7651789ee4e731259c))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
