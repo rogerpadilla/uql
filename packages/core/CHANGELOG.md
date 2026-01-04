@@ -1,25 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.6.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.6.0...@uql/core@3.6.1) (2026-01-04)
-
-
-### Bug Fixes
-
-* Correct README formatting and enhance user registration logic in UserService ([161fd73](https://github.com/rogerpadilla/uql/commit/161fd73ab11162c6534d51ed5b1b8fd7ca23f539))
-
-
-### Features
-
-* add CLI config flag, improve error handling, and introduce logging features; adjust README wording ([be50f29](https://github.com/rogerpadilla/uql/commit/be50f2951c26feb2c54c60b02b1733b3a5ca67a4))
-* Enhance migration CLI with new config and shared querier pool, and add transaction support to querier pools. ([c5b4ab4](https://github.com/rogerpadilla/uql/commit/c5b4ab466277b43a52219bd3f1ab8d073d23a6c1))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.

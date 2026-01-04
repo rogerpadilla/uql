@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
-import { User } from './test/index.js';
-import type { Querier, Repository } from './type/index.js';
+import type { Querier } from './type/index.js';
 
 describe('options', () => {
   beforeEach(() => {
@@ -13,13 +12,7 @@ describe('options', () => {
   });
 
   it('getQuerier', async () => {
-    const repositoryMock = {} as Repository<User>;
-
-    const querierMock = {
-      getRepository<T>(entity: T) {
-        return repositoryMock;
-      },
-    } as Querier;
+    const querierMock = {} as Querier;
 
     setQuerierPool({
       getQuerier: async () => querierMock,
@@ -33,9 +26,6 @@ describe('options', () => {
 
     const querier2 = await getQuerier();
     expect(querier2).toBe(querierMock);
-
-    const repository1 = await querier2.getRepository(User);
-    expect(repository1).toBe(repositoryMock);
 
     expect(getQuerierPool()).toBe(getQuerierPool());
   });

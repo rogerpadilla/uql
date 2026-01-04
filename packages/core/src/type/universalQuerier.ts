@@ -1,6 +1,6 @@
 import type { IdValue } from './entity.js';
 import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch } from './query.js';
-import type { UniversalRepository } from './repository.js';
+
 import type { Type } from './utility.js';
 
 /**
@@ -123,11 +123,4 @@ export interface UniversalQuerier {
    * @return the number of affected records
    */
   deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<unknown>;
-
-  /**
-   * get a repository for the given entity.
-   * @param entity the entity to get the repository for
-   * @return the repository
-   */
-  getRepository<E>(entity: Type<E>): UniversalRepository<E>;
 }

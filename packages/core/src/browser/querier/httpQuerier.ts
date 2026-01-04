@@ -2,8 +2,7 @@ import { getMeta } from '../../entity/index.js';
 import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from '../../type/index.js';
 import { kebabCase } from '../../util/index.js';
 import { get, patch, post, remove } from '../http/index.js';
-import type { ClientQuerier, ClientRepository, RequestFindOptions, RequestOptions } from '../type/index.js';
-import { GenericClientRepository } from './genericClientRepository.js';
+import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
 import { stringifyQuery } from './querier.util.js';
 
 export class HttpQuerier implements ClientQuerier {
@@ -70,10 +69,6 @@ export class HttpQuerier implements ClientQuerier {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(opts.softDelete ? { ...q, softDelete: opts.softDelete } : q);
     return remove<IdValue<E>[]>(`${basePath}${qs}`, opts);
-  }
-
-  getRepository<E>(entity: Type<E>): ClientRepository<E> {
-    return new GenericClientRepository(entity, this);
   }
 
   getBasePath<E>(entity: Type<E>) {

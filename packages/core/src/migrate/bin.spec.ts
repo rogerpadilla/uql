@@ -1,21 +1,62 @@
-import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import './bin.js'; // Import for coverage
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  main: vi.fn(),
+}));
+
+vi.mock('./cli.js', () => ({
+  main: mocks.main,
+}));
 
 describe('bin', () => {
-  const binTsPath = new URL('./bin.ts', import.meta.url).pathname;
+  const originalArgv = process.argv;
+  const originalExit = process.exit;
+  const originalConsoleError = console.error;
 
-  it('should run as a script', () => {
-    const result = spawnSync('bun', [binTsPath, '--help'], {
-      encoding: 'utf8',
-    });
-    expect(result.status).toBeDefined();
+  beforeEach(() => {
+    vi.resetModules();
+    process.argv = [...originalArgv];
+    // Mock argv[1] to match the file path so the script runs
+    process.argv[1] = new URL('./bin.ts', import.meta.url).pathname;
+    // Mock process.exit to prevent test process termination
+    process.exit = vi.fn() as any;
+    console.error = vi.fn();
   });
 
-  it('should verify main script detection logic', async () => {
-    // This is just to exercise the check in a way that doesn't trigger it
-    const isMain = import.meta.url === pathToFileURL(process.argv[1]).href;
-    expect(isMain).toBe(false); // In vitest it should be false
+  afterEach(() => {
+    process.argv = originalArgv;
+    process.exit = originalExit;
+    console.error = originalConsoleError;
+    vi.clearAllMocks();
+  });
+
+  it('should call main with arguments', async () => {
+    const binPath = new URL('./bin.ts', import.meta.url).pathname;
+    process.argv = ['node', binPath, 'arg1', 'arg2'];
+    mocks.main.mockResolvedValue(undefined);
+
+    await import('./bin.js');
+
+    expect(mocks.main).toHaveBeenCalledWith(['arg1', 'arg2']);
+  });
+
+  it('should handle errors from main', async () => {
+    const error = new Error('Test error');
+    mocks.main.mockRejectedValue(error);
+
+    await import('./bin.js');
+
+    // Wait for the promise chain to settle
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(console.error).toHaveBeenCalledWith(error);
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  it('should export logic for testing', async () => {
+    const bin = await import('./bin.js');
+    expect(bin._scriptLogic).toBeDefined();
+    expect(bin._scriptLogic.isMain).toBe(true);
   });
 });

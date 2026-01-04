@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { User } from '../test/index.js';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
-import { GenericClientRepository, HttpQuerier } from './querier/index.js';
+import { HttpQuerier } from './querier/index.js';
 import type { ClientQuerierPool } from './type/clientQuerierPool.js';
 
 describe('options', () => {
@@ -28,9 +27,6 @@ describe('options', () => {
 
     const querier2 = getQuerier();
     expect(querier2).toBe(querierMock);
-
-    const repository1 = querier2.getRepository(User);
-    expect(repository1).toBeInstanceOf(GenericClientRepository);
 
     expect(getQuerierPool()).toBe(getQuerierPool());
   });

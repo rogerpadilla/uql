@@ -11,7 +11,7 @@ import type {
   QueryUpdateResult,
   SqlQueryDialect,
 } from './query.js';
-import type { Repository } from './repository.js';
+
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -55,8 +55,6 @@ export interface Querier extends UniversalQuerier {
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
   deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-
-  getRepository<E>(entity: Type<E>): Repository<E>;
 
   /**
    * whether this querier is in a transaction or not.

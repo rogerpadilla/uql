@@ -44,11 +44,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.pool.end();
   }
 
-  shouldGetRepository() {
-    const repository = this.querier.getRepository(User);
-    expect(repository).toBeDefined();
-  }
-
   async shouldInsertMany() {
     const ids = await this.querier.insertMany(User, [
       {

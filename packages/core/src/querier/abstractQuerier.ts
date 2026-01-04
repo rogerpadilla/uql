@@ -1,5 +1,5 @@
 import { getMeta } from '../entity/decorator/index.js';
-import { GenericRepository } from '../repository/index.js';
+
 import type {
   ExtraOptions,
   IdValue,
@@ -14,7 +14,6 @@ import type {
   QueryUpdateResult,
   RelationKey,
   RelationValue,
-  Repository,
   Type,
 } from '../type/index.js';
 import {
@@ -310,10 +309,6 @@ export abstract class AbstractQuerier implements Querier {
       await this.updateOneById(entity, id, { [localField]: referenceId });
       return;
     }
-  }
-
-  getRepository<E>(entity: Type<E>): Repository<E> {
-    return new GenericRepository(entity, this);
   }
 
   abstract readonly hasOpenTransaction: boolean;

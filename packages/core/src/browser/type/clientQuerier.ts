@@ -1,5 +1,4 @@
 import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UniversalQuerier } from '../../type/index.js';
-import type { ClientRepository } from './clientRepository.js';
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientQuerier extends UniversalQuerier {
@@ -40,6 +39,4 @@ export interface ClientQuerier extends UniversalQuerier {
     qm: QuerySearch<E>,
     opts?: QueryOptions & RequestOptions,
   ): Promise<RequestSuccessResponse<IdValue<E>[]>>;
-
-  getRepository<E>(entity: Type<E>): ClientRepository<E>;
 }

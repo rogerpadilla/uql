@@ -214,7 +214,7 @@ export default {
 
 ## 4. Manipulate the Data
 
-UQL provides multiple ways to interact with your data. **Always ensure queriers are released back to the pool.**
+UQL provides a straightforward API to interact with your data. **Always ensure queriers are released back to the pool.**
 
 ```ts
 const querier = await pool.getQuerier();
@@ -301,30 +301,10 @@ export class UserService {
 
 &nbsp;
 
-## 5. Repositories & Web Integration
-
-### The Repository Pattern
-
-For better abstraction, use the `GenericRepository`. It encapsulates the querier logic and provides a cleaner API for your business logic.
-
-```ts
-import { GenericRepository } from '@uql/core';
-import { pool } from '../uql.config';
-
-export class UserRepository extends GenericRepository<User> {
-  constructor() {
-    super(User, pool);
-  }
-
-  async findActiveUsers() {
-    return this.findMany({ $where: { status: 'active' } });
-  }
-}
-```
 
 &nbsp;
 
-## 6. Migrations & Synchronization
+## 5. Migrations & Synchronization
 
 ### 1. Unified Configuration
 
