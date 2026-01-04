@@ -1,6 +1,7 @@
 import { getMeta } from '../entity/decorator/index.js';
 import { GenericRepository } from '../repository/index.js';
 import type {
+  ExtraOptions,
   IdValue,
   Key,
   Querier,
@@ -16,7 +17,14 @@ import type {
   Repository,
   Type,
 } from '../type/index.js';
-import { augmentWhere, clone, filterPersistableRelationKeys, filterRelationKeys, getKeys } from '../util/index.js';
+import {
+  augmentWhere,
+  clone,
+  filterPersistableRelationKeys,
+  filterRelationKeys,
+  getKeys,
+  LoggerWrapper,
+} from '../util/index.js';
 import { Serialized } from './decorator/index.js';
 
 /**
@@ -30,6 +38,11 @@ export abstract class AbstractQuerier implements Querier {
    * and ensuring that the database connection is used safely across concurrent calls.
    */
   private taskQueue: Promise<unknown> = Promise.resolve();
+  protected readonly logger: LoggerWrapper;
+
+  constructor(readonly extra?: ExtraOptions) {
+    this.logger = new LoggerWrapper(extra?.logger, extra?.slowQueryThreshold);
+  }
 
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q: QueryOne<E> = {}) {
     const meta = getMeta(entity);

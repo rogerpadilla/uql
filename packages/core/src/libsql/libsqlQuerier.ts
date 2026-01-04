@@ -9,20 +9,18 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
 
   constructor(
     readonly client: Client,
-    readonly extra?: ExtraOptions,
+    override readonly extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect(extra?.namingStrategy));
+    super(new SqliteDialect(extra?.namingStrategy), extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     const target = this.tx || this.client;
     const res = await target.execute({ sql: query, args: values as InValue[] });
     return res.rows as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     const target = this.tx || this.client;
     const res = await target.execute({ sql: query, args: values as InValue[] });
     return this.buildUpdateResult(res.rowsAffected, res.lastInsertRowid);

@@ -1,6 +1,7 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
+  ExtraOptions,
   Query,
   QueryConflictPaths,
   QueryOptions,
@@ -11,13 +12,16 @@ import type {
 } from '../type/index.js';
 import { clone, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
-import { Serialized } from './decorator/index.js';
+import { Log, Serialized } from './decorator/index.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
 
-  constructor(readonly dialect: AbstractSqlDialect) {
-    super();
+  constructor(
+    readonly dialect: AbstractSqlDialect,
+    override readonly extra?: ExtraOptions,
+  ) {
+    super(extra);
   }
 
   /**
@@ -31,11 +35,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected abstract internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
 
   @Serialized()
+  @Log()
   async all<T>(query: string, values?: unknown[]): Promise<T[]> {
     return this.internalAll<T>(query, values);
   }
 
   @Serialized()
+  @Log()
   async run(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
     return this.internalRun(query, values);
   }

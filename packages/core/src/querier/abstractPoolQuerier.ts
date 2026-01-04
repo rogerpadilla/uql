@@ -8,9 +8,9 @@ export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
   constructor(
     dialect: AbstractSqlDialect,
     protected readonly connect: () => Promise<C>,
-    protected readonly extra?: ExtraOptions,
+    override readonly extra?: ExtraOptions,
   ) {
-    super(dialect);
+    super(dialect, extra);
   }
 
   protected async lazyConnect() {

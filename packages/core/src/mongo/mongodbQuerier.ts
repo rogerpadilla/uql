@@ -1,6 +1,6 @@
 import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { getMeta } from '../entity/index.js';
-import { AbstractQuerier, Serialized } from '../querier/index.js';
+import { AbstractQuerier, Log, Serialized } from '../querier/index.js';
 import type {
   ExtraOptions,
   IdValue,
@@ -21,9 +21,9 @@ export class MongodbQuerier extends AbstractQuerier {
   constructor(
     readonly dialect: MongoDialect,
     readonly conn: MongoClient,
-    readonly extra?: ExtraOptions,
+    override readonly extra?: ExtraOptions,
   ) {
-    super();
+    super(extra);
   }
 
   @Serialized()
@@ -31,6 +31,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return task(this.session);
   }
 
+  @Log()
   override async findMany<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
 
@@ -39,7 +40,6 @@ export class MongodbQuerier extends AbstractQuerier {
 
     if (hasSelectedRelations) {
       const pipeline = this.dialect.aggregationPipeline(entity, q);
-      this.extra?.logger('findMany', entity.name, JSON.stringify(pipeline, null, 2));
       documents = await this.execute((session) =>
         this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
       );
@@ -67,8 +67,6 @@ export class MongodbQuerier extends AbstractQuerier {
         cursor.limit(q.$limit);
       }
 
-      this.extra?.logger?.('findMany', entity.name, q);
-
       documents = await this.execute(() => cursor.toArray() as Promise<E[]>);
       documents = this.dialect.normalizeIds(meta, documents) as E[];
     }
@@ -76,9 +74,9 @@ export class MongodbQuerier extends AbstractQuerier {
     return documents;
   }
 
+  @Log()
   override count<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.where(entity, qm.$where);
-    this.extra?.logger?.('count', entity.name, filter);
     return this.execute((session) =>
       this.collection(entity).countDocuments(filter, {
         session,
@@ -86,6 +84,7 @@ export class MongodbQuerier extends AbstractQuerier {
     );
   }
 
+  @Log()
   override async insertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
     if (!payloads?.length) {
       return [];
@@ -95,8 +94,6 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const meta = getMeta(entity);
     const persistables = this.dialect.getPersistables(meta, payloads, 'onInsert') as OptionalUnlessRequiredId<E>[];
-
-    this.extra?.logger?.('insertMany', entity.name, persistables);
 
     const { insertedIds } = await this.execute((session) =>
       this.collection(entity).insertMany(persistables, { session }),
@@ -113,14 +110,13 @@ export class MongodbQuerier extends AbstractQuerier {
     return ids;
   }
 
+  @Log()
   override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where);
     const update = { $set: persistable } satisfies UpdateFilter<E>;
-
-    this.extra?.logger?.('updateMany', entity.name, where, update);
 
     const { matchedCount } = await this.execute((session) =>
       this.collection(entity).updateMany(where, update, {
@@ -133,13 +129,12 @@ export class MongodbQuerier extends AbstractQuerier {
     return matchedCount;
   }
 
+  @Log()
   override async upsertOne<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
 
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload, 'onInsert') as OptionalUnlessRequiredId<E>;
-
-    this.extra?.logger?.('upsertOne', entity.name, persistable);
 
     const where = getKeys(conflictPaths).reduce(
       (acc, key) => {
@@ -165,10 +160,10 @@ export class MongodbQuerier extends AbstractQuerier {
     return { firstId, changes: firstId ? 1 : 0 };
   }
 
+  @Log()
   override async deleteMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {
     const meta = getMeta(entity);
     const where = this.dialect.where(entity, qm.$where);
-    this.extra?.logger?.('deleteMany', entity.name, where, opts);
     const founds = await this.execute((session) =>
       this.collection(entity)
         .find(where, {
@@ -222,7 +217,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }
-    this.extra?.logger?.('beginTransaction');
+    this.logger.logInfo('beginTransaction');
     await this.session?.endSession();
     this.session = this.conn.startSession();
     this.session.startTransaction();
@@ -233,7 +228,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
-    this.extra?.logger?.('commitTransaction');
+    this.logger.logInfo('commitTransaction');
     await this.session.commitTransaction();
   }
 
@@ -242,7 +237,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!this.hasOpenTransaction) {
       throw TypeError('not a pending transaction');
     }
-    this.extra?.logger?.('rollbackTransaction');
+    this.logger.logInfo('rollbackTransaction');
     await this.session.abortTransaction();
   }
 

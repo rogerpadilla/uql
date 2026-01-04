@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import type {
   Dialect,
+  LoggingOptions,
   Migration,
   MigrationDefinition,
   MigrationResult,
@@ -19,6 +20,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { isSqlQuerier } from '../type/index.js';
+import { LoggerWrapper } from '../util/index.js';
 import {
   MariadbSchemaGenerator,
   MongoSchemaGenerator,
@@ -41,12 +43,12 @@ import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 export class Migrator {
   public readonly storage: MigrationStorage;
   public readonly migrationsPath: string;
-  private _logger: (message: string) => void;
-  public get logger(): (message: string) => void {
+  private _logger: LoggerWrapper;
+  public get logger(): LoggerWrapper {
     return this._logger;
   }
-  public set logger(value: (message: string) => void) {
-    this._logger = value;
+  public set logger(value: LoggingOptions) {
+    this._logger = new LoggerWrapper(value);
   }
   private readonly _entities?: Type<unknown>[];
 
@@ -68,7 +70,7 @@ export class Migrator {
         tableName: options.tableName,
       });
     this.migrationsPath = options.migrationsPath ?? './migrations';
-    this.logger = options.logger ?? (() => {});
+    this._logger = new LoggerWrapper(options.logger, options.slowQueryThreshold);
     this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
     this.schemaGenerator = options.schemaGenerator ?? this.createGenerator(options.namingStrategy);
@@ -239,7 +241,7 @@ export class Migrator {
     }
 
     try {
-      this.logger(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
+      this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
       await querier.beginTransaction();
 
@@ -256,7 +258,9 @@ export class Migrator {
       await querier.commitTransaction();
 
       const duration = Date.now() - startTime;
-      this.logger(`Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`);
+      this.logger.logMigration(
+        `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`,
+      );
 
       return {
         name: migration.name,
@@ -268,7 +272,7 @@ export class Migrator {
       await querier.rollbackTransaction();
 
       const duration = Date.now() - startTime;
-      this.logger(`Migration ${migration.name} failed: ${(error as Error).message}`);
+      this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
 
       return {
         name: migration.name,
@@ -296,7 +300,7 @@ export class Migrator {
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
 
-    this.logger(`Created migration: ${filePath}`);
+    this.logger.logInfo(`Created migration: ${filePath}`);
     return filePath;
   }
 
@@ -329,7 +333,7 @@ export class Migrator {
     }
 
     if (upStatements.length === 0) {
-      this.logger('No schema changes detected.');
+      this.logger.logInfo('No schema changes detected.');
       return '';
     }
 
@@ -343,7 +347,7 @@ export class Migrator {
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
 
-    this.logger(`Created migration from entities: ${filePath}`);
+    this.logger.logInfo(`Created migration from entities: ${filePath}`);
     return filePath;
   }
 
@@ -412,19 +416,19 @@ export class Migrator {
       // Drop all tables first (in reverse order for foreign keys)
       for (const entity of [...this.entities].reverse()) {
         const dropSql = this.schemaGenerator.generateDropTable(entity);
-        this.logger(`Executing: ${dropSql}`);
+        this.logger.logSchema(`Executing: ${dropSql}`);
         await querier.run(dropSql);
       }
 
       // Create all tables
       for (const entity of this.entities) {
         const createSql = this.schemaGenerator.generateCreateTable(entity);
-        this.logger(`Executing: ${createSql}`);
+        this.logger.logSchema(`Executing: ${createSql}`);
         await querier.run(createSql);
       }
 
       await querier.commitTransaction();
-      this.logger('Schema sync (force) completed');
+      this.logger.logSchema('Schema sync (force) completed');
     } catch (error) {
       await querier.rollbackTransaction();
       throw error;
@@ -458,7 +462,7 @@ export class Migrator {
     }
 
     if (statements.length === 0) {
-      if (options.logging) this.logger('Schema is already in sync.');
+      if (options.logging) this.logger.logSchema('Schema is already in sync.');
       return;
     }
 
@@ -487,7 +491,7 @@ export class Migrator {
       } else {
         await this.executeSqlSyncStatements(statements, options, querier);
       }
-      if (options.logging) this.logger('Schema synchronization completed');
+      if (options.logging) this.logger.logSchema('Schema synchronization completed');
     } catch (error) {
       if (this.dialect !== 'mongodb' && isSqlQuerier(querier)) {
         await querier.rollbackTransaction();
@@ -513,7 +517,7 @@ export class Migrator {
         key?: Record<string, number>;
         options?: any;
       };
-      if (options.logging) this.logger(`Executing MongoDB: ${stmt}`);
+      if (options.logging) this.logger.logSchema(`Executing MongoDB: ${stmt}`);
 
       const collectionName = cmd.name || cmd.collection;
       if (!collectionName) {
@@ -549,7 +553,7 @@ export class Migrator {
     }
     await querier.beginTransaction();
     for (const sql of statements) {
-      if (options.logging) this.logger(`Executing: ${sql}`);
+      if (options.logging) this.logger.logSchema(`Executing: ${sql}`);
       await querier.run(sql);
     }
     await querier.commitTransaction();
@@ -601,10 +605,10 @@ export class Migrator {
         };
       }
 
-      this.logger(`Warning: ${fileName} is not a valid migration`);
+      this.logger.logWarn(`Warning: ${fileName} is not a valid migration`);
       return undefined;
     } catch (error) {
-      this.logger(`Error loading migration ${fileName}: ${(error as Error).message}`);
+      this.logger.logError(`Error loading migration ${fileName}: ${(error as Error).message}`, error);
       return undefined;
     }
   }

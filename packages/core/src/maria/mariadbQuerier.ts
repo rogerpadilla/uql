@@ -9,14 +9,12 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     await this.lazyConnect();
     const res: T[] = await this.conn.query(query, values);
     return res.slice(0, res.length);
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     await this.lazyConnect();
     const res = await this.conn.query(query, values);
     const ids = res.length ? res.map((r: any) => r.id) : [];

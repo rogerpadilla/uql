@@ -44,13 +44,12 @@ export interface D1Database {
 export class D1Querier extends AbstractSqliteQuerier {
   constructor(
     readonly db: D1Database,
-    readonly extra?: ExtraOptions,
+    override readonly extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect(extra?.namingStrategy));
+    super(new SqliteDialect(extra?.namingStrategy), extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     const stmt = this.db.prepare(query);
     const bound = values?.length ? stmt.bind(...values) : stmt;
     const res = await bound.all<T>();
@@ -58,7 +57,6 @@ export class D1Querier extends AbstractSqliteQuerier {
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     const stmt = this.db.prepare(query);
     const bound = values?.length ? stmt.bind(...values) : stmt;
     const res = await bound.run();

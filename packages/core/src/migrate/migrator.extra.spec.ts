@@ -78,7 +78,7 @@ describe('Migrator (extra coverage)', () => {
     (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
     const migrator = new Migrator(pool, { storage: mockStorage });
     const migration = { name: 'm1', up: vi.fn(), down: vi.fn() };
-    await expect(migrator['runMigration'](migration, 'up')).rejects.toThrow('Migrator requires a SQL-based querier');
+    await expect(migrator.runMigration(migration, 'up')).rejects.toThrow('Migrator requires a SQL-based querier');
     expect(mongoQuerier.release).toHaveBeenCalled();
   });
 
@@ -162,7 +162,7 @@ describe('Migrator (extra coverage)', () => {
     vi.spyOn(migrator, 'getMigrationFiles').mockResolvedValue(['m1.ts']);
     const res = await migrator.loadMigration('m1.ts');
     expect(res).toBeUndefined();
-    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Error loading migration m1.ts'));
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Error loading migration m1.ts'), expect.anything());
   });
 
   it('isMigration utility', () => {

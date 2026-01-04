@@ -9,7 +9,7 @@ const mockPoolInstance = {
 
 vi.mock('@neondatabase/serverless', () => {
   return {
-    Pool: vi.fn().mockImplementation(function () {
+    Pool: vi.fn().mockImplementation(function (this: any) {
       return mockPoolInstance;
     }),
   };

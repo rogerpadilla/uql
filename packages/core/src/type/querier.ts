@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb';
 import type { IdValue } from './entity.js';
+import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
   Query,
@@ -132,12 +133,8 @@ export interface MongoQuerier extends Querier {
   readonly db: Db;
 }
 
-/**
- * logger function to debug queries.
- */
-export type Logger = (message: unknown, ...args: unknown[]) => unknown;
-
 export type ExtraOptions = {
-  readonly logger?: Logger;
+  readonly logger?: LoggingOptions;
+  readonly slowQueryThreshold?: number;
   readonly namingStrategy?: NamingStrategy;
 };

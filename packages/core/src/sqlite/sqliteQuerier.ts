@@ -6,18 +6,16 @@ import { SqliteDialect } from './sqliteDialect.js';
 export class SqliteQuerier extends AbstractSqliteQuerier {
   constructor(
     readonly db: Database,
-    readonly extra?: ExtraOptions,
+    override readonly extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect(extra?.namingStrategy));
+    super(new SqliteDialect(extra?.namingStrategy), extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     return this.db.prepare(query).all(values || []) as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    this.extra?.logger?.(query, values);
     const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
     return this.buildUpdateResult(changes, lastInsertRowid);
   }

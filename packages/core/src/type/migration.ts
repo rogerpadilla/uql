@@ -1,4 +1,4 @@
-import type { Dialect, EntityMeta, FieldOptions, NamingStrategy, SqlQuerier, Type } from './index.js';
+import type { Dialect, EntityMeta, FieldOptions, LoggingOptions, NamingStrategy, SqlQuerier, Type } from './index.js';
 
 /**
  * Defines a migration using a simple object literal
@@ -69,9 +69,14 @@ export interface MigratorOptions {
   readonly tableName?: string;
 
   /**
-   * Logger function for migration output
+   * Logger function or options for migration output
    */
-  readonly logger?: (message: string) => void;
+  readonly logger?: LoggingOptions;
+
+  /**
+   * Threshold in milliseconds to log slow queries during migrations
+   */
+  readonly slowQueryThreshold?: number;
 
   /**
    * Entities to use for schema generation

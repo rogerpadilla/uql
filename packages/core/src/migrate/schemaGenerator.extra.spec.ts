@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import type { ColumnSchema, ColumnType, FieldOptions } from '../type/index.js';
 import { AbstractSchemaGenerator } from './schemaGenerator.js';
