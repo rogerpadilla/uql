@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.7.10](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.9...@uql/core@3.7.10) (2026-01-05)
+
+
+### Features
+
+* Integrate jiti for robust TypeScript configuration loading and update migration tool paths to `@uql/core/migrate`. ([8bc4971](https://github.com/rogerpadilla/uql/commit/8bc497128d4bc35c8dfdf01a48d7b1e3ac2d08d6))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
