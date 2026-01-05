@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.11] - 2026-01-04
+### Improvements
+- **Enhanced Down Migrations**: `generateAlterTableDown` now generates complete reversals for column alterations (restores original type) and index additions (drops them). For dropped columns/indexes, a TODO comment is added since the original schema isn't stored.
+- **Bun Documentation**: Added note in README for Bun users with TypeScript path aliases to use `--bun` flag for proper resolution.
+
 ## [3.7.10] - 2026-01-04
 ### Improvements
 - **Robust Config Loading**: Integrated `jiti` into the CLI configuration loader. This allows `uql-migrate` to natively support TypeScript configuration files (`uql.config.ts`) and properly resolve ESM/CJS interop logic across all node environments (Node.js, Bun, etc.) without requiring custom runtime flags.

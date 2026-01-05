@@ -115,11 +115,33 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const statements: string[] = [];
     const tableName = this.escapeId(diff.tableName);
 
-    // Rollback additions by dropping columns
+    // Reverse column additions by dropping them
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
         statements.push(`ALTER TABLE ${tableName} DROP COLUMN ${this.escapeId(column.name)};`);
       }
+    }
+
+    // Reverse column alterations by restoring original schema
+    if (diff.columnsToAlter?.length) {
+      for (const { from } of diff.columnsToAlter) {
+        const colDef = this.generateColumnDefinitionFromSchema(from, { includePrimaryKey: false });
+        const colStatements = this.generateAlterColumnStatements(diff.tableName, from, colDef);
+        statements.push(...colStatements);
+      }
+    }
+
+    // Reverse index additions by dropping them
+    if (diff.indexesToAdd?.length) {
+      for (const index of diff.indexesToAdd) {
+        statements.push(this.generateDropIndex(diff.tableName, index.name));
+      }
+    }
+
+    // Note: columnsToDrop and indexesToDrop cannot be auto-reversed
+    // because we don't store the original schema. These require manual down migrations.
+    if (diff.columnsToDrop?.length || diff.indexesToDrop?.length) {
+      statements.push(`-- TODO: Manual reversal needed for dropped columns/indexes`);
     }
 
     return statements;

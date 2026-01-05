@@ -123,7 +123,7 @@ describe('PostgresSchemaGenerator', () => {
     expect(sql[0]).not.toContain('JSONB(');
   });
 
-  it('should generate ALTER TABLE DOWN statements', () => {
+  it('should generate ALTER TABLE DOWN statements for column additions', () => {
     const sql = generator.generateAlterTableDown({
       tableName: 'users',
       type: 'alter',
@@ -139,6 +139,62 @@ describe('PostgresSchemaGenerator', () => {
       ],
     });
     expect(sql[0]).toBe('ALTER TABLE "users" DROP COLUMN "profile_data";');
+  });
+
+  it('should generate ALTER TABLE DOWN statements for column alterations', () => {
+    const sql = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      columnsToAlter: [
+        {
+          from: {
+            name: 'age',
+            type: 'INTEGER',
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+          to: {
+            name: 'age',
+            type: 'BIGINT',
+            nullable: false,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        },
+      ],
+    });
+    expect(sql.length).toBeGreaterThan(0);
+    expect(sql[0]).toContain('ALTER TABLE');
+    expect(sql[0]).toContain('"age"');
+    expect(sql[0]).toContain('INTEGER');
+  });
+
+  it('should generate ALTER TABLE DOWN statements for index additions', () => {
+    const sql = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      indexesToAdd: [{ name: 'idx_users_email', columns: ['email'], unique: true }],
+    });
+    expect(sql[0]).toBe('DROP INDEX IF EXISTS "idx_users_email";');
+  });
+
+  it('should add TODO comment for dropped columns/indexes', () => {
+    const sql1 = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      columnsToDrop: ['old_column'],
+    });
+    expect(sql1[0]).toContain('TODO');
+
+    const sql2 = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      indexesToDrop: ['idx_old'],
+    });
+    expect(sql2[0]).toContain('TODO');
   });
 });
 

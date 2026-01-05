@@ -394,6 +394,12 @@ npx uql-migrate down
 npx uql-migrate up --config ./configs/uql.config.ts
 ```
 
+> **Bun Users**: If your `uql.config.ts` uses TypeScript path aliases (e.g., `~app/...`), run migrations with the `--bun` flag to ensure proper resolution:
+> ```bash
+> bun run --bun uql-migrate status
+> ```
+> Or add a script to your `package.json`: `"uql": "bun run --bun uql-migrate"`, then run commands like, e.g., `bun run uql status`.
+
 ### 3. AutoSync (Development)
 
 Keep your schema in sync without manual migrations. It is **Safe by Default**: In safe mode (default), it strictly **adds** new tables and columns but **blocks** any destructive operations (column drops or type alterations) to prevent data loss. It provides **Transparent Feedback** by logging detailed warnings for any blocked changes, so you know exactly what remains to be migrated manually.
