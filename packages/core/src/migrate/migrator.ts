@@ -682,7 +682,7 @@ export class Migrator {
    * Generate migration file content
    */
   protected generateMigrationContent(name: string): string {
-    return /*ts*/ `import type { SqlQuerier } from '@uql/migrate';
+    return /*ts*/ `import type { SqlQuerier } from '@uql/core/migrate';
 
 /**
  * Migration: ${name}
@@ -722,7 +722,7 @@ export default {
     const upSql = upStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
     const downSql = downStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
 
-    return /*ts*/ `import type { SqlQuerier } from '@uql/migrate';
+    return /*ts*/ `import type { SqlQuerier } from '@uql/core/migrate';
 
 /**
  * Migration: ${name}

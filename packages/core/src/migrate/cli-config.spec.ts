@@ -19,6 +19,23 @@ describe('cli-config', () => {
     expect(config.pool.dialect).toBe('sqlite');
   });
 
+  it('loadConfig should load TypeScript config using jiti', async () => {
+    const tsConfigPath = path.resolve(process.cwd(), 'uql.config.ts');
+    const configContent = /** ts */ `
+      export default {
+        pool: { dialect: "postgres" },
+        entities: []
+      } satisfies any; // dummy type check
+    `;
+    try {
+      await fs.writeFile(tsConfigPath, configContent);
+      const config = await loadConfig();
+      expect(config.pool.dialect).toBe('postgres');
+    } finally {
+      await fs.unlink(tsConfigPath).catch(() => {});
+    }
+  });
+
   it('loadConfig should load config from custom path', async () => {
     const customConfigPath = path.resolve(process.cwd(), 'custom-uql.config.js');
     const configContent = 'export default { pool: { dialect: "mysql" } }';

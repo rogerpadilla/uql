@@ -230,9 +230,9 @@ export async function runSync(migrator: Migrator, args: string[]) {
 
 export function printHelp() {
   console.log(`
-@uql/migrate - Database migration tool for uql ORM
+@uql/core/migrate - Database migration tool for uql ORM
 
-Usage: @uql/migrate <command> [options]
+Usage: @uql/core/migrate <command> [options]
 
 Commands:
   up                    Run all pending migrations
@@ -270,12 +270,12 @@ Configuration:
   };
 
 Examples:
-  @uql/migrate up
-  @uql/migrate up --step 1
-  @uql/migrate down
-  @uql/migrate down --step 3
-  @uql/migrate status
-  @uql/migrate generate add_users_table
-  @uql/migrate generate:entities initial_schema
+  @uql/core/migrate up
+  @uql/core/migrate up --step 1
+  @uql/core/migrate down
+  @uql/core/migrate down --step 3
+  @uql/core/migrate status
+  @uql/core/migrate generate add_users_table
+  @uql/core/migrate generate:entities initial_schema
 `);
 }

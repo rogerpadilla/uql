@@ -1,9 +1,11 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { createJiti } from 'jiti';
 import type { Config } from '../type/index.js';
 
 export async function loadConfig(customPath?: string): Promise<Config> {
+  const jiti = createJiti(process.cwd());
+
   if (customPath) {
     const fullPath = resolve(process.cwd(), customPath);
     const exists = await stat(fullPath)
@@ -14,10 +16,9 @@ export async function loadConfig(customPath?: string): Promise<Config> {
       throw new Error(`Could not find uql configuration file at ${customPath}`);
     }
 
-    const fileUrl = pathToFileURL(fullPath).href;
     try {
-      const config = await import(fileUrl);
-      return config.default ?? config;
+      const config = await jiti.import(fullPath, { default: true });
+      return config as Config;
     } catch (error) {
       throw new Error(`Could not load configuration file at ${customPath}: ${(error as Error).message}`);
     }
@@ -32,9 +33,8 @@ export async function loadConfig(customPath?: string): Promise<Config> {
       .catch(() => false);
 
     if (exists) {
-      const fileUrl = pathToFileURL(fullPath).href;
-      const config = await import(fileUrl);
-      return config.default ?? config;
+      const config = await jiti.import(fullPath, { default: true });
+      return config as Config;
     }
   }
 

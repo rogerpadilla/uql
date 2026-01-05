@@ -1,24 +1,12 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.7.9](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.8...@uql/core@3.7.9) (2026-01-04)
-
-
-### Features
-
-* Disable chat input and show loading state during message send and update operations. ([06b824b](https://github.com/rogerpadilla/uql/commit/06b824b79e2ab1f771ec79481e8d9cb1db159982))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.7.10] - 2026-01-04
+### Improvements
+- **Robust Config Loading**: Integrated `jiti` into the CLI configuration loader. This allows `uql-migrate` to natively support TypeScript configuration files (`uql.config.ts`) and properly resolve ESM/CJS interop logic across all node environments (Node.js, Bun, etc.) without requiring custom runtime flags.
 
 ## [3.7.9] - 2026-01-04
 - **Manual Migrations**: Updated the root README to explicitly document the `generate` command for creating manual incremental migrations (`npx uql-migrate generate <name>`), ensuring developers know how to create empty migration files efficiently.
@@ -121,7 +109,7 @@ Reflect major changes in the package structure and dependencies.
 - **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `@uql/core`.
 - **Scoped Naming**:
   - `@uql/core`: The main ORM engine and all database adapters.
-  - `@uql/migrate`: The database migration system (formerly `nukak-migrate`).
+  - `@uql/core/migrate`: The database migration system (formerly `nukak-migrate`).
 - **Improved API Surface**:
   - Database-specific logic is now accessible via sub-paths (e.g., `import { ... } from '@uql/core/postgres'`).
   - Unified `NamingStrategy` and `QueryContext` across all unified adapters.
