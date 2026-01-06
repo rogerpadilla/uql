@@ -535,6 +535,16 @@ describe('AbstractSchemaGenerator (extra coverage)', () => {
       expect(isNumericType('int')).toBe(true);
       expect(isNumericType('DECIMAL')).toBe(true);
       expect(isNumericType('float')).toBe(true);
+      expect(isNumericType('float4')).toBe(true);
+      expect(isNumericType('float8')).toBe(true);
+      expect(isNumericType('double precision')).toBe(true);
+    });
+
+    it('normalizeType floating point aliases', () => {
+      const gen = generator as any;
+      expect(gen.normalizeType({ type: 'DOUBLE PRECISION' })).toBe('double');
+      expect(gen.normalizeType({ type: 'float8' })).toBe('double');
+      expect(gen.normalizeType({ type: 'float4' })).toBe('real');
     });
 
     it('isAutoIncrement edge cases', () => {

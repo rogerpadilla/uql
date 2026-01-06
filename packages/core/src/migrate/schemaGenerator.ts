@@ -516,6 +516,8 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       .replace(/^integer$/, 'int')
       .replace(/^boolean$/, 'tinyint(1)') // Common in MySQL
       .replace(/^doubleprecision$/, 'double') // Postgres vs MySQL
+      .replace(/^float8$/, 'double')
+      .replace(/^float4$/, 'real')
       .replace(/^characterany$/, 'varchar')
       .replace(/^charactervarying$/, 'varchar')
       .replace(/generated(always|bydefault)asidentity$/, '') // Ignore identity keywords

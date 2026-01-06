@@ -42,6 +42,7 @@ import {
   getFieldKeys,
   getKeys,
   hasKeys,
+  isJsonType,
   isSelectingRelations,
   raw,
 } from '../util/index.js';
@@ -764,7 +765,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       this.getRawValue(ctx, { value });
       return;
     }
-    if (field?.type === 'json' || field?.type === 'jsonb') {
+    if (isJsonType(field?.type)) {
       ctx.addValue(value ? JSON.stringify(value) : null);
       return;
     }

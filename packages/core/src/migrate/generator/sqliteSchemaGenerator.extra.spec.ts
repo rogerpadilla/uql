@@ -6,6 +6,12 @@ describe('SqliteSchemaGenerator (extra coverage)', () => {
 
   it('mapColumnType various types', () => {
     expect(generator.mapColumnType('decimal', {})).toBe('REAL');
+    expect(generator.mapColumnType('float', {})).toBe('REAL');
+    expect(generator.mapColumnType('float4', {})).toBe('REAL');
+    expect(generator.mapColumnType('float8', {})).toBe('REAL');
+    expect(generator.mapColumnType('double', {})).toBe('REAL');
+    expect(generator.mapColumnType('double precision', {})).toBe('REAL');
+    expect(generator.mapColumnType('real', {})).toBe('REAL');
     expect(generator.mapColumnType('boolean', {})).toBe('INTEGER');
     expect(generator.mapColumnType('timestamptz', {})).toBe('TEXT');
     expect(generator.mapColumnType('blob', {})).toBe('BLOB');

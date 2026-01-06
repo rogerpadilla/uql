@@ -386,5 +386,9 @@ describe('AbstractSchemaGenerator.coverage', () => {
     expect(pg.mapColumnType('decimal', { precision: 10, scale: 2 })).toBe('NUMERIC(10, 2)');
     expect(pg.mapColumnType('int', {})).toBe('INTEGER');
     expect(pg.mapColumnType('smallint', {})).toBe('SMALLINT');
+    expect(pg.mapColumnType('real', {})).toBe('REAL');
+    expect(pg.mapColumnType('float4', {})).toBe('REAL');
+    expect(pg.mapColumnType('float8', {})).toBe('DOUBLE PRECISION');
+    expect(pg.mapColumnType('double precision', {})).toBe('DOUBLE PRECISION');
   });
 });

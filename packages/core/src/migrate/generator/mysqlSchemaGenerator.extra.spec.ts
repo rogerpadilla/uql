@@ -8,7 +8,10 @@ describe('MysqlSchemaGenerator (extra coverage)', () => {
     expect(generator.mapColumnType('int', {})).toBe('INT');
     expect(generator.mapColumnType('smallint', {})).toBe('SMALLINT');
     expect(generator.mapColumnType('float', {})).toBe('FLOAT');
+    expect(generator.mapColumnType('float4', {})).toBe('FLOAT');
     expect(generator.mapColumnType('double', {})).toBe('DOUBLE');
+    expect(generator.mapColumnType('float8', {})).toBe('DOUBLE');
+    expect(generator.mapColumnType('double precision', {})).toBe('DOUBLE');
     expect(generator.mapColumnType('real', {})).toBe('DOUBLE');
     expect(generator.mapColumnType('decimal', { precision: 10 })).toBe('DECIMAL(10)');
     expect(generator.mapColumnType('decimal', {})).toBe('DECIMAL(10, 2)');

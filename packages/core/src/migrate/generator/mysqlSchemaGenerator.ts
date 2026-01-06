@@ -16,8 +16,11 @@ export class MysqlSchemaGenerator extends AbstractSchemaGenerator {
       case 'bigint':
         return 'BIGINT';
       case 'float':
+      case 'float4':
         return 'FLOAT';
       case 'double':
+      case 'double precision':
+      case 'float8':
       case 'real':
         return 'DOUBLE';
       case 'decimal':

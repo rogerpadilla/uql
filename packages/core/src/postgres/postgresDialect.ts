@@ -15,6 +15,7 @@ import {
   type QueryWhereMap,
   type Type,
 } from '../type/index.js';
+import { isJsonType } from '../util/index.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
@@ -125,7 +126,7 @@ export class PostgresDialect extends AbstractSqlDialect {
       super.formatPersistableValue(ctx, field, value);
       return;
     }
-    if (field.type === 'json' || field.type === 'jsonb') {
+    if (isJsonType(field.type)) {
       ctx.addValue(value ? JSON.stringify(value) : null);
       ctx.append(`::${field.type}`);
       return;

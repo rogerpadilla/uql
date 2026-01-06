@@ -17,7 +17,10 @@ export class SqliteSchemaGenerator extends AbstractSchemaGenerator {
       case 'bigserial':
         return 'INTEGER';
       case 'float':
+      case 'float4':
+      case 'float8':
       case 'double':
+      case 'double precision':
       case 'real':
       case 'decimal':
       case 'numeric':

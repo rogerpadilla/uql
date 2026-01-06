@@ -8,8 +8,11 @@ describe('PostgresSchemaGenerator (extra coverage)', () => {
   it('mapColumnType various types', () => {
     expect(generator.mapColumnType('smallint', {})).toBe('SMALLINT');
     expect(generator.mapColumnType('float', {})).toBe('DOUBLE PRECISION');
+    expect(generator.mapColumnType('float8', {})).toBe('DOUBLE PRECISION');
+    expect(generator.mapColumnType('double precision', {})).toBe('DOUBLE PRECISION');
     expect(generator.mapColumnType('double', {})).toBe('DOUBLE PRECISION');
-    expect(generator.mapColumnType('real', {})).toBe('DOUBLE PRECISION');
+    expect(generator.mapColumnType('float4', {})).toBe('REAL');
+    expect(generator.mapColumnType('real', {})).toBe('REAL');
     expect(generator.mapColumnType('decimal', { precision: 10 })).toBe('NUMERIC(10)');
     expect(generator.mapColumnType('decimal', {})).toBe('NUMERIC');
     expect(generator.mapColumnType('char', {})).toBe('CHAR(1)');

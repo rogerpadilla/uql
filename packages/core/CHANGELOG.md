@@ -1,25 +1,15 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.7.11](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.10...@uql/core@3.7.11) (2026-01-05)
-
-
-### Features
-
-* enhance down migration reversals and add Bun documentation for path alias resolution ([12afd81](https://github.com/rogerpadilla/uql/commit/12afd81e3e20b8679441d04dabd8fe2df36727e2))
-* enhance down migrations to reverse column alterations and index additions, and add Bun usage documentation ([338f828](https://github.com/rogerpadilla/uql/commit/338f8288daf08e7ce9f9c9c5c166329dc051851d))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.7.12] - 2026-01-06
+### Improvements
+- **Expanded Float Support**: Added `float4`, `float8`, and `double precision` to `ColumnType`, with proper mapping across PostgreSQL, MySQL, and SQLite.
+- **Type Grouping & Safety**: Introduced specialized union types (`NumericColumnType`, `StringColumnType`, `DateColumnType`, etc.) for better internal organization and exhaustive type checking.
+- **Optimized Type Helpers**: Refactored `field.util.ts` to use `as const satisfies Record<T, true>` for all column type groups, ensuring compile-time verification when adding new types.
+- **Dialect Refactoring**: Standardized SQL dialects to use centralized type helpers (`isNumericType`, `isJsonType`), improving code reuse and consistency.
 
 ## [3.7.11] - 2026-01-04
 ### Improvements

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.12] - 2026-01-06
+### Improvements
+- **Expanded Float Support**: Added `float4`, `float8`, and `double precision` to `ColumnType`, with proper mapping across PostgreSQL, MySQL, and SQLite.
+- **Type Grouping & Safety**: Introduced specialized union types (`NumericColumnType`, `StringColumnType`, `DateColumnType`, etc.) for better internal organization and exhaustive type checking.
+- **Optimized Type Helpers**: Refactored `field.util.ts` to use `as const satisfies Record<T, true>` for all column type groups, ensuring compile-time verification when adding new types.
+- **Dialect Refactoring**: Standardized SQL dialects to use centralized type helpers (`isNumericType`, `isJsonType`), improving code reuse and consistency.
+
 ## [3.7.11] - 2026-01-04
 ### Improvements
 - **Enhanced Down Migrations**: `generateAlterTableDown` now generates complete reversals for column alterations (restores original type) and index additions (drops them). For dropped columns/indexes, a TODO comment is added since the original schema isn't stored.

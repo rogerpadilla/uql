@@ -62,33 +62,54 @@ export type EntityOptions = {
 };
 
 /**
- * SQL column types supported by uql migrations
+ * SQL numeric column types
  */
-export type ColumnType =
+export type NumericColumnType =
   | 'int'
   | 'smallint'
   | 'bigint'
   | 'float'
+  | 'float4'
+  | 'float8'
   | 'double'
+  | 'double precision'
   | 'decimal'
   | 'numeric'
   | 'real'
-  | 'boolean'
-  | 'char'
-  | 'varchar'
-  | 'text'
-  | 'uuid'
-  | 'date'
-  | 'time'
-  | 'timestamp'
-  | 'timestamptz'
-  | 'json'
-  | 'jsonb'
-  | 'blob'
-  | 'bytea'
-  | 'vector'
   | 'serial'
   | 'bigserial';
+
+/**
+ * SQL string column types
+ */
+export type StringColumnType = 'char' | 'varchar' | 'text' | 'uuid';
+
+/**
+ * SQL date/time column types
+ */
+export type DateColumnType = 'date' | 'time' | 'timestamp' | 'timestamptz';
+
+/**
+ * SQL JSON column types
+ */
+export type JsonColumnType = 'json' | 'jsonb';
+
+/**
+ * SQL binary/blob column types
+ */
+export type BlobColumnType = 'blob' | 'bytea';
+
+/**
+ * SQL column types supported by uql migrations
+ */
+export type ColumnType =
+  | NumericColumnType
+  | StringColumnType
+  | DateColumnType
+  | JsonColumnType
+  | BlobColumnType
+  | 'boolean'
+  | 'vector';
 
 /**
  * Logical types for a field

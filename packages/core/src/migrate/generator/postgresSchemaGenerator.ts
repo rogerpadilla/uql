@@ -20,9 +20,13 @@ export class PostgresSchemaGenerator extends AbstractSchemaGenerator {
       case 'bigint':
         return 'BIGINT';
       case 'float':
+      case 'float8':
       case 'double':
-      case 'real':
+      case 'double precision':
         return 'DOUBLE PRECISION';
+      case 'float4':
+      case 'real':
+        return 'REAL';
       case 'decimal':
       case 'numeric':
         if (field.precision !== undefined) {
