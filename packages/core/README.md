@@ -40,12 +40,13 @@ const users = await querier.findMany(User, {
 | **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                    |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
-| **Naming Strategies**                                              | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
+| **[Naming Strategies](https://uql.app/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
 | **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
-| **Declarative Transactions**                                       | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Declarative Transactions](https://www.uql.app/transactions-declarative)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
 | **[Modern &amp; Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
-| **Structured Logging**                                             | Professional-grade monitoring with slow-query detection and colored output.                                                     |
+| **[Database Migrations](https://www.uql.app/migrations)**          | Built-in [Entity-First synchronization](https://uql.app/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
+| **[Logging & Monitoring](https://www.uql.app/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
 
 &nbsp;
 
