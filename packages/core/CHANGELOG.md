@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.7.13](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.12...@uql/core@3.7.13) (2026-01-07)
+## [3.7.14](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.13...@uql/core@3.7.14) (2026-01-07)
 
 **Note:** Version bump only for package @uql/core
 
@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [3.7.13] - 2026-01-06
+## [3.7.14] - 2026-01-06
 ### Documentation
 - **README Refinement**: Improved docs about new Migrations feature.
 
