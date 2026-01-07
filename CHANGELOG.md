@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [3.7.13] - 2026-01-06
+## [3.7.14] - 2026-01-06
 ### Documentation
 - **README Refinement**: Improved docs about new Migrations feature.
 
