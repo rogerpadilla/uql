@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.7.13] - 2026-01-06
+### Documentation
+- **README Refinement**: Improved docs about new Migrations feature.
+
 ## [3.7.12] - 2026-01-06
 ### Improvements
 - **Expanded Float Support**: Added `float4`, `float8`, and `double precision` to `ColumnType`, with proper mapping across PostgreSQL, MySQL, and SQLite.
