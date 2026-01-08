@@ -1,7 +1,67 @@
+import { SchemaAST } from '../../schema/schemaAST.js';
+import type { ColumnNode, TableNode } from '../../schema/types.js';
 import type { MongoQuerier, QuerierPool, SchemaIntrospector, TableSchema } from '../../type/index.js';
 
+/**
+ * MongoDB schema introspector.
+ * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
+ */
 export class MongoSchemaIntrospector implements SchemaIntrospector {
   constructor(private readonly pool: QuerierPool) {}
+
+  async introspect(): Promise<SchemaAST> {
+    const tableNames = await this.getTableNames();
+    const ast = new SchemaAST();
+
+    for (const name of tableNames) {
+      const schema = await this.getTableSchema(name);
+      if (schema) {
+        const columns = new Map<string, ColumnNode>();
+        const table: TableNode = {
+          name,
+          columns,
+          primaryKey: [],
+          indexes: [],
+          schema: ast,
+          incomingRelations: [],
+          outgoingRelations: [],
+        };
+
+        if (schema.indexes) {
+          for (const idx of schema.indexes) {
+            const indexColumns: ColumnNode[] = [];
+            for (const colName of idx.columns) {
+              let column = columns.get(colName);
+              if (!column) {
+                column = {
+                  name: colName,
+                  type: { category: 'string' }, // MongoDB fields are flexible, but indexes usually target strings/numbers
+                  nullable: true,
+                  isPrimaryKey: false,
+                  isAutoIncrement: false,
+                  isUnique: false,
+                  table,
+                  referencedBy: [],
+                };
+                columns.set(colName, column);
+              }
+              indexColumns.push(column);
+            }
+            table.indexes.push({
+              name: idx.name,
+              table,
+              columns: indexColumns,
+              unique: idx.unique,
+            });
+          }
+        }
+
+        ast.addTable(table);
+      }
+    }
+
+    return ast;
+  }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.pool.getQuerier();

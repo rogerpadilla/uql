@@ -1,9 +1,13 @@
 import SqlString from 'sqlstring';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryConflictPaths, QueryContext, QueryOptions, Type } from '../type/index.js';
+import type { NamingStrategy, QueryConflictPaths, QueryContext, QueryOptions, Type } from '../type/index.js';
 
 export class MariaDialect extends AbstractSqlDialect {
+  constructor(namingStrategy?: NamingStrategy) {
+    super('mariadb', namingStrategy);
+  }
+
   override addValue(values: unknown[], value: unknown): string {
     if (value instanceof Date) {
       values.push(value);

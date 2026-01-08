@@ -1,3 +1,4 @@
+import type { ForeignKeyAction } from '../schema/types.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type { Dialect } from './querier.js';
 import type { QuerierPool } from './querierPool.js';
@@ -42,4 +43,9 @@ export interface Config {
    * @default DefaultNamingStrategy (camelCase -> camelCase)
    */
   namingStrategy?: NamingStrategy;
+  /**
+   * Default action for foreign key ON DELETE and ON UPDATE clauses.
+   * @default 'NO ACTION'
+   */
+  defaultForeignKeyAction?: ForeignKeyAction;
 }

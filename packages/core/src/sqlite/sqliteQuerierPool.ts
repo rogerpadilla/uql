@@ -19,7 +19,7 @@ export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
       let db: any;
       if (typeof Bun !== 'undefined') {
         const { Database } = await import('bun:sqlite');
-        db = new Database(this.filename as string, this.opts as any);
+        db = new Database(this.filename as string, this.opts as Record<string, unknown>);
         db.run('PRAGMA journal_mode = WAL');
       } else {
         const { default: Database } = await import('better-sqlite3');

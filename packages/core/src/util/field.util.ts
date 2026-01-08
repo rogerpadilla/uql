@@ -44,9 +44,14 @@ export function isJsonType(type: any): boolean {
 
 /**
  * Checks if a field should be treated as auto-incrementing.
- * By default, only numeric primary keys without custom handlers or explicit column types are auto-incremented.
  */
 export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boolean {
+  if (field.autoIncrement === false) return false;
+  if (field.autoIncrement) return true;
+
+  const colType = field.columnType?.toLowerCase();
+  if (colType === 'serial' || colType === 'bigserial') return true;
+
   const isNumeric = isNumericType(field.type);
-  return isPrimaryKey && isNumeric && field.autoIncrement !== false && !field.onInsert && !field.columnType;
+  return isPrimaryKey && isNumeric && !field.onInsert && !field.columnType;
 }

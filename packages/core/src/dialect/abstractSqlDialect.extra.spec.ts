@@ -4,6 +4,9 @@ import { User } from '../test/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
+  constructor() {
+    super('mysql');
+  }
   escape(value: unknown): string {
     return String(value);
   }

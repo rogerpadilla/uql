@@ -19,7 +19,7 @@ import { isJsonType } from '../util/index.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
-    super(namingStrategy, '"', 'BEGIN TRANSACTION');
+    super('postgres', namingStrategy);
   }
 
   override addValue(values: unknown[], value: unknown): string {

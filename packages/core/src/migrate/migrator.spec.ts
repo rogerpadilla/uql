@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { Entity, Id } from '../entity/index.js';
+import { SchemaAST } from '../schema/schemaAST.js';
 import { User } from '../test/entityMock.js';
 import type {
   Migration,
@@ -10,14 +11,12 @@ import type {
   SqlQuerier,
 } from '../type/index.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
-import { MysqlSchemaGenerator } from './generator/mysqlSchemaGenerator.js';
-import { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
-import { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
 import { MongoSchemaIntrospector } from './introspection/mongoIntrospector.js';
 import { MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
 import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
+import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 vi.mock('node:url', () => ({
   pathToFileURL: vi.fn().mockReturnValue({ href: '' }),
@@ -168,7 +167,7 @@ describe('Migrator Core Methods', () => {
     migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
 
     const introspector = {
-      getTableSchema: vi.fn().mockResolvedValue({ name: 'DiffUser', columns: [] }),
+      introspect: vi.fn().mockResolvedValue(new SchemaAST()),
       getTableNames: vi.fn().mockResolvedValue([]),
       tableExists: vi.fn().mockResolvedValue(true),
     };
@@ -230,21 +229,21 @@ describe('Migrator Core Methods', () => {
   describe('Dialect Auto-Inference', () => {
     it('should infer Postgres generator and introspector', () => {
       const m = new Migrator(pool);
-      expect(m.schemaGenerator).toBeInstanceOf(PostgresSchemaGenerator);
+      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(PostgresSchemaIntrospector);
     });
 
     it('should infer MySQL generator and introspector', () => {
       const mysqlPool = { ...pool, dialect: 'mysql' } as QuerierPool;
       const m = new Migrator(mysqlPool);
-      expect(m.schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
+      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', () => {
       const sqlitePool = { ...pool, dialect: 'sqlite' } as QuerierPool;
       const m = new Migrator(sqlitePool);
-      expect(m.schemaGenerator).toBeInstanceOf(SqliteSchemaGenerator);
+      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
@@ -257,7 +256,7 @@ describe('Migrator Core Methods', () => {
 
     it('should allow overriding dialect in options', () => {
       const m = new Migrator(pool, { dialect: 'mysql' });
-      expect(m.schemaGenerator).toBeInstanceOf(MysqlSchemaGenerator);
+      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
     });
 
     it('should allow overriding generator in options', () => {
@@ -330,8 +329,8 @@ describe('Migrator Core Methods', () => {
     });
 
     it('autoSync should execute statements from diffs', async () => {
-      const generator = new PostgresSchemaGenerator();
-      const introspector = { getTableSchema: vi.fn().mockResolvedValue(undefined) };
+      const generator = new SqlSchemaGenerator('postgres');
+      const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       const migratorSync = new Migrator(pool, {
         entities: [MigratorUser],
         schemaGenerator: generator,
@@ -343,8 +342,8 @@ describe('Migrator Core Methods', () => {
     });
 
     it('should default to all entities if none provided', async () => {
-      const generator = new PostgresSchemaGenerator();
-      const introspector = { getTableSchema: vi.fn().mockResolvedValue(undefined) };
+      const generator = new SqlSchemaGenerator('postgres');
+      const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       const migratorDefault = new Migrator(pool, {
         schemaGenerator: generator,
       });
@@ -421,7 +420,7 @@ describe('Migrator Core Methods', () => {
         diffSchema: vi.fn().mockReturnValue(undefined),
       };
       migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
-      const introspector = { getTableSchema: vi.fn().mockResolvedValue({}) };
+      const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
       const filePath = await migrator.generateFromEntities('test');

@@ -81,7 +81,7 @@ const databases: DatabaseConfig[] = [
     createTableSql: (tableName, columns) => `CREATE TABLE \`${tableName}\` (${columns})`,
     serialPrimaryKey: '`id` INTEGER PRIMARY KEY AUTOINCREMENT',
     textType: 'TEXT',
-    unsafeAlterError: 'recreate the table',
+    unsafeAlterError: 'Cannot alter column',
   },
 ];
 
@@ -125,18 +125,20 @@ for (const db of databases) {
           db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('name')} ${db.textType}`),
         );
 
-        let schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns).toHaveLength(2);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'name']);
+        let ast = await introspector.introspect();
+        let table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(table.columns.size).toBe(2);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'name']);
 
         const migrator = new Migrator(db.pool, { entities: [AutoSyncUserTest1] });
         await migrator.autoSync({ logging: true });
 
-        schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns).toHaveLength(3);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'name']);
+        ast = await introspector.introspect();
+        table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(table.columns.size).toBe(3);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['email', 'id', 'name']);
 
         await cleanupTable(tableName);
       });
@@ -161,10 +163,11 @@ for (const db of databases) {
         const migrator = new Migrator(db.pool, { entities: [AutoSyncProductTest1] });
         await migrator.autoSync({ logging: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns).toHaveLength(5);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(table.columns.size).toBe(5);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
 
         await cleanupTable(tableName);
       });
@@ -184,14 +187,16 @@ for (const db of databases) {
         );
 
         const migrator = new Migrator(db.pool, { entities: [AutoSyncCategoryTest1] });
-        const schemaBefore = await introspector.getTableSchema(tableName);
-        expect(schemaBefore).toBeDefined();
+        const astBefore = await introspector.introspect();
+        const tableBefore = astBefore.getTable(tableName);
+        expect(tableBefore).toBeDefined();
 
         await migrator.autoSync({ logging: true });
 
-        const schemaAfter = await introspector.getTableSchema(tableName);
-        expect(schemaAfter).toBeDefined();
-        expect(schemaAfter.columns.length).toBe(schemaBefore.columns.length);
+        const astAfter = await introspector.introspect();
+        const tableAfter = astAfter.getTable(tableName);
+        expect(tableAfter).toBeDefined();
+        expect(tableAfter.columns.size).toBe(tableBefore.columns.size);
 
         await cleanupTable(tableName);
       });
@@ -217,9 +222,10 @@ for (const db of databases) {
         exists = await introspector.tableExists(tableName);
         expect(exists).toBe(true);
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns).toHaveLength(3);
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(table.columns.size).toBe(3);
 
         await cleanupTable(tableName);
       });
@@ -242,10 +248,11 @@ for (const db of databases) {
         const migrator = new Migrator(db.pool, { entities: [AutoSyncCustomNameTest1] });
         await migrator.autoSync({ logging: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns).toHaveLength(3);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['email', 'id', 'username']);
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(table.columns.size).toBe(3);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['email', 'id', 'username']);
 
         await cleanupTable(tableName);
       });
@@ -265,9 +272,10 @@ for (const db of databases) {
         const migrator = new Migrator(db.pool, { entities: [AutoSyncCustomColumnTest1] });
         await migrator.autoSync({ logging: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'user_email']);
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'user_email']);
 
         await cleanupTable(tableName);
       });
@@ -292,11 +300,12 @@ for (const db of databases) {
         // Run autoSync (safe mode is default)
         await migrator.autoSync({ logging: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
         // Should have 3 columns: id, oldName (kept), newName (added)
-        expect(schema.columns).toHaveLength(3);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'newName', 'oldName']);
+        expect(table.columns.size).toBe(3);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'newName', 'oldName']);
 
         await cleanupTable(tableName);
       });
@@ -321,11 +330,12 @@ for (const db of databases) {
         // Run autoSync with safe: false AND drop: true (explicit drop required)
         await migrator.autoSync({ logging: true, safe: false, drop: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
         // Should have 2 columns: id, newName. oldName should be GONE.
-        expect(schema.columns).toHaveLength(2);
-        expect(schema.columns.map((c) => c.name).sort()).toEqual(['id', 'newName']);
+        expect(table.columns.size).toBe(2);
+        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'newName']);
 
         // Verify data loss (implicit, since column is gone)
 
@@ -351,15 +361,16 @@ for (const db of databases) {
         // Run autoSync (safe defaults to true)
         await migrator.autoSync({ logging: true });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
 
         // The column type should REMAIN double/float, not change to bigint
-        const costCol = schema.columns.find((c) => c.name === 'cost');
+        const costCol = table.columns.get('cost');
         expect(costCol).toBeDefined();
 
         // We normalize types to lowercase for check
-        const type = costCol.type.toLowerCase();
+        const type = costCol.type.category.toLowerCase();
         const isFloatCompatible =
           type.includes('double') || type.includes('float') || type.includes('real') || type.includes('decimal');
 
@@ -393,11 +404,12 @@ for (const db of databases) {
         // Run autoSync with safe: false (but drop defaults to false)
         await migrator.autoSync({ logging: true, safe: false });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
         // Should STILL have extraColumn because drop is false
-        expect(schema.columns).toHaveLength(3);
-        const colNames = schema.columns.map((c) => c.name).sort();
+        expect(table.columns.size).toBe(3);
+        const colNames = Array.from(table.columns.keys()).sort();
         expect(colNames).toContain('extraColumn');
 
         await cleanupTable(tableName);
@@ -458,13 +470,14 @@ for (const db of databases) {
         // Run autoSync with safe: false
         await migrator.autoSync({ logging: true, safe: false });
 
-        const schema = await introspector.getTableSchema(tableName);
-        expect(schema).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
 
-        const costCol = schema.columns.find((c) => c.name === 'cost');
+        const costCol = table.columns.get('cost');
         expect(costCol).toBeDefined();
         // Should be converted to bigint (default for number)
-        const type = costCol.type.toLowerCase();
+        const type = costCol.type.category.toLowerCase();
 
         expect(type).toContain('int');
         expect(type).not.toContain('double');

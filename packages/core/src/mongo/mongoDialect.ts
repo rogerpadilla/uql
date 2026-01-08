@@ -4,6 +4,7 @@ import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
   FieldValue,
+  NamingStrategy,
   Query,
   QueryOptions,
   QuerySelect,
@@ -25,6 +26,9 @@ import {
 } from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
+  constructor(namingStrategy?: NamingStrategy) {
+    super('mongodb', namingStrategy);
+  }
   where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
 
@@ -156,7 +160,7 @@ export class MongoDialect extends AbstractDialect {
       return;
     }
 
-    const res = doc as any;
+    const res = doc as unknown as Record<string, unknown>;
 
     if (res._id) {
       res[meta.id] = res._id;
@@ -169,7 +173,7 @@ export class MongoDialect extends AbstractDialect {
       const field = meta.fields[key];
       const dbName = this.resolveColumnName(key, field);
       if (dbName !== key && res[dbName] !== undefined) {
-        res[key] = res[dbName];
+        res[key as string] = res[dbName];
         delete res[dbName];
       }
     }
@@ -179,12 +183,12 @@ export class MongoDialect extends AbstractDialect {
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       const relMeta = getMeta(relOpts.entity());
-      res[relKey] = Array.isArray(res[relKey])
-        ? this.normalizeIds(relMeta, res[relKey])
-        : this.normalizeId(relMeta, res[relKey]);
+      res[relKey as string] = Array.isArray(res[relKey as string])
+        ? this.normalizeIds(relMeta, res[relKey as string] as Document[])
+        : this.normalizeId(relMeta, res[relKey as string] as Document);
     }
 
-    return res;
+    return res as unknown as E;
   }
 
   getIdValue<T extends IdValue>(value: T): T {

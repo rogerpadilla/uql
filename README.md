@@ -365,13 +365,14 @@ export default {
 
 ### 2. Manage via CLI
 
-
 Use the CLI to manage your database schema evolution.
 
 | Command | Description |
 | :--- | :--- |
 | `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
 | `generate:entities <name>` | **Auto-generates** a migration by diffing your entities against the current DB schema. |
+| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
+| `drift:check` | **Drift Detection**: Compares your defined entities against the actual database schema and reports discrepancies. |
 | `up` | Applies all pending migrations. |
 | `down` | Rolls back the last applied migration batch. |
 | `status` | Shows which migrations have been executed and which are pending. |
@@ -388,11 +389,11 @@ npx uql-migrate generate:entities add_profile_table
 # 3. Apply changes
 npx uql-migrate up
 
-# 4. Revert changes if needed
-npx uql-migrate down
+# 4. Check for schema drift (Production Safety)
+npx uql-migrate drift:check
 
-# 5. Run with custom config
-npx uql-migrate up --config ./configs/uql.config.ts
+# 5. Scaffold entities from an existing DB (Legacy Adoption)
+npx uql-migrate generate:from-db --output ./src/entities
 ```
 
 > **Bun Users**: If your `uql.config.ts` uses TypeScript path aliases (e.g., `~app/...`), run migrations with the `--bun` flag to ensure proper resolution:
@@ -404,6 +405,12 @@ npx uql-migrate up --config ./configs/uql.config.ts
 ### 3. AutoSync (Development)
 
 Keep your schema in sync without manual migrations. It is **Safe by Default**: In safe mode (default), it strictly **adds** new tables and columns but **blocks** any destructive operations (column drops or type alterations) to prevent data loss. It provides **Transparent Feedback** by logging detailed warnings for any blocked changes, so you know exactly what remains to be migrated manually.
+
+**New Capabilities (v3.8+):**
+
+*   **Schema AST Engine**: Uses a graph-based representation of your schema for 100% accurate diffing, handling circular dependencies and correct topological sort orders for table creation/dropping.
+*   **Smart Relation Detection**: When generating entities from an existing DB, UQL automatically detects relationships (OneToOne, ManyToMany) via foreign key structures and naming conventions (`user_id` -> `User`).
+*   **Bidirectional Index Sync**: Indexes defined in `@Field({ index: true })` or `@Index()` are synced to the DB, and indexes found in the DB are reflected in generated entities.
 
 > **Important**: For `autoSync` to detect your entities, they must be **loaded** (imported) before calling `autoSync`.
 

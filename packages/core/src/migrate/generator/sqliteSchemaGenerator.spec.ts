@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { SqliteSchemaGenerator } from './sqliteSchemaGenerator.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('SqliteSchemaGenerator Specifics', () => {
-  const generator = new SqliteSchemaGenerator();
+  const generator = new SqlSchemaGenerator('sqlite');
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('TEXT');
@@ -10,7 +10,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('INTEGER');
   });
 
-  it('should throw error on generateAlterColumnStatements', () => {
+  it('should throw error on generateAlterColumnStatements (SQLite limitation)', () => {
     const col = {
       name: 'age',
       type: 'INTEGER',
@@ -19,9 +19,8 @@ describe('SqliteSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    expect(() => generator.generateAlterColumnStatements('users', col, 'INTEGER')).toThrow(
-      'SQLite does not support altering column',
-    );
+    // SQLite doesn't support ALTER COLUMN - requires table recreation
+    expect(() => generator.generateAlterColumnStatements('users', col, '`age` INTEGER')).toThrow('Cannot alter column');
   });
 
   it('should format default values correctly', () => {
@@ -36,10 +35,10 @@ describe('SqliteSchemaGenerator Specifics', () => {
   });
 
   it('should return empty string for column comment', () => {
-    expect(generator.generateColumnComment('users', 'name', 'comment')).toBe('');
+    expect(generator.generateColumnComment('name', 'comment')).toBe('');
   });
 
   it('should get table options', () => {
-    expect(generator.getTableOptions()).toBe(' STRICT');
+    expect(generator.getTableOptions({} as any)).toBe('');
   });
 });

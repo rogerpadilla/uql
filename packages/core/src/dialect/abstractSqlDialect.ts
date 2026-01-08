@@ -3,7 +3,6 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
-  type NamingStrategy,
   type Query,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -51,14 +50,20 @@ import { AbstractDialect } from './abstractDialect.js';
 import { SqlQueryContext } from './queryContext.js';
 
 export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
-  constructor(
-    namingStrategy?: NamingStrategy,
-    readonly escapeIdChar: '`' | '"' = '`',
-    readonly beginTransactionCommand: string = 'START TRANSACTION',
-    readonly commitTransactionCommand: string = 'COMMIT',
-    readonly rollbackTransactionCommand: string = 'ROLLBACK',
-  ) {
-    super(namingStrategy);
+  get escapeIdChar() {
+    return this.config.quoteChar;
+  }
+
+  get beginTransactionCommand() {
+    return this.config.beginTransactionCommand;
+  }
+
+  get commitTransactionCommand() {
+    return this.config.commitTransactionCommand;
+  }
+
+  get rollbackTransactionCommand() {
+    return this.config.rollbackTransactionCommand;
   }
 
   createContext(): QueryContext {
@@ -290,13 +295,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       ctx.append('(');
     }
 
-    entries.forEach(([key, val], index) => {
+    (getKeys(where) as (keyof QueryWhereMap<E>)[]).forEach((key, index) => {
       if (index > 0) {
         ctx.append(' AND ');
       }
-      this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as any, {
+      this.compare(ctx, entity, key, where[key], {
         ...opts,
-        usePrecedence: entries.length > 1,
+        usePrecedence: getKeys(where).length > 1,
       });
     });
 
@@ -436,7 +441,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         break;
       case '$not':
         ctx.append('NOT (');
-        this.compare(ctx, entity, key as any, val as any, opts);
+        this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], opts);
         ctx.append(')');
         break;
       case '$gt':
@@ -503,7 +508,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         this.getComparisonKey(ctx, entity, key, opts);
         if (Array.isArray(val) && val.length > 0) {
           ctx.append(' IN (');
-          this.addValues(ctx, val as any[]);
+          this.addValues(ctx, val as unknown[]);
           ctx.append(')');
         } else {
           ctx.append(' IN (NULL)');
@@ -513,7 +518,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         this.getComparisonKey(ctx, entity, key, opts);
         if (Array.isArray(val) && val.length > 0) {
           ctx.append(' NOT IN (');
-          this.addValues(ctx, val as any[]);
+          this.addValues(ctx, val as unknown[]);
           ctx.append(')');
         } else {
           ctx.append(' NOT IN (NULL)');

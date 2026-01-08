@@ -182,7 +182,8 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
 function fillThroughRelations<E>(entity: Type<E>): void {
   const meta = ensureMeta(entity);
   meta.relations = getKeys(meta.fields).reduce((relations, key) => {
-    const { reference } = meta.fields[key as FieldKey<E>];
+    const field = meta.fields[key as FieldKey<E>];
+    const reference = field.references ?? field.reference;
     if (reference) {
       const relEntity = reference();
       const relMeta = ensureMeta(relEntity);
