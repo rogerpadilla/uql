@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.8.0] - 2026-01-08
+### Schema Sync System & AST Engine
+- **Schema AST Feature**: Introduced a revolutionary **Schema AST (Abstract Syntax Tree)** engine that treats the database schema as a graph. This enables features like **Circular Dependency Detection** and automatic topological sorting for `CREATE`/`DROP` operations, solving complex schema edge cases that simple list-based approaches cannot handle.
+- **Smart Relation Detection**: When scaffolding entities from an existing database (`generate:from-db`), UQL now automatically infers **OneToOne** and **ManyToMany** relationships by analyzing foreign key structures and naming conventions (e.g., `user_id` -> `User` entity), significantly reducing manual boilerplate.
+- **Drift Detection**: Added the `drift:check` command to detect discrepancies between your TypeScript entities and the actual database schema. It reports critical issues (missing tables, risk of data truncation) and warnings (missing indexes) to ensure production safety.
+- **Bidirectional Index Sync**: Indexes are now fully synchronized in both directions. `@Field({ index: true })` definitions are pushed to the database, and existing database indexes are reflected in generated entity files.
+- **Unified Migration Builder API**: Refactored the migration builder to use a cohesive **Options Object** API (e.g., `t.string('email', { length: 255, unique: true })`). This replaces the old positional argument style, aligning strictly with the `@Field` decorator options for a consistent developer experience.
+- **Refactored Generators**: Consolidated `SqlSchemaGenerator` and `MongoSchemaGenerator` into a unified architecture, sharing core logic for simpler maintenance and better type safety.
+
 ## [3.7.14] - 2026-01-06
 ### Documentation
 - **README Refinement**: Improved docs about new Migrations feature.
