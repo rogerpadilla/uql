@@ -17,14 +17,12 @@ class User {
 // Mock introspector that returns empty tables
 const createMockIntrospector = (tables: TableSchema[] = []): SchemaIntrospector => ({
   introspect: async () => {
-    const builder = new SchemaASTBuilder();
-    // Since fromDatabase was removed, we would ideally build the AST manually or
-    // use a helper. For tests, we'll build it from entities or manually.
-    // However, the existing tests pass table schemas.
-    // We can't easily convert TableSchema to TableNode without the builder helper.
-    // For now, let's return a basic AST.
+    const tableMap = new Map();
+    for (const t of tables) {
+      tableMap.set(t.name, t);
+    }
     return {
-      tables: new Map(),
+      tables: tableMap,
       relationships: [],
       indexes: [],
     } as any;
@@ -134,6 +132,134 @@ describe('SchemaSync', () => {
         introspector: createMockIntrospector([]),
       });
       expect(sync).toBeInstanceOf(SchemaSync);
+    });
+  });
+  describe('Advanced Sync Logic', () => {
+    it('should filter destructive changes in safe mode', async () => {
+      // Setup: DB has a table that Entity doesn't have (would cause drop)
+      const introspector = createMockIntrospector([
+        {
+          name: 'ExtraTable',
+          columns: new Map(),
+          indexes: [],
+          primaryKey: [],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+      const sync = new SchemaSync({
+        entities: [], // No entities, so everything in DB should be dropped
+        introspector,
+        direction: 'entity-to-db',
+        safe: true, // Enable safe mode
+      });
+
+      const result = await sync.sync();
+
+      expect(result.dbChanges).toBeDefined();
+      expect(result.dbChanges?.tablesToDrop).toHaveLength(0); // Should be filtered out
+      // If nothing happens, summary might just say Entity -> DB changes: (with no details)
+      if (result.dbChanges?.hasDifferences) {
+        expect(result.summary).toContain('Entity → Database Changes:');
+      } else {
+        expect(result.summary).toBeDefined(); // Just ensure it exists
+      }
+    });
+
+    it('should detect bidirectional conflicts (type mismatch)', async () => {
+      // Entity has a field that differs from DB
+      @Entity()
+      class ConflictUser {
+        @Id() id?: number;
+        @Field() age?: number;
+      }
+
+      // DB has 'age' as string
+      const introspector = createMockIntrospector([
+        {
+          name: 'ConflictUser',
+          columns: new Map([
+            [
+              'id',
+              {
+                name: 'id',
+                type: { category: 'integer', size: 'big' },
+                isPrimaryKey: true,
+                autoIncrement: true,
+                nullable: false,
+                unique: true,
+                pos: 1,
+              },
+            ],
+            ['age', { name: 'age', type: { category: 'string' }, nullable: true, pos: 2 }],
+          ]),
+          indexes: [],
+          primaryKey: ['id'],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+      const sync = new SchemaSync({
+        entities: [ConflictUser],
+        introspector,
+        direction: 'bidirectional',
+      });
+
+      const result = await sync.sync();
+
+      expect(result.success).toBe(false);
+      expect(result.conflicts.length).toBeGreaterThanOrEqual(1);
+
+      const ageConflict = result.conflicts.find((c) => c.column === 'age');
+      expect(ageConflict).toBeDefined();
+      expect(ageConflict?.type).toBe('type_mismatch');
+      expect(ageConflict?.table).toBe('ConflictUser');
+      expect(ageConflict?.column).toBe('age');
+      expect(result.summary).toContain('conflict(s) require manual resolution');
+    });
+
+    it('should format summary correctly for bidirectional sync with changes', async () => {
+      // Entity has new table, DB has extra table (not in safe mode)
+      @Entity()
+      class NewEntity {
+        @Id() id?: number;
+      }
+
+      const introspector = createMockIntrospector([
+        {
+          name: 'OldTable',
+          columns: new Map(),
+          indexes: [],
+          primaryKey: [],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+      const sync = new SchemaSync({
+        entities: [NewEntity],
+        introspector,
+        direction: 'bidirectional',
+        safe: false,
+      });
+
+      const result = await sync.sync();
+      // console.log('DEBUG SUMMARY RESULT:', result.summary);
+
+      expect(result.summary).toContain('Bidirectional Sync Report');
+      expect(result.summary).toContain('Entity → Database:');
+      expect(result.summary).toContain('Database → Entity:');
+      // Entity -> DB: Create NewEntity, Drop OldTable
+      expect(result.dbChanges?.tablesToCreate).toHaveLength(1);
+      expect(result.dbChanges?.tablesToDrop).toHaveLength(1);
+      // DB -> Entity: Create OldTable, Drop NewEntity
+      expect(result.entityChanges?.tablesToCreate).toHaveLength(1);
+      expect(result.entityChanges?.tablesToDrop).toHaveLength(1);
     });
   });
 });
