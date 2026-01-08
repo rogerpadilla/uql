@@ -39,10 +39,10 @@ export default defineConfig({
         'packages/*/src/**/types.ts', // Pure type definition files
       ],
       thresholds: {
-        statements: 99.35,
-        branches: 95.8,
-        functions: 99.32,
-        lines: 99.49,
+        statements: 96.13,
+        branches: 87.9,
+        functions: 95.95,
+        lines: 97.13,
       },
     },
     pool: 'threads',

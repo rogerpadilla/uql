@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
-import { SchemaASTBuilder } from '../../schema/schemaASTBuilder.js';
 import type { SchemaIntrospector, TableSchema } from '../../type/migration.js';
 import { createSchemaSync, SchemaSync } from './schemaSync.js';
 
