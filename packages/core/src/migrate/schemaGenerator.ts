@@ -1,8 +1,17 @@
 import { AbstractDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
+import { areTypesEqual, canonicalToSql, fieldOptionsToCanonical, sqlToCanonical } from '../schema/canonicalType.js';
+import type {
+  CanonicalType,
+  ColumnNode,
+  ForeignKeyAction,
+  IndexNode,
+  RelationshipNode,
+  TableNode,
+} from '../schema/types.js';
 import type {
   ColumnSchema,
-  ColumnType,
+  Dialect,
   EntityMeta,
   FieldKey,
   FieldOptions,
@@ -10,33 +19,57 @@ import type {
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
-  TableSchema,
   Type,
 } from '../type/index.js';
-import { escapeSqlId, getKeys, isAutoIncrement, isNumericType } from '../util/index.js';
+import { escapeSqlId, getKeys, isAutoIncrement } from '../util/index.js';
+import { formatDefaultValue } from './builder/expressions.js';
+import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 
 /**
- * Abstract base class for SQL schema generation
+ * Unified SQL schema generator.
+ * Parameterized by dialect to handle Postgres, MySQL, MariaDB, and SQLite.
  */
-export abstract class AbstractSchemaGenerator extends AbstractDialect implements SchemaGenerator {
-  /**
-   * Primary key type for auto-increment integer IDs
-   */
-  protected abstract readonly serialPrimaryKeyType: string;
-
-  constructor(
-    namingStrategy?: NamingStrategy,
-    protected readonly escapeIdChar: '`' | '"' = '`',
-  ) {
-    super(namingStrategy);
-  }
-
+export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerator {
   /**
    * Escape an identifier (table name, column name, etc.)
    */
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.escapeIdChar);
+    return escapeSqlId(identifier, this.config.quoteChar);
   }
+
+  /**
+   * Primary key type for auto-increment integer IDs
+   */
+  protected get serialPrimaryKeyType(): string {
+    return this.config.serialPrimaryKey;
+  }
+
+  // ============================================================================
+  // CanonicalType Integration (Unified Type System)
+  // ============================================================================
+
+  /**
+   * Convert FieldOptions to CanonicalType using the unified type system.
+   */
+  protected getCanonicalType(field: FieldOptions, fieldType?: unknown): CanonicalType {
+    return fieldOptionsToCanonical(field, fieldType);
+  }
+
+  /**
+   * Convert CanonicalType to SQL type string for this dialect.
+   * Also handles legacy string types for backward compatibility.
+   */
+  protected canonicalTypeToSql(type: CanonicalType | string): string {
+    // Handle legacy string types
+    if (typeof type === 'string') {
+      return type;
+    }
+    return canonicalToSql(type, this.dialect);
+  }
+
+  // ============================================================================
+  // SchemaGenerator Implementation
+  // ============================================================================
 
   generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string {
     const meta = getMeta(entity);
@@ -44,13 +77,13 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const columns = this.generateColumnDefinitions(meta);
     const constraints = this.generateTableConstraints(meta);
 
-    const ifNotExists = options.ifNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
     let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(tableName)} (\n`;
     sql += columns.map((col) => `  ${col}`).join(',\n');
 
     if (constraints.length > 0) {
       sql += ',\n';
-      sql += constraints.map((c: any) => `  ${c}`).join(',\n');
+      sql += constraints.map((c) => `  ${c}`).join(',\n');
     }
 
     sql += '\n)';
@@ -138,8 +171,6 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       }
     }
 
-    // Note: columnsToDrop and indexesToDrop cannot be auto-reversed
-    // because we don't store the original schema. These require manual down migrations.
     if (diff.columnsToDrop?.length || diff.indexesToDrop?.length) {
       statements.push(`-- TODO: Manual reversal needed for dropped columns/indexes`);
     }
@@ -149,11 +180,15 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     const unique = index.unique ? 'UNIQUE ' : '';
-    const columns = index.columns.map((c: any) => this.escapeId(c)).join(', ');
-    return `CREATE ${unique}INDEX ${this.escapeId(index.name)} ON ${this.escapeId(tableName)} (${columns});`;
+    const columns = index.columns.map((c) => this.escapeId(c)).join(', ');
+    const ifNotExists = this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    return `CREATE ${unique}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)} (${columns});`;
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
+    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+      return `DROP INDEX ${this.escapeId(indexName)} ON ${this.escapeId(tableName)};`;
+    }
     return `DROP INDEX IF EXISTS ${this.escapeId(indexName)};`;
   }
 
@@ -166,7 +201,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     for (const key of fieldKeys) {
       const field = meta.fields[key];
-      if (field?.virtual) continue; // Skip virtual fields
+      if (field?.virtual) continue;
 
       const colDef = this.generateColumnDefinition(key as string, field, meta);
       columns.push(colDef);
@@ -180,33 +215,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
    */
   public generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
     const column = this.fieldToColumnSchema(fieldKey, field, meta);
-    const tableName = this.resolveTableName(meta.entity, meta);
-
-    const sqlType = column.isAutoIncrement ? this.serialPrimaryKeyType : column.type;
-    let definition = `${this.escapeId(column.name)} ${sqlType}`;
-
-    // PRIMARY KEY constraint (for non-serial types)
-    if (column.isPrimaryKey && !sqlType.includes('PRIMARY KEY')) {
-      definition += ' PRIMARY KEY';
-    }
-
-    // NULL/NOT NULL and UNIQUE
-    if (!column.isPrimaryKey) {
-      if (!column.nullable) definition += ' NOT NULL';
-      if (column.isUnique) definition += ' UNIQUE';
-    }
-
-    // DEFAULT value
-    if (column.defaultValue !== undefined) {
-      definition += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
-    }
-
-    // COMMENT (if supported)
-    if (column.comment) {
-      definition += this.generateColumnComment(tableName, column.name, column.comment);
-    }
-
-    return definition;
+    return this.generateColumnDefinitionFromSchema(column);
   }
 
   /**
@@ -217,24 +226,23 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     options: { includePrimaryKey?: boolean; includeUnique?: boolean } = {},
   ): string {
     const { includePrimaryKey = true, includeUnique = true } = options;
-    const isAutoIncrement = column.isAutoIncrement && !column.type.includes('IDENTITY');
 
-    let type = isAutoIncrement && this.serialPrimaryKeyType ? this.serialPrimaryKeyType : column.type;
+    let type = column.type;
 
-    // Some serial types (e.g. Postgres IDENTITY or MySQL AUTO_INCREMENT) include "PRIMARY KEY"
-    // in their definition string. We strip it if includePrimaryKey is false to avoid double PK errors.
-    if (!includePrimaryKey) {
-      type = type.replace(/\s+PRIMARY\s+KEY/i, '');
+    if (!type.includes('(')) {
+      if (column.precision !== undefined) {
+        if (column.scale !== undefined) {
+          type += `(${column.precision}, ${column.scale})`;
+        } else {
+          type += `(${column.precision})`;
+        }
+      } else if (column.length !== undefined) {
+        type += `(${column.length})`;
+      }
     }
 
-    if (column.length && !type.includes('(')) {
-      type = `${type}(${column.length})`;
-    } else if (column.precision !== undefined && !type.includes('(')) {
-      if (column.scale !== undefined) {
-        type = `${type}(${column.precision}, ${column.scale})`;
-      } else {
-        type = `${type}(${column.precision})`;
-      }
+    if (!includePrimaryKey) {
+      type = type.replace(/\s+PRIMARY\s+KEY/i, '');
     }
 
     let definition = `${this.escapeId(column.name)} ${type}`;
@@ -253,6 +261,10 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     if (column.defaultValue !== undefined) {
       definition += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
+    }
+
+    if (column.comment) {
+      definition += this.generateColumnComment(column.name, column.comment);
     }
 
     return definition;
@@ -279,8 +291,9 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     // Generate foreign key constraints from references
     for (const key of fieldKeys) {
       const field = meta.fields[key];
-      if (field?.reference && field.foreignKey !== false) {
-        const refEntity = field.reference();
+      const reference = field?.references ?? field?.reference;
+      if (reference && field.foreignKey !== false) {
+        const refEntity = reference();
         const refMeta = getMeta(refEntity);
         const refIdField = refMeta.fields[refMeta.id];
         const columnName = this.resolveColumnName(key as string, field);
@@ -297,110 +310,114 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     return constraints;
   }
-  public getSqlType(field: FieldOptions, fieldType?: unknown): string {
-    // Use explicit column type if specified
-    if (field.columnType) {
-      return this.mapColumnType(field.columnType, field);
-    }
 
-    // Inherit type from referenced field if applicable
-    if (field.reference) {
-      const refEntity = field.reference();
+  public getSqlType(field: FieldOptions, fieldType?: unknown): string {
+    // If field has a reference, inherit type from the target primary key
+    const reference = field.references ?? field.reference;
+    if (reference) {
+      const refEntity = reference();
       const refMeta = getMeta(refEntity);
       const refIdField = refMeta.fields[refMeta.id];
-      // Recursively call getSqlType for the referenced ID field
-      return this.getSqlType({ ...refIdField, reference: undefined }, refIdField.type);
+      return this.getSqlType(
+        { ...refIdField, references: undefined, reference: undefined, isId: undefined, autoIncrement: false },
+        refIdField.type,
+      );
     }
 
-    // Priority: 1. field.type (explicit logical type)
-    //           2. fieldType (inferred TS type)
-    const type = field.type ?? fieldType;
+    // Get canonical type and convert to SQL
+    const canonical = this.getCanonicalType(field, fieldType);
 
-    // Handle semantic types (e.g. 'uuid', 'json', 'vector') or any ColumnType string
-    if (typeof type === 'string') {
-      return this.mapColumnType(type as ColumnType, field);
+    // Special case for serial primary keys
+    if (isAutoIncrement(field, field.isId === true)) {
+      return this.serialPrimaryKeyType;
     }
 
-    if (isNumericType(type)) {
-      return field.precision ? this.mapColumnType('decimal', field) : this.mapColumnType('bigint', field);
-    }
-
-    if (type === String) {
-      return this.mapColumnType('varchar', field);
-    }
-
-    if (type === Boolean) {
-      return this.getBooleanType();
-    }
-
-    if (type === Date) {
-      return this.mapColumnType('timestamp', field);
-    }
-
-    return this.mapColumnType('varchar', field);
+    return this.canonicalTypeToSql(canonical);
   }
-
-  /**
-   * Map uql column type to database-specific SQL type
-   */
-  public abstract mapColumnType(columnType: ColumnType, field: FieldOptions): string;
 
   /**
    * Get the boolean type for this database
    */
-  public abstract getBooleanType(): string;
+  public getBooleanType(): string {
+    return this.canonicalTypeToSql({ category: 'boolean' });
+  }
 
   /**
    * Generate ALTER COLUMN statements (database-specific)
    */
-  public abstract generateAlterColumnStatements(
-    tableName: string,
-    column: ColumnSchema,
-    newDefinition: string,
-  ): string[];
+  public generateAlterColumnStatements(tableName: string, column: ColumnSchema, newDefinition: string): string[] {
+    const table = this.escapeId(tableName);
+    const colName = this.escapeId(column.name);
+
+    if (this.config.alterColumnSyntax === 'none') {
+      throw new Error(
+        `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
+          `This database does not support ALTER COLUMN.`,
+      );
+    }
+
+    if (this.dialect === 'postgres') {
+      const statements: string[] = [];
+      // PostgreSQL uses separate ALTER COLUMN clauses for different changes
+      // 1. Change type
+      statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} TYPE ${column.type};`);
+
+      // 2. Change nullability
+      if (column.nullable) {
+        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP NOT NULL;`);
+      } else {
+        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} SET NOT NULL;`);
+      }
+
+      // 3. Change default value
+      if (column.defaultValue !== undefined) {
+        statements.push(
+          `ALTER TABLE ${table} ALTER COLUMN ${colName} SET DEFAULT ${this.formatDefaultValue(column.defaultValue)};`,
+        );
+      } else {
+        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP DEFAULT;`);
+      }
+      return statements;
+    }
+
+    return [`ALTER TABLE ${table} ${this.config.alterColumnSyntax} ${newDefinition};`];
+  }
 
   /**
    * Get table options (e.g., ENGINE for MySQL)
    */
   getTableOptions<E>(meta: EntityMeta<E>): string {
-    return '';
+    return this.config.tableOptions ? ` ${this.config.tableOptions}` : '';
   }
 
   /**
    * Generate column comment clause (if supported)
    */
-  public abstract generateColumnComment(tableName: string, columnName: string, comment: string): string;
+  public generateColumnComment(columnName: string, comment: string): string {
+    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+      const escapedComment = comment.replace(/'/g, "''");
+      return ` COMMENT '${escapedComment}'`;
+    }
+    return '';
+  }
 
   /**
    * Format a default value for SQL
    */
   public formatDefaultValue(value: unknown): string {
-    if (value === null) {
-      return 'NULL';
+    if (this.dialect === 'sqlite' && typeof value === 'boolean') {
+      return value ? '1' : '0';
     }
-    if (typeof value === 'string') {
-      return `'${value.replace(/'/g, "''")}'`;
-    }
-    if (typeof value === 'boolean') {
-      return value ? 'TRUE' : 'FALSE';
-    }
-    if (typeof value === 'number' || typeof value === 'bigint') {
-      return String(value);
-    }
-    if (value instanceof Date) {
-      return `'${value.toISOString()}'`;
-    }
-    return String(value);
+    return formatDefaultValue(value);
   }
 
   /**
-   * Compare two schemas and return the differences
+   * Compare an entity with a database table node and return the differences.
    */
-  diffSchema<E>(entity: Type<E>, currentSchema: TableSchema | undefined): SchemaDiff | undefined {
+  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
 
-    if (!currentSchema) {
-      // Table doesn't exist, need to create
+    if (!currentTable) {
       return {
         tableName: this.resolveTableName(entity, meta),
         type: 'create',
@@ -411,10 +428,9 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const columnsToAlter: { from: ColumnSchema; to: ColumnSchema }[] = [];
     const columnsToDrop: string[] = [];
 
-    const currentColumns = new Map(currentSchema.columns.map((c: any) => [c.name, c]));
+    const currentColumns = new Map<string, ColumnNode>(currentTable.columns);
     const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
 
-    // Check for new or altered columns
     for (const key of fieldKeys) {
       const field = meta.fields[key];
       if (field?.virtual) continue;
@@ -423,25 +439,23 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       const currentColumn = currentColumns.get(columnName);
 
       if (!currentColumn) {
-        // Column needs to be added
         columnsToAdd.push(this.fieldToColumnSchema(key as string, field, meta));
       } else {
-        // Check if column needs alteration
         const desiredColumn = this.fieldToColumnSchema(key as string, field, meta);
-        if (this.columnsNeedAlteration(currentColumn, desiredColumn)) {
-          columnsToAlter.push({ from: currentColumn, to: desiredColumn });
+        const currentColumnSchema = this.columnNodeToSchema(currentColumn);
+        if (this.columnsNeedAlteration(currentColumnSchema, desiredColumn)) {
+          columnsToAlter.push({ from: currentColumnSchema, to: desiredColumn });
         }
       }
       currentColumns.delete(columnName);
     }
 
-    // Remaining columns in currentColumns should be dropped
     for (const [name] of currentColumns) {
       columnsToDrop.push(name);
     }
 
     if (columnsToAdd.length === 0 && columnsToAlter.length === 0 && columnsToDrop.length === 0) {
-      return undefined; // No changes needed
+      return undefined;
     }
 
     return {
@@ -450,6 +464,19 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
       columnsToDrop: columnsToDrop.length > 0 ? columnsToDrop : undefined,
+    };
+  }
+
+  private columnNodeToSchema(col: ColumnNode): ColumnSchema {
+    return {
+      name: col.name,
+      type: this.canonicalTypeToSql(col.type),
+      nullable: col.nullable,
+      defaultValue: col.defaultValue,
+      isPrimaryKey: col.isPrimaryKey,
+      isAutoIncrement: col.isAutoIncrement,
+      isUnique: col.isUnique,
+      comment: col.comment,
     };
   }
 
@@ -478,9 +505,6 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
    * Check if two columns differ enough to require alteration
    */
   protected columnsNeedAlteration(current: ColumnSchema, desired: ColumnSchema): boolean {
-    // If both are primary keys, we skip alteration by default.
-    // Altering primary keys is complex, dangerous, and often requires
-    // dropping and recreating foreign keys.
     if (current.isPrimaryKey && desired.isPrimaryKey) {
       return false;
     }
@@ -496,51 +520,12 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
   }
 
   /**
-   * Compare two column types for equality, accounting for dialect-specific differences
+   * Compare two column types for equality using the canonical type system
    */
   protected isTypeEqual(current: ColumnSchema, desired: ColumnSchema): boolean {
-    const cType = this.normalizeType(current);
-    const dType = this.normalizeType(desired);
-    return cType === dType;
-  }
-
-  /**
-   * Normalize a column type string for comparison
-   */
-  protected normalizeType(column: ColumnSchema): string {
-    let type = column.type.toLowerCase();
-
-    // Remove any extra spaces and standardize common aliases
-    type = type
-      .replace(/\s+/g, '')
-      .replace(/^integer$/, 'int')
-      .replace(/^boolean$/, 'tinyint(1)') // Common in MySQL
-      .replace(/^doubleprecision$/, 'double') // Postgres vs MySQL
-      .replace(/^float8$/, 'double')
-      .replace(/^float4$/, 'real')
-      .replace(/^characterany$/, 'varchar')
-      .replace(/^charactervarying$/, 'varchar')
-      .replace(/generated(always|bydefault)asidentity$/, '') // Ignore identity keywords
-      .replace(/unsigned$/, ''); // Ignore unsigned for type comparison
-
-    // Strip display width/length for integer types as they are often
-    // inconsistent between introspection and generation (e.g. bigint(20) vs bigint)
-    if (type.includes('int')) {
-      type = type.replace(/\(\d+\)/, '');
-    }
-
-    // Add length if it's not already in the type string
-    if (column.length && !type.includes('(')) {
-      type = `${type}(${column.length})`;
-    } else if (column.precision !== undefined && !type.includes('(')) {
-      if (column.scale !== undefined) {
-        type = `${type}(${column.precision},${column.scale})`;
-      } else {
-        type = `${type}(${column.precision})`;
-      }
-    }
-
-    return type;
+    const typeA = sqlToCanonical(current.type);
+    const typeB = sqlToCanonical(desired.type);
+    return areTypesEqual(typeA, typeB);
   }
 
   /**
@@ -553,9 +538,7 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
     const normalize = (val: unknown): string => {
       if (val === null) return 'null';
       if (typeof val === 'string') {
-        // Remove type casts first (common in Postgres like ::text, ::character varying, ::timestamp without time zone)
         let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
-        // Remove surrounding quotes
         s = s.replace(/^'(.*)'$/, '$1');
         if (s.toLowerCase() === 'null') return 'null';
         return s;
@@ -565,4 +548,298 @@ export abstract class AbstractSchemaGenerator extends AbstractDialect implements
 
     return normalize(current) === normalize(desired);
   }
+
+  // ============================================================================
+  // SchemaAST Support Methods
+  // ============================================================================
+
+  /**
+   * Generate CREATE TABLE SQL from a TableNode.
+   */
+  generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string {
+    const columns: string[] = [];
+    const constraints: string[] = [];
+
+    for (const col of table.columns.values()) {
+      const colDef = this.generateColumnFromNode(col);
+      columns.push(colDef);
+    }
+
+    if (table.primaryKey.length > 1) {
+      const pkCols = table.primaryKey.map((c) => this.escapeId(c.name)).join(', ');
+      constraints.push(`PRIMARY KEY (${pkCols})`);
+    }
+
+    // Add table-level foreign keys if any
+    for (const rel of table.outgoingRelations) {
+      if (rel.from.columns.length > 0) {
+        const fromCols = rel.from.columns.map((c) => this.escapeId(c.name)).join(', ');
+        const toCols = rel.to.columns.map((c) => this.escapeId(c.name)).join(', ');
+        const constraintName = rel.name ? `CONSTRAINT ${this.escapeId(rel.name)} ` : '';
+        constraints.push(
+          `${constraintName}FOREIGN KEY (${fromCols}) REFERENCES ${this.escapeId(rel.to.table.name)} (${toCols})` +
+            ` ON DELETE ${rel.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${rel.onUpdate ?? this.defaultForeignKeyAction}`,
+        );
+      }
+    }
+
+    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
+    sql += columns.map((col) => `  ${col}`).join(',\n');
+
+    if (constraints.length > 0) {
+      sql += ',\n';
+      sql += constraints.map((c) => `  ${c}`).join(',\n');
+    }
+
+    sql += '\n)';
+
+    if (this.config.tableOptions) {
+      sql += ` ${this.config.tableOptions}`;
+    }
+
+    sql += ';';
+
+    // Generate indexes as separate statements
+    const indexStatements = table.indexes.map((idx) => this.generateCreateIndexFromNode(idx, options)).join('\n');
+
+    return indexStatements ? `${sql}\n${indexStatements}` : sql;
+  }
+
+  /**
+   * Generate a column definition from a ColumnNode.
+   */
+  protected generateColumnFromNode(col: ColumnNode): string {
+    const colName = this.escapeId(col.name);
+    let sqlType = this.canonicalTypeToSql(col.type);
+
+    if (col.isPrimaryKey && col.isAutoIncrement) {
+      sqlType = this.serialPrimaryKeyType;
+    }
+
+    let def = `${colName} ${sqlType}`;
+
+    if (!col.nullable && !col.isPrimaryKey) {
+      def += ' NOT NULL';
+    }
+
+    if (col.isPrimaryKey && col.table.primaryKey.length === 1 && !sqlType.includes('PRIMARY KEY')) {
+      def += ' PRIMARY KEY';
+    }
+
+    if (col.isUnique && !col.isPrimaryKey) {
+      def += ' UNIQUE';
+    }
+
+    if (col.defaultValue !== undefined) {
+      def += ` DEFAULT ${this.formatDefaultValue(col.defaultValue)}`;
+    }
+
+    if (col.comment) {
+      def += this.generateColumnComment(col.name, col.comment);
+    }
+
+    return def;
+  }
+
+  /**
+   * Generate CREATE INDEX SQL from an IndexNode.
+   */
+  generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists?: boolean } = {}): string {
+    const uniqueStr = index.unique ? 'UNIQUE ' : '';
+    const columns = index.columns.map((c) => this.escapeId(c.name)).join(', ');
+    const tableName = this.escapeId(index.table.name);
+    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+
+    return `CREATE ${uniqueStr}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${tableName} (${columns});`;
+  }
+
+  /**
+   * Generate DROP TABLE SQL from a TableNode.
+   */
+  generateDropTableFromNode(table: TableNode, options: { ifExists?: boolean } = {}): string {
+    const ifExists = options.ifExists ? 'IF EXISTS ' : '';
+    return `DROP TABLE ${ifExists}${this.escapeId(table.name)};`;
+  }
+
+  // ============================================================================
+  // Phase 3: Builder Operation Methods (Moved forward for unification)
+  // ============================================================================
+
+  generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string {
+    const tableNode = this.tableDefinitionToNode(table);
+    return this.generateCreateTableFromNode(tableNode, options);
+  }
+
+  generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string {
+    const ifExists = options?.ifExists ? 'IF EXISTS ' : '';
+    const cascade = options?.cascade ? ' CASCADE' : '';
+    return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
+  }
+
+  generateRenameTableSql(oldName: string, newName: string): string {
+    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+      return `RENAME TABLE ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
+    }
+    return `ALTER TABLE ${this.escapeId(oldName)} RENAME TO ${this.escapeId(newName)};`;
+  }
+
+  generateAddColumnSql(tableName: string, column: FullColumnDefinition): string {
+    const colSql = this.generateColumnFromNode(this.fullColumnDefinitionToNode(column, tableName));
+    return `ALTER TABLE ${this.escapeId(tableName)} ADD COLUMN ${colSql};`;
+  }
+
+  generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string {
+    const colSql = this.generateColumnFromNode(this.fullColumnDefinitionToNode(column, tableName));
+    return this.generateAlterColumnStatements(tableName, { name: columnName, type: '' } as ColumnSchema, colSql).join(
+      '\n',
+    );
+  }
+
+  generateDropColumnSql(tableName: string, columnName: string): string {
+    return `ALTER TABLE ${this.escapeId(tableName)} DROP COLUMN ${this.escapeId(columnName)};`;
+  }
+
+  generateRenameColumnSql(tableName: string, oldName: string, newName: string): string {
+    return `ALTER TABLE ${this.escapeId(tableName)} RENAME COLUMN ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
+  }
+
+  generateCreateIndexSql(tableName: string, index: IndexSchema): string {
+    return this.generateCreateIndex(tableName, index);
+  }
+
+  generateDropIndexSql(tableName: string, indexName: string): string {
+    return this.generateDropIndex(tableName, indexName);
+  }
+
+  generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string {
+    const fkCols = foreignKey.columns.map((c) => this.escapeId(c)).join(', ');
+    const refCols = foreignKey.referencesColumns.map((c) => this.escapeId(c)).join(', ');
+    const constraintName = foreignKey.name
+      ? this.escapeId(foreignKey.name)
+      : this.escapeId(`fk_${tableName}_${foreignKey.columns.join('_')}`);
+
+    return (
+      `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} ` +
+      `FOREIGN KEY (${fkCols}) REFERENCES ${this.escapeId(foreignKey.referencesTable)} (${refCols}) ` +
+      `ON DELETE ${foreignKey.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${foreignKey.onUpdate ?? this.defaultForeignKeyAction};`
+    );
+  }
+
+  generateDropForeignKeySql(tableName: string, constraintName: string): string {
+    return `ALTER TABLE ${this.escapeId(tableName)} ${this.config.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
+  }
+
+  private tableDefinitionToNode(def: TableDefinition): TableNode {
+    const columns = new Map<string, ColumnNode>();
+    const pkNodes: ColumnNode[] = [];
+
+    const table: TableNode = {
+      name: def.name,
+      columns,
+      primaryKey: [], // placeholder
+      indexes: [],
+      schema: { tables: new Map(), relationships: [], indexes: [] },
+      incomingRelations: [],
+      outgoingRelations: [],
+      comment: def.comment,
+    };
+
+    for (const colDef of def.columns) {
+      const node = this.fullColumnDefinitionToNode(colDef, def.name);
+      (node as { table: TableNode }).table = table;
+      columns.set(node.name, node);
+      if (node.isPrimaryKey) {
+        pkNodes.push(node);
+      }
+    }
+
+    const finalPrimaryKey = def.primaryKey
+      ? def.primaryKey.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined)
+      : pkNodes;
+
+    (table as { primaryKey: ColumnNode[] }).primaryKey = finalPrimaryKey;
+
+    for (const idxDef of def.indexes) {
+      const indexNode: IndexNode = {
+        name: idxDef.name,
+        table,
+        columns: idxDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
+        unique: idxDef.unique,
+      };
+      table.indexes.push(indexNode);
+    }
+
+    for (const fkDef of def.foreignKeys) {
+      const relNode: RelationshipNode = {
+        name: fkDef.name ?? `fk_${def.name}_${fkDef.columns.join('_')}`,
+        type: 'ManyToOne', // Builder default
+        from: {
+          table,
+          columns: fkDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
+        },
+        to: {
+          table: { name: fkDef.referencesTable } as TableNode,
+          columns: fkDef.referencesColumns.map((name) => ({ name }) as ColumnNode),
+        },
+        onDelete: fkDef.onDelete,
+        onUpdate: fkDef.onUpdate,
+      };
+      table.outgoingRelations.push(relNode);
+    }
+
+    return table;
+  }
+
+  private fullColumnDefinitionToNode(col: FullColumnDefinition, tableName: string): ColumnNode {
+    return {
+      name: col.name,
+      type: col.type,
+      nullable: col.nullable,
+      defaultValue: col.defaultValue,
+      isPrimaryKey: col.primaryKey,
+      isAutoIncrement: col.autoIncrement,
+      isUnique: col.unique,
+      comment: col.comment,
+      table: { name: tableName } as TableNode,
+      referencedBy: [],
+      references: col.foreignKey
+        ? {
+            name: `fk_${tableName}_${col.name}`,
+            type: 'ManyToOne',
+            from: { table: { name: tableName } as TableNode, columns: [] },
+            to: {
+              table: { name: col.foreignKey.table } as TableNode,
+              columns: col.foreignKey.columns.map((name) => ({ name }) as ColumnNode),
+            },
+            onDelete: col.foreignKey.onDelete,
+            onUpdate: col.foreignKey.onUpdate,
+          }
+        : undefined,
+    };
+  }
+}
+
+import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
+
+export { MongoSchemaGenerator };
+
+/**
+ * Factory function to create a SchemaGenerator for a specific dialect.
+ * Returns undefined for unsupported dialects.
+ */
+export function createSchemaGenerator(
+  dialect: Dialect,
+  namingStrategy?: NamingStrategy,
+  defaultForeignKeyAction?: ForeignKeyAction,
+): SchemaGenerator | undefined {
+  if (dialect === 'mongodb') {
+    return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
+  }
+  // Check if dialect is supported (has config)
+  const supportedDialects: Dialect[] = ['postgres', 'mysql', 'mariadb', 'sqlite'];
+  if (!supportedDialects.includes(dialect)) {
+    return undefined;
+  }
+  return new SqlSchemaGenerator(dialect, namingStrategy, defaultForeignKeyAction);
 }

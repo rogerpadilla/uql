@@ -15,7 +15,7 @@ import type {
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
-    super(namingStrategy, '`', 'BEGIN TRANSACTION');
+    super('sqlite', namingStrategy);
   }
 
   override addValue(values: unknown[], value: unknown): string {

@@ -1,3 +1,6 @@
+import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
+import type { SchemaAST } from '../schema/schemaAST.js';
+import type { ForeignKeyAction, IndexNode, TableNode } from '../schema/types.js';
 import type { Dialect, EntityMeta, FieldOptions, LoggingOptions, NamingStrategy, SqlQuerier, Type } from './index.js';
 
 /**
@@ -87,6 +90,11 @@ export interface MigratorOptions {
    * Naming strategy for database tables and columns
    */
   readonly namingStrategy?: NamingStrategy;
+
+  /**
+   * Default action for foreign key ON DELETE and ON UPDATE clauses.
+   */
+  readonly defaultForeignKeyAction?: ForeignKeyAction;
 
   /**
    * Custom schema generator for DDL operations.
@@ -210,9 +218,9 @@ export interface SchemaGenerator {
   getSqlType(fieldOptions: FieldOptions, fieldType?: unknown): string;
 
   /**
-   * Compare two schemas and return the differences
+   * Compare an entity with a database table node and return the differences.
    */
-  diffSchema<E>(entity: Type<E>, currentSchema: TableSchema | undefined): SchemaDiff | undefined;
+  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined;
 
   /**
    * Resolve table name using entity and naming strategy
@@ -223,6 +231,38 @@ export interface SchemaGenerator {
    * Resolve column name using field options and naming strategy
    */
   resolveColumnName(key: string, field: FieldOptions): string;
+
+  // === SchemaAST / TableNode Support ===
+  /** Generate CREATE TABLE statement from a TableNode */
+  generateCreateTableFromNode(table: TableNode, options?: { ifNotExists?: boolean }): string;
+  /** Generate CREATE INDEX statement from an IndexNode */
+  generateCreateIndexFromNode(index: IndexNode, options?: { ifNotExists?: boolean }): string;
+  /** Generate DROP TABLE statement from a TableNode */
+  generateDropTableFromNode(table: TableNode, options?: { ifExists?: boolean }): string;
+
+  // === Migration Builder Support ===
+  /** Generate CREATE TABLE statement from a TableDefinition */
+  generateCreateTableFromDefinition(table: TableDefinition, options?: { ifNotExists?: boolean }): string;
+  /** Generate DROP TABLE statement */
+  generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string;
+  /** Generate RENAME TABLE statement */
+  generateRenameTableSql(oldName: string, newName: string): string;
+  /** Generate ADD COLUMN statement */
+  generateAddColumnSql(tableName: string, column: FullColumnDefinition): string;
+  /** Generate ALTER COLUMN statement */
+  generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string;
+  /** Generate DROP COLUMN statement */
+  generateDropColumnSql(tableName: string, columnName: string): string;
+  /** Generate RENAME COLUMN statement */
+  generateRenameColumnSql(tableName: string, oldName: string, newName: string): string;
+  /** Generate CREATE INDEX statement from IndexSchema */
+  generateCreateIndexSql(tableName: string, index: IndexSchema): string;
+  /** Generate DROP INDEX statement */
+  generateDropIndexSql(tableName: string, indexName: string): string;
+  /** Generate ADD FOREIGN KEY statement */
+  generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string;
+  /** Generate DROP FOREIGN KEY statement */
+  generateDropForeignKeySql(tableName: string, constraintName: string): string;
 }
 
 /**
@@ -230,9 +270,9 @@ export interface SchemaGenerator {
  */
 export interface SchemaIntrospector {
   /**
-   * Get the schema of a specific table
+   * Introspect entire database schema and return SchemaAST.
    */
-  getTableSchema(tableName: string): Promise<TableSchema | undefined>;
+  introspect(): Promise<SchemaAST>;
 
   /**
    * Get all table names in the database

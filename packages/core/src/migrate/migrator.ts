@@ -1,7 +1,8 @@
-import { readdir } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
+import { introspectSchema } from '../schema/index.js';
 import type {
   Dialect,
   LoggingOptions,
@@ -21,20 +22,14 @@ import type {
 } from '../type/index.js';
 import { isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
+import type { IMigrationBuilder } from './builder/types.js';
 import {
-  MariadbSchemaGenerator,
-  MongoSchemaGenerator,
-  MysqlSchemaGenerator,
-  PostgresSchemaGenerator,
-  SqliteSchemaGenerator,
-} from './generator/index.js';
-import {
-  MariadbSchemaIntrospector,
   MongoSchemaIntrospector,
   MysqlSchemaIntrospector,
   PostgresSchemaIntrospector,
   SqliteSchemaIntrospector,
 } from './introspection/index.js';
+import { createSchemaGenerator } from './schemaGenerator.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 
 /**
@@ -88,9 +83,8 @@ export class Migrator {
       case 'postgres':
         return new PostgresSchemaIntrospector(this.pool);
       case 'mysql':
-        return new MysqlSchemaIntrospector(this.pool);
       case 'mariadb':
-        return new MariadbSchemaIntrospector(this.pool);
+        return new MysqlSchemaIntrospector(this.pool);
       case 'sqlite':
         return new SqliteSchemaIntrospector(this.pool);
       case 'mongodb':
@@ -101,20 +95,7 @@ export class Migrator {
   }
 
   protected createGenerator(namingStrategy?: NamingStrategy): SchemaGenerator | undefined {
-    switch (this.dialect) {
-      case 'postgres':
-        return new PostgresSchemaGenerator(namingStrategy);
-      case 'mysql':
-        return new MysqlSchemaGenerator(namingStrategy);
-      case 'mariadb':
-        return new MariadbSchemaGenerator(namingStrategy);
-      case 'sqlite':
-        return new SqliteSchemaGenerator(namingStrategy);
-      case 'mongodb':
-        return new MongoSchemaGenerator(namingStrategy);
-      default:
-        return undefined;
-    }
+    return createSchemaGenerator(this.dialect, namingStrategy);
   }
 
   /**
@@ -139,7 +120,7 @@ export class Migrator {
     }
 
     // Sort by name (which typically includes timestamp)
-    return migrations.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    return migrations.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /**
@@ -149,7 +130,7 @@ export class Migrator {
     const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
 
     const executedSet = new Set(executed);
-    return migrations.filter((m: any) => !executedSet.has(m.name));
+    return migrations.filter((m) => !executedSet.has(m.name));
   }
 
   /**
@@ -169,7 +150,7 @@ export class Migrator {
     let migrationsToRun = pendingMigrations;
 
     if (options.to) {
-      const toIndex = migrationsToRun.findIndex((m: any) => m.name === options.to);
+      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
       if (toIndex === -1) {
         throw new Error(`Migration '${options.to}' not found`);
       }
@@ -199,13 +180,13 @@ export class Migrator {
     const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
 
     const executedSet = new Set(executed);
-    const executedMigrations = migrations.filter((m: any) => executedSet.has(m.name)).reverse(); // Rollback in reverse order
+    const executedMigrations = migrations.filter((m) => executedSet.has(m.name)).reverse(); // Rollback in reverse order
 
     const results: MigrationResult[] = [];
     let migrationsToRun = executedMigrations;
 
     if (options.to) {
-      const toIndex = migrationsToRun.findIndex((m: any) => m.name === options.to);
+      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
       if (toIndex === -1) {
         throw new Error(`Migration '${options.to}' not found`);
       }
@@ -296,7 +277,6 @@ export class Migrator {
 
     const content = this.generateMigrationContent(name);
 
-    const { writeFile, mkdir } = await import('node:fs/promises');
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
 
@@ -343,7 +323,6 @@ export class Migrator {
 
     const content = this.generateMigrationContentWithStatements(name, upStatements, downStatements.reverse());
 
-    const { writeFile, mkdir } = await import('node:fs/promises');
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
 
@@ -359,13 +338,14 @@ export class Migrator {
       throw new Error('Schema generator and introspector must be set');
     }
 
+    const ast = await introspectSchema(this.schemaIntrospector);
     const diffs: SchemaDiff[] = [];
 
     for (const entity of this.entities) {
       const meta = getMeta(entity);
       const tableName = this.schemaGenerator.resolveTableName(entity, meta);
-      const currentSchema = await this.schemaIntrospector.getTableSchema(tableName);
-      const diff = this.schemaGenerator.diffSchema(entity, currentSchema);
+      const currentTable = ast.getTable(tableName);
+      const diff = this.schemaGenerator.diffSchema(entity, currentTable);
       if (diff) {
         diffs.push(diff);
       }
@@ -746,5 +726,37 @@ ${downSql}
  * Helper function to define a migration with proper typing
  */
 export function defineMigration(migration: MigrationDefinition): MigrationDefinition {
+  return migration;
+}
+
+/**
+ * Migration definition that uses the type-safe builder API.
+ */
+export interface BuilderMigrationDefinition {
+  readonly name?: string;
+  readonly up: (builder: IMigrationBuilder) => Promise<void>;
+  readonly down: (builder: IMigrationBuilder) => Promise<void>;
+}
+
+/**
+ * Define a migration using the type-safe builder API.
+ *
+ * @example
+ * ```ts
+ * export default defineBuilderMigration({
+ *   async up(m) {
+ *     await m.createTable('users', (table) => {
+ *       table.id();
+ *       table.string('email', 255).unique();
+ *       table.timestamps();
+ *     });
+ *   },
+ *   async down(m) {
+ *     await m.dropTable('users');
+ *   }
+ * });
+ * ```
+ */
+export function defineBuilderMigration(migration: BuilderMigrationDefinition): BuilderMigrationDefinition {
   return migration;
 }

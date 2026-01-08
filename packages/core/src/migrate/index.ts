@@ -1,7 +1,4 @@
-// Core types
-
 // Re-export core types for convenience
-// Migration-specific types
 export type {
   ColumnSchema,
   Dialect,
@@ -22,21 +19,26 @@ export type {
   TableSchema,
 } from '../type/index.js';
 export { type Config, isSqlQuerier } from '../type/index.js';
+
+// Type-safe migration builder
+export * from './builder/index.js';
 export { loadConfig } from './cli-config.js';
-export {
-  MysqlSchemaGenerator,
-  MysqlSchemaGenerator as MariadbSchemaGenerator,
-} from './generator/mysqlSchemaGenerator.js';
-export { PostgresSchemaGenerator } from './generator/postgresSchemaGenerator.js';
-export { SqliteSchemaGenerator } from './generator/sqliteSchemaGenerator.js';
+
+// Entity code generation
+export * from './codegen/index.js';
+
+// Drift detection
+export * from './drift/index.js';
 // Schema introspection
-export { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
-export { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
-export { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
+export * from './introspection/index.js';
 // Main migrator
-export { defineMigration, Migrator } from './migrator.js';
+export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 // Schema generators
-export { AbstractSchemaGenerator } from './schemaGenerator.js';
+export { createSchemaGenerator, MongoSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
+
 // Storage implementations
 export { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 export { JsonMigrationStorage } from './storage/jsonStorage.js';
+
+// Schema sync
+export * from './sync/index.js';

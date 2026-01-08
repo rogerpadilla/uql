@@ -129,7 +129,14 @@ export type FieldOptions = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
+  /**
+   * @deprecated Use 'references' instead for better semantics.
+   */
   readonly reference?: EntityGetter;
+  /**
+   * Entity that this field references (for foreign keys).
+   */
+  readonly references?: EntityGetter;
   readonly virtual?: QueryRaw;
   readonly updatable?: boolean;
   readonly eager?: boolean;
@@ -248,7 +255,25 @@ export type EntityMeta<E> = {
   relations: {
     [K in RelationKey<E>]?: RelationOptions;
   };
+  /** Composite indexes defined via @Index decorator */
+  indexes?: EntityIndexMeta[];
   processed?: boolean;
+};
+
+/**
+ * Index metadata from @Index decorator.
+ */
+export type EntityIndexMeta = {
+  /** Column names in the index */
+  columns: string[];
+  /** Custom index name */
+  name?: string;
+  /** Whether index is unique */
+  unique: boolean;
+  /** Index type (btree, hash, etc.) */
+  type?: string;
+  /** Partial index condition (WHERE clause) */
+  where?: string;
 };
 
 export type Primitive = string | number | symbol;

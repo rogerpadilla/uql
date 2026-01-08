@@ -24,11 +24,11 @@ import { Field } from './field.js';
 it('User', () => {
   const meta = getMeta(User);
 
-  expect(meta.fields.companyId.reference()).toBe(Company);
+  expect(meta.fields.companyId.references()).toBe(Company);
   expect(meta.relations.company.entity()).toBe(Company);
   expect(meta.relations.company.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
 
-  expect(meta.fields.creatorId.reference()).toBe(User);
+  expect(meta.fields.creatorId.references()).toBe(User);
   expect(meta.relations.creator.entity()).toBe(User);
   expect(meta.relations.creator.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
@@ -42,12 +42,12 @@ it('User', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -97,12 +97,12 @@ it('Profile', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -136,12 +136,12 @@ it('Item', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -151,22 +151,22 @@ it('Item', () => {
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       taxId: {
         name: 'taxId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       measureUnitId: {
         name: 'measureUnitId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       salePrice: { name: 'salePrice', type: Number },
       inventoryable: { name: 'inventoryable', type: Boolean },
@@ -237,7 +237,7 @@ it('Tag', () => {
       },
       companyId: {
         name: 'companyId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: Number,
       },
       createdAt: {
@@ -264,7 +264,7 @@ it('Tag', () => {
       },
       creatorId: {
         name: 'creatorId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: Number,
       },
     },
@@ -306,12 +306,12 @@ it('ItemTag', () => {
       itemId: {
         name: 'itemId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       tagId: {
         name: 'tagId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
     },
     relations: {
@@ -342,12 +342,12 @@ it('TaxCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -381,7 +381,7 @@ it('Tax', () => {
       id: { name: 'id', type: Number, isId: true as const },
       categoryId: {
         name: 'categoryId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: String,
       },
       percentage: {
@@ -391,12 +391,12 @@ it('Tax', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -444,12 +444,12 @@ it('ItemAdjustment', () => {
       },
       inventoryAdjustmentId: {
         name: 'inventoryAdjustmentId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: Number,
       },
       itemId: {
         name: 'itemId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: Number,
       },
       number: {
@@ -458,18 +458,18 @@ it('ItemAdjustment', () => {
       },
       storehouseId: {
         name: 'storehouseId',
-        reference: expect.anything(),
+        references: expect.anything(),
         type: Number,
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -522,12 +522,12 @@ it('InventoryAdjustment', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -571,12 +571,12 @@ it('MeasureUnitCategory', () => {
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
@@ -618,17 +618,17 @@ it('MeasureUnit', () => {
       categoryId: {
         name: 'categoryId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       companyId: {
         name: 'companyId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
         type: Number,
-        reference: expect.anything(),
+        references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },

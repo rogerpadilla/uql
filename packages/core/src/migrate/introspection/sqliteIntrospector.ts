@@ -8,12 +8,15 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
  * SQLite schema introspector
  */
-export class SqliteSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly pool: QuerierPool) {}
+export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
+  constructor(private readonly pool: QuerierPool) {
+    super('sqlite');
+  }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -56,7 +59,7 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
       `;
 
       const results = await querier.all<{ name: string }>(sql);
-      return results.map((r: any) => r.name);
+      return results.map((r) => r.name);
     } finally {
       await querier.release();
     }
@@ -111,7 +114,7 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
     // Get unique columns from indexes
     const uniqueColumns = await this.getUniqueColumns(querier, tableName);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.name,
       type: this.normalizeType(row.type),
       nullable: row.notnull === 0,
@@ -175,7 +178,7 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
 
       result.push({
         name: index.name,
-        columns: columns.map((c: any) => c.name),
+        columns: columns.map((c) => c.name),
         unique: Boolean(index.unique),
       });
     }
@@ -209,9 +212,9 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
       const first = rows[0];
       return {
         name: `fk_${tableName}_${id}`,
-        columns: rows.map((r: any) => r.from),
+        columns: rows.map((r) => r.from),
         referencedTable: first.table,
-        referencedColumns: rows.map((r: any) => r.to),
+        referencedColumns: rows.map((r) => r.to),
         onDelete: this.normalizeReferentialAction(first.on_delete),
         onUpdate: this.normalizeReferentialAction(first.on_update),
       };
@@ -230,17 +233,13 @@ export class SqliteSchemaIntrospector implements SchemaIntrospector {
       pk: number;
     }>(sql);
 
-    const pkColumns = results.filter((r: any) => r.pk > 0).sort((a: any, b: any) => a.pk - b.pk);
+    const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
 
     if (pkColumns.length === 0) {
       return undefined;
     }
 
-    return pkColumns.map((r: any) => r.name);
-  }
-
-  private escapeId(identifier: string): string {
-    return `\`${identifier.replace(/`/g, '``')}\``;
+    return pkColumns.map((r) => r.name);
   }
 
   protected normalizeType(type: string): string {

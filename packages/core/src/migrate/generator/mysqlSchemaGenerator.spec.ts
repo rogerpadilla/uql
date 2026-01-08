@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { MysqlSchemaGenerator } from './mysqlSchemaGenerator.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MysqlSchemaGenerator Specifics', () => {
-  const generator = new MysqlSchemaGenerator();
+  const generator = new SqlSchemaGenerator('mysql');
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
@@ -14,8 +14,8 @@ describe('MysqlSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
     expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('TINYINT(1)');
     expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 }, Number)).toBe('DECIMAL(10, 2)');
-    expect(generator.mapColumnType('serial', {})).toBe('INT UNSIGNED AUTO_INCREMENT');
-    expect(generator.mapColumnType('bigserial', {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
+    expect(generator.getSqlType({ columnType: 'serial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY');
+    expect(generator.getSqlType({ columnType: 'bigserial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY');
   });
 
   it('should generate ALTER COLUMN statements', () => {
@@ -28,13 +28,14 @@ describe('MysqlSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    const statements = generator.generateAlterColumnStatements('users', col, 'INT NOT NULL DEFAULT 18');
+    // newDefinition should include the column name (as generateColumnDefinitionFromSchema does)
+    const statements = generator.generateAlterColumnStatements('users', col, '`age` INT NOT NULL DEFAULT 18');
 
     expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN `age` INT NOT NULL DEFAULT 18;']);
   });
 
   it('should get table options', () => {
-    expect(generator.getTableOptions()).toContain('ENGINE=InnoDB');
+    expect(generator.getTableOptions({} as any)).toContain('ENGINE=InnoDB');
   });
 
   it('should get boolean type', () => {
@@ -42,7 +43,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
   });
 
   it('should generate column comment', () => {
-    expect(generator.generateColumnComment('users', 'name', "user's name")).toBe(" COMMENT 'user''s name'");
+    expect(generator.generateColumnComment('name', "user's name")).toBe(" COMMENT 'user''s name'");
   });
 
   it('should generate DROP INDEX statement', () => {

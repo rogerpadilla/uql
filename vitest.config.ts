@@ -36,6 +36,7 @@ export default defineConfig({
         'packages/*/src/**/*.d.ts',
         'packages/*/src/type/**/*.ts',
         'packages/*/src/browser/type/**/*.ts',
+        'packages/*/src/**/types.ts', // Pure type definition files
       ],
       thresholds: {
         statements: 99.35,

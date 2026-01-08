@@ -8,13 +8,16 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
  * MySQL/MariaDB schema introspector.
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
-export class MysqlSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly pool: QuerierPool) {}
+export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
+  constructor(private readonly pool: QuerierPool) {
+    super('mysql');
+  }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -130,13 +133,13 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
       column_comment: string | null;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.column_name,
-      type: row.column_type.toUpperCase(),
+      type: (row.column_type || '').toUpperCase(),
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.column_key === 'PRI',
-      isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
+      isAutoIncrement: (row.extra || '').toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
       length: row.character_maximum_length ?? undefined,
       precision: row.numeric_precision ?? undefined,
@@ -165,9 +168,9 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
       is_unique: number;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.index_name,
-      columns: row.columns.split(','),
+      columns: (row.columns || '').split(','),
       unique: Boolean(row.is_unique),
     }));
   }
@@ -201,11 +204,11 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
       update_rule: string;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.constraint_name,
-      columns: row.columns.split(','),
+      columns: (row.columns || '').split(','),
       referencedTable: row.referenced_table,
-      referencedColumns: row.referenced_columns.split(','),
+      referencedColumns: (row.referenced_columns || '').split(','),
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));
@@ -227,7 +230,7 @@ export class MysqlSchemaIntrospector implements SchemaIntrospector {
       return undefined;
     }
 
-    return results.map((r: any) => r.column_name);
+    return results.map((r) => r.column_name);
   }
 
   protected parseDefaultValue(defaultValue: string | null): unknown {

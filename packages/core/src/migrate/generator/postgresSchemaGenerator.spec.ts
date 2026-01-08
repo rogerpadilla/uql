@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PostgresSchemaGenerator } from './postgresSchemaGenerator.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {
-  const generator = new PostgresSchemaGenerator();
+  const generator = new SqlSchemaGenerator('postgres');
 
   it('should format default values correctly', () => {
     expect(generator.formatDefaultValue('test')).toBe("'test'");
@@ -50,12 +50,6 @@ describe('PostgresSchemaGenerator Specifics', () => {
   });
 
   it('should return empty string for generateColumnComment', () => {
-    expect(generator.generateColumnComment('users', 'name', 'comment')).toBe('');
-  });
-
-  it('should generate column comment statement', () => {
-    expect(generator.generateColumnCommentStatement('users', 'name', "user's name")).toBe(
-      'COMMENT ON COLUMN "users"."name" IS \'user\'\'s name\';',
-    );
+    expect(generator.generateColumnComment('name', 'comment')).toBe('');
   });
 });

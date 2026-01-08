@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
-import type { IndexSchema, TableSchema } from '../../type/index.js';
+import type { TableNode } from '../../schema/types.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
@@ -49,7 +49,7 @@ describe('MongoSchemaGenerator', () => {
       name: 'idx_test',
       columns: ['test'],
       unique: true,
-    } as IndexSchema);
+    });
     const cmd = JSON.parse(json);
 
     expect(cmd).toMatchObject({
@@ -81,10 +81,14 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('diffSchema should return alter if indexes are missing', () => {
-    const currentSchema: TableSchema = {
+    const currentSchema: TableNode = {
       name: 'MongoUser',
-      columns: [],
-      indexes: [{ name: 'idx_MongoUser_username', columns: ['username'], unique: false }],
+      columns: new Map(),
+      indexes: [{ name: 'idx_MongoUser_username', table: {} as any, columns: [], unique: false }],
+      schema: undefined as any,
+      incomingRelations: [],
+      outgoingRelations: [],
+      primaryKey: [],
     };
 
     const diff = generator.diffSchema(MongoUser, currentSchema);
@@ -98,13 +102,17 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('diffSchema should return undefined if in sync', () => {
-    const currentSchema: import('../../type/index.js').TableSchema = {
+    const currentSchema: TableNode = {
       name: 'MongoUser',
-      columns: [],
+      columns: new Map(),
       indexes: [
-        { name: 'idx_MongoUser_username', columns: ['username'], unique: false },
-        { name: 'idx_email', columns: ['email'], unique: true },
+        { name: 'idx_MongoUser_username', table: {} as any, columns: [], unique: false },
+        { name: 'idx_email', table: {} as any, columns: [], unique: true },
       ],
+      schema: undefined as any,
+      incomingRelations: [],
+      outgoingRelations: [],
+      primaryKey: [],
     };
 
     const diff = generator.diffSchema(MongoUser, currentSchema);
@@ -134,6 +142,6 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should return empty string for getSqlType', () => {
-    expect(generator.getSqlType()).toBe('');
+    expect(generator.getSqlType({})).toBe('');
   });
 });

@@ -8,12 +8,15 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
  * PostgreSQL schema introspector
  */
-export class PostgresSchemaIntrospector implements SchemaIntrospector {
-  constructor(private readonly pool: QuerierPool) {}
+export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
+  constructor(private readonly pool: QuerierPool) {
+    super('postgres');
+  }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
@@ -56,7 +59,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
       `;
 
       const results = await querier.all<{ table_name: string }>(sql);
-      return results.map((r: any) => r.table_name);
+      return results.map((r) => r.table_name);
     } finally {
       await querier.release();
     }
@@ -151,7 +154,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
       column_comment: string | null;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.column_name,
       type: this.normalizeType(row.data_type, row.udt_name),
       nullable: row.is_nullable === 'YES',
@@ -191,7 +194,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
       is_unique: boolean;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.index_name,
       columns: row.columns,
       unique: row.is_unique,
@@ -233,7 +236,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
       update_rule: string;
     }>(sql, [tableName]);
 
-    return results.map((row: any) => ({
+    return results.map((row) => ({
       name: row.constraint_name,
       columns: row.columns,
       referencedTable: row.referenced_table,
@@ -262,7 +265,7 @@ export class PostgresSchemaIntrospector implements SchemaIntrospector {
       return undefined;
     }
 
-    return results.map((r: any) => r.column_name);
+    return results.map((r) => r.column_name);
   }
 
   protected normalizeType(dataType: string, udtName: string): string {

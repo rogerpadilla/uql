@@ -136,9 +136,10 @@ export class LoggerWrapper implements Logger {
       const method = `log${level.charAt(0).toUpperCase()}${level.slice(1)}` as keyof Logger;
       const args = error !== undefined ? [message, error] : [message];
       if (this.logger?.[method]) {
-        (this.logger[method] as any)(...args);
+        const logFn = this.logger[method] as (m: string, e?: any) => void;
+        logFn(...(args as [string, any?]));
       } else if (this.loggerFunction) {
-        this.loggerFunction(...(args as [any, ...any[]]));
+        this.loggerFunction(...(args as [string, any?]));
       }
     }
   }

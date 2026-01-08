@@ -17,7 +17,7 @@ export abstract class BaseEntity {
   /**
    * foreign-keys are really simple to specify with the `reference` property.
    */
-  @Field({ reference: () => Company })
+  @Field({ references: () => Company })
   companyId?: number;
 
   /**
@@ -27,7 +27,7 @@ export abstract class BaseEntity {
   @ManyToOne({ entity: () => Company })
   company?: Relation<Company>;
 
-  @Field({ reference: () => User })
+  @Field({ references: () => User })
   creatorId?: number;
 
   @ManyToOne({ entity: () => User })
@@ -124,7 +124,7 @@ export class LedgerAccount extends BaseEntity {
   @Field()
   description?: string;
 
-  @Field({ reference: () => LedgerAccount })
+  @Field({ references: () => LedgerAccount })
   parentLedgerId?: number;
 
   @ManyToOne()
@@ -164,7 +164,7 @@ export class Tax extends BaseEntity {
   @Field()
   percentage?: number;
 
-  @Field({ reference: () => TaxCategory })
+  @Field({ references: () => TaxCategory })
   categoryId?: string;
 
   @ManyToOne()
@@ -197,7 +197,7 @@ export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
 
-  @Field({ reference: () => MeasureUnitCategory })
+  @Field({ references: () => MeasureUnitCategory })
   categoryId?: number;
 
   @ManyToOne({ cascade: 'persist' })
@@ -230,25 +230,25 @@ export class Item extends BaseEntity {
   @Field()
   code?: string;
 
-  @Field({ reference: () => LedgerAccount })
+  @Field({ references: () => LedgerAccount })
   buyLedgerAccountId?: number;
 
   @ManyToOne()
   buyLedgerAccount?: LedgerAccount;
 
-  @Field({ reference: () => LedgerAccount })
+  @Field({ references: () => LedgerAccount })
   saleLedgerAccountId?: number;
 
   @ManyToOne()
   saleLedgerAccount?: LedgerAccount;
 
-  @Field({ reference: () => Tax })
+  @Field({ references: () => Tax })
   taxId?: number;
 
   @ManyToOne()
   tax?: Tax;
 
-  @Field({ reference: () => MeasureUnit })
+  @Field({ references: () => MeasureUnit })
   measureUnitId?: number;
 
   @ManyToOne()
@@ -324,10 +324,10 @@ export class ItemTag {
   @Id()
   id?: number;
 
-  @Field({ reference: () => Item })
+  @Field({ references: () => Item })
   itemId?: number;
 
-  @Field({ reference: () => Tag })
+  @Field({ references: () => Tag })
   tagId?: number;
 }
 
@@ -349,7 +349,7 @@ export class InventoryAdjustment extends BaseEntity {
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
-  @Field({ reference: () => Item })
+  @Field({ references: () => Item })
   itemId?: number;
 
   @ManyToOne()
@@ -361,13 +361,13 @@ export class ItemAdjustment extends BaseEntity {
   @Field()
   buyPrice?: number;
 
-  @Field({ reference: () => Storehouse })
+  @Field({ references: () => Storehouse })
   storehouseId?: number;
 
   @ManyToOne()
   storehouse?: Storehouse;
 
-  @Field({ reference: () => InventoryAdjustment })
+  @Field({ references: () => InventoryAdjustment })
   inventoryAdjustmentId?: number;
 
   @ManyToOne()

@@ -297,4 +297,22 @@ describe('SqliteSchemaIntrospector', () => {
     (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
     await expect(introspector.getTableNames()).rejects.toThrow('SqliteSchemaIntrospector requires a SQL-based querier');
   });
+
+  it('introspect should return SchemaAST with all tables', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      const normalized = sql.toLowerCase();
+      if (normalized.includes('sqlite_master')) {
+        if (normalized.includes('count(*)')) return Promise.resolve([{ count: 1 }]);
+        return Promise.resolve([{ name: 'users' }]);
+      }
+      if (normalized.includes('table_info')) {
+        return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 1, pk: 1 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const ast = await introspector.introspect();
+    expect(ast.getTables()).toHaveLength(1);
+    expect(ast.getTable('users')).toBeDefined();
+  });
 });

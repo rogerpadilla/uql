@@ -75,4 +75,43 @@ describe('MongoSchemaIntrospector', () => {
 
     expect(schema).toBeUndefined();
   });
+
+  it('tableExists should return true for existing collection', async () => {
+    db.listCollections.mockReturnValueOnce({
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }, { name: 'posts' }]),
+    });
+
+    const exists = await introspector.tableExists('users');
+
+    expect(exists).toBe(true);
+  });
+
+  it('tableExists should return false for non-existing collection', async () => {
+    db.listCollections.mockReturnValueOnce({
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }]),
+    });
+
+    const exists = await introspector.tableExists('non_existent');
+
+    expect(exists).toBe(false);
+  });
+
+  it('introspect should return SchemaAST with all collections', async () => {
+    // First call for getTableNames
+    db.listCollections.mockReturnValueOnce({
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }]),
+    });
+    // Second call for getTableSchema('users')
+    db.listCollections.mockReturnValueOnce({
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }]),
+    });
+    db.collection.mockReturnValueOnce({
+      indexes: vi.fn().mockResolvedValue([{ name: '_id_', key: { _id: 1 } }]),
+    });
+
+    const ast = await introspector.introspect();
+
+    expect(ast.getTables()).toHaveLength(1);
+    expect(ast.getTable('users')).toBeDefined();
+  });
 });

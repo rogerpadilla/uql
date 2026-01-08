@@ -1,10 +1,20 @@
-import type { EntityMeta, FieldOptions, NamingStrategy, Type } from '../type/index.js';
+import { DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../schema/types.js';
+import type { Dialect, EntityMeta, FieldOptions, NamingStrategy, Type } from '../type/index.js';
+import { type DialectConfig, getDialectConfig } from './dialectConfig.js';
 
 /**
  * Base abstract class for all database dialects (SQL and NoSQL).
  */
 export abstract class AbstractDialect {
-  constructor(readonly namingStrategy?: NamingStrategy) {}
+  protected readonly config: DialectConfig;
+
+  constructor(
+    readonly dialect: Dialect,
+    readonly namingStrategy?: NamingStrategy,
+    readonly defaultForeignKeyAction: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION,
+  ) {
+    this.config = getDialectConfig(dialect);
+  }
 
   /**
    * Resolve the table name for an entity, applying naming strategy if necessary.
