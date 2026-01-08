@@ -269,7 +269,6 @@ export interface TableDiff {
   readonly type: 'create' | 'drop' | 'alter';
   readonly columnDiffs?: ColumnDiff[];
   readonly indexDiffs?: IndexDiff[];
-  readonly relationshipDiffs?: RelationshipDiff[];
 }
 
 /**

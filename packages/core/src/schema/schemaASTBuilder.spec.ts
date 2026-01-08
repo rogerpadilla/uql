@@ -140,7 +140,24 @@ describe('SchemaASTBuilder', () => {
       expect(rel?.type).toBe('OneToOne');
     });
 
-    it('should use custom naming strategy', () => {
+    it('should use custom naming strategy via constructor', () => {
+      const ns = {
+        tableName: (name: string) => `tb_${name}`,
+        columnName: (name: string) => `col_${name}`,
+      } as any;
+      const builder = new SchemaASTBuilder(ns);
+
+      const ast = builder.fromEntities([User, Category]);
+
+      // User -> namingStrategy(User) -> tb_User
+      expect(ast.getTable('tb_User')).toBeDefined();
+      expect(ast.getTable('tb_User')?.columns.has('col_id')).toBe(true);
+
+      // Category -> namingStrategy(categories) -> tb_categories
+      expect(ast.getTable('tb_categories')).toBeDefined();
+    });
+
+    it('should use custom naming strategy options overriding constructor', () => {
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([User], {
         resolveTableName: (_entity, meta) => `tbl_${meta.name?.toLowerCase() ?? _entity.name.toLowerCase()}`,

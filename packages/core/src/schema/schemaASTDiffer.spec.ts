@@ -212,6 +212,25 @@ describe('SchemaASTDiffer', () => {
       expect(result.columnDiffs[0].description).toContain('default: 20 → 30');
     });
 
+    it('should detect unique constraint changes', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      source.addTable(
+        createTable('users', [
+          { name: 'id', isPrimaryKey: true },
+          { name: 'email', isUnique: true },
+        ]),
+      );
+      target.addTable(
+        createTable('users', [
+          { name: 'id', isPrimaryKey: true },
+          { name: 'email', isUnique: false },
+        ]),
+      );
+      const result = new SchemaASTDiffer().diff(source, target);
+      expect(result.columnDiffs[0].description).toContain('unique: false → true');
+    });
+
     it('should use case-insensitive comparison when configured', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();

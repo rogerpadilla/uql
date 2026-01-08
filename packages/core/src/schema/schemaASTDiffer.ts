@@ -118,11 +118,6 @@ export class SchemaASTDiffer {
         if (tableDiff.indexDiffs) {
           indexDiffs.push(...tableDiff.indexDiffs);
         }
-
-        // Collect relationship diffs
-        if (tableDiff.relationshipDiffs) {
-          relationshipDiffs.push(...tableDiff.relationshipDiffs);
-        }
       }
     }
 
