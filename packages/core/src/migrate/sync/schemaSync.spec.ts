@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
-import type { SchemaIntrospector, TableSchema } from '../../type/migration.js';
+import type { CanonicalType } from '../../schema/types.js';
+import type { SchemaIntrospector } from '../../type/migration.js';
 import { createSchemaSync, SchemaSync } from './schemaSync.js';
+
+interface MockColumn {
+  name: string;
+  type: CanonicalType | { category: string; size?: string };
+  nullable?: boolean;
+  isPrimaryKey?: boolean;
+  autoIncrement?: boolean;
+  unique?: boolean;
+  pos?: number;
+}
+
+interface MockTable {
+  name: string;
+  columns: Map<string, MockColumn>;
+  indexes: any[];
+  primaryKey: string[];
+  incomingRelations: any[];
+  outgoingRelations: any[];
+  schema: any;
+}
 
 // Test entities
 @Entity()
@@ -14,7 +35,7 @@ class User {
 }
 
 // Mock introspector that returns empty tables
-const createMockIntrospector = (tables: TableSchema[] = []): SchemaIntrospector => ({
+const createMockIntrospector = (tables: MockTable[] = []): SchemaIntrospector => ({
   introspect: async () => {
     const tableMap = new Map();
     for (const t of tables) {
