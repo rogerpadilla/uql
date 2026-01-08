@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.8.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.7.14...@uql/core@3.8.0) (2026-01-08)
+
+
+### Features
+
+* implementation of unified ORM schema synchronization system via Schema AST ([18d4c00](https://github.com/rogerpadilla/uql/commit/18d4c007d9cc9386c6299e9769a3e8cd34e9341e))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
