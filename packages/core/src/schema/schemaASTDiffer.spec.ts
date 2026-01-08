@@ -267,6 +267,37 @@ describe('SchemaASTDiffer', () => {
 
       expect(diff.hasBreakingChanges).toBe(true);
     });
+
+    it('should format meaningful type differences (size, precision, scale, unsigned)', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+
+      const sourceTable = createTable('users', [
+        { name: 'id', isPrimaryKey: true },
+        { name: 'amount', type: { category: 'decimal', precision: 10, scale: 2, unsigned: true } },
+        { name: 'bio', type: { category: 'string', length: 255 } },
+      ]);
+      const targetTable = createTable('users', [
+        { name: 'id', isPrimaryKey: true },
+        { name: 'amount', type: { category: 'decimal', precision: 8, scale: 2 } },
+        { name: 'bio', type: { category: 'string', length: 100 } },
+      ]);
+
+      source.addTable(sourceTable);
+      target.addTable(targetTable);
+
+      const differ = new SchemaASTDiffer();
+      const diff = differ.diff(source, target);
+
+      const amountDiff = diff.columnDiffs.find((c) => c.column === 'amount');
+      const bioDiff = diff.columnDiffs.find((c) => c.column === 'bio');
+
+      expect(amountDiff).toBeDefined();
+      expect(amountDiff?.description).toContain('type: decimal(10,2) unsigned → decimal(8,2)');
+
+      expect(bioDiff).toBeDefined();
+      expect(bioDiff?.description).toContain('type: string(255) → string(100)');
+    });
   });
 
   describe('index comparison', () => {
@@ -573,6 +604,34 @@ describe('SchemaASTDiffer', () => {
       };
       source.addRelationship(rel1 as any);
       target.addRelationship(rel2 as any);
+      const result = new SchemaASTDiffer().diff(source, target, { compareRelationships: true });
+      expect(result.relationshipDiffs.length).toBe(0);
+    });
+
+    it('should handle default onDelete/onUpdate actions in relationship diff', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const t1 = createTable('users', [{ name: 'id', isPrimaryKey: true }]);
+      const t2 = createTable('users', [{ name: 'id', isPrimaryKey: true }]);
+      source.addTable(t1);
+      target.addTable(t2);
+
+      // One has explicit 'NO ACTION', other has undefined (which defaults to 'NO ACTION')
+      const rel1 = {
+        name: 'fk_1',
+        from: { table: t1, columns: [t1.columns.get('id')] },
+        to: { table: t1, columns: [t1.columns.get('id')] },
+        onDelete: 'NO ACTION',
+      };
+      const rel2 = {
+        name: 'fk_1',
+        from: { table: t2, columns: [t2.columns.get('id')] },
+        to: { table: t2, columns: [t2.columns.get('id')] },
+        // onDelete undefined
+      };
+      source.addRelationship(rel1 as any);
+      target.addRelationship(rel2 as any);
+
       const result = new SchemaASTDiffer().diff(source, target, { compareRelationships: true });
       expect(result.relationshipDiffs.length).toBe(0);
     });

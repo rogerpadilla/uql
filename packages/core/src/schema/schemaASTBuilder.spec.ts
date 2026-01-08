@@ -222,6 +222,73 @@ describe('SchemaASTBuilder', () => {
       const ast = builder.fromEntities([CustomIndex]);
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
+
+    it('should use default callback when resolveTableName/resolveColumnName are not provided', () => {
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([User]);
+      const table = ast.getTable('User');
+      expect(table).toBeDefined();
+      expect(table?.name).toBe('User');
+      expect(table?.columns.get('name')).toBeDefined();
+    });
+
+    it('should handle OneToOne relation without explicit references (default inference)', () => {
+      @Entity()
+      class ProfileDef {
+        @Id() id?: number;
+      }
+      @Entity()
+      class UserDef {
+        @Id() id?: number;
+        @OneToOne({ entity: () => ProfileDef })
+        profile?: ProfileDef;
+        @Field() profileId?: number;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([ProfileDef, UserDef]);
+      const rel = ast.relationships.find((r) => r.from.table.name === 'UserDef');
+      expect(rel).toBeDefined();
+      expect(rel?.from.columns[0].name).toBe('profileId');
+      expect(rel?.to.columns[0].name).toBe('id');
+    });
+
+    it('should skip relation if foreign field is missing (broken relation)', () => {
+      @Entity()
+      class Other {
+        @Id() id?: number;
+      }
+      @Entity()
+      class Main {
+        @Id() id?: number;
+        @OneToOne({ entity: () => Other, references: [{ local: 'otherId', foreign: 'nonExistent' }] })
+        other?: Other;
+        @Field() otherId?: number;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Other, Main]);
+      expect(ast.relationships.length).toBe(0);
+    });
+
+    it('should skip relation if foreign column is missing (broken relation)', () => {
+      @Entity()
+      class Other2 {
+        @Id() id?: number;
+        @Field({ virtual: raw('true') }) virtual?: number;
+      }
+      @Entity()
+      class Main2 {
+        @Id() id?: number;
+        @OneToOne({ entity: () => Other2, references: [{ local: 'otherId', foreign: 'virtual' }] })
+        other?: Other2;
+        @Field() otherId?: number;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Other2, Main2]);
+      expect(ast.relationships.length).toBe(0);
+    });
   });
 
   describe('reset', () => {
