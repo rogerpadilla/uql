@@ -116,14 +116,29 @@ UQL separates the **intent** of your data from its **storage**. Both properties 
 | **`columnType`** | **Physical Type** (Implementation). **Highest Priority**. Bypasses UQL's inference for exact SQL control. | Raw SQL types: `'varchar(100)'`, `'decimal(10,2)'`, `'smallint'`, etc. |
 
 ```ts
-@Field() // Inference: Maps to TEXT (Postgres) or VARCHAR(255) (MySQL) automatically.
-name?: string;
+// Automatic inference from TypeScript types
+@Field() name?: string;           // → TEXT (Postgres), VARCHAR(255) (MySQL)
+@Field() age?: number;            // → INTEGER
+@Field() isActive?: boolean;      // → BOOLEAN
+@Field() createdAt?: Date;        // → TIMESTAMP
 
-@Field({ type: 'uuid' }) // Recommended: Cross-database abstraction for UUIDs.
-id?: string;
+// Semantic types - portable across all databases
+@Field({ type: 'uuid' })          // → UUID (Postgres), CHAR(36) (MySQL), TEXT (SQLite)
+externalId?: string;
 
-@Field({ columnType: 'varchar(500)' }) // Control: Explicitly forces a specific SQL type.
+@Field({ type: 'json' })          // → JSONB (Postgres), JSON (MySQL), TEXT (SQLite)
+metadata?: Record<string, unknown>;
+
+// Logical types with constraints - portable with control
+@Field({ type: 'varchar', length: 500 })
 bio?: string;
+
+@Field({ type: 'decimal', precision: 10, scale: 2 })
+price?: number;
+
+// Exact SQL type - when you need dialect-specific control
+@Field({ columnType: 'smallint' })
+statusCode?: number;
 ```
 
 
