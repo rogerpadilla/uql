@@ -36,8 +36,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
-    const count = results[0]?.count;
-    return (typeof count === 'number' || typeof count === 'bigint' ? Number(count) : 0) > 0;
+    return this.toNumber(results[0]?.count) > 0;
   }
 
   // SQLite uses PRAGMA which doesn't use parameterized queries in the same way
@@ -57,19 +56,19 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return `PRAGMA table_info(${this.escapeId(tableName)})`;
   }
 
-  protected override getColumnsParams(_tableName: string): any[] {
+  protected override getColumnsParams(_tableName: string): unknown[] {
     return [];
   }
 
-  protected override getIndexesParams(_tableName: string): any[] {
+  protected override getIndexesParams(_tableName: string): unknown[] {
     return [];
   }
 
-  protected override getForeignKeysParams(_tableName: string): any[] {
+  protected override getForeignKeysParams(_tableName: string): unknown[] {
     return [];
   }
 
-  protected override getPrimaryKeyParams(_tableName: string): any[] {
+  protected override getPrimaryKeyParams(_tableName: string): unknown[] {
     return [];
   }
 

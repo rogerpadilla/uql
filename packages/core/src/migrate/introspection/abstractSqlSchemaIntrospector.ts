@@ -140,23 +140,23 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   // Parameter Methods (can be overridden by dialects)
   // ============================================================================
 
-  protected tableExistsParams(tableName: string): any[] {
+  protected tableExistsParams(tableName: string): unknown[] {
     return [tableName];
   }
 
-  protected getColumnsParams(tableName: string): any[] {
+  protected getColumnsParams(tableName: string): unknown[] {
     return [tableName];
   }
 
-  protected getIndexesParams(tableName: string): any[] {
+  protected getIndexesParams(tableName: string): unknown[] {
     return [tableName];
   }
 
-  protected getForeignKeysParams(tableName: string): any[] {
+  protected getForeignKeysParams(tableName: string): unknown[] {
     return [tableName];
   }
 
-  protected getPrimaryKeyParams(tableName: string): any[] {
+  protected getPrimaryKeyParams(tableName: string): unknown[] {
     return [tableName];
   }
 
@@ -185,8 +185,8 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   /**
    * Convert bigint/null values to number safely.
    */
-  protected toNumber(value: number | bigint | null | undefined): number | undefined {
-    if (value == null) {
+  protected toNumber(value: unknown): number | undefined {
+    if (value == null || value === '') {
       return undefined;
     }
     return Number(value);

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.8.4] - 2026-01-09
+### Improvements
+- **Strict Type Polish**: Replaced remaining `any` type usage with `unknown` in the SQL introspection layer for improved safety. Refactored `toNumber` to handle more robustly various database numeric results during schema crawling.
+
 ## [3.8.3] - 2026-01-09
 ### Improvements & Refactoring
 - **Unified SQL Introspectors**: Refactored the database introspection layer using a template-method pattern via `AbstractSqlSchemaIntrospector`. This consolidated shared logic for **PostgreSQL**, **MySQL**, **MariaDB**, and **SQLite**, reducing code duplication by ~280 lines while ensuring consistent behavior across all SQL dialects.

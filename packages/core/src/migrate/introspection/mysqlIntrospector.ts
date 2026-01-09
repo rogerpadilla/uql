@@ -37,8 +37,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
-    const count = results[0]?.count;
-    return (typeof count === 'number' || typeof count === 'bigint' ? Number(count) : 0) > 0;
+    return this.toNumber(results[0]?.count) > 0;
   }
 
   protected getColumnsQuery(_tableName: string): string {
