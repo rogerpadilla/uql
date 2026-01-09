@@ -976,4 +976,65 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.release();
     await expect(this.querier.release()).resolves.toBeUndefined();
   }
+
+  async shouldReleaseIfFreeWithoutTransaction() {
+    // Release should work when no transaction is open
+    await (this.querier as any).releaseIfFree();
+    // Should not throw, just release
+    expect(this.querier.all).toHaveBeenCalledTimes(0);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  async shouldNotReleaseIfFreeWithOpenTransaction() {
+    // Begin a transaction
+    await this.querier.beginTransaction();
+    expect(this.querier.hasOpenTransaction).toBe(true);
+
+    // releaseIfFree should NOT release when transaction is open
+    await this.querier.releaseIfFree();
+
+    // Transaction should still be open
+    expect(this.querier.hasOpenTransaction).toBe(true);
+
+    // Clean up - rollback the transaction
+    await this.querier.rollbackTransaction();
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+  }
+
+  async shouldFindOneAndSelectOneToManyWithObjectSelect() {
+    await this.querier.insertOne(InventoryAdjustment, {
+      id: 999,
+      description: 'test adjustment',
+      createdAt: 1,
+    });
+
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?)',
+      [999, 'test adjustment', 1],
+    );
+
+    // Use object-style $select for the relation (not array)
+    await this.querier.findMany(InventoryAdjustment, {
+      $select: {
+        id: true,
+        itemAdjustments: { $select: { buyPrice: true, itemId: true } },
+      },
+      $where: { id: 999 },
+    });
+
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      1,
+      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ?',
+      [999],
+    );
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `buyPrice`, `itemId`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
+      [999],
+    );
+
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+  }
 }

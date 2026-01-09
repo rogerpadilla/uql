@@ -23,8 +23,17 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async afterAll() {
     await super.afterAll();
-    await this.pool.end();
-    await MongodbQuerierIt.replSet.stop();
+    try {
+      // Stop the replica set - cleanup may throw due to timing issues in mongodb-memory-server
+      await MongodbQuerierIt.replSet.stop({ doCleanup: false });
+    } finally {
+      // Try cleanup separately to avoid "mongodProcess is still defined" error
+      try {
+        await MongodbQuerierIt.replSet.cleanup();
+      } catch {
+        // Ignore cleanup errors - the process will be cleaned up by the OS
+      }
+    }
   }
 
   override async createTables() {

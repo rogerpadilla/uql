@@ -67,4 +67,40 @@ describe('NeonQuerier', () => {
     await querier.beginTransaction();
     await expect(querier.internalRelease()).rejects.toThrow('pending transaction');
   });
+
+  it('should handle null rowCount gracefully', async () => {
+    mockConn.query.mockResolvedValue({
+      rowCount: null as unknown as number,
+      rows: [{ id: 1 }],
+      command: 'INSERT',
+      oid: 0,
+      fields: [],
+    });
+
+    const res = await querier.internalRun('INSERT INTO users ...');
+
+    expect(res).toEqual({
+      changes: 0, // Falls back to 0 when rowCount is null
+      ids: [1],
+      firstId: 1,
+    });
+  });
+
+  it('should handle undefined rowCount gracefully', async () => {
+    mockConn.query.mockResolvedValue({
+      rowCount: undefined,
+      rows: [],
+      command: 'DELETE',
+      oid: 0,
+      fields: [],
+    });
+
+    const res = await querier.internalRun('DELETE FROM users');
+
+    expect(res).toEqual({
+      changes: 0, // Falls back to 0 when rowCount is undefined
+      ids: [],
+      firstId: undefined,
+    });
+  });
 });

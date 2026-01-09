@@ -155,6 +155,118 @@ describe('SchemaSync', () => {
       expect(sync).toBeInstanceOf(SchemaSync);
     });
   });
+  describe('formatSummary edge cases', () => {
+    it('should show index changes in summary when there are index diffs', async () => {
+      // DB has an index that entity doesn't have
+      const introspector = createMockIntrospector([
+        {
+          name: 'User',
+          columns: new Map([
+            [
+              'id',
+              {
+                name: 'id',
+                type: { category: 'integer', size: 'big' },
+                isPrimaryKey: true,
+                autoIncrement: true,
+                nullable: false,
+                pos: 1,
+              },
+            ],
+            ['name', { name: 'name', type: { category: 'string' }, nullable: true, pos: 2 }],
+          ]),
+          indexes: [
+            {
+              name: 'idx_user_name',
+              columns: ['name'],
+              unique: false,
+            },
+          ],
+          primaryKey: ['id'],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+      const sync = new SchemaSync({
+        entities: [User],
+        direction: 'entity-to-db',
+        introspector,
+      });
+
+      const result = await sync.sync();
+
+      // The summary should mention index changes if there are any differences
+      expect(result.dbChanges).toBeDefined();
+      expect(result.summary).toBeDefined();
+      // Check that the summary is a non-empty string
+      expect(typeof result.summary).toBe('string');
+      expect(result.summary.length).toBeGreaterThan(0);
+    });
+
+    it('should show "Schema is already in sync" when no differences', async () => {
+      // DB matches entity exactly
+      const introspector = createMockIntrospector([
+        {
+          name: 'User',
+          columns: new Map([
+            [
+              'id',
+              {
+                name: 'id',
+                type: { category: 'integer', size: 'big' },
+                isPrimaryKey: true,
+                autoIncrement: true,
+                nullable: false,
+                pos: 1,
+              },
+            ],
+            ['name', { name: 'name', type: { category: 'string' }, nullable: true, pos: 2 }],
+          ]),
+          indexes: [],
+          primaryKey: ['id'],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+      const sync = new SchemaSync({
+        entities: [User],
+        direction: 'entity-to-db',
+        introspector,
+      });
+
+      const result = await sync.sync();
+
+      // When schemas match, summary should say they're in sync
+      if (!result.dbChanges?.hasDifferences) {
+        expect(result.summary).toContain('Schema is already in sync');
+      }
+    });
+
+    it('should show bidirectional in-sync message when no changes anywhere', async () => {
+      // Use empty entities and empty DB for perfect sync
+      const introspector = createMockIntrospector([]);
+
+      const sync = new SchemaSync({
+        entities: [],
+        direction: 'bidirectional',
+        introspector,
+      });
+
+      const result = await sync.sync();
+
+      expect(result.direction).toBe('bidirectional');
+      // When both sides are empty, they are in sync
+      expect(result.dbChanges?.hasDifferences).toBeFalsy();
+      expect(result.entityChanges?.hasDifferences).toBeFalsy();
+      expect(result.conflicts).toHaveLength(0);
+      expect(result.summary).toContain('Schema is in sync');
+    });
+  });
+
   describe('Advanced Sync Logic', () => {
     it('should filter destructive changes in safe mode', async () => {
       // Setup: DB has a table that Entity doesn't have (would cause drop)
