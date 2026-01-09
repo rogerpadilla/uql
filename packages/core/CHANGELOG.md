@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.8.3](https://github.com/rogerpadilla/uql/compare/@uql/core@3.8.2...@uql/core@3.8.3) (2026-01-09)
+## [3.8.4](https://github.com/rogerpadilla/uql/compare/@uql/core@3.8.3...@uql/core@3.8.4) (2026-01-09)
 
 **Note:** Version bump only for package @uql/core
 
@@ -16,6 +16,10 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.8.4] - 2026-01-09
+### Improvements
+- **Strict Type Polish**: Replaced remaining `any` type usage with `unknown` in the SQL introspection layer for improved safety. Refactored `toNumber` to handle more robustly various database numeric results during schema crawling.
 
 ## [3.8.3] - 2026-01-09
 ### Improvements & Refactoring
