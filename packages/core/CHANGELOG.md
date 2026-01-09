@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.8.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.8.0...@uql/core@3.8.1) (2026-01-08)
+## [3.8.2](https://github.com/rogerpadilla/uql/compare/@uql/core@3.8.1...@uql/core@3.8.2) (2026-01-09)
 
 **Note:** Version bump only for package @uql/core
 
@@ -16,6 +16,13 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.8.2] - 2026-01-08
+### Improvements & Refactoring
+- **Refactored Dialect Configuration**: Grouped dialect-specific flags into a cohesive `features` object within `DialectConfig`. Introduced a new `foreignKeyAlter` flag to explicitly manage support for post-creation foreign key constraints, improving architectural clarity.
+- **Enhanced Table Builder**: Foreign key definitions created via the fluent `.references()` API are now automatically promoted to table-level constraints during the build process. This ensures full compatibility with **SQLite** and other dialects that require foreign keys to be defined within the `CREATE TABLE` statement.
+- **Predictable SQL Expressions**: Removed brittle string auto-detection in `formatDefaultValue`. Developers are now encouraged to use the explicit `raw()` helper or the `t.now()` shortcut for SQL expressions like `CURRENT_TIMESTAMP`, ensuring deterministic behavior across all databases.
+- **Robust Introspection Tests**: Refactored the integration test suite to use explicit SQL expression helpers and non-shadowed callback parameters. Standardized timestamp type assertions for MySQL and MariaDB, achieving 100% pass rate across the entire test suite (1,383 tests).
 
 ## [3.8.0] - 2026-01-08
 ### Schema Sync System & AST Engine
