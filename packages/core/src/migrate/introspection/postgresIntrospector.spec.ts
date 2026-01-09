@@ -9,8 +9,8 @@ class TestPostgresIntrospector extends PostgresSchemaIntrospector {
   public override normalizeReferentialAction(action: string) {
     return super.normalizeReferentialAction(action);
   }
-  public override isAutoIncrement(defaultValue: string | null) {
-    return super.isAutoIncrement(defaultValue);
+  public override isAutoIncrement(defaultValue: string | null, isIdentity: string) {
+    return super.isAutoIncrement(defaultValue, isIdentity);
   }
   public override parseDefaultValue(defaultValue: string | null) {
     return super.parseDefaultValue(defaultValue);
@@ -126,7 +126,7 @@ describe('PostgresSchemaIntrospector', () => {
 
   it('normalizeType should handle user-defined and array types', () => {
     expect(introspector.normalizeType('USER-DEFINED', 'my_enum')).toBe('MY_ENUM');
-    expect(introspector.normalizeType('ARRAY', '_int4')).toBe('int4[]');
+    expect(introspector.normalizeType('ARRAY', '_int4')).toBe('INT4[]');
     expect(introspector.normalizeType('integer', 'int4')).toBe('INTEGER');
   });
 
@@ -146,9 +146,10 @@ describe('PostgresSchemaIntrospector', () => {
   });
 
   it('isAutoIncrement utility', () => {
-    expect(introspector.isAutoIncrement("nextval('seq')")).toBe(true);
-    expect(introspector.isAutoIncrement('1')).toBe(false);
-    expect(introspector.isAutoIncrement(null)).toBe(false);
+    expect(introspector.isAutoIncrement("nextval('seq')", 'NO')).toBe(true);
+    expect(introspector.isAutoIncrement(null, 'YES')).toBe(true);
+    expect(introspector.isAutoIncrement('1', 'NO')).toBe(false);
+    expect(introspector.isAutoIncrement(null, 'NO')).toBe(false);
   });
 
   it('parseDefaultValue utility', () => {

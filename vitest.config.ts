@@ -30,7 +30,9 @@ export default defineConfig({
       include: ['packages/*/src/**/*.ts'],
       exclude: [
         'packages/*/src/**/*.spec.ts',
+        'packages/*/src/**/*-spec.ts',
         'packages/*/src/**/*.test.ts',
+        'packages/*/src/**/*-test.ts',
         'packages/*/src/test/**/*.ts',
         'packages/*/src/**/index.ts',
         'packages/*/src/**/*.d.ts',

@@ -48,6 +48,7 @@ const createMockIntrospector = (tables: MockTable[] = []): SchemaIntrospector =>
     } as any;
   },
   getTableNames: async () => tables.map((t) => t.name),
+  getTableSchema: async (name: string) => tables.find((t) => t.name === name) as any,
   tableExists: async (name: string) => tables.some((t) => t.name === name),
 });
 

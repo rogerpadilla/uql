@@ -44,6 +44,8 @@ export interface BaseColumnOptions {
   index?: boolean | string;
   /** Column comment */
   comment?: string;
+  /** Whether the numeric type is unsigned (MySQL/MariaDB) */
+  unsigned?: boolean;
   /** Foreign key reference */
   references?: ReferenceOptions;
 }
@@ -368,6 +370,8 @@ export interface IColumnBuilder {
   comment(text: string): this;
   /** Add index */
   index(name?: string): this;
+  /** Set as unsigned (MySQL/MariaDB) */
+  unsigned(): this;
   /** Add foreign key reference */
   references(table: string, column?: string): IForeignKeyBuilder;
   /** Get the built column definition */

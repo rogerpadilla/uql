@@ -1,13 +1,16 @@
 /**
  * Migration Builder
  *
- * The main builder class for defining type-safe migrations.
- * Records operations and generates SQL via the SchemaGenerator.
+ * Provides type-safe migration operations with two modes:
+ * - OperationRecorder: Record operations only (for code generation)
+ * - MigrationBuilder: Execute DDL operations (for integration tests/runtime)
  */
 
 import type { ForeignKeyAction } from '../../schema/types.js';
 import type { SchemaGenerator } from '../../type/migration.js';
+import type { NamingStrategy } from '../../type/namingStrategy.js';
 import type { SqlQuerier } from '../../type/querier.js';
+import { createSchemaGenerator } from '../schemaGenerator.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
@@ -20,28 +23,20 @@ import type {
 } from './types.js';
 
 /**
- * Options for the migration builder.
- */
-export interface MigrationBuilderOptions {
-  /** Whether to execute SQL immediately or just record operations */
-  dryRun?: boolean;
-}
-
-/**
  * Builder for altering a table.
- * Delegates to MigrationBuilder methods.
+ * Delegates to parent builder for operation recording.
  */
 class AlterTableBuilder implements IAlterTableBuilder {
   constructor(
     private readonly tableName: string,
-    private readonly migrationBuilder: IMigrationBuilder,
+    private readonly parentBuilder: IMigrationBuilder,
   ) {}
 
   addColumn(name: string, callback: (column: IColumnBuilder) => void): this {
     const builder = new ColumnBuilder(name, { category: 'string' });
     callback(builder);
 
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'addColumn',
       tableName: this.tableName,
       column: builder.build(),
@@ -50,7 +45,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 
   dropColumn(name: string): this {
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'dropColumn',
       tableName: this.tableName,
       columnName: name,
@@ -59,7 +54,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 
   renameColumn(oldName: string, newName: string): this {
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'renameColumn',
       tableName: this.tableName,
       oldName,
@@ -72,7 +67,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
     const builder = new ColumnBuilder(name, { category: 'string' });
     callback(builder);
 
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'alterColumn',
       tableName: this.tableName,
       columnName: name,
@@ -83,7 +78,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
 
   addIndex(columns: string[], options?: { name?: string; unique?: boolean }): this {
     const indexName = options?.name ?? `idx_${this.tableName}_${columns.join('_')}`;
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'createIndex',
       tableName: this.tableName,
       index: {
@@ -96,7 +91,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 
   dropIndex(name: string): this {
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'dropIndex',
       tableName: this.tableName,
       indexName: name,
@@ -109,7 +104,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
     target: { table: string; columns: string[] },
     options?: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction },
   ): this {
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'addForeignKey',
       tableName: this.tableName,
       foreignKey: {
@@ -125,7 +120,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 
   dropForeignKey(name: string): this {
-    this.migrationBuilder.recordOperationSync({
+    this.parentBuilder.recordOperationSync({
       type: 'dropForeignKey',
       tableName: this.tableName,
       constraintName: name,
@@ -135,20 +130,11 @@ class AlterTableBuilder implements IAlterTableBuilder {
 }
 
 /**
- * Main migration builder with fluent API.
- * Records operations and optionally executes them via a querier.
+ * Records migration operations without executing them.
+ * Use for migration code generation and dry-run scenarios.
  */
-export class MigrationBuilder implements IMigrationBuilder {
-  private operations: AnyMigrationOperation[] = [];
-  private querier?: SqlQuerier;
-  private sqlGenerator?: SchemaGenerator;
-  private dryRun: boolean;
-
-  constructor(querier?: SqlQuerier, sqlGenerator?: SchemaGenerator, options: MigrationBuilderOptions = {}) {
-    this.querier = querier;
-    this.sqlGenerator = sqlGenerator;
-    this.dryRun = options.dryRun ?? false;
-  }
+export class OperationRecorder implements IMigrationBuilder {
+  protected readonly operations: AnyMigrationOperation[] = [];
 
   // ============================================================================
   // Table Operations
@@ -158,14 +144,14 @@ export class MigrationBuilder implements IMigrationBuilder {
     const builder = new TableBuilder(name);
     callback(builder);
 
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'createTable',
       table: builder.build(),
     });
   }
 
   async dropTable(name: string, options: { ifExists?: boolean; cascade?: boolean } = {}): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'dropTable',
       tableName: name,
       ifExists: options.ifExists,
@@ -174,7 +160,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   async renameTable(oldName: string, newName: string): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'renameTable',
       oldName,
       newName,
@@ -184,7 +170,6 @@ export class MigrationBuilder implements IMigrationBuilder {
   async alterTable(name: string, callback: (table: IAlterTableBuilder) => void): Promise<void> {
     const builder = new AlterTableBuilder(name, this);
     callback(builder);
-    // AlterTableBuilder calls migrationBuilder methods directly, so we don't need to do anything else here
   }
 
   // ============================================================================
@@ -192,11 +177,10 @@ export class MigrationBuilder implements IMigrationBuilder {
   // ============================================================================
 
   async addColumn(tableName: string, columnName: string, callback: (column: IColumnBuilder) => void): Promise<void> {
-    // Create a generic column builder, the callback will configure the type
     const builder = new ColumnBuilder(columnName, { category: 'string' });
     callback(builder);
 
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'addColumn',
       tableName,
       column: builder.build(),
@@ -204,7 +188,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   async dropColumn(tableName: string, columnName: string): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'dropColumn',
       tableName,
       columnName,
@@ -215,7 +199,7 @@ export class MigrationBuilder implements IMigrationBuilder {
     const builder = new ColumnBuilder(columnName, { category: 'string' });
     callback(builder);
 
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'alterColumn',
       tableName,
       columnName,
@@ -224,7 +208,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   async renameColumn(tableName: string, oldName: string, newName: string): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'renameColumn',
       tableName,
       oldName,
@@ -243,7 +227,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   ): Promise<void> {
     const indexName = options.name ?? `idx_${tableName}_${columns.join('_')}`;
 
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'createIndex',
       tableName,
       index: {
@@ -256,7 +240,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   async dropIndex(tableName: string, indexName: string): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'dropIndex',
       tableName,
       indexName,
@@ -273,7 +257,7 @@ export class MigrationBuilder implements IMigrationBuilder {
     target: { table: string; columns: string[] },
     options: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction } = {},
   ): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'addForeignKey',
       tableName,
       foreignKey: {
@@ -288,7 +272,7 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   async dropForeignKey(tableName: string, constraintName: string): Promise<void> {
-    await this.recordOperation({
+    this.recordOperationSync({
       type: 'dropForeignKey',
       tableName,
       constraintName,
@@ -300,16 +284,10 @@ export class MigrationBuilder implements IMigrationBuilder {
   // ============================================================================
 
   async raw(sql: string): Promise<void> {
-    const operation: RawSqlOperation = {
+    this.recordOperationSync({
       type: 'raw',
       sql,
-    };
-
-    this.operations.push(operation);
-
-    if (!this.dryRun && this.querier) {
-      await this.querier.run(sql);
-    }
+    });
   }
 
   // ============================================================================
@@ -320,26 +298,214 @@ export class MigrationBuilder implements IMigrationBuilder {
     return [...this.operations];
   }
 
-  /**
-   * Internal method to record an operation and optionally execute it.
-   * @internal
-   */
-  async recordOperation(operation: AnyMigrationOperation): Promise<void> {
+  recordOperationSync(operation: AnyMigrationOperation): void {
+    this.operations.push(operation);
+  }
+}
+
+/**
+ * Options for the migration builder.
+ */
+export interface MigrationBuilderOptions {
+  /** Custom naming strategy for generated SQL */
+  namingStrategy?: NamingStrategy;
+}
+
+/**
+ * Executes DDL operations via a SQL querier.
+ * Use for integration tests and runtime schema management.
+ *
+ * @example
+ * ```typescript
+ * const builder = new MigrationBuilder(querier);
+ *
+ * await builder.createTable('users', (t) => {
+ *   t.id();
+ *   t.string('name');
+ *   t.timestamps();
+ * });
+ * ```
+ */
+export class MigrationBuilder extends OperationRecorder {
+  private readonly sqlGenerator: SchemaGenerator;
+
+  constructor(
+    private readonly querier: SqlQuerier,
+    options: MigrationBuilderOptions = {},
+  ) {
+    super();
+    this.sqlGenerator = createSchemaGenerator(querier.dialect.dialect, options.namingStrategy);
+  }
+
+  override recordOperationSync(operation: AnyMigrationOperation): void {
+    super.recordOperationSync(operation);
+    // Fire and forget execution - for sync contexts (AlterTableBuilder)
+    void this.execute(operation);
+  }
+
+  override async raw(sql: string): Promise<void> {
+    const operation: RawSqlOperation = {
+      type: 'raw',
+      sql,
+    };
+    this.operations.push(operation);
+    await this.querier.run(sql);
+  }
+
+  // ============================================================================
+  // Override async methods to execute immediately
+  // ============================================================================
+
+  override async createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void> {
+    const builder = new TableBuilder(name);
+    callback(builder);
+
+    const operation: AnyMigrationOperation = {
+      type: 'createTable',
+      table: builder.build(),
+    };
     this.operations.push(operation);
     await this.execute(operation);
   }
 
-  /**
-   * Internal method to record an operation synchronously (for builders).
-   * @internal
-   */
-  recordOperationSync(operation: AnyMigrationOperation): void {
+  override async dropTable(name: string, options: { ifExists?: boolean; cascade?: boolean } = {}): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'dropTable',
+      tableName: name,
+      ifExists: options.ifExists,
+      cascade: options.cascade,
+    };
     this.operations.push(operation);
-    // We can't await execution here, but typically builders are used in dry-run or
-    // the execution is handled separately. For now, we fire and forget the execute
-    // or just don't execute if it's from a sync builder.
-    // In our case, createDryRunBuilder sets dryRun: true, so execute does nothing.
-    void this.execute(operation);
+    await this.execute(operation);
+  }
+
+  override async renameTable(oldName: string, newName: string): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'renameTable',
+      oldName,
+      newName,
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async addColumn(
+    tableName: string,
+    columnName: string,
+    callback: (column: IColumnBuilder) => void,
+  ): Promise<void> {
+    const builder = new ColumnBuilder(columnName, { category: 'string' });
+    callback(builder);
+
+    const operation: AnyMigrationOperation = {
+      type: 'addColumn',
+      tableName,
+      column: builder.build(),
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async dropColumn(tableName: string, columnName: string): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'dropColumn',
+      tableName,
+      columnName,
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async alterColumn(
+    tableName: string,
+    columnName: string,
+    callback: (column: IColumnBuilder) => void,
+  ): Promise<void> {
+    const builder = new ColumnBuilder(columnName, { category: 'string' });
+    callback(builder);
+
+    const operation: AnyMigrationOperation = {
+      type: 'alterColumn',
+      tableName,
+      columnName,
+      changes: builder.build(),
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async renameColumn(tableName: string, oldName: string, newName: string): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'renameColumn',
+      tableName,
+      oldName,
+      newName,
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async createIndex(
+    tableName: string,
+    columns: string[],
+    options: { name?: string; unique?: boolean; where?: string } = {},
+  ): Promise<void> {
+    const indexName = options.name ?? `idx_${tableName}_${columns.join('_')}`;
+
+    const operation: AnyMigrationOperation = {
+      type: 'createIndex',
+      tableName,
+      index: {
+        name: indexName,
+        columns,
+        unique: options.unique ?? false,
+        where: options.where,
+      },
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async dropIndex(tableName: string, indexName: string): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'dropIndex',
+      tableName,
+      indexName,
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async addForeignKey(
+    tableName: string,
+    columns: string[],
+    target: { table: string; columns: string[] },
+    options: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction } = {},
+  ): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'addForeignKey',
+      tableName,
+      foreignKey: {
+        name: options.name,
+        columns,
+        referencesTable: target.table,
+        referencesColumns: target.columns,
+        onDelete: options.onDelete ?? 'NO ACTION',
+        onUpdate: options.onUpdate ?? 'NO ACTION',
+      },
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
+  }
+
+  override async dropForeignKey(tableName: string, constraintName: string): Promise<void> {
+    const operation: AnyMigrationOperation = {
+      type: 'dropForeignKey',
+      tableName,
+      constraintName,
+    };
+    this.operations.push(operation);
+    await this.execute(operation);
   }
 
   // ============================================================================
@@ -347,10 +513,6 @@ export class MigrationBuilder implements IMigrationBuilder {
   // ============================================================================
 
   private async execute(operation: AnyMigrationOperation): Promise<void> {
-    if (this.dryRun || !this.querier || !this.sqlGenerator) {
-      return;
-    }
-
     const sql = this.operationToSql(operation);
     if (sql) {
       await this.querier.run(sql);
@@ -358,8 +520,6 @@ export class MigrationBuilder implements IMigrationBuilder {
   }
 
   private operationToSql(operation: AnyMigrationOperation): string | undefined {
-    if (!this.sqlGenerator) return undefined;
-
     switch (operation.type) {
       case 'createTable':
         return this.sqlGenerator.generateCreateTableFromDefinition(operation.table);
@@ -395,8 +555,9 @@ export class MigrationBuilder implements IMigrationBuilder {
 }
 
 /**
- * Create a migration builder for dry-run (recording only).
+ * Create an operation recorder for dry-run (recording only).
+ * @deprecated Use `new OperationRecorder()` directly
  */
-export function createDryRunBuilder(): MigrationBuilder {
-  return new MigrationBuilder(undefined, undefined, { dryRun: true });
+export function createDryRunBuilder(): OperationRecorder {
+  return new OperationRecorder();
 }

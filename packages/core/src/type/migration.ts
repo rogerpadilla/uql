@@ -280,6 +280,11 @@ export interface SchemaIntrospector {
   getTableNames(): Promise<string[]>;
 
   /**
+   * Get the schema for a specific table
+   */
+  getTableSchema(tableName: string): Promise<TableSchema | undefined>;
+
+  /**
    * Check if a table exists
    */
   tableExists(tableName: string): Promise<boolean>;

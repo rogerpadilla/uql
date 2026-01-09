@@ -141,11 +141,18 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
       isPrimaryKey: row.column_key === 'PRI',
       isAutoIncrement: (row.extra || '').toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
-      length: row.character_maximum_length ?? undefined,
-      precision: row.numeric_precision ?? undefined,
-      scale: row.numeric_scale ?? undefined,
+      length: this.toNumber(row.character_maximum_length),
+      precision: this.toNumber(row.numeric_precision),
+      scale: this.toNumber(row.numeric_scale),
       comment: row.column_comment || undefined,
     }));
+  }
+
+  protected toNumber(value: number | bigint | null | undefined): number | undefined {
+    if (value == null) {
+      return undefined;
+    }
+    return Number(value);
   }
 
   protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
@@ -242,8 +249,9 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
     if (defaultValue === 'NULL') {
       return null;
     }
-    if (defaultValue === 'CURRENT_TIMESTAMP') {
-      return defaultValue;
+    // Normalize timestamp defaults (MariaDB uses current_timestamp(), MySQL uses CURRENT_TIMESTAMP)
+    if (defaultValue.toLowerCase() === 'current_timestamp' || defaultValue.toLowerCase() === 'current_timestamp()') {
+      return 'CURRENT_TIMESTAMP';
     }
     if (/^'.*'$/.test(defaultValue)) {
       return defaultValue.slice(1, -1);

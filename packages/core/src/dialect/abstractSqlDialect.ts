@@ -24,6 +24,7 @@ import {
   type QueryWhereFieldOperatorMap,
   type QueryWhereMap,
   type QueryWhereOptions,
+  type SqlDialect,
   type SqlQueryDialect,
   type Type,
 } from '../type/index.js';
@@ -50,6 +51,9 @@ import { AbstractDialect } from './abstractDialect.js';
 import { SqlQueryContext } from './queryContext.js';
 
 export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
+  // Narrow dialect type from Dialect to SqlDialect
+  declare readonly dialect: SqlDialect;
+
   get escapeIdChar() {
     return this.config.quoteChar;
   }

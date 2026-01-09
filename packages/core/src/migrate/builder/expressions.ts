@@ -144,7 +144,7 @@ export function formatDefaultValue(value: unknown): string {
   }
 
   if (typeof value === 'string') {
-    // Escape single quotes
+    // Escape single quotes for string literals
     const escaped = value.replace(/'/g, "''");
     return `'${escaped}'`;
   }

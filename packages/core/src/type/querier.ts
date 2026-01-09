@@ -9,6 +9,7 @@ import type {
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
+  SqlDialect,
   SqlQueryDialect,
 } from './query.js';
 
@@ -20,10 +21,8 @@ import type { Type } from './utility.js';
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
 
-/**
- * Supported SQL dialect identifiers.
- */
-export type SqlDialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite';
+// Re-export SqlDialect for backwards compatibility
+export type { SqlDialect };
 
 export type Dialect = SqlDialect | 'mongodb';
 

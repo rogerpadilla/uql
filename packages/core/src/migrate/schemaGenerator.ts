@@ -77,7 +77,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     const columns = this.generateColumnDefinitions(meta);
     const constraints = this.generateTableConstraints(meta);
 
-    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = options.ifNotExists && this.config.features.ifNotExists ? 'IF NOT EXISTS ' : '';
     let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(tableName)} (\n`;
     sql += columns.map((col) => `  ${col}`).join(',\n');
 
@@ -181,7 +181,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     const unique = index.unique ? 'UNIQUE ' : '';
     const columns = index.columns.map((c) => this.escapeId(c)).join(', ');
-    const ifNotExists = this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = this.config.features.indexIfNotExists ? 'IF NOT EXISTS ' : '';
     return `CREATE ${unique}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)} (${columns});`;
   }
 
@@ -583,7 +583,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       }
     }
 
-    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = options.ifNotExists && this.config.features.ifNotExists ? 'IF NOT EXISTS ' : '';
     let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
     sql += columns.map((col) => `  ${col}`).join(',\n');
 
@@ -649,7 +649,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     const uniqueStr = index.unique ? 'UNIQUE ' : '';
     const columns = index.columns.map((c) => this.escapeId(c.name)).join(', ');
     const tableName = this.escapeId(index.table.name);
-    const ifNotExists = options.ifNotExists && this.config.supportsIfNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = options.ifNotExists && this.config.features.indexIfNotExists ? 'IF NOT EXISTS ' : '';
 
     return `CREATE ${uniqueStr}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${tableName} (${columns});`;
   }
@@ -673,7 +673,8 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
   generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string {
     const ifExists = options?.ifExists ? 'IF EXISTS ' : '';
-    const cascade = options?.cascade ? ' CASCADE' : '';
+    // Use dialect-specific cascade support from config
+    const cascade = options?.cascade && this.config.features.dropTableCascade ? ' CASCADE' : '';
     return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
   }
 
@@ -718,6 +719,10 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     const constraintName = foreignKey.name
       ? this.escapeId(foreignKey.name)
       : this.escapeId(`fk_${tableName}_${foreignKey.columns.join('_')}`);
+
+    if (!this.config.features.foreignKeyAlter) {
+      throw new Error(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
+    }
 
     return (
       `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} ` +

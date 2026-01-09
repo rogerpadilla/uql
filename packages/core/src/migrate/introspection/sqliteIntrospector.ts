@@ -169,18 +169,22 @@ export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements Sch
     const result: IndexSchema[] = [];
 
     for (const index of indexes) {
-      // Skip auto-generated indexes (primary key, unique constraints)
-      if (index.origin !== 'c') {
-        continue;
-      }
-
       const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
 
-      result.push({
-        name: index.name,
-        columns: columns.map((c) => c.name),
-        unique: Boolean(index.unique),
-      });
+      // Include user-created indexes ('c') and multi-column unique constraints ('u')
+      // Skip primary key indexes ('pk') and single-column unique constraints
+      const isUserCreated = index.origin === 'c';
+      const isCompositeUnique = index.origin === 'u' && columns.length > 1;
+
+      const shouldInclude = isUserCreated || isCompositeUnique;
+
+      if (shouldInclude) {
+        result.push({
+          name: index.name,
+          columns: columns.map((c) => c.name),
+          unique: Boolean(index.unique),
+        });
+      }
     }
 
     return result;

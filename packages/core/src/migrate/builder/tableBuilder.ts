@@ -330,6 +330,20 @@ export class TableBuilder implements ITableBuilder {
       .map((fk) => fk.build())
       .filter((fk): fk is TableForeignKeyDefinition => fk !== undefined);
 
+    // Collect column-level foreign keys
+    for (const col of columns) {
+      if (col.foreignKey) {
+        foreignKeys.push({
+          name: col.foreignKey.name,
+          columns: [col.name],
+          referencesTable: col.foreignKey.table,
+          referencesColumns: col.foreignKey.columns,
+          onDelete: col.foreignKey.onDelete,
+          onUpdate: col.foreignKey.onUpdate,
+        });
+      }
+    }
+
     return {
       name: this._name,
       columns,

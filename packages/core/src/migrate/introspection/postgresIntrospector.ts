@@ -110,6 +110,8 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
         c.character_maximum_length,
         c.numeric_precision,
         c.numeric_scale,
+        c.is_identity,
+        c.identity_generation,
         COALESCE(
           (SELECT TRUE FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
@@ -149,6 +151,8 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
       character_maximum_length: number | null;
       numeric_precision: number | null;
       numeric_scale: number | null;
+      is_identity: string;
+      identity_generation: string | null;
       is_primary_key: boolean;
       is_unique: boolean;
       column_comment: string | null;
@@ -160,7 +164,7 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.is_primary_key,
-      isAutoIncrement: this.isAutoIncrement(row.column_default),
+      isAutoIncrement: this.isAutoIncrement(row.column_default, row.is_identity),
       isUnique: row.is_unique,
       length: row.character_maximum_length ?? undefined,
       precision: row.numeric_precision ?? undefined,
@@ -173,7 +177,7 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
     const sql = /*sql*/ `
       SELECT
         i.relname AS index_name,
-        array_agg(a.attname ORDER BY k.n) AS columns,
+        array_to_json(array_agg(a.attname ORDER BY k.n)) AS columns,
         ix.indisunique AS is_unique
       FROM pg_class t
       JOIN pg_index ix ON t.oid = ix.indrelid
@@ -205,9 +209,9 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
     const sql = /*sql*/ `
       SELECT
         tc.constraint_name,
-        array_agg(kcu.column_name ORDER BY kcu.ordinal_position) AS columns,
+        array_to_json(array_agg(kcu.column_name ORDER BY kcu.ordinal_position)) AS columns,
         ccu.table_name AS referenced_table,
-        array_agg(ccu.column_name ORDER BY kcu.ordinal_position) AS referenced_columns,
+        array_to_json(array_agg(ccu.column_name ORDER BY kcu.ordinal_position)) AS referenced_columns,
         rc.delete_rule,
         rc.update_rule
       FROM information_schema.table_constraints tc
@@ -274,7 +278,7 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
       return udtName.toUpperCase();
     }
     if (dataType === 'ARRAY') {
-      return `${udtName.replace(/^_/, '')}[]`;
+      return `${udtName.replace(/^_/, '').toUpperCase()}[]`;
     }
     return dataType.toUpperCase();
   }
@@ -284,8 +288,8 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
       return undefined;
     }
 
-    // Remove type casting
-    const cleaned = defaultValue.replace(/::[a-z_]+(\[\])?/gi, '').trim();
+    // Remove type casting (e.g., ::text, ::character varying, ::text[])
+    const cleaned = defaultValue.replace(/::[a-z_]+(\s+[a-z_]+)?(\[\])?/gi, '').trim();
 
     // Check for common patterns
     if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
@@ -304,15 +308,20 @@ export class PostgresSchemaIntrospector extends BaseSqlIntrospector implements S
       return Number.parseFloat(cleaned);
     }
 
-    // Return as-is for functions like CURRENT_TIMESTAMP, nextval(), etc.
-    return defaultValue;
+    // Return cleaned value for functions like CURRENT_TIMESTAMP, nextval(), etc.
+    return cleaned;
   }
 
-  protected isAutoIncrement(defaultValue: string | null): boolean {
-    if (!defaultValue) {
-      return false;
+  protected isAutoIncrement(defaultValue: string | null, isIdentity: string): boolean {
+    // PostgreSQL identity columns (GENERATED ... AS IDENTITY)
+    if (isIdentity === 'YES') {
+      return true;
     }
-    return defaultValue.includes('nextval(');
+    // Serial/bigserial columns use nextval()
+    if (defaultValue?.includes('nextval(')) {
+      return true;
+    }
+    return false;
   }
 
   protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {

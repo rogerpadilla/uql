@@ -40,6 +40,9 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
     this._defaultValue = options.defaultValue;
     this._index = options.index;
     this._comment = options.comment;
+    if (options.unsigned !== undefined) {
+      this._type = { ...this._type, unsigned: options.unsigned };
+    }
 
     // Handle inline references option
     if (options.references) {
@@ -115,6 +118,13 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    */
   index(name?: string): this {
     this._index = name ?? true;
+    return this;
+  }
+  /**
+   * Set as unsigned (MySQL/MariaDB).
+   */
+  unsigned(): this {
+    this._type = { ...this._type, unsigned: true };
     return this;
   }
 

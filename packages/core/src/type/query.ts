@@ -490,9 +490,19 @@ export interface QueryDialect {
 }
 
 /**
+ * Supported SQL dialect identifiers.
+ */
+export type SqlDialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite';
+
+/**
  * Minimal dialect interface exposing escapeIdChar for SQL operations
  */
 export interface SqlQueryDialect extends QueryDialect {
+  /**
+   * The SQL dialect name (postgres, mysql, mariadb, sqlite).
+   */
+  readonly dialect: SqlDialect;
+
   /**
    * the escape character for identifiers.
    */
