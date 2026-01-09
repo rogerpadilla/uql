@@ -1,144 +1,185 @@
-import type {
-  ColumnSchema,
-  ForeignKeySchema,
-  IndexSchema,
-  QuerierPool,
-  SchemaIntrospector,
-  SqlQuerier,
-  TableSchema,
-} from '../../type/index.js';
-import { isSqlQuerier } from '../../type/index.js';
-import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, SqlQuerier } from '../../type/index.js';
+import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * SQLite schema introspector
  */
-export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
-  constructor(private readonly pool: QuerierPool) {
+export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  protected readonly pool: QuerierPool;
+
+  constructor(pool: QuerierPool) {
     super('sqlite');
+    this.pool = pool;
   }
 
-  async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    const querier = await this.getQuerier();
+  // ============================================================================
+  // SQL Queries (dialect-specific)
+  // ============================================================================
 
-    try {
-      const exists = await this.tableExistsInternal(querier, tableName);
-      if (!exists) {
-        return undefined;
-      }
-
-      const [columns, indexes, foreignKeys, primaryKey] = await Promise.all([
-        this.getColumns(querier, tableName),
-        this.getIndexes(querier, tableName),
-        this.getForeignKeys(querier, tableName),
-        this.getPrimaryKey(querier, tableName),
-      ]);
-
-      return {
-        name: tableName,
-        columns,
-        primaryKey,
-        indexes,
-        foreignKeys,
-      };
-    } finally {
-      await querier.release();
-    }
+  protected getTableNamesQuery(): string {
+    return /*sql*/ `
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name NOT LIKE 'sqlite_%'
+      ORDER BY name
+    `;
   }
 
-  async getTableNames(): Promise<string[]> {
-    const querier = await this.getQuerier();
-
-    try {
-      const sql = /*sql*/ `
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table'
-          AND name NOT LIKE 'sqlite_%'
-        ORDER BY name
-      `;
-
-      const results = await querier.all<{ name: string }>(sql);
-      return results.map((r) => r.name);
-    } finally {
-      await querier.release();
-    }
-  }
-
-  async tableExists(tableName: string): Promise<boolean> {
-    const querier = await this.getQuerier();
-
-    try {
-      return this.tableExistsInternal(querier, tableName);
-    } finally {
-      await querier.release();
-    }
-  }
-
-  private async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
-    const sql = /*sql*/ `
+  protected tableExistsQuery(): string {
+    return /*sql*/ `
       SELECT COUNT(*) as count
       FROM sqlite_master
       WHERE type = 'table'
         AND name = ?
     `;
-
-    const results = await querier.all<{ count: number }>(sql, [tableName]);
-    return (results[0]?.count ?? 0) > 0;
   }
 
-  private async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.pool.getQuerier();
-
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('SqliteSchemaIntrospector requires a SQL-based querier');
-    }
-
-    return querier;
+  protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
+    const count = results[0]?.count;
+    return (typeof count === 'number' || typeof count === 'bigint' ? Number(count) : 0) > 0;
   }
 
-  private async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
-    // SQLite uses PRAGMA for table info
-    const sql = `PRAGMA table_info(${this.escapeId(tableName)})`;
+  // SQLite uses PRAGMA which doesn't use parameterized queries in the same way
+  protected getColumnsQuery(tableName: string): string {
+    return `PRAGMA table_info(${this.escapeId(tableName)})`;
+  }
 
-    const results = await querier.all<{
-      cid: number;
-      name: string;
-      type: string;
-      notnull: number;
-      dflt_value: string | null;
-      pk: number;
-    }>(sql);
+  protected getIndexesQuery(tableName: string): string {
+    return `PRAGMA index_list(${this.escapeId(tableName)})`;
+  }
 
+  protected getForeignKeysQuery(tableName: string): string {
+    return `PRAGMA foreign_key_list(${this.escapeId(tableName)})`;
+  }
+
+  protected getPrimaryKeyQuery(tableName: string): string {
+    return `PRAGMA table_info(${this.escapeId(tableName)})`;
+  }
+
+  protected override getColumnsParams(_tableName: string): any[] {
+    return [];
+  }
+
+  protected override getIndexesParams(_tableName: string): any[] {
+    return [];
+  }
+
+  protected override getForeignKeysParams(_tableName: string): any[] {
+    return [];
+  }
+
+  protected override getPrimaryKeyParams(_tableName: string): any[] {
+    return [];
+  }
+
+  // ============================================================================
+  // Row Mapping (dialect-specific)
+  // ============================================================================
+
+  protected mapTableNameRow(row: Record<string, unknown>): string {
+    return row.name as string;
+  }
+
+  protected async mapColumnsResult(
+    querier: SqlQuerier,
+    tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<ColumnSchema[]> {
     // Get unique columns from indexes
     const uniqueColumns = await this.getUniqueColumns(querier, tableName);
 
     return results.map((row) => ({
-      name: row.name,
-      type: this.normalizeType(row.type),
-      nullable: row.notnull === 0,
-      defaultValue: this.parseDefaultValue(row.dflt_value),
-      isPrimaryKey: row.pk > 0,
-      isAutoIncrement: row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
-      isUnique: uniqueColumns.has(row.name),
-      length: this.extractLength(row.type),
+      name: row.name as string,
+      type: this.normalizeType(row.type as string),
+      nullable: (row.notnull as number) === 0,
+      defaultValue: this.parseDefaultValue(row.dflt_value as string | null),
+      isPrimaryKey: (row.pk as number) > 0,
+      isAutoIncrement: (row.pk as number) > 0 && (row.type as string).toUpperCase() === 'INTEGER',
+      isUnique: uniqueColumns.has(row.name as string),
+      length: this.extractLength(row.type as string),
       precision: undefined,
       scale: undefined,
       comment: undefined, // SQLite doesn't support column comments
     }));
   }
 
-  private async getUniqueColumns(querier: SqlQuerier, tableName: string): Promise<Set<string>> {
-    const sql = `PRAGMA index_list(${this.escapeId(tableName)})`;
+  protected async mapIndexesResult(
+    querier: SqlQuerier,
+    _tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<IndexSchema[]> {
+    const indexSchemas: IndexSchema[] = [];
 
+    for (const index of results) {
+      const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name as string)})`);
+
+      // Include user-created indexes ('c') and multi-column unique constraints ('u')
+      // Skip primary key indexes ('pk') and single-column unique constraints
+      const isUserCreated = index.origin === 'c';
+      const isCompositeUnique = index.origin === 'u' && columns.length > 1;
+
+      if (isUserCreated || isCompositeUnique) {
+        indexSchemas.push({
+          name: index.name as string,
+          columns: columns.map((c) => c.name),
+          unique: Boolean(index.unique),
+        });
+      }
+    }
+
+    return indexSchemas;
+  }
+
+  protected async mapForeignKeysResult(
+    _querier: SqlQuerier,
+    tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<ForeignKeySchema[]> {
+    // Group by id to handle composite foreign keys
+    const grouped = new Map<number, Record<string, unknown>[]>();
+    for (const row of results) {
+      const id = row.id as number;
+      const existing = grouped.get(id) ?? [];
+      existing.push(row);
+      grouped.set(id, existing);
+    }
+
+    return Array.from(grouped.entries()).map(([id, rows]) => {
+      const first = rows[0];
+      return {
+        name: `fk_${tableName}_${id}`,
+        columns: rows.map((r) => r.from as string),
+        referencedTable: first.table as string,
+        referencedColumns: rows.map((r) => r.to as string),
+        onDelete: this.normalizeReferentialAction(first.on_delete as string),
+        onUpdate: this.normalizeReferentialAction(first.on_update as string),
+      };
+    });
+  }
+
+  protected mapPrimaryKeyResult(results: Record<string, unknown>[]): string[] | undefined {
+    const pkColumns = results.filter((r) => (r.pk as number) > 0).sort((a, b) => (a.pk as number) - (b.pk as number));
+
+    if (pkColumns.length === 0) {
+      return undefined;
+    }
+
+    return pkColumns.map((r) => r.name as string);
+  }
+
+  // ============================================================================
+  // SQLite-specific helpers
+  // ============================================================================
+
+  private async getUniqueColumns(querier: SqlQuerier, tableName: string): Promise<Set<string>> {
     const indexes = await querier.all<{
       seq: number;
       name: string;
       unique: number;
       origin: string;
       partial: number;
-    }>(sql);
+    }>(`PRAGMA index_list(${this.escapeId(tableName)})`);
 
     const uniqueColumns = new Set<string>();
 
@@ -153,97 +194,6 @@ export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements Sch
     }
 
     return uniqueColumns;
-  }
-
-  private async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
-    const sql = `PRAGMA index_list(${this.escapeId(tableName)})`;
-
-    const indexes = await querier.all<{
-      seq: number;
-      name: string;
-      unique: number;
-      origin: string;
-      partial: number;
-    }>(sql);
-
-    const result: IndexSchema[] = [];
-
-    for (const index of indexes) {
-      const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
-
-      // Include user-created indexes ('c') and multi-column unique constraints ('u')
-      // Skip primary key indexes ('pk') and single-column unique constraints
-      const isUserCreated = index.origin === 'c';
-      const isCompositeUnique = index.origin === 'u' && columns.length > 1;
-
-      const shouldInclude = isUserCreated || isCompositeUnique;
-
-      if (shouldInclude) {
-        result.push({
-          name: index.name,
-          columns: columns.map((c) => c.name),
-          unique: Boolean(index.unique),
-        });
-      }
-    }
-
-    return result;
-  }
-
-  private async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
-    const sql = `PRAGMA foreign_key_list(${this.escapeId(tableName)})`;
-
-    const results = await querier.all<{
-      id: number;
-      seq: number;
-      table: string;
-      from: string;
-      to: string;
-      on_update: string;
-      on_delete: string;
-      match: string;
-    }>(sql);
-
-    // Group by id to handle composite foreign keys
-    const grouped = new Map<number, typeof results>();
-    for (const row of results) {
-      const existing = grouped.get(row.id) ?? [];
-      existing.push(row);
-      grouped.set(row.id, existing);
-    }
-
-    return Array.from(grouped.entries()).map(([id, rows]) => {
-      const first = rows[0];
-      return {
-        name: `fk_${tableName}_${id}`,
-        columns: rows.map((r) => r.from),
-        referencedTable: first.table,
-        referencedColumns: rows.map((r) => r.to),
-        onDelete: this.normalizeReferentialAction(first.on_delete),
-        onUpdate: this.normalizeReferentialAction(first.on_update),
-      };
-    });
-  }
-
-  private async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
-    const sql = `PRAGMA table_info(${this.escapeId(tableName)})`;
-
-    const results = await querier.all<{
-      cid: number;
-      name: string;
-      type: string;
-      notnull: number;
-      dflt_value: string | null;
-      pk: number;
-    }>(sql);
-
-    const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
-
-    if (pkColumns.length === 0) {
-      return undefined;
-    }
-
-    return pkColumns.map((r) => r.name);
   }
 
   protected normalizeType(type: string): string {
@@ -262,7 +212,6 @@ export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements Sch
       return undefined;
     }
 
-    // Check for common patterns
     if (defaultValue === 'NULL') {
       return null;
     }
@@ -280,20 +229,5 @@ export class SqliteSchemaIntrospector extends BaseSqlIntrospector implements Sch
     }
 
     return defaultValue;
-  }
-
-  protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
-    switch (action.toUpperCase()) {
-      case 'CASCADE':
-        return 'CASCADE';
-      case 'SET NULL':
-        return 'SET NULL';
-      case 'RESTRICT':
-        return 'RESTRICT';
-      case 'NO ACTION':
-        return 'NO ACTION';
-      default:
-        return undefined;
-    }
   }
 }

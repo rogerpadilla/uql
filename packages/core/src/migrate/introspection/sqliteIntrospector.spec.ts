@@ -295,7 +295,7 @@ describe('SqliteSchemaIntrospector', () => {
 
   it('should throw error if not SQL querier', async () => {
     (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
-    await expect(introspector.getTableNames()).rejects.toThrow('SqliteSchemaIntrospector requires a SQL-based querier');
+    await expect(introspector.getTableNames()).rejects.toThrow('requires a SQL-based querier');
   });
 
   it('introspect should return SchemaAST with all tables', async () => {

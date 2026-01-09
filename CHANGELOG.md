@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.8.3] - 2026-01-09
+### Improvements & Refactoring
+- **Unified SQL Introspectors**: Refactored the database introspection layer using a template-method pattern via `AbstractSqlSchemaIntrospector`. This consolidated shared logic for **PostgreSQL**, **MySQL**, **MariaDB**, and **SQLite**, reducing code duplication by ~280 lines while ensuring consistent behavior across all SQL dialects.
+- **Enhanced `@Index` Decorator**: Completed the implementation for composite and customized indexes. Developers can now define multi-column indexes with support for custom `name`, `unique` constraints, and dialect-specific `type` (e.g., `btree`, `hash`, `gin`, `gist`) and `where` clauses.
+- **Reliable Schema Generation**: Synced `SqlSchemaGenerator` with the **Schema AST** for initial `CREATE TABLE` operations. This ensures that manually defined composite indexes and complex constraints are automatically included in new migrations and `autoSync` actions.
+- **Robust SQLite Introspection**: Optimized SQLite-specific PRAGMA handling to correctly manage non-standard placeholder support, resolving "Too many parameters" errors and improving stability for **LibSQL** and **Cloudflare D1**.
+- **Refined Type Safety**: Fixed TypeScript compilation issues related to `override` modifiers and corrected internal type mismatches in `SchemaASTBuilder`, achieving a perfectly clean `tsc` output and 100% test coverage for all introspector modules.
+
 ## [3.8.2] - 2026-01-08
 ### Improvements & Refactoring
 - **Refactored Dialect Configuration**: Grouped dialect-specific flags into a cohesive `features` object within `DialectConfig`. Introduced a new `foreignKeyAlter` flag to explicitly manage support for post-creation foreign key constraints, improving architectural clarity.

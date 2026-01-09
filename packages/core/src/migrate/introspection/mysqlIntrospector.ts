@@ -1,106 +1,48 @@
-import type {
-  ColumnSchema,
-  ForeignKeySchema,
-  IndexSchema,
-  QuerierPool,
-  SchemaIntrospector,
-  SqlQuerier,
-  TableSchema,
-} from '../../type/index.js';
-import { isSqlQuerier } from '../../type/index.js';
-import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, SqlQuerier } from '../../type/index.js';
+import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * MySQL/MariaDB schema introspector.
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
-export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
-  constructor(private readonly pool: QuerierPool) {
+export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  protected readonly pool: QuerierPool;
+
+  constructor(pool: QuerierPool) {
     super('mysql');
+    this.pool = pool;
   }
 
-  async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    const querier = await this.getQuerier();
+  // ============================================================================
+  // SQL Queries (dialect-specific)
+  // ============================================================================
 
-    try {
-      const exists = await this.tableExistsInternal(querier, tableName);
-      if (!exists) {
-        return undefined;
-      }
-
-      const [columns, indexes, foreignKeys, primaryKey] = await Promise.all([
-        this.getColumns(querier, tableName),
-        this.getIndexes(querier, tableName),
-        this.getForeignKeys(querier, tableName),
-        this.getPrimaryKey(querier, tableName),
-      ]);
-
-      return {
-        name: tableName,
-        columns,
-        primaryKey,
-        indexes,
-        foreignKeys,
-      };
-    } finally {
-      await querier.release();
-    }
+  protected getTableNamesQuery(): string {
+    return /*sql*/ `
+      SELECT TABLE_NAME as table_name
+      FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_TYPE = 'BASE TABLE'
+      ORDER BY TABLE_NAME
+    `;
   }
 
-  async getTableNames(): Promise<string[]> {
-    const querier = await this.getQuerier();
-
-    try {
-      const sql = `
-        SELECT TABLE_NAME as table_name
-        FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_TYPE = 'BASE TABLE'
-        ORDER BY TABLE_NAME
-      `;
-
-      const results = await querier.all<{ table_name: string }>(sql);
-      return results.map((r: any) => r.table_name);
-    } finally {
-      await querier.release();
-    }
-  }
-
-  async tableExists(tableName: string): Promise<boolean> {
-    const querier = await this.getQuerier();
-
-    try {
-      return this.tableExistsInternal(querier, tableName);
-    } finally {
-      await querier.release();
-    }
-  }
-
-  protected async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
-    const sql = `
+  protected tableExistsQuery(): string {
+    return /*sql*/ `
       SELECT COUNT(*) as count
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = ?
     `;
-
-    const results = await querier.all<{ count: number }>(sql, [tableName]);
-    return (results[0]?.count ?? 0) > 0;
   }
 
-  protected async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.pool.getQuerier();
-
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('MysqlSchemaIntrospector requires a SQL-based querier');
-    }
-
-    return querier;
+  protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
+    const count = results[0]?.count;
+    return (typeof count === 'number' || typeof count === 'bigint' ? Number(count) : 0) > 0;
   }
 
-  protected async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
-    const sql = `
+  protected getColumnsQuery(_tableName: string): string {
+    return /*sql*/ `
       SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
@@ -118,45 +60,10 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
         AND TABLE_NAME = ?
       ORDER BY ORDINAL_POSITION
     `;
-
-    const results = await querier.all<{
-      column_name: string;
-      data_type: string;
-      column_type: string;
-      is_nullable: string;
-      column_default: string | null;
-      character_maximum_length: number | null;
-      numeric_precision: number | null;
-      numeric_scale: number | null;
-      column_key: string;
-      extra: string;
-      column_comment: string | null;
-    }>(sql, [tableName]);
-
-    return results.map((row) => ({
-      name: row.column_name,
-      type: (row.column_type || '').toUpperCase(),
-      nullable: row.is_nullable === 'YES',
-      defaultValue: this.parseDefaultValue(row.column_default),
-      isPrimaryKey: row.column_key === 'PRI',
-      isAutoIncrement: (row.extra || '').toLowerCase().includes('auto_increment'),
-      isUnique: row.column_key === 'UNI',
-      length: this.toNumber(row.character_maximum_length),
-      precision: this.toNumber(row.numeric_precision),
-      scale: this.toNumber(row.numeric_scale),
-      comment: row.column_comment || undefined,
-    }));
   }
 
-  protected toNumber(value: number | bigint | null | undefined): number | undefined {
-    if (value == null) {
-      return undefined;
-    }
-    return Number(value);
-  }
-
-  protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
-    const sql = `
+  protected getIndexesQuery(_tableName: string): string {
+    return /*sql*/ `
       SELECT
         INDEX_NAME as index_name,
         GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) as columns,
@@ -168,22 +75,10 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
       GROUP BY INDEX_NAME, NON_UNIQUE
       ORDER BY INDEX_NAME
     `;
-
-    const results = await querier.all<{
-      index_name: string;
-      columns: string;
-      is_unique: number;
-    }>(sql, [tableName]);
-
-    return results.map((row) => ({
-      name: row.index_name,
-      columns: (row.columns || '').split(','),
-      unique: Boolean(row.is_unique),
-    }));
   }
 
-  protected async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
-    const sql = `
+  protected getForeignKeysQuery(_tableName: string): string {
+    return /*sql*/ `
       SELECT
         kcu.CONSTRAINT_NAME as constraint_name,
         GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION) as columns,
@@ -201,28 +96,10 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
       GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
       ORDER BY kcu.CONSTRAINT_NAME
     `;
-
-    const results = await querier.all<{
-      constraint_name: string;
-      columns: string;
-      referenced_table: string;
-      referenced_columns: string;
-      delete_rule: string;
-      update_rule: string;
-    }>(sql, [tableName]);
-
-    return results.map((row) => ({
-      name: row.constraint_name,
-      columns: (row.columns || '').split(','),
-      referencedTable: row.referenced_table,
-      referencedColumns: (row.referenced_columns || '').split(','),
-      onDelete: this.normalizeReferentialAction(row.delete_rule),
-      onUpdate: this.normalizeReferentialAction(row.update_rule),
-    }));
   }
 
-  protected async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
-    const sql = `
+  protected getPrimaryKeyQuery(_tableName: string): string {
+    return /*sql*/ `
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
       WHERE TABLE_SCHEMA = DATABASE()
@@ -230,14 +107,68 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
         AND CONSTRAINT_NAME = 'PRIMARY'
       ORDER BY ORDINAL_POSITION
     `;
+  }
 
-    const results = await querier.all<{ column_name: string }>(sql, [tableName]);
+  // ============================================================================
+  // Row Mapping (dialect-specific)
+  // ============================================================================
 
+  protected mapTableNameRow(row: Record<string, unknown>): string {
+    return row.table_name as string;
+  }
+
+  protected async mapColumnsResult(
+    _querier: SqlQuerier,
+    _tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<ColumnSchema[]> {
+    return results.map((row) => ({
+      name: row.column_name as string,
+      type: ((row.column_type as string) || '').toUpperCase(),
+      nullable: row.is_nullable === 'YES',
+      defaultValue: this.parseDefaultValue(row.column_default as string | null),
+      isPrimaryKey: row.column_key === 'PRI',
+      isAutoIncrement: ((row.extra as string) || '').toLowerCase().includes('auto_increment'),
+      isUnique: row.column_key === 'UNI',
+      length: this.toNumber(row.character_maximum_length as number | bigint | null),
+      precision: this.toNumber(row.numeric_precision as number | bigint | null),
+      scale: this.toNumber(row.numeric_scale as number | bigint | null),
+      comment: (row.column_comment as string) || undefined,
+    }));
+  }
+
+  protected async mapIndexesResult(
+    _querier: SqlQuerier,
+    _tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<IndexSchema[]> {
+    return results.map((row) => ({
+      name: row.index_name as string,
+      columns: ((row.columns as string) || '').split(','),
+      unique: Boolean(row.is_unique),
+    }));
+  }
+
+  protected async mapForeignKeysResult(
+    _querier: SqlQuerier,
+    _tableName: string,
+    results: Record<string, unknown>[],
+  ): Promise<ForeignKeySchema[]> {
+    return results.map((row) => ({
+      name: row.constraint_name as string,
+      columns: ((row.columns as string) || '').split(','),
+      referencedTable: row.referenced_table as string,
+      referencedColumns: ((row.referenced_columns as string) || '').split(','),
+      onDelete: this.normalizeReferentialAction(row.delete_rule as string),
+      onUpdate: this.normalizeReferentialAction(row.update_rule as string),
+    }));
+  }
+
+  protected mapPrimaryKeyResult(results: Record<string, unknown>[]): string[] | undefined {
     if (results.length === 0) {
       return undefined;
     }
-
-    return results.map((r) => r.column_name);
+    return results.map((r) => r.column_name as string);
   }
 
   protected parseDefaultValue(defaultValue: string | null): unknown {
@@ -245,7 +176,6 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
       return undefined;
     }
 
-    // Check for common patterns
     if (defaultValue === 'NULL') {
       return null;
     }
@@ -264,21 +194,6 @@ export class MysqlSchemaIntrospector extends BaseSqlIntrospector implements Sche
     }
 
     return defaultValue;
-  }
-
-  protected normalizeReferentialAction(action: string): 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | undefined {
-    switch (action.toUpperCase()) {
-      case 'CASCADE':
-        return 'CASCADE';
-      case 'SET NULL':
-        return 'SET NULL';
-      case 'RESTRICT':
-        return 'RESTRICT';
-      case 'NO ACTION':
-        return 'NO ACTION';
-      default:
-        return undefined;
-    }
   }
 }
 

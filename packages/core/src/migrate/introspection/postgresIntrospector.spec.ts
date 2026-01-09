@@ -140,9 +140,7 @@ describe('PostgresSchemaIntrospector', () => {
 
   it('should throw error if not SQL querier', async () => {
     (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
-    await expect(introspector.getTableNames()).rejects.toThrow(
-      'PostgresSchemaIntrospector requires a SQL-based querier',
-    );
+    await expect(introspector.getTableNames()).rejects.toThrow('requires a SQL-based querier');
   });
 
   it('isAutoIncrement utility', () => {

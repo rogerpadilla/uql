@@ -172,7 +172,7 @@ describe('MysqlSchemaIntrospector', () => {
   it('getTableNames should throw if not SQL-based querier', async () => {
     const mockRel = vi.fn().mockResolvedValue(undefined);
     mockGetQuerier.mockResolvedValueOnce({ release: mockRel } as any);
-    await expect(introspector.getTableNames()).rejects.toThrow('MysqlSchemaIntrospector requires a SQL-based querier');
+    await expect(introspector.getTableNames()).rejects.toThrow('requires a SQL-based querier');
     expect(mockRel).toHaveBeenCalled();
   });
 

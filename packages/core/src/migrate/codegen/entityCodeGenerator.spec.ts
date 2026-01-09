@@ -300,6 +300,7 @@ describe('EntityCodeGenerator', () => {
         name: 'idx_name',
         table,
         columns: [table.columns.get('first_name'), table.columns.get('last_name')],
+        unique: false,
       });
 
       const generator = new EntityCodeGenerator(ast);
