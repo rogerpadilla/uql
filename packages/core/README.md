@@ -99,6 +99,7 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | `@Entity()`   | Marks a class as a database table/collection.                                  |
 | `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
 | `@Field()`    | Standard column. Use `{ reference: ... }` for Foreign Keys.                  |
+| `@Index()`    | Defines a composite or custom index on one or more columns.                    |
 | `@OneToOne`   | Defines a one-to-one relationship.                                             |
 | `@OneToMany`  | Defines a one-to-many relationship.                                            |
 | `@ManyToOne`  | Defines a many-to-one relationship.                                            |
