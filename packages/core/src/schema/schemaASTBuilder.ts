@@ -228,6 +228,7 @@ export class SchemaASTBuilder {
     const table = this.ast.getTable(tableName);
     if (!table) return;
 
+    // 1. Single column indexes from @Field({ index: true })
     const indexFields = meta.fields as Record<string, FieldOptions | undefined>;
     for (const key of Object.keys(indexFields)) {
       const field = indexFields[key];
@@ -249,6 +250,37 @@ export class SchemaASTBuilder {
       };
 
       this.ast.addIndex(indexNode);
+    }
+
+    // 2. Composite indexes from @Index([...])
+    if (meta.indexes) {
+      for (const idxMeta of meta.indexes) {
+        const columns: ColumnNode[] = [];
+        for (const propName of idxMeta.columns) {
+          const field = meta.fields[propName as keyof typeof meta.fields];
+          if (!field) continue;
+          const colName = resolveColumnName(propName, field);
+          const column = table.columns.get(colName);
+          if (column) {
+            columns.push(column);
+          }
+        }
+
+        if (columns.length > 0) {
+          const indexName = idxMeta.name ?? `idx_${tableName}_${columns.map((c) => c.name).join('_')}`;
+          const indexNode: IndexNode = {
+            name: indexName,
+            table,
+            columns,
+            unique: idxMeta.unique ?? false,
+            type: idxMeta.type,
+            where: idxMeta.where,
+            source: 'entity',
+            syncStatus: 'entity_only',
+          };
+          this.ast.addIndex(indexNode);
+        }
+      }
     }
   }
 }

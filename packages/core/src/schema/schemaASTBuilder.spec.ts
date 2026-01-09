@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { raw } from '../util/index.js';
 import { SchemaASTBuilder } from './schemaASTBuilder.js';
 
@@ -178,6 +178,39 @@ describe('SchemaASTBuilder', () => {
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([VirtualUser]);
       expect(ast.getTable('VirtualUser')?.columns.has('secret')).toBe(false);
+    });
+
+    it('should handle composite indexes and full metadata from decorators', () => {
+      @Entity()
+      @Index(['firstName', 'lastName'], { name: 'idx_fullname', unique: true, where: 'active = true' })
+      class IndexedUser {
+        @Id() id?: number;
+        @Field() firstName?: string;
+        @Field() lastName?: string;
+        @Field() active?: boolean;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([IndexedUser]);
+      const table = ast.getTable('IndexedUser');
+
+      const compositeIdx = table?.indexes.find((idx) => idx.columns.length > 1);
+      expect(compositeIdx).toBeDefined();
+      expect(compositeIdx?.name).toBe('idx_fullname');
+      expect(compositeIdx?.unique).toBe(true);
+      expect(compositeIdx?.where).toBe('active = true');
+      expect(compositeIdx?.columns.map((c) => c.name)).toEqual(['firstName', 'lastName']);
+    });
+
+    it('should ignore composite index if columns do not exist', () => {
+      @Entity()
+      @Index(['unknown'])
+      class BadComposite {
+        @Id() id?: number;
+      }
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([BadComposite]);
+      expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
     });
   });
 

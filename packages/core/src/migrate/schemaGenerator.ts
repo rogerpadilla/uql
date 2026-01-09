@@ -1,6 +1,7 @@
 import { AbstractDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import { areTypesEqual, canonicalToSql, fieldOptionsToCanonical, sqlToCanonical } from '../schema/canonicalType.js';
+import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
 import type {
   CanonicalType,
   ColumnNode,
@@ -72,25 +73,13 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   // ============================================================================
 
   generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string {
-    const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
-    const columns = this.generateColumnDefinitions(meta);
-    const constraints = this.generateTableConstraints(meta);
-
-    const ifNotExists = options.ifNotExists && this.config.features.ifNotExists ? 'IF NOT EXISTS ' : '';
-    let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(tableName)} (\n`;
-    sql += columns.map((col) => `  ${col}`).join(',\n');
-
-    if (constraints.length > 0) {
-      sql += ',\n';
-      sql += constraints.map((c) => `  ${c}`).join(',\n');
-    }
-
-    sql += '\n)';
-    sql += this.getTableOptions(meta);
-    sql += ';';
-
-    return sql;
+    const builder = new SchemaASTBuilder(this.namingStrategy);
+    const ast = builder.fromEntities([entity], {
+      resolveTableName: this.resolveTableName.bind(this),
+      resolveColumnName: this.resolveColumnName.bind(this),
+    });
+    const tableNode = ast.getTables()[0];
+    return this.generateCreateTableFromNode(tableNode, options);
   }
 
   generateDropTable<E>(entity: Type<E>): string {
@@ -193,32 +182,6 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   /**
-   * Generate column definitions from entity metadata
-   */
-  public generateColumnDefinitions<E>(meta: EntityMeta<E>): string[] {
-    const columns: string[] = [];
-    const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
-
-    for (const key of fieldKeys) {
-      const field = meta.fields[key];
-      if (field?.virtual) continue;
-
-      const colDef = this.generateColumnDefinition(key as string, field, meta);
-      columns.push(colDef);
-    }
-
-    return columns;
-  }
-
-  /**
-   * Generate a single column definition
-   */
-  public generateColumnDefinition<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): string {
-    const column = this.fieldToColumnSchema(fieldKey, field, meta);
-    return this.generateColumnDefinitionFromSchema(column);
-  }
-
-  /**
    * Generate column definition from a ColumnSchema object
    */
   public generateColumnDefinitionFromSchema(
@@ -268,47 +231,6 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     }
 
     return definition;
-  }
-
-  /**
-   * Generate table constraints (indexes, foreign keys, etc.)
-   */
-  public generateTableConstraints<E>(meta: EntityMeta<E>): string[] {
-    const constraints: string[] = [];
-    const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
-    const tableName = this.resolveTableName(meta.entity, meta);
-
-    // Generate indexes from field options
-    for (const key of fieldKeys) {
-      const field = meta.fields[key];
-      if (field?.index) {
-        const columnName = this.resolveColumnName(key as string, field);
-        const indexName = typeof field.index === 'string' ? field.index : `idx_${tableName}_${columnName}`;
-        constraints.push(`INDEX ${this.escapeId(indexName)} (${this.escapeId(columnName)})`);
-      }
-    }
-
-    // Generate foreign key constraints from references
-    for (const key of fieldKeys) {
-      const field = meta.fields[key];
-      const reference = field?.references ?? field?.reference;
-      if (reference && field.foreignKey !== false) {
-        const refEntity = reference();
-        const refMeta = getMeta(refEntity);
-        const refIdField = refMeta.fields[refMeta.id];
-        const columnName = this.resolveColumnName(key as string, field);
-        const refTableName = this.resolveTableName(refEntity, refMeta);
-        const refColumnName = this.resolveColumnName(refMeta.id, refIdField);
-        const fkName = typeof field.foreignKey === 'string' ? field.foreignKey : `fk_${tableName}_${columnName}`;
-
-        constraints.push(
-          `CONSTRAINT ${this.escapeId(fkName)} FOREIGN KEY (${this.escapeId(columnName)}) ` +
-            `REFERENCES ${this.escapeId(refTableName)} (${this.escapeId(refColumnName)})`,
-        );
-      }
-    }
-
-    return constraints;
   }
 
   public getSqlType(field: FieldOptions, fieldType?: unknown): string {
@@ -386,7 +308,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   /**
    * Get table options (e.g., ENGINE for MySQL)
    */
-  getTableOptions<E>(meta: EntityMeta<E>): string {
+  public getTableOptions<E>(_meta: EntityMeta<E>): string {
     return this.config.tableOptions ? ` ${this.config.tableOptions}` : '';
   }
 

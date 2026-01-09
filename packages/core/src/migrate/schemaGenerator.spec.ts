@@ -181,6 +181,19 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     });
     expect(sql2[0]).toContain('TODO');
   });
+
+  it('should generate ALTER TABLE statements for dropping columns and indexes', () => {
+    const sql = generator.generateAlterTable({
+      tableName: 'users',
+      type: 'alter',
+      columnsToDrop: ['old_col'],
+      indexesToDrop: ['idx_old'],
+      indexesToAdd: [{ name: 'idx_new', columns: ['name'], unique: false }],
+    });
+    expect(sql).toContain('ALTER TABLE "users" DROP COLUMN "old_col";');
+    expect(sql).toContain('DROP INDEX IF EXISTS "idx_old";');
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "idx_new" ON "users" ("name");');
+  });
 });
 
 describe('SqlSchemaGenerator (MySQL)', () => {

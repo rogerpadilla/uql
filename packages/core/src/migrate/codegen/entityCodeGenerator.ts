@@ -134,7 +134,6 @@ export class EntityCodeGenerator {
         uqlImports.add(this.getRelationDecoratorName(rel.type));
         uqlImports.add('Relation');
 
-        // Add import for related entity
         const relatedTable = rel.from.table === table ? rel.to.table : rel.from.table;
         const relatedClassName = this.options.classNameTransformer(relatedTable.name);
         if (!relatedImports.includes(relatedClassName)) {
@@ -143,14 +142,19 @@ export class EntityCodeGenerator {
       }
     }
 
-    // Sort imports
-    const sortedUqlImports = Array.from(uqlImports).sort();
+    // Check for composite index decorators
+    if (this.options.includeIndexes) {
+      const compositeIndexes = this.ast.getTableIndexes(table.name).filter((idx) => idx.columns.length > 1);
+      if (compositeIndexes.length > 0) {
+        uqlImports.add('Index');
+      }
+    }
 
-    let code = `import { ${sortedUqlImports.join(', ')} } from '${this.options.uqlImportPath}';\n`;
+    let code = `import { ${Array.from(uqlImports).sort().join(', ')} } from '${this.options.uqlImportPath}';\n`;
 
     // Add related entity imports
-    for (const className of relatedImports) {
-      code += `import type { ${className} } from './${className}.js';\n`;
+    for (const className of relatedImports.sort()) {
+      code += `import { ${className} } from './${className}.js';\n`;
     }
 
     return code;
@@ -167,13 +171,13 @@ export class EntityCodeGenerator {
       const compositeIndexes = this.ast.getTableIndexes(table.name).filter((idx) => idx.columns.length > 1);
 
       for (const idx of compositeIndexes) {
-        const columnNames = idx.columns.map((c) => `'${c.name}'`).join(', ');
+        const propNames = idx.columns.map((c) => `'${this.options.propertyNameTransformer(c.name)}'`).join(', ');
         const options: string[] = [];
         if (idx.name) options.push(`name: '${idx.name}'`);
         if (idx.unique) options.push('unique: true');
 
         const optStr = options.length > 0 ? `, { ${options.join(', ')} }` : '';
-        lines.push(`// @Index([${columnNames}]${optStr})`);
+        lines.push(`@Index([${propNames}]${optStr})`);
       }
     }
 

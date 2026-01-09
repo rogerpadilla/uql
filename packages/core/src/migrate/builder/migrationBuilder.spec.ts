@@ -396,7 +396,7 @@ describe('MigrationBuilder', () => {
       await builder.dropForeignKey('t', 'f');
 
       // Each operation should have called querier.run
-      expect(mockQuerier.run).toHaveBeenCalledTimes(11);
+      expect(mockQuerier.run).toHaveBeenCalledTimes(13);
     });
   });
 });

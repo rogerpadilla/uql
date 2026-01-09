@@ -212,7 +212,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('posts');
 
-      expect(result.code).toContain('import type { User }');
+      expect(result.code).toContain('import { User } from');
       expect(result.code).toContain('@ManyToOne');
       expect(result.code).toContain('author?: Relation<User>');
     });
@@ -286,6 +286,27 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
 
       expect(result.code).toContain("index: 'idx_email'");
+    });
+
+    it('should generate composite index', () => {
+      const ast = new SchemaAST();
+      const table = createTable('users', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'first_name', type: { category: 'string' } },
+        { name: 'last_name', type: { category: 'string' } },
+      ]);
+      ast.addTable(table);
+      ast.addIndex({
+        name: 'idx_name',
+        table,
+        columns: [table.columns.get('first_name'), table.columns.get('last_name')],
+      });
+
+      const generator = new EntityCodeGenerator(ast);
+      const result = generator.generateForTable('users');
+
+      expect(result.code).toContain("@Index(['firstName', 'lastName'], { name: 'idx_name' })");
+      expect(result.code).toContain('import { Entity, Field, Id, Index }');
     });
 
     it('should handle boolean and Date types', () => {

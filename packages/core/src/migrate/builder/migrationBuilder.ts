@@ -515,7 +515,13 @@ export class MigrationBuilder extends OperationRecorder {
   private async execute(operation: AnyMigrationOperation): Promise<void> {
     const sql = this.operationToSql(operation);
     if (sql) {
-      await this.querier.run(sql);
+      const statements = sql
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      for (const statement of statements) {
+        await this.querier.run(statement);
+      }
     }
   }
 
