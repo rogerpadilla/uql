@@ -48,5 +48,6 @@ export default defineConfig({
       },
     },
     pool: 'threads',
+    css: false,
   },
 });
