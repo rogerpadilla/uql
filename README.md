@@ -6,10 +6,6 @@
 
 **[UQL](https://uql.app)** is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript. It is engineered to be **fast**, **safe**, and **universally compatible**.
 
-- **Runs Everywhere**: Node.js, Bun, Deno, Cloudflare Workers, Electron, React Native, and the Browser.
-- **Unified API**: A consistent query interface for PostgreSQL (incl. CockroachDB, YugabyteDB), MySQL (incl. TiDB, Aurora), MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, and MongoDB.
-
-&nbsp;
 
 ```ts
 const users = await querier.findMany(User, {
@@ -19,17 +15,6 @@ const users = await querier.findMany(User, {
   $limit: 100,
 });
 ```
-
-&nbsp;
-
-## Why UQL?
-
-| Feature              | **UQL**                                                             | Traditional ORMs                                        |
-| :------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------ |
-| **API**        | **Unified & Intuitive**: Same syntax for SQL & NoSQL.               | Fragmented: SQL and Mongo feel like different worlds.   |
-| **Safety**     | **Deep Type-Safety**: Validates relations & operators at any depth. | Surface-level: Often loses types in complex joins.      |
-| **Syntax**     | **Serializable JSON**: Pure data, perfect for APIs/Websockets.      | Method-Chaining: Hard to transport over the wire.       |
-| **Efficiency** | **Sticky Connections**: Minimal overhead, human-readable SQL.       | Heavy: Often generates "SQL Soup" that's hard to debug. |
 
 &nbsp;
 
@@ -385,9 +370,9 @@ Use the CLI to manage your database schema evolution.
 
 | Command | Description |
 | :--- | :--- |
+| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
 | `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
 | `generate:entities <name>` | **Auto-generates** a migration by diffing your entities against the current DB schema. |
-| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
 | `drift:check` | **Drift Detection**: Compares your defined entities against the actual database schema and reports discrepancies. |
 | `up` | Applies all pending migrations. |
 | `down` | Rolls back the last applied migration batch. |
