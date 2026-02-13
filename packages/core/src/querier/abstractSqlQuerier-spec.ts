@@ -15,7 +15,7 @@ import { raw } from '../util/index.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
-  querier: AbstractSqlQuerier;
+  querier!: AbstractSqlQuerier;
 
   constructor(
     readonly pool: QuerierPool<AbstractSqlQuerier>,
@@ -170,11 +170,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         id: 1,
       },
       $where: {
-        $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+        $exists: raw(({ ctx, dialect, escapedPrefix }: any) => {
           dialect.find(ctx, User, {
             $select: ['id'],
             $where: {
-              companyId: raw(({ ctx: innerCtx }) => {
+              companyId: raw(({ ctx: innerCtx }: any) => {
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),
             },
@@ -196,11 +196,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(Item, {
       $select: { id: 1 },
       $where: {
-        $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+        $nexists: raw(({ ctx, dialect, escapedPrefix }: any) => {
           dialect.find(ctx, User, {
             $select: ['id'],
             $where: {
-              companyId: raw(({ ctx: innerCtx }) => {
+              companyId: raw(({ ctx: innerCtx }: any) => {
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),
             },
@@ -234,7 +234,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: { itemAdjustments: ['id', 'buyPrice', 'itemId', 'creatorId', 'createdAt'] },
+      $select: {
+        itemAdjustments: {
+          $select: ['id' as any, 'buyPrice' as any, 'itemId' as any, 'creatorId' as any, 'createdAt' as any],
+        } as any,
+      },
       $where: { createdAt: 1 },
     });
 
@@ -358,7 +362,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOne(Item, {
-      $select: { id: true, createdAt: true, tags: ['id'] },
+      $select: { id: true, createdAt: true, tags: { $select: ['id' as any] } as any },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -388,7 +392,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOneById(Item, 123, {
-      $select: { id: 1, createdAt: 1, tags: ['id'] },
+      $select: { id: 1, createdAt: 1, tags: { $select: ['id' as any] } as any },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -436,7 +440,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).not.toHaveBeenCalled();
     expect(res1).toEqual([]);
 
-    const res2 = await this.querier.insertMany(User, undefined);
+    const res2 = await this.querier.insertMany(User, undefined as any);
     expect(this.querier.run).not.toHaveBeenCalled();
     expect(this.querier.all).not.toHaveBeenCalled();
     expect(res2).toEqual([]);
@@ -581,7 +585,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.updateOneById(User, 1, {
       name: 'something',
       updatedAt: 1,
-      profile: null,
+      profile: null as any,
     });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -647,7 +651,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.updateOneById(InventoryAdjustment, 1, {
       description: 'some description',
       updatedAt: 1,
-      itemAdjustments: null,
+      itemAdjustments: null as any,
     });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -681,7 +685,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       {
         description: 'some description',
         updatedAt: 1,
-        itemAdjustments: null,
+        itemAdjustments: null as any,
       },
     );
 

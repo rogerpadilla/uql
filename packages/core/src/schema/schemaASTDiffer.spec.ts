@@ -313,7 +313,7 @@ describe('SchemaASTDiffer', () => {
       source.addIndex({
         name: 'idx_users_email',
         table: sourceTable,
-        columns: [emailColumn],
+        columns: [emailColumn!],
         unique: true,
         source: 'entity',
         syncStatus: 'entity_only',
@@ -351,7 +351,7 @@ describe('SchemaASTDiffer', () => {
       target.addIndex({
         name: 'idx_users_email',
         table: targetTable,
-        columns: [targetEmailColumn],
+        columns: [targetEmailColumn!],
         unique: true,
         source: 'entity',
         syncStatus: 'entity_only',
@@ -380,14 +380,14 @@ describe('SchemaASTDiffer', () => {
       source.addIndex({
         name: 'idx_email',
         table: table1,
-        columns: [table1.columns.get('email')],
+        columns: [table1.columns.get('email')!],
         unique: true,
       });
 
       target.addIndex({
         name: 'idx_email',
         table: table2,
-        columns: [table2.columns.get('email')],
+        columns: [table2.columns.get('email')!],
         unique: false, // Changed uniqueness
       });
 
@@ -411,14 +411,14 @@ describe('SchemaASTDiffer', () => {
       source.addIndex({
         name: 'idx_unique',
         table: table1,
-        columns: [table1.columns.get('email')],
+        columns: [table1.columns.get('email')!],
         unique: true,
       });
 
       target.addIndex({
         name: 'idx_unique',
         table: table2,
-        columns: [table2.columns.get('login')], // Changed column
+        columns: [table2.columns.get('login')!], // Changed column
         unique: true,
       });
 
@@ -442,7 +442,7 @@ describe('SchemaASTDiffer', () => {
       source.addIndex({
         name: 'idx_email',
         table: table1,
-        columns: [table1.columns.get('email')],
+        columns: [table1.columns.get('email')!],
         unique: true,
         type: 'btree',
       });
@@ -450,7 +450,7 @@ describe('SchemaASTDiffer', () => {
       target.addIndex({
         name: 'idx_email',
         table: table2,
-        columns: [table2.columns.get('email')],
+        columns: [table2.columns.get('email')!],
         unique: true,
         type: 'hash', // Changed type
       });
@@ -481,8 +481,8 @@ describe('SchemaASTDiffer', () => {
       source.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -512,8 +512,8 @@ describe('SchemaASTDiffer', () => {
       target.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -544,8 +544,8 @@ describe('SchemaASTDiffer', () => {
       source.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [sourceAuthor] },
-        to: { table: users, columns: [sourceId] },
+        from: { table: posts, columns: [sourceAuthor!] },
+        to: { table: users, columns: [sourceId!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -555,8 +555,8 @@ describe('SchemaASTDiffer', () => {
       target.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [targetAuthor] },
-        to: { table: users, columns: [targetId] },
+        from: { table: posts, columns: [targetAuthor!] },
+        to: { table: users, columns: [targetId!] },
         onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
@@ -575,8 +575,8 @@ describe('SchemaASTDiffer', () => {
       const t2 = createTable('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
       source.addTable(t1);
       target.addTable(t2);
-      const idx1 = { name: 'idx_email', table: t1, columns: [t1.columns.get('email')], unique: true };
-      const idx2 = { name: 'idx_email', table: t2, columns: [t2.columns.get('email')], unique: true };
+      const idx1 = { name: 'idx_email', table: t1, columns: [t1.columns.get('email')!], unique: true };
+      const idx2 = { name: 'idx_email', table: t2, columns: [t2.columns.get('email')!], unique: true };
       source.addIndex(idx1 as any);
       target.addIndex(idx2 as any);
       const result = new SchemaASTDiffer().diff(source, target, { compareIndexes: true });
@@ -592,14 +592,14 @@ describe('SchemaASTDiffer', () => {
       target.addTable(t2);
       const rel1 = {
         name: 'fk_1',
-        from: { table: t1, columns: [t1.columns.get('id')] },
-        to: { table: t1, columns: [t1.columns.get('id')] },
+        from: { table: t1, columns: [t1.columns.get('id')!] },
+        to: { table: t1, columns: [t1.columns.get('id')!] },
         onDelete: 'CASCADE',
       };
       const rel2 = {
         name: 'fk_1',
-        from: { table: t2, columns: [t2.columns.get('id')] },
-        to: { table: t2, columns: [t2.columns.get('id')] },
+        from: { table: t2, columns: [t2.columns.get('id')!] },
+        to: { table: t2, columns: [t2.columns.get('id')!] },
         onDelete: 'CASCADE',
       };
       source.addRelationship(rel1 as any);
@@ -619,14 +619,14 @@ describe('SchemaASTDiffer', () => {
       // One has explicit 'NO ACTION', other has undefined (which defaults to 'NO ACTION')
       const rel1 = {
         name: 'fk_1',
-        from: { table: t1, columns: [t1.columns.get('id')] },
-        to: { table: t1, columns: [t1.columns.get('id')] },
+        from: { table: t1, columns: [t1.columns.get('id')!] },
+        to: { table: t1, columns: [t1.columns.get('id')!] },
         onDelete: 'NO ACTION',
       };
       const rel2 = {
         name: 'fk_1',
-        from: { table: t2, columns: [t2.columns.get('id')] },
-        to: { table: t2, columns: [t2.columns.get('id')] },
+        from: { table: t2, columns: [t2.columns.get('id')!] },
+        to: { table: t2, columns: [t2.columns.get('id')!] },
         // onDelete undefined
       };
       source.addRelationship(rel1 as any);

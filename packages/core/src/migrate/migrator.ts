@@ -65,7 +65,7 @@ export class Migrator {
         tableName: options.tableName,
       });
     this.migrationsPath = options.migrationsPath ?? './migrations';
-    this._logger = new LoggerWrapper(options.logger, options.slowQuery);
+    this._logger = new LoggerWrapper(options.logger!, options.slowQuery);
     this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
     this.schemaGenerator = options.schemaGenerator ?? this.createGenerator(options.namingStrategy);
@@ -357,7 +357,7 @@ export class Migrator {
   public findEntityForTable(tableName: string): Type<unknown> | undefined {
     for (const entity of this.entities) {
       const meta = getMeta(entity);
-      const name = this.schemaGenerator.resolveTableName(entity, meta);
+      const name = this.schemaGenerator!.resolveTableName(entity, meta);
       if (name === tableName) {
         return entity;
       }
@@ -526,7 +526,7 @@ export class Migrator {
       const collection = db.collection(collectionName);
 
       if (cmd.action === 'createCollection') {
-        await db.createCollection(cmd.name);
+        await db.createCollection(cmd.name!);
         if (cmd.indexes?.length) {
           for (const idx of cmd.indexes) {
             const key = Object.fromEntries(idx.columns.map((c: string) => [c, 1]));
@@ -536,9 +536,9 @@ export class Migrator {
       } else if (cmd.action === 'dropCollection') {
         await collection.drop();
       } else if (cmd.action === 'createIndex') {
-        await collection.createIndex(cmd.key, cmd.options);
+        await collection.createIndex(cmd.key!, cmd.options);
       } else if (cmd.action === 'dropIndex') {
-        await collection.dropIndex(cmd.name);
+        await collection.dropIndex(cmd.name!);
       }
     }
   }

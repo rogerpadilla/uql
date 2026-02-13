@@ -2,6 +2,7 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
   ExtraOptions,
+  IdValue,
   Query,
   QueryConflictPaths,
   QueryOptions,
@@ -67,7 +68,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     this.dialect.find(ctx, entity, q);
     const res = await this.all<any>(ctx.sql, ctx.values);
     const founds = unflatObjects<E>(res);
-    await this.fillToManyRelations(entity, founds, q.$select);
+    await this.fillToManyRelations(entity, founds, q.$select!);
     return founds;
   }
 
@@ -85,22 +86,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.insert(ctx, entity, payload);
-    const { ids } = await this.run(ctx.sql, ctx.values);
+    const { ids = [] } = await this.run(ctx.sql, ctx.values);
     const meta = getMeta(entity);
+    const idKey = meta.id!;
     const payloadIds = payload.map((it, index) => {
-      const id = ids[index] as E[typeof meta.id];
-      it[meta.id] ??= id;
-      return it[meta.id];
+      const id = ids[index] as E[typeof idKey];
+      it[idKey] ??= id;
+      return it[idKey];
     });
     await this.insertRelations(entity, payload);
-    return payloadIds;
+    return payloadIds as IdValue<E>[];
   }
 
   override async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.update(ctx, entity, q, payload);
-    const { changes } = await this.run(ctx.sql, ctx.values);
+    const { changes = 0 } = await this.run(ctx.sql, ctx.values);
     await this.updateRelations(entity, q, payload);
     return changes;
   }
@@ -119,21 +121,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   ) {
     const meta = getMeta(entity);
     const findCtx = this.dialect.createContext();
-    this.dialect.find(findCtx, entity, { ...q, $select: [meta.id] });
+    this.dialect.find(findCtx, entity, { ...q, $select: [meta.id!] } as Query<E>);
     const founds = await this.all<E>(findCtx.sql, findCtx.values);
     if (!founds.length) {
       return 0;
     }
-    const ids = founds.map((it) => it[meta.id]);
+    const ids = founds.map((it) => it[meta.id!]);
     const deleteCtx = this.dialect.createContext();
     this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
-    const { changes } = await this.run(deleteCtx.sql, deleteCtx.values);
+    const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);
     await this.deleteRelations(entity, ids, opts);
     return changes;
   }
 
   override get hasOpenTransaction() {
-    return this.hasPendingTransaction;
+    return !!this.hasPendingTransaction;
   }
 
   @Serialized()

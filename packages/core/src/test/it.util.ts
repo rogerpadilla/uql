@@ -18,7 +18,7 @@ export async function dropTables(querier: AbstractSqlQuerier) {
   await Promise.all(
     entities.map((entity) => {
       const meta = getMeta(entity);
-      const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name)}`;
+      const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name!)}`;
       return querier.run(sql);
     }),
   );
@@ -38,14 +38,14 @@ export async function clearTables(querier: AbstractSqlQuerier) {
 function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primaryKeyType: string) {
   const meta = getMeta(entity);
 
-  let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name)} (\n\t`;
+  let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name!)} (\n\t`;
 
   const insertableIdType = 'VARCHAR(36)';
   const defaultType = querier.dialect.escapeIdChar === '"' ? 'TEXT' : 'VARCHAR(255)';
 
   const columns = getKeys(meta.fields).map((key) => {
-    const field = meta.fields[key];
-    let propSql = querier.dialect.escapeId(field.name) + ' ';
+    const field = meta.fields[key]!;
+    let propSql = querier.dialect.escapeId(field.name!) + ' ';
     if (field.isId) {
       propSql += field.onInsert ? `${insertableIdType} PRIMARY KEY` : primaryKeyType;
     } else {

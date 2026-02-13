@@ -128,8 +128,8 @@ for (const db of databases) {
         let ast = await introspector.introspect();
         let table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(table.columns.size).toBe(2);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'name']);
+        expect(table!.columns.size).toBe(2);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'name']);
 
         const migrator = new Migrator(db.pool, { entities: [AutoSyncUserTest1] });
         await migrator.autoSync({ logging: true });
@@ -137,8 +137,8 @@ for (const db of databases) {
         ast = await introspector.introspect();
         table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(table.columns.size).toBe(3);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['email', 'id', 'name']);
+        expect(table!.columns.size).toBe(3);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['email', 'id', 'name']);
 
         await cleanupTable(tableName);
       });
@@ -166,8 +166,8 @@ for (const db of databases) {
         const ast = await introspector.introspect();
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(table.columns.size).toBe(5);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
+        expect(table!.columns.size).toBe(5);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
 
         await cleanupTable(tableName);
       });
@@ -196,7 +196,7 @@ for (const db of databases) {
         const astAfter = await introspector.introspect();
         const tableAfter = astAfter.getTable(tableName);
         expect(tableAfter).toBeDefined();
-        expect(tableAfter.columns.size).toBe(tableBefore.columns.size);
+        expect(tableAfter!.columns.size).toBe(tableBefore!.columns.size);
 
         await cleanupTable(tableName);
       });
@@ -225,7 +225,7 @@ for (const db of databases) {
         const ast = await introspector.introspect();
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(table.columns.size).toBe(3);
+        expect(table!.columns.size).toBe(3);
 
         await cleanupTable(tableName);
       });
@@ -251,8 +251,8 @@ for (const db of databases) {
         const ast = await introspector.introspect();
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(table.columns.size).toBe(3);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['email', 'id', 'username']);
+        expect(table!.columns.size).toBe(3);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['email', 'id', 'username']);
 
         await cleanupTable(tableName);
       });
@@ -275,7 +275,7 @@ for (const db of databases) {
         const ast = await introspector.introspect();
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'user_email']);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'user_email']);
 
         await cleanupTable(tableName);
       });
@@ -304,8 +304,8 @@ for (const db of databases) {
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
         // Should have 3 columns: id, oldName (kept), newName (added)
-        expect(table.columns.size).toBe(3);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'newName', 'oldName']);
+        expect(table!.columns.size).toBe(3);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'newName', 'oldName']);
 
         await cleanupTable(tableName);
       });
@@ -334,8 +334,8 @@ for (const db of databases) {
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
         // Should have 2 columns: id, newName. oldName should be GONE.
-        expect(table.columns.size).toBe(2);
-        expect(Array.from(table.columns.keys()).sort()).toEqual(['id', 'newName']);
+        expect(table!.columns.size).toBe(2);
+        expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'newName']);
 
         // Verify data loss (implicit, since column is gone)
 
@@ -366,11 +366,11 @@ for (const db of databases) {
         expect(table).toBeDefined();
 
         // The column type should REMAIN double/float, not change to bigint
-        const costCol = table.columns.get('cost');
+        const costCol = table!.columns.get('cost');
         expect(costCol).toBeDefined();
 
         // We normalize types to lowercase for check
-        const type = costCol.type.category.toLowerCase();
+        const type = costCol!.type.category.toLowerCase();
         const isFloatCompatible =
           type.includes('double') || type.includes('float') || type.includes('real') || type.includes('decimal');
 
@@ -408,8 +408,8 @@ for (const db of databases) {
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
         // Should STILL have extraColumn because drop is false
-        expect(table.columns.size).toBe(3);
-        const colNames = Array.from(table.columns.keys()).sort();
+        expect(table!.columns.size).toBe(3);
+        const colNames = Array.from(table!.columns.keys()).sort();
         expect(colNames).toContain('extraColumn');
 
         await cleanupTable(tableName);
@@ -474,10 +474,10 @@ for (const db of databases) {
         const table = ast.getTable(tableName);
         expect(table).toBeDefined();
 
-        const costCol = table.columns.get('cost');
+        const costCol = table!.columns.get('cost');
         expect(costCol).toBeDefined();
         // Should be converted to bigint (default for number)
-        const type = costCol.type.category.toLowerCase();
+        const type = costCol!.type.category.toLowerCase();
 
         expect(type).toContain('int');
         expect(type).not.toContain('double');

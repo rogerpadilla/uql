@@ -17,14 +17,15 @@ describe('Query with $exists and nested relation filtering', () => {
       dialect.find(ctx, Item, {
         $select: { id: true, name: true },
         $where: {
-          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $exists: raw((opts: any) => {
+            const { ctx, dialect, escapedPrefix } = opts;
             dialect.find(
               ctx,
               User,
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"companyId"`)),
+                  companyId: raw((o: any) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -45,14 +46,15 @@ describe('Query with $exists and nested relation filtering', () => {
       dialect.find(ctx, Item, {
         $select: { id: true },
         $where: {
-          $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $nexists: raw((opts: any) => {
+            const { ctx, dialect, escapedPrefix } = opts;
             dialect.find(
               ctx,
               User,
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"companyId"`)),
+                  companyId: raw((o: any) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -104,14 +106,15 @@ describe('Query with $exists and nested relation filtering', () => {
         },
         $where: {
           createdAt: { $gte: 1000 },
-          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+          $exists: raw((opts: any) => {
+            const { ctx, dialect, escapedPrefix } = opts;
             dialect.find(
               ctx,
               ItemAdjustment,
               {
                 $select: { id: true },
                 $where: {
-                  inventoryAdjustmentId: raw(({ ctx }) => void ctx.append(`${escapedPrefix}"id"`)),
+                  inventoryAdjustmentId: raw((o: any) => void o.ctx.append(`${escapedPrefix}"id"`)),
                   buyPrice: { $gte: 100 },
                 },
               },

@@ -24,13 +24,13 @@ import { Field } from './field.js';
 it('User', () => {
   const meta = getMeta(User);
 
-  expect(meta.fields.companyId.references()).toBe(Company);
-  expect(meta.relations.company.entity()).toBe(Company);
-  expect(meta.relations.company.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
+  expect(meta.fields.companyId!.references!()).toBe(Company);
+  expect(meta.relations.company!.entity!()).toBe(Company);
+  expect(meta.relations.company!.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
 
-  expect(meta.fields.creatorId.references()).toBe(User);
-  expect(meta.relations.creator.entity()).toBe(User);
-  expect(meta.relations.creator.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
+  expect(meta.fields.creatorId!.references!()).toBe(User);
+  expect(meta.relations.creator!.entity!()).toBe(User);
+  expect(meta.relations.creator!.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
   const expectedMeta = {
     entity: User,
@@ -253,7 +253,7 @@ it('Tag', () => {
         name: 'itemsCount',
         type: Number,
         virtual: {
-          alias: undefined as string,
+          alias: undefined as any as string,
           value: expect.any(Function),
         },
       },
@@ -664,7 +664,7 @@ it('not an @Entity', () => {
   }).toThrow(`'SomeClass' is not an entity`);
 
   class AnotherClass {
-    id: string;
+    id!: string;
   }
 
   expect(() => getMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
@@ -699,7 +699,7 @@ it('no @Id', () => {
     @Entity()
     class SomeEntity {
       @Field()
-      id: string;
+      id!: string;
     }
   }).toThrow(`'SomeEntity' must have one field decorated with @Id`);
 });
@@ -708,7 +708,7 @@ it('no fields', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
-      id: string;
+      id!: string;
     }
   }).toThrow(`'SomeEntity' must have fields`);
 });
@@ -718,7 +718,7 @@ it('softDelete onDelete', () => {
     @Entity({ softDelete: true })
     class SomeEntity {
       @Field()
-      id: string;
+      id!: string;
     }
   }).toThrow(`'SomeEntity' must have one field with 'onDelete' to enable 'softDelete'`);
 });
@@ -728,9 +728,9 @@ it('max 1 onDelete', () => {
     @Entity({ softDelete: true })
     class SomeEntity {
       @Field({ onDelete: Date.now })
-      deletedAt: number;
+      deletedAt!: number;
       @Field({ onDelete: () => true })
-      deleted: boolean;
+      deleted!: boolean;
     }
   }).toThrow(`'SomeEntity' must have one field with 'onDelete' as maximum`);
 });

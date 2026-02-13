@@ -13,7 +13,7 @@ export interface Logger {
    * @param values - The parameters passed to the query.
    * @param duration - The time it took to execute the query in milliseconds.
    */
-  logQuery?(query: string, values?: any[], duration?: number): void;
+  logQuery?(query: string, values?: unknown[], duration?: number): void;
   /**
    * Logs a slow query.
    * @param query - The SQL query string.
@@ -29,7 +29,7 @@ export interface Logger {
   /**
    * Logs an error.
    */
-  logError?(message: string, error?: any): void;
+  logError?(message: string, error?: unknown): void;
   /**
    * Logs informative messages.
    */
@@ -51,7 +51,7 @@ export interface Logger {
 /**
  * Function type for backward compatibility with simple loggers.
  */
-export type LoggerFunction = (message: any, ...args: any[]) => void;
+export type LoggerFunction = (message: unknown, ...args: unknown[]) => void;
 
 /**
  * Options for configuring ORM logging.

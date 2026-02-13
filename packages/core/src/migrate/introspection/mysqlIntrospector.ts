@@ -36,9 +36,12 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
-    // biome-ignore lint/complexity/useLiteralKeys: bracket access required by noPropertyAccessFromIndexSignature
-    return this.toNumber(results[0]?.['count']) > 0;
+  protected parseTableExistsResult(results: { count?: number | bigint }[]): boolean {
+    const row = results[0];
+    if (row?.count !== undefined) {
+      return (this.toNumber(row.count!) ?? 0) > 0;
+    }
+    return false;
   }
 
   protected getColumnsQuery(_tableName: string): string {

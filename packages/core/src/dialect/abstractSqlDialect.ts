@@ -3,6 +3,8 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
+  type IdKey,
+  type Key,
   type Query,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -85,7 +87,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   returningId<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
-    const idName = this.resolveColumnName(meta.id, meta.fields[meta.id]);
+    const idKey = (meta.id ?? 'id') as IdKey<E>;
+    const idName = this.resolveColumnName(idKey, meta.fields[idKey]);
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
@@ -99,10 +102,15 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     this.pager(ctx, q);
   }
 
-  selectFields<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E>, opts: QuerySelectOptions = {}): void {
+  selectFields<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    select: QuerySelect<E> | undefined,
+    opts: QuerySelectOptions = {},
+  ): void {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
-    const escapedPrefix = this.escapeId(opts.prefix, true, true);
+    const escapedPrefix = this.escapeId(opts.prefix as string, true, true);
 
     let selectArr: QuerySelectArray<E>;
 
@@ -116,8 +124,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           : (getFieldKeys(meta.fields).filter((it) => !(it in select)) as FieldKey<E>[]);
       }
       selectArr = selectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
-      if (opts.prefix && !selectArr.includes(meta.id)) {
-        selectArr = [meta.id, ...selectArr];
+      const id = meta.id;
+      if (id && opts.prefix && !selectArr.includes(id)) {
+        selectArr = [id, ...selectArr];
       }
     } else {
       selectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
@@ -139,10 +148,11 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         });
       } else {
         const field = meta.fields[key];
+        if (!field) return;
         const columnName = this.resolveColumnName(key, field);
         if (field.virtual) {
           this.getRawValue(ctx, {
-            value: raw(field.virtual.value, key as string),
+            value: raw(field.virtual.value, key),
             prefix: opts.prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -151,7 +161,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           ctx.append(escapedPrefix + this.escapeId(columnName));
         }
         if (!field.virtual && (columnName !== key || opts.autoPrefixAlias)) {
-          const aliasStr = (prefix + key) as string;
+          const aliasStr = prefix + key;
           // Replace dots with underscores for alias to avoid syntax errors
           const safeAlias = aliasStr.replace(/\./g, '_');
           ctx.append(' ' + this.escapeId(safeAlias, true));
@@ -160,7 +170,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     });
   }
 
-  select<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E>, opts: QueryOptions = {}): void {
+  select<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E> | undefined, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? tableName : undefined;
@@ -177,7 +187,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   protected selectRelationFields<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E>,
+    select: QuerySelect<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
     if (Array.isArray(select)) {
@@ -192,6 +202,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
+      if (!relOpts) continue;
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         continue;
@@ -199,8 +210,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
       const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
+      if (!relOpts.entity) continue;
       const relEntity = relOpts.entity();
-      const relSelect = (select as Record<string, unknown>)[relKey as string];
+      const relSelect = (select as Record<string, unknown>)[relKey];
       const relQuery: Query<any> = isSelectArray
         ? {}
         : Array.isArray(relSelect)
@@ -223,7 +235,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   protected selectRelationJoins<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E>,
+    select: QuerySelect<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
     if (Array.isArray(select)) {
@@ -238,15 +250,17 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
+      if (!relOpts) continue;
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         continue;
       }
 
       const isFirstLevel = prefix === tableName;
-      const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
+      const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
+      if (!relOpts.entity) continue;
       const relEntity = relOpts.entity();
-      const relSelect = (select as Record<string, unknown>)[relKey as string];
+      const relSelect = (select as Record<string, unknown>)[relKey];
       const relQuery: Query<any> = isSelectArray
         ? {}
         : Array.isArray(relSelect)
@@ -263,10 +277,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
       ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
       ctx.append(
-        relOpts.references
+        (relOpts.references ?? [])
           .map((it) => {
-            const foreignColumnName = this.resolveColumnName(it.foreign, relMeta.fields[it.foreign]);
-            const localColumnName = this.resolveColumnName(it.local, meta.fields[it.local]);
+            const relField = relMeta.fields[it.foreign];
+            const field = meta.fields[it.local];
+            const foreignColumnName = this.resolveColumnName(it.foreign, relField);
+            const localColumnName = this.resolveColumnName(it.local, field);
             return `${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`;
           })
           .join(' AND '),
@@ -290,8 +306,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     where = buldQueryWhereAsMap(meta, where);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete]) {
-      where[meta.softDelete] = null;
+    if (
+      meta.softDelete &&
+      (softDelete || softDelete === undefined) &&
+      !(where as Record<string, unknown>)[meta.softDelete]
+    ) {
+      (where as Record<string, unknown>)[meta.softDelete] = null;
     }
 
     const entries = Object.entries(where);
@@ -308,11 +328,14 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       ctx.append('(');
     }
 
-    (getKeys(where) as (keyof QueryWhereMap<E>)[]).forEach((key, index) => {
-      if (index > 0) {
+    const startLength = ctx.sql.length;
+    (getKeys(where) as (keyof QueryWhereMap<E>)[]).forEach((key) => {
+      const val = (where as Record<string, unknown>)[key];
+      if (val === undefined) return;
+      if (ctx.sql.length > startLength) {
         ctx.append(' AND ');
       }
-      this.compare(ctx, entity, key, where[key], {
+      this.compare(ctx, entity, key, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], {
         ...opts,
         usePrecedence: getKeys(where).length > 1,
       });
@@ -352,7 +375,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     if (key === '$text') {
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((fKey) => {
+      const searchFields = search.$fields ?? (getFieldKeys(meta.fields) as FieldKey<E>[]);
+      const fields = searchFields.map((fKey) => {
         const field = meta.fields[fKey];
         const columnName = this.resolveColumnName(fKey, field);
         return this.escapeId(columnName);
@@ -364,45 +388,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
 
     if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {
-      const negateOperatorMap = {
-        $not: '$and',
-        $nor: '$or',
-      } as const;
-
-      const op = (negateOperatorMap as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
-      const negate = key in negateOperatorMap ? 'NOT' : '';
-
-      const valArr = val as QueryWhereArray<E>;
-      const hasManyItems = valArr.length > 1;
-
-      if ((opts.usePrecedence || negate) && hasManyItems) {
-        ctx.append((negate ? negate + ' ' : '') + '(');
-      } else if (negate) {
-        ctx.append(negate + ' ');
-      }
-
-      valArr.forEach((whereEntry, index) => {
-        if (index > 0) {
-          ctx.append(op === '$or' ? ' OR ' : ' AND ');
-        }
-        if (whereEntry instanceof QueryRaw) {
-          this.getRawValue(ctx, {
-            value: whereEntry,
-            prefix: opts.prefix,
-            escapedPrefix: this.escapeId(opts.prefix, true, true),
-          });
-        } else {
-          this.where(ctx, entity, whereEntry, {
-            prefix: opts.prefix,
-            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && Object.keys(whereEntry as object).length > 1,
-            clause: false,
-          });
-        }
-      });
-
-      if ((opts.usePrecedence || negate) && hasManyItems) {
-        ctx.append(')');
-      }
+      this.compareLogicalOperator(
+        ctx,
+        entity,
+        key as '$and' | '$or' | '$not' | '$nor',
+        val as QueryWhereArray<E>,
+        opts,
+      );
       return;
     }
 
@@ -422,12 +414,60 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         entity,
         key as FieldKey<E>,
         op,
-        (value as Record<string, unknown>)[op as string],
+        (value as QueryWhereFieldOperatorMap<E>)[op],
         opts,
       );
     });
 
     if (operators.length > 1) {
+      ctx.append(')');
+    }
+  }
+
+  protected compareLogicalOperator<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: '$and' | '$or' | '$not' | '$nor',
+    val: QueryWhereArray<E>,
+    opts: QueryComparisonOptions,
+  ): void {
+    const negateOperatorMap = {
+      $not: '$and',
+      $nor: '$or',
+    } as const;
+
+    const op = (negateOperatorMap as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
+    const negate = key in negateOperatorMap ? 'NOT' : '';
+
+    const valArr = val ?? [];
+    const hasManyItems = valArr.length > 1;
+
+    if ((opts.usePrecedence || negate) && hasManyItems) {
+      ctx.append((negate ? negate + ' ' : '') + '(');
+    } else if (negate) {
+      ctx.append(negate + ' ');
+    }
+
+    valArr.forEach((whereEntry, index) => {
+      if (index > 0) {
+        ctx.append(op === '$or' ? ' OR ' : ' AND ');
+      }
+      if (whereEntry instanceof QueryRaw) {
+        this.getRawValue(ctx, {
+          value: whereEntry,
+          prefix: opts.prefix,
+          escapedPrefix: this.escapeId(opts.prefix as string, true, true),
+        });
+      } else if (whereEntry) {
+        this.where(ctx, entity, whereEntry, {
+          prefix: opts.prefix,
+          usePrecedence: hasManyItems && !Array.isArray(whereEntry) && Object.keys(whereEntry as object).length > 1,
+          clause: false,
+        });
+      }
+    });
+
+    if ((opts.usePrecedence || negate) && hasManyItems) {
       ctx.append(')');
     }
   }
@@ -649,7 +689,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
     const meta = getMeta(entity);
-    const escapedPrefix = this.escapeId(prefix, true, true);
+    const escapedPrefix = this.escapeId(prefix as string, true, true);
     const field = meta.fields[key];
 
     if (field?.virtual) {
@@ -665,7 +705,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.append(escapedPrefix + this.escapeId(columnName));
   }
 
-  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySort<E>, { prefix }: QueryOptions): void {
+  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySort<E> | undefined, { prefix }: QueryOptions): void {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return;
@@ -680,7 +720,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (index > 0) {
         ctx.append(', ');
       }
-      const field = meta.fields[key];
+      const field = meta.fields[key as Key<E>];
       const name = this.resolveColumnName(key, field);
       const direction = directionMap[sort as QuerySortDirection];
       ctx.append(this.escapeId(name) + direction);
@@ -800,7 +840,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
-    return getKeys(conflictPaths)
+    return (getKeys(conflictPaths) as Key<E>[])
       .map((key) => {
         const field = meta.fields[key];
         const columnName = this.resolveColumnName(key, field);
@@ -816,6 +856,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
         const field = meta.fields[meta.softDelete];
+        if (!field?.onDelete) return;
         const value = getFieldCallbackValue(field.onDelete);
         const columnName = this.resolveColumnName(meta.softDelete, field);
         ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
@@ -869,7 +910,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     );
   }
 
-  protected formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {
+  protected formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions | undefined, value: unknown): void {
     if (value instanceof QueryRaw) {
       this.getRawValue(ctx, { value });
       return;

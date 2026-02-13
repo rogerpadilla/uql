@@ -272,7 +272,7 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
   }
 
   const result: CanonicalType = {
-    category: base.category,
+    category: base.category!,
     size: base.size,
     withTimezone: base.withTimezone,
   };

@@ -58,7 +58,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  const onDeleteKeys = getKeys(meta.fields).filter((key) => meta.fields[key].onDelete) as FieldKey<E>[];
+  const onDeleteKeys = getKeys(meta.fields).filter((key) => meta.fields[key]?.onDelete) as FieldKey<E>[];
 
   if (onDeleteKeys.length > 1) {
     throw TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
@@ -95,7 +95,7 @@ export function getEntities(): Type<unknown>[] {
       acc.push(key);
     }
     return acc;
-  }, []);
+  }, [] as Type<unknown>[]);
 }
 
 function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
@@ -123,6 +123,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
     const relOpts = meta.relations[relKey];
+    if (!relOpts) continue;
 
     if (relOpts.references) {
       // references were manually specified
@@ -134,20 +135,23 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
       continue;
     }
 
-    const relEntity = relOpts.entity();
+    const relEntity = relOpts.entity!();
     const relMeta = ensureMeta(relEntity);
 
     if (relOpts.cardinality === 'mm') {
-      const idName = meta.fields[meta.id].name;
-      const relIdName = relMeta.fields[relMeta.id].name;
-      const source = lowerFirst(meta.name) + upperFirst(idName);
-      const target = lowerFirst(relMeta.name) + upperFirst(relIdName);
+      const idKey = meta.id!;
+      const relIdKey = relMeta.id!;
+      const idName = meta.fields[idKey]?.name ?? idKey;
+      const relIdName = relMeta.fields[relIdKey]?.name ?? relIdKey;
+      const source = lowerFirst(meta.name ?? '') + upperFirst(idName);
+      const target = lowerFirst(relMeta.name ?? '') + upperFirst(relIdName);
       relOpts.references = [
-        { local: source, foreign: meta.id },
-        { local: target, foreign: relMeta.id },
+        { local: source, foreign: idKey },
+        { local: target, foreign: relIdKey },
       ];
     } else {
-      relOpts.references = [{ local: `${relKey}Id`, foreign: relMeta.id }];
+      const relIdKey = relMeta.id!;
+      relOpts.references = [{ local: `${relKey}Id`, foreign: relIdKey }];
     }
 
     if (relOpts.through) {
@@ -159,24 +163,26 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
 }
 
 function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
-  const relEntity = relOpts.entity();
+  const relEntity = relOpts.entity!();
   const relMeta = getMeta(relEntity);
-  relOpts.mappedBy = getMappedByRelationKey(relOpts);
+  const mappedBy = getMappedByRelationKey(relOpts);
+  relOpts.mappedBy = mappedBy;
 
-  if (relMeta.fields[relOpts.mappedBy]) {
-    relOpts.references = [{ local: relMeta.id, foreign: relOpts.mappedBy }];
+  if (relMeta.fields[mappedBy as FieldKey<any>]) {
+    relOpts.references = [{ local: relMeta.id!, foreign: mappedBy }];
     return;
   }
 
-  const mappedByRelation = relMeta.relations[relOpts.mappedBy];
+  const mappedByRelation = relMeta.relations[mappedBy as RelationKey<any>];
+  if (!mappedByRelation) return;
 
   if (relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm') {
-    relOpts.references = mappedByRelation.references.slice().reverse();
+    relOpts.references = (mappedByRelation.references ?? []).slice().reverse();
     relOpts.through = mappedByRelation.through;
     return;
   }
 
-  relOpts.references = mappedByRelation.references.map(({ local, foreign }) => ({
+  relOpts.references = (mappedByRelation.references ?? []).map(({ local, foreign }) => ({
     local: foreign,
     foreign: local,
   }));
@@ -187,15 +193,17 @@ function fillThroughRelations<E>(entity: Type<E>): void {
   meta.relations = getKeys(meta.fields).reduce<EntityMeta<E>['relations']>(
     (relations, key) => {
       const field = meta.fields[key];
+      if (!field) return relations;
       const reference = field.references ?? field.reference;
       if (reference) {
         const relEntity = reference();
         const relMeta = ensureMeta(relEntity);
-        const relKey = key.slice(0, -relMeta.id.length);
+        const relIdKey = relMeta.id!;
+        const relKey = key.slice(0, -relIdKey.length);
         const relOpts: RelationOptions = {
           entity: reference,
           cardinality: 'm1',
-          references: [{ local: key, foreign: relMeta.id }],
+          references: [{ local: key, foreign: relIdKey }],
         };
         (relations as Record<string, RelationOptions>)[relKey] = relOpts;
       }
@@ -207,12 +215,12 @@ function fillThroughRelations<E>(entity: Type<E>): void {
 
 function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
   if (typeof relOpts.mappedBy === 'function') {
-    const relEntity = relOpts.entity();
+    const relEntity = relOpts.entity!();
     const relMeta = ensureMeta(relEntity);
     const keyMap = getRelationKeyMap(relMeta);
     return relOpts.mappedBy(keyMap);
   }
-  return relOpts.mappedBy;
+  return relOpts.mappedBy!;
 }
 
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {

@@ -37,9 +37,9 @@ export class SqliteDialect extends AbstractSqlDialect {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields.map((fKey) => {
+      const fields = search.$fields!.map((fKey) => {
         const field = meta.fields[fKey];
-        const columnName = this.resolveColumnName(fKey as string, field);
+        const columnName = this.resolveColumnName(fKey, field!);
         return this.escapeId(columnName);
       });
       const tableName = this.resolveTableName(entity, meta);
@@ -68,7 +68,7 @@ export class SqliteDialect extends AbstractSqlDialect {
         const conditions = values
           .map((v) => {
             ctx.pushValue(JSON.stringify(v));
-            return `EXISTS (SELECT 1 FROM json_each(${this.escapeId(key as string)}) WHERE value = json(?))`;
+            return `EXISTS (SELECT 1 FROM json_each(${this.escapeId(key)}) WHERE value = json(?))`;
           })
           .join(' AND ');
         ctx.append(`(${conditions})`);

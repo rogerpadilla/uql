@@ -137,7 +137,6 @@ export class EntityMerger {
    * Find the position to insert new fields (before the last closing brace).
    */
   private findInsertPosition(code: string): number {
-    // Find the last closing brace that ends the class
     const lines = code.split('\n');
     let braceCount = 0;
     let inClass = false;
@@ -150,35 +149,38 @@ export class EntityMerger {
         inClass = true;
       }
 
-      if (inClass) {
-        // Count braces
-        for (const char of line) {
-          if (char === '{') braceCount++;
-          if (char === '}') braceCount--;
-        }
+      if (!inClass) continue;
 
-        // Track property declarations
-        if (/^\s*(?:@\w+|readonly\s+|\w+\s*[?!]?:)/.test(line)) {
-          lastPropertyLine = i;
-        }
+      braceCount += this.countBraces(line);
 
-        // Found the closing brace
-        if (braceCount === 0 && inClass) {
-          // Insert before the closing brace, after the last property
-          const insertLineIndex = lastPropertyLine >= 0 ? lastPropertyLine + 1 : i;
-
-          // Calculate character position
-          let pos = 0;
-          for (let j = 0; j < insertLineIndex; j++) {
-            pos += lines[j].length + 1; // +1 for newline
-          }
-
-          return pos;
-        }
+      if (/^\s*(?:@\w+|readonly\s+|\w+\s*[?!]?:)/.test(line)) {
+        lastPropertyLine = i;
       }
+
+      if (braceCount !== 0) continue;
+
+      // Found the closing brace — calculate insertion position
+      const insertLineIndex = lastPropertyLine >= 0 ? lastPropertyLine + 1 : i;
+      let pos = 0;
+      for (let j = 0; j < insertLineIndex; j++) {
+        pos += lines[j].length + 1;
+      }
+      return pos;
     }
 
     return -1;
+  }
+
+  /**
+   * Count net brace depth change in a line.
+   */
+  private countBraces(line: string): number {
+    let count = 0;
+    for (const char of line) {
+      if (char === '{') count++;
+      if (char === '}') count--;
+    }
+    return count;
   }
 
   /**

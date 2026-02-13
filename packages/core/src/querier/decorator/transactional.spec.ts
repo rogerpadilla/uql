@@ -128,7 +128,7 @@ describe('transactional', () => {
     class ServiceA {
       @Transactional()
       async delete(id: string, @InjectQuerier() querier?: Querier) {
-        deleteStub(id, querier);
+        deleteStub(id, querier!);
       }
     }
 
@@ -231,10 +231,10 @@ function buildQuerierMock(): Querier {
       querier.hasOpenTransaction = true;
     }),
     commitTransaction: vi.fn(async () => {
-      querier.hasOpenTransaction = undefined;
+      querier.hasOpenTransaction = false;
     }),
     rollbackTransaction: vi.fn(async () => {
-      querier.hasOpenTransaction = undefined;
+      querier.hasOpenTransaction = false;
     }),
     release: vi.fn(async () => {}),
   } as Partial<Querier> as Writable<Querier>;

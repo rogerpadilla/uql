@@ -5,37 +5,37 @@ it('invalid auto-inferred type', () => {
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: number;
+      idTwo!: number;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'Number'`);
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: string;
+      idTwo!: string;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'String'`);
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: boolean;
+      idTwo!: boolean;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'Boolean'`);
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: object;
+      idTwo!: object;
     }
   }).not.toThrow();
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: null;
+      idTwo!: null;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'undefined'`);
   expect(() => {
     class SomeEntity {
       @ManyToOne()
-      idTwo: undefined;
+      idTwo!: undefined;
     }
   }).toThrow(`'SomeEntity.idTwo' type was auto-inferred with invalid type 'undefined'`);
 });

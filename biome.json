@@ -90,7 +90,7 @@
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": {
-            "maxAllowedComplexity": 32
+            "maxAllowedComplexity": 30
           }
         },
         "noForEach": "off",
@@ -147,7 +147,7 @@
         "noInferrableTypes": "error",
         "noUselessElse": "error",
         "useArrayLiterals": "off",
-        "noNonNullAssertion": "error",
+        "noNonNullAssertion": "off",
         "useConsistentObjectDefinitions": {
           "level": "error",
           "options": {

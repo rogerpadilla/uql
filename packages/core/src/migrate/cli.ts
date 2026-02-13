@@ -53,7 +53,11 @@ export async function main(args = process.argv.slice(2)) {
     };
 
     const migrator = new Migrator(config.pool, options);
-    migrator.setSchemaGenerator(getSchemaGenerator(dialect, config.namingStrategy));
+    const generator = getSchemaGenerator(dialect, config.namingStrategy);
+    if (!generator) {
+      throw new TypeError(`Could not find a schema generator for dialect: ${dialect}`);
+    }
+    migrator.setSchemaGenerator(generator);
 
     switch (command) {
       case 'up':

@@ -49,12 +49,12 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
 
       expect(result).toBeDefined();
-      expect(result.code).toContain('@Entity(');
-      expect(result.code).toContain('class User');
-      expect(result.code).toContain('@Id()');
-      expect(result.code).toContain('id?:');
-      expect(result.code).toContain('@Field(');
-      expect(result.code).toContain('name?:');
+      expect(result!.code).toContain('@Entity(');
+      expect(result!.code).toContain('class User');
+      expect(result!.code).toContain('@Id()');
+      expect(result!.code).toContain('id?:');
+      expect(result!.code).toContain('@Field(');
+      expect(result!.code).toContain('name?:');
     });
 
     it('should use PascalCase for class name', () => {
@@ -65,8 +65,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('user_profiles');
 
-      expect(result.className).toBe('UserProfile');
-      expect(result.code).toContain('class UserProfile');
+      expect(result!.className).toBe('UserProfile');
+      expect(result!.code).toContain('class UserProfile');
     });
 
     it('should use camelCase for property names', () => {
@@ -81,8 +81,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('firstName?:');
-      expect(result.code).toContain('lastName?:');
+      expect(result!.code).toContain('firstName?:');
+      expect(result!.code).toContain('lastName?:');
     });
 
     it('should add @Field with name when column name differs', () => {
@@ -97,7 +97,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
 
       // Column name is preserved in @Field decorator when different from property
-      expect(result.code).toContain('firstName');
+      expect(result!.code).toContain('firstName');
     });
 
     it('should handle different column types', () => {
@@ -114,9 +114,9 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('test');
 
-      expect(result.code).toContain('number'); // for decimal
-      expect(result.code).toContain('boolean');
-      expect(result.code).toContain('Date'); // for timestamp
+      expect(result!.code).toContain('number'); // for decimal
+      expect(result!.code).toContain('boolean');
+      expect(result!.code).toContain('Date'); // for timestamp
     });
 
     it('should add unique constraint', () => {
@@ -130,7 +130,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('unique: true');
+      expect(result!.code).toContain('unique: true');
     });
 
     it('should add nullable annotation', () => {
@@ -144,7 +144,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('nullable: true');
+      expect(result!.code).toContain('nullable: true');
     });
 
     it('should handle explicit entity name for non-standard table names', () => {
@@ -155,7 +155,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('tbl_users');
 
-      expect(result.code).toContain("name: 'tbl_users'");
+      expect(result!.code).toContain("name: 'tbl_users'");
     });
   });
 
@@ -186,8 +186,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('import {');
-      expect(result.code).toContain("from '@uql/core'");
+      expect(result!.code).toContain('import {');
+      expect(result!.code).toContain("from '@uql/core'");
     });
 
     it('should generate relation imports and decorators', () => {
@@ -203,8 +203,8 @@ describe('EntityCodeGenerator', () => {
       ast.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -212,9 +212,9 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('posts');
 
-      expect(result.code).toContain('import { User } from');
-      expect(result.code).toContain('@ManyToOne');
-      expect(result.code).toContain('author?: Relation<User>');
+      expect(result!.code).toContain('import { User } from');
+      expect(result!.code).toContain('@ManyToOne');
+      expect(result!.code).toContain('author?: Relation<User>');
     });
 
     it('should generate OneToMany relations on the inverse side', () => {
@@ -230,8 +230,8 @@ describe('EntityCodeGenerator', () => {
       ast.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -239,8 +239,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('@OneToMany');
-      expect(result.code).toContain('posts?: Relation<Post[]>');
+      expect(result!.code).toContain('@OneToMany');
+      expect(result!.code).toContain('posts?: Relation<Post[]>');
     });
 
     it('should generate Id with custom name', () => {
@@ -251,7 +251,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain("@Id({ name: 'user_id' })");
+      expect(result!.code).toContain("@Id({ name: 'user_id' })");
     });
 
     it('should generate field with default value', () => {
@@ -265,7 +265,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain("defaultValue: 'active'");
+      expect(result!.code).toContain("defaultValue: 'active'");
     });
 
     it('should generate single column index', () => {
@@ -278,14 +278,14 @@ describe('EntityCodeGenerator', () => {
       ast.addIndex({
         name: 'idx_email',
         table,
-        columns: [table.columns.get('email')],
+        columns: [table.columns.get('email')!],
         unique: true,
       });
 
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain("index: 'idx_email'");
+      expect(result!.code).toContain("index: 'idx_email'");
     });
 
     it('should generate composite index', () => {
@@ -299,15 +299,15 @@ describe('EntityCodeGenerator', () => {
       ast.addIndex({
         name: 'idx_name',
         table,
-        columns: [table.columns.get('first_name'), table.columns.get('last_name')],
+        columns: [table.columns.get('first_name')!, table.columns.get('last_name')!],
         unique: false,
       });
 
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain("@Index(['firstName', 'lastName'], { name: 'idx_name' })");
-      expect(result.code).toContain('import { Entity, Field, Id, Index }');
+      expect(result!.code).toContain("@Index(['firstName', 'lastName'], { name: 'idx_name' })");
+      expect(result!.code).toContain('import { Entity, Field, Id, Index }');
     });
 
     it('should handle boolean and Date types', () => {
@@ -322,8 +322,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('test');
 
-      expect(result.code).toContain('isActive?: boolean');
-      expect(result.code).toContain('createdAt?: Date');
+      expect(result!.code).toContain('isActive?: boolean');
+      expect(result!.code).toContain('createdAt?: Date');
     });
 
     it('should format complex default values correctly', () => {
@@ -342,12 +342,12 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('test');
 
-      expect(result.code).toContain('defaultValue: {"a":1}');
-      expect(result.code).toContain('defaultValue: ["tag1"]');
-      expect(result.code).toContain('defaultValue: null');
-      expect(result.code).toContain("defaultValue: 'CURRENT_TIMESTAMP'");
-      expect(result.code).toContain('defaultValue: true');
-      expect(result.code).toContain('defaultValue: 123');
+      expect(result!.code).toContain('defaultValue: {"a":1}');
+      expect(result!.code).toContain('defaultValue: ["tag1"]');
+      expect(result!.code).toContain('defaultValue: null');
+      expect(result!.code).toContain("defaultValue: 'CURRENT_TIMESTAMP'");
+      expect(result!.code).toContain('defaultValue: true');
+      expect(result!.code).toContain('defaultValue: 123');
     });
 
     it('should handle OneToOne and ManyToMany relations', () => {
@@ -367,7 +367,7 @@ describe('EntityCodeGenerator', () => {
       const tagsRel: any = {
         name: 'tags',
         type: 'ManyToMany',
-        from: { table: users, columns: [users.columns.get('id')] },
+        from: { table: users, columns: [users.columns.get('id')!] },
         to: { table: tags, columns: [] },
         through: { table: userTags },
       };
@@ -383,8 +383,8 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result.code).toContain('@OneToOne');
-      expect(result.code).toContain('@ManyToMany');
+      expect(result!.code).toContain('@OneToOne');
+      expect(result!.code).toContain('@ManyToMany');
     });
   });
 

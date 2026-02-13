@@ -15,7 +15,7 @@ const DEFAULT_LOG_LEVELS = [
  * Default implementation of the Logger interface using console methods.
  */
 export class DefaultLogger implements Logger {
-  logQuery(query: string, values?: any[], duration?: number): void {
+  logQuery(query: string, values?: unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
     const params = values?.length ? ` -- ${JSON.stringify(values)}` : '';
     console.log(`\x1b[36mquery:\x1b[0m ${query}${params}\x1b[32m${time}\x1b[0m`);
@@ -31,7 +31,7 @@ export class DefaultLogger implements Logger {
     console.warn(`\x1b[33mwarn:\x1b[0m ${message}`);
   }
 
-  logError(message: string, error?: any): void {
+  logError(message: string, error?: unknown): void {
     console.error(`\x1b[31merror:\x1b[0m ${message}`, error);
   }
 
@@ -113,7 +113,7 @@ export class LoggerWrapper implements Logger {
     this.log('warn', message);
   }
 
-  logError(message: string, error?: any): void {
+  logError(message: string, error?: unknown): void {
     this.log('error', message, error);
   }
 
@@ -133,15 +133,15 @@ export class LoggerWrapper implements Logger {
     this.log('skippedMigration', message);
   }
 
-  private log(level: LogLevel, message: string, error?: any) {
+  private log(level: LogLevel, message: string, error?: unknown) {
     if (this.levels.has(level)) {
       const method = `log${level.charAt(0).toUpperCase()}${level.slice(1)}` as keyof Logger;
       const args = error !== undefined ? [message, error] : [message];
       if (this.logger?.[method]) {
-        const logFn = this.logger[method] as (m: string, e?: any) => void;
-        logFn(...(args as [string, any?]));
+        const logFn = this.logger[method] as (m: string, e?: unknown) => void;
+        logFn(...(args as [string, unknown?]));
       } else if (this.loggerFunction) {
-        this.loggerFunction(...(args as [string, any?]));
+        this.loggerFunction(...(args as [string, unknown?]));
       }
     }
   }

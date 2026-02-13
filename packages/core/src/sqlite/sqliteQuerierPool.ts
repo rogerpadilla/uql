@@ -4,7 +4,7 @@ import type { ExtraOptions } from '../type/index.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
 export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
-  private querier: SqliteQuerier;
+  private querier?: SqliteQuerier;
 
   constructor(
     readonly filename?: string | Buffer,
@@ -32,7 +32,7 @@ export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
   }
 
   async end() {
-    await this.querier.db.close();
-    delete this.querier;
+    await this.querier?.db.close();
+    this.querier = undefined;
   }
 }

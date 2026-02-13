@@ -8,7 +8,7 @@ it('parseQuery -- empty', () => {
   const req1 = {} as Request;
   parseQuery(req1);
   expect(req1).toMatchObject({ query: { $where: {} } });
-  const req2 = { query: undefined as object } as Request;
+  const req2 = { query: undefined } as Request;
   parseQuery(req2);
   expect(req2).toMatchObject({ query: { $where: {} } });
 });

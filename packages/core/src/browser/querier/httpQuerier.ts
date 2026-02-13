@@ -1,27 +1,32 @@
 import { getMeta } from '../../entity/index.js';
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from '../../type/index.js';
+import type { IdKey, IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from '../../type/index.js';
 import { kebabCase } from '../../util/index.js';
 import { get, patch, post, remove } from '../http/index.js';
-import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
+import type { ClientQuerier, RequestFindOptions, RequestOptions, RequestSuccessResponse } from '../type/index.js';
 import { stringifyQuery } from './querier.util.js';
 
 export class HttpQuerier implements ClientQuerier {
   constructor(readonly basePath: string) {}
 
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>, opts?: RequestOptions) {
+  findOneById<E>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    q?: QueryOne<E>,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<E | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<E>(`${basePath}/${id}${qs}`, opts);
+    return get<E | undefined>(`${basePath}/${id}${qs}`, opts);
   }
 
-  findOne<E>(entity: Type<E>, q: QueryOne<E>, opts?: RequestOptions) {
+  findOne<E>(entity: Type<E>, q: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<E>(`${basePath}/one${qs}`, opts);
+    return get<E | undefined>(`${basePath}/one${qs}`, opts);
   }
 
   findMany<E>(entity: Type<E>, q: Query<E>, opts?: RequestFindOptions) {
-    const data: Query<E> & Pick<typeof opts, 'count'> = { ...q };
+    const data: Query<E> & { count?: boolean } = { ...q };
     if (opts?.count) {
       data.count = true;
     }
@@ -47,12 +52,13 @@ export class HttpQuerier implements ClientQuerier {
 
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return patch<typeof id>(`${basePath}/${id}`, payload, opts);
+    return patch<number>(`${basePath}/${id}`, payload, opts);
   }
 
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const meta = getMeta(entity);
-    const id = payload[meta.id];
+    const idKey = meta.id ?? ('id' as IdKey<E>);
+    const id = payload[idKey];
     if (id) {
       return this.updateOneById(entity, id, payload, opts).then(() => ({ data: id }));
     }
@@ -62,13 +68,13 @@ export class HttpQuerier implements ClientQuerier {
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = opts.softDelete ? stringifyQuery({ softDelete: opts.softDelete }) : '';
-    return remove<typeof id>(`${basePath}/${id}${qs}`, opts);
+    return remove<number>(`${basePath}/${id}${qs}`, opts);
   }
 
   deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(opts.softDelete ? { ...q, softDelete: opts.softDelete } : q);
-    return remove<IdValue<E>[]>(`${basePath}${qs}`, opts);
+    return remove<number>(`${basePath}${qs}`, opts);
   }
 
   getBasePath<E>(entity: Type<E>) {

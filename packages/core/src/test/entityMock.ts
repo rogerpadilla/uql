@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import { idKey, type Relation } from '../type/index.js';
+import { idKey, type QueryRawFnOptions, type Relation } from '../type/index.js';
 import { raw } from '../util/index.js';
 
 /**
@@ -100,7 +100,7 @@ export class User extends BaseEntity {
   /**
    * `mappedBy` property can be a callback or a string (callback is useful for auto-refactoring).
    */
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
+  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator!, cascade: true })
   profile?: Profile;
 
   @OneToMany({ entity: () => User, mappedBy: 'creator' })
@@ -110,10 +110,10 @@ export class User extends BaseEntity {
 @Entity()
 export class UserWithNonUpdatableId {
   @Id({ updatable: false })
-  id: number;
+  id!: number;
 
   @Field()
-  name: string;
+  name!: string;
 }
 
 @Entity()
@@ -182,7 +182,7 @@ export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
 
-  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId! })
   measureUnits?: MeasureUnit[];
 
   /**
@@ -270,21 +270,21 @@ export class Item extends BaseEntity {
      * be used in `$select` and `$where` as a common field whose value is
      * replaced is replaced at runtime.
      */
-    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
-      ctx.append('(');
-      dialect.count(
-        ctx,
+    virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
+      ctx!.append('(');
+      dialect!.count(
+        ctx!,
         ItemTag,
         {
           $where: {
-            itemId: raw(({ ctx }) => {
-              ctx.append(escapedPrefix + dialect.escapeId('id'));
+            itemId: raw(({ ctx: innerCtx }: QueryRawFnOptions = {}) => {
+              innerCtx!.append(escapedPrefix + dialect!.escapeId('id'));
             }),
           },
         },
         { autoPrefix: true },
       );
-      ctx.append(')');
+      ctx!.append(')');
     }),
   })
   tagsCount?: number;
@@ -295,25 +295,25 @@ export class Tag extends BaseEntity {
   @Field()
   name?: string;
 
-  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
+  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags! })
   items?: Item[];
 
   @Field({
-    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
-      ctx.append('(');
-      dialect.count(
-        ctx,
+    virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
+      ctx!.append('(');
+      dialect!.count(
+        ctx!,
         ItemTag,
         {
           $where: {
-            tagId: raw(({ ctx }) => {
-              ctx.append(escapedPrefix + dialect.escapeId('id'));
+            tagId: raw(({ ctx: innerCtx }: QueryRawFnOptions = {}) => {
+              innerCtx!.append(escapedPrefix + dialect!.escapeId('id'));
             }),
           },
         },
         { autoPrefix: true },
       );
-      ctx.append(')');
+      ctx!.append(')');
     }),
   })
   itemsCount?: number;
@@ -335,7 +335,7 @@ export class ItemTag {
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({
     entity: () => ItemAdjustment,
-    mappedBy: (rel) => rel.inventoryAdjustment,
+    mappedBy: (rel) => rel.inventoryAdjustment!,
     cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];

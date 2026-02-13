@@ -1,20 +1,20 @@
 import type { PoolConnection } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
-  constructor(connect: () => Promise<PoolConnection>, extra?: any) {
+  constructor(connect: () => Promise<PoolConnection>, extra?: ExtraOptions) {
     super(new MySqlDialect(extra?.namingStrategy), connect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const [res] = await this.conn.query(query, values);
+    const [res] = await this.conn!.query(query, values);
     return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const [res]: any = await this.conn.query(query, values);
+    const [res]: any = await this.conn!.query(query, values);
     const ids = res.insertId
       ? Array(res.affectedRows)
           .fill(res.insertId)

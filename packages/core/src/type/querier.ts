@@ -34,7 +34,7 @@ export type { SqlDialect };
 export type Dialect = SqlDialect | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
+  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E | undefined>;
 
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
@@ -44,8 +44,8 @@ export interface Querier extends UniversalQuerier {
    * // Entity as field (RPC-friendly)
    * querier.findOne({ $entity: User, $where: { id: 1 } })
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
-  findOne<E extends object>(q: QueryOneWithEntity<E>): Promise<E>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
+  findOne<E extends object>(q: QueryOneWithEntity<E>): Promise<E | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.

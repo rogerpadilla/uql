@@ -16,7 +16,7 @@ import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } 
 import type { MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerier extends AbstractQuerier {
-  private session: ClientSession;
+  private session?: ClientSession;
 
   constructor(
     readonly dialect: MongoDialect,
@@ -28,7 +28,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
   @Serialized()
   private async execute<T>(task: (session: ClientSession) => Promise<T>): Promise<T> {
-    return task(this.session);
+    return task(this.session!);
   }
 
   @Log()
@@ -43,8 +43,8 @@ export class MongodbQuerier extends AbstractQuerier {
       documents = await this.execute((session) =>
         this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
       );
-      documents = this.dialect.normalizeIds(meta, documents);
-      await this.fillToManyRelations(entity, documents, q.$select);
+      documents = this.dialect.normalizeIds(meta, documents) || [];
+      await this.fillToManyRelations(entity, documents, q.$select!);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
@@ -52,11 +52,11 @@ export class MongodbQuerier extends AbstractQuerier {
       if (hasKeys(filter)) {
         cursor.filter(filter);
       }
-      const select = this.dialect.select(entity, q.$select);
+      const select = this.dialect.select(entity, q.$select!);
       if (hasKeys(select)) {
         cursor.project(select);
       }
-      const sort = this.dialect.sort(entity, q.$sort);
+      const sort = this.dialect.sort(entity, q.$sort!);
       if (hasKeys(sort)) {
         cursor.sort(sort);
       }
@@ -68,7 +68,7 @@ export class MongodbQuerier extends AbstractQuerier {
       }
 
       documents = await this.execute(() => cursor.toArray());
-      documents = this.dialect.normalizeIds(meta, documents);
+      documents = this.dialect.normalizeIds(meta, documents) || [];
     }
 
     return documents;
@@ -102,7 +102,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const ids = Object.values(insertedIds) as IdValue<E>[];
 
     for (const [index, it] of payloads.entries()) {
-      it[meta.id] = ids[index];
+      it[meta.id!] = ids[index];
     }
 
     await this.insertRelations(entity, payloads);
@@ -176,14 +176,15 @@ export class MongodbQuerier extends AbstractQuerier {
     if (!founds.length) {
       return 0;
     }
-    const ids = this.dialect.normalizeIds(meta, founds as unknown as E[]).map((found) => found[meta.id]);
+    const ids = (this.dialect.normalizeIds(meta, founds as unknown as E[]) || []).map((found) => found[meta.id!]);
     let changes: number;
     if (meta.softDelete && !opts.softDelete) {
-      const onDeleteValue = getFieldCallbackValue(meta.fields[meta.softDelete].onDelete);
+      const field = meta.fields[meta.softDelete];
+      const onDeleteValue = getFieldCallbackValue(field!.onDelete!);
       const updateResult = await this.execute((session) =>
         this.collection(entity).updateMany(
           { _id: { $in: ids } },
-          { $set: { [meta.softDelete]: onDeleteValue } } as UpdateFilter<E>,
+          { $set: { [meta.softDelete as string]: onDeleteValue } } as UpdateFilter<E>,
           {
             session,
           },
@@ -200,13 +201,13 @@ export class MongodbQuerier extends AbstractQuerier {
     return changes;
   }
 
-  override get hasOpenTransaction() {
-    return this.session?.inTransaction();
+  override get hasOpenTransaction(): boolean {
+    return !!this.session?.inTransaction();
   }
 
   collection<E extends Document>(entity: Type<E>) {
     const { name } = getMeta(entity);
-    return this.db.collection<E>(name);
+    return this.db.collection<E>(name!);
   }
 
   get db() {
@@ -230,7 +231,7 @@ export class MongodbQuerier extends AbstractQuerier {
       throw TypeError('not a pending transaction');
     }
     this.logger.logInfo('commitTransaction');
-    await this.session.commitTransaction();
+    await this.session!.commitTransaction();
   }
 
   @Serialized()
@@ -239,7 +240,7 @@ export class MongodbQuerier extends AbstractQuerier {
       throw TypeError('not a pending transaction');
     }
     this.logger.logInfo('rollbackTransaction');
-    await this.session.abortTransaction();
+    await this.session!.abortTransaction();
   }
 
   override async internalRelease() {

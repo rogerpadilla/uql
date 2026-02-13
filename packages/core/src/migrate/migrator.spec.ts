@@ -311,7 +311,7 @@ describe('Migrator Core Methods', () => {
     @Entity()
     class MigratorUser {
       @Id()
-      id: number;
+      id!: number;
     }
 
     it('syncForce should drop and create tables', async () => {
@@ -428,7 +428,7 @@ describe('Migrator Core Methods', () => {
     });
 
     it('getDiffs should throw if generator/introspector missing', async () => {
-      migrator.schemaGenerator = undefined;
+      (migrator as any).schemaGenerator = undefined;
       await expect(migrator.getDiffs()).rejects.toThrow('Schema generator and introspector must be set');
     });
 
@@ -493,18 +493,18 @@ describe('Migrator Core Methods', () => {
         indexesToDrop: ['old_idx'],
       };
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
-      vi.spyOn(migrator.schemaGenerator, 'generateAlterTable').mockReturnValue([]);
+      vi.spyOn(migrator.schemaGenerator!, 'generateAlterTable').mockReturnValue([]);
 
       // Safe mode (default)
       await migrator.autoSync();
-      expect(migrator.schemaGenerator.generateAlterTable).toHaveBeenCalledWith(
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.not.objectContaining({ columnsToDrop: expect.anything() }),
       );
 
       // Unsafe mode with drop
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       await migrator.autoSync({ safe: false, drop: true });
-      expect(migrator.schemaGenerator.generateAlterTable).toHaveBeenCalledWith(
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.objectContaining({ columnsToDrop: ['old_col'] }),
       );
     });
@@ -609,10 +609,10 @@ describe('Migrator Core Methods', () => {
       ];
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
       vi.spyOn(m, 'findEntityForTable').mockReturnValue(User);
-      vi.spyOn(m.schemaGenerator, 'generateCreateTable').mockReturnValue('CREATE');
-      vi.spyOn(m.schemaGenerator, 'generateDropTable').mockReturnValue('DROP');
-      vi.spyOn(m.schemaGenerator, 'generateAlterTable').mockReturnValue(['ALTER UP']);
-      vi.spyOn(m.schemaGenerator, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);
+      vi.spyOn(m.schemaGenerator!, 'generateCreateTable').mockReturnValue('CREATE');
+      vi.spyOn(m.schemaGenerator!, 'generateDropTable').mockReturnValue('DROP');
+      vi.spyOn(m.schemaGenerator!, 'generateAlterTable').mockReturnValue(['ALTER UP']);
+      vi.spyOn(m.schemaGenerator!, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);
 
       const result = await m.generateFromEntities('test-full');
       expect(result).toContain('test_full');

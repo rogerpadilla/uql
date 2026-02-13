@@ -54,7 +54,7 @@ describe('SchemaAST', () => {
       ast.addRelationship(rel);
 
       const authorCol = posts.columns.get('col1');
-      expect(ast.getReferencedColumn(authorCol)).toBe(users.columns.get('col0'));
+      expect(ast.getReferencedColumn(authorCol!)).toBe(users.columns.get('col0'));
     });
     it('should get dependent tables', () => {
       const users = createTable('users');
@@ -373,7 +373,7 @@ describe('SchemaAST', () => {
       ast.addIndex({
         name: 'idx_users_name',
         table: users,
-        columns: [users.columns.get('col1')],
+        columns: [users.columns.get('col1')!],
         unique: false,
       });
 
@@ -416,7 +416,7 @@ describe('SchemaAST', () => {
       ast.addIndex({
         name: 'idx_users_name',
         table: users,
-        columns: [users.columns.get('col1')],
+        columns: [users.columns.get('col1')!],
         unique: false,
       });
 

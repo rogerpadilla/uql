@@ -5,7 +5,7 @@ export function stringifyQueryParameter(key: string, value?: unknown, useQuestio
   return (useQuestionMark ? '?' : '') + `${key}=${valStr}`;
 }
 
-export function stringifyQuery(query: Record<string, unknown>): string {
+export function stringifyQuery(query?: Record<string, unknown>): string {
   if (!query) {
     return '';
   }

@@ -11,7 +11,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { FieldKey, QueryContext } from '../type/index.js';
+import type { QueryContext } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -247,7 +247,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id', 'something' as FieldKey<User>],
+        $select: ['id', 'something' as any],
         $where: {
           id: 1,
           something: 1,
@@ -597,7 +597,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: ['id'],
-        $where: { creatorId: 123, companyId: null },
+        $where: { creatorId: 123, companyId: null as any },
         $limit: 5,
       }),
     );
@@ -661,7 +661,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$selectOneToOne() {
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $select: { id: true, name: true, profile: ['id', 'picture'] } }),
+      this.dialect.find(ctx, User, { $select: { id: true, name: true, profile: ['id', 'picture'] as any } }),
     );
     expect(res.sql).toBe(
       'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture` FROM `User`' +
@@ -709,7 +709,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: true,
           name: true,
           measureUnit: { $select: ['id', 'name'], $where: { name: { $ne: 'unidad' } }, $required: true },
-          tax: ['id', 'name'],
+          tax: ['id', 'name'] as any,
         },
         $where: { salePrice: { $gte: 1000 }, name: { $istartsWith: 'A' } },
         $sort: { tax: { name: 1 }, measureUnit: { name: 1 }, createdAt: -1 },
@@ -1314,7 +1314,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Company,
         { $where: { id: 1 } },
         {
-          kind: null,
+          kind: null as any,
           updatedAt: 123,
         },
       ),
