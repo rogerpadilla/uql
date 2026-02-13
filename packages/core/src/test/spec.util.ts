@@ -16,7 +16,7 @@ export function createSpec<T extends Spec>(spec: T) {
   describeFn(specName, () => createTestCases(spec));
 }
 
-function createTestCases(spec: object) {
+function createTestCases(spec: Record<string, unknown>) {
   let proto: FunctionConstructor = Object.getPrototypeOf(spec);
 
   const processedMethodsMap: { [k: string]: true } = {};
@@ -25,12 +25,14 @@ function createTestCases(spec: object) {
     for (const key of Object.getOwnPropertyNames(proto)) {
       const isProcessed = processedMethodsMap[key];
       processedMethodsMap[key] = true;
-      if (isProcessed || key === 'constructor' || typeof spec[key] !== 'function') {
+      const method = spec[key];
+      if (isProcessed || key === 'constructor' || typeof method !== 'function') {
         continue;
       }
-      const callback: () => void | Promise<void> = spec[key].bind(spec);
-      if (hooks[key]) {
-        hooks[key](callback);
+      const callback = (method as () => void | Promise<void>).bind(spec);
+      const hookFn = hooks[key as keyof typeof hooks];
+      if (hookFn) {
+        hookFn(callback);
       } else if (key.startsWith('should')) {
         it(key, callback);
       } else if (key.startsWith('fffShould')) {

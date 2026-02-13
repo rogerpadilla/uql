@@ -19,9 +19,9 @@ import type { Type } from './utility.js';
 /**
  * Query with $entity for entity-as-field pattern.
  */
-export type QueryWithEntity<E> = Query<E> & { $entity: Type<E> };
-export type QueryOneWithEntity<E> = QueryOne<E> & { $entity: Type<E> };
-export type QuerySearchWithEntity<E> = QuerySearch<E> & { $entity: Type<E> };
+export type QueryWithEntity<E extends object> = Query<E> & { $entity: Type<E> };
+export type QueryOneWithEntity<E extends object> = QueryOne<E> & { $entity: Type<E> };
+export type QuerySearchWithEntity<E extends object> = QuerySearch<E> & { $entity: Type<E> };
 
 /**
  * Isolation levels for transactions.
@@ -34,7 +34,7 @@ export type { SqlDialect };
 export type Dialect = SqlDialect | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
+  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
 
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
@@ -44,48 +44,52 @@ export interface Querier extends UniversalQuerier {
    * // Entity as field (RPC-friendly)
    * querier.findOne({ $entity: User, $where: { id: 1 } })
    */
-  findOne<E>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
-  findOne<E>(q: QueryOneWithEntity<E>): Promise<E>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
+  findOne<E extends object>(q: QueryOneWithEntity<E>): Promise<E>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
-  findMany<E>(q: QueryWithEntity<E>): Promise<E[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  findMany<E extends object>(q: QueryWithEntity<E>): Promise<E[]>;
 
   /**
    * Find many records and count. Supports both patterns.
    */
-  findManyAndCount<E>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
-  findManyAndCount<E>(q: QueryWithEntity<E>): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(q: QueryWithEntity<E>): Promise<[E[], number]>;
 
   /**
    * Count records. Supports both patterns.
    */
-  count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
-  count<E>(q: QuerySearchWithEntity<E>): Promise<number>;
+  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  count<E extends object>(q: QuerySearchWithEntity<E>): Promise<number>;
 
-  insertOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
+  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
-  insertMany<E>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<number>;
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<number>;
 
-  updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
+  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
 
-  upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<QueryUpdateResult>;
+  upsertOne<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E,
+  ): Promise<QueryUpdateResult>;
 
-  saveOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
+  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
-  saveMany<E>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
+  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * Delete many records. Supports both entity-as-argument and entity-as-field patterns.
    */
-  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-  deleteMany<E>(q: QuerySearchWithEntity<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E extends object>(q: QuerySearchWithEntity<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * whether this querier is in a transaction or not.

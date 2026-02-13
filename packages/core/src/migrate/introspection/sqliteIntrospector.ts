@@ -35,7 +35,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
+  protected parseTableExistsResult(results: SqliteCountRow[]): boolean {
     return this.toNumber(results[0]?.count) > 0;
   }
 
@@ -76,42 +76,44 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // Row Mapping (dialect-specific)
   // ============================================================================
 
-  protected mapTableNameRow(row: Record<string, unknown>): string {
-    return row.name as string;
+  protected mapTableNameRow(row: { name: string }): string {
+    return row.name;
   }
 
   protected async mapColumnsResult(
     querier: SqlQuerier,
     tableName: string,
-    results: Record<string, unknown>[],
+    results: SqliteColumnRow[],
   ): Promise<ColumnSchema[]> {
     // Get unique columns from indexes
     const uniqueColumns = await this.getUniqueColumns(querier, tableName);
 
-    return results.map((row) => ({
-      name: row.name as string,
-      type: this.normalizeType(row.type as string),
-      nullable: (row.notnull as number) === 0,
-      defaultValue: this.parseDefaultValue(row.dflt_value as string | null),
-      isPrimaryKey: (row.pk as number) > 0,
-      isAutoIncrement: (row.pk as number) > 0 && (row.type as string).toUpperCase() === 'INTEGER',
-      isUnique: uniqueColumns.has(row.name as string),
-      length: this.extractLength(row.type as string),
-      precision: undefined,
-      scale: undefined,
-      comment: undefined, // SQLite doesn't support column comments
-    }));
+    return results.map(
+      (row): ColumnSchema => ({
+        name: row.name,
+        type: this.normalizeType(row.type),
+        nullable: row.notnull === 0,
+        defaultValue: this.parseDefaultValue(row.dflt_value),
+        isPrimaryKey: row.pk > 0,
+        isAutoIncrement: row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
+        isUnique: uniqueColumns.has(row.name),
+        length: this.extractLength(row.type),
+        precision: undefined,
+        scale: undefined,
+        comment: undefined, // SQLite doesn't support column comments
+      }),
+    );
   }
 
   protected async mapIndexesResult(
     querier: SqlQuerier,
     _tableName: string,
-    results: Record<string, unknown>[],
+    results: SqliteIndexRow[],
   ): Promise<IndexSchema[]> {
     const indexSchemas: IndexSchema[] = [];
 
     for (const index of results) {
-      const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name as string)})`);
+      const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
 
       // Include user-created indexes ('c') and multi-column unique constraints ('u')
       // Skip primary key indexes ('pk') and single-column unique constraints
@@ -120,7 +122,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
       if (isUserCreated || isCompositeUnique) {
         indexSchemas.push({
-          name: index.name as string,
+          name: index.name,
           columns: columns.map((c) => c.name),
           unique: Boolean(index.unique),
         });
@@ -133,12 +135,12 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapForeignKeysResult(
     _querier: SqlQuerier,
     tableName: string,
-    results: Record<string, unknown>[],
+    results: SqliteForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
     // Group by id to handle composite foreign keys
-    const grouped = new Map<number, Record<string, unknown>[]>();
+    const grouped = new Map<number, SqliteForeignKeyRow[]>();
     for (const row of results) {
-      const id = row.id as number;
+      const id = row.id;
       const existing = grouped.get(id) ?? [];
       existing.push(row);
       grouped.set(id, existing);
@@ -148,23 +150,23 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       const first = rows[0];
       return {
         name: `fk_${tableName}_${id}`,
-        columns: rows.map((r) => r.from as string),
-        referencedTable: first.table as string,
-        referencedColumns: rows.map((r) => r.to as string),
-        onDelete: this.normalizeReferentialAction(first.on_delete as string),
-        onUpdate: this.normalizeReferentialAction(first.on_update as string),
+        columns: rows.map((r) => r.from),
+        referencedTable: first.table,
+        referencedColumns: rows.map((r) => r.to),
+        onDelete: this.normalizeReferentialAction(first.on_delete),
+        onUpdate: this.normalizeReferentialAction(first.on_update),
       };
     });
   }
 
-  protected mapPrimaryKeyResult(results: Record<string, unknown>[]): string[] | undefined {
-    const pkColumns = results.filter((r) => (r.pk as number) > 0).sort((a, b) => (a.pk as number) - (b.pk as number));
+  protected mapPrimaryKeyResult(results: SqliteColumnRow[]): string[] | undefined {
+    const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
 
     if (pkColumns.length === 0) {
       return undefined;
     }
 
-    return pkColumns.map((r) => r.name as string);
+    return pkColumns.map((r) => r.name);
   }
 
   // ============================================================================
@@ -172,18 +174,11 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // ============================================================================
 
   private async getUniqueColumns(querier: SqlQuerier, tableName: string): Promise<Set<string>> {
-    const indexes = await querier.all<{
-      seq: number;
-      name: string;
-      unique: number;
-      origin: string;
-      partial: number;
-    }>(`PRAGMA index_list(${this.escapeId(tableName)})`);
-
+    const results = await querier.all<SqliteIndexRow>(`PRAGMA index_list(${this.escapeId(tableName)})`);
     const uniqueColumns = new Set<string>();
 
-    for (const index of indexes) {
-      if (index.unique && index.origin === 'u') {
+    for (const index of results) {
+      if (index.unique) {
         const indexInfo = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
         // Only single-column unique constraints
         if (indexInfo.length === 1) {
@@ -230,3 +225,34 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return defaultValue;
   }
 }
+
+type SqliteCountRow = {
+  count: number | bigint;
+};
+
+type SqliteColumnRow = {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+};
+
+type SqliteIndexRow = {
+  seq: number;
+  name: string;
+  unique: number;
+  origin: string;
+  partial: number;
+};
+
+type SqliteForeignKeyRow = {
+  id: number;
+  seq: number;
+  table: string;
+  from: string;
+  to: string;
+  on_update: string;
+  on_delete: string;
+  match: string;
+};

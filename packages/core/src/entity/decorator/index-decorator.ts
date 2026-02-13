@@ -15,11 +15,12 @@ export interface IndexDecoratorOptions {
 }
 
 // Use the same meta holder as definition.ts
-const holder = globalThis;
+const holder = globalThis as Record<string, unknown>;
 const metaKey = '@uql/core/entity/decorator';
 
 function getOrCreateMeta<E>(entity: Type<E>): EntityMeta<E> {
-  const metas: Map<Type<unknown>, EntityMeta<any>> = holder[metaKey] ?? new Map();
+  const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
+  new Map();
   holder[metaKey] = metas;
 
   let meta = metas.get(entity);

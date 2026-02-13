@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.9.1] - 2026-02-13
+### Improvements & Refactoring
+- **TypeScript Upgrade**: Upgraded to TypeScript ^5.9.3 and hardened `tsconfig.json` with strict flags (`noPropertyAccessFromIndexSignature`, `verbatimModuleSyntax`, etc.).
+- **Type Safety Polish**: Propagated `E extends object` constraint across the `Querier` hierarchy and refined driver signatures to eliminate type casts (`as any`).
+
+### Bug Fixes
+- **MySQL Introspection Fix**: Fixed a bug where string default values were returned with surrounding quotes (e.g., `'active'`) during schema discovery in MySQL and MariaDB.
+
 ## [3.9.0] - 2026-02-13
 ### New Features
 - **New Query Operators**: Added `$between`, `$isNull`, `$isNotNull`, `$all`, `$size`, and `$elemMatch` operators with full support across PostgreSQL, MySQL, SQLite, and MongoDB.
@@ -13,7 +21,6 @@ date format is [yyyy-mm-dd]
 - **Structured Slow-Query Config**: Replaced flat `slowQueryThreshold: number` with a `slowQuery: { threshold, logParams? }` object. Use `logParams: false` to suppress sensitive query parameters from slow-query logs.
 - **DRY Dialect Refactor**: Extracted shared `$elemMatch` field-condition logic into `buildJsonFieldCondition` in `AbstractSqlDialect` with a `JsonFieldConfig` type. Each SQL dialect now passes a small config object (~10 lines) instead of duplicating a ~60-line switch across MySQL, PostgreSQL, and SQLite.
 - **Safer Abstract Base**: `$all`, `$size`, and `$elemMatch` now throw in the abstract SQL dialect base class, forcing each dialect subclass to provide its own implementation. This prevents silent inheritance of dialect-specific syntax.
-- **Type Safety**: Removed `$entity` from base `QuerySearch` type; it now exists only in dedicated intersection types (`QueryWithEntity`, `QueryOneWithEntity`, `QuerySearchWithEntity`), preventing it from leaking into unrelated query contexts.
 
 ### Bug Fixes
 - **SQLite `$in`/`$nin` Fix**: Fixed a critical bug where `buildJsonFieldOperator` used `vals.shift()` inside `.map()`, mutating the input array and only processing half the values.

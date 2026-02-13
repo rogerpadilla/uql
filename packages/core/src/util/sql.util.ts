@@ -1,7 +1,7 @@
 import type { FieldValue, Key } from '../type/index.js';
 import { getKeys, hasKeys } from './object.util.js';
 
-export function flatObject<E>(obj: E, pre?: string): E {
+export function flatObject<E extends object>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(
     (acc, key) => flatObjectEntry(acc, key, obj[key as Key<E>], typeof obj[key as Key<E>] === 'object' ? '' : pre),
     {} as E,
@@ -15,7 +15,7 @@ function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
     : { ...map, [prefix]: val };
 }
 
-export function unflatObjects<T>(objects: T[]): T[] {
+export function unflatObjects<T extends object>(objects: any[]): T[] {
   if (!Array.isArray(objects) || !objects.length) {
     return objects;
   }
@@ -46,7 +46,7 @@ export function unflatObjects<T>(objects: T[]): T[] {
         );
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
-        dto[col] = row[col];
+        (dto as Record<string, unknown>)[col] = row[col];
       }
     }
 
@@ -54,7 +54,7 @@ export function unflatObjects<T>(objects: T[]): T[] {
   });
 }
 
-export function obtainAttrsPaths<T>(row: T) {
+export function obtainAttrsPaths<T extends object>(row: T) {
   return getKeys(row).reduce(
     (acc, col) => {
       // Support both dot notation (legacy) and underscore notation (new)

@@ -7,15 +7,18 @@
     "target": "ESNext",
     "strict": true,
     "strictNullChecks": false,
-    "suppressImplicitAnyIndexErrors": true,
     "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "incremental": true,
     "forceConsistentCasingInFileNames": true,
     "allowUnreachableCode": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "isolatedModules": true,
     "useDefineForClassFields": true,
     "noFallthroughCasesInSwitch": true,
     "inlineSourceMap": true,
@@ -30,8 +33,7 @@
     "paths": {
       "@uql/core": ["packages/core/src/index.ts"],
       "@uql/core/*": ["packages/core/src/*"]
-    },
-    "ignoreDeprecations": "5.0"
+    }
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]
 }

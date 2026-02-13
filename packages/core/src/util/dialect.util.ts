@@ -20,8 +20,8 @@ import { getKeys } from './object.util.js';
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
-  const persistableKeys = getKeys(payload).filter((key) => {
-    const fieldOpts = meta.fields[key as FieldKey<E>];
+  const persistableKeys = (Object.keys(payload as object) as string[]).filter((key) => {
+    const fieldOpts = meta.fields[key];
     return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
   }) as FieldKey<E>[];
   return persistableKeys;
@@ -33,11 +33,11 @@ export function getFieldCallbackValue(val: OnFieldCallback) {
 
 export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const keys = getKeys(meta.fields).filter((key) => meta.fields[key][callbackKey]);
+  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]?.[callbackKey]) as FieldKey<E>[];
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
-        it[key] = getFieldCallbackValue(meta.fields[key][callbackKey]);
+        it[key] = getFieldCallbackValue(meta.fields[key][callbackKey]) as E[typeof key];
       }
     }
     return it;
@@ -49,9 +49,9 @@ export function filterPersistableRelationKeys<E>(
   payload: E,
   action: CascadeType,
 ): RelationKey<E>[] {
-  const keys = getKeys(payload);
+  const keys = Object.keys(payload as object) as string[];
   return keys.filter((key) => {
-    const relOpts = meta.relations[key as RelationKey<E>];
+    const relOpts = meta.relations[key];
     return relOpts && isCascadable(action, relOpts.cascade);
   }) as RelationKey<E>[];
 }

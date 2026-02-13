@@ -29,36 +29,46 @@ export class MongoDialect extends AbstractDialect {
   constructor(namingStrategy?: NamingStrategy) {
     super('mongodb', namingStrategy);
   }
-  where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, { softDelete }: QueryOptions = {}): Filter<E> {
+
+  public where<E extends Document>(
+    entity: Type<E>,
+    where: QueryWhere<E> = {},
+    { softDelete }: QueryOptions = {},
+  ): Filter<E> {
     const meta = getMeta(entity);
+    const whereMap = buldQueryWhereAsMap(meta, where);
 
-    where = buldQueryWhereAsMap(meta, where);
-
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete]) {
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !whereMap[meta.softDelete]) {
       const field = meta.fields[meta.softDelete];
-      where[this.resolveColumnName(meta.softDelete, field)] = null;
+      (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field)] = null;
     }
 
-    return getKeys(where).reduce(
-      (acc, key) => {
-        let value = where[key];
+    return Object.entries(whereMap).reduce<Filter<E>>(
+      (acc, entry) => {
+        let key = entry[0];
+        let val: unknown = entry[1];
         if (key === '$and' || key === '$or') {
-          acc[key] = value.map((filterIt: QueryWhere<E>) => this.where(entity, filterIt));
+          const filterList = (val as QueryWhere<E>[]).map((filterIt) => this.where(entity, filterIt));
+          (acc as any)[key] = filterList;
         } else {
           const field = meta.fields[key];
           if (key === '_id' || key === meta.id) {
             key = '_id';
-            value = this.getIdValue(value);
+            val = this.getIdValue(val as IdValue);
           } else if (field) {
             key = this.resolveColumnName(key, field);
           }
-          // Transform value operators if it's an object with operator keys ($ prefix)
-          if (value && typeof value === 'object' && !Array.isArray(value) && this.hasOperatorKeys(value)) {
-            value = this.transformOperators(value);
-          } else if (Array.isArray(value)) {
-            value = { $in: value };
+          if (
+            val &&
+            typeof val === 'object' &&
+            !Array.isArray(val) &&
+            this.hasOperatorKeys(val as Record<string, unknown>)
+          ) {
+            val = this.transformOperators(val as Record<string, unknown>);
+          } else if (Array.isArray(val)) {
+            val = { $in: val };
           }
-          acc[key as keyof Filter<E>] = value;
+          (acc as any)[key] = val;
         }
         return acc;
       },
@@ -73,6 +83,10 @@ export class MongoDialect extends AbstractDialect {
     return Object.keys(obj).some((key) => key.startsWith('$'));
   }
 
+  protected mapTableNameRow(row: { table_name: string }): string {
+    return row.table_name;
+  }
+
   /**
    * Transform RJPC operators to MongoDB operators.
    */
@@ -82,24 +96,32 @@ export class MongoDialect extends AbstractDialect {
       switch (op) {
         case '$between': {
           const [min, max] = val as [unknown, unknown];
-          result['$gte'] = min;
-          result['$lte'] = max;
+          const $gte = '$gte';
+          const $lte = '$lte';
+          result[$gte] = min;
+          result[$lte] = max;
           break;
         }
-        case '$isNull':
+        case '$isNull': {
+          const $eq = '$eq';
+          const $ne = '$ne';
           if (val) {
-            result['$eq'] = null;
+            result[$eq] = null;
           } else {
-            result['$ne'] = null;
+            result[$ne] = null;
           }
           break;
-        case '$isNotNull':
+        }
+        case '$isNotNull': {
+          const $ne = '$ne';
+          const $eq = '$eq';
           if (val) {
-            result['$ne'] = null;
+            result[$ne] = null;
           } else {
-            result['$eq'] = null;
+            result[$eq] = null;
           }
           break;
+        }
         // MongoDB native operators - pass through directly
         case '$all':
         case '$size':
@@ -117,62 +139,92 @@ export class MongoDialect extends AbstractDialect {
           result[op] = val;
           break;
         // String operators need to be converted to regex
-        case '$startsWith':
-          result['$regex'] = `^${val}`;
+        case '$startsWith': {
+          const $regex = '$regex';
+          result[$regex] = `^${val}`;
           break;
-        case '$istartsWith':
-          result['$regex'] = `^${val}`;
-          result['$options'] = 'i';
+        }
+        case '$istartsWith': {
+          const $regex = '$regex';
+          const $options = '$options';
+          result[$regex] = `^${val}`;
+          result[$options] = 'i';
           break;
-        case '$endsWith':
-          result['$regex'] = `${val}$`;
+        }
+        case '$endsWith': {
+          const $regex = '$regex';
+          result[$regex] = `${val}$`;
           break;
-        case '$iendsWith':
-          result['$regex'] = `${val}$`;
-          result['$options'] = 'i';
+        }
+        case '$iendsWith': {
+          const $regex = '$regex';
+          const $options = '$options';
+          result[$regex] = `${val}$`;
+          result[$options] = 'i';
           break;
+        }
         case '$includes':
-          result['$regex'] = val;
+        case '$contains': {
+          const $regex = '$regex';
+          result[$regex] = val;
           break;
+        }
         case '$iincludes':
-          result['$regex'] = val;
-          result['$options'] = 'i';
+        case '$icontains': {
+          const $regex = '$regex';
+          const $options = '$options';
+          result[$regex] = val;
+          result[$options] = 'i';
           break;
-        case '$like':
+        }
+        case '$text': {
+          const $text = '$text';
+          const $search = '$search';
+          result[$text] = { [$search]: val };
+          break;
+        }
+        case '$like': {
+          const $regex = '$regex';
           // Convert SQL LIKE pattern to regex
-          result['$regex'] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
+          result[$regex] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
           break;
-        case '$ilike':
-          result['$regex'] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
-          result['$options'] = 'i';
+        }
+        case '$ilike': {
+          const $regex = '$regex';
+          const $options = '$options';
+          // Convert SQL ILIKE pattern to regex
+          result[$regex] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
+          result[$options] = 'i';
           break;
-        default:
+        }
+        default: {
           result[op] = val;
+          break;
+        }
       }
     }
     return result;
   }
 
-  select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
+  public select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
     if (Array.isArray(select)) {
-      return select.reduce(
+      return select.reduce<QuerySelectMap<E>>(
         (acc, it) => {
-          acc[it as string] = true;
+          acc[it as keyof QuerySelectMap<E>] = true;
           return acc;
         },
-        {} satisfies QuerySelectMap<E>,
+        {} as QuerySelectMap<E>,
       );
     }
     return select as QuerySelectMap<E>;
   }
 
-  sort<E extends Document>(entity: Type<E>, sort: QuerySort<E>): Sort {
+  public sort<E extends Document>(entity: Type<E>, sort: QuerySort<E>): Sort {
     return buildSortMap(sort) as Sort;
   }
 
-  aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
+  public aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
-
     const where = this.where(entity, q.$where);
     const sort = this.sort(entity, q.$sort);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
@@ -218,8 +270,9 @@ export class MongoDialect extends AbstractDialect {
         const foreignFieldName = this.resolveColumnName(relOpts.references[0].foreign, foreignField);
         const referenceWhere = this.where(relEntity, where);
         const referenceSort = this.sort(relEntity, q.$sort);
+        const _id = '_id';
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
-          $match: { [foreignFieldName]: referenceWhere._id },
+          $match: { [foreignFieldName]: referenceWhere[_id] },
         };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
@@ -239,21 +292,22 @@ export class MongoDialect extends AbstractDialect {
     return pipeline;
   }
 
-  normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[]): E[] {
+  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[]): E[] {
     return docs?.map((doc) => this.normalizeId(meta, doc));
   }
 
-  normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E): E {
+  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E): E {
     if (!doc) {
-      return;
+      return doc;
     }
 
     const res = doc as unknown as Record<string, unknown>;
+    const _id = '_id';
 
-    if (res._id) {
-      res[meta.id] = res._id;
-      if (meta.id !== '_id') {
-        delete res._id;
+    if (res[_id]) {
+      res[meta.id as string] = res[_id];
+      if (meta.id !== _id) {
+        delete res[_id];
       }
     }
 
@@ -279,7 +333,7 @@ export class MongoDialect extends AbstractDialect {
     return res as unknown as E;
   }
 
-  getIdValue<T extends IdValue>(value: T): T {
+  public getIdValue<T extends IdValue>(value: T): T {
     if (value instanceof ObjectId) {
       return value;
     }
@@ -290,28 +344,35 @@ export class MongoDialect extends AbstractDialect {
     }
   }
 
-  getPersistable<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): E {
+  public getPersistable<E extends Document>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): Partial<E> {
     return this.getPersistables(meta, payload, callbackKey)[0];
   }
 
-  getPersistables<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+  public getPersistables<E extends Document>(
+    meta: EntityMeta<E>,
+    payload: E | E[],
+    callbackKey: CallbackKey,
+  ): Partial<E>[] {
     const payloads = fillOnFields(meta, payload, callbackKey);
     const persistableKeys = filterFieldKeys(meta, payloads[0], callbackKey);
     return payloads.map((it) =>
-      persistableKeys.reduce((acc, key) => {
-        const field = meta.fields[key];
-        acc[this.resolveColumnName(key, field)] = it[key];
-        return acc;
-      }, {} as E),
+      persistableKeys.reduce<Partial<E>>(
+        (acc, key) => {
+          const field = meta.fields[key];
+          (acc as any)[this.resolveColumnName(key, field)] = it[key];
+          return acc;
+        },
+        {} as Partial<E>,
+      ),
     );
   }
 }
 
-type MongoAggregationPipelineEntry<E extends Document> = {
-  readonly $lookup?: MongoAggregationLookup<E>;
+export type MongoAggregationPipelineEntry<E extends Document> = {
+  $lookup?: MongoAggregationLookup<E>;
   $match?: Filter<E> | Record<string, any>;
   $sort?: Sort;
-  readonly $unwind?: MongoAggregationUnwind;
+  $unwind?: MongoAggregationUnwind;
 };
 
 type MongoAggregationLookup<E extends Document> = {

@@ -62,23 +62,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.internalRun(query, values);
   }
 
-  protected override async internalFindMany<E>(entity: Type<E>, q: Query<E>) {
+  protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>) {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
-    const res = await this.all<E>(ctx.sql, ctx.values);
-    const founds = unflatObjects(res);
+    const res = await this.all<any>(ctx.sql, ctx.values);
+    const founds = unflatObjects<E>(res);
     await this.fillToManyRelations(entity, founds, q.$select);
     return founds;
   }
 
-  protected override async internalCount<E>(entity: Type<E>, q: QuerySearch<E> = {}) {
+  protected override async internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E> = {}) {
     const ctx = this.dialect.createContext();
     this.dialect.count(ctx, entity, q);
     const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
     return Number(res[0].count);
   }
 
-  override async insertMany<E>(entity: Type<E>, payload: E[]) {
+  override async insertMany<E extends object>(entity: Type<E>, payload: E[]) {
     if (!payload?.length) {
       return [];
     }
@@ -88,14 +88,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const { ids } = await this.run(ctx.sql, ctx.values);
     const meta = getMeta(entity);
     const payloadIds = payload.map((it, index) => {
-      it[meta.id as string] ??= ids[index];
+      const id = ids[index] as E[typeof meta.id];
+      it[meta.id] ??= id;
       return it[meta.id];
     });
     await this.insertRelations(entity, payload);
     return payloadIds;
   }
 
-  override async updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
+  override async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.update(ctx, entity, q, payload);
@@ -104,14 +105,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return changes;
   }
 
-  override async upsertOne<E>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+  override async upsertOne<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.upsert(ctx, entity, conflictPaths, payload);
     return this.run(ctx.sql, ctx.values);
   }
 
-  protected override async internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
+  protected override async internalDeleteMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions,
+  ) {
     const meta = getMeta(entity);
     const findCtx = this.dialect.createContext();
     this.dialect.find(findCtx, entity, { ...q, $select: [meta.id] });

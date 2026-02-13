@@ -211,7 +211,7 @@ type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' 
 type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> &
   Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
 
-export type RelationKeyMap<E> = { readonly [K in keyof E]: K };
+export type RelationKeyMap<E> = { readonly [K in keyof E]: K } & { readonly [key: string]: string };
 
 export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => Key<E>;
 
@@ -251,10 +251,10 @@ export type EntityMeta<E> = {
   softDelete?: FieldKey<E>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;
-  };
+  } & { [key: string]: FieldOptions | undefined };
   relations: {
     [K in RelationKey<E>]?: RelationOptions;
-  };
+  } & { [key: string]: RelationOptions | undefined };
   /** Composite indexes defined via @Index decorator */
   indexes?: EntityIndexMeta[];
   processed?: boolean;
