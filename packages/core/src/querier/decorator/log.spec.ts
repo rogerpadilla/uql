@@ -40,15 +40,15 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = { logQuery } as any;
       @Log()
-      async findMany(entity: string, query: any): Promise<any[]> {
+      async findMany(entity: object, query: any): Promise<any[]> {
         return [];
       }
     }
 
     const querier = new MockQuerier();
-    await querier.findMany('User', { id: 1 });
+    await querier.findMany(class User {}, { id: 1 });
 
-    expect(logQuery).toHaveBeenCalledWith('findMany', ['User', { id: 1 }], expect.any(Number));
+    expect(logQuery).toHaveBeenCalledWith('findMany', [expect.any(Function), { id: 1 }], expect.any(Number));
   });
 
   it('should do nothing if logger is not present', async () => {

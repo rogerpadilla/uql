@@ -454,6 +454,150 @@ class PostgresDialectSpec {
   shouldEscape() {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
+
+  // JSONB operator tests
+  shouldFind$elemMatch() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
+    expect(values).toEqual(['[{"city":"NYC","zip":"10001"}]']);
+  }
+
+  shouldFind$all() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $all: ['admin', 'user'] } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
+    expect(values).toEqual(['["admin","user"]']);
+  }
+
+  shouldFind$size() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $size: 3 } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") = $1');
+    expect(values).toEqual([3]);
+  }
+
+  // Tests for $elemMatch with nested operators
+  shouldFind$elemMatchWithOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'city\' ILIKE $1)',
+    );
+    expect(values).toEqual(['new%']);
+  }
+
+  shouldFind$elemMatchWithMultipleOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { price: { $gt: 100 }, active: { $eq: true } } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->>\'active\' = $2)',
+    );
+    expect(values).toEqual([100, true]);
+  }
+
+  shouldFind$elemMatchWithMixedConditions() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { name: 'exact', status: { $in: ['active', 'pending'] } } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' = $1 AND elem->>\'status\' = ANY($2))',
+    );
+    expect(values).toEqual(['exact', ['active', 'pending']]);
+  }
+
+  shouldFind$elemMatchWithStringOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { name: { $startsWith: 'Test' } } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' LIKE $1)',
+    );
+    expect(values).toEqual(['Test%']);
+  }
+
+  shouldFind$elemMatchWithAllOperators() {
+    // Test $ne
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
+      }),
+    );
+    expect(res.sql).toContain("elem->>'status' <> $1");
+
+    // Test $gte, $lt, $lte
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } } as any,
+      }),
+    );
+    expect(res.sql).toContain("(elem->>'qty')::numeric >= $1");
+    expect(res.sql).toContain("(elem->>'price')::numeric < $2");
+    expect(res.sql).toContain("(elem->>'discount')::numeric <= $3");
+
+    // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: {
+          kind: {
+            $elemMatch: {
+              a: { $like: '%x%' },
+              b: { $endsWith: '.pdf' },
+              c: { $iendsWith: '.PDF' },
+              d: { $istartsWith: 'Hi' },
+              e: { $includes: 'mid' },
+              f: { $iincludes: 'MID' },
+            },
+          },
+        } as any,
+      }),
+    );
+    expect(res.sql).toContain("elem->>'a' LIKE");
+    expect(res.sql).toContain("elem->>'b' LIKE");
+    expect(res.sql).toContain("elem->>'c' ILIKE");
+    expect(res.sql).toContain("elem->>'d' ILIKE");
+    expect(res.sql).toContain("elem->>'e' LIKE");
+    expect(res.sql).toContain("elem->>'f' ILIKE");
+
+    // Test $regex, $nin
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { kind: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } } as any,
+      }),
+    );
+    expect(res.sql).toContain("elem->>'code' ~ $1");
+    expect(res.sql).toContain("elem->>'tag' <> ALL");
+  }
 }
 
 createSpec(new PostgresDialectSpec());

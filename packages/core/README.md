@@ -6,10 +6,6 @@
 
 **[UQL](https://uql.app)** is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript. It is engineered to be **fast**, **safe**, and **universally compatible**.
 
-- **Runs Everywhere**: Node.js, Bun, Deno, Cloudflare Workers, Electron, React Native, and the Browser.
-- **Unified API**: A consistent query interface for PostgreSQL (incl. CockroachDB, YugabyteDB), MySQL (incl. TiDB, Aurora), MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, and MongoDB.
-
-&nbsp;
 
 ```ts
 const users = await querier.findMany(User, {
@@ -19,17 +15,6 @@ const users = await querier.findMany(User, {
   $limit: 100,
 });
 ```
-
-&nbsp;
-
-## Why UQL?
-
-| Feature              | **UQL**                                                             | Traditional ORMs                                        |
-| :------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------ |
-| **API**        | **Unified & Intuitive**: Same syntax for SQL & NoSQL.               | Fragmented: SQL and Mongo feel like different worlds.   |
-| **Safety**     | **Deep Type-Safety**: Validates relations & operators at any depth. | Surface-level: Often loses types in complex joins.      |
-| **Syntax**     | **Serializable JSON**: Pure data, perfect for APIs/Websockets.      | Method-Chaining: Hard to transport over the wire.       |
-| **Efficiency** | **Sticky Connections**: Minimal overhead, human-readable SQL.       | Heavy: Often generates "SQL Soup" that's hard to debug. |
 
 &nbsp;
 
@@ -116,14 +101,29 @@ UQL separates the **intent** of your data from its **storage**. Both properties 
 | **`columnType`** | **Physical Type** (Implementation). **Highest Priority**. Bypasses UQL's inference for exact SQL control. | Raw SQL types: `'varchar(100)'`, `'decimal(10,2)'`, `'smallint'`, etc. |
 
 ```ts
-@Field() // Inference: Maps to TEXT (Postgres) or VARCHAR(255) (MySQL) automatically.
-name?: string;
+// Automatic inference from TypeScript types
+@Field() name?: string;           // → TEXT (Postgres), VARCHAR(255) (MySQL)
+@Field() age?: number;            // → INTEGER
+@Field() isActive?: boolean;      // → BOOLEAN
+@Field() createdAt?: Date;        // → TIMESTAMP
 
-@Field({ type: 'uuid' }) // Recommended: Cross-database abstraction for UUIDs.
-id?: string;
+// Semantic types - portable across all databases
+@Field({ type: 'uuid' })          // → UUID (Postgres), CHAR(36) (MySQL), TEXT (SQLite)
+externalId?: string;
 
-@Field({ columnType: 'varchar(500)' }) // Control: Explicitly forces a specific SQL type.
+@Field({ type: 'json' })          // → JSONB (Postgres), JSON (MySQL), TEXT (SQLite)
+metadata?: Record<string, unknown>;
+
+// Logical types with constraints - portable with control
+@Field({ type: 'varchar', length: 500 })
 bio?: string;
+
+@Field({ type: 'decimal', precision: 10, scale: 2 })
+price?: number;
+
+// Exact SQL type - when you need dialect-specific control
+@Field({ columnType: 'smallint' })
+statusCode?: number;
 ```
 
 
@@ -238,8 +238,8 @@ export const pool = new PgQuerierPool(
   { host: 'localhost', database: 'uql_app', max: 10 },
   {
     logger: ['error', 'warn', 'migration'],
-    slowQueryThreshold: 1000,
     namingStrategy: new SnakeCaseNamingStrategy()
+    slowQuery: { threshold: 1000 },
   }
 );
 
@@ -370,9 +370,9 @@ Use the CLI to manage your database schema evolution.
 
 | Command | Description |
 | :--- | :--- |
+| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
 | `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
 | `generate:entities <name>` | **Auto-generates** a migration by diffing your entities against the current DB schema. |
-| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
 | `drift:check` | **Drift Detection**: Compares your defined entities against the actual database schema and reports discrepancies. |
 | `up` | Applies all pending migrations. |
 | `down` | Rolls back the last applied migration batch. |
@@ -454,7 +454,7 @@ UQL features a professional-grade, structured logging system designed for high v
 | Level                 | Description                                                                             |
 | :-------------------- | :-------------------------------------------------------------------------------------- |
 | `query`             | **Standard Queries**: Beautifully formatted SQL/Command logs with execution time. |
-| `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold.    |
+| `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold. Use `logParams: false` to omit sensitive data. |
 | `error` / `warn`  | **System Health**: Detailed error traces and potential issue warnings.            |
 | `migration`         | **Audit Trail**: Step-by-step history of schema changes.                          |
 | `skippedMigration`  | **Safety**: Logs blocked unsafe schema changes during autoSync.                   |

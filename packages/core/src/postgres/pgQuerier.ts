@@ -9,13 +9,11 @@ export class PgQuerier extends AbstractPoolQuerier<PoolClient> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const res = await this.conn.query<T>(query, values);
     return res.rows;
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const { rowCount: changes, rows = [] }: any = await this.conn.query(query, values);
     const ids = rows.map((r: any) => r.id);
     return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;

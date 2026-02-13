@@ -855,7 +855,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (?)', [1]);
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [1]);
-    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `pk` FROM `user_profile`', []);
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `pk` FROM `user_profile` WHERE `creatorId` IN (?)',
+      [1],
+    );
 
     expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(4);
@@ -869,7 +873,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteMany(User, { $where: { createdAt: 123 } });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = ?', [123]);
-    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `pk` FROM `user_profile`', []);
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `pk` FROM `user_profile` WHERE `creatorId` IN (?)',
+      [1],
+    );
     expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
 
     expect(this.querier.all).toHaveBeenCalledTimes(2);

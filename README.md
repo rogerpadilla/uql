@@ -238,8 +238,8 @@ export const pool = new PgQuerierPool(
   { host: 'localhost', database: 'uql_app', max: 10 },
   {
     logger: ['error', 'warn', 'migration'],
-    slowQueryThreshold: 1000,
     namingStrategy: new SnakeCaseNamingStrategy()
+    slowQuery: { threshold: 1000 },
   }
 );
 
@@ -454,7 +454,7 @@ UQL features a professional-grade, structured logging system designed for high v
 | Level                 | Description                                                                             |
 | :-------------------- | :-------------------------------------------------------------------------------------- |
 | `query`             | **Standard Queries**: Beautifully formatted SQL/Command logs with execution time. |
-| `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold.    |
+| `slowQuery`         | **Bottleneck Alerts**: Dedicated logging for queries exceeding your threshold. Use `logParams: false` to omit sensitive data. |
 | `error` / `warn`  | **System Health**: Detailed error traces and potential issue warnings.            |
 | `migration`         | **Audit Trail**: Step-by-step history of schema changes.                          |
 | `skippedMigration`  | **Safety**: Logs blocked unsafe schema changes during autoSync.                   |

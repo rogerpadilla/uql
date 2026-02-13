@@ -9,13 +9,11 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const [res] = await this.conn.query(query, values);
     return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const [res]: any = await this.conn.query(query, values);
     const ids = res.insertId
       ? Array(res.affectedRows)

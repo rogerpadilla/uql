@@ -1,7 +1,16 @@
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../schema/types.js';
-import type { Dialect, EntityMeta, FieldOptions, LoggingOptions, NamingStrategy, SqlQuerier, Type } from './index.js';
+import type {
+  Dialect,
+  EntityMeta,
+  FieldOptions,
+  LoggingOptions,
+  NamingStrategy,
+  SlowQueryOptions,
+  SqlQuerier,
+  Type,
+} from './index.js';
 
 /**
  * Defines a migration using a simple object literal
@@ -77,9 +86,9 @@ export interface MigratorOptions {
   readonly logger?: LoggingOptions;
 
   /**
-   * Threshold in milliseconds to log slow queries during migrations
+   * Configuration for slow query detection and logging during migrations
    */
-  readonly slowQueryThreshold?: number;
+  readonly slowQuery?: SlowQueryOptions;
 
   /**
    * Entities to use for schema generation

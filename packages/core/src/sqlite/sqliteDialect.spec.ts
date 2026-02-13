@@ -170,6 +170,127 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldEscape() {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
+
+  // JSON operator tests
+  shouldFind$elemMatch() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE json_extract(value, '$.city') = ? AND json_extract(value, '$.zip') = ?)",
+    );
+    expect(values).toEqual(['NYC', '10001']);
+  }
+
+  shouldFind$all() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $all: ['admin', 'user'] } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) WHERE value = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) WHERE value = json(?)))',
+    );
+    expect(values).toEqual(['"admin"', '"user"']);
+  }
+
+  shouldFind$size() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $size: 3 } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) = ?');
+    expect(values).toEqual([3]);
+  }
+
+  // Tests for $elemMatch with nested operators
+  shouldFind$elemMatchWithOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE LOWER(json_extract(value, '$.city')) LIKE ?)",
+    );
+    expect(values).toEqual(['new%']);
+  }
+
+  shouldFind$elemMatchWithMultipleOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $elemMatch: { price: { $lt: 100 }, active: { $eq: true } } } } as any,
+      }),
+    );
+    expect(sql).toContain('EXISTS (SELECT 1 FROM json_each');
+    expect(sql).toContain("CAST(json_extract(value, '$.price') AS REAL) < ?");
+    expect(sql).toContain("json_extract(value, '$.active') = ?");
+    expect(values).toEqual([100, true]);
+  }
+
+  shouldFind$elemMatchWithAllOperators() {
+    // Test $ne, $gt, $gte, $lte
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: {
+          name: {
+            $elemMatch: {
+              a: { $ne: 'x' },
+              b: { $gt: 5 },
+              c: { $gte: 10 },
+              d: { $lte: 20 },
+            },
+          },
+        } as any,
+      }),
+    );
+    expect(res.sql).toContain("json_extract(value, '$.a') <> ?");
+    expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
+    expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
+    expect(res.sql).toContain("CAST(json_extract(value, '$.d') AS REAL) <= ?");
+
+    // Test $like, $startsWith, $endsWith
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: {
+          name: {
+            $elemMatch: {
+              a: { $like: '%x%' },
+              b: { $startsWith: 'hi' },
+              c: { $endsWith: 'bye' },
+              d: { $istartsWith: 'HI' },
+              e: { $iendsWith: 'BYE' },
+              f: { $includes: 'mid' },
+              g: { $iincludes: 'MID' },
+            },
+          },
+        } as any,
+      }),
+    );
+    expect(res.sql).toContain("json_extract(value, '$.a') LIKE ?");
+    expect(res.sql).toContain("LOWER(json_extract(value, '$.d')) LIKE ?");
+    expect(res.sql).toContain("LOWER(json_extract(value, '$.e')) LIKE ?");
+    expect(res.sql).toContain("LOWER(json_extract(value, '$.g')) LIKE ?");
+
+    // Test $regex
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: ['id'],
+        $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
+      }),
+    );
+    expect(res.sql).toContain("json_extract(value, '$.code') REGEXP ?");
+  }
 }
 
 createSpec(new SqliteDialectSpec());

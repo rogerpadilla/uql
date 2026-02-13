@@ -160,6 +160,11 @@ export type QueryWhereFieldOperatorMap<T> = {
    */
   $gte?: ExpandScalar<T>;
   /**
+   * whether a value is between two values (inclusive). Shorthand for $gte + $lte.
+   * @example { age: { $between: [18, 65] } }
+   */
+  $between?: [ExpandScalar<T>, ExpandScalar<T>];
+  /**
    * whether a string begins with the given string (case sensitive).
    */
   $startsWith?: string;
@@ -203,6 +208,31 @@ export type QueryWhereFieldOperatorMap<T> = {
    * whether a value does not match any of the given values.
    */
   $nin?: ExpandScalar<T>[];
+  /**
+   * whether a value is null.
+   * @example { deletedAt: { $isNull: true } }
+   */
+  $isNull?: boolean;
+  /**
+   * whether a value is not null.
+   * @example { email: { $isNotNull: true } }
+   */
+  $isNotNull?: boolean;
+  /**
+   * whether an array contains all the specified values.
+   * @example { tags: { $all: ['typescript', 'orm'] } }
+   */
+  $all?: ExpandScalar<T>[];
+  /**
+   * whether an array has the specified length.
+   * @example { roles: { $size: 3 } }
+   */
+  $size?: number;
+  /**
+   * whether an array contains at least one element matching all specified conditions.
+   * @example { addresses: { $elemMatch: { city: 'NYC', zip: '10001' } } }
+   */
+  $elemMatch?: T extends (infer U)[] ? Partial<U> : never;
 };
 
 /**

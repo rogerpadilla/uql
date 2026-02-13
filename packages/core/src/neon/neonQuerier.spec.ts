@@ -28,7 +28,7 @@ describe('NeonQuerier', () => {
       fields: [],
     } satisfies QueryResult<any>);
 
-    await querier.internalAll('SELECT * FROM users');
+    await querier.all('SELECT * FROM users');
 
     expect(connect).toHaveBeenCalled();
     expect(mockConn.query).toHaveBeenCalledWith('SELECT * FROM users', undefined);
@@ -43,7 +43,7 @@ describe('NeonQuerier', () => {
       fields: [],
     } satisfies QueryResult<any>);
 
-    const res = await querier.internalRun('INSERT INTO users ...');
+    const res = await querier.run('INSERT INTO users ...');
 
     expect(res).toEqual({
       changes: 5,
@@ -77,7 +77,7 @@ describe('NeonQuerier', () => {
       fields: [],
     });
 
-    const res = await querier.internalRun('INSERT INTO users ...');
+    const res = await querier.run('INSERT INTO users ...');
 
     expect(res).toEqual({
       changes: 0, // Falls back to 0 when rowCount is null
@@ -95,7 +95,7 @@ describe('NeonQuerier', () => {
       fields: [],
     });
 
-    const res = await querier.internalRun('DELETE FROM users');
+    const res = await querier.run('DELETE FROM users');
 
     expect(res).toEqual({
       changes: 0, // Falls back to 0 when rowCount is undefined

@@ -18,15 +18,15 @@ class MockQuerier extends AbstractQuerier {
   }
 
   // Abstract methods required by AbstractQuerier
-  findMany(): any {}
-  count(): any {}
-  insertMany(): any {}
-  updateMany(): any {}
-  upsertOne(): any {}
-  deleteMany(): any {}
-  beginTransaction(): any {}
-  commitTransaction(): any {}
-  rollbackTransaction(): any {}
+  protected override internalFindMany(): any {}
+  protected override internalCount(): any {}
+  override insertMany(): any {}
+  override updateMany(): any {}
+  override upsertOne(): any {}
+  protected override internalDeleteMany(): any {}
+  override beginTransaction(): any {}
+  override commitTransaction(): any {}
+  override rollbackTransaction(): any {}
   protected internalRelease(): any {}
   hasOpenTransaction = false;
 }

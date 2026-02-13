@@ -34,19 +34,35 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    */
   protected abstract internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
 
+  /**
+   * Hook for subclasses (e.g. pool queriers) to establish a connection.
+   * Called before every query but outside the `@Log()` timer.
+   */
+  protected async lazyConnect(): Promise<void> {}
+
   @Serialized()
-  @Log()
   async all<T>(query: string, values?: unknown[]): Promise<T[]> {
+    await this.lazyConnect();
+    return this.timedAll<T>(query, values);
+  }
+
+  @Log()
+  private async timedAll<T>(query: string, values?: unknown[]): Promise<T[]> {
     return this.internalAll<T>(query, values);
   }
 
   @Serialized()
-  @Log()
   async run(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
+    await this.lazyConnect();
+    return this.timedRun(query, values);
+  }
+
+  @Log()
+  private async timedRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
     return this.internalRun(query, values);
   }
 
-  override async findMany<E>(entity: Type<E>, q: Query<E>) {
+  protected override async internalFindMany<E>(entity: Type<E>, q: Query<E>) {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
     const res = await this.all<E>(ctx.sql, ctx.values);
@@ -55,7 +71,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return founds;
   }
 
-  override async count<E>(entity: Type<E>, q: QuerySearch<E> = {}) {
+  protected override async internalCount<E>(entity: Type<E>, q: QuerySearch<E> = {}) {
     const ctx = this.dialect.createContext();
     this.dialect.count(ctx, entity, q);
     const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
@@ -95,7 +111,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.run(ctx.sql, ctx.values);
   }
 
-  override async deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
+  protected override async internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
     const findCtx = this.dialect.createContext();
     this.dialect.find(findCtx, entity, { ...q, $select: [meta.id] });
@@ -120,6 +136,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (this.hasPendingTransaction) {
       throw TypeError('pending transaction');
     }
+    await this.lazyConnect();
     await this.internalRun(this.dialect.beginTransactionCommand);
     this.hasPendingTransaction = true;
   }
