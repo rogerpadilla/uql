@@ -1,26 +1,16 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.9.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.9.0...@uql/core@3.9.1) (2026-02-13)
-
-### Improvements & Refactoring
-- **TypeScript Upgrade**: Upgraded to TypeScript ~5.9.3 and hardened `tsconfig.json` with strict flags (`noPropertyAccessFromIndexSignature`, `verbatimModuleSyntax`, etc.).
-- **Type Safety Polish**: Propagated `E extends object` constraint across the `Querier` hierarchy and refined driver signatures to eliminate type casts (`as any`).
-
-### Bug Fixes
-- **MySQL Introspection Fix**: Fixed a bug where string default values were returned with surrounding quotes (e.g., `'active'`) during schema discovery in MySQL and MariaDB.
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.9.1] - 2026-02-13
+### Improvements & Refactoring
+- **TypeScript Upgrade**: Upgraded to TypeScript ^5.9.3 and hardened `tsconfig.json` with strict flags (`noPropertyAccessFromIndexSignature`, `verbatimModuleSyntax`, etc.).
+- **Type Safety Polish**: Propagated `E extends object` constraint across the `Querier` hierarchy and refined driver signatures to eliminate type casts (`as any`).
+
+### Bug Fixes
+- **MySQL Introspection Fix**: Fixed a bug where string default values were returned with surrounding quotes (e.g., `'active'`) during schema discovery in MySQL and MariaDB.
 
 ## [3.9.0] - 2026-02-13
 ### New Features
