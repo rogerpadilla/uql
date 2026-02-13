@@ -52,10 +52,11 @@ export class MongoDialect extends AbstractDialect {
           } else if (field) {
             key = this.resolveColumnName(key, field);
           }
-          if (Array.isArray(value)) {
-            value = {
-              $in: value,
-            };
+          // Transform value operators if it's an object with operator keys ($ prefix)
+          if (value && typeof value === 'object' && !Array.isArray(value) && this.hasOperatorKeys(value)) {
+            value = this.transformOperators(value);
+          } else if (Array.isArray(value)) {
+            value = { $in: value };
           }
           acc[key as keyof Filter<E>] = value;
         }
@@ -63,6 +64,93 @@ export class MongoDialect extends AbstractDialect {
       },
       {} as Filter<E>,
     );
+  }
+
+  /**
+   * Check if an object has operator keys (keys starting with $).
+   */
+  private hasOperatorKeys(obj: Record<string, unknown>): boolean {
+    return Object.keys(obj).some((key) => key.startsWith('$'));
+  }
+
+  /**
+   * Transform RJPC operators to MongoDB operators.
+   */
+  private transformOperators<T>(ops: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [op, val] of Object.entries(ops)) {
+      switch (op) {
+        case '$between': {
+          const [min, max] = val as [unknown, unknown];
+          result['$gte'] = min;
+          result['$lte'] = max;
+          break;
+        }
+        case '$isNull':
+          if (val) {
+            result['$eq'] = null;
+          } else {
+            result['$ne'] = null;
+          }
+          break;
+        case '$isNotNull':
+          if (val) {
+            result['$ne'] = null;
+          } else {
+            result['$eq'] = null;
+          }
+          break;
+        // MongoDB native operators - pass through directly
+        case '$all':
+        case '$size':
+        case '$elemMatch':
+        case '$eq':
+        case '$ne':
+        case '$lt':
+        case '$lte':
+        case '$gt':
+        case '$gte':
+        case '$in':
+        case '$nin':
+        case '$regex':
+        case '$not':
+          result[op] = val;
+          break;
+        // String operators need to be converted to regex
+        case '$startsWith':
+          result['$regex'] = `^${val}`;
+          break;
+        case '$istartsWith':
+          result['$regex'] = `^${val}`;
+          result['$options'] = 'i';
+          break;
+        case '$endsWith':
+          result['$regex'] = `${val}$`;
+          break;
+        case '$iendsWith':
+          result['$regex'] = `${val}$`;
+          result['$options'] = 'i';
+          break;
+        case '$includes':
+          result['$regex'] = val;
+          break;
+        case '$iincludes':
+          result['$regex'] = val;
+          result['$options'] = 'i';
+          break;
+        case '$like':
+          // Convert SQL LIKE pattern to regex
+          result['$regex'] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
+          break;
+        case '$ilike':
+          result['$regex'] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
+          result['$options'] = 'i';
+          break;
+        default:
+          result[op] = val;
+      }
+    }
+    return result;
   }
 
   select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {

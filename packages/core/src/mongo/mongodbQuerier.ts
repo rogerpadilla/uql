@@ -32,7 +32,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override async findMany<E extends Document>(entity: Type<E>, q: Query<E>) {
+  protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
 
     let documents: E[];
@@ -75,7 +75,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override count<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
+  protected override internalCount<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
     const filter = this.dialect.where(entity, qm.$where);
     return this.execute((session) =>
       this.collection(entity).countDocuments(filter, {
@@ -161,7 +161,11 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override async deleteMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, opts: QueryOptions = {}) {
+  protected override async internalDeleteMany<E extends Document>(
+    entity: Type<E>,
+    qm: QuerySearch<E>,
+    opts: QueryOptions = {},
+  ) {
     const meta = getMeta(entity);
     const where = this.dialect.where(entity, qm.$where);
     const founds = await this.execute((session) =>

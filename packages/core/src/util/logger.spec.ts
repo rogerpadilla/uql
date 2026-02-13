@@ -131,7 +131,7 @@ describe('LoggerWrapper', () => {
   });
 
   it('should handle slow query threshold', () => {
-    const wrapper = new LoggerWrapper(true, 100);
+    const wrapper = new LoggerWrapper(true, { threshold: 100 });
 
     wrapper.logQuery('SELECT 1', [], 50);
     expect(spyWarn).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe('LoggerWrapper', () => {
   });
 
   it('should handle slow query threshold even if logger is false', () => {
-    const wrapper = new LoggerWrapper(false, 100);
+    const wrapper = new LoggerWrapper(false, { threshold: 100 });
 
     wrapper.logQuery('SELECT 1', [], 50);
     expect(spyLog).not.toHaveBeenCalled();
@@ -177,9 +177,24 @@ describe('LoggerWrapper', () => {
 
   it('should use custom function for slow queries', () => {
     const customFunc = vi.fn();
-    const wrapper = new LoggerWrapper(customFunc, 100);
+    const wrapper = new LoggerWrapper(customFunc, { threshold: 100 });
     wrapper.logQuery('SELECT 1', [], 150);
     expect(customFunc).toHaveBeenCalledWith('SELECT 1', [], 150);
+  });
+
+  it('should omit params from slow query log when logParams is false', () => {
+    const wrapper = new LoggerWrapper(true, { threshold: 100, logParams: false });
+    wrapper.logQuery('SELECT 1', [42], 150);
+    const call = stripAnsi(spyWarn.mock.calls[0][0]);
+    expect(call).toContain('slow query: SELECT 1');
+    expect(call).not.toContain('42');
+  });
+
+  it('should omit params via custom function when logParams is false', () => {
+    const customFunc = vi.fn();
+    const wrapper = new LoggerWrapper(customFunc, { threshold: 100, logParams: false });
+    wrapper.logQuery('SELECT 1', [42], 150);
+    expect(customFunc).toHaveBeenCalledWith('SELECT 1', undefined, 150);
   });
 
   it('DefaultLogger should log slow queries with values and duration', () => {
@@ -191,7 +206,7 @@ describe('LoggerWrapper', () => {
 
   it('LoggerWrapper should fall back to logQuery if logSlowQuery is missing', () => {
     const customLogger = { logQuery: vi.fn() } as any;
-    const wrapper = new LoggerWrapper(customLogger, 100);
+    const wrapper = new LoggerWrapper(customLogger, { threshold: 100 });
     wrapper.logQuery('SELECT 1', [], 150);
     expect(customLogger.logQuery).toHaveBeenCalled();
   });

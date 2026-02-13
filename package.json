@@ -10,7 +10,7 @@
     "release.patch": "bun run build && lerna publish patch && git pull && git push",
     "release.minor": "bun run build && lerna publish minor && git pull && git push",
     "release.major": "bun run build && lerna publish major && git pull && git push",
-    "check": "concurrently 'bun run ts' 'bun run lint.fix'",
+    "check": "bun run --parallel ts lint.fix",
     "ts": "tsc --noEmit",
     "build": "lerna run build",
     "lint": "biome check .",
@@ -25,23 +25,23 @@
     ]
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.11",
-    "@commitlint/cli": "20.3.1",
-    "@commitlint/config-conventional": "20.3.1",
-    "@swc/core": "^1.15.8",
-    "@types/bun": "^1.3.5",
+    "@biomejs/biome": "2.3.15",
+    "@commitlint/cli": "20.4.1",
+    "@commitlint/config-conventional": "20.4.1",
+    "@swc/core": "^1.15.11",
+    "@swc/helpers": "^0.5.18",
+    "@types/bun": "^1.3.9",
     "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^4.0.16",
-    "concurrently": "9.2.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "copyfiles": "^2.4.1",
-    "lerna": "^9.0.3",
+    "lerna": "^9.0.4",
     "mongodb-memory-server": "11.0.1",
     "rimraf": "6.1.2",
     "supertest": "^7.2.2",
     "typescript": "~5.4.5",
     "unplugin-swc": "^1.5.9",
-    "vite-tsconfig-paths": "^6.0.3",
-    "vitest": "^4.0.16"
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^4.0.18"
   },
   "author": "Roger Padilla"
 }

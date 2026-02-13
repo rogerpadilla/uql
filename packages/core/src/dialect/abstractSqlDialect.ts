@@ -533,6 +533,28 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         ctx.append(' REGEXP ');
         ctx.addValue(val);
         break;
+      case '$between': {
+        const [min, max] = val as [unknown, unknown];
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' BETWEEN ');
+        ctx.addValue(min);
+        ctx.append(' AND ');
+        ctx.addValue(max);
+        break;
+      }
+      case '$isNull':
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(val ? ' IS NULL' : ' IS NOT NULL');
+        break;
+      case '$isNotNull':
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(val ? ' IS NOT NULL' : ' IS NULL');
+        break;
+      case '$all':
+      case '$size':
+      case '$elemMatch':
+        // Each SQL dialect must provide its own implementation
+        throw TypeError(`${op} is not supported in the base SQL dialect - override in dialect subclass`);
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
@@ -545,6 +567,68 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       }
       ctx.addValue(val);
     });
+  }
+
+  /**
+   * Build a comparison condition for a JSON field within $elemMatch.
+   * Shared across all SQL dialects — each dialect provides a JsonFieldConfig.
+   */
+  protected buildJsonFieldCondition(
+    ctx: QueryContext,
+    config: JsonFieldConfig,
+    field: string,
+    op: string,
+    value: unknown,
+  ): string {
+    const jsonField = config.fieldAccessor(field);
+    switch (op) {
+      case '$eq':
+        return `${jsonField} = ${config.addValue(ctx, value)}`;
+      case '$ne':
+        return `${jsonField} <> ${config.addValue(ctx, value)}`;
+      case '$gt':
+        return `${config.numericCast(jsonField)} > ${config.addValue(ctx, value)}`;
+      case '$gte':
+        return `${config.numericCast(jsonField)} >= ${config.addValue(ctx, value)}`;
+      case '$lt':
+        return `${config.numericCast(jsonField)} < ${config.addValue(ctx, value)}`;
+      case '$lte':
+        return `${config.numericCast(jsonField)} <= ${config.addValue(ctx, value)}`;
+      case '$like':
+        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, value)}`;
+      case '$ilike':
+        return config.ilikeExpr(jsonField, config.addValue(ctx, (value as string).toLowerCase()));
+      case '$startsWith':
+        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `${value}%`)}`;
+      case '$istartsWith':
+        return config.ilikeExpr(jsonField, config.addValue(ctx, `${(value as string).toLowerCase()}%`));
+      case '$endsWith':
+        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `%${value}`)}`;
+      case '$iendsWith':
+        return config.ilikeExpr(jsonField, config.addValue(ctx, `%${(value as string).toLowerCase()}`));
+      case '$includes':
+        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `%${value}%`)}`;
+      case '$iincludes':
+        return config.ilikeExpr(jsonField, config.addValue(ctx, `%${(value as string).toLowerCase()}%`));
+      case '$regex':
+        return `${jsonField} ${config.regexpOp} ${config.addValue(ctx, value)}`;
+      case '$in': {
+        if (config.inExpr) {
+          return config.inExpr(jsonField, config.addValue(ctx, value));
+        }
+        const inVals = value as unknown[];
+        return `${jsonField} IN (${inVals.map((v) => config.addValue(ctx, v)).join(', ')})`;
+      }
+      case '$nin': {
+        if (config.ninExpr) {
+          return config.ninExpr(jsonField, config.addValue(ctx, value));
+        }
+        const ninVals = value as unknown[];
+        return `${jsonField} NOT IN (${ninVals.map((v) => config.addValue(ctx, v)).join(', ')})`;
+      }
+      default:
+        throw TypeError(`$elemMatch does not support operator: ${op}`);
+    }
   }
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
@@ -813,3 +897,26 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   abstract escape(value: unknown): string;
 }
+
+/**
+ * Configuration for JSON field operations within $elemMatch.
+ * Each SQL dialect provides its own config to the shared buildJsonFieldCondition method.
+ */
+export type JsonFieldConfig = {
+  /** Produces the field accessor expression, e.g. `elem->>'name'` or `json_extract(value, '$.name')` */
+  fieldAccessor: (field: string) => string;
+  /** Wraps an expression for numeric comparison, e.g. `(expr)::numeric` or `CAST(expr AS REAL)` */
+  numericCast: (expr: string) => string;
+  /** The LIKE keyword to use for case-sensitive matching, e.g. `'LIKE'` */
+  likeFn: string;
+  /** Builds a case-insensitive LIKE expression from a field and placeholder, e.g. `LOWER(field) LIKE ph` or `field ILIKE ph` */
+  ilikeExpr: (field: string, placeholder: string) => string;
+  /** The regexp operator, e.g. `'REGEXP'` or `'~'` */
+  regexpOp: string;
+  /** Binds a value and returns its placeholder string */
+  addValue: (ctx: QueryContext, value: unknown) => string;
+  /** Optional: custom $in expression (e.g. Postgres `= ANY()`). If omitted, uses `IN (v1, v2, ...)` */
+  inExpr?: (field: string, placeholder: string) => string;
+  /** Optional: custom $nin expression (e.g. Postgres `<> ALL()`). If omitted, uses `NOT IN (v1, v2, ...)` */
+  ninExpr?: (field: string, placeholder: string) => string;
+};

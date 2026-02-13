@@ -116,9 +116,102 @@ export class PostgresDialect extends AbstractSqlDialect {
         ctx.append(' ~ ');
         ctx.addValue(val);
         break;
+      case '$elemMatch':
+        this.buildElemMatchCondition(ctx, entity, key, val as Record<string, unknown>, opts);
+        break;
+      case '$all':
+        // PostgreSQL: JSONB array contains all specified values
+        // e.g., tags @> '["typescript", "orm"]'::jsonb
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(' @> ');
+        ctx.addValue(JSON.stringify(val));
+        ctx.append('::jsonb');
+        break;
+      case '$size':
+        // PostgreSQL: Check JSONB array length
+        // e.g., jsonb_array_length(roles) = 3
+        ctx.append('jsonb_array_length(');
+        this.getComparisonKey(ctx, entity, key, opts);
+        ctx.append(') = ');
+        ctx.addValue(val);
+        break;
       default:
         super.compareFieldOperator(ctx, entity, key, op, val, opts);
     }
+  }
+
+  /**
+   * Build $elemMatch condition for PostgreSQL JSONB arrays.
+   * - Simple objects (no operators): Use fast @> containment
+   * - Objects with operators ($ilike, $regex, etc.): Use EXISTS subquery
+   */
+  private buildElemMatchCondition<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: FieldKey<E>,
+    match: Record<string, unknown>,
+    opts: QueryOptions,
+  ): void {
+    // Check if any field value contains operators
+    const hasOperators = Object.values(match).some(
+      (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith('$')),
+    );
+
+    if (!hasOperators) {
+      // Simple case: use fast @> containment operator
+      // e.g., addresses @> '[{"city": "NYC"}]'::jsonb
+      this.getComparisonKey(ctx, entity, key, opts);
+      ctx.append(' @> ');
+      ctx.addValue(JSON.stringify([match]));
+      ctx.append('::jsonb');
+      return;
+    }
+
+    // Complex case: use EXISTS with jsonb_array_elements
+    // e.g., EXISTS (SELECT 1 FROM jsonb_array_elements(addresses) AS elem WHERE elem->>'city' ILIKE $1)
+    ctx.append('EXISTS (SELECT 1 FROM jsonb_array_elements(');
+    this.getComparisonKey(ctx, entity, key, opts);
+    ctx.append(') AS elem WHERE ');
+
+    const conditions: string[] = [];
+    for (const [field, value] of Object.entries(match)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        // Value is an operator object
+        const ops = value as Record<string, unknown>;
+        for (const [op, opVal] of Object.entries(ops)) {
+          conditions.push(this.buildJsonFieldOperator(ctx, field, op, opVal));
+        }
+      } else {
+        // Simple equality
+        conditions.push(`elem->>'${field}' = ${this.addValue(ctx.values, value)}`);
+      }
+    }
+
+    ctx.append(conditions.join(' AND '));
+    ctx.append(')');
+  }
+
+  /**
+   * Build a comparison condition for a JSON field with an operator.
+   * Returns the SQL condition string.
+   */
+  private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
+    return this.buildJsonFieldCondition(
+      ctx,
+      {
+        fieldAccessor: (f) => `elem->>'${f}'`,
+        numericCast: (expr) => `(${expr})::numeric`,
+        likeFn: 'LIKE',
+        ilikeExpr: (f, ph) => `${f} ILIKE ${ph}`,
+        regexpOp: '~',
+        addValue: (c, v) => this.addValue(c.values, v),
+        inExpr: (f, ph) => `${f} = ANY(${ph})`,
+        ninExpr: (f, ph) => `${f} <> ALL(${ph})`,
+      },
+      field,
+      op,
+      value,
+    );
   }
 
   protected override formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {

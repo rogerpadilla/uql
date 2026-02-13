@@ -13,7 +13,7 @@ export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
     super(dialect, extra);
   }
 
-  protected async lazyConnect() {
+  protected override async lazyConnect() {
     this.conn ??= await this.connect();
   }
 

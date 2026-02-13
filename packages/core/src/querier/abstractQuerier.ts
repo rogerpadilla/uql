@@ -40,7 +40,30 @@ export abstract class AbstractQuerier implements Querier {
   protected readonly logger: LoggerWrapper;
 
   constructor(readonly extra?: ExtraOptions) {
-    this.logger = new LoggerWrapper(extra?.logger, extra?.slowQueryThreshold);
+    this.logger = new LoggerWrapper(extra?.logger, extra?.slowQuery);
+  }
+
+  /**
+   * Resolves entity from either a separate argument or from $entity field in query.
+   * @param entityOrQuery - Entity class or query object with $entity
+   * @param maybeQuery - Query object if entity was passed separately
+   * @returns Tuple of [entity, query]
+   */
+  protected resolveEntityAndQuery<E>(
+    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
+    maybeQuery?: QuerySearch<E>,
+  ): [Type<E>, QuerySearch<E>] {
+    // Check if first argument is a class (function with prototype)
+    if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
+      return [entityOrQuery as Type<E>, maybeQuery ?? {}];
+    }
+    // Otherwise it's a query object with $entity
+    const q = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
+    if (!q.$entity) {
+      throw new TypeError('$entity is required when using query-object syntax');
+    }
+    const { $entity, ...query } = q;
+    return [$entity, query as QuerySearch<E>];
   }
 
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q: QueryOne<E> = {}) {
@@ -49,24 +72,69 @@ export abstract class AbstractQuerier implements Querier {
     return this.findOne(entity, q);
   }
 
-  async findOne<E>(entity: Type<E>, q: QueryOne<E>) {
+  /**
+   * Find a single record matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
+  async findOne<E>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
+  async findOne<E>(q: QueryOne<E> & { $entity: Type<E> }): Promise<E>;
+  async findOne<E>(
+    entityOrQuery: Type<E> | (QueryOne<E> & { $entity: Type<E> }),
+    maybeQuery?: QueryOne<E>,
+  ): Promise<E> {
+    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
     const rows = await this.findMany(entity, { ...q, $limit: 1 });
     return rows[0];
   }
 
-  abstract findMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  /**
+   * Find multiple records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
+  findMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  findMany<E>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
+  findMany<E>(entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }), maybeQuery?: Query<E>): Promise<E[]> {
+    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    return this.internalFindMany(entity, q as Query<E>);
+  }
 
-  findManyAndCount<E>(entity: Type<E>, q: Query<E>) {
+  protected abstract internalFindMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+
+  /**
+   * Find multiple records and return both the records and total count.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
+  findManyAndCount<E>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
+  findManyAndCount<E>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
+  findManyAndCount<E>(
+    entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
+    maybeQuery?: Query<E>,
+  ): Promise<[E[], number]> {
+    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
     const qCount = {
       ...q,
     } satisfies QuerySearch<E>;
     delete qCount.$sort;
     delete qCount.$limit;
     delete qCount.$skip;
-    return Promise.all([this.findMany(entity, q), this.count(entity, qCount)]);
+    return Promise.all([this.internalFindMany(entity, q as Query<E>), this.internalCount(entity, qCount)]);
   }
 
-  abstract count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  /**
+   * Count records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
+  count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  count<E>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
+  count<E>(
+    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
+    maybeQuery?: QuerySearch<E>,
+  ): Promise<number> {
+    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    return this.internalCount(entity, q);
+  }
+
+  protected abstract internalCount<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   async insertOne<E>(entity: Type<E>, payload: E) {
     const [id] = await this.insertMany(entity, [payload]);
@@ -87,7 +155,26 @@ export abstract class AbstractQuerier implements Querier {
     return this.deleteMany(entity, { $where: id }, opts);
   }
 
-  abstract deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  /**
+   * Delete records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
+  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  deleteMany<E>(
+    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
+    qOrOpts?: QuerySearch<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
+  ): Promise<number> {
+    if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
+      return this.internalDeleteMany(entityOrQuery as Type<E>, qOrOpts as QuerySearch<E>, maybeOpts);
+    }
+    const q = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
+    const { $entity, ...query } = q;
+    return this.internalDeleteMany($entity, query as QuerySearch<E>, qOrOpts as QueryOptions);
+  }
+
+  protected abstract internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   async saveOne<E>(entity: Type<E>, payload: E) {
     const [id] = await this.saveMany(entity, [payload]);
@@ -96,31 +183,32 @@ export abstract class AbstractQuerier implements Querier {
 
   async saveMany<E>(entity: Type<E>, payload: E[]) {
     const meta = getMeta(entity);
-    const ids: IdValue<E>[] = [];
-    const updates: E[] = [];
-    const inserts: E[] = [];
+    const toInsert: E[] = [];
+    const toUpdate: E[] = [];
+    const existingIds: IdValue<E>[] = [];
 
     for (const it of payload) {
-      if (it[meta.id]) {
-        if (getKeys(it).length === 1) {
-          ids.push(it[meta.id]);
-        } else {
-          updates.push(it);
-        }
+      if (!it[meta.id]) {
+        toInsert.push(it);
+      } else if (getKeys(it).length === 1) {
+        existingIds.push(it[meta.id]);
       } else {
-        inserts.push(it);
+        toUpdate.push(it);
       }
     }
 
-    return Promise.all([
-      ...ids,
-      ...(inserts.length ? await this.insertMany(entity, inserts) : []),
-      ...updates.map(async (it) => {
-        const { [meta.id]: id, ...data } = it;
-        await this.updateOneById(entity, id, data as E);
-        return id;
-      }),
+    const [insertedIds, updatedIds] = await Promise.all([
+      toInsert.length ? this.insertMany(entity, toInsert) : ([] as IdValue<E>[]),
+      Promise.all(
+        toUpdate.map(async (it) => {
+          const { [meta.id]: id, ...data } = it;
+          await this.updateOneById(entity, id, data as E);
+          return id;
+        }),
+      ),
     ]);
+
+    return [...existingIds, ...insertedIds, ...updatedIds];
   }
 
   protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], select: QuerySelect<E>) {
@@ -192,18 +280,20 @@ export abstract class AbstractQuerier implements Querier {
     referenceKey: string,
     relKey: string,
   ): void {
-    const childrenByParentMap = children.reduce((acc, child) => {
-      const parenId = child[referenceKey];
-      if (!acc[parenId]) {
-        acc[parenId] = [];
-      }
-      acc[parenId].push(child);
-      return acc;
-    }, {});
+    const childrenByParentId = children.reduce(
+      (acc, child) => {
+        const parentId = child[referenceKey];
+        if (!acc[parentId]) {
+          acc[parentId] = [];
+        }
+        acc[parentId].push(child);
+        return acc;
+      },
+      {} as Record<string, E[]>,
+    );
 
     for (const parent of parents) {
-      const parentId = parent[parentIdKey];
-      parent[relKey] = childrenByParentMap[parentId];
+      parent[relKey] = childrenByParentId[parent[parentIdKey]];
     }
   }
 
@@ -249,9 +339,11 @@ export abstract class AbstractQuerier implements Querier {
       if (relOpts.through) {
         const throughEntity = relOpts.through();
         await this.deleteMany(throughEntity, { $where: { [localField]: ids } }, opts);
-        return;
+      } else {
+        // For non-through relations, use the foreign field reference
+        const foreignField = relOpts.references[0].foreign;
+        await this.deleteMany(relEntity, { $where: { [foreignField]: ids } }, opts);
       }
-      await this.deleteMany(relEntity, { [localField]: ids }, opts);
     }
   }
 

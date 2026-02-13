@@ -9,13 +9,11 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const res: T[] = await this.conn.query(query, values);
     return res.slice(0, res.length);
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const res = await this.conn.query(query, values);
     const ids = res.length ? res.map((r: any) => r.id) : [];
     return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;

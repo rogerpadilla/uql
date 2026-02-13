@@ -17,6 +17,13 @@ import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
 /**
+ * Query with $entity for entity-as-field pattern.
+ */
+export type QueryWithEntity<E> = Query<E> & { $entity: Type<E> };
+export type QueryOneWithEntity<E> = QueryOne<E> & { $entity: Type<E> };
+export type QuerySearchWithEntity<E> = QuerySearch<E> & { $entity: Type<E> };
+
+/**
  * Isolation levels for transactions.
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
@@ -29,13 +36,34 @@ export type Dialect = SqlDialect | 'mongodb';
 export interface Querier extends UniversalQuerier {
   findOneById<E>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E>;
 
+  /**
+   * Find one record. Supports both entity-as-argument and entity-as-field patterns.
+   * @example
+   * // Entity as argument (classic)
+   * querier.findOne(User, { $where: { id: 1 } })
+   * // Entity as field (RPC-friendly)
+   * querier.findOne({ $entity: User, $where: { id: 1 } })
+   */
   findOne<E>(entity: Type<E>, q: QueryOne<E>): Promise<E>;
+  findOne<E>(q: QueryOneWithEntity<E>): Promise<E>;
 
+  /**
+   * Find many records. Supports both entity-as-argument and entity-as-field patterns.
+   */
   findMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  findMany<E>(q: QueryWithEntity<E>): Promise<E[]>;
 
+  /**
+   * Find many records and count. Supports both patterns.
+   */
   findManyAndCount<E>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
+  findManyAndCount<E>(q: QueryWithEntity<E>): Promise<[E[], number]>;
 
+  /**
+   * Count records. Supports both patterns.
+   */
   count<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  count<E>(q: QuerySearchWithEntity<E>): Promise<number>;
 
   insertOne<E>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
@@ -53,7 +81,11 @@ export interface Querier extends UniversalQuerier {
 
   deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
+  /**
+   * Delete many records. Supports both entity-as-argument and entity-as-field patterns.
+   */
   deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E>(q: QuerySearchWithEntity<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * whether this querier is in a transaction or not.
@@ -130,8 +162,18 @@ export interface MongoQuerier extends Querier {
   readonly db: Db;
 }
 
+/**
+ * Configuration for slow query detection and logging.
+ */
+export type SlowQueryOptions = {
+  /** Threshold in milliseconds — queries exceeding this are logged as slow. */
+  readonly threshold: number;
+  /** Whether to include query parameters in slow-query logs. Defaults to `true`. */
+  readonly logParams?: boolean;
+};
+
 export type ExtraOptions = {
   readonly logger?: LoggingOptions;
-  readonly slowQueryThreshold?: number;
+  readonly slowQuery?: SlowQueryOptions;
   readonly namingStrategy?: NamingStrategy;
 };

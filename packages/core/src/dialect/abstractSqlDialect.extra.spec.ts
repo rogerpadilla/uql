@@ -73,4 +73,79 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     (dialect as any).formatPersistableValue(ctx, field, [1, 2, 3]);
     expect(ctx.values[0]).toBe('[1,2,3]');
   });
+
+  // New operator tests
+  describe('new operators', () => {
+    it('compareFieldOperator $between', () => {
+      const ctx = dialect.createContext();
+      dialect.compareFieldOperator(ctx, User, 'createdAt', '$between', [100, 200] as any);
+      expect(ctx.sql).toBe('`createdAt` BETWEEN ? AND ?');
+      expect(ctx.values).toEqual([100, 200]);
+    });
+
+    it('compareFieldOperator $isNull with true', () => {
+      const ctx = dialect.createContext();
+      dialect.compareFieldOperator(ctx, User, 'name', '$isNull', true);
+      expect(ctx.sql).toBe('`name` IS NULL');
+    });
+
+    it('compareFieldOperator $isNull with false', () => {
+      const ctx = dialect.createContext();
+      dialect.compareFieldOperator(ctx, User, 'name', '$isNull', false);
+      expect(ctx.sql).toBe('`name` IS NOT NULL');
+    });
+
+    it('compareFieldOperator $isNotNull with true', () => {
+      const ctx = dialect.createContext();
+      dialect.compareFieldOperator(ctx, User, 'email', '$isNotNull', true);
+      expect(ctx.sql).toBe('`email` IS NOT NULL');
+    });
+
+    it('compareFieldOperator $isNotNull with false', () => {
+      const ctx = dialect.createContext();
+      dialect.compareFieldOperator(ctx, User, 'email', '$isNotNull', false);
+      expect(ctx.sql).toBe('`email` IS NULL');
+    });
+
+    it('compareFieldOperator $all throws for base SQL', () => {
+      const ctx = dialect.createContext();
+      expect(() => {
+        dialect.compareFieldOperator(ctx, User, 'name', '$all', ['admin', 'user'] as any);
+      }).toThrow('$all is not supported in the base SQL dialect');
+    });
+
+    it('compareFieldOperator $size throws for base SQL', () => {
+      const ctx = dialect.createContext();
+      expect(() => {
+        dialect.compareFieldOperator(ctx, User, 'name', '$size', 3);
+      }).toThrow('$size is not supported in the base SQL dialect');
+    });
+
+    it('compareFieldOperator $elemMatch throws for SQL', () => {
+      const ctx = dialect.createContext();
+      expect(() => {
+        // Use 'as any' on dialect since $elemMatch type is 'never' for non-array fields
+        (dialect as any).compareFieldOperator(ctx, User, 'name', '$elemMatch', { foo: 'bar' });
+      }).toThrow('$elemMatch is not supported in the base SQL dialect');
+    });
+
+    it('where clause with $between', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, User, { createdAt: { $between: [1000, 2000] } });
+      expect(ctx.sql).toBe(' WHERE `createdAt` BETWEEN ? AND ?');
+      expect(ctx.values).toEqual([1000, 2000]);
+    });
+
+    it('where clause with $isNull', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, User, { name: { $isNull: true } });
+      expect(ctx.sql).toBe(' WHERE `name` IS NULL');
+    });
+
+    it('where clause with $isNotNull', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, User, { email: { $isNotNull: true } });
+      expect(ctx.sql).toBe(' WHERE `email` IS NOT NULL');
+    });
+  });
 });

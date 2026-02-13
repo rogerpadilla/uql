@@ -246,6 +246,68 @@ class MongoDialectSpec implements Spec {
       },
     ]);
   }
+
+  // New operator tests
+  shouldTransformBetweenOperator() {
+    const result = this.dialect.where(Item, { createdAt: { $between: [100, 200] } });
+    expect(result).toEqual({
+      createdAt: { $gte: 100, $lte: 200 },
+    });
+  }
+
+  shouldTransformIsNullOperator() {
+    expect(this.dialect.where(Item, { name: { $isNull: true } })).toEqual({
+      name: { $eq: null },
+    });
+    expect(this.dialect.where(Item, { name: { $isNull: false } })).toEqual({
+      name: { $ne: null },
+    });
+  }
+
+  shouldTransformIsNotNullOperator() {
+    expect(this.dialect.where(Item, { name: { $isNotNull: true } })).toEqual({
+      name: { $ne: null },
+    });
+    expect(this.dialect.where(Item, { name: { $isNotNull: false } })).toEqual({
+      name: { $eq: null },
+    });
+  }
+
+  shouldPassThroughAllOperator() {
+    const result = this.dialect.where(Item, { name: { $all: ['a', 'b', 'c'] } } as any);
+    expect(result).toEqual({
+      name: { $all: ['a', 'b', 'c'] },
+    });
+  }
+
+  shouldPassThroughSizeOperator() {
+    const result = this.dialect.where(Item, { name: { $size: 3 } } as any);
+    expect(result).toEqual({
+      name: { $size: 3 },
+    });
+  }
+
+  shouldPassThroughElemMatchOperator() {
+    const result = this.dialect.where(Item, { name: { $elemMatch: { foo: 'bar' } } } as any);
+    expect(result).toEqual({
+      name: { $elemMatch: { foo: 'bar' } },
+    });
+  }
+
+  shouldTransformStringOperatorsToRegex() {
+    expect(this.dialect.where(Item, { name: { $startsWith: 'abc' } })).toEqual({
+      name: { $regex: '^abc' },
+    });
+    expect(this.dialect.where(Item, { name: { $endsWith: 'xyz' } })).toEqual({
+      name: { $regex: 'xyz$' },
+    });
+    expect(this.dialect.where(Item, { name: { $includes: 'test' } })).toEqual({
+      name: { $regex: 'test' },
+    });
+    expect(this.dialect.where(Item, { name: { $like: '%test%' } })).toEqual({
+      name: { $regex: '.*test.*' },
+    });
+  }
 }
 
 createSpec(new MongoDialectSpec());

@@ -15,7 +15,7 @@ export function Log() {
         return await originalMethod.apply(this, args);
       } finally {
         const duration = performance.now() - startTime;
-        const isSql = _key === 'all' || _key === 'run';
+        const isSql = typeof args[0] === 'string';
         const query = isSql ? args[0] : _key;
         const values = isSql ? args[1] : args;
         this.logger.logQuery(query, values, Math.round(duration));

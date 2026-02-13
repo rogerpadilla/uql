@@ -9,13 +9,11 @@ export class NeonQuerier extends AbstractPoolQuerier<PoolClient> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const res = await this.conn.query(query, values);
     return res.rows as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    await this.lazyConnect();
     const res = await this.conn.query(query, values);
     const changes = res.rowCount ?? 0;
     const ids = res.rows.map((r: any) => r.id);

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.9.0] - 2026-02-13
+### New Features
+- **New Query Operators**: Added `$between`, `$isNull`, `$isNotNull`, `$all`, `$size`, and `$elemMatch` operators with full support across PostgreSQL, MySQL, SQLite, and MongoDB.
+- **Dual-API Pattern**: Querier read and delete methods (`findOne`, `findMany`, `findManyAndCount`, `count`, `deleteMany`) now accept either the classic `(Entity, query)` call or an RPC-friendly `({ $entity: Entity, ...query })` call. This enables cleaner serialization for RPC/REST endpoints.
+
+### Improvements & Refactoring
+- **Structured Slow-Query Config**: Replaced flat `slowQueryThreshold: number` with a `slowQuery: { threshold, logParams? }` object. Use `logParams: false` to suppress sensitive query parameters from slow-query logs.
+- **DRY Dialect Refactor**: Extracted shared `$elemMatch` field-condition logic into `buildJsonFieldCondition` in `AbstractSqlDialect` with a `JsonFieldConfig` type. Each SQL dialect now passes a small config object (~10 lines) instead of duplicating a ~60-line switch across MySQL, PostgreSQL, and SQLite.
+- **Safer Abstract Base**: `$all`, `$size`, and `$elemMatch` now throw in the abstract SQL dialect base class, forcing each dialect subclass to provide its own implementation. This prevents silent inheritance of dialect-specific syntax.
+- **Type Safety**: Removed `$entity` from base `QuerySearch` type; it now exists only in dedicated intersection types (`QueryWithEntity`, `QueryOneWithEntity`, `QuerySearchWithEntity`), preventing it from leaking into unrelated query contexts.
+
+### Bug Fixes
+- **SQLite `$in`/`$nin` Fix**: Fixed a critical bug where `buildJsonFieldOperator` used `vals.shift()` inside `.map()`, mutating the input array and only processing half the values.
+- **Accurate Slow-Query Logging**: The `@Log()` timer now excludes connection establishment (TCP/SSL handshake) time. Previously, the first query on a new connection could trigger false slow-query alerts. Connection setup (`lazyConnect()`) is now centralized in `all()`/`run()` outside the `@Log()` scope.
+
 ## [3.8.4] - 2026-01-09
 ### Improvements
 - **Strict Type Polish**: Replaced remaining `any` type usage with `unknown` in the SQL introspection layer for improved safety. Refactored `toNumber` to handle more robustly various database numeric results during schema crawling.

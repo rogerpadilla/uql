@@ -19,8 +19,9 @@ export interface Logger {
    * @param query - The SQL query string.
    * @param values - The parameters passed to the query.
    * @param duration - The time it took to execute the query in milliseconds.
+   * @param logParams - Whether to include parameters in the log output.
    */
-  logSlowQuery?(query: string, values?: any[], duration?: number): void;
+  logSlowQuery?(query: string, values?: unknown[], duration?: number, logParams?: boolean): void;
   /**
    * Logs a warning.
    */

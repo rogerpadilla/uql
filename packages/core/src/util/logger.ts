@@ -1,4 +1,5 @@
 import type { Logger, LoggerFunction, LoggingOptions, LogLevel } from '../type/logger.js';
+import type { SlowQueryOptions } from '../type/querier.js';
 
 const DEFAULT_LOG_LEVELS = [
   'query',
@@ -20,9 +21,9 @@ export class DefaultLogger implements Logger {
     console.log(`\x1b[36mquery:\x1b[0m ${query}${params}\x1b[32m${time}\x1b[0m`);
   }
 
-  logSlowQuery(query: string, values?: any[], duration?: number): void {
+  logSlowQuery(query: string, values?: unknown[], duration?: number, logParams = true): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
-    const params = values?.length ? ` -- ${JSON.stringify(values)}` : '';
+    const params = logParams && values?.length ? ` -- ${JSON.stringify(values)}` : '';
     console.warn(`\x1b[33mslow query:\x1b[0m ${query}${params}\x1b[31m${time}\x1b[0m`);
   }
 
@@ -61,7 +62,7 @@ export class LoggerWrapper implements Logger {
 
   constructor(
     options: LoggingOptions,
-    private readonly slowQueryThreshold?: number,
+    private readonly slowQuery?: SlowQueryOptions,
   ) {
     this.levels = new Set();
 
@@ -79,22 +80,23 @@ export class LoggerWrapper implements Logger {
       this.logger = options;
     }
 
-    if (slowQueryThreshold !== undefined && !this.logger && !this.loggerFunction) {
+    if (slowQuery !== undefined && !this.logger && !this.loggerFunction) {
       this.logger = new DefaultLogger();
     }
   }
 
-  logQuery(query: string, values?: any[], duration?: number): void {
-    if (this.slowQueryThreshold !== undefined && duration !== undefined && duration >= this.slowQueryThreshold) {
+  logQuery(query: string, values?: unknown[], duration?: number): void {
+    if (this.slowQuery !== undefined && duration !== undefined && duration >= this.slowQuery.threshold) {
+      const logParams = this.slowQuery.logParams !== false;
       if (this.logger?.logSlowQuery) {
-        this.logger.logSlowQuery(query, values, duration);
+        this.logger.logSlowQuery(query, values, duration, logParams);
         return;
       }
       if (this.loggerFunction) {
-        this.loggerFunction(query, values, duration);
+        this.loggerFunction(query, logParams ? values : undefined, duration);
         return;
       }
-      // If slowQueryThreshold is met but no specific slowQuery logger exists,
+      // If slowQuery threshold is met but no specific slowQuery logger exists,
       // it falls through to the standard logQuery below.
     }
 
