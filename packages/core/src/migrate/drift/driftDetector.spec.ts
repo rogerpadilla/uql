@@ -126,7 +126,7 @@ describe('DriftDetector', () => {
       expected.addIndex({
         name: 'idx_email',
         table: table1,
-        columns: [table1.columns.get('email')],
+        columns: [table1.columns.get('email')!],
         unique: true,
       });
 
@@ -154,8 +154,8 @@ describe('DriftDetector', () => {
       expected.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -204,7 +204,7 @@ describe('DriftDetector', () => {
       actual.addIndex({
         name: 'idx_email',
         table: table2,
-        columns: [table2.columns.get('email')],
+        columns: [table2.columns.get('email')!],
         unique: true,
       });
 
@@ -232,8 +232,8 @@ describe('DriftDetector', () => {
       actual.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')] },
-        to: { table: users, columns: [users.columns.get('id')] },
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -366,16 +366,16 @@ describe('DriftDetector', () => {
       expected.addTable(t1);
       expected.addRelationship({
         name: 'fk_1',
-        from: { table: t1, columns: [t1.columns.get('role_id')] },
-        to: { table: t1, columns: [t1.columns.get('id')] },
+        from: { table: t1, columns: [t1.columns.get('role_id')!] },
+        to: { table: t1, columns: [t1.columns.get('id')!] },
       } as any);
 
       const t2 = createTable('users', [{ name: 'id', isPrimaryKey: true }, { name: 'dept_id' }]);
       actual.addTable(t2);
       actual.addRelationship({
         name: 'fk_2',
-        from: { table: t2, columns: [t2.columns.get('dept_id')] },
-        to: { table: t2, columns: [t2.columns.get('id')] },
+        from: { table: t2, columns: [t2.columns.get('dept_id')!] },
+        to: { table: t2, columns: [t2.columns.get('id')!] },
       } as any);
 
       const report = detectDrift(expected, actual);

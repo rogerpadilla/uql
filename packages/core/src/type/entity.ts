@@ -15,14 +15,14 @@ export type Key<E> = keyof E & string;
  * Infers the field names of an entity
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]: E[K] extends Scalar ? K : never;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar ? K : never;
 }[Key<E>];
 
 /**
  * Infers the relation names of an entity
  */
 export type RelationKey<E> = {
-  readonly [K in keyof E]: E[K] extends Scalar ? never : K;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar ? never : K;
 }[Key<E>];
 
 /**

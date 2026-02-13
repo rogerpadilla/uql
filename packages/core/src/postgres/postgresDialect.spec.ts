@@ -440,7 +440,7 @@ class PostgresDialectSpec {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
       @Id() id?: number;
-      @Field({ type: 'vector' }) vec: number[];
+      @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, VectorItem, {

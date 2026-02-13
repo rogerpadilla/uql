@@ -104,10 +104,10 @@ describe('PostgresSchemaIntrospector', () => {
     const schema = await introspector.getTableSchema('users');
 
     expect(schema).toBeDefined();
-    expect(schema.name).toBe('users');
-    expect(schema.columns).toHaveLength(1);
-    expect(schema.foreignKeys).toHaveLength(1);
-    expect(schema.primaryKey).toEqual(['id']);
+    expect(schema!.name).toBe('users');
+    expect(schema!.columns).toHaveLength(1);
+    expect(schema!.foreignKeys).toHaveLength(1);
+    expect(schema!.primaryKey).toEqual(['id']);
   });
 
   it('getTableSchema should handle table with no primary key', async () => {
@@ -123,7 +123,7 @@ describe('PostgresSchemaIntrospector', () => {
 
     const schema = await introspector.getTableSchema('no_pk');
 
-    expect(schema.primaryKey).toBeUndefined();
+    expect(schema!.primaryKey).toBeUndefined();
   });
 
   it('getTableSchema should return undefined for non-existent table', async () => {

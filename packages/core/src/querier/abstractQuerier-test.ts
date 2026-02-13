@@ -15,7 +15,7 @@ import {
 import type { Querier, QuerierPool, Type } from '../type/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
-  querier: Q;
+  querier!: Q;
 
   constructor(protected pool: QuerierPool<Q>) {}
 
@@ -27,7 +27,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       await this.createTables();
     } finally {
       await querier.release();
-      this.querier = undefined;
+      this.querier = undefined as any;
     }
   }
 
@@ -227,7 +227,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: ['buyPrice'] },
+      $select: { itemAdjustments: { $select: ['buyPrice' as any] } as any },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -256,7 +256,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: ['buyPrice'] },
+      $select: { itemAdjustments: { $select: ['buyPrice' as any] } as any },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -275,7 +275,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(2);
 
     await this.querier.updateOneById(InventoryAdjustment, id, {
-      itemAdjustments: null,
+      itemAdjustments: null as any,
     });
 
     await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(0);
@@ -290,7 +290,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       InventoryAdjustment,
       { $where: {} },
       {
-        itemAdjustments: null,
+        itemAdjustments: null as any,
       },
     );
 
@@ -318,7 +318,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(id).toBeDefined();
 
     const foundItem = await this.querier.findOneById(Item, id, {
-      $select: { name: true, createdAt: true, tags: ['name', 'createdAt'] },
+      $select: { name: true, createdAt: true, tags: { $select: ['name' as any, 'createdAt' as any] } as any },
     });
 
     expect(foundItem).toMatchObject({
@@ -327,12 +327,12 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const foundTags = await this.querier.findMany(Tag, {
-      $select: { name: true, createdAt: true, items: ['name', 'createdAt'] },
+      $select: { name: true, createdAt: true, items: { $select: ['name' as any, 'createdAt' as any] } as any },
     });
 
-    delete foundItem.tags;
+    delete (foundItem as any).tags;
 
-    expect(foundTags).toMatchObject(payload.tags.map((tag) => ({ ...tag, items: [foundItem] })));
+    expect(foundTags).toMatchObject(payload.tags!.map((tag) => ({ ...tag, items: [foundItem] })));
   }
 
   async shouldUpdateOneAndCascadeManyToMany() {
@@ -434,16 +434,22 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     await expect(this.querier.count(User, {})).resolves.toBe(3);
-    await expect(this.querier.count(User, { $where: { companyId: null } })).resolves.toBe(3);
+    await expect(this.querier.count(User, { $where: { companyId: null } as any })).resolves.toBe(3);
     await expect(this.querier.count(User, { $where: { companyId: 1 } })).resolves.toBe(0);
   }
 
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null })).resolves.toBe(0);
-    await expect(this.querier.updateMany(User, { $where: { companyId: null } }, { companyId: 1 })).resolves.toBe(3);
-    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null as any })).resolves.toBe(
+      0,
+    );
+    await expect(this.querier.updateMany(User, { $where: { companyId: null } as any }, { companyId: 1 })).resolves.toBe(
+      3,
+    );
+    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null as any })).resolves.toBe(
+      3,
+    );
   }
 
   async shouldThrowIfUnknownComparisonOperator() {
@@ -522,23 +528,26 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       this.querier.findOne(Company, { $select: ['id'] }),
     ]);
 
+    const user_ = user!;
+    const company_ = company!;
+
     const [firstItemId, secondItemId] = await this.querier.insertMany(Item, [
       {
         name: 'some item name a',
-        creatorId: user.id,
-        companyId: company.id,
+        creatorId: user_.id,
+        companyId: company_.id,
       },
       {
         name: 'some item name b',
-        creatorId: user.id,
-        companyId: company.id,
+        creatorId: user_.id,
+        companyId: company_.id,
       },
     ]);
 
     const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some inventory adjustment',
-      creatorId: user.id,
-      companyId: company.id,
+      creatorId: user_.id,
+      companyId: company_.id,
       itemAdjustments: [
         { buyPrice: 1000, itemId: firstItemId },
         { buyPrice: 2000, itemId: secondItemId },
@@ -565,7 +574,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldDeleteMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
     await expect(this.querier.deleteMany(User, { $where: { companyId: 1 } })).resolves.toBe(0);
-    await expect(this.querier.deleteMany(User, { $where: { companyId: null } })).resolves.toBe(3);
+    await expect(this.querier.deleteMany(User, { $where: { companyId: null } as any })).resolves.toBe(3);
   }
 
   async clearTables() {

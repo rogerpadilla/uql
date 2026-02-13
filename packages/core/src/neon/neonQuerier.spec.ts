@@ -88,7 +88,7 @@ describe('NeonQuerier', () => {
 
   it('should handle undefined rowCount gracefully', async () => {
     mockConn.query.mockResolvedValue({
-      rowCount: undefined,
+      rowCount: undefined as unknown as number,
       rows: [],
       command: 'DELETE',
       oid: 0,

@@ -40,7 +40,7 @@ export class MongoDialect extends AbstractDialect {
 
     if (meta.softDelete && (softDelete || softDelete === undefined) && !whereMap[meta.softDelete]) {
       const field = meta.fields[meta.softDelete];
-      (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field)] = null;
+      (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field!)] = null;
     }
 
     return Object.entries(whereMap).reduce<Filter<E>>(
@@ -49,7 +49,7 @@ export class MongoDialect extends AbstractDialect {
         let val: unknown = entry[1];
         if (key === '$and' || key === '$or') {
           const filterList = (val as QueryWhere<E>[]).map((filterIt) => this.where(entity, filterIt));
-          (acc as any)[key] = filterList;
+          (acc as Record<string, unknown>)[key] = filterList;
         } else {
           const field = meta.fields[key];
           if (key === '_id' || key === meta.id) {
@@ -68,7 +68,7 @@ export class MongoDialect extends AbstractDialect {
           } else if (Array.isArray(val)) {
             val = { $in: val };
           }
-          (acc as any)[key] = val;
+          (acc as Record<string, unknown>)[key] = val;
         }
         return acc;
       },
@@ -226,7 +226,7 @@ export class MongoDialect extends AbstractDialect {
   public aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
     const where = this.where(entity, q.$where);
-    const sort = this.sort(entity, q.$sort);
+    const sort = this.sort(entity, q.$sort!);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
     if (hasKeys(where)) {
@@ -242,34 +242,35 @@ export class MongoDialect extends AbstractDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relKeys = filterRelationKeys(meta, q.$select);
+    const relKeys = filterRelationKeys(meta, q.$select!);
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
+      if (!relOpts) continue;
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
         // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
         continue;
       }
 
-      const relEntity = relOpts.entity();
+      const relEntity = relOpts.entity!();
       const relMeta = getMeta(relEntity);
 
       if (relOpts.cardinality === 'm1') {
-        const localField = meta.fields[relOpts.references[0].local];
+        const localField = meta.fields[relOpts.references![0].local];
         pipeline.push({
           $lookup: {
             from: this.resolveTableName(relEntity, relMeta),
-            localField: this.resolveColumnName(relOpts.references[0].local, localField),
+            localField: this.resolveColumnName(relOpts.references![0].local, localField!),
             foreignField: '_id',
             as: relKey,
           },
         });
       } else {
-        const foreignField = relMeta.fields[relOpts.references[0].foreign];
-        const foreignFieldName = this.resolveColumnName(relOpts.references[0].foreign, foreignField);
+        const foreignField = relMeta.fields[relOpts.references![0].foreign];
+        const foreignFieldName = this.resolveColumnName(relOpts.references![0].foreign, foreignField!);
         const referenceWhere = this.where(relEntity, where);
-        const referenceSort = this.sort(relEntity, q.$sort);
+        const referenceSort = this.sort(relEntity, q.$sort!);
         const _id = '_id';
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
           $match: { [foreignFieldName]: referenceWhere[_id] },
@@ -292,11 +293,11 @@ export class MongoDialect extends AbstractDialect {
     return pipeline;
   }
 
-  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[]): E[] {
-    return docs?.map((doc) => this.normalizeId(meta, doc));
+  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[] | undefined): E[] | undefined {
+    return docs?.map((doc) => this.normalizeId(meta, doc)) as E[] | undefined;
   }
 
-  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E): E {
+  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E | undefined): E | undefined {
     if (!doc) {
       return doc;
     }
@@ -313,9 +314,9 @@ export class MongoDialect extends AbstractDialect {
 
     for (const key of getKeys(meta.fields)) {
       const field = meta.fields[key];
-      const dbName = this.resolveColumnName(key, field);
+      const dbName = this.resolveColumnName(key, field!);
       if (dbName !== key && res[dbName] !== undefined) {
-        res[key as string] = res[dbName];
+        res[key] = res[dbName];
         delete res[dbName];
       }
     }
@@ -324,10 +325,11 @@ export class MongoDialect extends AbstractDialect {
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
-      const relMeta = getMeta(relOpts.entity());
-      res[relKey as string] = Array.isArray(res[relKey as string])
-        ? this.normalizeIds(relMeta, res[relKey as string] as Document[])
-        : this.normalizeId(relMeta, res[relKey as string] as Document);
+      if (!relOpts) continue;
+      const relMeta = getMeta(relOpts.entity!());
+      res[relKey] = Array.isArray(res[relKey])
+        ? this.normalizeIds(relMeta, res[relKey] as Document[])
+        : this.normalizeId(relMeta, res[relKey] as Document);
     }
 
     return res as unknown as E;
@@ -359,7 +361,7 @@ export class MongoDialect extends AbstractDialect {
       persistableKeys.reduce<Partial<E>>(
         (acc, key) => {
           const field = meta.fields[key];
-          (acc as any)[this.resolveColumnName(key, field)] = it[key];
+          (acc as Record<string, unknown>)[this.resolveColumnName(key, field!)] = it[key];
           return acc;
         },
         {} as Partial<E>,

@@ -280,7 +280,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectForeignKeys() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
-    expect(schema.foreignKeys.length).toBeGreaterThanOrEqual(1);
+    expect(schema.foreignKeys!.length).toBeGreaterThanOrEqual(1);
 
     const fk = this.getForeignKey(schema, 'a_id');
     expect(fk.referencedTable).toBe(INTROSPECT_TABLES.A);
@@ -439,7 +439,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectMultipleForeignKeysToSameTable() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.MULTI_FK);
 
-    expect(schema.foreignKeys.length).toBe(2);
+    expect(schema.foreignKeys!.length).toBe(2);
 
     const createdByFK = this.getForeignKey(schema, 'created_by');
     expect(createdByFK.referencedTable).toBe(INTROSPECT_TABLES.A);
@@ -463,7 +463,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_UNIQUE);
 
     // Find composite unique constraint - stored as unique index
-    const uniqueIndex = schema.indexes.find(
+    const uniqueIndex = schema.indexes!.find(
       (i) => i.unique && i.columns.includes('code') && i.columns.includes('region'),
     );
     this.assertDefined(uniqueIndex, 'Composite unique index on (code, region) not found');
@@ -487,7 +487,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.NO_FK);
 
     // Primary key index might still exist, but no user-defined indexes
-    const nonPkIndexes = schema.indexes.filter((i) => i.name !== 'PRIMARY');
+    const nonPkIndexes = schema.indexes!.filter((i) => i.name !== 'PRIMARY');
     expect(nonPkIndexes.filter((i) => i.name.includes(INTROSPECT_TABLES.NO_FK))).toEqual([]);
   }
 
@@ -585,13 +585,13 @@ export abstract class AbstractIntrospectorIt implements Spec {
   }
 
   protected getForeignKey(schema: TableSchema, columnName: string) {
-    const fk = schema.foreignKeys.find((f) => f.columns.includes(columnName));
+    const fk = schema.foreignKeys!.find((f) => f.columns.includes(columnName));
     this.assertDefined(fk, `Foreign key on ${columnName} not found in ${schema.name}`);
     return fk;
   }
 
   protected getIndex(schema: TableSchema, indexName: string) {
-    const index = schema.indexes.find((i) => i.name === indexName);
+    const index = schema.indexes!.find((i) => i.name === indexName);
     this.assertDefined(index, `Index ${indexName} not found in ${schema.name}`);
     return index;
   }

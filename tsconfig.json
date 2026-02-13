@@ -6,7 +6,7 @@
     "types": ["@types/bun"],
     "target": "ESNext",
     "strict": true,
-    "strictNullChecks": false,
+    "strictNullChecks": true,
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,

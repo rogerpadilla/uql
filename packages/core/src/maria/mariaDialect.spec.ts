@@ -2,7 +2,6 @@ import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
-import type { FieldKey } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends AbstractSqlDialectSpec {
@@ -74,7 +73,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   override shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id', 'something' as FieldKey<User>],
+        $select: ['id', 'something' as any],
         $where: {
           id: 1,
           something: 1,

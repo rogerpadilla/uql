@@ -20,7 +20,7 @@ export function Transactional({
 
     propDescriptor.value = async function func(this: object, ...args: any[]) {
       const params = [...args];
-      let isOwnTransaction: boolean;
+      let isOwnTransaction = false;
       let querier: Querier;
 
       if (params[injectedQuerierIndex]) {

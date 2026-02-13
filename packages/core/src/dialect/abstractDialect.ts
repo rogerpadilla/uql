@@ -20,16 +20,17 @@ export abstract class AbstractDialect {
    * Resolve the table name for an entity, applying naming strategy if necessary.
    */
   resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string {
-    if (meta.name !== entity.name || !this.namingStrategy) {
-      return meta.name;
+    const name = meta.name ?? entity.name;
+    if (name !== entity.name || !this.namingStrategy) {
+      return name;
     }
-    return this.namingStrategy.tableName(meta.name);
+    return this.namingStrategy.tableName(name);
   }
 
   /**
    * Resolve the column/field name for a property, applying naming strategy if necessary.
    */
-  resolveColumnName(key: string, field: FieldOptions): string {
+  resolveColumnName(key: string, field: FieldOptions | undefined): string {
     if (!field || field.name !== key || !this.namingStrategy) {
       return field?.name ?? key;
     }

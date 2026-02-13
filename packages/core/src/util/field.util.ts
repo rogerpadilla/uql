@@ -24,7 +24,7 @@ const JSON_COLUMN_TYPES = {
 /**
  * Checks if a field type is numeric (Number, BigInt, or explicit numeric logical types)
  */
-export function isNumericType(type: any): boolean {
+export function isNumericType(type: unknown): boolean {
   if (type === Number || type === BigInt) return true;
   if (typeof type === 'string') {
     return type.toLowerCase() in NUMERIC_COLUMN_TYPES;
@@ -35,7 +35,7 @@ export function isNumericType(type: any): boolean {
 /**
  * Checks if a field type is JSON
  */
-export function isJsonType(type: any): boolean {
+export function isJsonType(type: unknown): boolean {
   if (typeof type === 'string') {
     return type.toLowerCase() in JSON_COLUMN_TYPES;
   }

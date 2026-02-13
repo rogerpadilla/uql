@@ -23,5 +23,5 @@ export function getFieldKeys<E>(
     [K in FieldKey<E>]?: FieldOptions;
   },
 ): FieldKey<E>[] {
-  return getKeys(fields).filter((field) => fields[field].eager ?? true);
+  return getKeys(fields).filter((field) => fields[field]!.eager ?? true);
 }

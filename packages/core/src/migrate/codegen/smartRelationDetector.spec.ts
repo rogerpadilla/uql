@@ -84,8 +84,8 @@ describe('SmartRelationDetector', () => {
       ast.addRelationship({
         name: 'fk_posts_users',
         type: 'ManyToOne',
-        from: { table: postsTable, columns: [postsTable.columns.get('user_id')] },
-        to: { table: usersTable, columns: [usersTable.columns.get('id')] },
+        from: { table: postsTable, columns: [postsTable.columns.get('user_id')!] },
+        to: { table: usersTable, columns: [usersTable.columns.get('id')!] },
         onDelete: 'NO ACTION',
         onUpdate: 'NO ACTION',
         inferredFrom: 'explicit_fk',
@@ -114,8 +114,8 @@ describe('SmartRelationDetector', () => {
       ast.addRelationship({
         name: 'fk_pt_posts',
         type: 'ManyToOne',
-        from: { table: postTagsTable, columns: [postTagsTable.columns.get('post_id')] },
-        to: { table: postsTable, columns: [postsTable.columns.get('id')] },
+        from: { table: postTagsTable, columns: [postTagsTable.columns.get('post_id')!] },
+        to: { table: postsTable, columns: [postsTable.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -123,8 +123,8 @@ describe('SmartRelationDetector', () => {
       ast.addRelationship({
         name: 'fk_pt_tags',
         type: 'ManyToOne',
-        from: { table: postTagsTable, columns: [postTagsTable.columns.get('tag_id')] },
-        to: { table: tagsTable, columns: [tagsTable.columns.get('id')] },
+        from: { table: postTagsTable, columns: [postTagsTable.columns.get('tag_id')!] },
+        to: { table: tagsTable, columns: [tagsTable.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -150,8 +150,8 @@ describe('SmartRelationDetector', () => {
       ast.addRelationship({
         name: 'fk_profiles_users',
         type: 'ManyToOne',
-        from: { table: profilesTable, columns: [profilesTable.columns.get('user_id')] },
-        to: { table: usersTable, columns: [usersTable.columns.get('id')] },
+        from: { table: profilesTable, columns: [profilesTable.columns.get('user_id')!] },
+        to: { table: usersTable, columns: [usersTable.columns.get('id')!] },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });

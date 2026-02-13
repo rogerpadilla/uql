@@ -5,7 +5,7 @@ import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/ind
 import { MongoDialect } from './mongoDialect.js';
 
 class MongoDialectSpec implements Spec {
-  dialect: MongoDialect;
+  dialect!: MongoDialect;
 
   beforeEach() {
     this.dialect = new MongoDialect();

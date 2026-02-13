@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.9.2](https://github.com/rogerpadilla/uql/compare/@uql/core@3.9.1...@uql/core@3.9.2) (2026-02-13)
+## [3.9.3](https://github.com/rogerpadilla/uql/compare/@uql/core@3.9.2...@uql/core@3.9.3) (2026-02-13)
 
 **Note:** Version bump only for package @uql/core
 
@@ -16,6 +16,11 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.9.2] - 2026-02-13
+### Improvements & Refactoring
+- **Reduced Cognitive Complexity**: Extracted `compareLogicalOperator` from `AbstractSqlDialect.compare` and `countBraces` helper from `EntityMerger.findInsertPosition`, bringing both functions under the biome complexity threshold.
+- **Tighter Type Safety**: Replaced `any` with `unknown` across the logger interface, field utilities, and D1 bindings. Typed all DB querier constructors with `ExtraOptions` instead of `any`.
 
 ## [3.9.1] - 2026-02-13
 ### Improvements & Refactoring

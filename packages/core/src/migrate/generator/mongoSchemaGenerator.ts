@@ -16,7 +16,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
 
     for (const key of getKeys(meta.fields)) {
       const field = meta.fields[key];
-      if (field.index) {
+      if (field?.index) {
         const columnName = this.resolveColumnName(key, field);
         const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
         indexes.push({
@@ -197,7 +197,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
 
     for (const key of getKeys(meta.fields)) {
       const field = meta.fields[key];
-      if (field.index) {
+      if (field?.index) {
         const columnName = this.resolveColumnName(key, field);
         const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
         if (!existingIndexes.has(indexName)) {

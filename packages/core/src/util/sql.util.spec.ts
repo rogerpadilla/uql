@@ -4,8 +4,8 @@ import type { QuerySortMap } from '../type/index.js';
 import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
-  expect(flatObject(undefined)).toEqual({});
-  expect(flatObject(null)).toEqual({});
+  expect(flatObject(undefined as any)).toEqual({});
+  expect(flatObject(null as any)).toEqual({});
   expect(flatObject({})).toEqual({});
   const sort: QuerySortMap<Item> = {
     name: 1,
@@ -19,7 +19,7 @@ it('flatObject', () => {
 });
 
 it('unflatObjects - empty', () => {
-  const res1 = unflatObjects(undefined);
+  const res1 = unflatObjects(undefined as any);
   expect(res1).toBe(undefined);
   const res2 = unflatObjects([]);
   expect(res2).toEqual([]);
@@ -30,10 +30,10 @@ it('unflatObjects', () => {
     {
       id: 1,
       name: 'Auxiliar',
-      address: null,
-      description: null,
+      address: null as any,
+      description: null as any,
       createdAt: 1,
-      updatedAt: null,
+      updatedAt: null as any,
       creatorId: 1,
       companyId: 1,
     },
@@ -53,18 +53,18 @@ it('unflatObjects', () => {
     {
       id: 1,
       name: 'Auxiliar',
-      address: null,
-      description: null,
+      address: null as any,
+      description: null as any,
       createdAt: 1,
-      updatedAt: null,
+      updatedAt: null as any,
       creatorId: 1,
       companyId: 1,
     },
     {
       id: 2,
       name: 'Principal',
-      address: null,
-      description: null,
+      address: null as any,
+      description: null as any,
       createdAt: 1,
       updatedAt: 1578759519913,
       creatorId: 1,
@@ -101,9 +101,9 @@ it('unflatObjects deep', () => {
       'item.tax.category.description': 'Nacionales',
       'item.measureUnit.id': 1,
       'item.measureUnit.name': 'Unidad',
-      'item.creatorId': null as string,
-      'item.creator.id': null as string,
-      'item.creator.name': null as string,
+      'item.creatorId': null as unknown as string,
+      'item.creator.id': null as unknown as string,
+      'item.creator.name': null as unknown as string,
     },
     {
       id: 15,
@@ -175,7 +175,7 @@ it('unflatObjects deep', () => {
 });
 
 it('obtainAttrsPaths - empty', () => {
-  const res1 = obtainAttrsPaths(undefined);
+  const res1 = obtainAttrsPaths(undefined as any);
   expect(res1).toEqual({});
   const res2 = obtainAttrsPaths({});
   expect(res2).toEqual({});
@@ -204,7 +204,7 @@ it('escapeSqlId', () => {
   expect(escapeSqlId('table', '`', false, true)).toBe('`table`.');
   expect(escapeSqlId('schema.table', '`', false, true)).toBe('`schema`.`table`.');
   expect(escapeSqlId('')).toBe('');
-  expect(escapeSqlId(undefined)).toBe('');
+  expect(escapeSqlId(undefined as any)).toBe('');
 });
 
 it('obtainAttrsPaths - underscore', () => {

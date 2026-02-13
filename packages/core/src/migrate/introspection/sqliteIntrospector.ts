@@ -36,7 +36,11 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: SqliteCountRow[]): boolean {
-    return this.toNumber(results[0]?.count) > 0;
+    const row = results[0];
+    if (row?.count !== undefined) {
+      return (this.toNumber(row.count!) ?? 0) > 0;
+    }
+    return false;
   }
 
   // SQLite uses PRAGMA which doesn't use parameterized queries in the same way

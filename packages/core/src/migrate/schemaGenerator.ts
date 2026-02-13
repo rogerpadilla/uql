@@ -239,10 +239,10 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     if (reference) {
       const refEntity = reference();
       const refMeta = getMeta(refEntity);
-      const refIdField = refMeta.fields[refMeta.id];
+      const refIdField = refMeta.fields[refMeta.id!];
       return this.getSqlType(
-        { ...refIdField, references: undefined, reference: undefined, isId: undefined, autoIncrement: false },
-        refIdField.type,
+        { ...refIdField!, references: undefined, reference: undefined, isId: undefined, autoIncrement: false },
+        refIdField!.type,
       );
     }
 
@@ -355,15 +355,15 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
     for (const key of fieldKeys) {
       const field = meta.fields[key];
-      if (field?.virtual) continue;
+      if (!field || field.virtual) continue;
 
-      const columnName = this.resolveColumnName(key as string, field);
+      const columnName = this.resolveColumnName(key, field);
       const currentColumn = currentColumns.get(columnName);
 
       if (!currentColumn) {
-        columnsToAdd.push(this.fieldToColumnSchema(key as string, field, meta));
+        columnsToAdd.push(this.fieldToColumnSchema(key, field, meta));
       } else {
-        const desiredColumn = this.fieldToColumnSchema(key as string, field, meta);
+        const desiredColumn = this.fieldToColumnSchema(key, field, meta);
         const currentColumnSchema = this.columnNodeToSchema(currentColumn);
         if (this.columnsNeedAlteration(currentColumnSchema, desiredColumn)) {
           columnsToAlter.push({ from: currentColumnSchema, to: desiredColumn });

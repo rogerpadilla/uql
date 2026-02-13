@@ -37,7 +37,7 @@ export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackK
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
-        it[key] = getFieldCallbackValue(meta.fields[key][callbackKey]) as E[typeof key];
+        it[key] = getFieldCallbackValue(meta.fields[key]![callbackKey]!) as E[typeof key];
       }
     }
     return it;
@@ -63,24 +63,27 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
   return configuration === action;
 }
 
-export function filterRelationKeys<E>(meta: EntityMeta<E>, select: QuerySelect<E>): RelationKey<E>[] {
+export function filterRelationKeys<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): RelationKey<E>[] {
   const keys = filterPositiveKeys(select);
   return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
 }
 
-export function isSelectingRelations<E>(meta: EntityMeta<E>, select: QuerySelect<E>): boolean {
+export function isSelectingRelations<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): boolean {
   const keys = filterPositiveKeys(select);
   return keys.some((key) => key in meta.relations);
 }
 
-function filterPositiveKeys<E>(select: QuerySelect<E>): Key<E>[] {
+function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {
+  if (!select) {
+    return [];
+  }
   if (Array.isArray(select)) {
     return select as Key<E>[];
   }
   return getKeys(select).filter((key) => select[key]) as Key<E>[];
 }
 
-export function buildSortMap<E>(sort: QuerySort<E>): QuerySortMap<E> {
+export function buildSortMap<E>(sort: QuerySort<E> | undefined): QuerySortMap<E> {
   if (Array.isArray(sort)) {
     return sort.reduce(
       (acc, it) => {
@@ -116,7 +119,7 @@ export function buldQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E
   }
   if (isIdValue(filter)) {
     return {
-      [meta.id]: filter,
+      [meta.id!]: filter,
     } as QueryWhereMap<E>;
   }
   return filter as QueryWhereMap<E>;

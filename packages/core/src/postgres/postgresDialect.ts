@@ -55,10 +55,10 @@ export class PostgresDialect extends AbstractSqlDialect {
     if (key === '$text') {
       const meta = getMeta(entity);
       const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields
+      const fields = (search.$fields ?? [])
         .map((fKey) => {
           const field = meta.fields[fKey];
-          const columnName = this.resolveColumnName(fKey as string, field);
+          const columnName = this.resolveColumnName(fKey, field!);
           return this.escapeId(columnName);
         })
         .join(` || ' ' || `);
