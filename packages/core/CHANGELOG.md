@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.9.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.8.5...@uql/core@3.9.0) (2026-02-13)
+
+
+### Features
+
+* Introduce RPC-friendly query API with entity-as-field pattern and add new SQL comparison operators ($between, $isNull, $isNotNull). ([d5bbf01](https://github.com/rogerpadilla/uql/commit/d5bbf0108563ceca8cc33e7936494e93fe57ba9e))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
