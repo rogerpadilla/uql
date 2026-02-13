@@ -138,7 +138,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           autoPrefixAlias: opts.autoPrefixAlias,
         });
       } else {
-        const field = meta.fields[key as FieldKey<E>];
+        const field = meta.fields[key];
         const columnName = this.resolveColumnName(key, field);
         if (field.virtual) {
           this.getRawValue(ctx, {
@@ -200,8 +200,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
       const relEntity = relOpts.entity();
-      const relSelect = select[relKey as string];
-      const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
+      const relSelect = (select as Record<string, unknown>)[relKey as string];
+      const relQuery: Query<any> = isSelectArray
+        ? {}
+        : Array.isArray(relSelect)
+          ? { $select: relSelect }
+          : ((relSelect as Query<any>) ?? {});
 
       ctx.append(', ');
       this.selectFields(ctx, relEntity, relQuery.$select, {
@@ -242,14 +246,19 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? (relKey as string) : prefix ? prefix + '.' + relKey : (relKey as string);
       const relEntity = relOpts.entity();
-      const relSelect = select[relKey as string];
-      const relQuery = isSelectArray ? {} : Array.isArray(relSelect) ? { $select: relSelect } : relSelect;
+      const relSelect = (select as Record<string, unknown>)[relKey as string];
+      const relQuery: Query<any> = isSelectArray
+        ? {}
+        : Array.isArray(relSelect)
+          ? { $select: relSelect }
+          : ((relSelect as Query<any>) ?? {});
 
       const relMeta = getMeta(relEntity);
       const relTableName = this.resolveTableName(relEntity, relMeta);
       const relEntityName = this.escapeId(relTableName);
       const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(tableName);
-      const joinType = relQuery.$required ? 'INNER' : 'LEFT';
+      const required = '$required';
+      const joinType = (relQuery as Record<string, unknown>)[required] ? 'INNER' : 'LEFT';
       const joinAlias = this.escapeId(joinRelAlias, true);
 
       ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
@@ -281,8 +290,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     where = buldQueryWhereAsMap(meta, where);
 
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete as string]) {
-      where[meta.softDelete as string] = null;
+    if (meta.softDelete && (softDelete || softDelete === undefined) && !where[meta.softDelete]) {
+      where[meta.softDelete] = null;
     }
 
     const entries = Object.entries(where);
@@ -360,7 +369,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         $nor: '$or',
       } as const;
 
-      const op: '$and' | '$or' = negateOperatorMap[key as string] ?? key;
+      const op = (negateOperatorMap as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
       const negate = key in negateOperatorMap ? 'NOT' : '';
 
       const valArr = val as QueryWhereArray<E>;
@@ -385,7 +394,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         } else {
           this.where(ctx, entity, whereEntry, {
             prefix: opts.prefix,
-            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && getKeys(whereEntry).length > 1,
+            usePrecedence: hasManyItems && !Array.isArray(whereEntry) && Object.keys(whereEntry as object).length > 1,
             clause: false,
           });
         }
@@ -408,7 +417,14 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (index > 0) {
         ctx.append(' AND ');
       }
-      this.compareFieldOperator(ctx, entity, key as FieldKey<E>, op, value[op], opts);
+      this.compareFieldOperator(
+        ctx,
+        entity,
+        key as FieldKey<E>,
+        op,
+        (value as Record<string, unknown>)[op as string],
+        opts,
+      );
     });
 
     if (operators.length > 1) {
@@ -846,7 +862,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         valCtx.values.forEach((val) => {
           ctx.pushValue(val);
         });
-        acc[key as string] = valCtx.sql;
+        acc[key] = valCtx.sql;
         return acc;
       },
       {} as Record<string, unknown>,

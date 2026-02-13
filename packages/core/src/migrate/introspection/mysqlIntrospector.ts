@@ -37,7 +37,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
-    return this.toNumber(results[0]?.count) > 0;
+    // biome-ignore lint/complexity/useLiteralKeys: bracket access required by noPropertyAccessFromIndexSignature
+    return this.toNumber(results[0]?.['count']) > 0;
   }
 
   protected getColumnsQuery(_tableName: string): string {
@@ -109,41 +110,41 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   // ============================================================================
-  // Row Mapping (dialect-specific)
+  // Internal Types
   // ============================================================================
 
-  protected mapTableNameRow(row: Record<string, unknown>): string {
-    return row.table_name as string;
+  protected mapTableNameRow(row: { table_name: string }): string {
+    return row.table_name;
   }
 
   protected async mapColumnsResult(
     _querier: SqlQuerier,
     _tableName: string,
-    results: Record<string, unknown>[],
+    results: MysqlColumnRow[],
   ): Promise<ColumnSchema[]> {
     return results.map((row) => ({
-      name: row.column_name as string,
-      type: ((row.column_type as string) || '').toUpperCase(),
+      name: row.column_name,
+      type: (row.column_type || '').toUpperCase(),
       nullable: row.is_nullable === 'YES',
-      defaultValue: this.parseDefaultValue(row.column_default as string | null),
+      defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.column_key === 'PRI',
-      isAutoIncrement: ((row.extra as string) || '').toLowerCase().includes('auto_increment'),
+      isAutoIncrement: (row.extra || '').toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
-      length: this.toNumber(row.character_maximum_length as number | bigint | null),
-      precision: this.toNumber(row.numeric_precision as number | bigint | null),
-      scale: this.toNumber(row.numeric_scale as number | bigint | null),
-      comment: (row.column_comment as string) || undefined,
+      length: this.toNumber(row.character_maximum_length),
+      precision: this.toNumber(row.numeric_precision),
+      scale: this.toNumber(row.numeric_scale),
+      comment: row.column_comment || undefined,
     }));
   }
 
   protected async mapIndexesResult(
     _querier: SqlQuerier,
     _tableName: string,
-    results: Record<string, unknown>[],
+    results: { index_name: string; columns: string; is_unique: number }[],
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
-      name: row.index_name as string,
-      columns: ((row.columns as string) || '').split(','),
+      name: row.index_name,
+      columns: (row.columns || '').split(','),
       unique: Boolean(row.is_unique),
     }));
   }
@@ -151,39 +152,42 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapForeignKeysResult(
     _querier: SqlQuerier,
     _tableName: string,
-    results: Record<string, unknown>[],
+    results: {
+      constraint_name: string;
+      columns: string;
+      referenced_table: string;
+      referenced_columns: string;
+      delete_rule: string;
+      update_rule: string;
+    }[],
   ): Promise<ForeignKeySchema[]> {
     return results.map((row) => ({
-      name: row.constraint_name as string,
-      columns: ((row.columns as string) || '').split(','),
-      referencedTable: row.referenced_table as string,
-      referencedColumns: ((row.referenced_columns as string) || '').split(','),
-      onDelete: this.normalizeReferentialAction(row.delete_rule as string),
-      onUpdate: this.normalizeReferentialAction(row.update_rule as string),
+      name: row.constraint_name,
+      columns: (row.columns || '').split(','),
+      referencedTable: row.referenced_table,
+      referencedColumns: (row.referenced_columns || '').split(','),
+      onDelete: this.normalizeReferentialAction(row.delete_rule),
+      onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));
   }
 
-  protected mapPrimaryKeyResult(results: Record<string, unknown>[]): string[] | undefined {
+  protected mapPrimaryKeyResult(results: { column_name: string }[]): string[] | undefined {
     if (results.length === 0) {
       return undefined;
     }
-    return results.map((r) => r.column_name as string);
+    return results.map((r) => r.column_name);
   }
 
   protected parseDefaultValue(defaultValue: string | null): unknown {
     if (defaultValue === null) {
       return undefined;
     }
-
-    if (defaultValue === 'NULL') {
+    const normalized = defaultValue.toUpperCase();
+    if (normalized === 'NULL') {
       return null;
     }
-    // Normalize timestamp defaults (MariaDB uses current_timestamp(), MySQL uses CURRENT_TIMESTAMP)
-    if (defaultValue.toLowerCase() === 'current_timestamp' || defaultValue.toLowerCase() === 'current_timestamp()') {
+    if (normalized === 'CURRENT_TIMESTAMP' || normalized === 'CURRENT_TIMESTAMP()') {
       return 'CURRENT_TIMESTAMP';
-    }
-    if (/^'.*'$/.test(defaultValue)) {
-      return defaultValue.slice(1, -1);
     }
     if (/^-?\d+$/.test(defaultValue)) {
       return Number.parseInt(defaultValue, 10);
@@ -192,9 +196,26 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       return Number.parseFloat(defaultValue);
     }
 
+    if (defaultValue?.startsWith("'") && defaultValue?.endsWith("'")) {
+      return defaultValue.slice(1, -1);
+    }
+
     return defaultValue;
   }
 }
+
+type MysqlColumnRow = {
+  column_name: string;
+  column_type: string;
+  is_nullable: string;
+  column_default: string | null;
+  column_key: string;
+  extra: string;
+  character_maximum_length: number | bigint | null;
+  numeric_precision: number | bigint | null;
+  numeric_scale: number | null;
+  column_comment: string | null;
+};
 
 /**
  * Alias for MysqlSchemaIntrospector.

@@ -13,9 +13,10 @@ import type {
 } from '../../type/index.js';
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
-const holder = globalThis;
+const holder = globalThis as Record<string, unknown>;
 const metaKey = '@uql/core/entity/decorator';
-const metas: Map<Type<unknown>, EntityMeta<any>> = holder[metaKey] ?? new Map();
+const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
+new Map();
 holder[metaKey] = metas;
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
@@ -24,7 +25,8 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
     const type = inferType(entity, key);
     opts = { ...opts, type };
   }
-  meta.fields[key] = { ...meta.fields[key], ...{ name: key, ...opts } };
+  const fieldKey = key as FieldKey<E>;
+  meta.fields[fieldKey] = { ...meta.fields[fieldKey], ...{ name: key, ...opts } };
   return meta;
 }
 
@@ -44,7 +46,8 @@ export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOp
     opts.entity = () => inferredType;
   }
   const meta = ensureMeta(entity);
-  meta.relations[key] = { ...meta.relations[key], ...opts };
+  const relKey = key as RelationKey<E>;
+  meta.relations[relKey] = { ...meta.relations[relKey], ...opts };
   return meta;
 }
 
@@ -119,7 +122,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const relKey in meta.relations) {
-    const relOpts = meta.relations[relKey as RelationKey<E>];
+    const relOpts = meta.relations[relKey];
 
     if (relOpts.references) {
       // references were manually specified
@@ -160,12 +163,12 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const relMeta = getMeta(relEntity);
   relOpts.mappedBy = getMappedByRelationKey(relOpts);
 
-  if (relMeta.fields[relOpts.mappedBy as FieldKey<E>]) {
+  if (relMeta.fields[relOpts.mappedBy]) {
     relOpts.references = [{ local: relMeta.id, foreign: relOpts.mappedBy }];
     return;
   }
 
-  const mappedByRelation = relMeta.relations[relOpts.mappedBy as RelationKey<E>];
+  const mappedByRelation = relMeta.relations[relOpts.mappedBy];
 
   if (relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm') {
     relOpts.references = mappedByRelation.references.slice().reverse();
@@ -181,22 +184,25 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
 
 function fillThroughRelations<E>(entity: Type<E>): void {
   const meta = ensureMeta(entity);
-  meta.relations = getKeys(meta.fields).reduce((relations, key) => {
-    const field = meta.fields[key as FieldKey<E>];
-    const reference = field.references ?? field.reference;
-    if (reference) {
-      const relEntity = reference();
-      const relMeta = ensureMeta(relEntity);
-      const relKey = key.slice(0, -relMeta.id.length);
-      const relOpts: RelationOptions = {
-        entity: reference,
-        cardinality: 'm1',
-        references: [{ local: key, foreign: relMeta.id }],
-      };
-      relations[relKey] = relOpts;
-    }
-    return relations;
-  }, {});
+  meta.relations = getKeys(meta.fields).reduce<EntityMeta<E>['relations']>(
+    (relations, key) => {
+      const field = meta.fields[key];
+      const reference = field.references ?? field.reference;
+      if (reference) {
+        const relEntity = reference();
+        const relMeta = ensureMeta(relEntity);
+        const relKey = key.slice(0, -relMeta.id.length);
+        const relOpts: RelationOptions = {
+          entity: reference,
+          cardinality: 'm1',
+          references: [{ local: key, foreign: relMeta.id }],
+        };
+        (relations as Record<string, RelationOptions>)[relKey] = relOpts;
+      }
+      return relations;
+    },
+    {} as EntityMeta<E>['relations'],
+  );
 }
 
 function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
@@ -210,15 +216,14 @@ function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
 }
 
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
-  return getKeys(meta.fields)
-    .concat(getKeys(meta.relations))
-    .reduce(
-      (acc, key) => {
-        acc[key] = key;
-        return acc;
-      },
-      {} as RelationKeyMap<E>,
-    );
+  const keys = [...getKeys(meta.fields), ...getKeys(meta.relations)];
+  return keys.reduce(
+    (acc, key) => {
+      (acc as Record<string, string>)[key] = key;
+      return acc;
+    },
+    {} as RelationKeyMap<E>,
+  );
 }
 
 function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {

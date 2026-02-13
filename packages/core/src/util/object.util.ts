@@ -10,12 +10,12 @@ export function clone<T>(value: T): T {
   return { ...value };
 }
 
-export function hasKeys<T>(obj: T): boolean {
-  return getKeys(obj).length > 0;
+export function hasKeys(obj: unknown): boolean {
+  return typeof obj === 'object' && obj !== null ? Object.keys(obj).length > 0 : false;
 }
 
-export function getKeys<T>(obj: T): string[] {
-  return obj ? Object.keys(obj) : [];
+export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
+  return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }
 
 export function getFieldKeys<E>(
@@ -23,5 +23,5 @@ export function getFieldKeys<E>(
     [K in FieldKey<E>]?: FieldOptions;
   },
 ): FieldKey<E>[] {
-  return getKeys(fields).filter((field) => fields[field as FieldKey<E>].eager ?? true) as FieldKey<E>[];
+  return getKeys(fields).filter((field) => fields[field].eager ?? true);
 }

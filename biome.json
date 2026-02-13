@@ -86,6 +86,7 @@
         "useSemanticElements": "off"
       },
       "complexity": {
+        "useLiteralKeys": "error",
         "noExcessiveCognitiveComplexity": {
           "level": "error",
           "options": {

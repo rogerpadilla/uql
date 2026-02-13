@@ -110,6 +110,22 @@ describe('PostgresSchemaIntrospector', () => {
     expect(schema.primaryKey).toEqual(['id']);
   });
 
+  it('getTableSchema should handle table with no primary key', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('EXISTS')) {
+        return Promise.resolve([{ exists: true }]);
+      }
+      if (sql.includes('information_schema.columns')) {
+        return Promise.resolve([{ column_name: 'name', data_type: 'text', udt_name: 'text', is_nullable: 'YES' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('no_pk');
+
+    expect(schema.primaryKey).toBeUndefined();
+  });
+
   it('getTableSchema should return undefined for non-existent table', async () => {
     mockAll.mockResolvedValueOnce([{ exists: false }]);
 

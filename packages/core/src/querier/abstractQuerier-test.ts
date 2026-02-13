@@ -12,7 +12,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { Querier, QuerierPool } from '../type/index.js';
+import type { Querier, QuerierPool, Type } from '../type/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier: Q;
@@ -570,7 +570,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async clearTables() {
     const entities = getEntities();
-    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {})));
+    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity as Type<object>, {})));
   }
 
   abstract createTables(): Promise<void>;

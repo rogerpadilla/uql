@@ -238,7 +238,8 @@ describe('SchemaASTBuilder', () => {
         @Id() id?: number;
       }
       const meta = getMeta(BadIndex);
-      (meta.fields as Record<string, any>).no_col = { index: true, name: 'no_col', virtual: true }; // Inject a field that wasn't properly added
+      const noCol = 'no_col';
+      (meta.fields as Record<string, any>)[noCol] = { index: true, name: noCol, virtual: true }; // Inject a field that wasn't properly added
 
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([BadIndex]);

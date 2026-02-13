@@ -43,7 +43,7 @@ export class MongodbQuerier extends AbstractQuerier {
       documents = await this.execute((session) =>
         this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
       );
-      documents = this.dialect.normalizeIds(meta, documents) as E[];
+      documents = this.dialect.normalizeIds(meta, documents);
       await this.fillToManyRelations(entity, documents, q.$select);
     } else {
       const cursor = this.collection(entity).find<E>({}, { session: this.session });
@@ -67,8 +67,8 @@ export class MongodbQuerier extends AbstractQuerier {
         cursor.limit(q.$limit);
       }
 
-      documents = await this.execute(() => cursor.toArray() as Promise<E[]>);
-      documents = this.dialect.normalizeIds(meta, documents) as E[];
+      documents = await this.execute(() => cursor.toArray());
+      documents = this.dialect.normalizeIds(meta, documents);
     }
 
     return documents;
@@ -99,7 +99,7 @@ export class MongodbQuerier extends AbstractQuerier {
       this.collection(entity).insertMany(persistables, { session }),
     );
 
-    const ids = Object.values(insertedIds) as unknown as IdValue<E>[];
+    const ids = Object.values(insertedIds) as IdValue<E>[];
 
     for (const [index, it] of payloads.entries()) {
       it[meta.id] = ids[index];
@@ -116,7 +116,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where);
-    const update = { $set: persistable } satisfies UpdateFilter<E>;
+    const update: UpdateFilter<E> = { $set: persistable };
 
     const { matchedCount } = await this.execute((session) =>
       this.collection(entity).updateMany(where, update, {
@@ -134,19 +134,16 @@ export class MongodbQuerier extends AbstractQuerier {
     payload = clone(payload);
 
     const meta = getMeta(entity);
-    const persistable = this.dialect.getPersistable(meta, payload, 'onInsert') as OptionalUnlessRequiredId<E>;
+    const persistable = this.dialect.getPersistable(meta, payload, 'onInsert');
 
-    const where = getKeys(conflictPaths).reduce(
-      (acc, key) => {
-        acc[key] = payload[key];
-        return acc;
-      },
-      {} as QueryWhere<E>,
-    );
+    const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = payload[key];
+      return acc;
+    }, {}) as QueryWhere<E>;
 
     const filter = this.dialect.where(entity, where);
 
-    const update = { $set: persistable } as UpdateFilter<E>;
+    const update: UpdateFilter<E> = { $set: persistable };
 
     const res = await this.execute((session) =>
       this.collection(entity).findOneAndUpdate(filter, update, {

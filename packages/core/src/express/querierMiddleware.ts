@@ -29,7 +29,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}): Router {
   return router;
 }
 
-export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Router {
+export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: ExtraOptions): Router {
   const meta = getMeta(entity);
   const router = expressRouter();
 
@@ -59,7 +59,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Rout
   router.get(
     '/:id',
     withQuerier(async (req, res, querier) => {
-      const id = req.params.id as unknown as IdValue<E>;
+      const params = req.params as { id: string };
+      const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
       q.$where ??= {};
@@ -99,7 +100,8 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Rout
     '/:id',
     withTransaction(async (req, res, querier) => {
       const payload = req.body as E;
-      const id = req.params.id as unknown as IdValue<E>;
+      const params = req.params as { id: string };
+      const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
       q.$where ??= {};
@@ -111,14 +113,15 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Rout
       }
 
       const count = await querier.updateMany(entity, q, payload);
-      res.json({ data: req.params.id, count });
+      res.json({ data: params.id, count });
     }),
   );
 
   router.delete(
     '/:id',
     withTransaction(async (req, res, querier) => {
-      const id = req.params.id as unknown as IdValue<E>;
+      const params = req.params as { id: string };
+      const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
       q.$where ??= {};
@@ -132,7 +135,7 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Rout
       const count = await querier.deleteMany(entity, q, {
         softDelete: !!req.query.softDelete,
       });
-      res.json({ data: req.params.id, count });
+      res.json({ data: params.id, count });
     }),
   );
 
@@ -144,10 +147,14 @@ export function buildQuerierRouter<E>(entity: Type<E>, opts: ExtraOptions): Rout
       let ids: IdValue<E>[] = [];
       let count = 0;
       if (founds.length) {
-        ids = founds.map((found) => found[meta.id as keyof E] as unknown as IdValue<E>);
-        count = await querier.deleteMany(entity, { $where: ids } as Query<E>, {
-          softDelete: !!req.query.softDelete,
-        });
+        ids = founds.map((found) => found[meta.id]);
+        count = await querier.deleteMany(
+          entity,
+          { $where: ids },
+          {
+            softDelete: !!req.query.softDelete,
+          },
+        );
       }
       res.json({ data: ids, count });
     }),
@@ -204,6 +211,8 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
   });
 }
 
+type Pre = (req: Request, meta: EntityMeta<any>) => void;
+
 type ExtraOptions = {
   /**
    * Allow augment any kind of request before it runs
@@ -218,8 +227,6 @@ type ExtraOptions = {
    */
   readonly preFilter?: Pre;
 };
-
-type Pre = (req: Request, meta: EntityMeta<any>) => void;
 
 export type MiddlewareOptions = ExtraOptions & {
   include?: Type<any>[];

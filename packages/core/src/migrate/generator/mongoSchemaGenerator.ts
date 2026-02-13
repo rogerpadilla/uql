@@ -2,6 +2,7 @@ import { AbstractDialect } from '../../dialect/index.js';
 import { getMeta } from '../../entity/index.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
 import type { IndexSchema, NamingStrategy, SchemaDiff, SchemaGenerator, Type } from '../../type/index.js';
+import { getKeys } from '../../util/index.js';
 import type { TableDefinition } from '../builder/types.js';
 
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
@@ -13,7 +14,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     const collectionName = this.resolveTableName(entity, meta);
     const indexes: IndexSchema[] = [];
 
-    for (const key in meta.fields) {
+    for (const key of getKeys(meta.fields)) {
       const field = meta.fields[key];
       if (field.index) {
         const columnName = this.resolveColumnName(key, field);
@@ -194,7 +195,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     const indexesToAdd: IndexSchema[] = [];
     const existingIndexes = new Set(currentTable.indexes?.map((i) => i.name) ?? []);
 
-    for (const key in meta.fields) {
+    for (const key of getKeys(meta.fields)) {
       const field = meta.fields[key];
       if (field.index) {
         const columnName = this.resolveColumnName(key, field);
