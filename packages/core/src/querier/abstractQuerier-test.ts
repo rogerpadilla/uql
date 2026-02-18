@@ -615,6 +615,21 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.deleteMany(User, { $where: { companyId: null } as any })).resolves.toBe(3);
   }
 
+  async shouldSoftDelete() {
+    const id = await this.querier.insertOne(MeasureUnit, { name: 'To be soft deleted' });
+    const changes = await this.querier.deleteOneById(MeasureUnit, id);
+    expect(changes).toBe(1);
+
+    const found = await this.querier.findOneById(MeasureUnit, id);
+    expect(found).toBeUndefined();
+
+    const foundWithSoftDeleted = await this.querier.findOneById(MeasureUnit, id, {
+      $where: { deletedAt: { $ne: null } } as any,
+    });
+    expect(foundWithSoftDeleted).toBeDefined();
+    expect(foundWithSoftDeleted!.name).toBe('To be soft deleted');
+  }
+
   async clearTables() {
     const entities = getEntities();
     await Promise.all(entities.map((entity) => this.querier.deleteMany(entity as Type<object>, {})));
