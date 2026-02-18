@@ -144,7 +144,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     );
   }
 
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void {
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
     const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);

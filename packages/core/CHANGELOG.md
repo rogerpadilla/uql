@@ -1,21 +1,24 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.9.3](https://github.com/rogerpadilla/uql/compare/@uql/core@3.9.2...@uql/core@3.9.3) (2026-02-13)
-
-**Note:** Version bump only for package @uql/core
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.10.0] - 2026-02-18
+### New Features
+- **Bulk Upsert**: Added `upsertMany` operation to the `Querier` and `UniversalQuerier` interfaces, enabling efficient bulk insert-or-update across all supported databases.
+  - **SQL** (PostgreSQL, MySQL, MariaDB, SQLite): Uses a single `INSERT ... ON CONFLICT/ON DUPLICATE KEY UPDATE` statement with array payloads.
+  - **MongoDB**: Uses `bulkWrite` with `updateOne` + `upsert: true` operations.
+  - `upsertOne` now delegates to `upsertMany` in SQL dialects for DRY internals; MongoDB retains independent `findOneAndUpdate` for optimal single-document behavior.
+
+### Test Coverage
+- **Branch coverage improved from ~88% to 90%** with targeted tests across `schemaAST`, `entityMerger`, `driftDetector`, `canonicalType`, and `tableBuilder`.
+
+### Dependencies
+- `@biomejs/biome` 2.3.15 → 2.4.2
+- `rimraf` 6.1.2 → 6.1.3
+- `mariadb` 3.4.5 → 3.5.1
+- `mysql2` 3.17.1 → 3.17.2
 
 ## [3.9.2] - 2026-02-13
 ### Improvements & Refactoring

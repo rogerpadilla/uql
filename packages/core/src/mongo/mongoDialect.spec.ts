@@ -245,6 +245,47 @@ class MongoDialectSpec implements Spec {
         },
       },
     ]);
+
+    // Test referenceSort branch for 11 relation with $sort
+    expect(
+      this.dialect.aggregationPipeline(User, {
+        $select: { profile: true },
+        $where: { id: '65496146f8f7899f63768df1' as any },
+        $sort: { name: 1 },
+        $limit: 1,
+      }),
+    ).toEqual([
+      {
+        $match: {
+          _id: new ObjectId('65496146f8f7899f63768df1'),
+        },
+        $sort: {
+          name: 1,
+        },
+      },
+      {
+        $lookup: {
+          from: 'user_profile',
+          pipeline: [
+            {
+              $match: {
+                creatorId: new ObjectId('65496146f8f7899f63768df1'),
+              },
+              $sort: {
+                name: 1,
+              },
+            },
+          ],
+          as: 'profile',
+        },
+      },
+      {
+        $unwind: {
+          path: '$profile',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+    ]);
   }
 
   // New operator tests
@@ -307,6 +348,35 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.where(Item, { name: { $like: '%test%' } })).toEqual({
       name: { $regex: '.*test.*' },
     });
+    // Case-insensitive operators
+    expect(this.dialect.where(Item, { name: { $istartsWith: 'abc' } })).toEqual({
+      name: { $regex: '^abc', $options: 'i' },
+    });
+    expect(this.dialect.where(Item, { name: { $iendsWith: 'xyz' } })).toEqual({
+      name: { $regex: 'xyz$', $options: 'i' },
+    });
+    expect(this.dialect.where(Item, { name: { $iincludes: 'test' } })).toEqual({
+      name: { $regex: 'test', $options: 'i' },
+    });
+    expect(this.dialect.where(Item, { name: { $icontains: 'data' } })).toEqual({
+      name: { $regex: 'data', $options: 'i' },
+    });
+    expect(this.dialect.where(Item, { name: { $contains: 'val' } })).toEqual({
+      name: { $regex: 'val' },
+    });
+    expect(this.dialect.where(Item, { name: { $ilike: '%test%' } })).toEqual({
+      name: { $regex: '.*test.*', $options: 'i' },
+    });
+  }
+
+  shouldTransformTextOperator() {
+    expect(this.dialect.where(Item, { name: { $text: 'search' } } as any)).toEqual({
+      name: { $text: { $search: 'search' } },
+    });
+  }
+
+  shouldMapTableNameRow() {
+    expect((this.dialect as any).mapTableNameRow({ table_name: 'users' })).toBe('users');
   }
 }
 

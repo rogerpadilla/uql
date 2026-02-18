@@ -403,6 +403,44 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  async shouldUpsertManyEmpty() {
+    const result = await this.querier.upsertMany(TaxCategory, { pk: true }, []);
+    expect(result.changes).toBe(0);
+  }
+
+  async shouldUpsertMany() {
+    const pk1 = '507f1f77bcf86cd799439021';
+    const pk2 = '507f1f77bcf86cd799439022';
+
+    // Verify records don't exist
+    const existing1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
+    const existing2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    expect(existing1).toBeUndefined();
+    expect(existing2).toBeUndefined();
+
+    // Insert via upsertMany
+    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+      { pk: pk1, name: 'Upsert A' },
+      { pk: pk2, name: 'Upsert B' },
+    ]);
+
+    const inserted1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
+    const inserted2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    expect(inserted1).toMatchObject({ name: 'Upsert A' });
+    expect(inserted2).toMatchObject({ name: 'Upsert B' });
+
+    // Update via upsertMany (same keys, different names)
+    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+      { pk: pk1, name: 'Updated A' },
+      { pk: pk2, name: 'Updated B' },
+    ]);
+
+    const updated1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
+    const updated2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    expect(updated1).toMatchObject({ name: 'Updated A' });
+    expect(updated2).toMatchObject({ name: 'Updated B' });
+  }
+
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 

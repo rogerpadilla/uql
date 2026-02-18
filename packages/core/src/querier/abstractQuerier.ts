@@ -160,6 +160,12 @@ export abstract class AbstractQuerier implements Querier {
     payload: E,
   ): Promise<QueryUpdateResult>;
 
+  abstract upsertMany<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E[],
+  ): Promise<QueryUpdateResult>;
+
   deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
     return this.deleteMany(entity, { $where: id }, opts);
   }

@@ -481,7 +481,7 @@ export interface QueryDialect {
    * @param conflictPaths the conflict paths
    * @param payload
    */
-  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void;
+  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void;
 
   /**
    * delete records.

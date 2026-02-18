@@ -23,6 +23,7 @@ class MockQuerier extends AbstractQuerier {
   override insertMany(): any {}
   override updateMany(): any {}
   override upsertOne(): any {}
+  override upsertMany(): any {}
   protected override internalDeleteMany(): any {}
   override beginTransaction(): any {}
   override commitTransaction(): any {}

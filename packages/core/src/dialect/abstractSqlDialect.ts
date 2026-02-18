@@ -795,7 +795,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     this.search(ctx, entity, q, opts);
   }
 
-  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): void {
+  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
     const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `VALUES(${name})`);
 
@@ -816,10 +816,11 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx: QueryContext,
     meta: EntityMeta<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E,
+    payload: E | E[],
     callback?: (columnName: string) => string,
   ): string {
-    const [filledPayload] = fillOnFields(meta, payload, 'onUpdate');
+    const sample = Array.isArray(payload) ? payload[0] : payload;
+    const [filledPayload] = fillOnFields(meta, sample, 'onUpdate');
     const fields = filterFieldKeys(meta, filledPayload, 'onUpdate');
     return fields
       .filter((col) => !conflictPaths[col])

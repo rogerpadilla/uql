@@ -173,6 +173,124 @@ export class Post {
       const result = merger.merge(existingCode, [{ column: col, propertyName: 'fullName' }]);
       expect(result.code).toContain('fullName?: string;');
     });
+
+    it('should skip deprecation when markRemovedAsDeprecated is false', () => {
+      const merger = new EntityMerger({ markRemovedAsDeprecated: false });
+      const existingCode = `
+@Entity()
+export class User {
+  @Field()
+  oldField?: string;
+}
+`;
+      const result = merger.merge(existingCode, [], [{ propertyName: 'oldField', reason: 'Removed' }]);
+
+      expect(result.fieldsDeprecated).toBe(0);
+      expect(result.code).not.toContain('@deprecated');
+    });
+
+    it('should not duplicate deprecated annotation', () => {
+      const merger = new EntityMerger({ markRemovedAsDeprecated: true });
+      const existingCode = `
+@Entity()
+export class User {
+  /**
+   * @deprecated Already gone
+   */
+  @Field()
+  oldField?: string;
+}
+`;
+      const result = merger.merge(existingCode, [], [{ propertyName: 'oldField', reason: 'Removed again' }]);
+
+      expect(result.fieldsDeprecated).toBe(0);
+    });
+
+    it('should omit sync comments when addSyncComments is false', () => {
+      const merger = new EntityMerger({ addSyncComments: false });
+      const existingCode = `@Entity() export class User { @Id() id?: number; }`;
+      const col = mockColumn('email', 'string', { nullable: true });
+
+      const result = merger.merge(existingCode, [{ column: col, propertyName: 'email' }]);
+      expect(result.code).not.toContain('@sync-added');
+      expect(result.code).toContain('email?: string;');
+    });
+
+    it('should add ManyToMany relation field', () => {
+      const merger = new EntityMerger();
+      const existingCode = `@Entity() export class User { @Id() id?: number; }`;
+      const userTable: TableNode = { name: 'users', columns: new Map(), primaryKey: [] } as any;
+      const roleTable: TableNode = { name: 'roles', columns: new Map(), primaryKey: [] } as any;
+
+      const rel = {
+        name: 'fk_user_roles',
+        type: 'ManyToMany',
+        from: { table: userTable, columns: [mockColumn('role_id')] },
+        to: { table: roleTable, columns: [mockColumn('id')] },
+      } as any;
+
+      const col = mockColumn('role_id');
+      const result = merger.merge(existingCode, [
+        { column: col, propertyName: 'roles', isRelation: true, relation: rel },
+      ]);
+
+      expect(result.code).toContain('@ManyToMany({ entity: () => Role })');
+      expect(result.code).toContain('roles?: Relation<Role[]>;');
+    });
+
+    it('should add inverse OneToMany→ManyToOne relation', () => {
+      const merger = new EntityMerger();
+      const existingCode = `@Entity() export class Post { @Id() id?: number; }`;
+      const postTable: TableNode = { name: 'posts', columns: new Map(), primaryKey: [] } as any;
+      const commentTable: TableNode = { name: 'comments', columns: new Map(), primaryKey: [] } as any;
+
+      const rel = {
+        name: 'fk_comments_post',
+        type: 'OneToMany',
+        from: { table: commentTable, columns: [mockColumn('post_id')] },
+        to: { table: postTable, columns: [mockColumn('id')] },
+      } as any;
+
+      // Inverse: column is in 'to' table → not outgoing
+      const col = mockColumn('id');
+      const result = merger.merge(existingCode, [
+        { column: col, propertyName: 'comments', isRelation: true, relation: rel },
+      ]);
+
+      expect(result.code).toContain('@ManyToOne({ entity: () => Comment })');
+    });
+
+    it('should format type with size', () => {
+      const merger = new EntityMerger();
+      const existingCode = `@Entity() export class T { @Id() id?: number; }`;
+      const col = mockColumn('data', 'integer', {
+        type: { category: 'integer', size: 'big' } as any,
+      });
+
+      const result = merger.merge(existingCode, [{ column: col, propertyName: 'data' }]);
+      expect(result.code).toContain('BIGINTEGER');
+    });
+
+    it('should handle field with precision only', () => {
+      const merger = new EntityMerger();
+      const existingCode = `@Entity() export class T { @Id() id?: number; }`;
+      const col = mockColumn('amount', 'decimal', {
+        type: { category: 'decimal', precision: 8 } as any,
+      });
+
+      const result = merger.merge(existingCode, [{ column: col, propertyName: 'amount' }]);
+      expect(result.code).toContain('precision: 8');
+      expect(result.code).not.toContain('scale');
+    });
+
+    it('should handle field nullable option', () => {
+      const merger = new EntityMerger();
+      const existingCode = `@Entity() export class T { @Id() id?: number; }`;
+      const col = mockColumn('status', 'string', { nullable: true });
+
+      const result = merger.merge(existingCode, [{ column: col, propertyName: 'status' }]);
+      expect(result.code).toContain('nullable: true');
+    });
   });
 
   describe('createEntityMerger', () => {

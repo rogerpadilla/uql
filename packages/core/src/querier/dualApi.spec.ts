@@ -33,6 +33,10 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve({ firstId: null, changes: 0 });
   }
 
+  override upsertMany(): any {
+    return Promise.resolve({ changes: 0 });
+  }
+
   protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: any): Promise<number> {
     this.deleteManyMock(entity, q, opts);
     return Promise.resolve(0);
