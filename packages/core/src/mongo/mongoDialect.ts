@@ -163,14 +163,12 @@ export class MongoDialect extends AbstractDialect {
           result[$options] = 'i';
           break;
         }
-        case '$includes':
-        case '$contains': {
+        case '$includes': {
           const $regex = '$regex';
           result[$regex] = val;
           break;
         }
-        case '$iincludes':
-        case '$icontains': {
+        case '$iincludes': {
           const $regex = '$regex';
           const $options = '$options';
           result[$regex] = val;

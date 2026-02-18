@@ -1,4 +1,5 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { expect } from 'vitest';
 import { getEntities, getMeta } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
 import { createSpec } from '../test/index.js';
@@ -48,6 +49,30 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async dropTables() {
     await this.querier.conn.db().dropDatabase();
+  }
+
+  override async shouldSoftDelete() {
+    return super.shouldSoftDelete();
+  }
+
+  async shouldThrowOnDoubleBeginTransaction() {
+    await this.querier.beginTransaction();
+    await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
+    await this.querier.rollbackTransaction();
+  }
+
+  async shouldThrowOnCommitWithoutBeginTransaction() {
+    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldThrowOnRollbackWithoutBeginTransaction() {
+    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
+  }
+
+  async shouldThrowOnReleaseWithPendingTransaction() {
+    await this.querier.beginTransaction();
+    await expect(this.querier.release()).rejects.toThrow('pending transaction');
+    await this.querier.rollbackTransaction();
   }
 }
 

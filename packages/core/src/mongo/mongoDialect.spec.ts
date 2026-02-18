@@ -358,10 +358,10 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.where(Item, { name: { $iincludes: 'test' } })).toEqual({
       name: { $regex: 'test', $options: 'i' },
     });
-    expect(this.dialect.where(Item, { name: { $icontains: 'data' } })).toEqual({
+    expect(this.dialect.where(Item, { name: { $iincludes: 'data' } })).toEqual({
       name: { $regex: 'data', $options: 'i' },
     });
-    expect(this.dialect.where(Item, { name: { $contains: 'val' } })).toEqual({
+    expect(this.dialect.where(Item, { name: { $includes: 'val' } })).toEqual({
       name: { $regex: 'val' },
     });
     expect(this.dialect.where(Item, { name: { $ilike: '%test%' } })).toEqual({
