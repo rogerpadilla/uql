@@ -32,6 +32,27 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['a', 'Some Name D', 1, 1]);
   }
 
+  override shouldUpsertMany() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, User, { email: true }, [
+        {
+          name: 'Name A',
+          email: 'a@example.com',
+          createdAt: 100,
+        },
+        {
+          name: 'Name B',
+          email: 'b@example.com',
+          createdAt: 200,
+        },
+      ]),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET/,
+    );
+    expect(values).toHaveLength(8);
+  }
+
   shouldUpsertWithDifferentColumnNames() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(

@@ -79,6 +79,12 @@ export interface Querier extends UniversalQuerier {
     payload: E,
   ): Promise<QueryUpdateResult>;
 
+  upsertMany<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E[],
+  ): Promise<QueryUpdateResult>;
+
   saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
   saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;

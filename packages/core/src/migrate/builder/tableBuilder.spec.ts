@@ -336,4 +336,34 @@ describe('TableBuilder', () => {
       expect(def.comment).toBe('User accounts table');
     });
   });
+
+  describe('edge cases', () => {
+    it('should auto-generate index name for table-level index()', () => {
+      const table = new TableBuilder('users');
+      table.index(['email']);
+      const def = table.build();
+
+      expect(def.indexes[0].name).toBe('idx_users_email');
+      expect(def.indexes[0].unique).toBe(false);
+    });
+
+    it('should skip FK builder when references not called', () => {
+      const table = new TableBuilder('posts');
+      table.integer('authorId');
+      table.foreignKey(['authorId']); // no .references() call
+      const def = table.build();
+
+      expect(def.foreignKeys.length).toBe(0);
+    });
+
+    it('should skip duplicate column-level index if table-level index exists', () => {
+      const table = new TableBuilder('users');
+      table.string('email').index('idx_users_email');
+      table.index(['email'], 'idx_users_email'); // same name as column-level
+      const def = table.build();
+
+      // Should not duplicate the index
+      expect(def.indexes.filter((i) => i.name === 'idx_users_email').length).toBe(1);
+    });
+  });
 });

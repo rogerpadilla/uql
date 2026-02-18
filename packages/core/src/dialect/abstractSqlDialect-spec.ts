@@ -180,6 +180,25 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }
 
+  shouldUpsertMany() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, User, { email: true }, [
+        {
+          name: 'Name A',
+          email: 'a@example.com',
+          createdAt: 100,
+        },
+        {
+          name: 'Name B',
+          email: 'b@example.com',
+          createdAt: 200,
+        },
+      ]),
+    );
+    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
+    expect(values).toHaveLength(8);
+  }
+
   shouldUpdate() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(

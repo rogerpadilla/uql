@@ -93,6 +93,15 @@ export interface UniversalQuerier {
   upsertOne?<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<unknown>;
 
   /**
+   * Insert or update many records given a search criteria.
+   * @param entity the entity to persist on
+   * @param conflictPaths the keys to use for the unique search
+   * @param payload the data to be persisted
+   * @return void
+   */
+  upsertMany?<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]): Promise<unknown>;
+
+  /**
    * insert or update a record.
    * @param entity the entity to persist on
    * @param payload the data to be persisted

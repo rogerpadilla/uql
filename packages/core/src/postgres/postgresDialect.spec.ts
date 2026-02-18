@@ -114,6 +114,27 @@ class PostgresDialectSpec {
     expect(values).toEqual([1, 'Some Name', 123, expect.any(Number)]);
   }
 
+  shouldUpsertMany() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, User, { id: true }, [
+        {
+          id: 1,
+          name: 'Name A',
+          createdAt: 100,
+        },
+        {
+          id: 2,
+          name: 'Name B',
+          createdAt: 200,
+        },
+      ]),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO "User" .*VALUES \(\$1, \$2, \$3, \$4\), \(\$5, \$6, \$7, \$8\) ON CONFLICT \("id"\) DO UPDATE SET.*RETURNING/,
+    );
+    expect(values).toHaveLength(8);
+  }
+
   shouldUpsertWithDifferentColumnNames() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(

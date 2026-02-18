@@ -35,12 +35,36 @@ describe('SchemaAST', () => {
       expect(ast.relationships.length).toBe(0);
     });
 
+    it('should remove tables and their indexes', () => {
+      const users = createTable('users');
+      ast.addTable(users);
+
+      const idx: IndexNode = {
+        name: 'idx_users_email',
+        table: users,
+        columns: [],
+        unique: false,
+      };
+      ast.addIndex(idx);
+
+      expect(ast.indexes.length).toBe(1);
+
+      ast.removeTable('users');
+
+      expect(ast.getTable('users')).toBeUndefined();
+      expect(ast.indexes.length).toBe(0);
+    });
+
     it('should return undefined for non-existent table', () => {
       expect(ast.getTable('nonexistent')).toBeUndefined();
     });
 
     it('should return false when removing non-existent table', () => {
       expect(ast.removeTable('nonexistent')).toBe(false);
+    });
+
+    it('should return empty indexes for non-existent table', () => {
+      expect(ast.getTableIndexes('nonexistent')).toEqual([]);
     });
   });
 
@@ -269,6 +293,32 @@ describe('SchemaAST', () => {
       ast.addRelationship(createRelationship('fk_role', userRoles, roles));
 
       expect(ast.isJunctionTable(userRoles)).toBe(false);
+    });
+
+    it('should detect junction table with ≤5 columns even if name does not match', () => {
+      const users = createTable('users');
+      const roles = createTable('roles');
+      const assignments = createTable('assignments', 4); // name doesn't contain 'users' or 'roles'
+      ast.addTable(users);
+      ast.addTable(roles);
+      ast.addTable(assignments);
+
+      ast.addRelationship(createRelationship('fk_user', assignments, users));
+      ast.addRelationship(createRelationship('fk_role', assignments, roles));
+
+      // columnCount ≤ 5, so still detected as junction
+      expect(ast.isJunctionTable(assignments)).toBe(true);
+    });
+
+    it('should not detect junction table with only 1 FK', () => {
+      const users = createTable('users');
+      const posts = createTable('posts', 3);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship(createRelationship('fk_user', posts, users));
+
+      expect(ast.isJunctionTable(posts)).toBe(false);
     });
   });
 

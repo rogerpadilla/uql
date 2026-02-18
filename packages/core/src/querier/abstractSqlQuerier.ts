@@ -108,6 +108,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   override async upsertOne<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+    return this.upsertMany(entity, conflictPaths, [payload]);
+  }
+
+  override async upsertMany<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]) {
+    if (!payload?.length) {
+      return { changes: 0 };
+    }
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.upsert(ctx, entity, conflictPaths, payload);

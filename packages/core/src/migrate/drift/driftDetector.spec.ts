@@ -395,5 +395,62 @@ describe('DriftDetector', () => {
       const report = detectDrift(expected, actual, { checkIndexes: false });
       expect(report.drifts.some((d) => d.type === 'missing_index')).toBe(false);
     });
+
+    it('should respect checkForeignKeys: false', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      const t1 = createTable('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]);
+      expected.addTable(t1);
+      expected.addRelationship({
+        name: 'fk_1',
+        from: { table: t1, columns: [t1.columns.get('role_id')!] },
+        to: { table: t1, columns: [t1.columns.get('id')!] },
+      } as any);
+
+      actual.addTable(createTable('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]));
+
+      const report = detectDrift(expected, actual, { checkForeignKeys: false });
+      expect(report.drifts.some((d) => d.type === 'missing_relationship')).toBe(false);
+    });
+
+    it('should respect checkNullable: false', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+
+      expected.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'email', type: { category: 'string' }, nullable: false },
+        ]),
+      );
+      actual.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'email', type: { category: 'string' }, nullable: true },
+        ]),
+      );
+
+      const report = detectDrift(expected, actual, { checkNullable: false, checkTypes: false });
+      expect(report.drifts.some((d) => d.type === 'constraint_mismatch')).toBe(false);
+      expect(report.status).toBe('in_sync');
+    });
+
+    it('should return drifted status for non-critical drifts', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+
+      const t1 = createTable('users', [{ name: 'id', isPrimaryKey: true }]);
+      expected.addTable(t1);
+      const t2 = createTable('users', [
+        { name: 'id', isPrimaryKey: true },
+        { name: 'extra', type: { category: 'string' } },
+      ]);
+      actual.addTable(t2);
+
+      // No type check, no nullable check — only warning-level unexpected column
+      const report = detectDrift(expected, actual, { checkTypes: false });
+      expect(report.status).toBe('drifted');
+      expect(report.summary.warning).toBeGreaterThan(0);
+    });
   });
 });

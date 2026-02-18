@@ -258,4 +258,39 @@ describe('canonicalType', () => {
       expect(canonicalToColumnType({ category: 'vector' })).toBe('vector');
     });
   });
+
+  describe('canonicalToSql edge cases', () => {
+    it('should format string for mongodb dialect', () => {
+      expect(canonicalToSql({ category: 'string', length: 100 }, 'mongodb')).toBe('VARCHAR(100)');
+      expect(canonicalToSql({ category: 'string' }, 'mongodb')).toBe('VARCHAR(255)');
+    });
+
+    it('should format string with size variants for mysql', () => {
+      expect(canonicalToSql({ category: 'string', size: 'tiny' }, 'mysql')).toBe('TINYTEXT');
+      expect(canonicalToSql({ category: 'string', size: 'small' }, 'mysql')).toBe('TEXT');
+      expect(canonicalToSql({ category: 'string', size: 'medium' }, 'mysql')).toBe('MEDIUMTEXT');
+      expect(canonicalToSql({ category: 'string', size: 'big' }, 'mysql')).toBe('LONGTEXT');
+    });
+
+    it('should format string for sqlite', () => {
+      expect(canonicalToSql({ category: 'string', length: 100 }, 'sqlite')).toBe('TEXT');
+    });
+
+    it('should format string without length for postgres', () => {
+      expect(canonicalToSql({ category: 'string' }, 'postgres')).toBe('TEXT');
+    });
+
+    it('should format decimal without precision for postgres', () => {
+      expect(canonicalToSql({ category: 'decimal' }, 'postgres')).toBe('NUMERIC');
+    });
+
+    it('should format decimal with precision only', () => {
+      expect(canonicalToSql({ category: 'decimal', precision: 8 }, 'postgres')).toBe('NUMERIC(8)');
+    });
+
+    it('should format integer with size for mysql', () => {
+      expect(canonicalToSql({ category: 'integer', size: 'tiny' }, 'mysql')).toBe('TINYINT');
+      expect(canonicalToSql({ category: 'integer', size: 'medium' }, 'mysql')).toBe('MEDIUMINT');
+    });
+  });
 });

@@ -158,6 +158,43 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
+  override async upsertMany<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]) {
+    if (!payload?.length) {
+      return { changes: 0 };
+    }
+
+    payload = clone(payload);
+
+    const meta = getMeta(entity);
+
+    const operations = payload.map((item) => {
+      const persistable = this.dialect.getPersistable(meta, item, 'onInsert');
+
+      const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = item[key];
+        return acc;
+      }, {}) as QueryWhere<E>;
+
+      const filter = this.dialect.where(entity, where);
+      const update: UpdateFilter<E> = { $set: persistable };
+
+      return {
+        updateOne: {
+          filter,
+          update,
+          upsert: true,
+        },
+      };
+    });
+
+    const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
+
+    const changes = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
+
+    return { changes };
+  }
+
+  @Log()
   protected override async internalDeleteMany<E extends Document>(
     entity: Type<E>,
     qm: QuerySearch<E>,
