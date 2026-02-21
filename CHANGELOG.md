@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.11.0] - 2026-02-21
+### New Features
+- **Scoped Querier**: Added `pool.withQuerier(callback)` — the non-transactional counterpart to `pool.transaction()`. Acquires a querier, runs the callback, and guarantees release via `try/finally`. Useful for scoping connection lifetime without transaction overhead.
+
+  ```ts
+  const users = await pool.withQuerier(async (querier) => {
+    return querier.findMany(User, { $limit: 10 });
+  });
+  // querier is automatically released here
+  ```
+
 ## [3.10.0] - 2026-02-18
 ### New Features
 - **Bulk Upsert**: Added `upsertMany` operation to the `Querier` and `UniversalQuerier` interfaces, enabling efficient bulk insert-or-update across all supported databases.

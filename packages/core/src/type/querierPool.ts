@@ -25,6 +25,11 @@ export type QuerierPool<Q extends Querier = Querier> = {
   transaction<T>(callback: (querier: Q) => Promise<T>): Promise<T>;
 
   /**
+   * get a querier from the pool, run the given callback, and release the querier.
+   */
+  withQuerier<T>(callback: (querier: Q) => Promise<T>): Promise<T>;
+
+  /**
    * end the pool.
    */
   end(): Promise<void>;
