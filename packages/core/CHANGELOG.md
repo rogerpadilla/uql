@@ -1,8 +1,35 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.11.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.10.0...@uql/core@3.11.0) (2026-02-21)
+
+
+### Features
+
+* add new feat 'withQuerier' to simplify get querier and auto release. ([eded8c0](https://github.com/rogerpadilla/uql/commit/eded8c0c412245d686178ed7caad4b8b082513ad))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.11.0] - 2026-02-21
+### New Features
+- **Scoped Querier**: Added `pool.withQuerier(callback)` — the non-transactional counterpart to `pool.transaction()`. Acquires a querier, runs the callback, and guarantees release via `try/finally`. Useful for scoping connection lifetime without transaction overhead.
+
+  ```ts
+  const users = await pool.withQuerier(async (querier) => {
+    return querier.findMany(User, { $limit: 10 });
+  });
+  // querier is automatically released here
+  ```
 
 ## [3.10.0] - 2026-02-18
 ### New Features
