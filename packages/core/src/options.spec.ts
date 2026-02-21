@@ -19,6 +19,7 @@ describe('options', () => {
       end: async () => {},
       dialect: 'postgres',
       transaction: async (cb) => cb(querierMock),
+      withQuerier: async (cb) => cb(querierMock),
     });
 
     const querier1 = await getQuerierPool().getQuerier();

@@ -20,6 +20,18 @@ export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierP
   }
 
   /**
+   * get a querier from the pool, run the given callback, and release the querier.
+   */
+  async withQuerier<T>(callback: (querier: Q) => Promise<T>): Promise<T> {
+    const querier = await this.getQuerier();
+    try {
+      return await callback(querier);
+    } finally {
+      await querier.release();
+    }
+  }
+
+  /**
    * end the pool.
    */
   abstract end(): Promise<void>;

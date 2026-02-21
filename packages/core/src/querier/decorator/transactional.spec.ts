@@ -16,6 +16,7 @@ describe('transactional', () => {
       end: async () => undefined,
       dialect: 'postgres',
       transaction: async (cb) => cb(querierSingleton),
+      withQuerier: async (cb) => cb(querierSingleton),
     });
 
     anotherQuerierPool = {
@@ -23,6 +24,7 @@ describe('transactional', () => {
       end: async () => undefined,
       dialect: 'postgres',
       transaction: async (cb) => cb(anotherQuerierSingleton),
+      withQuerier: async (cb) => cb(anotherQuerierSingleton),
     };
   });
 
