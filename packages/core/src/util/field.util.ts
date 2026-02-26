@@ -2,6 +2,8 @@ import type { FieldOptions, JsonColumnType, NumericColumnType } from '../type/in
 
 const NUMERIC_COLUMN_TYPES = {
   int: true,
+  integer: true,
+  tinyint: true,
   smallint: true,
   bigint: true,
   float: true,
@@ -13,6 +15,7 @@ const NUMERIC_COLUMN_TYPES = {
   numeric: true,
   real: true,
   serial: true,
+  smallserial: true,
   bigserial: true,
 } as const satisfies Record<NumericColumnType, true>;
 
@@ -50,7 +53,7 @@ export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boo
   if (field.autoIncrement) return true;
 
   const colType = field.columnType?.toLowerCase();
-  if (colType === 'serial' || colType === 'bigserial') return true;
+  if (colType === 'serial' || colType === 'smallserial' || colType === 'bigserial') return true;
 
   const isNumeric = isNumericType(field.type);
   return isPrimaryKey && isNumeric && !field.onInsert && !field.columnType;

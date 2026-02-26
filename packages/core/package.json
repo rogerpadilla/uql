@@ -3,8 +3,9 @@
   "homepage": "https://uql.app",
   "description": "One Language. Frontend to Backend.",
   "license": "MIT",
-  "version": "3.11.0",
+  "version": "3.11.1",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
@@ -42,7 +43,6 @@
     "README.md",
     "CHANGELOG.md"
   ],
-  "sideEffects": false,
   "scripts": {
     "copyfiles": "copyfiles -f ../../README.md ../../CHANGELOG.md .",
     "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js",
@@ -106,8 +106,8 @@
     "express": "^5.2.1",
     "mariadb": "^3.5.1",
     "mongodb": "^7.1.0",
-    "mysql2": "^3.17.4",
-    "pg": "^8.18.0"
+    "mysql2": "^3.18.2",
+    "pg": "^8.19.0"
   },
   "author": "Roger Padilla",
   "repository": {

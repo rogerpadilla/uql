@@ -66,6 +66,8 @@ export type EntityOptions = {
  */
 export type NumericColumnType =
   | 'int'
+  | 'integer'
+  | 'tinyint'
   | 'smallint'
   | 'bigint'
   | 'float'
@@ -77,6 +79,7 @@ export type NumericColumnType =
   | 'numeric'
   | 'real'
   | 'serial'
+  | 'smallserial'
   | 'bigserial';
 
 /**
@@ -87,7 +90,7 @@ export type StringColumnType = 'char' | 'varchar' | 'text' | 'uuid';
 /**
  * SQL date/time column types
  */
-export type DateColumnType = 'date' | 'time' | 'timestamp' | 'timestamptz';
+export type DateColumnType = 'date' | 'time' | 'datetime' | 'timestamp' | 'timestamptz';
 
 /**
  * SQL JSON column types
@@ -108,6 +111,7 @@ export type ColumnType =
   | DateColumnType
   | JsonColumnType
   | BlobColumnType
+  | 'bool'
   | 'boolean'
   | 'vector';
 
