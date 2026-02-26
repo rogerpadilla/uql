@@ -12,7 +12,21 @@ describe('isNumericType', () => {
   });
 
   it('should return true for numeric string types', () => {
-    const numericTypes = ['int', 'bigint', 'smallint', 'decimal', 'numeric', 'float', 'real', 'double'];
+    const numericTypes = [
+      'int',
+      'integer',
+      'tinyint',
+      'bigint',
+      'smallint',
+      'decimal',
+      'numeric',
+      'float',
+      'real',
+      'double',
+      'serial',
+      'smallserial',
+      'bigserial',
+    ];
     for (const type of numericTypes) {
       expect(isNumericType(type)).toBe(true);
     }
@@ -44,6 +58,13 @@ describe('isAutoIncrement', () => {
     const field: FieldOptions = { type: Number };
     expect(isAutoIncrement(field, true)).toBe(true);
     expect(isAutoIncrement({ type: 'int' }, true)).toBe(true);
+    expect(isAutoIncrement({ type: 'integer' }, true)).toBe(true);
+  });
+
+  it('should return true for serial/smallserial columnType', () => {
+    expect(isAutoIncrement({ columnType: 'serial' }, false)).toBe(true);
+    expect(isAutoIncrement({ columnType: 'bigserial' }, false)).toBe(true);
+    expect(isAutoIncrement({ columnType: 'smallserial' }, false)).toBe(true);
   });
 
   it('should return false given a non-primary key', () => {

@@ -18,6 +18,7 @@ describe('canonicalType', () => {
       expect(sqlToCanonical('BIGINT')).toEqual({ category: 'integer', size: 'big' });
       expect(sqlToCanonical('smallint')).toEqual({ category: 'integer', size: 'small' });
       expect(sqlToCanonical('tinyint')).toEqual({ category: 'integer', size: 'tiny' });
+      expect(sqlToCanonical('smallserial')).toEqual({ category: 'integer', size: 'small' });
     });
 
     it('should parse string types with length', () => {
@@ -47,6 +48,7 @@ describe('canonicalType', () => {
       expect(sqlToCanonical('TIME')).toEqual({ category: 'time' });
       expect(sqlToCanonical('TIMESTAMP')).toEqual({ category: 'timestamp' });
       expect(sqlToCanonical('timestamptz')).toEqual({ category: 'timestamp', withTimezone: true });
+      expect(sqlToCanonical('datetime')).toEqual({ category: 'timestamp' });
     });
 
     it('should parse JSON types', () => {
@@ -141,6 +143,22 @@ describe('canonicalType', () => {
     it('should detect decimal from precision/scale', () => {
       const result = fieldOptionsToCanonical({ type: Number, precision: 10, scale: 2 });
       expect(result.category).toBe('decimal');
+    });
+
+    it('should handle new type aliases via type', () => {
+      expect(fieldOptionsToCanonical({ type: 'integer' }).category).toBe('integer');
+      expect(fieldOptionsToCanonical({ type: 'tinyint' })).toEqual({ category: 'integer', size: 'tiny' });
+      expect(fieldOptionsToCanonical({ type: 'bool' }).category).toBe('boolean');
+      expect(fieldOptionsToCanonical({ type: 'datetime' }).category).toBe('timestamp');
+      expect(fieldOptionsToCanonical({ type: 'smallserial' })).toEqual({ category: 'integer', size: 'small' });
+    });
+
+    it('should handle new type aliases via columnType', () => {
+      expect(fieldOptionsToCanonical({ columnType: 'integer' }).category).toBe('integer');
+      expect(fieldOptionsToCanonical({ columnType: 'tinyint' })).toEqual({ category: 'integer', size: 'tiny' });
+      expect(fieldOptionsToCanonical({ columnType: 'bool' }).category).toBe('boolean');
+      expect(fieldOptionsToCanonical({ columnType: 'datetime' }).category).toBe('timestamp');
+      expect(fieldOptionsToCanonical({ columnType: 'smallserial' })).toEqual({ category: 'integer', size: 'small' });
     });
 
     it('should default to string', () => {

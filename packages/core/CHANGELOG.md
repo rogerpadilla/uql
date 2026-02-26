@@ -3,12 +3,9 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-# [3.11.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.10.0...@uql/core@3.11.0) (2026-02-21)
+## [3.11.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.11.0...@uql/core@3.11.1) (2026-02-26)
 
-
-### Features
-
-* add new feat 'withQuerier' to simplify get querier and auto release. ([eded8c0](https://github.com/rogerpadilla/uql/commit/eded8c0c412245d686178ed7caad4b8b082513ad))
+**Note:** Version bump only for package @uql/core
 
 
 
@@ -19,6 +16,11 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.11.1] - 2026-02-26
+### Improvements
+- **Expanded ColumnType Aliases**: Added `integer`, `tinyint`, `bool`, `datetime`, and `smallserial` as first-class `ColumnType` values (aliases for `int`, `boolean`, `timestamp`, `smallserial`, and `serial` respectively). Users can now use standard SQL keywords interchangeably (e.g., `integer` or `int`, `bool` or `boolean`, `datetime` or `timestamp`).
+- **Auto-Increment Fix**: `smallserial` columns are now correctly detected as auto-incrementing, consistent with `serial` and `bigserial`.
 
 ## [3.11.0] - 2026-02-21
 ### New Features

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.11.1] - 2026-02-26
+### Improvements
+- **Expanded ColumnType Aliases**: Added `integer`, `tinyint`, `bool`, `datetime`, and `smallserial` as first-class `ColumnType` values (aliases for `int`, `boolean`, `timestamp`, `smallserial`, and `serial` respectively). Users can now use standard SQL keywords interchangeably (e.g., `integer` or `int`, `bool` or `boolean`, `datetime` or `timestamp`).
+- **Auto-Increment Fix**: `smallserial` columns are now correctly detected as auto-incrementing, consistent with `serial` and `bigserial`.
+
 ## [3.11.0] - 2026-02-21
 ### New Features
 - **Scoped Querier**: Added `pool.withQuerier(callback)` — the non-transactional counterpart to `pool.transaction()`. Acquires a querier, runs the callback, and guarantees release via `try/finally`. Useful for scoping connection lifetime without transaction overhead.
