@@ -572,7 +572,7 @@ class PostgresDialectSpec {
         $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("elem->>'status' <> $1");
+    expect(res.sql).toContain("elem->>'status' IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -640,7 +640,7 @@ class PostgresDialectSpec {
         $where: { 'kind.private': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') <> $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') IS DISTINCT FROM $1');
     expect(values).toEqual([0]);
   }
 

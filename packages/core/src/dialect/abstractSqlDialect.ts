@@ -347,13 +347,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
   }
 
-  compare<E, K extends keyof QueryWhereMap<E>>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    key: K,
-    val: QueryWhereMap<E>[K],
-    opts: QueryComparisonOptions = {},
-  ): void {
+  compare<E>(ctx: QueryContext, entity: Type<E>, key: string, val: unknown, opts: QueryComparisonOptions = {}): void {
     const meta = getMeta(entity);
 
     if (val instanceof QueryRaw) {
@@ -657,9 +651,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const jsonField = config.fieldAccessor(jsonPath);
     switch (op) {
       case '$eq':
-        return `${jsonField} = ${config.addValue(ctx, value)}`;
+        return value === null ? `${jsonField} IS NULL` : `${jsonField} = ${config.addValue(ctx, value)}`;
       case '$ne':
-        return `${jsonField} <> ${config.addValue(ctx, value)}`;
+        if (value === null) return `${jsonField} IS NOT NULL`;
+        return config.neExpr
+          ? config.neExpr(jsonField, config.addValue(ctx, value))
+          : `${jsonField} <> ${config.addValue(ctx, value)}`;
       case '$gt':
         return `${config.numericCast(jsonField)} > ${config.addValue(ctx, value)}`;
       case '$gte':
@@ -1135,4 +1132,6 @@ export type JsonFieldConfig = {
   inExpr?: (field: string, placeholder: string) => string;
   /** Optional: custom $nin expression (e.g. Postgres `<> ALL()`). If omitted, uses `NOT IN (v1, v2, ...)` */
   ninExpr?: (field: string, placeholder: string) => string;
+  /** Optional: null-safe `$ne` (e.g. Postgres `IS DISTINCT FROM`, SQLite `IS NOT`). If omitted, uses `<>` */
+  neExpr?: (field: string, placeholder: string) => string;
 };

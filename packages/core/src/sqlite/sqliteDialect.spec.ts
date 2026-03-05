@@ -284,7 +284,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(value, '$.a') <> ?");
+    expect(res.sql).toContain("json_extract(value, '$.a') IS NOT ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.d') AS REAL) <= ?");
@@ -342,7 +342,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') <> ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') IS NOT ?");
     expect(values).toEqual([0]);
   }
 

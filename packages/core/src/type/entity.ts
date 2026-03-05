@@ -26,12 +26,26 @@ export type RelationKey<E> = {
 }[Key<E>];
 
 /**
- * Derives valid dot-notation paths from `Json<T>` fields for autocompletion.
- * For `kind?: Json<{ public: number }>`, this produces `'kind.public'`.
+ * Recursively derives dot-notation key paths from an object type, up to 5 levels deep.
+ * Uses `Scalar` exclusion instead of `Record<string, unknown>` guard because TS object
+ * types without an index signature (e.g. `{ public?: 0 | 1 }`) don't extend `Record`.
+ */
+type DeepJsonKeys<T, D extends unknown[] = []> = D['length'] extends 5
+  ? never
+  : {
+      [K in keyof T & string]:
+        | K
+        | (NonNullable<T[K]> extends Scalar ? never : `${K}.${DeepJsonKeys<NonNullable<T[K]>, [...D, unknown]>}`);
+    }[keyof T & string];
+
+/**
+ * Derives valid dot-notation paths from `Json<T>` fields (up to 5 levels deep).
+ * For `kind?: Json<{ public: number; theme: { color: string } }>`,
+ * this produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
  */
 export type JsonFieldPaths<E> = {
   readonly [K in FieldKey<E>]: NonNullable<E[K]> extends Json
-    ? `${K & string}.${string & Exclude<keyof NonNullable<E[K]>, '__json'>}`
+    ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<E[K]>>, '__json'>}`
     : never;
 }[FieldKey<E>];
 
