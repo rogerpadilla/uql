@@ -98,11 +98,12 @@ export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<
  * complex operators, JSONB dot-path access, and relation filtering.
  */
 export type QueryWhereMap<E> = QueryWhereFieldMap<E> &
-  QueryWhereRootOperator<E> & /** Typed JSONB dot-notation paths derived from `Json<T>` fields — provides IDE autocompletion. */
-  {
+  QueryWhereRootOperator<E> /** Typed JSONB dot-notation paths derived from `Json<T>` fields — provides IDE autocompletion. */ & {
     [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<unknown>;
-  } & /** Open-ended string keys for deep dot-paths and relation filtering. */
-  Record<string, QueryWhereFieldValue<unknown> | Record<string, unknown> | undefined>;
+  } /** Open-ended string keys for deep dot-paths and relation filtering. */ & Record<
+    string,
+    QueryWhereFieldValue<unknown> | Record<string, unknown> | undefined
+  >;
 
 export type QueryWhereRootOperator<E> = {
   /**

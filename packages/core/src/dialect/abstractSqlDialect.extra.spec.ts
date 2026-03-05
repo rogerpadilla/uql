@@ -410,7 +410,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('relation with missing references throws TypeError', () => {
       const meta = getMeta(Item);
-      const tagRelation = meta.relations['tags'];
+      const tagRelation = meta.relations.tags;
       if (!tagRelation) throw new Error('Test setup: tags relation must exist');
       const originalRefs = tagRelation.references;
       tagRelation.references = undefined;
