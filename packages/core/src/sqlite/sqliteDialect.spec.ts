@@ -1,6 +1,16 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
-import { Company, createSpec, InventoryAdjustment, Item, ItemTag, Profile, TaxCategory, User } from '../test/index.js';
+import {
+  Company,
+  createSpec,
+  InventoryAdjustment,
+  Item,
+  ItemTag,
+  MeasureUnitCategory,
+  Profile,
+  TaxCategory,
+  User,
+} from '../test/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
@@ -311,6 +321,91 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toContain("json_extract(value, '$.code') REGEXP ?");
+  }
+
+  // ─── JSONB dot-notation (SQLite-specific json_extract syntax) ──────
+  shouldFindByJsonDotNotation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': 1 } as any,
+      }),
+    );
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') = ?");
+    expect(values).toEqual([1]);
+  }
+
+  shouldFindByJsonDotNotationWithOperator() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': { $ne: 0 } } as any,
+      }),
+    );
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') <> ?");
+    expect(values).toEqual([0]);
+  }
+
+  shouldFindByJsonDotNotationWithNumericCast() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': { $gt: 0 } } as any,
+      }),
+    );
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) > ?");
+    expect(values).toEqual([0]);
+  }
+
+  shouldFindByJsonDotNotationDeepPath() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.theme.color': 'red' } as any,
+      }),
+    );
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.theme.color') = ?");
+    expect(values).toEqual(['red']);
+  }
+
+  shouldFindByJsonDotNotationWithIlike() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': { $ilike: '%active%' } } as any,
+      }),
+    );
+    // SQLite uses LOWER(...) LIKE for ILIKE
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE LOWER(json_extract(`kind`, '$.public')) LIKE ?");
+    expect(values).toEqual(['%active%']);
+  }
+
+  // ─── Relation filtering (SQLite-specific) ──────────────────────────
+  shouldFindByManyToManyRelation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: ['id'],
+        $where: { tags: { id: 5 } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`id` = ?))',
+    );
+    expect(values).toEqual([5]);
+  }
+
+  shouldFindByOneToManyRelation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: ['id'],
+        $where: { measureUnits: { name: 'kg' } } as any,
+      }),
+    );
+    // MeasureUnitCategory has softDelete → parent query adds AND `deletedAt` IS NULL
+    expect(sql).toBe(
+      'SELECT `id` FROM `MeasureUnitCategory` WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ?) AND `deletedAt` IS NULL',
+    );
+    expect(values).toEqual(['kg']);
   }
 }
 

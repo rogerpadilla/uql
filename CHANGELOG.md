@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.12.0] - 2026-03-05
+### New Features
+- **JSONB Dot-Notation Operators**: Filter by nested JSON field paths directly in `$where` with full operator support (`$eq`, `$ne`, `$gt`, `$lt`, `$like`, `$ilike`, `$in`, `$nin`, `$regex`, etc.). Works across PostgreSQL, MySQL, and SQLite.
+  ```ts
+  await querier.findMany(User, {
+    $where: { 'settings.isArchived': { $ne: true } },
+  });
+  ```
+- **Relation Filtering**: Filter by ManyToMany and OneToMany relations using automatic EXISTS subqueries. No more manual `raw()` joins.
+  ```ts
+  await querier.findMany(Item, {
+    $where: { tags: { name: 'important' } },
+  });
+  ```
+- **`Json<T>` Marker Type**: Wrap JSONB field types with `Json<T>` to ensure they are classified as `FieldKey` (not `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`.
+  ```ts
+  @Field({ type: 'jsonb' })
+  settings?: Json<{ isArchived?: boolean }>;
+  ```
+- **`JsonFieldPaths<E>` Autocompletion**: Template literal type that derives valid dot-notation paths from `Json<T>` fields (e.g., `'kind.public' | 'kind.private'`). Provides IDE autocompletion for JSONB `$where` queries without restricting arbitrary string paths.
+
+### Bug Fixes
+- **raw() String Prefix Fix**: String-based `raw()` values in `$and`/`$or` are no longer incorrectly table-prefixed (e.g., `raw("kind IS NOT NULL")` previously produced `resource.kind IS NOT NULL` instead of `kind IS NOT NULL`).
+
+### Improvements & Refactoring
+- **DRY JSON Config**: Extracted `getBaseJsonConfig()` in each dialect — `$elemMatch` and dot-notation now compose from a single config source, eliminating ~20 lines of duplication.
+- **Extracted `normalizeWhereValue()`**: Deduplicated the `Array→$in / object→passthrough / scalar→$eq` normalization used by both regular field and JSON path comparisons.
+- **Cleaner Dot-Notation Detection**: Uses `indexOf`+`slice` instead of two `split('.')` calls for efficient dot-path parsing.
+- **Relation Safety Guard**: `compareRelation()` now throws a descriptive `TypeError` if `rel.references` is missing, instead of a cryptic undefined crash.
+- **TypeScript 6 Compatibility**: Fixed `QueryWhereMap` circular type reference and expanded `QueryWhereOptions.clause` union.
+
+### Test Coverage
+- **46 new tests** across 3 dialects (base, PostgreSQL, SQLite) covering all new features and edge cases. Total: **1561 tests passing**.
+
 ## [3.11.1] - 2026-02-26
 ### Improvements
 - **Expanded ColumnType Aliases**: Added `integer`, `tinyint`, `bool`, `datetime`, and `smallserial` as first-class `ColumnType` values (aliases for `int`, `boolean`, `timestamp`, `smallserial`, and `serial` respectively). Users can now use standard SQL keywords interchangeably (e.g., `integer` or `int`, `bool` or `boolean`, `datetime` or `timestamp`).

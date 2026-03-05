@@ -198,20 +198,23 @@ export class PostgresDialect extends AbstractSqlDialect {
   private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
     return this.buildJsonFieldCondition(
       ctx,
-      {
-        fieldAccessor: (f) => `elem->>'${f}'`,
-        numericCast: (expr) => `(${expr})::numeric`,
-        likeFn: 'LIKE',
-        ilikeExpr: (f, ph) => `${f} ILIKE ${ph}`,
-        regexpOp: '~',
-        addValue: (c, v) => this.addValue(c.values, v),
-        inExpr: (f, ph) => `${f} = ANY(${ph})`,
-        ninExpr: (f, ph) => `${f} <> ALL(${ph})`,
-      },
+      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `elem->>'${f}'` },
       field,
       op,
       value,
     );
+  }
+
+  protected override getBaseJsonConfig() {
+    return {
+      numericCast: (expr: string) => `(${expr})::numeric`,
+      likeFn: 'LIKE',
+      ilikeExpr: (f: string, ph: string) => `${f} ILIKE ${ph}`,
+      regexpOp: '~',
+      addValue: (c: QueryContext, v: unknown) => this.addValue(c.values, v),
+      inExpr: (f: string, ph: string) => `${f} = ANY(${ph})`,
+      ninExpr: (f: string, ph: string) => `${f} <> ALL(${ph})`,
+    };
   }
 
   protected override formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {

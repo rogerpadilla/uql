@@ -8,6 +8,19 @@ export type MongoId = {
 
 export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer | MongoId;
 
+/**
+ * Marker type for JSON/JSONB fields.
+ * Wrapping a field's TypeScript type with `Json<T>` ensures it is classified as a `FieldKey`
+ * (not a `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`.
+ *
+ * @example
+ * ```ts
+ * @Field({ type: 'jsonb' })
+ * settings?: Json<{ isArchived?: boolean }>;
+ * ```
+ */
+export type Json<T = unknown> = T & { readonly __json?: never };
+
 export type ExpandScalar<T> = null | (T extends Date ? Date | string : T);
 
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };

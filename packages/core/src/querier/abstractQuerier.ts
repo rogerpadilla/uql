@@ -14,6 +14,7 @@ import type {
   QuerySearch,
   QuerySelect,
   QueryUpdateResult,
+  QueryWhere,
   RelationKey,
   RelationValue,
   Type,
@@ -278,7 +279,7 @@ export abstract class AbstractQuerier implements Querier {
             [localField!]: ids,
           },
         });
-        const founds = (throughFounds as Record<string, unknown>[]).map((it) => ({
+        const founds = (throughFounds as unknown as Record<string, unknown>[]).map((it) => ({
           ...(it[targetRelKey!] as Record<string, unknown>),
           [localField!]: it[localField!],
         }));
@@ -394,7 +395,7 @@ export abstract class AbstractQuerier implements Querier {
 
         const throughEntity = through();
         if (isUpdate) {
-          await this.deleteMany(throughEntity, { $where: { [localField]: id } });
+          await this.deleteMany(throughEntity, { $where: { [localField]: id } as QueryWhere<object> });
         }
         if (relPayload) {
           const savedIds = await this.saveMany(relEntity, relPayload);
@@ -408,7 +409,7 @@ export abstract class AbstractQuerier implements Querier {
       }
       const foreignField = references![0].foreign;
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $where: { [foreignField]: id } });
+        await this.deleteMany(relEntity, { $where: { [foreignField]: id } as QueryWhere<object> });
       }
       if (relPayload) {
         for (const it of relPayload) {
@@ -422,7 +423,7 @@ export abstract class AbstractQuerier implements Querier {
     if (cardinality === '11') {
       const foreignField = references![0].foreign;
       if (relPayload === null) {
-        await this.deleteMany(relEntity, { $where: { [foreignField!]: id } });
+        await this.deleteMany(relEntity, { $where: { [foreignField!]: id } as QueryWhere<object> });
         return;
       }
       await this.saveOne(relEntity, { ...relPayload, [foreignField!]: id });
@@ -432,7 +433,7 @@ export abstract class AbstractQuerier implements Querier {
     if (cardinality === 'm1' && relPayload) {
       const localField = references![0].local;
       const referenceId = await this.insertOne(relEntity, relPayload);
-      await this.updateOneById(entity, id, { [localField]: referenceId });
+      await this.updateOneById(entity, id, { [localField]: referenceId } as E);
       return;
     }
   }

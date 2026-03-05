@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
-import { User } from '../test/index.js';
+import { Company, Item, MeasureUnitCategory, User } from '../test/index.js';
+import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
@@ -146,6 +147,279 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, User, { email: { $isNotNull: true } });
       expect(ctx.sql).toBe(' WHERE `email` IS NOT NULL');
+    });
+  });
+
+  // ─── raw() prefix bug fix ───────────────────────────────────────────
+  describe('raw() prefix fix', () => {
+    it('raw string in $and should not be prefixed', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw("(kind->>'public')::boolean IS TRUE")],
+      } as any);
+      expect(ctx.sql).toBe(" WHERE (kind->>'public')::boolean IS TRUE");
+    });
+
+    it('raw string in $or should not be prefixed', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $or: [raw('kind IS NULL'), raw("kind = '{}'")],
+      } as any);
+      expect(ctx.sql).toBe(" WHERE kind IS NULL OR kind = '{}'");
+    });
+
+    it('raw function in $and should still work (regression)', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw(() => 'custom_check(kind) = TRUE')],
+      } as any);
+      expect(ctx.sql).toBe(' WHERE custom_check(kind) = TRUE');
+    });
+
+    it('raw string in $and mixed with regular field', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        name: 'Acme',
+        $and: [raw('kind IS NOT NULL')],
+      } as any);
+      expect(ctx.sql).toBe(' WHERE `name` = ? AND kind IS NOT NULL');
+      expect(ctx.values).toEqual(['Acme']);
+    });
+  });
+
+  // ─── JSONB dot-notation ────────────────────────────────────────────
+  describe('JSONB dot-notation', () => {
+    it('simple equality', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': 1 } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ?");
+      expect(ctx.values).toEqual([1]);
+    });
+
+    it('with $eq operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $eq: 'active' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ?");
+      expect(ctx.values).toEqual(['active']);
+    });
+
+    it('with $ne operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $ne: 1 } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') <> ?");
+      expect(ctx.values).toEqual([1]);
+    });
+
+    it('with $gt numeric operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $gt: 0 } } as any);
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) > ?");
+      expect(ctx.values).toEqual([0]);
+    });
+
+    it('with $lt numeric operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $lt: 100 } } as any);
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) < ?");
+      expect(ctx.values).toEqual([100]);
+    });
+
+    it('with multiple numeric operators', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $gte: 0, $lte: 1 } } as any);
+      expect(ctx.sql).toBe(
+        " WHERE (CAST((`kind`->>'public') AS NUMERIC) >= ? AND CAST((`kind`->>'public') AS NUMERIC) <= ?)",
+      );
+      expect(ctx.values).toEqual([0, 1]);
+    });
+
+    it('with $like string operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $like: '%test%' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') LIKE ?");
+      expect(ctx.values).toEqual(['%test%']);
+    });
+
+    it('with $startsWith string operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $startsWith: 'pre' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') LIKE ?");
+      expect(ctx.values).toEqual(['pre%']);
+    });
+
+    it('with $endsWith string operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $endsWith: 'fix' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') LIKE ?");
+      expect(ctx.values).toEqual(['%fix']);
+    });
+
+    it('with $includes string operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $includes: 'mid' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') LIKE ?");
+      expect(ctx.values).toEqual(['%mid%']);
+    });
+
+    it('with $regex operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $regex: '^test' } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') REGEXP ?");
+      expect(ctx.values).toEqual(['^test']);
+    });
+
+    it('with $in operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $in: ['a', 'b', 'c'] } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') IN (?, ?, ?)");
+      expect(ctx.values).toEqual(['a', 'b', 'c']);
+    });
+
+    it('with $nin operator', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $nin: ['x', 'y'] } } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') NOT IN (?, ?)");
+      expect(ctx.values).toEqual(['x', 'y']);
+    });
+
+    it('with array shorthand (maps to $in)', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': ['a', 'b'] } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') IN (?, ?)");
+      expect(ctx.values).toEqual(['a', 'b']);
+    });
+
+    it('deep nested path (two levels)', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.theme.color': 'red' } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'theme.color') = ?");
+      expect(ctx.values).toEqual(['red']);
+    });
+
+    it('combined with regular field', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { name: 'Acme', 'kind.public': 1 } as any);
+      expect(ctx.sql).toBe(" WHERE `name` = ? AND (`kind`->>'public') = ?");
+      expect(ctx.values).toEqual(['Acme', 1]);
+    });
+
+    it('combined with $and', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [{ 'kind.public': { $eq: 1 } } as any, { 'kind.active': { $ne: 0 } } as any],
+      } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ? AND (`kind`->>'active') <> ?");
+      expect(ctx.values).toEqual([1, 0]);
+    });
+
+    it('multiple dot-paths on same column', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        'kind.public': 1,
+        'kind.active': { $ne: 0 },
+      } as any);
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ? AND (`kind`->>'active') <> ?");
+      expect(ctx.values).toEqual([1, 0]);
+    });
+  });
+
+  // ─── Relation filtering ───────────────────────────────────────────
+  describe('relation filtering', () => {
+    it('ManyToMany with simple id equality', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { id: 5 } } as any);
+      expect(ctx.sql).toBe(
+        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`id` = ?))',
+      );
+      expect(ctx.values).toEqual([5]);
+    });
+
+    it('ManyToMany with operator filter', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { name: { $like: '%react%' } } } as any);
+      expect(ctx.sql).toBe(
+        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`name` LIKE ?))',
+      );
+      expect(ctx.values).toEqual(['%react%']);
+    });
+
+    it('ManyToMany with multiple conditions on related entity', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { id: 1, name: 'urgent' } } as any);
+      expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
+      expect(ctx.sql).toContain('`Tag`.`id` = ?');
+      expect(ctx.sql).toContain('`Tag`.`name` = ?');
+      expect(ctx.values).toEqual([1, 'urgent']);
+    });
+
+    it('OneToMany with simple filter', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } } as any);
+      // MeasureUnitCategory has softDelete, so parent query adds AND `deletedAt` IS NULL
+      expect(ctx.sql).toBe(
+        ' WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ?) AND `deletedAt` IS NULL',
+      );
+      expect(ctx.values).toEqual(['kg']);
+    });
+
+    it('inner EXISTS subquery should not leak softDelete conditions', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } } as any);
+      const existsPart = ctx.sql.split('EXISTS (')[1].split(')')[0];
+      // softDelete condition should NOT appear inside the EXISTS subquery
+      expect(existsPart).not.toContain('deletedAt');
+    });
+
+    it('combined with regular field', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { companyId: 1, tags: { name: 'urgent' } } as any);
+      expect(ctx.sql).toContain('`companyId` = ?');
+      expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
+      expect(ctx.values).toEqual([1, 'urgent']);
+    });
+
+    it('ManyToMany combined with regular field and raw', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, {
+        companyId: 1,
+        tags: { name: 'test' },
+        $and: [raw('code IS NOT NULL')],
+      } as any);
+      expect(ctx.sql).toContain('`companyId` = ?');
+      expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
+      expect(ctx.sql).toContain('code IS NOT NULL');
+      expect(ctx.values).toEqual([1, 'test']);
+    });
+  });
+
+  // ─── Branch coverage: error & fallback paths ─────────────────────
+  describe('edge cases', () => {
+    it('unsupported JSON operator throws TypeError', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.where(ctx, Company, { 'kind.public': { $unsupported: 1 } } as any)).toThrow(
+        'JSON field condition does not support operator: $unsupported',
+      );
+    });
+
+    it('base dialect $ilike uses LOWER() fallback', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $ilike: '%Active%' } } as any);
+      expect(ctx.sql).toBe(" WHERE LOWER((`kind`->>'public')) LIKE ?");
+      expect(ctx.values).toEqual(['%active%']);
+    });
+
+    it('relation with missing references throws TypeError', () => {
+      const meta = getMeta(Item);
+      const tagRelation = meta.relations['tags'];
+      if (!tagRelation) throw new Error('Test setup: tags relation must exist');
+      const originalRefs = tagRelation.references;
+      tagRelation.references = undefined;
+      try {
+        const ctx = dialect.createContext();
+        expect(() => dialect.where(ctx, Item, { tags: { id: 1 } } as any)).toThrow('has no references defined');
+      } finally {
+        tagRelation.references = originalRefs;
+      }
     });
   });
 });

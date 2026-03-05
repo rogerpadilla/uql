@@ -1,5 +1,5 @@
 import type { QueryRaw } from './query.js';
-import type { Scalar, Type } from './utility.js';
+import type { Json, Scalar, Type } from './utility.js';
 
 /**
  * Allow to customize the name of the property that identifies an entity
@@ -15,15 +15,25 @@ export type Key<E> = keyof E & string;
  * Infers the field names of an entity
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar ? K : never;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Json ? K : never;
 }[Key<E>];
 
 /**
  * Infers the relation names of an entity
  */
 export type RelationKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar ? never : K;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Json ? never : K;
 }[Key<E>];
+
+/**
+ * Derives valid dot-notation paths from `Json<T>` fields for autocompletion.
+ * For `kind?: Json<{ public: number }>`, this produces `'kind.public'`.
+ */
+export type JsonFieldPaths<E> = {
+  readonly [K in FieldKey<E>]: NonNullable<E[K]> extends Json
+    ? `${K & string}.${string & Exclude<keyof NonNullable<E[K]>, '__json'>}`
+    : never;
+}[FieldKey<E>];
 
 /**
  * Infers the field values of an entity
