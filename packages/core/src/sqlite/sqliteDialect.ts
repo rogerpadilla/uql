@@ -9,7 +9,6 @@ import type {
   QueryContext,
   QueryTextSearchOptions,
   QueryWhereFieldOperatorMap,
-  QueryWhereMap,
   Type,
 } from '../type/index.js';
 
