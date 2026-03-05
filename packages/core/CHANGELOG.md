@@ -1,24 +1,22 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [3.12.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.11.1...@uql/core@3.12.0) (2026-03-05)
-
-
-### Features
-
-* introduce JSONB dot-notation filtering in `where` clauses and fix `raw()` expression prefixing in logical operators. ([669257d](https://github.com/rogerpadilla/uql/commit/669257d497e08729094a9f178685ca6665b8b20b))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.12.1] - 2026-03-05
+### Bug Fixes
+- **Null-Safe JSONB `$ne`**: JSONB dot-notation `$ne` now uses null-safe operators (`IS DISTINCT FROM` on PostgreSQL, `IS NOT` on SQLite) so that absent keys (which return SQL `NULL`) are correctly included in results. Previously, `{ 'settings.isArchived': { $ne: true } }` would silently exclude rows where the key didn't exist.
+- **JSONB `$eq`/`$ne` with `null`**: `$eq: null` and `$ne: null` on JSONB paths now correctly generate `IS NULL` / `IS NOT NULL` instead of `= NULL` / `<> NULL`.
+
+### Improvements & Refactoring
+- **`QueryWhereMap` Type Safety**: Replaced the overly permissive `Record<string, ...>` catch-all with explicit typed unions: template literal `` `${string}.${string}` `` for dot-paths, `RelationKey<E>` for relation filtering, and `JsonFieldPaths<E>` for IDE autocompletion.
+- **`DeepJsonKeys` Recursive Type**: `JsonFieldPaths<E>` now derives dot-notation paths up to 5 levels deep (previously only 1 level), enabling autocompletion for nested JSONB structures like `'kind.theme.color'`.
+- **DRY `compare()` Signature**: Simplified `compare()` from `<E, K extends keyof QueryWhereMap<E>>(key: K, val: QueryWhereMap<E>[K])` to `<E>(key: string, val: unknown)` across all dialect overrides, removing redundant generic constraints.
+- **DRY SQLite Config**: SQLite's `getBaseJsonConfig()` now spreads from `super` instead of duplicating 4 identical fields.
+
+### Test Coverage
+- Removed ~20 `as any` casts from tests (now unnecessary with improved types). Added null-safe `$ne` tests across all dialects. Total: **1,563 tests passing**.
 
 ## [3.12.0] - 2026-03-05
 ### New Features
