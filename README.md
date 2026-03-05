@@ -112,7 +112,7 @@ UQL separates the **intent** of your data from its **storage**. Both properties 
 externalId?: string;
 
 @Field({ type: 'json' })          // → JSONB (Postgres), JSON (MySQL), TEXT (SQLite)
-metadata?: Record<string, unknown>;
+metadata?: Json<{ theme?: string }>;
 
 // Logical types with constraints - portable with control
 @Field({ type: 'varchar', length: 500 })
@@ -131,7 +131,7 @@ statusCode?: number;
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
-import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation } from '@uql/core';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation, type Json } from '@uql/core';
 
 @Entity()
 export class User {
@@ -311,6 +311,38 @@ export class Item {
   tagsCount?: number;
 }
 ```
+
+&nbsp;
+
+### JSONB Operators & Relation Filtering
+
+Query nested JSON fields using **type-safe dot-notation** with full operator support. Wrap fields with `Json<T>` to get IDE autocompletion for valid paths. UQL generates the correct SQL for each dialect.
+
+```ts
+// Filter by nested JSONB field paths
+const items = await querier.findMany(Company, {
+  $where: {
+    'settings.isArchived': { $ne: true },
+    'settings.priority': { $gte: 5 },
+  },
+});
+```
+
+**PostgreSQL:** `WHERE ("settings"->>'isArchived') <> $1 AND (("settings"->>'priority'))::numeric >= $2`
+**SQLite:** `WHERE json_extract("settings", '$.isArchived') <> ? AND CAST(json_extract("settings", '$.priority') AS REAL) >= ?`
+
+Filter parent entities by their **ManyToMany** or **OneToMany** relations using automatic EXISTS subqueries:
+
+```ts
+// Find posts that have a tag named 'typescript'
+const posts = await querier.findMany(Post, {
+  $where: { tags: { name: 'typescript' } },
+});
+```
+
+**PostgreSQL:** `WHERE EXISTS (SELECT 1 FROM "PostTag" WHERE "PostTag"."postId" = "Post"."id" AND "PostTag"."tagId" IN (SELECT "Tag"."id" FROM "Tag" WHERE "Tag"."name" = $1))`
+
+> **Pro Tip**: Wrap JSONB field types with `Json<T>` (e.g., `settings?: Json<{ isArchived?: boolean }>`) to get IDE autocompletion for dot-notation paths.
 
 &nbsp;
 

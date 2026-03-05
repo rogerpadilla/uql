@@ -127,21 +127,28 @@ export class SqliteDialect extends AbstractSqlDialect {
   private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
     return this.buildJsonFieldCondition(
       ctx,
-      {
-        fieldAccessor: (f) => `json_extract(value, '$.${f}')`,
-        numericCast: (expr) => `CAST(${expr} AS REAL)`,
-        likeFn: 'LIKE',
-        ilikeExpr: (f, ph) => `LOWER(${f}) LIKE ${ph}`,
-        regexpOp: 'REGEXP',
-        addValue: (c, v) => {
-          c.pushValue(v);
-          return '?';
-        },
-      },
+      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `json_extract(value, '$.${f}')` },
       field,
       op,
       value,
     );
+  }
+
+  protected override getJsonFieldConfig(escapedColumn: string, jsonPath: string) {
+    return { ...this.getBaseJsonConfig(), fieldAccessor: () => `json_extract(${escapedColumn}, '$.${jsonPath}')` };
+  }
+
+  protected override getBaseJsonConfig() {
+    return {
+      numericCast: (expr: string) => `CAST(${expr} AS REAL)`,
+      likeFn: 'LIKE',
+      ilikeExpr: (f: string, ph: string) => `LOWER(${f}) LIKE ${ph}`,
+      regexpOp: 'REGEXP',
+      addValue: (c: QueryContext, v: unknown) => {
+        c.pushValue(v);
+        return '?';
+      },
+    };
   }
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {

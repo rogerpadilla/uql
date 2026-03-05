@@ -26,6 +26,7 @@ import {
   type QueryWhereFieldOperatorMap,
   type QueryWhereMap,
   type QueryWhereOptions,
+  type RelationOptions,
   type SqlDialect,
   type SqlQueryDialect,
   type Type,
@@ -398,7 +399,26 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return;
     }
 
-    const value = Array.isArray(val) ? { $in: val } : typeof val === 'object' && val !== null ? val : { $eq: val };
+    // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
+    const keyStr = key as string;
+    const dotIndex = keyStr.indexOf('.');
+    if (dotIndex > 0) {
+      const root = keyStr.slice(0, dotIndex);
+      const field = meta.fields[root as FieldKey<E>];
+      if (field && isJsonType(field.type)) {
+        this.compareJsonPath(ctx, entity, root, keyStr.slice(dotIndex + 1), val, opts);
+        return;
+      }
+    }
+
+    // Detect relation filtering: key is a known relation with 'mm' or '1m' cardinality
+    const rel = meta.relations[keyStr];
+    if (rel && (rel.cardinality === 'mm' || rel.cardinality === '1m')) {
+      this.compareRelation(ctx, entity, keyStr, val as QueryWhereMap<unknown>, rel, opts);
+      return;
+    }
+
+    const value = this.normalizeWhereValue(val);
     const operators = getKeys(value) as (keyof QueryWhereFieldOperatorMap<E>)[];
 
     if (operators.length > 1) {
@@ -455,8 +475,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (whereEntry instanceof QueryRaw) {
         this.getRawValue(ctx, {
           value: whereEntry,
-          prefix: opts.prefix,
-          escapedPrefix: this.escapeId(opts.prefix as string, true, true),
         });
       } else if (whereEntry) {
         this.where(ctx, entity, whereEntry, {
@@ -626,17 +644,17 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * Build a comparison condition for a JSON field within $elemMatch.
-   * Shared across all SQL dialects — each dialect provides a JsonFieldConfig.
+   * Build a comparison condition for a JSON field.
+   * Used by both `$elemMatch` and dot-notation paths. Each dialect provides a `JsonFieldConfig`.
    */
   protected buildJsonFieldCondition(
     ctx: QueryContext,
     config: JsonFieldConfig,
-    field: string,
+    jsonPath: string,
     op: string,
     value: unknown,
   ): string {
-    const jsonField = config.fieldAccessor(field);
+    const jsonField = config.fieldAccessor(jsonPath);
     switch (op) {
       case '$eq':
         return `${jsonField} = ${config.addValue(ctx, value)}`;
@@ -683,7 +701,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         return `${jsonField} NOT IN (${ninVals.map((v) => config.addValue(ctx, v)).join(', ')})`;
       }
       default:
-        throw TypeError(`$elemMatch does not support operator: ${op}`);
+        throw TypeError(`JSON field condition does not support operator: ${op}`);
     }
   }
 
@@ -953,11 +971,151 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
   }
 
+  /**
+   * Compare a JSONB dot-notation path, e.g. `'settings.isArchived': { $ne: true }`.
+   * The dialect's `getJsonFieldConfig` provides the SQL expression for accessing the nested JSON value.
+   */
+  protected compareJsonPath<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    root: string,
+    jsonPath: string,
+    val: unknown,
+    opts: QueryComparisonOptions,
+  ): void {
+    const meta = getMeta(entity);
+    const field = meta.fields[root as FieldKey<E>];
+    const columnName = this.resolveColumnName(root, field);
+    const escapedColumn = (opts.prefix ? this.escapeId(opts.prefix, true, true) : '') + this.escapeId(columnName);
+    const config = this.getJsonFieldConfig(escapedColumn, jsonPath);
+
+    const value = this.normalizeWhereValue(val);
+    const operators = getKeys(value);
+
+    if (operators.length > 1) {
+      ctx.append('(');
+    }
+
+    operators.forEach((op, index) => {
+      if (index > 0) ctx.append(' AND ');
+      ctx.append(this.buildJsonFieldCondition(ctx, config, jsonPath, op, value[op]));
+    });
+
+    if (operators.length > 1) {
+      ctx.append(')');
+    }
+  }
+
+  /**
+   * Returns a dialect-specific `JsonFieldConfig` for accessing a nested JSON path.
+   * Dialects should override this to provide their specific JSON accessor syntax.
+   *
+   * @param escapedColumn - The escaped column name (possibly prefixed with table name)
+   * @param jsonPath - The dot-separated path within the JSON field (e.g. 'isArchived' or 'theme.color')
+   */
+  protected getJsonFieldConfig(escapedColumn: string, jsonPath: string): JsonFieldConfig {
+    return { ...this.getBaseJsonConfig(), fieldAccessor: () => `(${escapedColumn}->>'${jsonPath}')` };
+  }
+
+  /**
+   * Returns the dialect-invariant portion of `JsonFieldConfig`.
+   * Dialects override this to provide casts, operators, and value binding.
+   * Both `getJsonFieldConfig` (dot-notation) and `buildJsonFieldOperator` ($elemMatch) compose with this.
+   */
+  protected getBaseJsonConfig(): Omit<JsonFieldConfig, 'fieldAccessor'> {
+    return {
+      numericCast: (expr) => `CAST(${expr} AS NUMERIC)`,
+      likeFn: 'LIKE',
+      ilikeExpr: (f, ph) => `LOWER(${f}) LIKE ${ph}`,
+      regexpOp: 'REGEXP',
+      addValue: (c, v) => {
+        c.pushValue(v);
+        return '?';
+      },
+    };
+  }
+
+  /**
+   * Normalizes a raw WHERE value into an operator map.
+   * Arrays become `$in`, scalars/null become `$eq`, objects pass through.
+   */
+  private normalizeWhereValue(val: unknown): Record<string, unknown> {
+    if (Array.isArray(val)) return { $in: val };
+    if (typeof val === 'object' && val !== null) return val as Record<string, unknown>;
+    return { $eq: val };
+  }
+
+  /**
+   * Filter by ManyToMany or OneToMany relation using an EXISTS subquery.
+   * Generates: `EXISTS (SELECT 1 FROM ... WHERE local_fk = parent.id AND ...)`
+   */
+  protected compareRelation<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: string,
+    val: QueryWhereMap<unknown>,
+    rel: RelationOptions,
+    opts: QueryComparisonOptions,
+  ): void {
+    const meta = getMeta(entity);
+    const parentTable = this.resolveTableName(entity, meta);
+    const parentId = meta.id!;
+    const escapedParentId =
+      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
+      this.escapeId(parentId);
+
+    if (!rel.references?.length) {
+      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
+    }
+
+    const relatedEntity = rel.entity!();
+    const relatedMeta = getMeta(relatedEntity);
+    const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
+
+    ctx.append('EXISTS (SELECT 1 FROM ');
+
+    if (rel.cardinality === 'mm' && rel.through) {
+      // ManyToMany: EXISTS (SELECT 1 FROM JunctionTable WHERE junction.localFk = parent.id AND junction.foreignFk IN (SELECT related.id FROM Related WHERE ...))
+      const throughEntity = rel.through();
+      const throughMeta = getMeta(throughEntity);
+      const throughTable = this.resolveTableName(throughEntity, throughMeta);
+      const localFk = rel.references[0].local;
+      const foreignFk = rel.references[1].local;
+      const relatedId = relatedMeta.id!;
+
+      ctx.append(this.escapeId(throughTable));
+      ctx.append(` WHERE ${this.escapeId(throughTable, false, true)}${this.escapeId(localFk)} = ${escapedParentId}`);
+      ctx.append(` AND ${this.escapeId(throughTable, false, true)}${this.escapeId(foreignFk)} IN (`);
+      ctx.append(
+        `SELECT ${this.escapeId(relatedTable, false, true)}${this.escapeId(relatedId)} FROM ${this.escapeId(relatedTable)}`,
+      );
+      this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
+        prefix: relatedTable,
+        clause: 'WHERE',
+        softDelete: false,
+      });
+      ctx.append(')');
+    } else if (rel.cardinality === '1m') {
+      // OneToMany: EXISTS (SELECT 1 FROM Child WHERE child.parentFk = parent.id AND ...)
+      const foreignFk = rel.references[0].foreign;
+
+      ctx.append(this.escapeId(relatedTable));
+      ctx.append(` WHERE ${this.escapeId(relatedTable, false, true)}${this.escapeId(foreignFk)} = ${escapedParentId}`);
+      this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
+        prefix: relatedTable,
+        clause: 'AND',
+        softDelete: false,
+      });
+    }
+
+    ctx.append(')');
+  }
+
   abstract escape(value: unknown): string;
 }
 
 /**
- * Configuration for JSON field operations within $elemMatch.
+ * Configuration for JSON field operations.
  * Each SQL dialect provides its own config to the shared buildJsonFieldCondition method.
  */
 export type JsonFieldConfig = {

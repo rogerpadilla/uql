@@ -5,6 +5,7 @@ import {
   createSpec,
   Item,
   ItemTag,
+  MeasureUnitCategory,
   Profile,
   TaxCategory,
   User,
@@ -618,6 +619,91 @@ class PostgresDialectSpec {
     );
     expect(res.sql).toContain("elem->>'code' ~ $1");
     expect(res.sql).toContain("elem->>'tag' <> ALL");
+  }
+
+  // JSONB dot-notation tests (Postgres-specific)
+  shouldFindByJsonDotNotation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': 1 } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'public\') = $1');
+    expect(values).toEqual([1]);
+  }
+
+  shouldFindByJsonDotNotationWithOperator() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.private': { $ne: 0 } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') <> $1');
+    expect(values).toEqual([0]);
+  }
+
+  shouldFindByJsonDotNotationWithNumericCast() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': { $gt: 0, $lte: 5 } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE ((("kind"->>\'public\'))::numeric > $1 AND (("kind"->>\'public\'))::numeric <= $2)',
+    );
+    expect(values).toEqual([0, 5]);
+  }
+
+  shouldFindByJsonDotNotationWithIlike() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.public': { $ilike: '%active%' } } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'public\') ILIKE $1');
+    expect(values).toEqual(['%active%']);
+  }
+
+  // ManyToMany relation filtering (Postgres-specific)
+  shouldFindByManyToManyRelation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: ['id'],
+        $where: { tags: { id: 5 } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "Item" WHERE EXISTS (SELECT 1 FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id" AND "ItemTag"."tagId" IN (SELECT "Tag"."id" FROM "Tag" WHERE "Tag"."id" = $1))',
+    );
+    expect(values).toEqual([5]);
+  }
+
+  shouldFindByOneToManyRelation() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: ['id'],
+        $where: { measureUnits: { name: 'kg' } } as any,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "MeasureUnitCategory" WHERE EXISTS (SELECT 1 FROM "MeasureUnit" WHERE "MeasureUnit"."categoryId" = "MeasureUnitCategory"."id" AND "MeasureUnit"."name" = $1) AND "deletedAt" IS NULL',
+    );
+    expect(values).toEqual(['kg']);
+  }
+
+  shouldFindByJsonDotNotationDeepPath() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $where: { 'kind.theme.color': 'red' } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'theme.color\') = $1');
+    expect(values).toEqual(['red']);
   }
 }
 

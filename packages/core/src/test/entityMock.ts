@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import { idKey, type QueryRawFnOptions, type Relation } from '../type/index.js';
+import { idKey, type Json, type QueryRawFnOptions, type Relation } from '../type/index.js';
 import { raw } from '../util/index.js';
 
 /**
@@ -64,7 +64,7 @@ export class Company extends BaseEntity {
   description?: string;
 
   @Field({ type: 'jsonb' })
-  kind?: CompanyKind;
+  kind?: Json<CompanyKind>;
 }
 
 /**
