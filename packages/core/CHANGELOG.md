@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.12.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.11.1...@uql/core@3.12.0) (2026-03-05)
+
+
+### Features
+
+* introduce JSONB dot-notation filtering in `where` clauses and fix `raw()` expression prefixing in logical operators. ([669257d](https://github.com/rogerpadilla/uql/commit/669257d497e08729094a9f178685ca6665b8b20b))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
