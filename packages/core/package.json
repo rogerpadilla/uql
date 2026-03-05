@@ -98,7 +98,7 @@
     "@neondatabase/serverless": "^1.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
-    "@types/pg": "^8.16.0",
+    "@types/pg": "^8.18.0",
     "@types/sqlstring": "^2.3.2",
     "better-sqlite3": "^12.6.2",
     "bunchee": "^6.9.4",
@@ -107,7 +107,7 @@
     "mariadb": "^3.5.1",
     "mongodb": "^7.1.0",
     "mysql2": "^3.18.2",
-    "pg": "^8.19.0"
+    "pg": "^8.20.0"
   },
   "author": "Roger Padilla",
   "repository": {

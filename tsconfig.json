@@ -24,14 +24,14 @@
     "inlineSources": true,
     "declaration": true,
     "declarationMap": true,
-    "baseUrl": ".",
+
     "importHelpers": true,
     "skipLibCheck": true,
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "paths": {
-      "@uql/core": ["packages/core/src/index.ts"],
-      "@uql/core/*": ["packages/core/src/*"]
+      "@uql/core": ["./packages/core/src/index.ts"],
+      "@uql/core/*": ["./packages/core/src/*"]
     }
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]
