@@ -12,7 +12,6 @@ import {
   QueryRaw,
   type QueryTextSearchOptions,
   type QueryWhereFieldOperatorMap,
-  type QueryWhereMap,
   type Type,
 } from '../type/index.js';
 import { isJsonType } from '../util/index.js';
@@ -45,11 +44,11 @@ export class PostgresDialect extends AbstractSqlDialect {
     ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
   }
 
-  override compare<E, K extends keyof QueryWhereMap<E>>(
+  override compare<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: K,
-    val: QueryWhereMap<E>[K],
+    key: string,
+    val: unknown,
     opts: QueryComparisonOptions = {},
   ): void {
     if (key === '$text') {
@@ -214,6 +213,7 @@ export class PostgresDialect extends AbstractSqlDialect {
       addValue: (c: QueryContext, v: unknown) => this.addValue(c.values, v),
       inExpr: (f: string, ph: string) => `${f} = ANY(${ph})`,
       ninExpr: (f: string, ph: string) => `${f} <> ALL(${ph})`,
+      neExpr: (f: string, ph: string) => `${f} IS DISTINCT FROM ${ph}`,
     };
   }
 

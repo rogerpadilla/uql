@@ -27,11 +27,11 @@ export class SqliteDialect extends AbstractSqlDialect {
     return super.addValue(values, value);
   }
 
-  override compare<E, K extends keyof QueryWhereMap<E>>(
+  override compare<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: K,
-    val: QueryWhereMap<E>[K],
+    key: string,
+    val: unknown,
     opts?: QueryComparisonOptions,
   ): void {
     if (key === '$text') {
@@ -140,14 +140,9 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   protected override getBaseJsonConfig() {
     return {
+      ...super.getBaseJsonConfig(),
       numericCast: (expr: string) => `CAST(${expr} AS REAL)`,
-      likeFn: 'LIKE',
-      ilikeExpr: (f: string, ph: string) => `LOWER(${f}) LIKE ${ph}`,
-      regexpOp: 'REGEXP',
-      addValue: (c: QueryContext, v: unknown) => {
-        c.pushValue(v);
-        return '?';
-      },
+      neExpr: (f: string, ph: string) => `${f} IS NOT ${ph}`,
     };
   }
 

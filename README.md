@@ -328,8 +328,8 @@ const items = await querier.findMany(Company, {
 });
 ```
 
-**PostgreSQL:** `WHERE ("settings"->>'isArchived') <> $1 AND (("settings"->>'priority'))::numeric >= $2`
-**SQLite:** `WHERE json_extract("settings", '$.isArchived') <> ? AND CAST(json_extract("settings", '$.priority') AS REAL) >= ?`
+**PostgreSQL:** `WHERE ("settings"->>'isArchived') IS DISTINCT FROM $1 AND (("settings"->>'priority'))::numeric >= $2`
+**SQLite:** `WHERE json_extract("settings", '$.isArchived') IS NOT ? AND CAST(json_extract("settings", '$.priority') AS REAL) >= ?`
 
 Filter parent entities by their **ManyToMany** or **OneToMany** relations using automatic EXISTS subqueries:
 

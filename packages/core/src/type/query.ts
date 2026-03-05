@@ -95,15 +95,15 @@ export type QueryTextSearchOptions<E> = {
 export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
 
 /**
- * complex operators, JSONB dot-path access, and relation filtering.
+ * Field comparison, JSONB dot-path access, and relation filtering — all fully typed.
+ * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
+ * for dot-paths because TypeScript's excess property checking cannot resolve recursive
+ * conditional types in mapped type key positions.
  */
 export type QueryWhereMap<E> = QueryWhereFieldMap<E> &
-  QueryWhereRootOperator<E> /** Typed JSONB dot-notation paths derived from `Json<T>` fields — provides IDE autocompletion. */ & {
-    [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<unknown>;
-  } /** Open-ended string keys for deep dot-paths and relation filtering. */ & Record<
-    string,
-    QueryWhereFieldValue<unknown> | Record<string, unknown> | undefined
-  >;
+  QueryWhereRootOperator<E> & { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<unknown> } & {
+    [key: `${string}.${string}`]: QueryWhereFieldValue<unknown> | undefined;
+  } & { [K in RelationKey<E>]?: QueryWhereMap<Unpacked<NonNullable<E[K]>>> };
 
 export type QueryWhereRootOperator<E> = {
   /**
