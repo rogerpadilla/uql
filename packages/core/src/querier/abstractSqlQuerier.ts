@@ -8,6 +8,7 @@ import type {
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
+  RawRow,
   SqlQuerier,
   Type,
   UpdatePayload,
@@ -67,7 +68,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>) {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
-    const res = await this.all<any>(ctx.sql, ctx.values);
+    const res = await this.all<RawRow>(ctx.sql, ctx.values);
     const founds = unflatObjects<E>(res);
     await this.fillToManyRelations(entity, founds, q.$select!);
     return founds;

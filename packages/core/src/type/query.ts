@@ -33,9 +33,9 @@ export type QuerySelectOptions = {
 export type QuerySelectArray<E> = (Key<E> | QueryRaw)[];
 
 /**
- * query selection as a map.
+ * query selection as a map — field and relation selections combined.
  */
-export type QuerySelectMap<E> = QuerySelectFieldMap<E> | QuerySelectRelationMap<E>;
+export type QuerySelectMap<E> = QuerySelectFieldMap<E> & QuerySelectRelationMap<E>;
 
 /**
  * query selection.
@@ -50,16 +50,11 @@ export type QuerySelectFieldMap<E> = {
 };
 
 /**
- * query conflict paths map.
+ * query conflict paths — subset of field keys used to detect upsert conflicts.
  */
-export type QueryConflictPathsMap<E> = {
+export type QueryConflictPaths<E> = {
   [K in FieldKey<E>]?: true;
 };
-
-/**
- * query conflict paths.
- */
-export type QueryConflictPaths<E> = QueryConflictPathsMap<E>;
 
 /**
  * query selection of relations as a map.
@@ -116,6 +111,7 @@ export type QueryWhereRootOperator<E> = {
   $or?: QueryWhereArray<E>;
   /**
    * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
+   * @see {@link QueryWhereFieldOperatorMap.$not} for per-field negation.
    */
   $not?: QueryWhereArray<E>;
   /**
@@ -140,13 +136,14 @@ export type QueryWhereFieldOperatorMap<T> = {
   /**
    * whether a value is equal to the given value.
    */
-  $eq?: ExpandScalar<T>;
+  $eq?: ExpandScalar<T> | null;
   /**
    * whether a value is not equal to the given value.
    */
-  $ne?: ExpandScalar<T>;
+  $ne?: ExpandScalar<T> | null;
   /**
-   * negates the given comparison.
+   * negates the given comparison for a single field.
+   * @see {@link QueryWhereRootOperator.$not} for root-level clause negation.
    */
   $not?: QueryWhereFieldValue<T>;
   /**
@@ -313,7 +310,6 @@ export type QuerySearch<E> = {
 /**
  * criteria one options.
  */
-export type QuerySearchOne<E> = Omit<QuerySearch<E>, '$limit'>;
 
 /**
  * query options.

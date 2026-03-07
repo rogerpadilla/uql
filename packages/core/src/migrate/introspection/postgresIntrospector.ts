@@ -1,4 +1,4 @@
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, SqlQuerier } from '../../type/index.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, RawRow, SqlQuerier } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
 /**
@@ -36,8 +36,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: Record<string, unknown>[]): boolean {
-    // biome-ignore lint/complexity/useLiteralKeys: bracket access required by noPropertyAccessFromIndexSignature
+  protected parseTableExistsResult(results: RawRow[]): boolean {
     return (results[0]?.['exists'] as boolean) ?? false;
   }
 

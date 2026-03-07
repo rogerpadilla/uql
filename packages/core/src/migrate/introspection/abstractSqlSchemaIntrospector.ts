@@ -3,6 +3,7 @@ import type {
   ForeignKeySchema,
   IndexSchema,
   QuerierPool,
+  RawRow,
   SchemaIntrospector,
   SqlQuerier,
   TableSchema,
@@ -73,7 +74,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     const querier = await this.getQuerier();
 
     try {
-      const results = await querier.all<Record<string, unknown>>(this.getTableNamesQuery());
+      const results = await querier.all<RawRow>(this.getTableNamesQuery());
       return results.map((row) => this.mapTableNameRow(row));
     } finally {
       await querier.release();
@@ -104,35 +105,35 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
     const sql = this.tableExistsQuery();
     const params = this.tableExistsParams(tableName);
-    const results = await querier.all<Record<string, unknown>>(sql, params);
+    const results = await querier.all<RawRow>(sql, params);
     return this.parseTableExistsResult(results);
   }
 
   protected async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
     const sql = this.getColumnsQuery(tableName);
     const params = this.getColumnsParams(tableName);
-    const results = await querier.all<Record<string, unknown>>(sql, params);
+    const results = await querier.all<RawRow>(sql, params);
     return this.mapColumnsResult(querier, tableName, results);
   }
 
   protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
     const sql = this.getIndexesQuery(tableName);
     const params = this.getIndexesParams(tableName);
-    const results = await querier.all<Record<string, unknown>>(sql, params);
+    const results = await querier.all<RawRow>(sql, params);
     return this.mapIndexesResult(querier, tableName, results);
   }
 
   protected async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
     const sql = this.getForeignKeysQuery(tableName);
     const params = this.getForeignKeysParams(tableName);
-    const results = await querier.all<Record<string, unknown>>(sql, params);
+    const results = await querier.all<RawRow>(sql, params);
     return this.mapForeignKeysResult(querier, tableName, results);
   }
 
   protected async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
     const sql = this.getPrimaryKeyQuery(tableName);
     const params = this.getPrimaryKeyParams(tableName);
-    const results = await querier.all<Record<string, unknown>>(sql, params);
+    const results = await querier.all<RawRow>(sql, params);
     return this.mapPrimaryKeyResult(results);
   }
 
@@ -203,7 +204,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected abstract tableExistsQuery(): string;
 
   /** Parse the result of tableExistsQuery to boolean. */
-  protected abstract parseTableExistsResult(results: Record<string, unknown>[]): boolean;
+  protected abstract parseTableExistsResult(results: RawRow[]): boolean;
 
   /** SQL query to get column metadata. Parameter: tableName (for PRAGMA-style). */
   protected abstract getColumnsQuery(tableName: string): string;
@@ -218,31 +219,31 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected abstract getPrimaryKeyQuery(tableName: string): string;
 
   /** Extract table name from a row returned by getTableNamesQuery. */
-  protected abstract mapTableNameRow(row: Record<string, unknown>): string;
+  protected abstract mapTableNameRow(row: RawRow): string;
 
   /** Map column query results to ColumnSchema array. Allows async for SQLite's unique column check. */
   protected abstract mapColumnsResult(
     querier: SqlQuerier,
     tableName: string,
-    results: Record<string, unknown>[],
+    results: RawRow[],
   ): Promise<ColumnSchema[]>;
 
   /** Map index query results to IndexSchema array. Allows async for SQLite's index_info calls. */
   protected abstract mapIndexesResult(
     querier: SqlQuerier,
     tableName: string,
-    results: Record<string, unknown>[],
+    results: RawRow[],
   ): Promise<IndexSchema[]>;
 
   /** Map foreign key query results to ForeignKeySchema array. */
   protected abstract mapForeignKeysResult(
     querier: SqlQuerier,
     tableName: string,
-    results: Record<string, unknown>[],
+    results: RawRow[],
   ): Promise<ForeignKeySchema[]>;
 
   /** Map primary key query results to column names array. */
-  protected abstract mapPrimaryKeyResult(results: Record<string, unknown>[]): string[] | undefined;
+  protected abstract mapPrimaryKeyResult(results: RawRow[]): string[] | undefined;
 
   /** Parse default value string to appropriate type. */
   protected abstract parseDefaultValue(defaultValue: string | null): unknown;

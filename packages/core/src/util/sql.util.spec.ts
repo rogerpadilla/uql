@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
-import type { QuerySortMap } from '../type/index.js';
+import type { QuerySortMap, RawRow } from '../type/index.js';
 import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
@@ -26,7 +26,7 @@ it('unflatObjects - empty', () => {
 });
 
 it('unflatObjects', () => {
-  const source: Storehouse[] = [
+  const source: RawRow[] = [
     {
       id: 1,
       name: 'Auxiliar',
@@ -118,7 +118,7 @@ it('unflatObjects deep', () => {
       'item.creator.name': 'Roshi Master',
     },
   ];
-  const result = unflatObjects(source as Item[]);
+  const result = unflatObjects<Item>(source);
   const expected: ItemAdjustment[] = [
     {
       id: 9,

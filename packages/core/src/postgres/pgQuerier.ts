@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
+import { extractInsertResult } from '../util/sql.util.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 export class PgQuerier extends AbstractPoolQuerier<PoolClient> {
@@ -9,14 +10,13 @@ export class PgQuerier extends AbstractPoolQuerier<PoolClient> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.conn!.query<T & Record<string, unknown>>(query, values);
+    const res = await this.conn!.query<T & RawRow>(query, values);
     return res.rows;
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const { rowCount: changes, rows = [] }: any = await this.conn!.query(query, values);
-    const ids = rows.map((r: any) => r.id);
-    return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    const { rowCount, rows = [] } = await this.conn!.query(query, values);
+    return extractInsertResult(rows, rowCount ?? undefined);
   }
 
   protected override async releaseConn(conn: PoolClient) {

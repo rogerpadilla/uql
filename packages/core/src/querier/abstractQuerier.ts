@@ -15,6 +15,7 @@ import type {
   QuerySelect,
   QueryUpdateResult,
   QueryWhere,
+  RawRow,
   RelationKey,
   RelationValue,
   Type,
@@ -280,8 +281,8 @@ export abstract class AbstractQuerier implements Querier {
             [localField!]: ids,
           },
         });
-        const founds = (throughFounds as unknown as Record<string, unknown>[]).map((it) => ({
-          ...(it[targetRelKey!] as Record<string, unknown>),
+        const founds = (throughFounds as unknown as RawRow[]).map((it) => ({
+          ...(it[targetRelKey!] as RawRow),
           [localField!]: it[localField!],
         }));
         this.putChildrenInParents(payload, founds, meta.id!, localField!, relKey);
@@ -305,12 +306,12 @@ export abstract class AbstractQuerier implements Querier {
 
   protected putChildrenInParents<E>(
     parents: E[],
-    children: Record<string, unknown>[],
+    children: RawRow[],
     parentIdKey: keyof E & string,
     referenceKey: string,
     relKey: keyof E & string,
   ): void {
-    const childrenByParentId = children.reduce<Record<string, Record<string, unknown>[]>>((acc, child) => {
+    const childrenByParentId = children.reduce<Record<string, RawRow[]>>((acc, child) => {
       const parentId = String(child[referenceKey]);
       if (!acc[parentId]) {
         acc[parentId] = [];
@@ -414,7 +415,7 @@ export abstract class AbstractQuerier implements Querier {
       }
       if (relPayload) {
         for (const it of relPayload) {
-          (it as Record<string, unknown>)[foreignField] = id;
+          (it as RawRow)[foreignField] = id;
         }
         await this.saveMany(relEntity, relPayload);
       }

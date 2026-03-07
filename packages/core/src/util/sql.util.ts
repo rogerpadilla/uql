@@ -1,4 +1,4 @@
-import type { FieldValue, Key } from '../type/index.js';
+import type { FieldValue, Key, QueryUpdateResult, RawRow } from '../type/index.js';
 import { getKeys, hasKeys } from './object.util.js';
 
 export function flatObject<E extends object>(obj: E, pre?: string): E {
@@ -15,15 +15,15 @@ function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
     : { ...map, [prefix]: val };
 }
 
-export function unflatObjects<T extends object>(objects: any[]): T[] {
+export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
   if (!Array.isArray(objects) || !objects.length) {
-    return objects;
+    return objects as T[];
   }
 
   const attrsPaths = obtainAttrsPaths(objects[0]);
 
   if (!hasKeys(attrsPaths)) {
-    return objects;
+    return objects as T[];
   }
 
   return objects.map((row) => {
@@ -46,7 +46,7 @@ export function unflatObjects<T extends object>(objects: any[]): T[] {
         );
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
-        (dto as Record<string, unknown>)[col] = row[col];
+        (dto as RawRow)[col] = row[col];
       }
     }
 
@@ -101,4 +101,15 @@ export function escapeSqlId(
   const suffix = addDot ? '.' : '';
 
   return escaped + suffix;
+}
+
+/**
+ * Extract INSERT result IDs from raw database rows.
+ *
+ * UQL's SQL dialect always aliases the entity's ID column to `id` in RETURNING clauses,
+ * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
+ */
+export function extractInsertResult(rows: RawRow[], changes?: number): QueryUpdateResult {
+  const ids = rows.map((r) => r['id']) as QueryUpdateResult['ids'];
+  return { changes, ids, firstId: ids?.[0] };
 }

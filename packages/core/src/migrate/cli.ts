@@ -3,7 +3,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type Drift, type DriftReport, SchemaASTBuilder } from '../schema/index.js';
-import type { Dialect, MigratorOptions, NamingStrategy } from '../type/index.js';
+import type { Config, Dialect, MigratorOptions, NamingStrategy } from '../type/index.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { detectDrift } from './drift/driftDetector.js';
@@ -219,7 +219,7 @@ export async function runGenerateFromEntities(migrator: Migrator, args: string[]
   console.log(`\nCreated migration from entities: ${filePath}`);
 }
 
-export async function runSync(migrator: Migrator, args: string[], config: any) {
+export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
   const force = args.includes('--force');
   const push = args.includes('--push');
   const pull = args.includes('--pull');
@@ -269,7 +269,7 @@ export async function runSync(migrator: Migrator, args: string[], config: any) {
   }
 }
 
-export async function runGenerateFromDb(migrator: Migrator, args: string[], config: any) {
+export async function runGenerateFromDb(migrator: Migrator, args: string[], config: Partial<Config>) {
   // Parse output directory
   let outputDir = './src/entities';
   for (let i = 0; i < args.length; i++) {
@@ -314,7 +314,7 @@ export async function runGenerateFromDb(migrator: Migrator, args: string[], conf
   }
 }
 
-export async function runDriftCheck(migrator: Migrator, config: any) {
+export async function runDriftCheck(migrator: Migrator, config: Partial<Config>) {
   if (!config.entities || config.entities.length === 0) {
     console.error('No entities configured. Add entities to your uql config.');
     process.exit(1);

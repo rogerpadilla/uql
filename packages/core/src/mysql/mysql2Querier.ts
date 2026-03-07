@@ -1,4 +1,4 @@
-import type { PoolConnection } from 'mysql2/promise';
+import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
@@ -14,13 +14,14 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const [res]: any = await this.conn!.query(query, values);
-    const ids = res.insertId
-      ? Array(res.affectedRows)
-          .fill(res.insertId)
+    const [res] = (await this.conn!.query(query, values)) as [ResultSetHeader, FieldPacket[]];
+    const { insertId, affectedRows } = res;
+    const ids = insertId
+      ? Array(affectedRows)
+          .fill(insertId)
           .map((i, index) => i + index)
       : [];
-    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    return { changes: affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
   }
 
   protected override async releaseConn(conn: PoolConnection) {

@@ -1,7 +1,8 @@
 import type { PoolClient } from '@neondatabase/serverless';
 import { PostgresDialect } from '../postgres/index.js';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
+import { extractInsertResult } from '../util/sql.util.js';
 
 export class NeonQuerier extends AbstractPoolQuerier<PoolClient> {
   constructor(connect: () => Promise<PoolClient>, extra?: ExtraOptions) {
@@ -15,9 +16,7 @@ export class NeonQuerier extends AbstractPoolQuerier<PoolClient> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const res = await this.conn!.query(query, values);
-    const changes = res.rowCount ?? 0;
-    const ids = res.rows.map((r: any) => r.id);
-    return { changes, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    return extractInsertResult(res.rows, res.rowCount ?? 0);
   }
 
   protected override async releaseConn(conn: PoolClient) {

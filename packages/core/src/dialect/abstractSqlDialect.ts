@@ -37,8 +37,8 @@ import {
 } from '../type/index.js';
 
 import {
+  buildQueryWhereAsMap,
   buildSortMap,
-  buldQueryWhereAsMap,
   type CallbackKey,
   escapeSqlId,
   fillOnFields,
@@ -195,46 +195,11 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     select: QuerySelect<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
-    if (Array.isArray(select)) {
-      return;
-    }
-
-    const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
-    const relKeys = filterRelationKeys(meta, select);
-    const isSelectArray = Array.isArray(select);
-    const prefix = opts.prefix;
-
-    for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
-
-      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
-        continue;
-      }
-
-      const isFirstLevel = prefix === tableName;
-      const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
-      if (!relOpts.entity) continue;
-      const relEntity = relOpts.entity();
-      const relSelect = (select as Record<string, unknown>)[relKey];
-      const relQuery: Query<any> = isSelectArray
-        ? {}
-        : Array.isArray(relSelect)
-          ? { $select: relSelect }
-          : ((relSelect as Query<any>) ?? {});
-
+    this.forEachJoinableRelation(entity, select, opts, (relEntity, relQuery, joinRelAlias) => {
       ctx.append(', ');
-      this.selectFields(ctx, relEntity, relQuery.$select, {
-        prefix: joinRelAlias,
-        autoPrefixAlias: true,
-      });
-
-      // Recursively add nested relation fields
-      this.selectRelationFields(ctx, relEntity, relQuery.$select, {
-        prefix: joinRelAlias,
-      });
-    }
+      this.selectFields(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias, autoPrefixAlias: true });
+      this.selectRelationFields(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias });
+    });
   }
 
   protected selectRelationJoins<E>(
@@ -243,65 +208,87 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     select: QuerySelect<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
-    if (Array.isArray(select)) {
-      return;
-    }
+    this.forEachJoinableRelation(
+      entity,
+      select,
+      opts,
+      (relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required) => {
+        const relMeta = getMeta(relEntity);
+        const relTableName = this.resolveTableName(relEntity, relMeta);
+        const relEntityName = this.escapeId(relTableName);
+        const relPath = opts.prefix ? this.escapeId(opts.prefix, true) : this.escapeId(tableName);
+        const joinType = required ? 'INNER' : 'LEFT';
+        const joinAlias = this.escapeId(joinRelAlias, true);
 
+        ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
+        ctx.append(
+          (relOpts.references ?? [])
+            .map((it) => {
+              const relField = relMeta.fields[it.foreign];
+              const field = meta.fields[it.local];
+              const foreignColumnName = this.resolveColumnName(it.foreign, relField);
+              const localColumnName = this.resolveColumnName(it.local, field);
+              return `${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`;
+            })
+            .join(' AND '),
+        );
+
+        if (relQuery.$where) {
+          ctx.append(' AND ');
+          this.where(ctx, relEntity, relQuery.$where, { prefix: joinRelAlias, clause: false });
+        }
+
+        this.selectRelationJoins(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias });
+      },
+    );
+  }
+
+  /**
+   * Iterates over joinable (11/m1) relations for a given select, resolving shared metadata.
+   * Used by both `selectRelationFields` and `selectRelationJoins` to avoid duplicated iteration logic.
+   */
+  private forEachJoinableRelation<E>(
+    entity: Type<E>,
+    select: QuerySelect<E> | undefined,
+    opts: { prefix?: string },
+    callback: (
+      relEntity: Type<unknown>,
+      relQuery: Query<unknown>,
+      joinRelAlias: string,
+      relOpts: RelationOptions,
+      meta: EntityMeta<E>,
+      tableName: string,
+      required: boolean,
+    ) => void,
+  ): void {
+    if (Array.isArray(select)) return;
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const relKeys = filterRelationKeys(meta, select);
-    const isSelectArray = Array.isArray(select);
     const prefix = opts.prefix;
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
-
-      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
-        continue;
-      }
+      if (!relOpts || relOpts.cardinality === '1m' || relOpts.cardinality === 'mm' || !relOpts.entity) continue;
 
       const isFirstLevel = prefix === tableName;
-      const joinRelAlias = isFirstLevel ? relKey : prefix ? prefix + '.' + relKey : relKey;
-      if (!relOpts.entity) continue;
+      const joinRelAlias = isFirstLevel ? relKey : prefix ? `${prefix}.${relKey}` : relKey;
       const relEntity = relOpts.entity();
-      const relSelect = (select as Record<string, unknown>)[relKey];
-      const relQuery: Query<any> = isSelectArray
-        ? {}
-        : Array.isArray(relSelect)
-          ? { $select: relSelect }
-          : ((relSelect as Query<any>) ?? {});
+      const relSelect = select?.[relKey];
 
-      const relMeta = getMeta(relEntity);
-      const relTableName = this.resolveTableName(relEntity, relMeta);
-      const relEntityName = this.escapeId(relTableName);
-      const relPath = prefix ? this.escapeId(prefix, true) : this.escapeId(tableName);
-      const required = '$required';
-      const joinType = (relQuery as Record<string, unknown>)[required] ? 'INNER' : 'LEFT';
-      const joinAlias = this.escapeId(joinRelAlias, true);
+      let relQuery: Query<unknown>;
+      let required = false;
 
-      ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
-      ctx.append(
-        (relOpts.references ?? [])
-          .map((it) => {
-            const relField = relMeta.fields[it.foreign];
-            const field = meta.fields[it.local];
-            const foreignColumnName = this.resolveColumnName(it.foreign, relField);
-            const localColumnName = this.resolveColumnName(it.local, field);
-            return `${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`;
-          })
-          .join(' AND '),
-      );
-
-      if (relQuery.$where) {
-        ctx.append(' AND ');
-        this.where(ctx, relEntity, relQuery.$where, { prefix: joinRelAlias, clause: false });
+      if (isRelationSelectQuery(relSelect)) {
+        relQuery = relSelect;
+        required = relSelect.$required === true;
+      } else if (Array.isArray(relSelect)) {
+        relQuery = { $select: relSelect };
+      } else {
+        relQuery = {};
       }
 
-      // Recursively add nested relation JOINs
-      this.selectRelationJoins(ctx, relEntity, relQuery.$select, {
-        prefix: joinRelAlias,
-      });
+      callback(relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required);
     }
   }
 
@@ -309,7 +296,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const meta = getMeta(entity);
     const { usePrecedence, clause = 'WHERE', softDelete } = opts;
 
-    where = buldQueryWhereAsMap(meta, where);
+    where = buildQueryWhereAsMap(meta, where);
 
     if (
       meta.softDelete &&
@@ -399,9 +386,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
     const keyStr = key as string;
-    const jsonDot = this.resolveJsonDotPath(meta, keyStr);
+    const jsonDot = this.resolveJsonDotPath(meta, keyStr, opts.prefix);
     if (jsonDot) {
-      this.compareJsonPath(ctx, entity, jsonDot.root, jsonDot.jsonPath, val, opts);
+      this.compareJsonPath(ctx, jsonDot, val);
       return;
     }
 
@@ -1032,6 +1019,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   protected resolveJsonDotPath<E>(
     meta: EntityMeta<E>,
     key: string,
+    prefix?: string,
   ): { root: string; jsonPath: string; config: JsonFieldConfig } | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
@@ -1044,29 +1032,21 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
     const jsonPath = key.slice(dotIndex + 1);
     const colName = this.resolveColumnName(root, field);
-    const escapedCol = this.escapeId(colName);
+    const escapedCol = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
     const config = this.getJsonFieldConfig(escapedCol, jsonPath);
     return { root, jsonPath, config };
   }
 
   /**
    * Compare a JSONB dot-notation path, e.g. `'settings.isArchived': { $ne: true }`.
-   * The dialect's `getJsonFieldConfig` provides the SQL expression for accessing the nested JSON value.
+   * Receives a pre-resolved `resolveJsonDotPath` result to avoid redundant computation.
    */
-  protected compareJsonPath<E>(
+  protected compareJsonPath(
     ctx: QueryContext,
-    entity: Type<E>,
-    root: string,
-    jsonPath: string,
+    resolved: { jsonPath: string; config: JsonFieldConfig },
     val: unknown,
-    opts: QueryComparisonOptions,
   ): void {
-    const meta = getMeta(entity);
-    const field = meta.fields[root as FieldKey<E>];
-    const columnName = this.resolveColumnName(root, field);
-    const escapedColumn = (opts.prefix ? this.escapeId(opts.prefix, true, true) : '') + this.escapeId(columnName);
-    const config = this.getJsonFieldConfig(escapedColumn, jsonPath);
-
+    const { jsonPath, config } = resolved;
     const value = this.normalizeWhereValue(val);
     const operators = getKeys(value);
 
@@ -1227,3 +1207,10 @@ export type JsonFieldConfig = {
   /** Optional: null-safe `$ne` (e.g. Postgres `IS DISTINCT FROM`, SQLite `IS NOT`). If omitted, uses `<>` */
   neExpr?: (field: string, placeholder: string) => string;
 };
+
+/**
+ * Type guard: narrows a relation select value to a query object (with optional `$required`).
+ */
+function isRelationSelectQuery(val: unknown): val is Query<unknown> & { $required?: boolean } {
+  return val !== null && typeof val === 'object' && !Array.isArray(val);
+}

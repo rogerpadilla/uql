@@ -15,8 +15,8 @@ import type {
   Type,
 } from '../type/index.js';
 import {
+  buildQueryWhereAsMap,
   buildSortMap,
-  buldQueryWhereAsMap,
   type CallbackKey,
   fillOnFields,
   filterFieldKeys,
@@ -36,7 +36,7 @@ export class MongoDialect extends AbstractDialect {
     { softDelete }: QueryOptions = {},
   ): Filter<E> {
     const meta = getMeta(entity);
-    const whereMap = buldQueryWhereAsMap(meta, where);
+    const whereMap = buildQueryWhereAsMap(meta, where);
 
     if (meta.softDelete && (softDelete || softDelete === undefined) && !whereMap[meta.softDelete]) {
       const field = meta.fields[meta.softDelete];
@@ -206,13 +206,7 @@ export class MongoDialect extends AbstractDialect {
 
   public select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
     if (Array.isArray(select)) {
-      return select.reduce<QuerySelectMap<E>>(
-        (acc, it) => {
-          acc[it as keyof QuerySelectMap<E>] = true;
-          return acc;
-        },
-        {} as QuerySelectMap<E>,
-      );
+      return Object.fromEntries(select.map((it) => [it, true])) as QuerySelectMap<E>;
     }
     return select as QuerySelectMap<E>;
   }

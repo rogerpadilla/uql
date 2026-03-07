@@ -91,15 +91,15 @@ export function augmentWhere<E>(
   target: QueryWhere<E> = {},
   source: QueryWhere<E> = {},
 ): QueryWhere<E> {
-  const targetComparison = buldQueryWhereAsMap(meta, target);
-  const sourceComparison = buldQueryWhereAsMap(meta, source);
+  const targetComparison = buildQueryWhereAsMap(meta, target);
+  const sourceComparison = buildQueryWhereAsMap(meta, source);
   return {
     ...targetComparison,
     ...sourceComparison,
   };
 }
 
-export function buldQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
+export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryWhereMap<E>;
   }

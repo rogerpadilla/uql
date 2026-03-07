@@ -72,7 +72,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       const { dialect } = querier;
       const sql = `SELECT ${dialect.escapeId('name')} FROM ${dialect.escapeId(this.tableName)} ORDER BY ${dialect.escapeId('name')} ASC`;
       const results = await querier.all<MigrationRecord>(sql);
-      return results.map((r: any) => r.name);
+      return results.map((r) => r.name);
     } finally {
       await querier.release();
     }

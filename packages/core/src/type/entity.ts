@@ -237,7 +237,7 @@ export type FieldOptions = {
   /**
    * Default value for the column
    */
-  readonly defaultValue?: any;
+  readonly defaultValue?: Scalar | Record<string, unknown>;
   /**
    * Whether the column is auto-incrementing (for integer IDs).
    */
@@ -340,5 +340,3 @@ export type EntityIndexMeta = {
   /** Partial index condition (WHERE clause) */
   where?: string;
 };
-
-export type Primitive = string | number | symbol;
