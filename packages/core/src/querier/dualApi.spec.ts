@@ -109,11 +109,11 @@ describe('Dual API Pattern: $entity field support', () => {
     });
 
     it('should not include $entity in the query object passed to internalFindMany', async () => {
-      await querier.findMany({ $entity: User, $select: ['id', 'name'], $limit: 5 });
+      await querier.findMany({ $entity: User, $select: { id: true, name: true }, $limit: 5 });
 
       const [, passedQuery] = querier.findManyMock.mock.calls[0];
       expect(passedQuery).not.toHaveProperty('$entity');
-      expect(passedQuery).toEqual({ $select: ['id', 'name'], $limit: 5 });
+      expect(passedQuery).toEqual({ $select: { id: true, name: true }, $limit: 5 });
     });
   });
 

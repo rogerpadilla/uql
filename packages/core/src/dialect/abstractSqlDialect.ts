@@ -17,7 +17,6 @@ import {
   type QueryRawFnOptions,
   type QuerySearch,
   type QuerySelect,
-  type QuerySelectArray,
   type QuerySelectOptions,
   type QuerySortDirection,
   type QuerySortMap,
@@ -110,25 +109,30 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   selectFields<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E> | undefined,
+    select: QuerySelect<E> | QueryRaw[] | undefined,
     opts: QuerySelectOptions = {},
   ): void {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix as string, true, true);
 
-    let selectArr: QuerySelectArray<E>;
+    let selectArr: (FieldKey<E> | QueryRaw)[];
 
     if (select) {
       if (Array.isArray(select)) {
+        // Internal-only path: raw SQL expressions passed as QueryRaw[]
         selectArr = select;
       } else {
-        const selectPositive = getKeys(select).filter((it) => select[it]) as FieldKey<E>[];
-        selectArr = selectPositive.length
-          ? selectPositive
-          : (getFieldKeys(meta.fields).filter((it) => !(it in select)) as FieldKey<E>[]);
+        // Only field keys affect whitelist/exclusion mode; relation keys are additive
+        const fieldEntries = getKeys(select).filter((it) => it in meta.fields) as FieldKey<E>[];
+        const positiveFields = fieldEntries.filter((it) => select[it]) as FieldKey<E>[];
+        const negativeFields = fieldEntries.filter((it) => !select[it]) as FieldKey<E>[];
+
+        selectArr = positiveFields.length
+          ? positiveFields
+          : (getFieldKeys(meta.fields).filter((it) => !negativeFields.includes(it)) as FieldKey<E>[]);
       }
-      selectArr = selectArr.filter((it) => it instanceof QueryRaw || it in meta.fields);
+
       const id = meta.id;
       if (id && opts.prefix && !selectArr.includes(id)) {
         selectArr = [id, ...selectArr];
@@ -175,18 +179,24 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     });
   }
 
-  select<E>(ctx: QueryContext, entity: Type<E>, select: QuerySelect<E> | undefined, opts: QueryOptions = {}): void {
+  select<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    select: QuerySelect<E> | QueryRaw[] | undefined,
+    opts: QueryOptions = {},
+  ): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, select))) ? tableName : undefined;
+    const mapSelect = Array.isArray(select) ? undefined : select;
+    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, mapSelect))) ? tableName : undefined;
 
     ctx.append('SELECT ');
     this.selectFields(ctx, entity, select, { prefix });
     // Add related fields BEFORE FROM clause
-    this.selectRelationFields(ctx, entity, select, { prefix });
+    this.selectRelationFields(ctx, entity, mapSelect, { prefix });
     ctx.append(` FROM ${this.escapeId(tableName)}`);
     // Add JOINs AFTER FROM clause
-    this.selectRelationJoins(ctx, entity, select, { prefix });
+    this.selectRelationJoins(ctx, entity, mapSelect, { prefix });
   }
 
   protected selectRelationFields<E>(
@@ -261,7 +271,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       required: boolean,
     ) => void,
   ): void {
-    if (Array.isArray(select)) return;
+    if (!select) return;
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const relKeys = filterRelationKeys(meta, select);
@@ -749,7 +759,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void {
     const search: Query<E> = { ...q };
     delete search.$sort;
-    this.select<E>(ctx, entity, [raw('COUNT(*)', 'count')], undefined);
+    this.select<E>(ctx, entity, [raw('COUNT(*)', 'count')]);
     this.search(ctx, entity, search, opts);
   }
 

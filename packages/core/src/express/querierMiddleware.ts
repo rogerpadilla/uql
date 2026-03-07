@@ -63,13 +63,9 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
-      q.$where ??= {};
-      if (Array.isArray(q.$where)) {
-        q.$where.push(id);
-      } else {
-        const where = q.$where as Record<string, unknown>;
-        where[meta.id as string] = id;
-      }
+      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
+      where[meta.id as string] = id;
+      q.$where = where as typeof q.$where;
 
       const data = await querier.findOne(entity, q);
       res.json({ data, count: data ? 1 : 0 });
@@ -104,13 +100,9 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
-      q.$where ??= {};
-      if (Array.isArray(q.$where)) {
-        q.$where.push(id);
-      } else {
-        const where = q.$where as Record<string, unknown>;
-        where[meta.id as string] = id;
-      }
+      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
+      where[meta.id as string] = id;
+      q.$where = where as typeof q.$where;
 
       const count = await querier.updateMany(entity, q, payload);
       res.json({ data: params.id, count });
@@ -124,13 +116,9 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       const id = params.id as unknown as IdValue<E>;
       const q = req.query as Query<E>;
 
-      q.$where ??= {};
-      if (Array.isArray(q.$where)) {
-        q.$where.push(id);
-      } else {
-        const where = q.$where as Record<string, unknown>;
-        where[meta.id as string] = id;
-      }
+      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
+      where[meta.id as string] = id;
+      q.$where = where as typeof q.$where;
 
       const count = await querier.deleteMany(entity, q, {
         softDelete: !!req.query.softDelete,

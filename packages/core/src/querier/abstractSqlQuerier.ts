@@ -130,7 +130,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   ) {
     const meta = getMeta(entity);
     const findCtx = this.dialect.createContext();
-    this.dialect.find(findCtx, entity, { ...q, $select: [meta.id!] } as Query<E>);
+    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id!]: true } } as Query<E>);
     const founds = await this.all<E>(findCtx.sql, findCtx.values);
     if (!founds.length) {
       return 0;

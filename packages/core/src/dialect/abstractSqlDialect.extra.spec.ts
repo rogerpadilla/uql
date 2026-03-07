@@ -513,7 +513,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('single level sort', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.public': 1 },
       });
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'public')");
@@ -522,7 +522,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('deep nested sort', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.theme.color': -1 } as any,
       });
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY ((`kind`->'theme')->>'color') DESC");
@@ -531,7 +531,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('combined with regular sort', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { name: 1, 'kind.public': -1 },
       });
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->>'public') DESC");

@@ -59,7 +59,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldFindOne() {
-    await this.querier.findOne(User, { $select: ['id', 'name'], $where: { companyId: 123 } });
+    await this.querier.findOne(User, { $select: { id: true, name: true }, $where: { companyId: 123 } });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
       'SELECT `id`, `name` FROM `User` WHERE `companyId` = ? LIMIT 1',
@@ -172,7 +172,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: {
         $exists: raw(({ ctx, dialect, escapedPrefix }: any) => {
           dialect.find(ctx, User, {
-            $select: ['id'],
+            $select: { id: true },
             $where: {
               companyId: raw(({ ctx: innerCtx }: any) => {
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
@@ -198,7 +198,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: {
         $nexists: raw(({ ctx, dialect, escapedPrefix }: any) => {
           dialect.find(ctx, User, {
-            $select: ['id'],
+            $select: { id: true },
             $where: {
               companyId: raw(({ ctx: innerCtx }: any) => {
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
@@ -236,15 +236,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(InventoryAdjustment, {
       $select: {
         itemAdjustments: {
-          $select: ['id' as any, 'buyPrice' as any, 'itemId' as any, 'creatorId' as any, 'createdAt' as any],
-        } as any,
+          $select: { id: true, buyPrice: true, itemId: true, creatorId: true, createdAt: true },
+        },
       },
       $where: { createdAt: 1 },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
+      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`companyId`, `InventoryAdjustment`.`creatorId`' +
+        ', `InventoryAdjustment`.`createdAt`, `InventoryAdjustment`.`updatedAt`' +
+        ', `InventoryAdjustment`.`date`, `InventoryAdjustment`.`description`' +
+        ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
       [1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -300,7 +303,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: { id: true, itemAdjustments: { $select: ['buyPrice'], $skip: 1, $limit: 2 } },
+      $select: { id: true, itemAdjustments: { $select: { buyPrice: true }, $skip: 1, $limit: 2 } },
       $where: { createdAt: 1 },
     });
 
@@ -362,7 +365,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOne(Item, {
-      $select: { id: true, createdAt: true, tags: { $select: ['id' as any] } as any },
+      $select: { id: true, createdAt: true, tags: { $select: { id: true } as any } as any },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -392,7 +395,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOneById(Item, 123, {
-      $select: { id: 1, createdAt: 1, tags: { $select: ['id' as any] } as any },
+      $select: { id: 1, createdAt: 1, tags: { $select: { id: true } as any } as any },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(

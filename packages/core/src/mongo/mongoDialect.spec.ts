@@ -61,7 +61,7 @@ class MongoDialectSpec implements Spec {
 
   shouldSelect() {
     expect(this.dialect.select(Tax, { name: true })).toEqual({ name: true });
-    expect(this.dialect.select(Tax, ['id', 'name'])).toEqual({ id: true, name: true });
+    expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ id: true, name: true });
   }
 
   shouldBuildSort() {

@@ -76,9 +76,6 @@ function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {
   if (!select) {
     return [];
   }
-  if (Array.isArray(select)) {
-    return select as Key<E>[];
-  }
   return getKeys(select).filter((key) => select[key]) as Key<E>[];
 }
 

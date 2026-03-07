@@ -33,8 +33,8 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
-      $where: { name: { $elemMatch: { city: 'NYC' } } } as any,
+      $select: { id: true },
+      $where: { name: { $elemMatch: { city: 'NYC' } } },
     });
     expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
     expect(ctx.values).toEqual(['[{"city":"NYC"}]']);
@@ -44,8 +44,8 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
-      $where: { name: { $all: ['admin', 'user'] } } as any,
+      $select: { id: true },
+      $where: { name: { $all: ['admin', 'user'] } },
     });
     expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
     expect(ctx.values).toEqual(['["admin","user"]']);
@@ -55,8 +55,8 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
-      $where: { name: { $size: 3 } } as any,
+      $select: { id: true },
+      $where: { name: { $size: 3 } },
     });
     expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) = ?');
     expect(ctx.values).toEqual([3]);
@@ -67,8 +67,8 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
-      $where: { name: { $elemMatch: { city: { $like: 'New%' } } } } as any,
+      $select: { id: true },
+      $where: { name: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
       "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`name`, '$[*]' COLUMNS (city TEXT PATH '$.city')) AS jt WHERE jt.city LIKE ?)",
@@ -80,8 +80,8 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
-      $where: { name: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } } as any,
+      $select: { id: true },
+      $where: { name: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
     expect(ctx.sql).toContain('CAST(jt.price AS DECIMAL) >= ?');
@@ -92,7 +92,7 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
-      $select: ['id'],
+      $select: { id: true },
       $where: {
         name: {
           $elemMatch: {
@@ -113,7 +113,7 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
             o: { $nin: [3, 4] },
           },
         },
-      } as any,
+      },
     });
     expect(ctx.sql).toContain('jt.a = ?');
     expect(ctx.sql).toContain('CAST(jt.b AS DECIMAL) > ?');
