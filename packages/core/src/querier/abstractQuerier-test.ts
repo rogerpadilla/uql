@@ -227,7 +227,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: { $select: ['buyPrice' as any] } as any },
+      $select: { itemAdjustments: { $select: { buyPrice: true } } },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -256,7 +256,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: { $select: ['buyPrice' as any] } as any },
+      $select: { itemAdjustments: { $select: { buyPrice: true } } },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -318,7 +318,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(id).toBeDefined();
 
     const foundItem = await this.querier.findOneById(Item, id, {
-      $select: { name: true, createdAt: true, tags: { $select: ['name' as any, 'createdAt' as any] } as any },
+      $select: { name: true, createdAt: true, tags: { $select: { name: true, createdAt: true } } },
     });
 
     expect(foundItem).toMatchObject({
@@ -327,7 +327,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const foundTags = await this.querier.findMany(Tag, {
-      $select: { name: true, createdAt: true, items: { $select: ['name' as any, 'createdAt' as any] } as any },
+      $select: { name: true, createdAt: true, items: { $select: { name: true, createdAt: true } } },
     });
 
     delete (foundItem as any).tags;
@@ -367,7 +367,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
     const record1 = await this.querier.findOne(TaxCategory, {
-      $select: ['name'],
+      $select: { name: true },
       $where: { pk },
     });
     expect(record1).toBeUndefined();
@@ -380,7 +380,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       },
     );
     const record2 = await this.querier.findOne(TaxCategory, {
-      $select: ['name'],
+      $select: { name: true },
       $where: { pk },
     });
     expect(record2).toMatchObject({
@@ -395,7 +395,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       },
     );
     const record3 = await this.querier.findOne(TaxCategory, {
-      $select: ['name'],
+      $select: { name: true },
       $where: { pk },
     });
     expect(record3).toMatchObject({
@@ -413,8 +413,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const pk2 = '507f1f77bcf86cd799439022';
 
     // Verify records don't exist
-    const existing1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
-    const existing2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    const existing1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
+    const existing2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
     expect(existing1).toBeUndefined();
     expect(existing2).toBeUndefined();
 
@@ -424,8 +424,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { pk: pk2, name: 'Upsert B' },
     ]);
 
-    const inserted1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
-    const inserted2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    const inserted1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
+    const inserted2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
     expect(inserted1).toMatchObject({ name: 'Upsert A' });
     expect(inserted2).toMatchObject({ name: 'Upsert B' });
 
@@ -435,8 +435,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { pk: pk2, name: 'Updated B' },
     ]);
 
-    const updated1 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk1 } });
-    const updated2 = await this.querier.findOne(TaxCategory, { $select: ['name'], $where: { pk: pk2 } });
+    const updated1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
+    const updated2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
     expect(updated1).toMatchObject({ name: 'Updated A' });
     expect(updated2).toMatchObject({ name: 'Updated B' });
   }
@@ -445,7 +445,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
     const found = await this.querier.findOne(User, {
-      $select: ['id', 'name', 'email', 'password'],
+      $select: { id: true, name: true, email: true, password: true },
       $where: {
         email: 'someemaila@example.com',
       },
@@ -562,8 +562,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.shouldInsertOne();
 
     const [user, company] = await Promise.all([
-      this.querier.findOne(User, { $select: ['id'] }),
-      this.querier.findOne(Company, { $select: ['id'] }),
+      this.querier.findOne(User, { $select: { id: true } }),
+      this.querier.findOne(Company, { $select: { id: true } }),
     ]);
 
     const user_ = user!;

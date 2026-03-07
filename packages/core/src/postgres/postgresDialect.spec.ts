@@ -263,7 +263,7 @@ class PostgresDialectSpec {
   shouldFind$istartsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -291,7 +291,7 @@ class PostgresDialectSpec {
   shouldFind$iendsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -319,7 +319,7 @@ class PostgresDialectSpec {
   shouldFind$iincludes() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iincludes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -347,7 +347,7 @@ class PostgresDialectSpec {
   shouldFind$ilike() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $ilike: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -481,7 +481,7 @@ class PostgresDialectSpec {
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
       }),
     );
@@ -492,7 +492,7 @@ class PostgresDialectSpec {
   shouldFind$all() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $all: ['admin', 'user'] } } as any,
       }),
     );
@@ -503,7 +503,7 @@ class PostgresDialectSpec {
   shouldFind$size() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $size: 3 } } as any,
       }),
     );
@@ -515,7 +515,7 @@ class PostgresDialectSpec {
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
       }),
     );
@@ -528,7 +528,7 @@ class PostgresDialectSpec {
   shouldFind$elemMatchWithMultipleOperators() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { price: { $gt: 100 }, active: { $eq: true } } } } as any,
       }),
     );
@@ -541,7 +541,7 @@ class PostgresDialectSpec {
   shouldFind$elemMatchWithMixedConditions() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { name: 'exact', status: { $in: ['active', 'pending'] } } } } as any,
       }),
     );
@@ -554,7 +554,7 @@ class PostgresDialectSpec {
   shouldFind$elemMatchWithStringOperators() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { name: { $startsWith: 'Test' } } } } as any,
       }),
     );
@@ -568,7 +568,7 @@ class PostgresDialectSpec {
     // Test $ne
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
       }),
     );
@@ -577,7 +577,7 @@ class PostgresDialectSpec {
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } } as any,
       }),
     );
@@ -588,7 +588,7 @@ class PostgresDialectSpec {
     // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           kind: {
             $elemMatch: {
@@ -613,7 +613,7 @@ class PostgresDialectSpec {
     // Test $regex, $nin
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { kind: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } } as any,
       }),
     );
@@ -625,7 +625,7 @@ class PostgresDialectSpec {
   shouldFindByJsonDotNotation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': 1 } as any,
       }),
     );
@@ -636,7 +636,7 @@ class PostgresDialectSpec {
   shouldFindByJsonDotNotationWithOperator() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.private': { $ne: 0 } } as any,
       }),
     );
@@ -647,7 +647,7 @@ class PostgresDialectSpec {
   shouldFindByJsonDotNotationWithNumericCast() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': { $gt: 0, $lte: 5 } } as any,
       }),
     );
@@ -660,7 +660,7 @@ class PostgresDialectSpec {
   shouldFindByJsonDotNotationWithIlike() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': { $ilike: '%active%' } } as any,
       }),
     );
@@ -672,7 +672,7 @@ class PostgresDialectSpec {
   shouldFindByManyToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { tags: { id: 5 } } as any,
       }),
     );
@@ -685,7 +685,7 @@ class PostgresDialectSpec {
   shouldFindByOneToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnitCategory, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { measureUnits: { name: 'kg' } } as any,
       }),
     );
@@ -698,7 +698,7 @@ class PostgresDialectSpec {
   shouldFindByJsonDotNotationDeepPath() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.theme.color': 'red' } as any,
       }),
     );
@@ -763,7 +763,7 @@ class PostgresDialectSpec {
   shouldSortByJsonDotNotation() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.public': 1 },
       }),
     );
@@ -773,7 +773,7 @@ class PostgresDialectSpec {
   shouldSortByJsonDotNotationDeep() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.theme.color': -1 } as any,
       }),
     );

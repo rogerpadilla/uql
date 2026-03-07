@@ -77,7 +77,7 @@ describe('Query with $exists and nested relation filtering', () => {
           id: true,
           description: true,
           itemAdjustments: {
-            $select: ['buyPrice', 'number'],
+            $select: { buyPrice: true, number: true },
             $where: {
               buyPrice: { $gte: 100 },
             },
@@ -140,7 +140,7 @@ describe('Query with $exists and nested relation filtering', () => {
           id: true,
           name: true,
           tax: {
-            $select: ['name', 'percentage'],
+            $select: { name: true, percentage: true },
             $where: {
               percentage: { $gte: 10 },
             },

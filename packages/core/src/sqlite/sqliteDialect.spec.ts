@@ -207,7 +207,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
       }),
     );
@@ -220,7 +220,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$all() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $all: ['admin', 'user'] } } as any,
       }),
     );
@@ -233,7 +233,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$size() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $size: 3 } } as any,
       }),
     );
@@ -245,7 +245,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
       }),
     );
@@ -258,7 +258,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithMultipleOperators() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $elemMatch: { price: { $lt: 100 }, active: { $eq: true } } } } as any,
       }),
     );
@@ -272,7 +272,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     // Test $ne, $gt, $gte, $lte
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           name: {
             $elemMatch: {
@@ -293,7 +293,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     // Test $like, $startsWith, $endsWith
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           name: {
             $elemMatch: {
@@ -317,7 +317,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     // Test $regex
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
       }),
     );
@@ -328,7 +328,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByJsonDotNotation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': 1 } as any,
       }),
     );
@@ -339,7 +339,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByJsonDotNotationWithOperator() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': { $ne: 0 } } as any,
       }),
     );
@@ -350,7 +350,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByJsonDotNotationWithNumericCast() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': { $gt: 0 } } as any,
       }),
     );
@@ -361,7 +361,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByJsonDotNotationDeepPath() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.theme.color': 'red' } as any,
       }),
     );
@@ -372,7 +372,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByJsonDotNotationWithIlike() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { 'kind.public': { $ilike: '%active%' } } as any,
       }),
     );
@@ -385,7 +385,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByManyToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { tags: { id: 5 } } as any,
       }),
     );
@@ -398,7 +398,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFindByOneToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnitCategory, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { measureUnits: { name: 'kg' } } as any,
       }),
     );
@@ -466,7 +466,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldSortByJsonDotNotation() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.public': 1 },
       }),
     );
@@ -476,7 +476,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldSortByJsonDotNotationDeep() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $sort: { 'kind.theme.color': -1 } as any,
       }),
     );

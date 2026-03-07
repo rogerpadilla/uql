@@ -24,8 +24,11 @@ it('augmentWhere', () => {
   const meta = getMeta(User);
   expect(augmentWhere(meta, { name: 'a' }, { name: 'b' })).toEqual({ name: 'b' });
   expect(augmentWhere(meta, { name: 'a' }, { id: 1 })).toEqual({ name: 'a', id: 1 });
-  expect(augmentWhere(meta, { name: 'a' }, { $and: [1, 2] })).toEqual({ name: 'a', $and: [1, 2] });
-  expect(augmentWhere(meta, 1, { $or: [2, 3] })).toEqual({ id: 1, $or: [2, 3] });
+  expect(augmentWhere(meta, { name: 'a' }, { $and: [{ id: 1 }, { id: 2 }] })).toEqual({
+    name: 'a',
+    $and: [{ id: 1 }, { id: 2 }],
+  });
+  expect(augmentWhere(meta, 1, { $or: [{ id: 2 }, { id: 3 }] })).toEqual({ id: 1, $or: [{ id: 2 }, { id: 3 }] });
   const rawFilter = raw(() => 'a > 1');
   expect(augmentWhere(meta, rawFilter, 1)).toEqual({ $and: [rawFilter], id: 1 });
   expect(augmentWhere(meta, 1, rawFilter)).toEqual({ id: 1, $and: [rawFilter] });
@@ -52,14 +55,14 @@ it('fillOnFields', () => {
 
 it('filterRelationKeys', () => {
   const meta = getMeta(User);
-  expect(filterRelationKeys(meta, { id: 1, profile: 1 } as any)).toEqual(['profile']);
-  expect(filterRelationKeys(meta, ['id', 'profile'] as any)).toEqual(['profile']);
+  expect(filterRelationKeys(meta, { id: 1, profile: 1 })).toEqual(['profile']);
+  expect(filterRelationKeys(meta, { id: true, profile: true })).toEqual(['profile']);
 });
 
 it('isSelectingRelations', () => {
   const meta = getMeta(User);
   expect(isSelectingRelations(meta, { id: 1 })).toBe(false);
-  expect(isSelectingRelations(meta, { profile: 1 } as any)).toBe(true);
+  expect(isSelectingRelations(meta, { profile: 1 })).toBe(true);
 });
 
 it('isCascadable', () => {

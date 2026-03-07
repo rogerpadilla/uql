@@ -4,7 +4,6 @@ import type {
   ExtraOptions,
   IdKey,
   IdValue,
-  Key,
   LoggingOptions,
   Querier,
   Query,
@@ -289,11 +288,7 @@ export abstract class AbstractQuerier implements Querier {
       } else if (relOpts.cardinality === '1m') {
         const foreignField = relOpts.references![0].foreign;
         if (relQuery.$select) {
-          if (Array.isArray(relQuery.$select)) {
-            if (!relQuery.$select.includes(foreignField as Key<RelEntity>)) {
-              relQuery.$select.push(foreignField as Key<RelEntity>);
-            }
-          } else if (!(relQuery.$select as Record<string, unknown>)[foreignField]) {
+          if (!(relQuery.$select as Record<string, unknown>)[foreignField]) {
             (relQuery.$select as Record<string, unknown>)[foreignField] = true;
           }
         }
@@ -346,7 +341,7 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
-    const founds = await this.findMany(entity, { ...q, $select: [meta.id!] } as Query<E>);
+    const founds = await this.findMany(entity, { ...q, $select: { [meta.id!]: true } } as Query<E>);
     const ids = founds.map((found) => found[meta.id!]);
 
     await Promise.all(

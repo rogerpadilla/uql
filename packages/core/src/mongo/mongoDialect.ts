@@ -8,7 +8,6 @@ import type {
   Query,
   QueryOptions,
   QuerySelect,
-  QuerySelectMap,
   QuerySortMap,
   QueryWhere,
   RelationKey,
@@ -204,11 +203,8 @@ export class MongoDialect extends AbstractDialect {
     return result;
   }
 
-  public select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelectMap<E> {
-    if (Array.isArray(select)) {
-      return Object.fromEntries(select.map((it) => [it, true])) as QuerySelectMap<E>;
-    }
-    return select as QuerySelectMap<E>;
+  public select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelect<E> {
+    return select;
   }
 
   public sort<E extends Document>(entity: Type<E>, sort: QuerySortMap<E>): Sort {

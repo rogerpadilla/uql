@@ -73,7 +73,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   override shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id', 'something' as any],
+        $select: { id: true, something: true } as any,
         $where: {
           id: 1,
           something: 1,

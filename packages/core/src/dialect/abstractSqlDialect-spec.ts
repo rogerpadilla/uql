@@ -235,7 +235,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { id: 123, name: { $ne: 'abc' } },
       }),
     );
@@ -244,7 +244,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Profile, {
-        $select: ['pk', 'picture', 'companyId'],
+        $select: { pk: true, picture: true, companyId: true },
         $where: { pk: 123, picture: 'abc' },
       }),
     );
@@ -255,7 +255,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnit, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { id: 123, name: 'abc' },
       }),
     );
@@ -266,7 +266,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id', 'something' as any],
+        $select: { id: true, something: true } as any,
         $where: {
           id: 1,
           something: 1,
@@ -319,7 +319,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$and() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $and: [{ id: 123, name: 'abc' }] },
       }),
     );
@@ -339,7 +339,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$or() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $or: [{ id: 123 }, { name: 'abc' }] },
       }),
     );
@@ -348,7 +348,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $or: [{ id: 123 }] },
       }),
     );
@@ -366,7 +366,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $or: [{ id: 123 }], name: 'abc' },
       }),
     );
@@ -377,7 +377,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$not() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $not: [{ name: 'Some' }] },
       }),
     );
@@ -386,7 +386,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { id: { $not: 123 } },
       }),
     );
@@ -395,7 +395,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { id: { $not: [123, 456] } },
       }),
     );
@@ -404,7 +404,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { id: 123, name: { $not: { $startsWith: 'a' } } },
       }),
     );
@@ -413,7 +413,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
       }),
     );
@@ -440,7 +440,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Tax, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
       }),
     );
@@ -451,7 +451,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$nor() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $nor: [{ name: 'Some' }] },
       }),
     );
@@ -480,7 +480,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$orAnd$and() {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { creatorId: 1, $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: 1 },
       }),
     );
@@ -491,7 +491,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     const res2 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           creatorId: 1,
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
@@ -508,7 +508,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     const res3 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           creatorId: 1,
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
@@ -530,7 +530,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     const res4 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: {
           $or: [
             {
@@ -557,7 +557,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFindSingle$where() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'some' },
         $limit: 3,
       }),
@@ -569,7 +569,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFindMultipleComparisonOperators() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { companyId: 1 }] },
       }),
     );
@@ -578,7 +578,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { createdAt: { $gte: 123, $lte: 999 } },
         $limit: 10,
       }),
@@ -588,7 +588,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { createdAt: { $gt: 123, $lt: 999 } },
         $limit: 10,
       }),
@@ -600,7 +600,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$ne() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'some', companyId: { $ne: 5 } },
         $limit: 20,
       }),
@@ -612,7 +612,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFindIsNull() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { creatorId: 123, companyId: null as any },
         $limit: 5,
       }),
@@ -622,7 +622,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { creatorId: 123, companyId: { $ne: null } },
         $limit: 5,
       }),
@@ -634,7 +634,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$in() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'some', companyId: [1, 2, 3] },
         $limit: 10,
       }),
@@ -644,7 +644,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'some', companyId: { $in: [1, 2, 3] } },
         $limit: 10,
       }),
@@ -656,7 +656,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$nin() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'some', companyId: { $nin: [1, 2, 3] } },
         $limit: 10,
       }),
@@ -677,7 +677,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$selectOneToOne() {
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $select: { id: true, name: true, profile: ['id', 'picture'] as any } }),
+      this.dialect.find(ctx, User, {
+        $select: { id: true, name: true, profile: { $select: { id: true, picture: true } } },
+      }),
     );
     expect(res.sql).toBe(
       'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture` FROM `User`' +
@@ -686,7 +688,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { profile: true } }));
     expect(res.sql).toBe(
-      'SELECT `User`.`id`, `profile`.`companyId` `profile_companyId`' +
+      'SELECT `User`.`id`, `User`.`companyId`, `User`.`creatorId`, `User`.`createdAt`' +
+        ', `User`.`updatedAt`, `User`.`name`, `User`.`email`' +
+        ', `profile`.`companyId` `profile_companyId`' +
         ', `profile`.`creatorId` `profile_creatorId`, `profile`.`createdAt` `profile_createdAt`' +
         ', `profile`.`updatedAt` `profile_updatedAt`' +
         ', `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture`' +
@@ -701,8 +705,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: true,
           name: true,
           code: true,
-          tax: { $select: ['id', 'name'], $required: true },
-          measureUnit: { $select: ['id', 'name', 'categoryId'] },
+          tax: { $select: { id: true, name: true }, $required: true },
+          measureUnit: { $select: { id: true, name: true, categoryId: true } },
         },
         $limit: 100,
       }),
@@ -724,7 +728,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $select: {
           id: true,
           name: true,
-          measureUnit: { $select: ['id', 'name'], $where: { name: { $ne: 'unidad' } }, $required: true },
+          measureUnit: { $select: { id: true, name: true }, $where: { name: { $ne: 'unidad' } }, $required: true },
           tax: ['id', 'name'] as any,
         },
         $where: { salePrice: { $gte: 1000 }, name: { $istartsWith: 'A' } },
@@ -868,7 +872,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$limit() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: 9,
         $limit: 1,
       }),
@@ -888,7 +892,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: 'something', creatorId: 123 },
         $limit: 1,
       }),
@@ -898,7 +902,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id', 'name', 'creatorId'],
+        $select: { id: true, name: true, creatorId: true },
         $limit: 25,
       }),
     );
@@ -932,7 +936,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
+        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')] as any,
         $where: { name: 'something' },
       }),
     );
@@ -971,7 +975,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$selectRaw() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw(() => 'createdAt', 'hotness')],
+        $select: [raw(() => 'createdAt', 'hotness')] as any,
         $where: { name: 'something' },
       }),
     );
@@ -980,7 +984,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
+        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')] as any,
         $where: { name: 'something' },
       }),
     );
@@ -993,7 +997,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$whereRaw() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['creatorId'],
+        $select: { creatorId: true },
         $where: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
       }),
     );
@@ -1002,8 +1006,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
-        $where: { $or: [{ companyId: 1 }, 5, raw('SUM(salePrice) > 500')] },
+        $select: { id: true },
+        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw('SUM(salePrice) > 500')] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `companyId` = ? OR `id` = ? OR SUM(salePrice) > 500');
@@ -1011,8 +1015,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
-        $where: { $or: [1, raw('SUM(salePrice) > 500')] },
+        $select: { id: true },
+        $where: { $or: [{ id: 1 }, raw('SUM(salePrice) > 500')] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `id` = ? OR SUM(salePrice) > 500');
@@ -1020,8 +1024,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
-        $where: { $or: [raw('SUM(salePrice) > 500'), 1, { companyId: 1 }] },
+        $select: { id: true },
+        $where: { $or: [raw('SUM(salePrice) > 500'), { id: 1 }, { companyId: 1 }] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = ? OR `companyId` = ?');
@@ -1029,7 +1033,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { $and: [raw('SUM(salePrice) > 500')] },
       }),
     );
@@ -1037,7 +1041,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['id'],
+        $select: { id: true },
         $where: raw('SUM(salePrice) > 500'),
       }),
     );
@@ -1045,8 +1049,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: ['creatorId'],
-        $where: { $or: [[1, 2], { code: 'abc' }] },
+        $select: { creatorId: true },
+        $where: { $or: [{ id: { $in: [1, 2] } }, { code: 'abc' }] },
       }),
     );
     expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `id` IN (?, ?) OR `code` = ?');
@@ -1056,7 +1060,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$startsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $startsWith: 'Some' } },
         $sort: { name: 'asc', createdAt: 'desc' },
         $skip: 0,
@@ -1086,7 +1090,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$istartsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $istartsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1114,7 +1118,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$endsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $endsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1126,7 +1130,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $endsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1142,7 +1146,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$iendsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iendsWith: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1154,7 +1158,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iendsWith: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1170,7 +1174,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$includes() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $includes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1182,7 +1186,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $includes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1198,7 +1202,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$iincludes() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iincludes: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1210,7 +1214,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $iincludes: 'Some', $ne: 'Something' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1226,7 +1230,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$like() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $like: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1254,7 +1258,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$ilike() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $ilike: 'Some' } },
         $sort: { name: 1, id: -1 },
         $skip: 0,
@@ -1282,7 +1286,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$regex() {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: ['id'],
+        $select: { id: true },
         $where: { name: { $regex: '^some' } },
       }),
     );

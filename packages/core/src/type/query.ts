@@ -1,4 +1,4 @@
-import type { FieldKey, IdValue, JsonFieldPaths, Key, RelationKey, UpdatePayload } from './entity.js';
+import type { FieldKey, IdValue, JsonFieldPaths, RelationKey, UpdatePayload } from './entity.js';
 import type { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
@@ -28,19 +28,10 @@ export type QuerySelectOptions = {
 };
 
 /**
- * query selection as an array.
- */
-export type QuerySelectArray<E> = (Key<E> | QueryRaw)[];
-
-/**
  * query selection as a map — field and relation selections combined.
+ * Uses intersection of two mapped types to enforce strict key validation.
  */
-export type QuerySelectMap<E> = QuerySelectFieldMap<E> & QuerySelectRelationMap<E>;
-
-/**
- * query selection.
- */
-export type QuerySelect<E> = QuerySelectArray<E> | QuerySelectMap<E>;
+export type QuerySelect<E> = QuerySelectFieldMap<E> & QuerySelectRelationMap<E>;
 
 /**
  * query selection of fields as a map.
@@ -50,17 +41,17 @@ export type QuerySelectFieldMap<E> = {
 };
 
 /**
+ * query selection of relations as a map.
+ */
+export type QuerySelectRelationMap<E> = {
+  [K in RelationKey<E>]?: BooleanLike | QuerySelectRelationOptions<E[K]>;
+};
+
+/**
  * query conflict paths — subset of field keys used to detect upsert conflicts.
  */
 export type QueryConflictPaths<E> = {
   [K in FieldKey<E>]?: true;
-};
-
-/**
- * query selection of relations as a map.
- */
-export type QuerySelectRelationMap<E> = {
-  [K in RelationKey<E>]?: BooleanLike | Key<Unpacked<E[K]>>[] | QuerySelectRelationOptions<E[K]>;
 };
 
 /**
@@ -225,7 +216,7 @@ export type QueryWhereFieldOperatorMap<T> = {
    * whether an array contains all the specified values.
    * @example { tags: { $all: ['typescript', 'orm'] } }
    */
-  $all?: ExpandScalar<T>[];
+  $all?: T extends (infer U)[] ? ExpandScalar<U>[] : unknown[];
   /**
    * whether an array has the specified length.
    * @example { roles: { $size: 3 } }
@@ -235,7 +226,7 @@ export type QueryWhereFieldOperatorMap<T> = {
    * whether an array contains at least one element matching all specified conditions.
    * @example { addresses: { $elemMatch: { city: 'NYC', zip: '10001' } } }
    */
-  $elemMatch?: T extends (infer U)[] ? Partial<U> : never;
+  $elemMatch?: T extends (infer U)[] ? Partial<U> : Record<string, QueryWhereFieldValue<unknown>>;
 };
 
 /**
@@ -244,19 +235,14 @@ export type QueryWhereFieldOperatorMap<T> = {
 export type QueryWhereFieldValue<T> = T | T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
 
 /**
- * query single filter.
+ * query filter array — used for `$and`, `$or`, `$not`, `$nor` operators.
  */
-export type QueryWhereSingle<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | QueryRaw;
-
-/**
- * query filter array.
- */
-export type QueryWhereArray<E> = QueryWhereSingle<E>[];
+export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
 
 /**
  * query filter.
  */
-export type QueryWhere<E> = QueryWhereSingle<E> | QueryWhereArray<E>;
+export type QueryWhere<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | QueryWhereArray<E> | QueryRaw;
 
 /**
  * direction for the sort.
