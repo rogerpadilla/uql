@@ -42,15 +42,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runtime: [node, bun]
-        version: [latest]
         include:
+          - runtime: bun
+            version: latest
           - runtime: node
-            version: 20
+            version: lts/*
           - runtime: node
-            version: 22
-          - runtime: node
-            version: 24
+            version: latest
 
     name: Test (${{ matrix.runtime }} ${{ matrix.version }})
 
@@ -89,7 +87,7 @@ jobs:
           fi
 
       - name: Submit coverage
-        if: matrix.runtime == 'node' && matrix.version == 24
+        if: matrix.runtime == 'node' && matrix.version == 'lts/*'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
