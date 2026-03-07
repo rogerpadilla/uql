@@ -28,7 +28,7 @@ const users = await querier.findMany(User, {
 | **[Naming Strategies](https://uql.app/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
 | **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
-| **[Declarative Transactions](https://www.uql.app/transactions-declarative)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Declarative Transactions](https://uql.app/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
 | **[Modern &amp; Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
 | **[Database Migrations](https://www.uql.app/migrations)**          | Built-in [Entity-First synchronization](https://uql.app/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
 | **[Logging & Monitoring](https://www.uql.app/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
@@ -266,7 +266,7 @@ try {
   const users = await querier.findMany(User, {
     $select: {
       name: true,
-      profile: { $select: ['bio'], $required: true } // INNER JOIN
+      profile: { $select: { bio: true }, $required: true } // INNER JOIN
     },
     $where: {
       status: 'active',
@@ -372,6 +372,27 @@ export class UserService {
     const userId = await querier.insertOne(User, user);
     await querier.insertOne(Profile, { userId, picture });
   }
+}
+```
+
+#### Option C: Imperative
+
+For granular control over the transaction lifecycle, manage `begin`, `commit`, `rollback`, and `release` yourself.
+
+```ts
+const querier = await pool.getQuerier();
+try {
+  await querier.beginTransaction();
+
+  const userId = await querier.insertOne(User, { name: '...' });
+  await querier.insertOne(Profile, { userId, picture: '...' });
+
+  await querier.commitTransaction();
+} catch (error) {
+  await querier.rollbackTransaction();
+  throw error;
+} finally {
+  await querier.release();
 }
 ```
 
