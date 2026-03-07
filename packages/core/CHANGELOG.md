@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.13.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.13.0...@uql/core@3.13.1) (2026-03-07)
+
+
+### Features
+
+* refactor `QueryRaw` to a class, add JSON `$merge`/`$unset` operators, and enable JSON dot-notation sorting. ([3f6f31a](https://github.com/rogerpadilla/uql/commit/3f6f31a9f3f2f9fcc038d4974121df2d0f8e6260))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
