@@ -29,6 +29,7 @@ const users = await querier.findMany(User, {
 | **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
 | **[Declarative Transactions](https://uql.app/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Lifecycle Hooks](https://uql.app/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
 | **[Modern &amp; Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
 | **[Database Migrations](https://www.uql.app/migrations)**          | Built-in [Entity-First synchronization](https://uql.app/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
 | **[Logging & Monitoring](https://www.uql.app/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
@@ -90,6 +91,10 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | `@ManyToOne`  | Defines a many-to-one relationship.                                            |
 | `@ManyToMany` | Defines a many-to-many relationship.                                           |
 | `@Virtual()`  | Defines a read-only field calculated via SQL (see Advanced).                    |
+| `@BeforeInsert` / `@AfterInsert` | Lifecycle hooks fired around `insert` operations.           |
+| `@BeforeUpdate` / `@AfterUpdate` | Lifecycle hooks fired around `update` operations.           |
+| `@BeforeDelete` / `@AfterDelete` | Lifecycle hooks fired around `delete` operations.           |
+| `@AfterLoad`  | Lifecycle hook fired after loading entities from the database.                  |
 
 ### Type Abstraction: Logical vs. Physical
 
@@ -531,6 +536,7 @@ Learn more about UQL at [uql.app](https://uql.app) for details on:
 
 - [Complex Logical Operators](https://uql.app/querying/logical-operators)
 - [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying/relations)
+- [Lifecycle Hooks](https://uql.app/entities/lifecycle-hooks)
 - [Soft Deletes &amp; Auditing](https://uql.app/entities/soft-delete)
 - [Database Migration &amp; Syncing](https://uql.app/migrations)
 

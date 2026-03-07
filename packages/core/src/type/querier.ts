@@ -1,5 +1,5 @@
 import type { Db } from 'mongodb';
-import type { IdValue, UpdatePayload } from './entity.js';
+import type { HookEvent, IdValue, UpdatePayload } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
@@ -182,8 +182,27 @@ export type SlowQueryOptions = {
   readonly logParams?: boolean;
 };
 
+/**
+ * Context passed to global querier listeners.
+ */
+export type ListenerContext<E extends object = object> = {
+  readonly entity: Type<E>;
+  readonly querier: Querier;
+  readonly payloads: E[];
+  readonly event: HookEvent;
+};
+
+/**
+ * Global lifecycle listener for cross-cutting concerns (audit logging, timestamps, etc.).
+ * Registered on QuerierPool options, fired before entity-level hooks.
+ */
+export type QuerierListener = {
+  readonly [K in HookEvent]?: (ctx: ListenerContext) => Promise<void> | void;
+};
+
 export type ExtraOptions = {
   readonly logger?: LoggingOptions;
   readonly slowQuery?: SlowQueryOptions;
   readonly namingStrategy?: NamingStrategy;
+  readonly listeners?: readonly QuerierListener[];
 };

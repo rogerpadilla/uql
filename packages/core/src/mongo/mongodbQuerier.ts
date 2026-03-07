@@ -86,7 +86,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override async insertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
+  override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
     if (!payloads?.length) {
       return [];
     }
@@ -112,7 +112,11 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: UpdatePayload<E>) {
+  override async internalUpdateMany<E extends Document>(
+    entity: Type<E>,
+    qm: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+  ) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');

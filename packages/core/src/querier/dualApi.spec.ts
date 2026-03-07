@@ -21,11 +21,11 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  override insertMany(): any {
+  override internalInsertMany(): any {
     return Promise.resolve([]);
   }
 
-  override updateMany(): any {
+  override internalUpdateMany(): any {
     return Promise.resolve(0);
   }
 
@@ -190,6 +190,48 @@ describe('Dual API Pattern: $entity field support', () => {
         $where: { name: { $startsWith: 'John' } },
         $limit: 10,
       });
+    });
+  });
+
+  describe('lifecycle hook emission', () => {
+    let emitHookSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      emitHookSpy = vi.spyOn(querier as any, 'emitHook').mockResolvedValue(undefined);
+    });
+
+    it('should emit afterLoad for findMany', async () => {
+      await querier.findMany(User, { $where: { id: 1 } });
+
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterLoad', []);
+    });
+
+    it('should emit afterLoad for findManyAndCount', async () => {
+      await querier.findManyAndCount(User, { $where: { id: 1 } });
+
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterLoad', []);
+    });
+
+    it('should emit beforeInsert and afterInsert for insertMany', async () => {
+      const payload = [{ name: 'test' }] as User[];
+      await querier.insertMany(User, payload);
+
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeInsert', payload);
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterInsert', payload);
+    });
+
+    it('should emit beforeUpdate and afterUpdate for updateMany', async () => {
+      await querier.updateMany(User, { $where: { id: 1 } }, { name: 'updated' });
+
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeUpdate', [{ name: 'updated' }]);
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterUpdate', [{ name: 'updated' }]);
+    });
+
+    it('should emit beforeDelete and afterDelete for deleteMany', async () => {
+      await querier.deleteMany(User, { $where: { id: 1 } });
+
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeDelete', []);
+      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterDelete', []);
     });
   });
 });

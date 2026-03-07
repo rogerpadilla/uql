@@ -2,6 +2,7 @@ import { getMeta } from '../entity/decorator/index.js';
 
 import type {
   ExtraOptions,
+  HookEvent,
   IdKey,
   IdValue,
   LoggingOptions,
@@ -27,6 +28,7 @@ import {
   filterRelationKeys,
   getKeys,
   LoggerWrapper,
+  runHooks,
 } from '../util/index.js';
 import { Serialized } from './decorator/index.js';
 
@@ -97,12 +99,14 @@ export abstract class AbstractQuerier implements Querier {
    */
   findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
   findMany<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
-  findMany<E extends object>(
+  async findMany<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQuery?: Query<E>,
   ): Promise<E[]> {
     const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    return this.internalFindMany(entity, q as Query<E>);
+    const founds = await this.internalFindMany(entity, q as Query<E>);
+    await this.emitHook(entity, 'afterLoad', founds);
+    return founds;
   }
 
   protected abstract internalFindMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
@@ -113,7 +117,7 @@ export abstract class AbstractQuerier implements Querier {
    */
   findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
   findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(
+  async findManyAndCount<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQuery?: Query<E>,
   ): Promise<[E[], number]> {
@@ -124,7 +128,12 @@ export abstract class AbstractQuerier implements Querier {
     delete qCount.$sort;
     delete qCount.$limit;
     delete qCount.$skip;
-    return Promise.all([this.internalFindMany(entity, q as Query<E>), this.internalCount(entity, qCount)]);
+    const [founds, count] = await Promise.all([
+      this.internalFindMany(entity, q as Query<E>),
+      this.internalCount(entity, qCount),
+    ]);
+    await this.emitHook(entity, 'afterLoad', founds);
+    return [founds, count];
   }
 
   /**
@@ -148,13 +157,31 @@ export abstract class AbstractQuerier implements Querier {
     return id;
   }
 
-  abstract insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  async insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]> {
+    await this.emitHook(entity, 'beforeInsert', payload);
+    const ids = await this.internalInsertMany(entity, payload);
+    await this.emitHook(entity, 'afterInsert', payload);
+    return ids;
+  }
+
+  protected abstract internalInsertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>) {
     return this.updateMany(entity, { $where: id }, payload);
   }
 
-  abstract updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
+  async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number> {
+    await this.emitHook(entity, 'beforeUpdate', [payload as E]);
+    const changes = await this.internalUpdateMany(entity, q, payload);
+    await this.emitHook(entity, 'afterUpdate', [payload as E]);
+    return changes;
+  }
+
+  protected abstract internalUpdateMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+  ): Promise<number>;
 
   abstract upsertOne<E extends object>(
     entity: Type<E>,
@@ -178,17 +205,24 @@ export abstract class AbstractQuerier implements Querier {
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object>(
+  async deleteMany<E extends object>(
     entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
     qOrOpts?: QuerySearch<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
     if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      return this.internalDeleteMany(entityOrQuery as Type<E>, qOrOpts as QuerySearch<E>, maybeOpts);
+      const entity = entityOrQuery as Type<E>;
+      const q = qOrOpts as QuerySearch<E>;
+      await this.emitHook(entity, 'beforeDelete', []);
+      const changes = await this.internalDeleteMany(entity, q, maybeOpts);
+      await this.emitHook(entity, 'afterDelete', []);
+      return changes;
     }
-    const q = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
-    const { $entity, ...query } = q;
-    return this.internalDeleteMany($entity, query as QuerySearch<E>, qOrOpts as QueryOptions);
+    const { $entity, ...query } = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
+    await this.emitHook($entity, 'beforeDelete', []);
+    const changes = await this.internalDeleteMany($entity, query as QuerySearch<E>, qOrOpts as QueryOptions);
+    await this.emitHook($entity, 'afterDelete', []);
+    return changes;
   }
 
   protected abstract internalDeleteMany<E extends object>(
@@ -448,6 +482,35 @@ export abstract class AbstractQuerier implements Querier {
       throw err;
     } finally {
       await this.release();
+    }
+  }
+
+  /**
+   * Emit a lifecycle hook event for the given entity.
+   * Fires global listeners first, then entity-level hooks.
+   */
+  private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: E[]): Promise<void> {
+    const listeners = this.extra?.listeners;
+    const meta = getMeta(entity);
+    const registrations = meta.hooks?.[event];
+
+    // Fast bail-out: skip if no listeners and no entity hooks
+    if (!listeners?.length && !registrations?.length) return;
+
+    // Fire global listeners first
+    if (listeners?.length) {
+      for (const listener of listeners) {
+        const fn = listener[event];
+        if (fn) {
+          const result = fn({ entity, querier: this, payloads, event });
+          if (result instanceof Promise) await result;
+        }
+      }
+    }
+
+    // Fire entity-level hooks
+    if (registrations?.length) {
+      await runHooks(entity, event, payloads, { querier: this });
     }
   }
 
