@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [3.14.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.13.1...@uql/core@3.14.0) (2026-03-07)
-
-
-### Features
-
-* Standardize the `$select` query parameter to accept an object instead of an array for field selection. ([b4dca74](https://github.com/rogerpadilla/uql/commit/b4dca74e65013c14dd508c9ccea646b44eee1f3e))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
