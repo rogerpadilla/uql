@@ -1,21 +1,43 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.14.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.14.0...@uql/core@3.14.1) (2026-03-07)
-
-**Note:** Version bump only for package @uql/core
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.15.0] - 2026-03-07
+### New Features
+- **Lifecycle Hooks**: Added entity-level lifecycle hook decorators for domain-specific logic. Seven decorators are available: `@BeforeInsert()`, `@AfterInsert()`, `@BeforeUpdate()`, `@AfterUpdate()`, `@BeforeDelete()`, `@AfterDelete()`, and `@AfterLoad()`. Hooks receive a `HookContext` with access to the active `querier` for transactional DB operations.
+  ```ts
+  @Entity()
+  class Article {
+    @BeforeInsert()
+    generateSlug() {
+      this.slug = this.title.toLowerCase().replace(/\s+/g, '-');
+    }
+
+    @AfterLoad()
+    maskSensitiveData() {
+      this.internalCode = '***';
+    }
+  }
+  ```
+- **Global Querier Listeners**: Added `QuerierListener` interface and `listeners` option on `ExtraOptions` for cross-cutting concerns (audit logging, automatic timestamps, cache invalidation). Listeners fire before entity-level hooks.
+  ```ts
+  const pool = new PgQuerierPool(connectionConfig, {
+    listeners: [{
+      beforeInsert: ({ entity, payloads }) => { /* audit log */ },
+      afterUpdate: ({ entity, querier }) => { /* invalidate cache */ },
+    }],
+  });
+  ```
+
+### Architecture
+- **Renamed Internal Methods**: `insertMany`/`updateMany` in `AbstractSqlQuerier` and `MongodbQuerier` are now `internalInsertMany`/`internalUpdateMany` (protected). Public `insertMany`/`updateMany` in `AbstractQuerier` wrap them with hook emission.
+- **New Utility**: `runHooks()` in `util/hook.util.ts` — lightweight hook invocation engine using `entity.prototype[method].call(payload, ctx)`.
+- **Hook Inheritance**: Entity hooks are inherited from parent classes (parent hooks execute first).
+
+### Test Coverage
+- **22 new tests** (11 for decorators, 11 for `runHooks`). Total: **1602 tests passing**. Coverage: Statements 97.2%, Branches 90.1%, Functions 98.4%, Lines 98.0%.
 
 ## [3.14.0] - 2026-03-07
 ### Type Safety
