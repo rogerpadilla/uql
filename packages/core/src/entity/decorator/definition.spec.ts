@@ -16,7 +16,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type IdKey, QueryRaw } from '../../type/index.js';
+import { type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Field } from './field.js';
@@ -252,10 +252,9 @@ it('Tag', () => {
       itemsCount: {
         name: 'itemsCount',
         type: Number,
-        virtual: {
-          alias: undefined as any as string,
-          value: expect.any(Function),
-        },
+        virtual: expect.objectContaining({
+          [RAW_VALUE]: expect.any(Function),
+        }),
       },
       updatedAt: {
         name: 'updatedAt',

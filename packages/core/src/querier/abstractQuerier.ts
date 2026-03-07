@@ -18,6 +18,7 @@ import type {
   RelationKey,
   RelationValue,
   Type,
+  UpdatePayload,
 } from '../type/index.js';
 import {
   augmentWhere,
@@ -149,11 +150,11 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: E) {
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>) {
     return this.updateMany(entity, { $where: id }, payload);
   }
 
-  abstract updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
+  abstract updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
 
   abstract upsertOne<E extends object>(
     entity: Type<E>,
@@ -336,9 +337,9 @@ export abstract class AbstractQuerier implements Querier {
     );
   }
 
-  protected async updateRelations<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
+  protected async updateRelations<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
     const meta = getMeta(entity);
-    const relKeys = filterPersistableRelationKeys(meta, payload, 'persist');
+    const relKeys = filterPersistableRelationKeys(meta, payload as E, 'persist');
 
     if (!relKeys.length) {
       return;

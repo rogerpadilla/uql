@@ -1,4 +1,4 @@
-import type { FieldKey, IdValue, JsonFieldPaths, Key, RelationKey } from './entity.js';
+import type { FieldKey, IdValue, JsonFieldPaths, Key, RelationKey, UpdatePayload } from './entity.js';
 import type { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
@@ -265,40 +265,20 @@ export type QueryWhere<E> = QueryWhereSingle<E> | QueryWhereArray<E>;
  * direction for the sort.
  */
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
-
 /**
- * sort by tuples
+ * sort by map — supports field keys, JSON dot-notation paths, and relation sort.
+ * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
+ * for dot-paths, matching the same approach used in `QueryWhereMap`.
  */
-export type QuerySortTuples<E> = [FieldKey<E>, QuerySortDirection][];
-
-/**
- * sort by objects.
- */
-export type QuerySortObjects<E> = { field: FieldKey<E>; sort: QuerySortDirection }[];
-
-/**
- * sort by fields.
- */
-export type QuerySortFieldMap<E> = {
+export type QuerySortMap<E> = {
   [K in FieldKey<E>]?: QuerySortDirection;
+} & {
+  [P in JsonFieldPaths<E>]?: QuerySortDirection;
+} & {
+  [key: `${string}.${string}`]: QuerySortDirection | undefined;
+} & {
+  [K in RelationKey<E>]?: QuerySortMap<NonNullable<Unpacked<E[K]>>>;
 };
-
-/**
- * sort by relations fields.
- */
-export type QuerySortRelationMap<E> = {
-  [K in RelationKey<E>]?: QuerySortMap<Unpacked<E[K]>>;
-};
-
-/**
- * sort by map.
- */
-export type QuerySortMap<E> = QuerySortFieldMap<E> | QuerySortRelationMap<E>;
-
-/**
- * sort options.
- */
-export type QuerySort<E> = QuerySortMap<E> | QuerySortTuples<E> | QuerySortObjects<E>;
 
 /**
  * pager options.
@@ -327,7 +307,7 @@ export type QuerySearch<E> = {
   /**
    * sorting options.
    */
-  $sort?: QuerySort<E>;
+  $sort?: QuerySortMap<E>;
 } & QueryPager;
 
 /**
@@ -407,11 +387,17 @@ export type QueryRawFnOptions = {
  */
 export type QueryRawFn = (opts?: QueryRawFnOptions) => void | Scalar;
 
+export const RAW_VALUE: unique symbol = Symbol('rawValue');
+export const RAW_ALIAS: unique symbol = Symbol('rawAlias');
+
 export class QueryRaw {
-  constructor(
-    readonly value: Scalar | QueryRawFn,
-    readonly alias?: string,
-  ) {}
+  readonly [RAW_VALUE]: Scalar | QueryRawFn;
+  readonly [RAW_ALIAS]?: string;
+
+  constructor(value: Scalar | QueryRawFn, alias?: string) {
+    this[RAW_VALUE] = value;
+    this[RAW_ALIAS] = alias;
+  }
 }
 
 /**
@@ -478,7 +464,13 @@ export interface QueryDialect {
    * @param payload
    * @param opts the query options
    */
-  update<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): void;
+  update<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): void;
 
   /**
    * upsert records.

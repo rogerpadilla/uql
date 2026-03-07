@@ -9,7 +9,6 @@ import {
   type OnFieldCallback,
   QueryRaw,
   type QuerySelect,
-  type QuerySort,
   type QuerySortMap,
   type QueryWhere,
   type QueryWhereMap,
@@ -83,21 +82,8 @@ function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {
   return getKeys(select).filter((key) => select[key]) as Key<E>[];
 }
 
-export function buildSortMap<E>(sort: QuerySort<E> | undefined): QuerySortMap<E> {
-  if (Array.isArray(sort)) {
-    return sort.reduce(
-      (acc, it) => {
-        if (Array.isArray(it)) {
-          acc[it[0]] = it[1];
-        } else {
-          acc[it.field] = it.sort;
-        }
-        return acc;
-      },
-      {} as QuerySortMap<E>,
-    );
-  }
-  return sort as QuerySortMap<E>;
+export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap<E> {
+  return (sort ?? {}) as QuerySortMap<E>;
 }
 
 export function augmentWhere<E>(

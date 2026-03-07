@@ -9,7 +9,7 @@ import type {
   QueryOptions,
   QuerySelect,
   QuerySelectMap,
-  QuerySort,
+  QuerySortMap,
   QueryWhere,
   RelationKey,
   Type,
@@ -217,7 +217,7 @@ export class MongoDialect extends AbstractDialect {
     return select as QuerySelectMap<E>;
   }
 
-  public sort<E extends Document>(entity: Type<E>, sort: QuerySort<E>): Sort {
+  public sort<E extends Document>(entity: Type<E>, sort: QuerySortMap<E>): Sort {
     return buildSortMap(sort) as Sort;
   }
 

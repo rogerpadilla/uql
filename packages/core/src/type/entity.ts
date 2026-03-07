@@ -50,6 +50,43 @@ export type JsonFieldPaths<E> = {
 }[FieldKey<E>];
 
 /**
+ * Operator shape accepted by JSON/JSONB fields in update payloads.
+ * Provides type-safe `$merge` and `$unset` operations with IDE autocomplete.
+ *
+ * @example
+ * ```ts
+ * // merge only — autocompletes keys from the JSON field's inner type
+ * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } });
+ * // unset only — autocompletes keys from the JSON field's inner type
+ * querier.updateOneById(Company, id, { kind: { $unset: ['private'] } });
+ * // merge + unset
+ * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 }, $unset: ['private'] } });
+ * ```
+ */
+export type JsonMergeOp<T = unknown> = {
+  readonly $merge?: Partial<T>;
+  readonly $unset?: (keyof T & string)[];
+};
+
+/**
+ * Accepted value for a single field in an update payload.
+ * - JSON/JSONB fields additionally accept `JsonMergeOp<T>` for partial merge/unset operations.
+ * - All fields accept `QueryRaw` for raw SQL expressions (e.g. `raw('NOW()')`).
+ */
+type UpdateFieldValue<V> = NonNullable<V> extends Json<infer T> ? V | JsonMergeOp<T> | QueryRaw : V | QueryRaw;
+
+/**
+ * Payload type for update operations.
+ * Widens each field to additionally accept `QueryRaw` or `JsonMergeOp` (for JSON fields),
+ * providing IDE autocomplete for `$merge` keys via `Json<infer T>`.
+ */
+export type UpdatePayload<E> = {
+  [K in FieldKey<E>]?: UpdateFieldValue<E[K]>;
+} & {
+  [K in RelationKey<E>]?: E[K];
+};
+
+/**
  * Infers the field values of an entity
  */
 export type FieldValue<E> = E[FieldKey<E>];

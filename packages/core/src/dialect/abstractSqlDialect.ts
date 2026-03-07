@@ -4,6 +4,7 @@ import {
   type FieldKey,
   type FieldOptions,
   type IdKey,
+  type JsonMergeOp,
   type Key,
   type Query,
   type QueryComparisonOptions,
@@ -18,18 +19,21 @@ import {
   type QuerySelect,
   type QuerySelectArray,
   type QuerySelectOptions,
-  type QuerySort,
   type QuerySortDirection,
+  type QuerySortMap,
   type QueryTextSearchOptions,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOperatorMap,
   type QueryWhereMap,
   type QueryWhereOptions,
+  RAW_ALIAS,
+  RAW_VALUE,
   type RelationOptions,
   type SqlDialect,
   type SqlQueryDialect,
   type Type,
+  type UpdatePayload,
 } from '../type/index.js';
 
 import {
@@ -153,7 +157,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         const columnName = this.resolveColumnName(key, field);
         if (field.virtual) {
           this.getRawValue(ctx, {
-            value: raw(field.virtual.value, key),
+            value: raw(field.virtual[RAW_VALUE], key),
             prefix: opts.prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -395,14 +399,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
     const keyStr = key as string;
-    const dotIndex = keyStr.indexOf('.');
-    if (dotIndex > 0) {
-      const root = keyStr.slice(0, dotIndex);
-      const field = meta.fields[root as FieldKey<E>];
-      if (field && isJsonType(field.type)) {
-        this.compareJsonPath(ctx, entity, root, keyStr.slice(dotIndex + 1), val, opts);
-        return;
-      }
+    const jsonDot = this.resolveJsonDotPath(meta, keyStr);
+    if (jsonDot) {
+      this.compareJsonPath(ctx, entity, jsonDot.root, jsonDot.jsonPath, val, opts);
+      return;
     }
 
     // Detect relation filtering: key is a known relation with 'mm' or '1m' cardinality
@@ -720,7 +720,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.append(escapedPrefix + this.escapeId(columnName));
   }
 
-  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySort<E> | undefined, { prefix }: QueryOptions): void {
+  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, { prefix }: QueryOptions): void {
     const sortMap = buildSortMap(sort);
     if (!hasKeys(sortMap)) {
       return;
@@ -735,9 +735,17 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (index > 0) {
         ctx.append(', ');
       }
+      const direction = directionMap[sort as QuerySortDirection];
+
+      // Detect JSONB dot-notation: 'column.path'
+      const jsonDot = this.resolveJsonDotPath(meta, key);
+      if (jsonDot) {
+        ctx.append(jsonDot.config.fieldAccessor(jsonDot.jsonPath) + direction);
+        return;
+      }
+
       const field = meta.fields[key as Key<E>];
       const name = this.resolveColumnName(key, field);
-      const direction = directionMap[sort as QuerySortDirection];
       ctx.append(this.escapeId(name) + direction);
     });
   }
@@ -790,9 +798,15 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.append(')');
   }
 
-  update<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, payload: E, opts?: QueryOptions): void {
+  update<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): void {
     const meta = getMeta(entity);
-    const [filledPayload] = fillOnFields(meta, payload, 'onUpdate');
+    const [filledPayload] = fillOnFields(meta, payload as E, 'onUpdate');
     const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
 
     const tableName = this.resolveTableName(entity, meta);
@@ -803,8 +817,15 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       }
       const field = meta.fields[key];
       const columnName = this.resolveColumnName(key, field);
-      ctx.append(`${this.escapeId(columnName)} = `);
-      this.formatPersistableValue(ctx, field, filledPayload[key]);
+      const escapedCol = this.escapeId(columnName);
+      const value = filledPayload[key];
+
+      if (this.isJsonMergeOp(value)) {
+        this.formatJsonMerge<E>(ctx, escapedCol, value);
+      } else {
+        ctx.append(`${escapedCol} = `);
+        this.formatPersistableValue(ctx, field, value);
+      }
     });
 
     this.search(ctx, entity, q, opts);
@@ -942,10 +963,44 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.addValue(value);
   }
 
+  /**
+   * Generate SQL for a JSONB merge and/or unset operation.
+   * Called from `update()` when a field value has `$merge` and/or `$unset` operators.
+   * Generates the full `"col" = <expression>` assignment.
+   *
+   * Base implementation uses MySQL-compatible syntax. Override in dialect subclasses.
+   */
+  protected formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+    let expr = escapedCol;
+    if (hasKeys(value.$merge)) {
+      expr = `JSON_MERGE_PATCH(COALESCE(${escapedCol}, '{}'), ?)`;
+      ctx.pushValue(JSON.stringify(value.$merge));
+    }
+    if (value.$unset?.length) {
+      for (const key of value.$unset) {
+        expr = `JSON_REMOVE(${expr}, '$.${this.escapeJsonKey(key)}')`;
+      }
+    }
+    ctx.append(`${escapedCol} = ${expr}`);
+  }
+
+  /**
+   * Checks if a value is a `$merge`/`$unset` operator object.
+   */
+  protected isJsonMergeOp(value: unknown): value is JsonMergeOp {
+    return typeof value === 'object' && value !== null && ('$merge' in value || '$unset' in value);
+  }
+
+  /** Escapes a JSON key for safe interpolation into SQL string literals. */
+  protected escapeJsonKey(key: string): string {
+    return key.replace(/'/g, "''");
+  }
+
   getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
     const { value, prefix = '', escapedPrefix, autoPrefixAlias } = opts;
-    if (typeof value.value === 'function') {
-      const res = value.value({
+    const rawValue = value[RAW_VALUE];
+    if (typeof rawValue === 'function') {
+      const res = rawValue({
         ...opts,
         ctx,
         dialect: this,
@@ -956,9 +1011,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         ctx.append(String(res));
       }
     } else {
-      ctx.append(prefix + String(value.value));
+      ctx.append(prefix + String(rawValue));
     }
-    const alias = value.alias;
+    const alias = value[RAW_ALIAS];
     if (alias) {
       const fullAlias = autoPrefixAlias ? prefix + alias : alias;
       // Replace dots with underscores for alias to avoid syntax errors
@@ -966,6 +1021,32 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const escapedFullAlias = this.escapeId(safeAlias, true);
       ctx.append(' ' + escapedFullAlias);
     }
+  }
+
+  /**
+   * Resolves a dot-notation key to its JSON field metadata.
+   * Shared by `where()` and `sort()` to detect 'column.path' keys where 'column' is a JSON/JSONB field.
+   *
+   * @returns resolved metadata or `undefined` if the key is not a JSON dot-notation path
+   */
+  protected resolveJsonDotPath<E>(
+    meta: EntityMeta<E>,
+    key: string,
+  ): { root: string; jsonPath: string; config: JsonFieldConfig } | undefined {
+    const dotIndex = key.indexOf('.');
+    if (dotIndex <= 0) {
+      return undefined;
+    }
+    const root = key.slice(0, dotIndex);
+    const field = meta.fields[root as FieldKey<E>];
+    if (!field || !isJsonType(field.type)) {
+      return undefined;
+    }
+    const jsonPath = key.slice(dotIndex + 1);
+    const colName = this.resolveColumnName(root, field);
+    const escapedCol = this.escapeId(colName);
+    const config = this.getJsonFieldConfig(escapedCol, jsonPath);
+    return { root, jsonPath, config };
   }
 
   /**
@@ -1011,7 +1092,18 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * @param jsonPath - The dot-separated path within the JSON field (e.g. 'isArchived' or 'theme.color')
    */
   protected getJsonFieldConfig(escapedColumn: string, jsonPath: string): JsonFieldConfig {
-    return { ...this.getBaseJsonConfig(), fieldAccessor: () => `(${escapedColumn}->>'${jsonPath}')` };
+    return {
+      ...this.getBaseJsonConfig(),
+      fieldAccessor: () => {
+        const segments = jsonPath.split('.');
+        let expr = escapedColumn;
+        for (let i = 0; i < segments.length; i++) {
+          const op = i === segments.length - 1 ? '->>' : '->';
+          expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
+        }
+        return expr;
+      },
+    };
   }
 
   /**
