@@ -1,24 +1,20 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [3.13.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.12.1...@uql/core@3.13.0) (2026-03-07)
-
-
-### Features
-
-* Add JSON merge/unset operations to SQL dialect update methods and enable JSON dot-notation sorting. ([9140ff7](https://github.com/rogerpadilla/uql/commit/9140ff767218e44ae9c054a0fdc431b4b14b9d15))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.13.0] - 2026-03-07
+### New Features
+- **`QueryRaw` Class Refactoring**: Replaced the opaque type + type-guard pattern with a proper `class` using `Symbol`-keyed properties (`RAW_VALUE`, `RAW_ALIAS`). Enables `instanceof QueryRaw` checks, eliminates autocomplete pollution, and prevents accidental structural matches.
+- **JSON `$merge`/`$unset` Operators**: Restored type-safe partial update of JSONB fields via `$merge` (shallow merge) and `$unset` (key removal) in `update()` payloads. Works across PostgreSQL (`||`/`-`), MySQL (`JSON_MERGE_PATCH`/`JSON_REMOVE`), and SQLite (`json_patch`/`json_remove`).
+  ```ts
+  await querier.updateMany(Company, { $where: { id: 1 } }, {
+    kind: { $merge: { theme: 'dark' }, $unset: ['deprecated'] },
+  });
+  ```
+- **JSON Dot-Notation Sorting**: `$sort` now supports JSONB dot-notation paths (e.g. `{ 'kind.priority': 'desc' }`), sharing the `resolveJsonDotPath` helper with `$where` for DRY consistency.
+
 
 ## [3.12.1] - 2026-03-05
 ### Bug Fixes
