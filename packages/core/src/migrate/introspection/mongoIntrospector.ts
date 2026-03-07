@@ -78,8 +78,8 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
       return {
         name: tableName,
         columns: [], // We don't have columns in Mongo
-        indexes: indexes.map((idx: any) => ({
-          name: idx.name,
+        indexes: indexes.map((idx) => ({
+          name: idx.name ?? Object.keys(idx.key).join('_'),
           columns: Object.keys(idx.key),
           unique: !!idx.unique,
         })),
@@ -94,7 +94,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
     try {
       const { db } = querier as MongoQuerier;
       const collections = await db.listCollections().toArray();
-      return collections.map((c: any) => c.name);
+      return collections.map((c: { name: string }) => c.name);
     } finally {
       await querier.release();
     }

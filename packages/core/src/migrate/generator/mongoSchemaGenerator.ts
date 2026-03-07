@@ -1,7 +1,7 @@
 import { AbstractDialect } from '../../dialect/index.js';
 import { getMeta } from '../../entity/index.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
-import type { IndexSchema, NamingStrategy, SchemaDiff, SchemaGenerator, Type } from '../../type/index.js';
+import type { FieldOptions, IndexSchema, NamingStrategy, SchemaDiff, SchemaGenerator, Type } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import type { TableDefinition } from '../builder/types.js';
 
@@ -78,7 +78,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     });
   }
 
-  getSqlType(fieldOptions: any, fieldType?: unknown): string {
+  getSqlType(fieldOptions: FieldOptions, fieldType?: unknown): string {
     return '';
   }
 

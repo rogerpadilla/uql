@@ -1,16 +1,16 @@
-import type {
-  IdValue,
-  Query,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  Type,
-  UniversalQuerier,
-  UpdatePayload,
-} from '../../type/index.js';
+import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
-export interface ClientQuerier extends UniversalQuerier {
+/**
+ * Client-side querier — mirrors {@link UniversalQuerier} method names and semantics but with two structural differences:
+ * 1. Every return type is wrapped in `RequestSuccessResponse<T>` (adds `data`/`count` envelope).
+ * 2. Every method accepts an extra `opts?: RequestOptions` parameter.
+ *
+ * These differences prevent clean `extends UniversalQuerier` — TypeScript does not support
+ * higher-kinded type wrappers, so the interfaces are kept in sync by convention.
+ * @see UniversalQuerier for the server-side contract with direct return types.
+ */
+export interface ClientQuerier {
   findOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,

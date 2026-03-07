@@ -8,6 +8,8 @@ export type MongoId = {
 
 export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer | MongoId;
 
+export type Primitive = string | number | symbol;
+
 /**
  * Marker type for JSON/JSONB fields.
  * Wrapping a field's TypeScript type with `Json<T>` ensures it is classified as a `FieldKey`
@@ -21,7 +23,14 @@ export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer
  */
 export type Json<T = unknown> = T & { readonly __json?: never };
 
-export type ExpandScalar<T> = null | (T extends Date ? Date | string : T);
+export type ExpandScalar<T> = T extends Date ? Date | string : T;
+
+/**
+ * A raw database result row before entity mapping.
+ */
+export interface RawRow {
+  [key: string]: unknown;
+}
 
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 

@@ -1,6 +1,7 @@
 import type { PoolConnection } from 'mariadb';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
+import { extractInsertResult } from '../util/sql.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
@@ -15,8 +16,7 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const res = await this.conn!.query(query, values);
-    const ids = res.length ? res.map((r: any) => r.id) : [];
-    return { changes: res.affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    return extractInsertResult(res.length ? res : [], res.affectedRows);
   }
 
   protected override async releaseConn(conn: PoolConnection) {

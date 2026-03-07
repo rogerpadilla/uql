@@ -1,5 +1,5 @@
 import type { IdValue, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch } from './query.js';
+import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
 
 import type { Type } from './utility.js';
 
@@ -14,7 +14,7 @@ export interface UniversalQuerier {
    * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<unknown>;
+  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -22,7 +22,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the record
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<unknown>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -30,7 +30,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<unknown>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
 
   /**
    * obtains the records matching the given search parameters,
@@ -39,7 +39,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<unknown>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -47,7 +47,7 @@ export interface UniversalQuerier {
    * @param q the search options
    * @return the count
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<unknown>;
+  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   /**
    * inserts a record.
@@ -55,7 +55,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the ID
    */
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<unknown>;
+  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
   /**
    * Inserts many records.
@@ -63,7 +63,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the IDs
    */
-  insertMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<unknown>;
+  insertMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   /**
    * updates a record partially.
@@ -72,7 +72,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<unknown>;
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<number>;
 
   /**
    * updates many records partially.
@@ -81,7 +81,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateMany?<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<unknown>;
+  updateMany?<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
 
   /**
    * Insert or update a record given a search criteria.
@@ -90,7 +90,11 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return void
    */
-  upsertOne?<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E): Promise<unknown>;
+  upsertOne?<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E,
+  ): Promise<QueryUpdateResult>;
 
   /**
    * Insert or update many records given a search criteria.
@@ -99,7 +103,11 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return void
    */
-  upsertMany?<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]): Promise<unknown>;
+  upsertMany?<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E[],
+  ): Promise<QueryUpdateResult>;
 
   /**
    * insert or update a record.
@@ -107,7 +115,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the ID
    */
-  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<unknown>;
+  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
   /**
    * Insert or update records.
@@ -115,7 +123,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<unknown>;
+  saveMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   /**
    * delete or SoftDelete a record.
@@ -123,7 +131,7 @@ export interface UniversalQuerier {
    * @param id the primary key of the record
    * @return the number of affected records
    */
-  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<unknown>;
+  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * delete or SoftDelete records.
@@ -131,5 +139,5 @@ export interface UniversalQuerier {
    * @param q the criteria to look for the records
    * @return the number of affected records
    */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<unknown>;
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 }

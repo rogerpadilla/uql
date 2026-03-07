@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.13.1] - 2026-03-07
+### Type Safety
+- **Fully Typed Querier Returns**: Remaining querier methods now return proper types instead of `unknown`, enabling IDE autocompletion and compile-time validation on query results for all methods.
+- **Semantic `RawRow` Type**: Introduced `RawRow` as a reusable semantic alias for raw database result rows, replacing scattered `Record<string, unknown>` and `any` across queriers, introspection, and SQL utilities.
+- **Typed MySQL Driver**: Replaced `any` in MySQL2 querier with proper `ResultSetHeader` type from the driver.
+- **Smarter `$select` Validation**: Field and relation selections are now validated simultaneously, catching invalid property names at compile time.
+- **Stricter Null Comparisons**: `null` is now only accepted in `$eq` and `$ne` operators — invalid comparisons like `$gt: null` are caught at compile time.
+- **Typed `defaultValue`**: Entity field defaults are now type-checked instead of accepting `any`.
+
+### API Surface & DX
+- **Cleaner Querier Interfaces**: `ClientQuerier` and `UniversalQuerier` are now properly separated with documented contracts, preventing confusing type mismatches.
+- **Reduced Public API**: Removed unused/redundant type exports (`QuerySearchOne`, `QueryConflictPathsMap`), making the API surface smaller and easier to navigate.
+- **Improved JSDoc**: Added cross-references between related operators (`$not` root vs field) for better discoverability.
+
+### Refactoring
+- **DRY Relation Iteration**: Consolidated duplicated relation iteration logic into `forEachJoinableRelation`, eliminating ~35 duplicated lines.
+- **DRY `compareJsonPath`**: Simplified from 6 parameters to 3, removing redundant internal calls.
+- **DRY `extractInsertResult`**: Shared utility for INSERT result ID extraction across all RETURNING-based drivers (pg, neon, maria), eliminating duplicated logic.
+- **Eliminated Type Casts**: Replaced `Record<string, unknown>` casts with proper type guards across the dialect layer.
+- **Typo Fix**: Renamed `buldQueryWhereAsMap` → `buildQueryWhereAsMap`.
+
 ## [3.13.0] - 2026-03-07
 ### New Features
 - **`QueryRaw` Class Refactoring**: Replaced the opaque type + type-guard pattern with a proper `class` using `Symbol`-keyed properties (`RAW_VALUE`, `RAW_ALIAS`). Enables `instanceof QueryRaw` checks, eliminates autocomplete pollution, and prevents accidental structural matches.
