@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [3.13.0] - 2026-03-07
+### New Features
+- **`QueryRaw` Class Refactoring**: Replaced the opaque type + type-guard pattern with a proper `class` using `Symbol`-keyed properties (`RAW_VALUE`, `RAW_ALIAS`). Enables `instanceof QueryRaw` checks, eliminates autocomplete pollution, and prevents accidental structural matches.
+- **JSON `$merge`/`$unset` Operators**: Restored type-safe partial update of JSONB fields via `$merge` (shallow merge) and `$unset` (key removal) in `update()` payloads. Works across PostgreSQL (`||`/`-`), MySQL (`JSON_MERGE_PATCH`/`JSON_REMOVE`), and SQLite (`json_patch`/`json_remove`).
+  ```ts
+  await querier.updateMany(Company, { $where: { id: 1 } }, {
+    kind: { $merge: { theme: 'dark' }, $unset: ['deprecated'] },
+  });
+  ```
+- **JSON Dot-Notation Sorting**: `$sort` now supports JSONB dot-notation paths (e.g. `{ 'kind.priority': 'desc' }`), sharing the `resolveJsonDotPath` helper with `$where` for DRY consistency.
+
+
 ## [3.12.1] - 2026-03-05
 ### Bug Fixes
 - **Null-Safe JSONB `$ne`**: JSONB dot-notation `$ne` now uses null-safe operators (`IS DISTINCT FROM` on PostgreSQL, `IS NOT` on SQLite) so that absent keys (which return SQL `NULL`) are correctly included in results. Previously, `{ 'settings.isArchived': { $ne: true } }` would silently exclude rows where the key didn't exist.
