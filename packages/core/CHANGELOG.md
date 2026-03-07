@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [3.13.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.12.1...@uql/core@3.13.0) (2026-03-07)
+
+
+### Features
+
+* Add JSON merge/unset operations to SQL dialect update methods and enable JSON dot-notation sorting. ([9140ff7](https://github.com/rogerpadilla/uql/commit/9140ff767218e44ae9c054a0fdc431b4b14b9d15))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
