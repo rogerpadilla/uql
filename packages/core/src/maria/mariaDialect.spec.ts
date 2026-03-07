@@ -102,7 +102,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
         ctx,
         User,
         {
-          $where: { something: 'anything' },
+          $where: { something: 'anything' } as any,
         },
         {
           name: 'Some Name',

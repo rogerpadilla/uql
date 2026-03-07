@@ -10,6 +10,7 @@ import type {
   QuerySearch,
   QueryWhere,
   Type,
+  UpdatePayload,
 } from '../type/index.js';
 import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from '../util/index.js';
 
@@ -111,10 +112,10 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: E) {
+  override async updateMany<E extends Document>(entity: Type<E>, qm: QuerySearch<E>, payload: UpdatePayload<E>) {
     payload = clone(payload);
     const meta = getMeta(entity);
-    const persistable = this.dialect.getPersistable(meta, payload, 'onUpdate');
+    const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where);
     const update: UpdateFilter<E> = { $set: persistable };
 

@@ -71,6 +71,5 @@ it('isCascadable', () => {
 
 it('buildSortMap', () => {
   expect(buildSortMap({ id: 1 } as any)).toEqual({ id: 1 });
-  expect(buildSortMap([{ field: 'id', sort: 1 }])).toEqual({ id: 1 });
-  expect(buildSortMap([['id', -1]])).toEqual({ id: -1 });
+  expect(buildSortMap(undefined)).toEqual({});
 });

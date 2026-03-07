@@ -1,4 +1,4 @@
-import type { IdValue } from './entity.js';
+import type { IdValue, UpdatePayload } from './entity.js';
 import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch } from './query.js';
 
 import type { Type } from './utility.js';
@@ -72,7 +72,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<unknown>;
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<unknown>;
 
   /**
    * updates many records partially.
@@ -81,7 +81,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateMany?<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<unknown>;
+  updateMany?<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<unknown>;
 
   /**
    * Insert or update a record given a search criteria.

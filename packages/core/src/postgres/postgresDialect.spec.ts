@@ -702,8 +702,82 @@ class PostgresDialectSpec {
         $where: { 'kind.theme.color': 'red' } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'theme.color\') = $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->\'theme\')->>\'color\') = $1');
     expect(values).toEqual(['red']);
+  }
+
+  shouldUpdateWithJsonMerge() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\') || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(values).toEqual(['{"private":1}', 123, 1]);
+  }
+
+  shouldUpdateWithJsonMergeUnsetOnly() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $unset: ['public', 'private'] },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = (("kind") - \'public\') - \'private\', "updatedAt" = $1 WHERE "id" = $2',
+    );
+    expect(values).toEqual([123, 1]);
+  }
+
+  shouldUpdateWithJsonMergeCombined() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 }, $unset: ['public'] },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\') || $1::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(values).toEqual(['{"private":1}', 123, 1]);
+  }
+
+  shouldSortByJsonDotNotation() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $sort: { 'kind.public': 1 },
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY ("kind"->>\'public\')');
+  }
+
+  shouldSortByJsonDotNotationDeep() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: ['id'],
+        $sort: { 'kind.theme.color': -1 } as any,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY (("kind"->\'theme\')->>\'color\') DESC');
   }
 }
 

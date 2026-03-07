@@ -4,6 +4,7 @@ import { getMeta } from '../entity/index.js';
 import {
   type FieldKey,
   type FieldOptions,
+  type JsonMergeOp,
   type NamingStrategy,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -14,7 +15,7 @@ import {
   type QueryWhereFieldOperatorMap,
   type Type,
 } from '../type/index.js';
-import { isJsonType } from '../util/index.js';
+import { hasKeys, isJsonType } from '../util/index.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
@@ -233,6 +234,20 @@ export class PostgresDialect extends AbstractSqlDialect {
       return;
     }
     super.formatPersistableValue(ctx, field, value);
+  }
+
+  protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+    let expr = escapedCol;
+    if (hasKeys(value.$merge)) {
+      ctx.pushValue(JSON.stringify(value.$merge));
+      expr = `COALESCE(${escapedCol}, '{}') || ${this.placeholder(ctx.values.length)}::jsonb`;
+    }
+    if (value.$unset?.length) {
+      for (const key of value.$unset) {
+        expr = `(${expr}) - '${this.escapeJsonKey(key)}'`;
+      }
+    }
+    ctx.append(`${escapedCol} = ${expr}`);
   }
 
   override escape(value: unknown): string {

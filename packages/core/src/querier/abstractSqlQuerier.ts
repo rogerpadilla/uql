@@ -10,6 +10,7 @@ import type {
   QueryUpdateResult,
   SqlQuerier,
   Type,
+  UpdatePayload,
 } from '../type/index.js';
 import { clone, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
@@ -98,7 +99,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return payloadIds as IdValue<E>[];
   }
 
-  override async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E) {
+  override async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.update(ctx, entity, q, payload);

@@ -292,7 +292,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('deep nested path (two levels)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.theme.color': 'red' } as any);
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'theme.color') = ?");
+      expect(ctx.sql).toBe(" WHERE ((`kind`->'theme')->>'color') = ?");
       expect(ctx.values).toEqual(['red']);
     });
 
@@ -434,6 +434,107 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       } finally {
         tagRelation.references = originalRefs;
       }
+    });
+  });
+
+  // ─── $merge/$unset update tests ───────────────────────────────────
+  describe('$merge/$unset in update', () => {
+    it('merge only', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 } },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_MERGE_PATCH(COALESCE(`kind`, '{}'), ?), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['{"private":1}', 123, 1]);
+    });
+
+    it('unset only', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $unset: ['public', 'private'] },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_REMOVE(`kind`, '$.public'), '$.private'), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual([123, 1]);
+    });
+
+    it('merge + unset combined', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 }, $unset: ['public'] },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_MERGE_PATCH(COALESCE(`kind`, '{}'), ?), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['{"private":1}', 123, 1]);
+    });
+
+    it('$unset escapes keys with single quotes', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $unset: ["it's"] } as any,
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.it''s'), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual([123, 1]);
+    });
+  });
+
+  // ─── $sort JSONB dot-notation tests ───────────────────────────────
+  describe('$sort JSONB dot-notation', () => {
+    it('single level sort', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Company, {
+        $select: ['id'],
+        $sort: { 'kind.public': 1 },
+      });
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'public')");
+    });
+
+    it('deep nested sort', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Company, {
+        $select: ['id'],
+        $sort: { 'kind.theme.color': -1 } as any,
+      });
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY ((`kind`->'theme')->>'color') DESC");
+    });
+
+    it('combined with regular sort', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Company, {
+        $select: ['id'],
+        $sort: { name: 1, 'kind.public': -1 },
+      });
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->>'public') DESC");
     });
   });
 });

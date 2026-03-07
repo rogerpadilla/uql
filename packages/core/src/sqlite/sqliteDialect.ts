@@ -3,6 +3,7 @@ import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
   FieldKey,
+  JsonMergeOp,
   NamingStrategy,
   QueryComparisonOptions,
   QueryConflictPaths,
@@ -11,6 +12,7 @@ import type {
   QueryWhereFieldOperatorMap,
   Type,
 } from '../type/index.js';
+import { hasKeys } from '../util/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
@@ -152,6 +154,19 @@ export class SqliteDialect extends AbstractSqlDialect {
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     this.insert(ctx, entity, payload);
     ctx.append(` ON CONFLICT (${keysStr}) ${onConflict}`);
+  }
+
+  protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+    let expr = escapedCol;
+    if (hasKeys(value.$merge)) {
+      ctx.pushValue(JSON.stringify(value.$merge));
+      expr = `json_patch(COALESCE(${escapedCol}, '{}'), ?)`;
+    }
+    if (value.$unset?.length) {
+      const paths = value.$unset.map((k) => `'$.${this.escapeJsonKey(k)}'`).join(', ');
+      expr = `json_remove(${expr}, ${paths})`;
+    }
+    ctx.append(`${escapedCol} = ${expr}`);
   }
 
   override escape(value: unknown): string {

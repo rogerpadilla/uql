@@ -1,24 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [3.12.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.12.0...@uql/core@3.12.1) (2026-03-05)
-
-
-### Bug Fixes
-
-* Make JSONB `$ne` operator null-safe by using `IS DISTINCT FROM` / `IS NOT` and refine query map type definitions. ([2bb2023](https://github.com/rogerpadilla/uql/commit/2bb202310d5a1a7fa2bc0ff7948c892afa4ba4f2))
-
-
-### Features
-
-* Enhance `QueryWhereMap` type for improved JSONB dot-notation and relation filtering, eliminating `as any` casts in tests. ([2092e11](https://github.com/rogerpadilla/uql/commit/2092e113d858130941a0d0b2807026b73c852946))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.

@@ -1,5 +1,5 @@
 import type { Db } from 'mongodb';
-import type { IdValue } from './entity.js';
+import type { IdValue, UpdatePayload } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
@@ -69,9 +69,9 @@ export interface Querier extends UniversalQuerier {
 
   insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: E): Promise<number>;
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<number>;
 
-  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: E): Promise<number>;
+  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
 
   upsertOne<E extends object>(
     entity: Type<E>,

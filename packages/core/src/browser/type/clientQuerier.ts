@@ -1,4 +1,13 @@
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UniversalQuerier } from '../../type/index.js';
+import type {
+  IdValue,
+  Query,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  Type,
+  UniversalQuerier,
+  UpdatePayload,
+} from '../../type/index.js';
 import type { RequestOptions, RequestSuccessResponse } from './request.js';
 
 export interface ClientQuerier extends UniversalQuerier {
@@ -22,7 +31,7 @@ export interface ClientQuerier extends UniversalQuerier {
   updateOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,
-    payload: E,
+    payload: UpdatePayload<E>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 

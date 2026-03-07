@@ -295,7 +295,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ctx,
         User,
         {
-          $where: { something: 'anything' },
+          $where: { something: 'anything' } as any,
         },
         {
           name: 'Some Name',
@@ -541,10 +541,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
             { name: ['a', 'b', 'c'], email: 'abc@example.com' },
           ],
         },
-        $sort: [
-          { field: 'name', sort: 'asc' },
-          { field: 'createdAt', sort: 'desc' },
-        ],
+        $sort: { name: 'asc', createdAt: 'desc' },
         $skip: 50,
         $limit: 10,
       }),
@@ -1061,10 +1058,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, User, {
         $select: ['id'],
         $where: { name: { $startsWith: 'Some' } },
-        $sort: [
-          { field: 'name', sort: 'asc' },
-          { field: 'createdAt', sort: 'desc' },
-        ],
+        $sort: { name: 'asc', createdAt: 'desc' },
         $skip: 0,
         $limit: 50,
       }),

@@ -1,5 +1,14 @@
 import { getMeta } from '../../entity/index.js';
-import type { IdKey, IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type } from '../../type/index.js';
+import type {
+  IdKey,
+  IdValue,
+  Query,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  Type,
+  UpdatePayload,
+} from '../../type/index.js';
 import { kebabCase } from '../../util/index.js';
 import { get, patch, post, remove } from '../http/index.js';
 import type { ClientQuerier, RequestFindOptions, RequestOptions, RequestSuccessResponse } from '../type/index.js';
@@ -50,7 +59,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<any>(basePath, payload, opts);
   }
 
-  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: E, opts?: RequestOptions) {
+  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, payload, opts);
   }
@@ -60,7 +69,7 @@ export class HttpQuerier implements ClientQuerier {
     const idKey = meta.id ?? ('id' as IdKey<E>);
     const id = payload[idKey];
     if (id) {
-      return this.updateOneById(entity, id, payload, opts).then(() => ({ data: id }));
+      return this.updateOneById(entity, id, payload as UpdatePayload<E>, opts).then(() => ({ data: id }));
     }
     return this.insertOne(entity, payload, opts);
   }
