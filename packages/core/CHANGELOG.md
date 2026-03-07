@@ -3,12 +3,12 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
-## [3.13.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.13.0...@uql/core@3.13.1) (2026-03-07)
+# [3.14.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.13.1...@uql/core@3.14.0) (2026-03-07)
 
 
 ### Features
 
-* refactor `QueryRaw` to a class, add JSON `$merge`/`$unset` operators, and enable JSON dot-notation sorting. ([3f6f31a](https://github.com/rogerpadilla/uql/commit/3f6f31a9f3f2f9fcc038d4974121df2d0f8e6260))
+* Standardize the `$select` query parameter to accept an object instead of an array for field selection. ([b4dca74](https://github.com/rogerpadilla/uql/commit/b4dca74e65013c14dd508c9ccea646b44eee1f3e))
 
 
 
@@ -19,6 +19,16 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [3.14.0] - 2026-03-07
+### Type Safety
+- **Map-Only `$select`**: `$select` now only accepts the map form (e.g., `{ id: true, name: true }`), removing the less type-safe array form. Relation selections are now additive in map form.
+- **Stricter `$and`/`$or`/`$not`/`$nor`**: Logical operators now only accept `QueryWhereMap | QueryRaw` elements — bare ID values (e.g., `$or: [5]`) must use the explicit form `$or: [{ id: 5 }]`. This restores TypeScript's excess property checking inside logical clauses.
+- **Wider JSON Array Operators**: `$elemMatch` and `$all` now accept JSON fields without requiring `as any` casts, thanks to widened fallback types for non-array field types. Removed 6 unnecessary `as any` casts from tests.
+
+### Refactoring
+- **Simplified Express Middleware**: `$where` ID injection in `querierMiddleware` now always uses map form, properly converting array `$where` from query strings to `{ id: { $in: [...] } }`.
+- **Removed `QueryWhereSingle`**: Consolidated into a flattened `QueryWhere<E>` union. Introduced reusable `QueryWhereArray<E>` type alias.
 
 ## [3.13.1] - 2026-03-07
 ### Type Safety
