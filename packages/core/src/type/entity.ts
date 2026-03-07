@@ -309,6 +309,25 @@ export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | Rela
  */
 export type Relation<T> = T;
 
+/**
+ * Lifecycle hook event names.
+ */
+export type HookEvent =
+  | 'beforeInsert'
+  | 'afterInsert'
+  | 'beforeUpdate'
+  | 'afterUpdate'
+  | 'beforeDelete'
+  | 'afterDelete'
+  | 'afterLoad';
+
+/**
+ * A registered hook: the method name on the entity class to call.
+ */
+export type HookRegistration = {
+  readonly methodName: string;
+};
+
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name?: string;
@@ -322,6 +341,8 @@ export type EntityMeta<E> = {
   } & { [key: string]: RelationOptions | undefined };
   /** Composite indexes defined via @Index decorator */
   indexes?: EntityIndexMeta[];
+  /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
+  hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
   processed?: boolean;
 };
 

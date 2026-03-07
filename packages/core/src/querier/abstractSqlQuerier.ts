@@ -81,7 +81,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return Number(res[0].count);
   }
 
-  override async insertMany<E extends object>(entity: Type<E>, payload: E[]) {
+  override async internalInsertMany<E extends object>(entity: Type<E>, payload: E[]) {
     if (!payload?.length) {
       return [];
     }
@@ -100,7 +100,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return payloadIds as IdValue<E>[];
   }
 
-  override async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
+  override async internalUpdateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.update(ctx, entity, q, payload);
