@@ -101,9 +101,9 @@ export function getEntities(): Type<unknown>[] {
 
 export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  const hooks = (meta.hooks ??= {});
-  const list = (hooks[event] ??= []);
-  list.push({ methodName });
+  if (!meta.hooks) meta.hooks = {};
+  if (!meta.hooks[event]) meta.hooks[event] = [];
+  meta.hooks[event].push({ methodName });
   return meta;
 }
 
@@ -262,11 +262,11 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
 
   // Merge hooks from parent entity (parent hooks execute first)
   if (source.hooks) {
-    const targetHooks = (target.hooks ??= {});
+    if (!target.hooks) target.hooks = {};
     for (const event of Object.keys(source.hooks) as HookEvent[]) {
       const sourceList = source.hooks[event];
       if (sourceList?.length) {
-        targetHooks[event] = [...sourceList, ...(targetHooks[event] ?? [])];
+        target.hooks[event] = [...sourceList, ...(target.hooks[event] ?? [])];
       }
     }
   }
