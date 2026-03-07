@@ -1,3 +1,16 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [3.14.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.14.0...@uql/core@3.14.1) (2026-03-07)
+
+**Note:** Version bump only for package @uql/core
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
