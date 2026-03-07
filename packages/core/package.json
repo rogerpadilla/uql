@@ -16,7 +16,6 @@
     "./dialect": "./dist/dialect/index.js",
     "./entity": "./dist/entity/index.js",
     "./querier": "./dist/querier/index.js",
-    "./repository": "./dist/repository/index.js",
     "./type": "./dist/type/index.js",
     "./util": "./dist/util/index.js",
     "./namingStrategy": "./dist/namingStrategy/index.js",

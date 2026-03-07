@@ -7,10 +7,11 @@
     "packages/*"
   ],
   "scripts": {
-    "release.patch": "bun run build && lerna publish patch && git pull && git push",
-    "release.minor": "bun run build && lerna publish minor && git pull && git push",
-    "release.major": "bun run build && lerna publish major && git pull && git push",
-    "release.current": "bun run build && lerna publish from-package && git pull && git push",
+    "release": "bun run build && lerna publish",
+    "release.patch": "bun run release patch && git pull && git push",
+    "release.minor": "bun run release minor && git pull && git push",
+    "release.major": "bun run release major && git pull && git push",
+    "release.current": "bun run release from-package && git pull && git push",
     "check": "bun run --parallel ts lint.fix",
     "ts": "tsc --noEmit",
     "build": "lerna run build",
