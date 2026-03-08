@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.1.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.1.2...uql-orm@0.1.3) (2026-03-08)
+
+
+### Performance Improvements
+
+* Reduce allocations and simplify logic in utility functions and SQL query generation. ([5bc1ed5](https://github.com/rogerpadilla/uql/commit/5bc1ed5d85b91ba4af96075a91c93c923a204e76))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
