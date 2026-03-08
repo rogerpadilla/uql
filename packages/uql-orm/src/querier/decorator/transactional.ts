@@ -18,13 +18,13 @@ export function Transactional({
       throw TypeError(`missing decorator @InjectQuerier() in '${target.constructor.name}.${key}'`);
     }
 
-    propDescriptor.value = async function func(this: object, ...args: any[]) {
+    propDescriptor.value = async function func(this: object, ...args: unknown[]) {
       const params = [...args];
       let isOwnTransaction = false;
       let querier: Querier;
 
       if (params[injectedQuerierIndex]) {
-        querier = params[injectedQuerierIndex];
+        querier = params[injectedQuerierIndex] as Querier;
       } else {
         isOwnTransaction = true;
         pool ??= getQuerierPool();

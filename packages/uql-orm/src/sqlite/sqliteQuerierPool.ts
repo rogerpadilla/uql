@@ -1,4 +1,4 @@
-import type { Options } from 'better-sqlite3';
+import type { Database, Options } from 'better-sqlite3';
 import { AbstractQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
@@ -16,14 +16,15 @@ export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteQuerier> {
 
   async getQuerier() {
     if (!this.querier) {
-      let db: any;
+      let db: Database;
       if (typeof Bun !== 'undefined') {
-        const { Database } = await import('bun:sqlite');
-        db = new Database(this.filename as string, this.opts as Record<string, unknown>);
-        db.run('PRAGMA journal_mode = WAL');
+        const { Database: BunDatabase } = await import('bun:sqlite');
+        const bunDb = new BunDatabase(this.filename as string, this.opts);
+        bunDb.run('PRAGMA journal_mode = WAL');
+        db = bunDb as unknown as Database;
       } else {
-        const { default: Database } = await import('better-sqlite3');
-        db = new Database(this.filename, this.opts);
+        const { default: BetterSqlite3 } = await import('better-sqlite3');
+        db = new BetterSqlite3(this.filename, this.opts);
         db.pragma('journal_mode = WAL');
       }
       this.querier = new SqliteQuerier(db, this.extra);

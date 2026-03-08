@@ -26,7 +26,7 @@ export type QuerySearchWithEntity<E extends object> = QuerySearch<E> & { $entity
 /**
  * Isolation levels for transactions.
  */
-export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeteable read' | 'serializable';
+export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
 
 // Re-export SqlDialect for backwards compatibility
 export type { SqlDialect };

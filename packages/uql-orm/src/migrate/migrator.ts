@@ -515,7 +515,7 @@ export class Migrator {
         collection?: string;
         indexes?: { name: string; columns: string[]; unique?: boolean }[];
         key?: Record<string, number>;
-        options?: any;
+        options?: { unique?: boolean; name?: string };
       };
       if (options.logging) this.logger.logSchema(`Executing MongoDB: ${stmt}`);
 

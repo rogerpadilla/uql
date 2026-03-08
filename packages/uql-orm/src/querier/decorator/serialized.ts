@@ -6,7 +6,7 @@
 export function Serialized() {
   return (_target: object, _key: string, propDescriptor: PropertyDescriptor): void => {
     const originalMethod = propDescriptor.value;
-    propDescriptor.value = function (this: any, ...args: any[]) {
+    propDescriptor.value = function (this: { serialize: (fn: () => unknown) => unknown }, ...args: unknown[]) {
       return this.serialize(() => originalMethod.apply(this, args));
     };
   };

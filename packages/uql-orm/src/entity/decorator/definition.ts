@@ -14,10 +14,10 @@ import type {
 } from '../../type/index.js';
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
-const holder = globalThis as Record<string, unknown>;
+type Meta = Map<Type<unknown>, EntityMeta<any>>;
+const holder = globalThis as unknown as Record<string, Meta>;
 const metaKey = 'uql-orm/entity/decorator';
-const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
-new Map();
+const metas: Meta = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
@@ -275,12 +275,13 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
 function inferType<E>(entity: Type<E>, key: string): any {
   return Reflect.getMetadata('design:type', entity.prototype, key);
 }
-
 function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
   if (!isValidType) {
-    throw TypeError(`'${entity.name}.${key}' type was auto-inferred with invalid type '${inferredType?.name}'`);
+    throw TypeError(
+      `'${entity.name}.${key}' type was auto-inferred with invalid type '${(inferredType as { name?: string })?.name}'`,
+    );
   }
   return inferredType;
 }
@@ -295,4 +296,17 @@ export function isValidEntityType(type: unknown): type is Type<unknown> {
     type !== Date &&
     type !== Symbol
   );
+}
+
+export function getOrCreateMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
+  new Map();
+  holder[metaKey] = metas;
+
+  let meta = metas.get(entity);
+  if (!meta) {
+    meta = { entity, fields: {}, relations: {} };
+    metas.set(entity, meta);
+  }
+  return meta;
 }
