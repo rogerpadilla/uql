@@ -35,7 +35,7 @@ describe('EntityMerger', () => {
     it('should add a new column field to an empty entity', () => {
       const merger = new EntityMerger();
       const existingCode = `
-import { Entity, Id, Field } from '@uql/core';
+import { Entity, Id, Field } from 'uql-orm';
 
 @Entity()
 export class User {

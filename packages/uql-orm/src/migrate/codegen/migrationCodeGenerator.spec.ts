@@ -220,7 +220,7 @@ describe('MigrationCodeGenerator', () => {
       const file = generator.generateFile(diffs, 'create_users');
 
       expect(file).toContain('Migration: create_users');
-      expect(file).toContain("import type { IMigrationBuilder } from '@uql/core'");
+      expect(file).toContain("import type { IMigrationBuilder } from 'uql-orm'");
       expect(file).toContain('export async function up(builder: IMigrationBuilder)');
       expect(file).toContain('export async function down(builder: IMigrationBuilder)');
       expect(file).toContain("createTable('users'");

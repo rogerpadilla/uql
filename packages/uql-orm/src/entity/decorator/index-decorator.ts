@@ -16,7 +16,7 @@ export interface IndexDecoratorOptions {
 
 // Use the same meta holder as definition.ts
 const holder = globalThis as Record<string, unknown>;
-const metaKey = '@uql/core/entity/decorator';
+const metaKey = 'uql-orm/entity/decorator';
 
 function getOrCreateMeta<E>(entity: Type<E>): EntityMeta<E> {
   const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??

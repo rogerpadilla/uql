@@ -187,7 +187,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
 
       expect(result!.code).toContain('import {');
-      expect(result!.code).toContain("from '@uql/core'");
+      expect(result!.code).toContain("from 'uql-orm'");
     });
 
     it('should generate relation imports and decorators', () => {

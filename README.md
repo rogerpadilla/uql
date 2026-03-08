@@ -1,10 +1,10 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-[![uql maku](assets/logo.svg)](https://uql.app)
+[![uql maku](assets/logo.svg)](https://uql-orm.dev)
 
-[![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/@uql/core.svg)](https://www.npmjs.com/package/@uql/core)
+[![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql.app)** is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript. It is engineered to be **fast**, **safe**, and **universally compatible**.
+**[UQL](https://uql-orm.dev)** is the [smartest ORM](https://medium.com/@rogerpadillac/in-search-of-the-perfect-orm-e01fcc9bce3d) for TypeScript. It is engineered to be **fast**, **safe**, and **universally compatible**.
 
 
 ```ts
@@ -22,17 +22,17 @@ const users = await querier.findMany(User, {
 
 | Feature                                                                  | Description                                                                                                                     |
 | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Context-Aware Queries](https://uql.app/querying/relations)**       | Deep type-safety for operators and [relations](https://uql.app/querying/relations) at any depth.                                    |
+| **[Context-Aware Queries](https://uql-orm.dev/querying/relations)**       | Deep type-safety for operators and [relations](https://uql-orm.dev/querying/relations) at any depth.                                    |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
-| **[Naming Strategies](https://uql.app/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
+| **[Naming Strategies](https://uql-orm.dev/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
 | **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
-| **[Declarative Transactions](https://uql.app/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
-| **[Lifecycle Hooks](https://uql.app/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
-| **[Modern &amp; Versatile](https://uql.app/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql.app/entities/soft-delete), and **Vector/JSONB/JSON** support. |
-| **[Database Migrations](https://www.uql.app/migrations)**          | Built-in [Entity-First synchronization](https://uql.app/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
-| **[Logging & Monitoring](https://www.uql.app/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
+| **[Declarative Transactions](https://uql-orm.dev/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
+| **[Modern &amp; Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **Vector/JSONB/JSON** support. |
+| **[Database Migrations](https://www.uql-orm.dev/migrations)**          | Built-in [Entity-First synchronization](https://uql-orm.dev/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
+| **[Logging & Monitoring](https://www.uql-orm.dev/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
 
 &nbsp;
 
@@ -42,7 +42,7 @@ Install the core package and the driver for your database:
 
 ```sh
 # Core
-npm install @uql/core       # or bun add / pnpm add
+npm install uql-orm       # or bun add / pnpm add
 ```
 
 ### Supported Drivers (pick according to your database)
@@ -136,7 +136,7 @@ statusCode?: number;
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
-import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation, type Json } from '@uql/core';
+import { Entity, Id, Field, OneToOne, OneToMany, ManyToOne, ManyToMany, type Relation, type Json } from 'uql-orm';
 
 @Entity()
 export class User {
@@ -235,8 +235,8 @@ export class PostTag {
 A pool manages connections (queriers). Initialize it once at application bootstrap (e.g., in `server.ts`).
 
 ```ts
-import { SnakeCaseNamingStrategy, type Config } from '@uql/core';
-import { PgQuerierPool } from '@uql/core/postgres'; // or mysql2, sqlite, etc.
+import { SnakeCaseNamingStrategy, type Config } from 'uql-orm';
+import { PgQuerierPool } from 'uql-orm/postgres'; // or mysql2, sqlite, etc.
 import { User, Profile, Post } from './entities';
 
 export const pool = new PgQuerierPool(
@@ -369,7 +369,7 @@ const result = await pool.transaction(async (querier) => {
 Perfect for **NestJS** and other Dependency Injection frameworks. Use `@Transactional()` to wrap a method and `@InjectQuerier()` to access the managed connection.
 
 ```ts
-import { Transactional, InjectQuerier, type Querier } from '@uql/core';
+import { Transactional, InjectQuerier, type Querier } from 'uql-orm';
 
 export class UserService {
   @Transactional()
@@ -411,7 +411,7 @@ Ideally, use the same `uql.config.ts` for your application bootstrap and the CLI
 
 ```ts
 // uql.config.ts
-import type { Config } from '@uql/core';
+import type { Config } from 'uql-orm';
 
 export default {
   pool: new PgQuerierPool({ /* ... */ }),
@@ -478,7 +478,7 @@ Keep your schema in sync without manual migrations. It is **Safe by Default**: I
 If you follow the [unified configuration](#1-unified-configuration) pattern, your entities are already imported. Simply reuse it:
 
 ```ts
-import { Migrator } from '@uql/core/migrate';
+import { Migrator } from 'uql-orm/migrate';
 import config from './uql.config.js';
 
 const migrator = new Migrator(config.pool, {
@@ -492,7 +492,7 @@ await migrator.autoSync({ logging: true });
 Alternatively, pass entities directly if you want to be explicit about which entities to sync:
 
 ```ts
-import { Migrator } from '@uql/core/migrate';
+import { Migrator } from 'uql-orm/migrate';
 import { User, Profile, Post } from './entities/index.js';
 
 const migrator = new Migrator(pool, {
@@ -532,13 +532,13 @@ error: Failed to connect to database: Connection timeout
 
 &nbsp;
 
-Learn more about UQL at [uql.app](https://uql.app) for details on:
+Learn more about UQL at [uql-orm.dev](https://uql-orm.dev) for details on:
 
-- [Complex Logical Operators](https://uql.app/querying/logical-operators)
-- [Relationship Mapping (1-1, 1-M, M-M)](https://uql.app/querying/relations)
-- [Lifecycle Hooks](https://uql.app/entities/lifecycle-hooks)
-- [Soft Deletes &amp; Auditing](https://uql.app/entities/soft-delete)
-- [Database Migration &amp; Syncing](https://uql.app/migrations)
+- [Complex Logical Operators](https://uql-orm.dev/querying/logical-operators)
+- [Relationship Mapping (1-1, 1-M, M-M)](https://uql-orm.dev/querying/relations)
+- [Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)
+- [Soft Deletes &amp; Auditing](https://uql-orm.dev/entities/soft-delete)
+- [Database Migration &amp; Syncing](https://uql-orm.dev/migrations)
 
 &nbsp;
 
@@ -546,12 +546,12 @@ Learn more about UQL at [uql.app](https://uql.app) for details on:
 
 For those who want to see the "engine under the hood," check out these resources in the source code:
 
-- **Entity Mocks**: See how complex entities and virtual fields are defined in [entityMock.ts](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/test/entityMock.ts).
-- **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect.ts).
+- **Entity Mocks**: See how complex entities and virtual fields are defined in [entityMock.ts](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/test/entityMock.ts).
+- **Core Dialect Logic**: The foundation of our context-aware SQL generation in [abstractSqlDialect.ts](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/dialect/abstractSqlDialect.ts).
 - **Comprehensive Test Suite**:
-  - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/dialect/abstractSqlDialect-spec.ts): Base test suite for all dialects.
-  - [PostgreSQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/postgres/postgresDialect.spec.ts) \| [MySQL](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/mysql/mysqlDialect.spec.ts) \| [SQLite](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/sqlite/sqliteDialect.spec.ts) specs.
-  - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/core/src/querier/abstractSqlQuerier-spec.ts): SQL generation & connection management tests.
+  - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/dialect/abstractSqlDialect-spec.ts): Base test suite for all dialects.
+  - [PostgreSQL](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/postgres/postgresDialect.spec.ts) \| [MySQL](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/mysql/mysqlDialect.spec.ts) \| [SQLite](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/sqlite/sqliteDialect.spec.ts) specs.
+  - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/querier/abstractSqlQuerier-spec.ts): SQL generation & connection management tests.
 
 &nbsp;
 

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.1.0] - 2026-03-08
+### Package Rename
+- **Renamed `@uql/core` → `uql-orm`**: The package is now published as an unscoped name for better SEO, discoverability, and simpler install commands (`npm install uql-orm`).
+- **Version Reset to `0.1.0`**: Fresh start to reflect UQL's modern, fast-moving nature. All functionality from `@uql/core@3.15.0` is preserved — this is a rename, not a rewrite.
+- **New Homepage**: [uql-orm.dev](https://uql-orm.dev)
+- **Migration**: Update your imports from `@uql/core` → `uql-orm` (e.g., `import { Entity } from 'uql-orm'`). Sub-path imports follow the same pattern (e.g., `uql-orm/postgres`, `uql-orm/migrate`).
+
 ## [3.15.0] - 2026-03-07
 ### New Features
 - **Lifecycle Hooks**: Added entity-level lifecycle hook decorators for domain-specific logic. Seven decorators are available: `@BeforeInsert()`, `@AfterInsert()`, `@BeforeUpdate()`, `@AfterUpdate()`, `@BeforeDelete()`, `@AfterDelete()`, and `@AfterLoad()`. Hooks receive a `HookContext` with access to the active `querier` for transactional DB operations.
@@ -319,31 +326,31 @@ date format is [yyyy-mm-dd]
 
 - Update examples in docs
 
-## [3.1.1](https://github.com/rogerpadilla/uql/compare/@uql/core@3.1.0...@uql/core@3.1.1) (2025-12-30)
+## [3.1.1](https://github.com/rogerpadilla/uql/compare/uql-orm@3.1.0...uql-orm@3.1.1) (2025-12-30)
 ### Bug Fixes
 * adjust relative paths for README and CHANGELOG in copyfiles script ([741c2ee](https://github.com/rogerpadilla/uql/commit/741c2ee8839376ca89a860a53950ef6b6d234596))
 
-## [3.1.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.0.0...@uql/core@3.1.0) (2025-12-30)
+## [3.1.0](https://github.com/rogerpadilla/uql/compare/uql-orm@3.0.0...uql-orm@3.1.0) (2025-12-30)
 ### Bug Fixes
 
 * adjust relative paths for README and CHANGELOG in copyfiles script ([7a61a01](https://github.com/rogerpadilla/uql/commit/7a61a0135da2d0459e588cda7d94f324bb9eebca))
 
-## [3.0.0](https://github.com/rogerpadilla/uql/compare/@uql/core@2.0.0...@uql/core@3.0.0) (2025-12-30)
+## [3.0.0](https://github.com/rogerpadilla/uql/compare/uql-orm@2.0.0...uql-orm@3.0.0) (2025-12-30)
 Reflect major changes in the package structure and dependencies.
 
 ## [2.0.0] - 2025-12-29
 - **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - this was the original name!).
   - New Slogan: **"One Language. Frontend to Backend."**
-  - Project homepage: [uql.app](https://uql.app).
-- **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `@uql/core`.
+  - Project homepage: [uql-orm.dev](https://uql-orm.dev).
+- **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `uql-orm`.
 - **Scoped Naming**:
-  - `@uql/core`: The main ORM engine and all database adapters.
-  - `@uql/core/migrate`: The database migration system (formerly `nukak-migrate`).
+  - `uql-orm`: The main ORM engine and all database adapters.
+  - `uql-orm/migrate`: The database migration system (formerly `nukak-migrate`).
 - **Improved API Surface**:
-  - Database-specific logic is now accessible via sub-paths (e.g., `import { ... } from '@uql/core/postgres'`).
+  - Database-specific logic is now accessible via sub-paths (e.g., `import { ... } from 'uql-orm/postgres'`).
   - Unified `NamingStrategy` and `QueryContext` across all unified adapters.
 - **Build & Distribution**:
-  - Integrated `bunchee` for high-performance browser bundle generation (`@uql/core/browser`).
+  - Integrated `bunchee` for high-performance browser bundle generation (`uql-orm/browser`).
   - Minimized core dependency footprint by moving database drivers to optional `peerDependencies`.
 - **Enhanced Type Safety**: Fully updated internal type resolution to support the unified package structure.
 

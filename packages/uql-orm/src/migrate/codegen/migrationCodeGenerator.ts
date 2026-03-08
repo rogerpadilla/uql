@@ -105,7 +105,7 @@ export class MigrationCodeGenerator {
  * Generated at: ${new Date().toISOString()}
  */
 
-import type { IMigrationBuilder } from '@uql/core';
+import type { IMigrationBuilder } from 'uql-orm';
 
 export async function up(builder: IMigrationBuilder): Promise<void> {
 ${this.indentBlock(up, 1)}

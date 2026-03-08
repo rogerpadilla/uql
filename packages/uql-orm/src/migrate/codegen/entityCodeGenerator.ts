@@ -19,7 +19,7 @@ import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
  * Options for entity code generation.
  */
 export interface EntityCodeGeneratorOptions {
-  /** Base import path for @uql/core (default: '@uql/core') */
+  /** Base import path for uql-orm (default: 'uql-orm') */
   uqlImportPath?: string;
   /** Whether to add JSDoc with @sync-added for generated fields */
   addSyncComments?: boolean;
@@ -60,7 +60,7 @@ export class EntityCodeGenerator {
     options: EntityCodeGeneratorOptions = {},
   ) {
     this.options = {
-      uqlImportPath: options.uqlImportPath ?? '@uql/core',
+      uqlImportPath: options.uqlImportPath ?? 'uql-orm',
       addSyncComments: options.addSyncComments ?? true,
       classNameTransformer: options.classNameTransformer ?? this.defaultClassNameTransformer.bind(this),
       propertyNameTransformer: options.propertyNameTransformer ?? this.defaultPropertyNameTransformer.bind(this),
