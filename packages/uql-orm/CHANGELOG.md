@@ -1,3 +1,24 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.2.1](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.0...uql-orm@0.2.1) (2026-03-08)
+
+
+### Bug Fixes
+
+* update changelog version from 0.3.0 to 0.2.1. ([3768858](https://github.com/rogerpadilla/uql/commit/3768858b532454bae5a28777b4313e2bea52aa31))
+
+
+### Features
+
+* Add isolation level support to `@Transactional` and `pool.transaction`, and enable transaction reuse for nested calls. ([4c0bad5](https://github.com/rogerpadilla/uql/commit/4c0bad5265509e60a742982da2606b1c56024484))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
