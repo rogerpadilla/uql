@@ -407,6 +407,7 @@ export interface QueryContext {
   addValue(value: unknown): this;
   pushValue(value: unknown): this;
   readonly sql: string;
+  readonly length: number;
   readonly values: unknown[];
 }
 

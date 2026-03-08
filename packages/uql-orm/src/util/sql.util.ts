@@ -1,6 +1,9 @@
 import type { FieldValue, Key, QueryUpdateResult, RawRow } from '../type/index.js';
 import { getKeys, hasKeys } from './object.util.js';
 
+/** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
+const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
+
 export function flatObject<E extends object>(obj: E, pre?: string): E {
   return getKeys(obj).reduce(
     (acc, key) => flatObjectEntry(acc, key, obj[key as Key<E>], typeof obj[key as Key<E>] === 'object' ? '' : pre),
@@ -96,7 +99,8 @@ export function escapeSqlId(
     return addDot ? result + '.' : result;
   }
 
-  const escaped = escapeIdChar + val.replace(new RegExp(escapeIdChar, 'g'), escapeIdChar + escapeIdChar) + escapeIdChar;
+  const escaped =
+    escapeIdChar + val.replace(escapeIdRegexCache[escapeIdChar], escapeIdChar + escapeIdChar) + escapeIdChar;
 
   const suffix = addDot ? '.' : '';
 

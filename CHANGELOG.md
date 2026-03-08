@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.1.1] - 2026-03-08
+### Performance
+- **Faster SQL Query Generation**: Optimized the internal SQL generation pipeline to reduce overhead on every query. Identifier escaping now reuses pre-compiled regex patterns instead of creating new ones per call. Relation detection short-circuits without intermediate array allocations. The query context tracks SQL length incrementally, avoiding repeated string joins. These changes reduce per-query CPU and memory cost, improving throughput for high-volume workloads.
+
 ## [0.1.0] - 2026-03-08
 ### Package Rename
 - **Renamed `@uql/core` → `uql-orm`**: The package is now published as an unscoped name for better SEO, discoverability, and simpler install commands (`npm install uql-orm`).
