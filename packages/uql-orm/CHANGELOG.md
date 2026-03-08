@@ -1,3 +1,20 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## 0.1.1 (2026-03-08)
+
+
+### Performance Improvements
+
+* Optimize query context length tracking, SQL identifier escaping, and `WHERE` clause generation logic for improved performance. ([cc4d40d](https://github.com/rogerpadilla/uql/commit/cc4d40dd08d949260998b97fa60ea1cfa4b97887))
+* Optimize SQL query generation by reusing regex patterns, short-circuiting relation detection, and incrementally tracking SQL length. ([0568e52](https://github.com/rogerpadilla/uql/commit/0568e52ef691e54edb3a5bd7cd5a9fc2a5a013d3))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
