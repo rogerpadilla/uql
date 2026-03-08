@@ -668,9 +668,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$selectFields() {
     const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true, company: true } }));
     expect(sql).toBe(
-      'SELECT `User`.`id`, `company`.`id` `company_id`, `company`.`companyId` `company_companyId`, `company`.`creatorId` `company_creatorId`' +
-        ', `company`.`createdAt` `company_createdAt`, `company`.`updatedAt` `company_updatedAt`' +
-        ', `company`.`name` `company_name`, `company`.`description` `company_description`, `company`.`kind` `company_kind`' +
+      'SELECT `User`.`id`, `company`.`id` `company.id`, `company`.`companyId` `company.companyId`, `company`.`creatorId` `company.creatorId`' +
+        ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`' +
+        ', `company`.`name` `company.name`, `company`.`description` `company.description`, `company`.`kind` `company.kind`' +
         ' FROM `User` LEFT JOIN `Company` `company` ON `company`.`id` = `User`.`companyId`',
     );
   }
@@ -682,7 +682,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture` FROM `User`' +
+      'SELECT `User`.`id`, `User`.`name`, `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture` FROM `User`' +
         ' LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`',
     );
 
@@ -690,10 +690,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(
       'SELECT `User`.`id`, `User`.`companyId`, `User`.`creatorId`, `User`.`createdAt`' +
         ', `User`.`updatedAt`, `User`.`name`, `User`.`email`' +
-        ', `profile`.`companyId` `profile_companyId`' +
-        ', `profile`.`creatorId` `profile_creatorId`, `profile`.`createdAt` `profile_createdAt`' +
-        ', `profile`.`updatedAt` `profile_updatedAt`' +
-        ', `profile`.`pk` `profile_pk`, `profile`.`image` `profile_picture`' +
+        ', `profile`.`companyId` `profile.companyId`' +
+        ', `profile`.`creatorId` `profile.creatorId`, `profile`.`createdAt` `profile.createdAt`' +
+        ', `profile`.`updatedAt` `profile.updatedAt`' +
+        ', `profile`.`pk` `profile.pk`, `profile`.`image` `profile.picture`' +
         ' FROM `User` LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`',
     );
   }
@@ -713,8 +713,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', `tax`.`id` `tax_id`, `tax`.`name` `tax_name`' +
-        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
+        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ' FROM `Item`' +
         ' INNER JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
         ' LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
@@ -738,8 +738,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`' +
-        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`' +
-        ', `tax`.`id` `tax_id`, `tax`.`name` `tax_name`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
+        ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ' FROM `Item`' +
         ' INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> ? AND `measureUnit`.`deletedAt` IS NULL' +
         ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
@@ -782,8 +782,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
-        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -806,9 +806,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(res.sql).toBe(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', `measureUnit`.`id` `measureUnit_id`' +
-        ', `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
+        ', `measureUnit`.`id` `measureUnit.id`' +
+        ', `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -828,9 +828,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit_id`' +
-        ', `measureUnit`.`name` `measureUnit_name`, `measureUnit.category`.`id` `measureUnit_category_id`' +
-        ', `measureUnit.category`.`name` `measureUnit_category_name`' +
+      'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`, `measureUnit`.`id` `measureUnit.id`' +
+        ', `measureUnit`.`name` `measureUnit.name`, `measureUnit.category`.`id` `measureUnit.category.id`' +
+        ', `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -858,9 +858,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(res.sql).toBe(
       'SELECT `ItemAdjustment`.`id`, `ItemAdjustment`.`buyPrice`, `ItemAdjustment`.`number`' +
-        ', `item`.`id` `item_id`, `item`.`name` `item_name`' +
-        ', `item.measureUnit`.`id` `item_measureUnit_id`, `item.measureUnit`.`name` `item_measureUnit_name`' +
-        ', `item.measureUnit.category`.`id` `item_measureUnit_category_id`, `item.measureUnit.category`.`name` `item_measureUnit_category_name`' +
+        ', `item`.`id` `item.id`, `item`.`name` `item.name`' +
+        ', `item.measureUnit`.`id` `item.measureUnit.id`, `item.measureUnit`.`name` `item.measureUnit.name`' +
+        ', `item.measureUnit.category`.`id` `item.measureUnit.category.id`, `item.measureUnit.category`.`name` `item.measureUnit.category.name`' +
         ' FROM `ItemAdjustment`' +
         ' INNER JOIN `Item` `item` ON `item`.`id` = `ItemAdjustment`.`itemId`' +
         ' LEFT JOIN `MeasureUnit` `item.measureUnit` ON `item.measureUnit`.`id` = `item`.`measureUnitId`' +

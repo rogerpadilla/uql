@@ -1,4 +1,4 @@
-import type { FieldValue, Key, QueryUpdateResult, RawRow } from '../type/index.js';
+import type { Key, QueryUpdateResult, RawRow } from '../type/index.js';
 import { getKeys, hasKeys } from './object.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
@@ -38,15 +38,14 @@ export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
       }
       const attrPath = attrsPaths[col];
       if (attrPath) {
-        const target = attrPath.slice(0, -1).reduce(
-          (acc, key) => {
-            if (typeof acc[key as Key<T>] !== 'object') {
-              acc[key as Key<T>] = {} as FieldValue<T>;
-            }
-            return acc[key as Key<T>];
-          },
-          dto as Record<string, any>,
-        );
+        let target = dto as Record<string, unknown>;
+        for (let i = 0; i < attrPath.length - 1; i++) {
+          const seg = attrPath[i];
+          if (typeof target[seg] !== 'object') {
+            target[seg] = {};
+          }
+          target = target[seg] as Record<string, unknown>;
+        }
         target[attrPath[attrPath.length - 1]] = row[col];
       } else {
         (dto as RawRow)[col] = row[col];
@@ -58,20 +57,13 @@ export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
 }
 
 export function obtainAttrsPaths<T extends object>(row: T) {
-  return getKeys(row).reduce(
-    (acc, col) => {
-      // Support both dot notation (legacy) and underscore notation (new)
-      if (col.includes('.')) {
-        acc[col] = col.split('.');
-      } else if (col.includes('_') && col !== col.toUpperCase()) {
-        // Convert underscore to dot notation for nested paths
-        // Skip all-uppercase (like UPPER_CASE constants)
-        acc[col] = col.split('_');
-      }
-      return acc;
-    },
-    {} as { [k: string]: string[] },
-  );
+  const paths: { [k: string]: string[] } = {};
+  for (const col in row) {
+    if (col.includes('.')) {
+      paths[col] = col.split('.');
+    }
+  }
+  return paths;
 }
 
 /**
