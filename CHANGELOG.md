@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.0] - 2026-03-08
+### New Features
+- **`@Transactional({ isolationLevel })` support**: The decorator now accepts an `isolationLevel` option, forwarded to `beginTransaction()`.
+- **`pool.transaction(callback, opts?)` support**: `TransactionOptions` (including `isolationLevel`) are now forwarded through the pool to `querier.transaction()`.
+- **Transaction reuse (nesting)**: `querier.transaction()` and `@Transactional()` now reuse the active transaction when called inside an existing one, enabling composable service methods. `beginTransaction()` remains strict (throws if already in a transaction).
+
 ## [0.2.0] - 2026-03-08
 ### New Features
 - **Transaction Isolation Levels**: `beginTransaction()` and `transaction()` now accept an optional `TransactionOptions` object with an `isolationLevel` property. Supports all standard SQL isolation levels: `read uncommitted`, `read committed`, `repeatable read`, and `serializable`.

@@ -575,6 +575,61 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(affectedRows).toBe(2);
   }
 
+  async shouldReuseTransactionWhenNested() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+
+    const result = await this.querier.transaction(async () => {
+      await this.querier.insertOne(User, { name: 'outer' });
+
+      // Nested transaction should reuse the outer one
+      const innerResult = await this.querier.transaction(async () => {
+        await this.querier.insertOne(User, { name: 'inner' });
+        return this.querier.count(User, {});
+      });
+
+      expect(innerResult).toBe(2);
+      return innerResult;
+    });
+
+    expect(result).toBe(2);
+    await expect(this.querier.count(User, {})).resolves.toBe(2);
+  }
+
+  async shouldRollbackEntireTransactionWhenNestedThrows() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+
+    await expect(
+      this.querier.transaction(async () => {
+        await this.querier.insertOne(User, { name: 'outer' });
+        await this.querier.transaction(async () => {
+          await this.querier.insertOne(User, { name: 'inner' });
+          throw new Error('inner error');
+        });
+      }),
+    ).rejects.toThrow('inner error');
+
+    // Both outer and inner inserts should be rolled back
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+  }
+
+  async shouldReuseDeeplyNestedTransactions() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+
+    const result = await this.querier.transaction(async () => {
+      await this.querier.insertOne(User, { name: 'level-1' });
+      return this.querier.transaction(async () => {
+        await this.querier.insertOne(User, { name: 'level-2' });
+        return this.querier.transaction(async () => {
+          await this.querier.insertOne(User, { name: 'level-3' });
+          return this.querier.count(User, {});
+        });
+      });
+    });
+
+    expect(result).toBe(3);
+    await expect(this.querier.count(User, {})).resolves.toBe(3);
+  }
+
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }

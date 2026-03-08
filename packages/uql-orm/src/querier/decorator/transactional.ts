@@ -1,13 +1,15 @@
 import { getQuerierPool } from '../../options.js';
-import type { Querier, QuerierPool, Type } from '../../type/index.js';
+import type { IsolationLevel, Querier, QuerierPool, Type } from '../../type/index.js';
 import { getInjectedQuerierIndex } from './injectQuerier.js';
 
 export function Transactional({
   propagation = 'required',
   pool,
+  isolationLevel,
 }: {
   readonly propagation?: 'supported' | 'required';
   readonly pool?: QuerierPool;
+  readonly isolationLevel?: IsolationLevel;
 } = {}) {
   return (target: object, key: string, propDescriptor: PropertyDescriptor): void => {
     const theClass = target.constructor as Type<any>;
@@ -34,7 +36,7 @@ export function Transactional({
 
       try {
         if (propagation === 'required' && !querier.hasOpenTransaction) {
-          await querier.beginTransaction();
+          await querier.beginTransaction(isolationLevel ? { isolationLevel } : undefined);
         }
         const resp = await originalMethod.apply(this, params);
         if (isOwnTransaction && querier.hasOpenTransaction) {

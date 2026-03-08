@@ -1013,6 +1013,104 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
+  async shouldReuseTransactionWhenNested() {
+    const internalRunSpy = vi.spyOn(this.querier as any, 'internalRun');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    await this.querier.transaction(async () => {
+      expect(this.querier.hasOpenTransaction).toBe(true);
+
+      // Nested transaction should reuse — no additional beginTransaction
+      const innerResult = await this.querier.transaction(async () => {
+        expect(this.querier.hasOpenTransaction).toBe(true);
+        await this.querier.updateOneById(User, 5, { name: 'nested' });
+        return 42;
+      });
+
+      expect(innerResult).toBe(42);
+      expect(this.querier.hasOpenTransaction).toBe(true);
+    });
+
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    // beginTransaction called once (outer only), commitTransaction once
+    const beginStatements = this.querier.dialect.getBeginTransactionStatements();
+    expect(internalRunSpy).toHaveBeenNthCalledWith(1, beginStatements[0]);
+    // The UPDATE runs via run()
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+  }
+
+  async shouldRollbackEntireTransactionWhenNestedThrows() {
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    const prom = this.querier.transaction(async () => {
+      expect(this.querier.hasOpenTransaction).toBe(true);
+
+      await this.querier.transaction(async () => {
+        throw new Error('inner error');
+      });
+    });
+
+    await expect(prom).rejects.toThrow('inner error');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+  }
+
+  async shouldIgnoreIsolationLevelWhenReusing() {
+    const internalRunSpy = vi.spyOn(this.querier as any, 'internalRun');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    await this.querier.transaction(
+      async () => {
+        // Inner call specifies a different isolation level — should be ignored
+        await this.querier.transaction(
+          async () => {
+            await this.querier.updateOneById(User, 5, { name: 'nested' });
+          },
+          { isolationLevel: 'read uncommitted' },
+        );
+      },
+      { isolationLevel: 'serializable' },
+    );
+
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    // Only the outer isolation level SQL should have been emitted
+    const outerStatements = this.querier.dialect.getBeginTransactionStatements('serializable');
+    for (let i = 0; i < outerStatements.length; i++) {
+      expect(internalRunSpy).toHaveBeenNthCalledWith(i + 1, outerStatements[i]);
+    }
+
+    // No 'read uncommitted' statements should appear
+    const innerStatements = this.querier.dialect.getBeginTransactionStatements('read uncommitted');
+    for (const stmt of innerStatements) {
+      if (stmt !== outerStatements[0]) {
+        expect(internalRunSpy).not.toHaveBeenCalledWith(stmt);
+      }
+    }
+  }
+
+  async shouldReuseDeeplyNestedTransactions() {
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    const result = await this.querier.transaction(async () => {
+      expect(this.querier.hasOpenTransaction).toBe(true);
+
+      return this.querier.transaction(async () => {
+        expect(this.querier.hasOpenTransaction).toBe(true);
+
+        return this.querier.transaction(async () => {
+          expect(this.querier.hasOpenTransaction).toBe(true);
+          await this.querier.updateOneById(User, 5, { name: 'deep' });
+          return 'deep-value';
+        });
+      });
+    });
+
+    expect(result).toBe('deep-value');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+  }
+
   async shouldThrowIfCommitWithNoPendingTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');

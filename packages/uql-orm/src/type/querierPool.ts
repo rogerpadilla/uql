@@ -1,4 +1,4 @@
-import type { Dialect, ExtraOptions, Querier } from './querier.js';
+import type { Dialect, ExtraOptions, Querier, TransactionOptions } from './querier.js';
 
 /**
  * querier pool.
@@ -22,7 +22,7 @@ export type QuerierPool<Q extends Querier = Querier> = {
   /**
    * get a querier from the pool and run the given callback inside a transaction.
    */
-  transaction<T>(callback: (querier: Q) => Promise<T>): Promise<T>;
+  transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions): Promise<T>;
 
   /**
    * get a querier from the pool, run the given callback, and release the querier.

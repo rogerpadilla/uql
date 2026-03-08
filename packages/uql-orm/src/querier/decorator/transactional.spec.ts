@@ -100,6 +100,52 @@ describe('transactional', () => {
     expect(anotherQuerier.release).toHaveBeenCalledTimes(0);
   });
 
+  it('injectQuerier with isolationLevel', async () => {
+    class ServiceA {
+      @Transactional({ isolationLevel: 'serializable' })
+      async save(@InjectQuerier() querier?: Querier) {}
+    }
+
+    const serviceA = new ServiceA();
+    await serviceA.save();
+
+    const querier = await getQuerier();
+
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledWith({ isolationLevel: 'serializable' });
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('nested @Transactional inherits outer isolation level', async () => {
+    class ServiceA {
+      @Transactional({ isolationLevel: 'serializable' })
+      async outer(@InjectQuerier() querier?: Querier) {
+        const serviceB = new ServiceB();
+        await serviceB.inner(querier);
+      }
+    }
+
+    class ServiceB {
+      @Transactional({ isolationLevel: 'read committed' })
+      async inner(@InjectQuerier() querier?: Querier) {}
+    }
+
+    const serviceA = new ServiceA();
+    await serviceA.outer();
+
+    const querier = await getQuerier();
+
+    // beginTransaction called once with the outer's isolation level
+    expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.beginTransaction).toHaveBeenCalledWith({ isolationLevel: 'serializable' });
+    // Inner @Transactional skips beginTransaction because transaction is already open
+    expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
+    expect(querier.rollbackTransaction).toHaveBeenCalledTimes(0);
+    expect(querier.release).toHaveBeenCalledTimes(1);
+  });
+
   it('injectQuerier another pool', async () => {
     class ServiceA {
       @Transactional({ pool: anotherQuerierPool })
