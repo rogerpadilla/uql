@@ -1,4 +1,4 @@
-import type { Dialect, ExtraOptions, Querier, QuerierPool } from '../type/index.js';
+import type { Dialect, ExtraOptions, Querier, QuerierPool, TransactionOptions } from '../type/index.js';
 
 export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierPool<Q> {
   constructor(
@@ -14,9 +14,9 @@ export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierP
   /**
    * get a querier from the pool and run the given callback inside a transaction.
    */
-  async transaction<T>(callback: (querier: Q) => Promise<T>): Promise<T> {
+  async transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions): Promise<T> {
     const querier = await this.getQuerier();
-    return querier.transaction(() => callback(querier));
+    return querier.transaction(() => callback(querier), opts);
   }
 
   /**
