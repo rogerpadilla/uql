@@ -31,6 +31,25 @@ class PostgresDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
+  shouldGetBeginTransactionStatementsWithoutIsolationLevel() {
+    expect(this.dialect.getBeginTransactionStatements()).toEqual(['BEGIN TRANSACTION']);
+  }
+
+  shouldGetBeginTransactionStatementsWithIsolationLevel() {
+    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
+      'BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
+      'BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements('repeatable read')).toEqual([
+      'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements('read uncommitted')).toEqual([
+      'BEGIN TRANSACTION ISOLATION LEVEL READ UNCOMMITTED',
+    ]);
+  }
+
   shouldInsertMany() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [

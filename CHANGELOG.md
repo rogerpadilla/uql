@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.0] - 2026-03-08
+### New Features
+- **Transaction Isolation Levels**: `beginTransaction()` and `transaction()` now accept an optional `TransactionOptions` object with an `isolationLevel` property. Supports all standard SQL isolation levels: `read uncommitted`, `read committed`, `repeatable read`, and `serializable`.
+  - **PostgreSQL**: Uses inline syntax (`BEGIN TRANSACTION ISOLATION LEVEL ...`).
+  - **MySQL / MariaDB**: Uses the `SET TRANSACTION ISOLATION LEVEL` + `START TRANSACTION` two-statement pattern.
+  - **SQLite / LibSQL / MongoDB**: Isolation level is silently ignored (these databases do not support configurable isolation levels).
+  ```ts
+  await querier.beginTransaction({ isolationLevel: 'serializable' });
+  // or with the callback API
+  const result = await querier.transaction(async () => {
+    return querier.findMany(User, {});
+  }, { isolationLevel: 'read committed' });
+  ```
+- **Config-Driven Dialect Strategy**: Added `isolationLevelStrategy` to `DialectConfig` (`'inline'` | `'set-before'` | `'none'`), enabling declarative per-dialect SQL generation without dialect-name branching.
+
 ## [0.1.5] - 2026-03-08
 ### Type Safety
 - **Eliminated `any` Types**: Replaced `any` with proper types across decorators (`serialized.ts`, `log.ts`, `transactional.ts`), Express middleware (`querierMiddleware.ts`), MongoDB dialect pipeline types, SQLite querier pool, and migrator. Remaining `any` usages are documented and justified (generic variance, `Reflect.getMetadata`).

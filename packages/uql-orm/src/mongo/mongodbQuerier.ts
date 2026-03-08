@@ -9,6 +9,7 @@ import type {
   QueryOptions,
   QuerySearch,
   QueryWhere,
+  TransactionOptions,
   Type,
   UpdatePayload,
 } from '../type/index.js';
@@ -257,7 +258,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Serialized()
-  override async beginTransaction() {
+  override async beginTransaction(_opts?: TransactionOptions) {
     if (this.hasOpenTransaction) {
       throw TypeError('pending transaction');
     }

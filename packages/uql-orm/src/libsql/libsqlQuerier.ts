@@ -2,7 +2,7 @@ import type { Client, InValue, Transaction } from '@libsql/client';
 import { Serialized } from '../querier/decorator/index.js';
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import { SqliteDialect } from '../sqlite/index.js';
-import type { ExtraOptions } from '../type/index.js';
+import type { ExtraOptions, TransactionOptions } from '../type/index.js';
 
 export class LibsqlQuerier extends AbstractSqliteQuerier {
   private tx?: Transaction;
@@ -31,7 +31,7 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   }
 
   @Serialized()
-  override async beginTransaction() {
+  override async beginTransaction(_opts?: TransactionOptions) {
     if (this.tx) {
       throw TypeError('pending transaction');
     }

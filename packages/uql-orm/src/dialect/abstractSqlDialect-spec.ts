@@ -32,6 +32,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(this.dialect.beginTransactionCommand).toBe('START TRANSACTION');
   }
 
+  shouldGetBeginTransactionStatementsWithoutIsolationLevel() {
+    expect(this.dialect.getBeginTransactionStatements()).toEqual([this.dialect.beginTransactionCommand]);
+  }
+
   shouldInsertMany() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [

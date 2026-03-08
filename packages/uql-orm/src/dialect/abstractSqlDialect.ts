@@ -4,6 +4,7 @@ import {
   type FieldKey,
   type FieldOptions,
   type IdKey,
+  type IsolationLevel,
   type JsonMergeOp,
   type Key,
   type Query,
@@ -66,6 +67,19 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   get beginTransactionCommand() {
     return this.config.beginTransactionCommand;
+  }
+
+  getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
+    const level = isolationLevel?.toUpperCase();
+    const strategy = this.config.isolationLevelStrategy;
+    if (!level || strategy === 'none') {
+      return [this.config.beginTransactionCommand];
+    }
+    if (strategy === 'inline') {
+      return [`${this.config.beginTransactionCommand} ISOLATION LEVEL ${level}`];
+    }
+    // 'set-before' — MySQL/MariaDB pattern
+    return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.config.beginTransactionCommand];
   }
 
   get commitTransactionCommand() {

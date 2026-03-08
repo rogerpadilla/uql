@@ -18,6 +18,7 @@ import type {
   RawRow,
   RelationKey,
   RelationValue,
+  TransactionOptions,
   Type,
   UpdatePayload,
 } from '../type/index.js';
@@ -471,9 +472,9 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract readonly hasOpenTransaction: boolean;
 
-  async transaction<T>(callback: () => Promise<T>) {
+  async transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions) {
     try {
-      await this.beginTransaction();
+      await this.beginTransaction(opts);
       const res = await callback();
       await this.commitTransaction();
       return res;
@@ -533,7 +534,7 @@ export abstract class AbstractQuerier implements Querier {
     return res;
   }
 
-  abstract beginTransaction(): Promise<void>;
+  abstract beginTransaction(opts?: TransactionOptions): Promise<void>;
 
   abstract commitTransaction(): Promise<void>;
 

@@ -522,6 +522,39 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.release();
   }
 
+  async shouldCommitWithIsolationLevel() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+    await this.querier.beginTransaction({ isolationLevel: 'serializable' });
+    await this.querier.insertOne(User, {});
+    await expect(this.querier.count(User, {})).resolves.toBe(1);
+    await this.querier.commitTransaction();
+    await expect(this.querier.count(User, {})).resolves.toBe(1);
+    await this.querier.release();
+  }
+
+  async shouldRollbackWithIsolationLevel() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+    await this.querier.beginTransaction({ isolationLevel: 'read committed' });
+    await this.querier.insertOne(User, {});
+    await expect(this.querier.count(User, {})).resolves.toBe(1);
+    await this.querier.rollbackTransaction();
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+    await this.querier.release();
+  }
+
+  async shouldTransactionCallbackWithIsolationLevel() {
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+    const result = await this.querier.transaction(
+      async () => {
+        await this.querier.insertOne(User, { name: 'isolated' });
+        return this.querier.count(User, {});
+      },
+      { isolationLevel: 'serializable' },
+    );
+    expect(result).toBe(1);
+    await expect(this.querier.count(User, {})).resolves.toBe(1);
+  }
+
   async shouldThrowWhenBeginTransactionAfterBeginTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();

@@ -10,6 +10,7 @@ import type {
   QueryUpdateResult,
   RawRow,
   SqlQuerier,
+  TransactionOptions,
   Type,
   UpdatePayload,
 } from '../type/index.js';
@@ -148,12 +149,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   @Serialized()
-  override async beginTransaction() {
+  override async beginTransaction(opts?: TransactionOptions) {
     if (this.hasPendingTransaction) {
       throw TypeError('pending transaction');
     }
     await this.lazyConnect();
-    await this.internalRun(this.dialect.beginTransactionCommand);
+    const statements = this.dialect.getBeginTransactionStatements(opts?.isolationLevel);
+    for (const sql of statements) {
+      await this.internalRun(sql);
+    }
     this.hasPendingTransaction = true;
   }
 
