@@ -1,3 +1,20 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [0.2.0](https://github.com/rogerpadilla/uql/compare/uql-orm@0.1.4...uql-orm@0.2.0) (2026-03-08)
+
+
+### Features
+
+* Add transaction isolation level support to SQL dialects and queriers. ([0ee285a](https://github.com/rogerpadilla/uql/commit/0ee285ab0f52e480631a80a8237c6cc95e1a55ae))
+* enhance type safety across various modules, fix a typo in IsolationLevel, and refine error handling ([2631d0b](https://github.com/rogerpadilla/uql/commit/2631d0b5cfa8ce6130e3834a60e3820b83d7404b))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
