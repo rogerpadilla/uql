@@ -340,14 +340,14 @@ export abstract class AbstractQuerier implements Querier {
     referenceKey: string,
     relKey: keyof E & string,
   ): void {
-    const childrenByParentId = children.reduce<Record<string, RawRow[]>>((acc, child) => {
+    const childrenByParentId: Record<string, RawRow[]> = {};
+    for (const child of children) {
       const parentId = String(child[referenceKey]);
-      if (!acc[parentId]) {
-        acc[parentId] = [];
+      if (!childrenByParentId[parentId]) {
+        childrenByParentId[parentId] = [];
       }
-      acc[parentId].push(child);
-      return acc;
-    }, {});
+      childrenByParentId[parentId].push(child);
+    }
 
     for (const parent of parents) {
       parent[relKey] = childrenByParentId[String(parent[parentIdKey!])] as E[keyof E & string];

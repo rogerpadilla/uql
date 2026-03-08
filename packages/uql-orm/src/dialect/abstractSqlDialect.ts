@@ -239,17 +239,16 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         const joinAlias = this.escapeId(joinRelAlias, true);
 
         ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
-        ctx.append(
-          (relOpts.references ?? [])
-            .map((it) => {
-              const relField = relMeta.fields[it.foreign];
-              const field = meta.fields[it.local];
-              const foreignColumnName = this.resolveColumnName(it.foreign, relField);
-              const localColumnName = this.resolveColumnName(it.local, field);
-              return `${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`;
-            })
-            .join(' AND '),
-        );
+        let refAppended = false;
+        for (const it of relOpts.references ?? []) {
+          if (refAppended) ctx.append(' AND ');
+          const relField = relMeta.fields[it.foreign];
+          const field = meta.fields[it.local];
+          const foreignColumnName = this.resolveColumnName(it.foreign, relField);
+          const localColumnName = this.resolveColumnName(it.local, field);
+          ctx.append(`${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`);
+          refAppended = true;
+        }
 
         if (relQuery.$where) {
           ctx.append(' AND ');
