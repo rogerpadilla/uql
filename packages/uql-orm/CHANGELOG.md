@@ -1,24 +1,12 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.1.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.1.2...uql-orm@0.1.3) (2026-03-08)
-
-
-### Performance Improvements
-
-* Reduce allocations and simplify logic in utility functions and SQL query generation. ([5bc1ed5](https://github.com/rogerpadilla/uql/commit/5bc1ed5d85b91ba4af96075a91c93c923a204e76))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [0.1.4] - 2026-03-08
+### Bug Fixes
+- **Fixed Virtual Field Alias in Relations**: `getRawValue` was missing a dot separator in prefixed aliases and had a stale dot→underscore replacement from the old convention. Added tests to prevent regressions.
 
 ## [0.1.3] - 2026-03-08
 ### Code Quality
@@ -26,7 +14,7 @@ date format is [yyyy-mm-dd]
 
 ## [0.1.1] - 2026-03-08
 ### Bug Fixes
-- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers.
+- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers. Updated tests to prevent regressions.
 
 ### Performance
 - **Faster SQL Query Generation**: Optimized the internal SQL generation pipeline to reduce overhead on every query. Identifier escaping now reuses pre-compiled regex patterns instead of creating new ones per call. Relation detection short-circuits without intermediate array allocations. The query context tracks SQL length incrementally, avoiding repeated string joins. These changes reduce per-query CPU and memory cost, improving throughput for high-volume workloads.

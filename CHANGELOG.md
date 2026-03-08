@@ -4,13 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.1.4] - 2026-03-08
+### Bug Fixes
+- **Fixed Virtual Field Alias in Relations**: `getRawValue` was missing a dot separator in prefixed aliases and had a stale dot→underscore replacement from the old convention. Added tests to prevent regressions.
+
 ## [0.1.3] - 2026-03-08
 ### Code Quality
 - **Internal Code Cleanup**: Eliminated unnecessary allocations and simplified utility functions across the codebase. Removed dead code and redundant variables.
 
 ## [0.1.1] - 2026-03-08
 ### Bug Fixes
-- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers.
+- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers. Updated tests to prevent regressions.
 
 ### Performance
 - **Faster SQL Query Generation**: Optimized the internal SQL generation pipeline to reduce overhead on every query. Identifier escaping now reuses pre-compiled regex patterns instead of creating new ones per call. Relation detection short-circuits without intermediate array allocations. The query context tracks SQL length incrementally, avoiding repeated string joins. These changes reduce per-query CPU and memory cost, improving throughput for high-volume workloads.

@@ -161,3 +161,37 @@ describe('Query with $exists and nested relation filtering', () => {
     expect(values).toEqual([10, 50]);
   });
 });
+
+describe('getRawValue alias', () => {
+  const dialect = new PostgresDialect();
+
+  it('should use dot separator when autoPrefixAlias is true', () => {
+    const ctx = dialect.createContext();
+    dialect.getRawValue(ctx, {
+      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      prefix: 'relation',
+      autoPrefixAlias: true,
+    });
+    expect(ctx.sql).toBe('SOME_EXPR() "relation.myAlias"');
+  });
+
+  it('should not prefix alias when autoPrefixAlias is false', () => {
+    const ctx = dialect.createContext();
+    dialect.getRawValue(ctx, {
+      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      prefix: 'relation',
+      autoPrefixAlias: false,
+    });
+    expect(ctx.sql).toBe('SOME_EXPR() "myAlias"');
+  });
+
+  it('should not prefix alias when prefix is empty', () => {
+    const ctx = dialect.createContext();
+    dialect.getRawValue(ctx, {
+      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      prefix: '',
+      autoPrefixAlias: true,
+    });
+    expect(ctx.sql).toBe('SOME_EXPR() "myAlias"');
+  });
+});
