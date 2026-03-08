@@ -5,8 +5,12 @@ All notable changes to this project will be documented in this file. Please add 
 date format is [yyyy-mm-dd]
 
 ## [0.1.1] - 2026-03-08
+### Bug Fixes
+- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers.
+
 ### Performance
 - **Faster SQL Query Generation**: Optimized the internal SQL generation pipeline to reduce overhead on every query. Identifier escaping now reuses pre-compiled regex patterns instead of creating new ones per call. Relation detection short-circuits without intermediate array allocations. The query context tracks SQL length incrementally, avoiding repeated string joins. These changes reduce per-query CPU and memory cost, improving throughput for high-volume workloads.
+- **Zero-Allocation Row Parsing**: `unflatObjects` now uses index-based path traversal instead of `slice().reduce()`, eliminating an array allocation per nested column per row.
 
 ## [0.1.0] - 2026-03-08
 ### Package Rename
