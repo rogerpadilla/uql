@@ -28,6 +28,13 @@ export type QuerySearchWithEntity<E extends object> = QuerySearch<E> & { $entity
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
 
+/**
+ * Options for starting a transaction.
+ */
+export type TransactionOptions = {
+  readonly isolationLevel?: IsolationLevel;
+};
+
 // Re-export SqlDialect for backwards compatibility
 export type { SqlDialect };
 
@@ -105,12 +112,12 @@ export interface Querier extends UniversalQuerier {
   /**
    * run the given callback inside a transaction in this querier.
    */
-  transaction<T>(callback: () => Promise<T>): Promise<T>;
+  transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions): Promise<T>;
 
   /**
    * starts a new transaction in this querier.
    */
-  beginTransaction(): Promise<void>;
+  beginTransaction(opts?: TransactionOptions): Promise<void>;
 
   /**
    * commits the currently active transaction in this querier.

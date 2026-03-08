@@ -935,6 +935,62 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
+  async shouldBeginTransactionWithIsolationLevel() {
+    const internalRunSpy = vi.spyOn(this.querier as any, 'internalRun');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    await this.querier.beginTransaction({ isolationLevel: 'serializable' });
+    expect(this.querier.hasOpenTransaction).toBe(true);
+
+    // Verify the correct SQL was forwarded to internalRun
+    const expectedStatements = this.querier.dialect.getBeginTransactionStatements('serializable');
+    for (let i = 0; i < expectedStatements.length; i++) {
+      expect(internalRunSpy).toHaveBeenNthCalledWith(i + 1, expectedStatements[i]);
+    }
+    expect(internalRunSpy).toHaveBeenCalledTimes(expectedStatements.length);
+
+    await this.querier.commitTransaction();
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+  }
+
+  async shouldUseTransactionCallbackWithIsolationLevel() {
+    const internalRunSpy = vi.spyOn(this.querier as any, 'internalRun');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    await this.querier.transaction(
+      async () => {
+        expect(this.querier.hasOpenTransaction).toBe(true);
+        await this.querier.updateOneById(User, 5, { name: 'Hola', updatedAt: 1 });
+      },
+      { isolationLevel: 'read committed' },
+    );
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+
+    // First call(s) should be the isolation-level SQL, then the UPDATE via run
+    const expectedStatements = this.querier.dialect.getBeginTransactionStatements('read committed');
+    for (let i = 0; i < expectedStatements.length; i++) {
+      expect(internalRunSpy).toHaveBeenNthCalledWith(i + 1, expectedStatements[i]);
+    }
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledWith('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `id` = ?', [
+      'Hola',
+      1,
+      5,
+    ]);
+  }
+
+  async shouldBeginTransactionWithoutIsolationLevel() {
+    const internalRunSpy = vi.spyOn(this.querier as any, 'internalRun');
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+    await this.querier.beginTransaction();
+    expect(this.querier.hasOpenTransaction).toBe(true);
+
+    // Without isolation level, only the base command is emitted
+    expect(internalRunSpy).toHaveBeenCalledTimes(1);
+    expect(internalRunSpy).toHaveBeenCalledWith(this.querier.dialect.beginTransactionCommand);
+
+    await this.querier.commitTransaction();
+    expect(this.querier.hasOpenTransaction).toBeFalsy();
+  }
+
   async shouldThrowIfRollbackIfErrorInCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {

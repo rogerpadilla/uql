@@ -8,6 +8,18 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     super(new MySqlDialect());
   }
 
+  shouldGetBeginTransactionStatementsWithIsolationLevel() {
+    // MySQL uses 'set-before' strategy — two separate statements
+    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
+      'SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
+      'START TRANSACTION',
+    ]);
+    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
+      'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+      'START TRANSACTION',
+    ]);
+  }
+
   shouldHandleDate() {
     const dialect = new MySqlDialect();
     const values: unknown[] = [];

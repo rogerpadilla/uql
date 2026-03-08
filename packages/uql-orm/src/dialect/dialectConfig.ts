@@ -1,5 +1,7 @@
 import type { Dialect } from '../type/index.js';
 
+export type IsolationLevelStrategy = 'inline' | 'set-before' | 'none';
+
 export interface DialectFeatures {
   returning: boolean;
   ifNotExists: boolean;
@@ -18,6 +20,7 @@ export interface DialectConfig {
   beginTransactionCommand: string;
   commitTransactionCommand: string;
   rollbackTransactionCommand: string;
+  isolationLevelStrategy: IsolationLevelStrategy;
   features: DialectFeatures;
 }
 
@@ -29,6 +32,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     beginTransactionCommand: 'BEGIN TRANSACTION',
     commitTransactionCommand: 'COMMIT',
     rollbackTransactionCommand: 'ROLLBACK',
+    isolationLevelStrategy: 'inline',
     alterColumnSyntax: 'ALTER COLUMN',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
     features: {
@@ -47,6 +51,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     beginTransactionCommand: 'START TRANSACTION',
     commitTransactionCommand: 'COMMIT',
     rollbackTransactionCommand: 'ROLLBACK',
+    isolationLevelStrategy: 'set-before',
     alterColumnSyntax: 'MODIFY COLUMN',
     dropForeignKeySyntax: 'DROP FOREIGN KEY',
     features: {
@@ -65,6 +70,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     beginTransactionCommand: 'START TRANSACTION',
     commitTransactionCommand: 'COMMIT',
     rollbackTransactionCommand: 'ROLLBACK',
+    isolationLevelStrategy: 'set-before',
     alterColumnSyntax: 'MODIFY COLUMN',
     dropForeignKeySyntax: 'DROP FOREIGN KEY',
     features: {
@@ -83,6 +89,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     beginTransactionCommand: 'BEGIN TRANSACTION',
     commitTransactionCommand: 'COMMIT',
     rollbackTransactionCommand: 'ROLLBACK',
+    isolationLevelStrategy: 'none',
     alterColumnSyntax: 'none',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
     features: {
@@ -101,6 +108,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     beginTransactionCommand: '',
     commitTransactionCommand: '',
     rollbackTransactionCommand: '',
+    isolationLevelStrategy: 'none',
     alterColumnSyntax: 'none',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
     features: {

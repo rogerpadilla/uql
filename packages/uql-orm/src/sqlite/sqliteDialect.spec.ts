@@ -23,6 +23,12 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }
 
+  shouldGetBeginTransactionStatementsWithIsolationLevel() {
+    // SQLite uses 'none' strategy — isolation level is silently ignored
+    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual(['BEGIN TRANSACTION']);
+    expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual(['BEGIN TRANSACTION']);
+  }
+
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
