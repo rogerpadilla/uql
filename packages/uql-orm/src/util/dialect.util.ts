@@ -68,8 +68,11 @@ export function filterRelationKeys<E>(meta: EntityMeta<E>, select?: QuerySelect<
 }
 
 export function isSelectingRelations<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): boolean {
-  const keys = filterPositiveKeys(select);
-  return keys.some((key) => key in meta.relations);
+  if (!select) return false;
+  for (const key in select) {
+    if (key in meta.relations && select[key as keyof typeof select]) return true;
+  }
+  return false;
 }
 
 function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {

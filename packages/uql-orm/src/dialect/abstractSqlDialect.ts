@@ -340,16 +340,18 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       ctx.append('(');
     }
 
-    const startLength = ctx.sql.length;
-    (getKeys(where) as (keyof QueryWhereMap<E>)[]).forEach((key) => {
+    const startLength = ctx.length;
+    const whereKeys = getKeys(where) as (keyof QueryWhereMap<E>)[];
+    const hasMultipleKeys = whereKeys.length > 1;
+    whereKeys.forEach((key) => {
       const val = (where as Record<string, unknown>)[key];
       if (val === undefined) return;
-      if (ctx.sql.length > startLength) {
+      if (ctx.length > startLength) {
         ctx.append(' AND ');
       }
       this.compare(ctx, entity, key, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], {
         ...opts,
-        usePrecedence: getKeys(where).length > 1,
+        usePrecedence: hasMultipleKeys,
       });
     });
 
