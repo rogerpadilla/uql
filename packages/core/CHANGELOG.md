@@ -1,20 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [3.15.0](https://github.com/rogerpadilla/uql/compare/@uql/core@3.14.1...@uql/core@3.15.0) (2026-03-07)
-
-
-### Features
-
-* Introduce entity lifecycle hooks and global querier listeners. ([27055ca](https://github.com/rogerpadilla/uql/commit/27055ca5be5364be0430300590f6d3ed3503bbec))
-* introduce entity lifecycle hooks with `@BeforeInsert`, `@AfterLoad`, `@BeforeUpdate`, `@BeforeDelete`, and `@AfterDelete` decorators. ([2e901bc](https://github.com/rogerpadilla/uql/commit/2e901bc83801a87ae30fdd069ae35a2d49c72328))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
