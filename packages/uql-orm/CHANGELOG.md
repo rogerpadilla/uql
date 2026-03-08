@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.1.4](https://github.com/rogerpadilla/uql/compare/uql-orm@0.1.3...uql-orm@0.1.4) (2026-03-08)
+
+
+### Bug Fixes
+
+* Correct virtual field alias generation in `getRawValue` by ensuring proper dot separators and removing stale underscore replacement, with added tests for regression prevention. ([4071dd0](https://github.com/rogerpadilla/uql/commit/4071dd0f9f0b453a235cb75d1889a497417995d7))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
