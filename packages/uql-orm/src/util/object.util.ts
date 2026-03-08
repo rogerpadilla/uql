@@ -11,7 +11,9 @@ export function clone<T>(value: T): T {
 }
 
 export function hasKeys(obj: unknown): boolean {
-  return typeof obj === 'object' && obj !== null ? Object.keys(obj).length > 0 : false;
+  if (typeof obj !== 'object' || obj === null) return false;
+  for (const _ in obj) return true;
+  return false;
 }
 
 export function getKeys<T extends object>(obj: T): (keyof T & string)[] {

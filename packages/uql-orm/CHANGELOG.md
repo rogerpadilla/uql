@@ -1,24 +1,12 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.1.2](https://github.com/rogerpadilla/uql/compare/uql-orm@0.1.1...uql-orm@0.1.2) (2026-03-08)
-
-
-### Bug Fixes
-
-* Correct row parsing for underscore columns and improve SQL query generation and row parsing performance. ([aab7c2a](https://github.com/rogerpadilla/uql/commit/aab7c2aba1dde4a87d3037d5d0fc23c386b7f7c1))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [0.1.3] - 2026-03-08
+### Code Quality
+- **Internal Code Cleanup**: Eliminated unnecessary allocations and simplified utility functions across the codebase. Removed dead code and redundant variables.
 
 ## [0.1.1] - 2026-03-08
 ### Bug Fixes

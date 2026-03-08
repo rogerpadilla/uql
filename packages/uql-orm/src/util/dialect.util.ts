@@ -19,11 +19,10 @@ import { getKeys } from './object.util.js';
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
-  const persistableKeys = (Object.keys(payload as object) as string[]).filter((key) => {
+  return (Object.keys(payload as object) as string[]).filter((key) => {
     const fieldOpts = meta.fields[key];
     return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
   }) as FieldKey<E>[];
-  return persistableKeys;
 }
 
 export function getFieldCallbackValue(val: OnFieldCallback) {

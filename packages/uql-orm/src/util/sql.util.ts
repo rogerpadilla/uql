@@ -11,11 +11,16 @@ export function flatObject<E extends object>(obj: E, pre?: string): E {
   );
 }
 
-function flatObjectEntry<E>(map: E, key: string, val: any, pre?: string): E {
+function flatObjectEntry<E>(map: E, key: string, val: unknown, pre?: string): E {
   const prefix = pre ? `${pre}.${key}` : key;
-  return typeof val === 'object'
-    ? getKeys(val).reduce((acc, prop) => flatObjectEntry(acc, prop, val[prop], prefix), map)
-    : { ...map, [prefix]: val };
+  if (typeof val === 'object' && val !== null) {
+    return getKeys(val).reduce(
+      (acc, prop) => flatObjectEntry(acc, prop, (val as Record<string, unknown>)[prop], prefix),
+      map,
+    );
+  }
+  (map as Record<string, unknown>)[prefix] = val;
+  return map;
 }
 
 export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
