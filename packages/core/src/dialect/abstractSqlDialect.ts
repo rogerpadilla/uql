@@ -123,10 +123,20 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         // Internal-only path: raw SQL expressions passed as QueryRaw[]
         selectArr = select;
       } else {
-        // Only field keys affect whitelist/exclusion mode; relation keys are additive
-        const fieldEntries = getKeys(select).filter((it) => it in meta.fields) as FieldKey<E>[];
-        const positiveFields = fieldEntries.filter((it) => select[it]) as FieldKey<E>[];
-        const negativeFields = fieldEntries.filter((it) => !select[it]) as FieldKey<E>[];
+        const positiveFields: FieldKey<E>[] = [];
+        const negativeFields: FieldKey<E>[] = [];
+
+        for (const prop in select) {
+          if (!(prop in meta.fields)) {
+            continue;
+          }
+          const val = select[prop as FieldKey<E>];
+          if (val) {
+            positiveFields.push(prop as FieldKey<E>);
+          } else {
+            negativeFields.push(prop as FieldKey<E>);
+          }
+        }
 
         selectArr = positiveFields.length
           ? positiveFields
