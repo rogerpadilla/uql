@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.1.5] - 2026-03-08
+### Type Safety
+- **Eliminated `any` Types**: Replaced `any` with proper types across decorators (`serialized.ts`, `log.ts`, `transactional.ts`), Express middleware (`querierMiddleware.ts`), MongoDB dialect pipeline types, SQLite querier pool, and migrator. Remaining `any` usages are documented and justified (generic variance, `Reflect.getMetadata`).
+- **Typed `raw()` Return**: `raw()` now returns `QueryRaw` instead of `any`, enabling IDE autocompletion and compile-time validation.
+
+### Bug Fixes
+- **Fixed `IsolationLevel` Typo**: Corrected `'repeteable read'` → `'repeatable read'` in the `IsolationLevel` type.
+
+### Security
+- **`raw()` Safety Documentation**: Added JSDoc warning that `raw()` bypasses SQL parameterization, with guidance to use `$where` operators for user-supplied data.
+
 ## [0.1.4] - 2026-03-08
 ### Bug Fixes
 - **Fixed Virtual Field Alias in Relations**: `getRawValue` was missing a dot separator in prefixed aliases and had a stale dot→underscore replacement from the old convention. Added tests to prevent regressions.

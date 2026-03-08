@@ -360,7 +360,7 @@ export class MongoDialect extends AbstractDialect {
 
 export type MongoAggregationPipelineEntry<E extends Document> = {
   $lookup?: MongoAggregationLookup<E>;
-  $match?: Filter<E> | Record<string, any>;
+  $match?: Filter<E> | Record<string, unknown>;
   $sort?: Sort;
   $unwind?: MongoAggregationUnwind;
 };

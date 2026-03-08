@@ -193,10 +193,10 @@ function pre(req: Request, meta: EntityMeta<any>, extra: ExtraOptions) {
   }
 }
 
-export function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-  });
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
+  const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
+  const message = err instanceof Error ? err.message : 'Internal Server Error';
+  res.status(status).json({ error: message });
 }
 
 type Pre = (req: Request, meta: EntityMeta<any>) => void;
