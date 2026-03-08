@@ -1022,11 +1022,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
     const alias = value[RAW_ALIAS];
     if (alias) {
-      const fullAlias = autoPrefixAlias ? prefix + alias : alias;
-      // Replace dots with underscores for alias to avoid syntax errors
-      const safeAlias = fullAlias.replace(/\./g, '_');
-      const escapedFullAlias = this.escapeId(safeAlias, true);
-      ctx.append(' ' + escapedFullAlias);
+      const fullAlias = autoPrefixAlias && prefix ? `${prefix}.${alias}` : alias;
+      ctx.append(' ' + this.escapeId(fullAlias, true));
     }
   }
 
