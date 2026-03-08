@@ -103,9 +103,9 @@
     "bunchee": "^6.9.4",
     "copyfiles": "^2.4.1",
     "express": "^5.2.1",
-    "mariadb": "^3.5.1",
+    "mariadb": "^3.5.2",
     "mongodb": "^7.1.0",
-    "mysql2": "^3.18.2",
+    "mysql2": "^3.19.0",
     "pg": "^8.20.0"
   },
   "author": "Roger Padilla",
