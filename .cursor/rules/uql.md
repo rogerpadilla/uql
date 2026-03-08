@@ -8,8 +8,8 @@ You are an expert in the UQL ORM framework. When writing code that uses UQL, fol
 
 ## 1. AI Ingestion (MCP & llms.txt)
 Full technical context is available at:
-- `https://uql.app/llms-full.txt` (Consolidated documentation for RAG)
-- `https://uql.app/llms.txt` (Navigation index for AI agents)
+- `https://uql-orm.dev/llms-full.txt` (Consolidated documentation for RAG)
+- `https://uql-orm.dev/llms.txt` (Navigation index for AI agents)
 
 If you need deeper API details, suggest to the user to fetch the `llms-full.txt` context.
 

@@ -30,8 +30,8 @@
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "paths": {
-      "@uql/core": ["./packages/core/src/index.ts"],
-      "@uql/core/*": ["./packages/core/src/*"]
+      "uql-orm": ["./packages/uql-orm/src/index.ts"],
+      "uql-orm/*": ["./packages/uql-orm/src/*"]
     }
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/node_modules", "**/*/dist"]

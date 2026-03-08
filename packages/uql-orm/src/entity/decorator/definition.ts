@@ -15,7 +15,7 @@ import type {
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 
 const holder = globalThis as Record<string, unknown>;
-const metaKey = '@uql/core/entity/decorator';
+const metaKey = 'uql-orm/entity/decorator';
 const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
 new Map();
 holder[metaKey] = metas;

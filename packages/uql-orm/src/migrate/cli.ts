@@ -383,9 +383,9 @@ function printDriftGroup(title: string, drifts: Drift[], icon: string, showSugge
 
 export function printHelp() {
   console.log(`
-@uql/core/migrate - Database migration tool for uql ORM
+uql-orm/migrate - Database migration tool for uql ORM
 
-Usage: @uql/core/migrate <command> [options]
+Usage: uql-orm/migrate <command> [options]
 
 Commands:
   up                    Run all pending migrations
@@ -433,16 +433,16 @@ Configuration:
   };
 
 Examples:
-  @uql/core/migrate up
-  @uql/core/migrate up --step 1
-  @uql/core/migrate down
-  @uql/core/migrate down --step 3
-  @uql/core/migrate status
-  @uql/core/migrate generate add_users_table
-  @uql/core/migrate generate:entities initial_schema
-  @uql/core/migrate generate:from-db --output ./src/entities
-  @uql/core/migrate sync --push
-  @uql/core/migrate sync --pull
-  @uql/core/migrate drift:check
+  uql-orm/migrate up
+  uql-orm/migrate up --step 1
+  uql-orm/migrate down
+  uql-orm/migrate down --step 3
+  uql-orm/migrate status
+  uql-orm/migrate generate add_users_table
+  uql-orm/migrate generate:entities initial_schema
+  uql-orm/migrate generate:from-db --output ./src/entities
+  uql-orm/migrate sync --push
+  uql-orm/migrate sync --pull
+  uql-orm/migrate drift:check
 `);
 }

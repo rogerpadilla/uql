@@ -1,6 +1,5 @@
 {
   "private": true,
-  "version": "3.8.4",
   "type": "module",
   "sideEffects": false,
   "workspaces": [
@@ -19,7 +18,7 @@
     "lint.fix": "biome check . --fix",
     "test": "vitest run --coverage",
     "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/core/src/mongo/mongodbQuerier.test.ts"
+    "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/uql-orm/src/mongo/mongodbQuerier.test.ts"
   },
   "commitlint": {
     "extends": [
