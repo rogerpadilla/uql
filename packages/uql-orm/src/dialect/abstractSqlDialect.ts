@@ -181,9 +181,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         }
         if (!field.virtual && (columnName !== key || opts.autoPrefixAlias)) {
           const aliasStr = prefix + key;
-          // Replace dots with underscores for alias to avoid syntax errors
-          const safeAlias = aliasStr.replace(/\./g, '_');
-          ctx.append(' ' + this.escapeId(safeAlias, true));
+          ctx.append(' ' + this.escapeId(aliasStr, true));
         }
       }
     });
@@ -340,19 +338,20 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       ctx.append('(');
     }
 
-    const startLength = ctx.length;
     const whereKeys = getKeys(where) as (keyof QueryWhereMap<E>)[];
     const hasMultipleKeys = whereKeys.length > 1;
+    let appended = false;
     whereKeys.forEach((key) => {
       const val = (where as Record<string, unknown>)[key];
       if (val === undefined) return;
-      if (ctx.length > startLength) {
+      if (appended) {
         ctx.append(' AND ');
       }
       this.compare(ctx, entity, key, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], {
         ...opts,
         usePrecedence: hasMultipleKeys,
       });
+      appended = true;
     });
 
     if (usePrecedence) {

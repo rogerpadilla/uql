@@ -213,10 +213,8 @@ it('obtainAttrsPaths - underscore', () => {
     USER_ID: 2,
     user_id: 3,
   });
-  expect(res1).toEqual({
-    prop1_a_b: ['prop1', 'a', 'b'],
-    user_id: ['user', 'id'],
-  });
+  // Underscores are NOT treated as path delimiters (they can appear in property names)
+  expect(res1).toEqual({});
 });
 
 it('unflatObjects - underscore', () => {
@@ -228,12 +226,11 @@ it('unflatObjects - underscore', () => {
     },
   ];
   const result = unflatObjects(source);
+  // Underscore columns stay flat (they are NOT treated as nested paths)
   expect(result).toEqual([
     {
-      user: {
-        id: 1,
-        name: 'John',
-      },
+      user_id: 1,
+      user_name: 'John',
       USER_ROLE: 'admin',
     },
   ]);

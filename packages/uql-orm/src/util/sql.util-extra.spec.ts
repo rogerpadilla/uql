@@ -11,7 +11,6 @@ describe('sql.util extras', () => {
     expect(res).toEqual({
       'user.profile.name': ['user', 'profile', 'name'],
       'user.email': ['user', 'email'],
-      user_profile_name: ['user', 'profile', 'name'],
     });
   });
 });

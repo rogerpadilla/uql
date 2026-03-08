@@ -10,7 +10,6 @@ import type { QueryContext, QueryDialect } from '../type/index.js';
 export class SqlQueryContext implements QueryContext {
   private readonly sqlChunks: string[] = [];
   private readonly params: unknown[] = [];
-  private _length = 0;
 
   /**
    * @param dialect The SQL dialect used to determine how values should be formatted as placeholders.
@@ -26,7 +25,6 @@ export class SqlQueryContext implements QueryContext {
   append(sql: string): this {
     if (sql) {
       this.sqlChunks.push(sql);
-      this._length += sql.length;
     }
     return this;
   }
@@ -60,13 +58,6 @@ export class SqlQueryContext implements QueryContext {
    */
   get sql() {
     return this.sqlChunks.join('');
-  }
-
-  /**
-   * Returns the accumulated SQL character count without joining the chunks array.
-   */
-  get length(): number {
-    return this._length;
   }
 
   /**

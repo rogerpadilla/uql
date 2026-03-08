@@ -135,8 +135,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
         ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
-        ', `measureUnit`.`id` `measureUnit_id`, `measureUnit`.`name` `measureUnit_name`, `measureUnit`.`categoryId` `measureUnit_categoryId`' +
-        ', `measureUnit.category`.`id` `measureUnit_category_id`, `measureUnit.category`.`name` `measureUnit_category_name`' +
+        ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
+        ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId`' +
         ' LEFT JOIN `MeasureUnitCategory` `measureUnit.category` ON `measureUnit.category`.`id` = `measureUnit`.`categoryId`' +
         ' LIMIT 100',
@@ -375,7 +375,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag_id`' +
+      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (?)',
       [123],
@@ -405,7 +405,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag_id`' +
+      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
         ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
         ' WHERE `ItemTag`.`itemId` IN (?)',
       [123],

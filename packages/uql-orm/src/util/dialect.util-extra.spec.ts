@@ -154,7 +154,7 @@ describe('Query with $exists and nested relation filtering', () => {
 
     // The related tax is fetched via JOIN with its filter applied in the JOIN condition
     expect(sql).toBe(
-      'SELECT "Item"."id", "Item"."name", "tax"."id" "tax_id", "tax"."name" "tax_name", "tax"."percentage" "tax_percentage" ' +
+      'SELECT "Item"."id", "Item"."name", "tax"."id" "tax.id", "tax"."name" "tax.name", "tax"."percentage" "tax.percentage" ' +
         'FROM "Item" LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."taxId" AND "tax"."percentage" >= $1 ' +
         'WHERE "Item"."salePrice" >= $2',
     );
