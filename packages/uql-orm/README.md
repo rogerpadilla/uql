@@ -66,14 +66,12 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 {
   "compilerOptions": {
     "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "module": "NodeNext",
-    "target": "ESNext"
+    "emitDecoratorMetadata": true
   }
 }
 ```
 
-&nbsp;**Note:** `ES2020+` will work for `target` as well.
+&nbsp;**Note:** UQL is Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
 
 ## 2. Define the Entities
 

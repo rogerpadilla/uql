@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.3] - 2026-03-09
+### Documentation
+- **Aggregate Queries guide**: Added dedicated [aggregate documentation page](https://uql-orm.dev/querying/aggregate) covering `$group`, `$having`, `$where` vs `$having`, sorting/pagination, and `$distinct`.
+- **README**: Added Aggregate Queries to features table, new §4 subsection with code examples and generated SQL, and "Learn more" link.
+- **Querier methods table**: Added `aggregate()` to the website's querier reference.
+- **Simplified tsconfig**: Removed `module`/`target` from recommended config — only decorator flags are UQL-specific. Added Pure ESM note.
+
 ## [0.2.2] - 2026-03-09
 ### New Features
 - **Aggregate Query API**: Added `querier.aggregate()` with full support across all SQL dialects and MongoDB. Includes typed `QueryAggregate<E>`, `QueryGroupMap`, `QueryHavingMap`, and `QueryAggregateOp` types. Supports `$group` (with `$count`, `$sum`, `$avg`, `$min`, `$max`), `$having` (post-aggregation filtering with operator support), `$where` (pre-aggregation filtering), `$sort`, `$skip`, and `$limit`.
@@ -20,7 +27,7 @@ date format is [yyyy-mm-dd]
 
 ### Bug Fixes
 - **Sort direction with numeric `-1`**: `SORT_DIRECTION_MAP` only had the string key `'-1'`, not the numeric `-1` from `QuerySortDirection`. Queries using `$sort: { field: -1 }` silently produced ascending order. Now both numeric and string forms work correctly.
-- **MongoDB sort normalization**: `buildAggregateStages` passed raw string directions (`'asc'`/`'desc'`) to MongoDB's `$sort` stage, which only understands numeric `1`/`-1`. Extracted `buildMongoSort()` helper that normalizes all direction values.
+- **MongoDB sort normalization**: Unified sort direction normalization into `sort()` method, ensuring all callers (find queries and aggregate pipelines) normalize string directions (`'asc'`/`'desc'`) to numeric `1`/`-1` for the MongoDB server.
 
 ### Type Safety
 - **`QueryAggregateFn` enforces single operation**: Changed from a mapped type (which allowed invalid `{ $count: '*', $sum: 'amount' }`) to a discriminated union that enforces exactly one aggregate op per entry.
@@ -40,6 +47,11 @@ date format is [yyyy-mm-dd]
 - **`insertRelations` cleanup**: Replaced `.map()` with implicit undefined return with `.filter().map()` pattern.
 - **Dead code removal**: Removed dead `Array.isArray` branch in `fillToManyRelations` (array-based `$select` was removed in 3.14.0), dead `Promise.resolve()` in async context, unused generic type parameter.
 - **`havingCondition` visibility**: Changed from `private` to `protected` to allow dialect subclass overrides.
+- **`insertRelations` DRY**: Eliminated double `filterPersistableRelationKeys` call per item using a single `.reduce()` pass.
+- **`where()` loop**: Replaced `.reduce()` accumulator in MongoDB `where()` with a cleaner `for...of` loop.
+- **`_id` constant**: Extracted repeated `'_id'` string literal to `MongoDialect.ID_KEY` class constant.
+- **`negateOperatorMap` static**: Promoted per-call `negateOperatorMap` allocation in `compareLogicalOperator` to `static readonly NEGATE_OP_MAP`.
+- **`AGGREGATE_OP_MAP` class-level**: Moved module-level `MONGO_AGGREGATE_OP_MAP` to `MongoDialect.AGGREGATE_OP_MAP` static, consistent with `REGEX_OP_MAP` and `NATIVE_OPS`.
 
 ### Test Coverage
 - Added comprehensive tests for `aggregate()` (all SQL dialects + MongoDB pipeline stages), HAVING `$in`/`$nin`/`$isNull`/`$isNotNull`, sort with numeric `-1`, mixed sort directions, MongoDB string-to-numeric sort normalization, aggregate pagination, `parseGroupMap` (edge cases), and `deleteMany` dual-API pattern. All coverage thresholds met.
