@@ -1,20 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.2.2](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.1...uql-orm@0.2.2) (2026-03-09)
-
-
-### Features
-
-* implement aggregate query API with `$group`, `$having`, and `$distinct` support, accompanied by sorting bug fixes and extensive code refactoring. ([fa90ee9](https://github.com/rogerpadilla/uql/commit/fa90ee9313645179c4d7d1ec2e4ec291dfe7285b))
-* Introduce aggregate query support with `GROUP BY`, `HAVING`, `$count`, `$sum`, `$avg`, `$min`, `$max`, and `DISTINCT` across all dialects. ([2ba02e9](https://github.com/rogerpadilla/uql/commit/2ba02e9070c8a457a651507cd55ee8e94e22819e))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
