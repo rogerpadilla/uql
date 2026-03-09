@@ -71,7 +71,7 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 }
 ```
 
-&nbsp;**Note:** UQL is Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
+&nbsp;**Note:** UQL is Modern Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
 
 ## 2. Define the Entities
 
