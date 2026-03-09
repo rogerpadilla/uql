@@ -22,7 +22,7 @@ const users = await querier.findMany(User, {
 
 | Feature                                                                  | Description                                                                                                                     |
 | :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Context-Aware Queries](https://uql-orm.dev/querying/relations)**       | Deep type-safety for operators and [relations](https://uql-orm.dev/querying/relations) at any depth.                                    |
+| **[Intelligent Querying](https://uql-orm.dev/querying/relations)**       | Deep auto-completion for operators and [relations](https://uql-orm.dev/querying/relations) at any depth.                         |
 | **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
 | **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
 | **[Naming Strategies](https://uql-orm.dev/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
