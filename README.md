@@ -9,10 +9,10 @@
 
 ```ts
 const users = await querier.findMany(User, {
-  $select: { email: true, profile: { $select: { picture: true } } },
-  $where: { email: { $endsWith: '@domain.com' } },
+  $select: { name: true, profile: { $select: { picture: true } } },
+  $where: { name: { $istartsWith: 'a' }, posts: { tags: { name: 'typescript' } } },
   $sort: { createdAt: 'desc' },
-  $limit: 100,
+  $limit: 10,
 });
 ```
 
