@@ -365,6 +365,155 @@ class MongoDialectSpec implements Spec {
     });
   }
 
+  shouldBuildAggregateStagesBasicCount() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+    });
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  shouldBuildAggregateStagesGroupByWithAccumulators() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: {
+        code: true,
+        total: { $sum: 'salePrice' },
+        avg: { $avg: 'salePrice' },
+        min: { $min: 'salePrice' },
+        max: { $max: 'salePrice' },
+      },
+    } as any);
+    expect(stages).toEqual([
+      {
+        $group: {
+          _id: { code: '$code' },
+          total: { $sum: '$salePrice' },
+          avg: { $avg: '$salePrice' },
+          min: { $min: '$salePrice' },
+          max: { $max: '$salePrice' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          code: '$_id.code',
+          total: 1,
+          avg: 1,
+          min: 1,
+          max: 1,
+        },
+      },
+    ]);
+  }
+
+  shouldBuildAggregateStagesWithWhere() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $where: { code: '123' },
+    });
+    expect(stages).toEqual([{ $match: { code: '123' } }, { $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  shouldBuildAggregateStagesWithHavingNumber() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true, count: { $count: '*' } },
+      $having: { count: 5 },
+    } as any);
+    expect(stages).toEqual([
+      {
+        $group: {
+          _id: { code: '$code' },
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: { _id: 0, code: '$_id.code', count: 1 },
+      },
+      {
+        $match: { count: 5 },
+      },
+    ]);
+  }
+
+  shouldBuildAggregateStagesWithHavingOperator() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $having: { count: { $gte: 3 } },
+    } as any);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $match: { count: { $gte: 3 } } }]);
+  }
+
+  shouldBuildAggregateStagesWithHavingUndefined() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $having: { count: undefined },
+    } as any);
+    // undefined conditions are skipped, so no HAVING $match stage
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  shouldBuildAggregateStagesWithSort() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $sort: { count: -1 },
+    } as any);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $sort: { count: -1 } }]);
+  }
+
+  shouldBuildAggregateStagesWithSkipAndLimit() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $skip: 10,
+      $limit: 5,
+    } as any);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $skip: 10 }, { $limit: 5 }]);
+  }
+
+  shouldBuildAggregateStagesFullPipeline() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: {
+        code: true,
+        count: { $count: '*' },
+      },
+      $where: { code: { $ne: '' } },
+      $having: { count: { $gt: 1 } },
+      $sort: { count: -1 },
+      $skip: 0,
+      $limit: 10,
+    } as any);
+    expect(stages).toEqual([
+      { $match: { code: { $ne: '' } } },
+      {
+        $group: {
+          _id: { code: '$code' },
+          count: { $sum: 1 },
+        },
+      },
+      { $project: { _id: 0, code: '$_id.code', count: 1 } },
+      { $match: { count: { $gt: 1 } } },
+      { $sort: { count: -1 } },
+      { $skip: 0 },
+      { $limit: 10 },
+    ]);
+  }
+
+  shouldBuildAggregateStagesNormalizeStringSortDescToNumeric() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { count: { $count: '*' } },
+      $sort: { count: 'desc' },
+    } as any);
+    const sortStage = stages.find((s) => '$sort' in s);
+    expect(sortStage).toEqual({ $sort: { count: -1 } });
+  }
+
+  shouldBuildAggregateStagesNormalizeStringSortAscToNumeric() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true, count: { $count: '*' } },
+      $sort: { code: 'asc', count: 'desc' },
+    } as any);
+    const sortStage = stages.find((s) => '$sort' in s);
+    expect(sortStage).toEqual({ $sort: { code: 1, count: -1 } });
+  }
+
   shouldMapTableNameRow() {
     expect((this.dialect as any).mapTableNameRow({ table_name: 'users' })).toBe('users');
   }

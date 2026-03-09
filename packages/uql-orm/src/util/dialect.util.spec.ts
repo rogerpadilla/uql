@@ -10,6 +10,7 @@ import {
   getFieldCallbackValue,
   isCascadable,
   isSelectingRelations,
+  parseGroupMap,
 } from './dialect.util.js';
 import { raw } from './raw.js';
 
@@ -75,4 +76,28 @@ it('isCascadable', () => {
 it('buildSortMap', () => {
   expect(buildSortMap({ id: 1 } as any)).toEqual({ id: 1 });
   expect(buildSortMap(undefined)).toEqual({});
+});
+
+it('parseGroupMap keys and fns', () => {
+  const entries = parseGroupMap({
+    code: true,
+    count: { $count: '*' },
+    total: { $sum: 'price' },
+  } as any);
+  expect(entries).toEqual([
+    { kind: 'key', alias: 'code' },
+    { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*' },
+    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'price' },
+  ]);
+});
+
+it('parseGroupMap skips falsy and non-object values', () => {
+  const entries = parseGroupMap({
+    a: false,
+    b: 0,
+    c: '',
+    d: true,
+  } as any);
+  // Only `true` is a valid group key; false/0/'' are ignored
+  expect(entries).toEqual([{ kind: 'key', alias: 'd' }]);
 });

@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.2] - 2026-03-09
+### New Features
+- **Aggregate Query API**: Added `querier.aggregate()` with full support across all SQL dialects and MongoDB. Includes typed `QueryAggregate<E>`, `QueryGroupMap`, `QueryHavingMap`, and `QueryAggregateOp` types. Supports `$group` (with `$count`, `$sum`, `$avg`, `$min`, `$max`), `$having` (post-aggregation filtering with operator support), `$where` (pre-aggregation filtering), `$sort`, `$skip`, and `$limit`.
+  ```ts
+  const results = await querier.aggregate(Order, {
+    $group: { status: true, total: { $sum: 'amount' }, count: { $count: '*' } },
+    $having: { count: { $gt: 5 } },
+    $sort: { total: -1 },
+  });
+  ```
+  - **SQL**: Generates `SELECT … GROUP BY … HAVING … ORDER BY` with proper escaping and parameterization.
+  - **MongoDB**: Generates a full aggregation pipeline (`$match → $group → $project → $match → $sort → $skip → $limit`).
+- **`$distinct` support**: Added `$distinct` option to `Query<E>` for `SELECT DISTINCT` queries.
+
+### Bug Fixes
+- **Sort direction with numeric `-1`**: `SORT_DIRECTION_MAP` only had the string key `'-1'`, not the numeric `-1` from `QuerySortDirection`. Queries using `$sort: { field: -1 }` silently produced ascending order. Now both numeric and string forms work correctly.
+- **MongoDB sort normalization**: `buildAggregateStages` passed raw string directions (`'asc'`/`'desc'`) to MongoDB's `$sort` stage, which only understands numeric `1`/`-1`. Extracted `buildMongoSort()` helper that normalizes all direction values.
+
+### Type Safety
+- **`QueryAggregateFn` enforces single operation**: Changed from a mapped type (which allowed invalid `{ $count: '*', $sum: 'amount' }`) to a discriminated union that enforces exactly one aggregate op per entry.
+- **HAVING `$in`/`$nin` support**: `havingCondition` now supports `$in` and `$nin` operators (e.g., `HAVING COUNT(*) IN (5, 10)`).
+- **HAVING `$isNull`/`$isNotNull` support**: `havingCondition` now supports null-checking operators (e.g., `HAVING MAX(score) IS NULL`).
+
+### Code Quality
+- **`compareFieldOperator` compaction**: Reduced from 142 to 85 lines (−40%) by extracting `COMPARE_OP_MAP` (simple comparison operators), `LIKE_OP_MAP` (8 string/LIKE operators), and unifying `$in`/`$nin` into a single code path.
+- **`saveRelation` split**: Decomposed the 61-line monolith into a dispatcher + 3 focused helpers by cardinality: `saveToMany` (1:M + M:M), `saveOneToOne` (1:1), `saveManyToOne` (M:1).
+- **`buildAggregateStages` complexity reduction**: Extracted `buildHavingFilter()` helper from the MongoDB aggregation pipeline builder, bringing cognitive complexity under the linter threshold.
+- **`deleteMany` DRY**: Eliminated duplicated `emitHook → internalDeleteMany → deleteRelations` logic by reusing the `resolveEntityAndQuery()` pattern.
+- **`directionMap` deduplication**: Extracted the `asc/desc → 1/-1` mapping into a static `SORT_DIRECTION_MAP` constant shared by `sort()` and `aggregateSort()`.
+- **`parseGroupMap` shared utility**: Eliminated `$group` parsing duplication between SQL and MongoDB dialects with a single generator function in `dialect.util.ts`.
+- **`transformOperators` compaction**: Replaced verbose `if/else if` chains with a static `MONGO_COMPARISON_OP_MAP` lookup, and absorbed `$like`/`$ilike` into `REGEX_OP_MAP`.
+- **`putChildrenInParents` simplification**: Simplified child-grouping loop using explicit initialization pattern.
+- **`findManyAndCount` cleanup**: Replaced spread + triple-delete mutation with clean destructuring.
+- **`insertRelations` cleanup**: Replaced `.map()` with implicit undefined return with `.filter().map()` pattern.
+- **Dead code removal**: Removed dead `Array.isArray` branch in `fillToManyRelations` (array-based `$select` was removed in 3.14.0), dead `Promise.resolve()` in async context, unused generic type parameter.
+- **`havingCondition` visibility**: Changed from `private` to `protected` to allow dialect subclass overrides.
+
+### Test Coverage
+- Added comprehensive tests for `aggregate()` (all SQL dialects + MongoDB pipeline stages), HAVING `$in`/`$nin`/`$isNull`/`$isNotNull`, sort with numeric `-1`, mixed sort directions, MongoDB string-to-numeric sort normalization, aggregate pagination, `parseGroupMap` (edge cases), and `deleteMany` dual-API pattern. All coverage thresholds met.
+
 ## [0.2.1] - 2026-03-08
 ### New Features
 - **`@Transactional({ isolationLevel })` support**: The decorator now accepts an `isolationLevel` option, forwarded to `beginTransaction()`.

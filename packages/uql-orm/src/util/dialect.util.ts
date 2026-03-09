@@ -7,6 +7,8 @@ import {
   type Key,
   type MongoId,
   type OnFieldCallback,
+  type QueryAggregateOp,
+  type QueryGroupMap,
   QueryRaw,
   type QuerySelect,
   type QuerySortMap,
@@ -119,4 +121,30 @@ function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[
     typeof (filter as MongoId).toHexString === 'function' ||
     Array.isArray(filter)
   );
+}
+
+/**
+ * Parsed entry from a `$group` map — either a raw group key or an aggregate function call.
+ */
+export type ParsedGroupEntry =
+  | { readonly kind: 'key'; readonly alias: string }
+  | { readonly kind: 'fn'; readonly alias: string; readonly op: QueryAggregateOp; readonly fieldRef: string };
+
+/**
+ * Parse a `QueryGroupMap` into structured entries consumable by any dialect.
+ * Eliminates the duplicated `value === true` / `typeof value === 'object'` pattern.
+ */
+export function parseGroupMap<E>(group: QueryGroupMap<E>): ParsedGroupEntry[] {
+  const entries: ParsedGroupEntry[] = [];
+  for (const alias of getKeys(group) as string[]) {
+    const value = (group as Record<string, unknown>)[alias];
+    if (value === true) {
+      entries.push({ kind: 'key', alias });
+    } else if (value && typeof value === 'object') {
+      const fnEntry = value as Record<string, string>;
+      const op = getKeys(fnEntry)[0] as QueryAggregateOp;
+      entries.push({ kind: 'fn', alias, op, fieldRef: fnEntry[op] });
+    }
+  }
+  return entries;
 }

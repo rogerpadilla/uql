@@ -8,6 +8,7 @@ import type {
   LoggingOptions,
   Querier,
   Query,
+  QueryAggregate,
   QueryConflictPaths,
   QueryOne,
   QueryOptions,
@@ -17,6 +18,7 @@ import type {
   QueryWhere,
   RawRow,
   RelationKey,
+  RelationOptions,
   RelationValue,
   TransactionOptions,
   Type,
@@ -123,12 +125,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQuery?: Query<E>,
   ): Promise<[E[], number]> {
     const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    const qCount = {
-      ...q,
-    } satisfies QuerySearch<E>;
-    delete qCount.$sort;
-    delete qCount.$limit;
-    delete qCount.$skip;
+    const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q as Query<E>;
     const [founds, count] = await Promise.all([
       this.internalFindMany(entity, q as Query<E>),
       this.internalCount(entity, qCount),
@@ -152,6 +149,21 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   protected abstract internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+
+  /**
+   * Run an aggregate query.
+   */
+  aggregate<E extends object, R extends Record<string, unknown> = Record<string, unknown>>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+  ): Promise<R[]> {
+    return this.internalAggregate(entity, q) as Promise<R[]>;
+  }
+
+  protected abstract internalAggregate<E extends object>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+  ): Promise<Record<string, unknown>[]>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: E) {
     const [id] = await this.insertMany(entity, [payload]);
@@ -211,18 +223,24 @@ export abstract class AbstractQuerier implements Querier {
     qOrOpts?: QuerySearch<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
+    let entity: Type<E>;
+    let q: QuerySearch<E>;
+    let opts: QueryOptions | undefined;
+
     if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      const entity = entityOrQuery as Type<E>;
-      const q = qOrOpts as QuerySearch<E>;
-      await this.emitHook(entity, 'beforeDelete', []);
-      const changes = await this.internalDeleteMany(entity, q, maybeOpts);
-      await this.emitHook(entity, 'afterDelete', []);
-      return changes;
+      entity = entityOrQuery as Type<E>;
+      q = qOrOpts as QuerySearch<E>;
+      opts = maybeOpts;
+    } else {
+      const { $entity, ...rest } = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
+      entity = $entity;
+      q = rest as QuerySearch<E>;
+      opts = qOrOpts as QueryOptions;
     }
-    const { $entity, ...query } = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
-    await this.emitHook($entity, 'beforeDelete', []);
-    const changes = await this.internalDeleteMany($entity, query as QuerySearch<E>, qOrOpts as QueryOptions);
-    await this.emitHook($entity, 'afterDelete', []);
+
+    await this.emitHook(entity, 'beforeDelete', []);
+    const changes = await this.internalDeleteMany(entity, q, opts);
+    await this.emitHook(entity, 'afterDelete', []);
     return changes;
   }
 
@@ -286,12 +304,7 @@ export abstract class AbstractQuerier implements Querier {
       const relEntity = relOpts.entity!();
       type RelEntity = typeof relEntity;
       const relSelect = clone((select as Record<string, unknown>)[relKey]);
-      const relQuery: Query<RelEntity> =
-        relSelect === true || relSelect === undefined || relSelect === null
-          ? {}
-          : Array.isArray(relSelect)
-            ? { $select: relSelect }
-            : relSelect;
+      const relQuery: Query<RelEntity> = relSelect === true || !relSelect ? {} : relSelect;
       const ids = payload.map((it) => it[meta.id!]);
 
       if (relOpts.through) {
@@ -344,12 +357,9 @@ export abstract class AbstractQuerier implements Querier {
     const childrenByParentId: Record<string, RawRow[]> = {};
     for (const child of children) {
       const parentId = String(child[referenceKey]);
-      if (!childrenByParentId[parentId]) {
-        childrenByParentId[parentId] = [];
-      }
+      if (!childrenByParentId[parentId]) childrenByParentId[parentId] = [];
       childrenByParentId[parentId].push(child);
     }
-
     for (const parent of parents) {
       parent[relKey] = childrenByParentId[String(parent[parentIdKey!])] as E[keyof E & string];
     }
@@ -357,14 +367,14 @@ export abstract class AbstractQuerier implements Querier {
 
   protected async insertRelations<E extends object>(entity: Type<E>, payload: E[]) {
     const meta = getMeta(entity);
+    const entries = payload.reduce<{ it: E; relKeys: RelationKey<E>[] }[]>((acc, it) => {
+      const relKeys = filterPersistableRelationKeys(meta, it, 'persist');
+      if (relKeys.length > 0) acc.push({ it, relKeys });
+      return acc;
+    }, []);
+    if (!entries.length) return;
     await Promise.all(
-      payload.map((it) => {
-        const relKeys = filterPersistableRelationKeys(meta, it, 'persist');
-        if (!relKeys.length) {
-          return Promise.resolve();
-        }
-        return Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)));
-      }),
+      entries.map(({ it, relKeys }) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)))),
     );
   }
 
@@ -414,60 +424,78 @@ export abstract class AbstractQuerier implements Querier {
     isUpdate?: boolean,
   ) {
     const meta = getMeta(entity);
-    const id = payload[meta.id!];
+    const id = payload[meta.id!] as IdValue<E>;
     const relOpts = meta.relations[relKey];
     if (!relOpts) return;
-    const { entity: entityGetter, cardinality, references, through } = relOpts;
-    const relEntity = entityGetter!();
+    const relEntity = relOpts.entity!();
     const relPayload = payload[relKey] as unknown as RelationValue<E>[];
 
-    if (cardinality === '1m' || cardinality === 'mm') {
-      if (through) {
-        const localField = references![0].local;
+    switch (relOpts.cardinality) {
+      case '1m':
+      case 'mm':
+        return this.saveToMany(relOpts, relEntity, id, relPayload as unknown as object[], isUpdate);
+      case '11':
+        return this.saveOneToOne(relEntity, relOpts, id, relPayload as unknown as object);
+      case 'm1':
+        if (relPayload) return this.saveManyToOne(entity, relEntity, relOpts, id, relPayload as unknown as object);
+    }
+  }
 
-        const throughEntity = through();
-        if (isUpdate) {
-          await this.deleteMany(throughEntity, { $where: { [localField]: id } as QueryWhere<object> });
-        }
-        if (relPayload) {
-          const savedIds = await this.saveMany(relEntity, relPayload);
-          const throughBodies = savedIds.map((relId) => ({
-            [references![0].local]: id,
-            [references![1].local]: relId,
-          }));
-          await this.insertMany(throughEntity, throughBodies);
-        }
-        return;
-      }
-      const foreignField = references![0].foreign;
+  private async saveToMany(
+    relOpts: RelationOptions,
+    relEntity: Type<object>,
+    id: unknown,
+    relPayload: object[],
+    isUpdate?: boolean,
+  ) {
+    const { references, through } = relOpts;
+    if (through) {
+      const localField = references![0].local;
+      const throughEntity = through();
       if (isUpdate) {
-        await this.deleteMany(relEntity, { $where: { [foreignField]: id } as QueryWhere<object> });
+        await this.deleteMany(throughEntity, { $where: { [localField]: id } as QueryWhere<object> });
       }
       if (relPayload) {
-        for (const it of relPayload) {
-          (it as RawRow)[foreignField] = id;
-        }
-        await this.saveMany(relEntity, relPayload);
+        const savedIds = await this.saveMany(relEntity, relPayload);
+        const throughBodies = savedIds.map((relId) => ({
+          [references![0].local]: id,
+          [references![1].local]: relId,
+        }));
+        await this.insertMany(throughEntity, throughBodies);
       }
       return;
     }
-
-    if (cardinality === '11') {
-      const foreignField = references![0].foreign;
-      if (relPayload === null) {
-        await this.deleteMany(relEntity, { $where: { [foreignField!]: id } as QueryWhere<object> });
-        return;
+    const foreignField = references![0].foreign;
+    if (isUpdate) {
+      await this.deleteMany(relEntity, { $where: { [foreignField]: id } as QueryWhere<object> });
+    }
+    if (relPayload) {
+      for (const it of relPayload) {
+        (it as RawRow)[foreignField] = id;
       }
-      await this.saveOne(relEntity, { ...relPayload, [foreignField!]: id });
-      return;
+      await this.saveMany(relEntity, relPayload);
     }
+  }
 
-    if (cardinality === 'm1' && relPayload) {
-      const localField = references![0].local;
-      const referenceId = await this.insertOne(relEntity, relPayload);
-      await this.updateOneById(entity, id, { [localField]: referenceId } as E);
+  private async saveOneToOne(relEntity: Type<object>, relOpts: RelationOptions, id: unknown, relPayload: object) {
+    const foreignField = relOpts.references![0].foreign;
+    if (relPayload === null) {
+      await this.deleteMany(relEntity, { $where: { [foreignField!]: id } as QueryWhere<object> });
       return;
     }
+    await this.saveOne(relEntity, { ...relPayload, [foreignField!]: id });
+  }
+
+  private async saveManyToOne<E extends object>(
+    entity: Type<E>,
+    relEntity: Type<object>,
+    relOpts: RelationOptions,
+    id: IdValue<E>,
+    relPayload: object,
+  ) {
+    const localField = relOpts.references![0].local;
+    const referenceId = await this.insertOne(relEntity, relPayload);
+    await this.updateOneById(entity, id, { [localField]: referenceId } as E);
   }
 
   abstract readonly hasOpenTransaction: boolean;

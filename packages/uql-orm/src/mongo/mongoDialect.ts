@@ -6,6 +6,7 @@ import type {
   FieldValue,
   NamingStrategy,
   Query,
+  QueryAggregate,
   QueryOptions,
   QuerySelect,
   QuerySortMap,
@@ -22,9 +23,20 @@ import {
   filterRelationKeys,
   getKeys,
   hasKeys,
+  parseGroupMap,
 } from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
+  private static readonly ID_KEY = '_id';
+
+  private static readonly AGGREGATE_OP_MAP: Record<string, string> = {
+    $count: '$sum',
+    $sum: '$sum',
+    $avg: '$avg',
+    $min: '$min',
+    $max: '$max',
+  };
+
   constructor(namingStrategy?: NamingStrategy) {
     super('mongodb', namingStrategy);
   }
@@ -42,37 +54,34 @@ export class MongoDialect extends AbstractDialect {
       (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field!)] = null;
     }
 
-    return Object.entries(whereMap).reduce<Filter<E>>(
-      (acc, entry) => {
-        let key = entry[0];
-        let val: unknown = entry[1];
-        if (key === '$and' || key === '$or') {
-          const filterList = (val as QueryWhere<E>[]).map((filterIt) => this.where(entity, filterIt));
-          (acc as Record<string, unknown>)[key] = filterList;
-        } else {
-          const field = meta.fields[key];
-          if (key === '_id' || key === meta.id) {
-            key = '_id';
-            val = this.getIdValue(val as IdValue);
-          } else if (field) {
-            key = this.resolveColumnName(key, field);
-          }
-          if (
-            val &&
-            typeof val === 'object' &&
-            !Array.isArray(val) &&
-            this.hasOperatorKeys(val as Record<string, unknown>)
-          ) {
-            val = this.transformOperators(val as Record<string, unknown>);
-          } else if (Array.isArray(val)) {
-            val = { $in: val };
-          }
-          (acc as Record<string, unknown>)[key] = val;
+    const filter: Record<string, unknown> = {};
+    for (const [rawKey, rawVal] of Object.entries(whereMap)) {
+      let key = rawKey;
+      let val: unknown = rawVal;
+      if (key === '$and' || key === '$or') {
+        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => this.where(entity, filterIt));
+      } else {
+        const field = meta.fields[key];
+        if (key === MongoDialect.ID_KEY || key === meta.id) {
+          key = MongoDialect.ID_KEY;
+          val = this.getIdValue(val as IdValue);
+        } else if (field) {
+          key = this.resolveColumnName(key, field);
         }
-        return acc;
-      },
-      {} as Filter<E>,
-    );
+        if (
+          val &&
+          typeof val === 'object' &&
+          !Array.isArray(val) &&
+          this.hasOperatorKeys(val as Record<string, unknown>)
+        ) {
+          val = this.transformOperators(val as Record<string, unknown>);
+        } else if (Array.isArray(val)) {
+          val = { $in: val };
+        }
+        filter[key] = val;
+      }
+    }
+    return filter as Filter<E>;
   }
 
   /**
@@ -86,118 +95,73 @@ export class MongoDialect extends AbstractDialect {
     return row.table_name;
   }
 
+  /** String operators → { pattern: (v) => regex, caseInsensitive } */
+  private static readonly REGEX_OP_MAP: Record<string, { wrap: (v: unknown) => string; ci: boolean }> = {
+    $startsWith: { wrap: (v) => `^${v}`, ci: false },
+    $istartsWith: { wrap: (v) => `^${v}`, ci: true },
+    $endsWith: { wrap: (v) => `${v}$`, ci: false },
+    $iendsWith: { wrap: (v) => `${v}$`, ci: true },
+    $includes: { wrap: (v) => String(v), ci: false },
+    $iincludes: { wrap: (v) => String(v), ci: true },
+    $like: { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false },
+    $ilike: { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true },
+  };
+
+  /** MongoDB native operators — pass through as-is. */
+  private static readonly NATIVE_OPS = new Set([
+    '$all',
+    '$size',
+    '$elemMatch',
+    '$eq',
+    '$ne',
+    '$lt',
+    '$lte',
+    '$gt',
+    '$gte',
+    '$in',
+    '$nin',
+    '$regex',
+    '$not',
+  ]);
+
   /**
-   * Transform RJPC operators to MongoDB operators.
+   * Transform UQL operators to MongoDB operators.
    */
-  private transformOperators<T>(ops: Record<string, unknown>): Record<string, unknown> {
+  private transformOperators(ops: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(ops)) {
+      // Native MongoDB operators — pass through directly
+      if (MongoDialect.NATIVE_OPS.has(op)) {
+        result[op] = val;
+        continue;
+      }
+      // String/pattern → regex operators (8 variants including $like/$ilike)
+      const regexEntry = MongoDialect.REGEX_OP_MAP[op];
+      if (regexEntry) {
+        result['$regex'] = regexEntry.wrap(val);
+        if (regexEntry.ci) result['$options'] = 'i';
+        continue;
+      }
+      // Structural transforms
       switch (op) {
         case '$between': {
           const [min, max] = val as [unknown, unknown];
-          const $gte = '$gte';
-          const $lte = '$lte';
-          result[$gte] = min;
-          result[$lte] = max;
+          result['$gte'] = min;
+          result['$lte'] = max;
           break;
         }
-        case '$isNull': {
-          const $eq = '$eq';
-          const $ne = '$ne';
-          if (val) {
-            result[$eq] = null;
-          } else {
-            result[$ne] = null;
-          }
+        case '$isNull':
+          result[val ? '$eq' : '$ne'] = null;
           break;
-        }
-        case '$isNotNull': {
-          const $ne = '$ne';
-          const $eq = '$eq';
-          if (val) {
-            result[$ne] = null;
-          } else {
-            result[$eq] = null;
-          }
+        case '$isNotNull':
+          result[val ? '$ne' : '$eq'] = null;
           break;
-        }
-        // MongoDB native operators - pass through directly
-        case '$all':
-        case '$size':
-        case '$elemMatch':
-        case '$eq':
-        case '$ne':
-        case '$lt':
-        case '$lte':
-        case '$gt':
-        case '$gte':
-        case '$in':
-        case '$nin':
-        case '$regex':
-        case '$not':
+        case '$text':
+          result['$text'] = { $search: val };
+          break;
+        default:
           result[op] = val;
           break;
-        // String operators need to be converted to regex
-        case '$startsWith': {
-          const $regex = '$regex';
-          result[$regex] = `^${val}`;
-          break;
-        }
-        case '$istartsWith': {
-          const $regex = '$regex';
-          const $options = '$options';
-          result[$regex] = `^${val}`;
-          result[$options] = 'i';
-          break;
-        }
-        case '$endsWith': {
-          const $regex = '$regex';
-          result[$regex] = `${val}$`;
-          break;
-        }
-        case '$iendsWith': {
-          const $regex = '$regex';
-          const $options = '$options';
-          result[$regex] = `${val}$`;
-          result[$options] = 'i';
-          break;
-        }
-        case '$includes': {
-          const $regex = '$regex';
-          result[$regex] = val;
-          break;
-        }
-        case '$iincludes': {
-          const $regex = '$regex';
-          const $options = '$options';
-          result[$regex] = val;
-          result[$options] = 'i';
-          break;
-        }
-        case '$text': {
-          const $text = '$text';
-          const $search = '$search';
-          result[$text] = { [$search]: val };
-          break;
-        }
-        case '$like': {
-          const $regex = '$regex';
-          // Convert SQL LIKE pattern to regex
-          result[$regex] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
-          break;
-        }
-        case '$ilike': {
-          const $regex = '$regex';
-          const $options = '$options';
-          // Convert SQL ILIKE pattern to regex
-          result[$regex] = String(val).replace(/%/g, '.*').replace(/_/g, '.');
-          result[$options] = 'i';
-          break;
-        }
-        default: {
-          result[op] = val;
-          break;
-        }
       }
     }
     return result;
@@ -208,7 +172,12 @@ export class MongoDialect extends AbstractDialect {
   }
 
   public sort<E extends Document>(entity: Type<E>, sort: QuerySortMap<E>): Sort {
-    return buildSortMap(sort) as Sort;
+    const raw = buildSortMap(sort);
+    const normalized: Record<string, 1 | -1> = {};
+    for (const [key, dir] of Object.entries(raw)) {
+      normalized[key] = dir === 'desc' || dir === -1 ? -1 : 1;
+    }
+    return normalized as Sort;
   }
 
   public aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
@@ -259,7 +228,7 @@ export class MongoDialect extends AbstractDialect {
         const foreignFieldName = this.resolveColumnName(relOpts.references![0].foreign, foreignField!);
         const referenceWhere = this.where(relEntity, where);
         const referenceSort = this.sort(relEntity, q.$sort!);
-        const _id = '_id';
+        const _id = MongoDialect.ID_KEY;
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
           $match: { [foreignFieldName]: referenceWhere[_id] },
         };
@@ -291,7 +260,7 @@ export class MongoDialect extends AbstractDialect {
     }
 
     const res = doc as unknown as Record<string, unknown>;
-    const _id = '_id';
+    const _id = MongoDialect.ID_KEY;
 
     if (res[_id]) {
       res[meta.id as string] = res[_id];
@@ -356,6 +325,87 @@ export class MongoDialect extends AbstractDialect {
       ),
     );
   }
+
+  /**
+   * Build MongoDB aggregation pipeline stages from a QueryAggregate.
+   */
+  public buildAggregateStages<E extends Document>(entity: Type<E>, q: QueryAggregate<E>): Record<string, unknown>[] {
+    const pipeline: Record<string, unknown>[] = [];
+
+    // $match stage (WHERE equivalent — before grouping)
+    if (q.$where) {
+      const filter = this.where(entity, q.$where);
+      if (hasKeys(filter)) {
+        pipeline.push({ $match: filter });
+      }
+    }
+
+    // $group stage
+    const groupId: Record<string, string> = {};
+    const groupAccumulators: Record<string, Record<string, unknown>> = {};
+
+    for (const entry of parseGroupMap(q.$group)) {
+      if (entry.kind === 'key') {
+        groupId[entry.alias] = `$${entry.alias}`;
+      } else {
+        const mongoOp = MongoDialect.AGGREGATE_OP_MAP[entry.op];
+        groupAccumulators[entry.alias] = entry.op === '$count' ? { [mongoOp]: 1 } : { [mongoOp]: `$${entry.fieldRef}` };
+      }
+    }
+
+    pipeline.push({ $group: { _id: hasKeys(groupId) ? groupId : null, ...groupAccumulators } });
+
+    // Project stage — rename _id fields back to their original names
+    if (hasKeys(groupId)) {
+      const project: Record<string, unknown> = { _id: 0 };
+      for (const alias of Object.keys(groupId)) {
+        project[alias] = `$_id.${alias}`;
+      }
+      for (const alias of Object.keys(groupAccumulators)) {
+        project[alias] = 1;
+      }
+      pipeline.push({ $project: project });
+    }
+
+    // $match stage for HAVING (post-group filtering)
+    if (q.$having) {
+      const havingFilter = this.buildHavingFilter(q.$having);
+      if (hasKeys(havingFilter)) {
+        pipeline.push({ $match: havingFilter });
+      }
+    }
+
+    // $sort stage
+    if (q.$sort) {
+      const sort = this.sort(entity, q.$sort);
+      if (hasKeys(sort)) {
+        pipeline.push({ $sort: sort });
+      }
+    }
+
+    // $skip and $limit stages
+    if (q.$skip !== undefined) {
+      pipeline.push({ $skip: q.$skip });
+    }
+    if (q.$limit !== undefined) {
+      pipeline.push({ $limit: q.$limit });
+    }
+
+    return pipeline;
+  }
+
+  private buildHavingFilter(having: Record<string, unknown>): Record<string, unknown> {
+    const filter: Record<string, unknown> = {};
+    for (const [alias, condition] of Object.entries(having)) {
+      if (condition === undefined) continue;
+      if (typeof condition === 'number') {
+        filter[alias] = condition;
+      } else if (typeof condition === 'object' && condition !== null) {
+        filter[alias] = this.transformOperators(condition as Record<string, unknown>);
+      }
+    }
+    return filter;
+  }
 }
 
 export type MongoAggregationPipelineEntry<E extends Document> = {
@@ -363,6 +413,10 @@ export type MongoAggregationPipelineEntry<E extends Document> = {
   $match?: Filter<E> | Record<string, unknown>;
   $sort?: Sort;
   $unwind?: MongoAggregationUnwind;
+  $group?: Record<string, unknown>;
+  $project?: Record<string, unknown>;
+  $skip?: number;
+  $limit?: number;
 };
 
 type MongoAggregationLookup<E extends Document> = {

@@ -4,6 +4,7 @@ import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
   Query,
+  QueryAggregate,
   QueryConflictPaths,
   QueryOne,
   QueryOptions,
@@ -103,6 +104,14 @@ export interface Querier extends UniversalQuerier {
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearchWithEntity<E>, opts?: QueryOptions): Promise<number>;
+
+  /**
+   * Run an aggregate query (GROUP BY with aggregate functions).
+   */
+  aggregate<E extends object, R extends Record<string, unknown> = Record<string, unknown>>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+  ): Promise<R[]>;
 
   /**
    * whether this querier is in a transaction or not.
