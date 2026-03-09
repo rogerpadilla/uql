@@ -1,3 +1,16 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.2.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.2...uql-orm@0.2.3) (2026-03-09)
+
+**Note:** Version bump only for package uql-orm
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
