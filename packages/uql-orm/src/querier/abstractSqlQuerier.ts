@@ -4,6 +4,7 @@ import type {
   ExtraOptions,
   IdValue,
   Query,
+  QueryAggregate,
   QueryConflictPaths,
   QueryOptions,
   QuerySearch,
@@ -80,6 +81,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     this.dialect.count(ctx, entity, q);
     const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
     return Number(res[0].count);
+  }
+
+  protected override async internalAggregate<E extends object>(entity: Type<E>, q: QueryAggregate<E>) {
+    const ctx = this.dialect.createContext();
+    this.dialect.aggregate(ctx, entity, q);
+    return this.all<Record<string, unknown>>(ctx.sql, ctx.values);
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, payload: E[]) {

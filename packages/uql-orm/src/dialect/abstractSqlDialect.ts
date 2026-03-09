@@ -8,10 +8,12 @@ import {
   type JsonMergeOp,
   type Key,
   type Query,
+  type QueryAggregate,
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
   type QueryDialect,
+  type QueryHavingMap,
   type QueryOptions,
   type QueryPager,
   QueryRaw,
@@ -51,6 +53,7 @@ import {
   hasKeys,
   isJsonType,
   isSelectingRelations,
+  parseGroupMap,
   raw,
 } from '../util/index.js';
 
@@ -206,13 +209,14 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     entity: Type<E>,
     select: QuerySelect<E> | QueryRaw[] | undefined,
     opts: QueryOptions = {},
+    distinct?: boolean,
   ): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const mapSelect = Array.isArray(select) ? undefined : select;
     const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, mapSelect))) ? tableName : undefined;
 
-    ctx.append('SELECT ');
+    ctx.append(distinct ? 'SELECT DISTINCT ' : 'SELECT ');
     this.selectFields(ctx, entity, select, { prefix });
     // Add related fields BEFORE FROM clause
     this.selectRelationFields(ctx, entity, mapSelect, { prefix });
@@ -466,13 +470,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     val: QueryWhereArray<E>,
     opts: QueryComparisonOptions,
   ): void {
-    const negateOperatorMap = {
-      $not: '$and',
-      $nor: '$or',
-    } as const;
-
-    const op = (negateOperatorMap as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
-    const negate = key in negateOperatorMap ? 'NOT' : '';
+    const op = (AbstractSqlDialect.NEGATE_OP_MAP as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
+    const negate = key in AbstractSqlDialect.NEGATE_OP_MAP ? 'NOT' : '';
 
     const valArr = val ?? [];
     const hasManyItems = valArr.length > 1;
@@ -505,6 +504,29 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
   }
 
+  /** Simple comparison operators: `getComparisonKey → op → addValue`. */
+  private static readonly NEGATE_OP_MAP = { $not: '$and', $nor: '$or' } as const;
+
+  private static readonly COMPARE_OP_MAP: Record<string, string> = {
+    $gt: ' > ',
+    $gte: ' >= ',
+    $lt: ' < ',
+    $lte: ' <= ',
+    $regex: ' REGEXP ',
+  };
+
+  /** String/LIKE operators: wrap the value, optionally lowercase it. */
+  private static readonly LIKE_OP_MAP: Record<string, { wrap: (v: string) => string; lower: boolean }> = {
+    $startsWith: { wrap: (v) => `${v}%`, lower: false },
+    $istartsWith: { wrap: (v) => `${v.toLowerCase()}%`, lower: false },
+    $endsWith: { wrap: (v) => `%${v}`, lower: false },
+    $iendsWith: { wrap: (v) => `%${v.toLowerCase()}`, lower: false },
+    $includes: { wrap: (v) => `%${v}%`, lower: false },
+    $iincludes: { wrap: (v) => `%${v.toLowerCase()}%`, lower: false },
+    $like: { wrap: (v) => v, lower: false },
+    $ilike: { wrap: (v) => v.toLowerCase(), lower: false },
+  };
+
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -513,115 +535,53 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
   ): void {
+    // Simple comparison operators (5 cases)
+    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP[op as string];
+    if (simpleOp) {
+      this.getComparisonKey(ctx, entity, key, opts);
+      ctx.append(simpleOp);
+      ctx.addValue(val);
+      return;
+    }
+
+    // LIKE string operators (8 cases)
+    const likeEntry = AbstractSqlDialect.LIKE_OP_MAP[op as string];
+    if (likeEntry) {
+      this.getComparisonKey(ctx, entity, key, opts);
+      ctx.append(' LIKE ');
+      ctx.addValue(likeEntry.wrap(val as string));
+      return;
+    }
+
     switch (op) {
       case '$eq':
         this.getComparisonKey(ctx, entity, key, opts);
-        if (val === null) {
-          ctx.append(' IS NULL');
-        } else {
-          ctx.append(' = ');
-          ctx.addValue(val);
-        }
+        ctx.append(val === null ? ' IS NULL' : ' = ');
+        if (val !== null) ctx.addValue(val);
         break;
       case '$ne':
         this.getComparisonKey(ctx, entity, key, opts);
-        if (val === null) {
-          ctx.append(' IS NOT NULL');
-        } else {
-          ctx.append(' <> ');
-          ctx.addValue(val);
-        }
+        ctx.append(val === null ? ' IS NOT NULL' : ' <> ');
+        if (val !== null) ctx.addValue(val);
         break;
       case '$not':
         ctx.append('NOT (');
         this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], opts);
         ctx.append(')');
         break;
-      case '$gt':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' > ');
-        ctx.addValue(val);
-        break;
-      case '$gte':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' >= ');
-        ctx.addValue(val);
-        break;
-      case '$lt':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' < ');
-        ctx.addValue(val);
-        break;
-      case '$lte':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' <= ');
-        ctx.addValue(val);
-        break;
-      case '$startsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`${val}%`);
-        break;
-      case '$istartsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`${(val as string).toLowerCase()}%`);
-        break;
-      case '$endsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`%${val}`);
-        break;
-      case '$iendsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`%${(val as string).toLowerCase()}`);
-        break;
-      case '$includes':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`%${val}%`);
-        break;
-      case '$iincludes':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(`%${(val as string).toLowerCase()}%`);
-        break;
-      case '$ilike':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue((val as string).toLowerCase());
-        break;
-      case '$like':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' LIKE ');
-        ctx.addValue(val);
-        break;
       case '$in':
+      case '$nin': {
         this.getComparisonKey(ctx, entity, key, opts);
+        const keyword = op === '$in' ? ' IN ' : ' NOT IN ';
         if (Array.isArray(val) && val.length > 0) {
-          ctx.append(' IN (');
+          ctx.append(`${keyword}(`);
           this.addValues(ctx, val as unknown[]);
           ctx.append(')');
         } else {
-          ctx.append(' IN (NULL)');
+          ctx.append(`${keyword}(NULL)`);
         }
         break;
-      case '$nin':
-        this.getComparisonKey(ctx, entity, key, opts);
-        if (Array.isArray(val) && val.length > 0) {
-          ctx.append(' NOT IN (');
-          this.addValues(ctx, val as unknown[]);
-          ctx.append(')');
-        } else {
-          ctx.append(' NOT IN (NULL)');
-        }
-        break;
-      case '$regex':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' REGEXP ');
-        ctx.addValue(val);
-        break;
+      }
       case '$between': {
         const [min, max] = val as [unknown, unknown];
         this.getComparisonKey(ctx, entity, key, opts);
@@ -642,7 +602,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       case '$all':
       case '$size':
       case '$elemMatch':
-        // Each SQL dialect must provide its own implementation
         throw TypeError(`${op} is not supported in the base SQL dialect - override in dialect subclass`);
       default:
         throw TypeError(`unknown operator: ${op}`);
@@ -748,7 +707,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
     const meta = getMeta(entity);
     const flattenedSort = flatObject(sortMap, prefix);
-    const directionMap = { 1: '', asc: '', '-1': ' DESC', desc: ' DESC' } as const;
 
     ctx.append(' ORDER BY ');
 
@@ -756,7 +714,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (index > 0) {
         ctx.append(', ');
       }
-      const direction = directionMap[sort as QuerySortDirection];
+      const direction = AbstractSqlDialect.SORT_DIRECTION_MAP[sort as QuerySortDirection];
 
       // Detect JSONB dot-notation: 'column.path'
       const jsonDot = this.resolveJsonDotPath(meta, key);
@@ -787,8 +745,134 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     this.search(ctx, entity, search, opts);
   }
 
+  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts: QueryOptions = {}): void {
+    const meta = getMeta(entity);
+    const tableName = this.resolveTableName(entity, meta);
+    const groupKeys: string[] = [];
+    const selectParts: string[] = [];
+    const aggregateExpressions: Record<string, string> = {};
+
+    for (const entry of parseGroupMap(q.$group)) {
+      if (entry.kind === 'key') {
+        const field = meta.fields[entry.alias as FieldKey<E>];
+        const columnName = this.resolveColumnName(entry.alias, field);
+        const escaped = this.escapeId(columnName);
+        groupKeys.push(escaped);
+        selectParts.push(columnName !== entry.alias ? `${escaped} ${this.escapeId(entry.alias)}` : escaped);
+      } else {
+        const sqlFn = entry.op.slice(1).toUpperCase();
+        const sqlArg =
+          entry.fieldRef === '*'
+            ? '*'
+            : this.escapeId(this.resolveColumnName(entry.fieldRef, meta.fields[entry.fieldRef as FieldKey<E>]));
+        const expr = `${sqlFn}(${sqlArg})`;
+        aggregateExpressions[entry.alias] = expr;
+        selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
+      }
+    }
+
+    ctx.append(`SELECT ${selectParts.join(', ')} FROM ${this.escapeId(tableName)}`);
+    this.where<E>(ctx, entity, q.$where, opts);
+
+    if (groupKeys.length) {
+      ctx.append(` GROUP BY ${groupKeys.join(', ')}`);
+    }
+
+    if (q.$having) {
+      this.having(ctx, q.$having, aggregateExpressions);
+    }
+
+    this.aggregateSort(ctx, q.$sort, aggregateExpressions);
+    this.pager(ctx, q);
+  }
+
+  /**
+   * ORDER BY for aggregate queries — handles both entity-field and alias references.
+   */
+  private aggregateSort(
+    ctx: QueryContext,
+    sort: QuerySortMap<object> | undefined,
+    aggregateExpressions: Record<string, string>,
+  ): void {
+    const sortMap = buildSortMap(sort);
+    if (!hasKeys(sortMap)) return;
+
+    ctx.append(' ORDER BY ');
+    Object.entries(sortMap).forEach(([key, dir], index) => {
+      if (index > 0) ctx.append(', ');
+      const direction = AbstractSqlDialect.SORT_DIRECTION_MAP[dir as QuerySortDirection];
+      const ref = aggregateExpressions[key] ?? this.escapeId(key);
+      ctx.append(ref + direction);
+    });
+  }
+
+  protected having(ctx: QueryContext, having: QueryHavingMap, aggregateExpressions: Record<string, string>): void {
+    const entries = Object.entries(having).filter(([, v]) => v !== undefined);
+    if (!entries.length) return;
+
+    ctx.append(' HAVING ');
+    entries.forEach(([alias, condition], index) => {
+      if (index > 0) ctx.append(' AND ');
+      const expr = aggregateExpressions[alias] ?? this.escapeId(alias);
+      this.havingCondition(ctx, expr, condition!);
+    });
+  }
+
+  private static readonly SORT_DIRECTION_MAP: Record<string | number, string> = Object.assign(
+    { 1: '', asc: '', desc: ' DESC', '-1': ' DESC' },
+    { [-1]: ' DESC' },
+  );
+
+  private static readonly havingOpMap: Record<string, string> = {
+    $eq: '=',
+    $ne: '<>',
+    $gt: '>',
+    $gte: '>=',
+    $lt: '<',
+    $lte: '<=',
+  };
+
+  protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
+    if (typeof condition !== 'object' || condition === null) {
+      ctx.append(`${expr} = `);
+      ctx.addValue(condition);
+      return;
+    }
+    const ops = condition as QueryWhereFieldOperatorMap<number>;
+    const keys = getKeys(ops);
+    keys.forEach((op, i) => {
+      if (i > 0) ctx.append(' AND ');
+      const val = ops[op];
+      if (op === '$between') {
+        const [min, max] = val as [number, number];
+        ctx.append(`${expr} BETWEEN `);
+        ctx.addValue(min);
+        ctx.append(' AND ');
+        ctx.addValue(max);
+      } else if (op === '$in' || op === '$nin') {
+        const keyword = op === '$in' ? 'IN' : 'NOT IN';
+        if (Array.isArray(val) && val.length > 0) {
+          ctx.append(`${expr} ${keyword} (`);
+          this.addValues(ctx, val as unknown[]);
+          ctx.append(')');
+        } else {
+          ctx.append(`${expr} ${keyword} (NULL)`);
+        }
+      } else if (op === '$isNull') {
+        ctx.append(`${expr}${val ? ' IS NULL' : ' IS NOT NULL'}`);
+      } else if (op === '$isNotNull') {
+        ctx.append(`${expr}${val ? ' IS NOT NULL' : ' IS NULL'}`);
+      } else {
+        const sqlOp = AbstractSqlDialect.havingOpMap[op];
+        if (!sqlOp) throw TypeError(`unsupported HAVING operator: ${op}`);
+        ctx.append(`${expr} ${sqlOp} `);
+        ctx.addValue(val);
+      }
+    });
+  }
+
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
-    this.select(ctx, entity, q.$select, opts);
+    this.select(ctx, entity, q.$select, opts, q.$distinct);
     this.search(ctx, entity, q, opts);
   }
 

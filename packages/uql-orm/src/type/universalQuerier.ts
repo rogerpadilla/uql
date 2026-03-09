@@ -1,5 +1,13 @@
 import type { IdValue, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type {
+  Query,
+  QueryAggregate,
+  QueryConflictPaths,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  QueryUpdateResult,
+} from './query.js';
 
 import type { Type } from './utility.js';
 
@@ -140,4 +148,15 @@ export interface UniversalQuerier {
    * @return the number of affected records
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+
+  /**
+   * runs an aggregate query (GROUP BY with aggregate functions).
+   * @param entity the target entity
+   * @param q the aggregate query options
+   * @return the aggregate results
+   */
+  aggregate<E extends object, R extends Record<string, unknown> = Record<string, unknown>>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+  ): Promise<R[]>;
 }

@@ -1361,4 +1361,295 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ctx.append('SELECT ').append('').append('*');
     expect(ctx.sql).toBe('SELECT *');
   }
+
+  // Aggregate tests — shared across all SQL dialects
+  shouldAggregateGroupByWithCount() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+      }),
+    );
+    expect(sql).toBe(`SELECT ${e}status${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}status${e}`);
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateGroupByWithMultipleFunctions() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+          avgCreated: { $avg: 'createdAt' },
+          maxCreated: { $max: 'createdAt' },
+          minCreated: { $min: 'createdAt' },
+        },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}status${e}, COUNT(*) ${e}count${e}, AVG(${e}createdAt${e}) ${e}avgCreated${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e}, MIN(${e}createdAt${e}) ${e}minCreated${e} FROM ${e}User${e} GROUP BY ${e}status${e}`,
+    );
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateWithHaving() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: { $gt: 5 } },
+      }),
+    );
+    expect(sql).toContain(`GROUP BY ${e}status${e} HAVING COUNT(*) > `);
+    expect(values).toEqual([5]);
+  }
+
+  shouldAggregateWithHavingMultipleConditions() {
+    const { values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+          total: { $sum: 'createdAt' },
+        },
+        $having: {
+          count: { $gte: 2 },
+          total: { $lt: 1000 },
+        },
+      }),
+    );
+    expect(values).toEqual([2, 1000]);
+  }
+
+  shouldAggregateWithWhereAndSort() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $where: { name: { $ne: null } },
+        $sort: { count: -1 },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toContain(`${e}name${e} IS NOT NULL`);
+    expect(sql).toContain('ORDER BY COUNT(*) DESC LIMIT 10');
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateTotalWithoutGroupBy() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          total: { $count: '*' },
+          maxCreated: { $max: 'createdAt' },
+        },
+      }),
+    );
+    expect(sql).toBe(`SELECT COUNT(*) ${e}total${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e} FROM ${e}User${e}`);
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateWithHavingBetween() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: { $between: [2, 10] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) BETWEEN ');
+    expect(values).toEqual([2, 10]);
+  }
+
+  shouldAggregateWithHavingExactValue() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: 5 },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) = ');
+    expect(values).toEqual([5]);
+  }
+
+  shouldAggregateSortByAliasInsteadOfField() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+          total: { $sum: 'createdAt' },
+        },
+        $sort: { count: -1, status: 1 },
+      }),
+    );
+    // `count` should resolve to the aggregate expression COUNT(*), not a column name
+    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+    expect(sql).toContain('GROUP BY');
+  }
+
+  // $distinct tests — shared across all SQL dialects
+  shouldFindDistinct() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { name: true },
+        $distinct: true,
+      }),
+    );
+    expect(sql).toBe(`SELECT DISTINCT ${e}name${e} FROM ${e}User${e}`);
+    expect(values).toEqual([]);
+  }
+
+  shouldFindDistinctWithWhereAndSort() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { name: true, email: true },
+        $distinct: true,
+        $where: { name: { $ne: null } },
+        $sort: { name: 1 },
+        $limit: 50,
+      }),
+    );
+    expect(sql).toContain('SELECT DISTINCT');
+    expect(sql).toContain('IS NOT NULL');
+    expect(sql).toContain('LIMIT 50');
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateWithHavingIn() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: { $in: [1, 5, 10] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) IN (');
+    expect(values).toEqual([1, 5, 10]);
+  }
+
+  shouldAggregateWithHavingNin() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: { $nin: [0, 999] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) NOT IN (');
+    expect(values).toEqual([0, 999]);
+  }
+
+  shouldAggregateWithHavingInEmpty() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $having: { count: { $in: [] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) IN (NULL)');
+  }
+
+  shouldAggregateWithHavingIsNull() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          maxVal: { $max: 'createdAt' },
+        },
+        $having: { maxVal: { $isNull: true } },
+      }),
+    );
+    expect(sql).toContain('HAVING MAX(');
+    expect(sql).toContain(' IS NULL');
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateWithHavingIsNotNull() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          maxVal: { $max: 'createdAt' },
+        },
+        $having: { maxVal: { $isNotNull: true } },
+      }),
+    );
+    expect(sql).toContain('HAVING MAX(');
+    expect(sql).toContain(' IS NOT NULL');
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateSortWithNumericNegativeOne() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $sort: { count: -1 },
+      }),
+    );
+    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+  }
+
+  shouldAggregateSortWithMixedDirections() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+          total: { $sum: 'createdAt' },
+        },
+        $sort: { count: 'desc', status: 'asc', total: 1 },
+      }),
+    );
+    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+    expect(sql).toContain('SUM(');
+    expect(sql).not.toContain('SUM(' + this.dialect.escapeIdChar + 'createdAt' + this.dialect.escapeIdChar + ') DESC');
+  }
+
+  shouldAggregateWithPagination() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: {
+          status: true,
+          count: { $count: '*' },
+        },
+        $sort: { count: -1 },
+        $skip: 20,
+        $limit: 10,
+      }),
+    );
+    expect(sql).toContain(`GROUP BY ${e}status${e}`);
+    expect(sql).toContain('ORDER BY COUNT(*) DESC');
+    expect(sql).toContain('LIMIT 10');
+    expect(sql).toContain('OFFSET 20');
+    expect(values).toEqual([]);
+  }
 }

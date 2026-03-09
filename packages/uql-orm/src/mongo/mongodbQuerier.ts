@@ -5,6 +5,7 @@ import type {
   ExtraOptions,
   IdValue,
   Query,
+  QueryAggregate,
   QueryConflictPaths,
   QueryOptions,
   QuerySearch,
@@ -74,6 +75,14 @@ export class MongodbQuerier extends AbstractQuerier {
     }
 
     return documents;
+  }
+
+  @Log()
+  protected override async internalAggregate<E extends Document>(entity: Type<E>, q: QueryAggregate<E>) {
+    const pipeline = this.dialect.buildAggregateStages(entity, q);
+    return this.execute((session) =>
+      this.collection(entity).aggregate<Record<string, unknown>>(pipeline, { session }).toArray(),
+    );
   }
 
   @Log()

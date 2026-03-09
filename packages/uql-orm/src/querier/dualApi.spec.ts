@@ -42,6 +42,10 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
+  protected override internalAggregate(): any {
+    return Promise.resolve([]);
+  }
+
   override async beginTransaction() {}
   override commitTransaction(): any {}
   override rollbackTransaction(): any {}

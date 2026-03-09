@@ -30,6 +30,7 @@ const users = await querier.findMany(User, {
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
 | **[Declarative Transactions](https://uql-orm.dev/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
+| **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, and `DISTINCT` across all dialects. |
 | **[Modern &amp; Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **Vector/JSONB/JSON** support. |
 | **[Database Migrations](https://www.uql-orm.dev/migrations)**          | Built-in [Entity-First synchronization](https://uql-orm.dev/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
 | **[Logging & Monitoring](https://www.uql-orm.dev/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
@@ -351,6 +352,48 @@ const posts = await querier.findMany(Post, {
 
 &nbsp;
 
+### Aggregate Queries
+
+Use `querier.aggregate()` for `GROUP BY` analytics with `$count`, `$sum`, `$avg`, `$min`, `$max`, and full `$having` support.
+
+```ts
+const results = await querier.aggregate(Order, {
+  $group: {
+    status: true,
+    total: { $sum: 'amount' },
+    count: { $count: '*' },
+  },
+  $having: { count: { $gt: 5 } },
+  $sort: { total: -1 },
+  $limit: 10,
+});
+```
+
+**Generated SQL (PostgreSQL):**
+
+```sql
+SELECT "status", SUM("amount") "total", COUNT(*) "count"
+FROM "Order"
+GROUP BY "status"
+HAVING COUNT(*) > $1
+ORDER BY SUM("amount") DESC
+LIMIT 10
+```
+
+For `SELECT DISTINCT`, add `$distinct: true` to any find query:
+
+```ts
+const names = await querier.findMany(User, {
+  $select: { name: true },
+  $distinct: true,
+});
+// → SELECT DISTINCT "name" FROM "User"
+```
+
+> **Learn more**: See the full [Aggregate Queries guide](https://uql-orm.dev/querying/aggregate) for `$having` operators, MongoDB pipeline details, and advanced patterns.
+
+&nbsp;
+
 ### Thread-Safe Transactions
 
 UQL is one of the few ORMs with a **centralized serialization engine**. Transactions are guaranteed to be race-condition free.
@@ -535,6 +578,7 @@ error: Failed to connect to database: Connection timeout
 Learn more about UQL at [uql-orm.dev](https://uql-orm.dev) for details on:
 
 - [Complex Logical Operators](https://uql-orm.dev/querying/logical-operators)
+- [Aggregate Queries (GROUP BY, HAVING, DISTINCT)](https://uql-orm.dev/querying/aggregate)
 - [Relationship Mapping (1-1, 1-M, M-M)](https://uql-orm.dev/querying/relations)
 - [Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)
 - [Soft Deletes &amp; Auditing](https://uql-orm.dev/entities/soft-delete)

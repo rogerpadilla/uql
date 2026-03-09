@@ -305,6 +305,11 @@ export type Query<E> = {
    * selection options.
    */
   $select?: QuerySelect<E>;
+
+  /**
+   * whether to return only distinct rows.
+   */
+  $distinct?: boolean;
 } & QuerySearch<E>;
 
 /**
@@ -519,8 +524,99 @@ export interface SqlQueryDialect extends QueryDialect {
   readonly escapeIdChar: '"' | '`';
 
   /**
+   * Build an aggregate query.
+   */
+  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts?: QueryOptions): void;
+
+  /**
    * Get the placeholder for a parameter at the given index (1-based).
    * Default: '?' for MySQL/MariaDB/SQLite, '$n' for PostgreSQL.
    */
   placeholder(index: number): string;
 }
+
+// ============================================================================
+// Aggregation Types
+// ============================================================================
+
+/**
+ * Supported aggregate operations.
+ */
+export type QueryAggregateOp = '$count' | '$sum' | '$avg' | '$min' | '$max';
+
+/**
+ * An aggregate function applied to a field.
+ * Exactly one aggregate operation per entry.
+ *
+ * @example { $count: '*' }         → COUNT(*)
+ * @example { $sum: 'amount' }      → SUM("amount")
+ * @example { $avg: 'age' }         → AVG("age")
+ */
+export type QueryAggregateFn<E> =
+  | { readonly $count: FieldKey<E> | '*' | 1 }
+  | { readonly $sum: FieldKey<E> | '*' | 1 }
+  | { readonly $avg: FieldKey<E> | '*' | 1 }
+  | { readonly $min: FieldKey<E> | '*' | 1 }
+  | { readonly $max: FieldKey<E> | '*' | 1 };
+
+/**
+ * Group-by map: keys set to `true` become GROUP BY columns;
+ * keys with an aggregate function become computed columns.
+ *
+ * @example
+ * ```ts
+ * { status: true, count: { $count: '*' }, avgAge: { $avg: 'age' } }
+ * // → SELECT "status", COUNT(*) AS "count", AVG("age") AS "avgAge" … GROUP BY "status"
+ * ```
+ */
+export type QueryGroupMap<E> = {
+  readonly [K in FieldKey<E>]?: true | QueryAggregateFn<E>;
+} & {
+  readonly [alias: string]: true | QueryAggregateFn<E> | undefined;
+};
+
+/**
+ * HAVING clause — filters on aggregate results by alias name.
+ *
+ * @example { count: { $gt: 5 } }   → HAVING COUNT(*) > 5
+ */
+export type QueryHavingMap = {
+  readonly [alias: string]: QueryWhereFieldValue<number> | undefined;
+};
+
+/**
+ * Aggregate query — separate from `Query<E>` to keep return types honest.
+ * Used exclusively with `querier.aggregate()`.
+ *
+ * @example
+ * ```ts
+ * querier.aggregate(User, {
+ *   $group: { status: true, count: { $count: '*' }, avgAge: { $avg: 'age' } },
+ *   $where: { deletedAt: { $isNull: true } },
+ *   $having: { count: { $gt: 5 } },
+ *   $sort: { count: -1 },
+ * });
+ * ```
+ */
+export type QueryAggregate<E> = {
+  /**
+   * Grouping and aggregate function definitions.
+   */
+  readonly $group: QueryGroupMap<E>;
+
+  /**
+   * Row-level filtering (applied before grouping — SQL WHERE).
+   */
+  readonly $where?: QueryWhere<E>;
+
+  /**
+   * Post-aggregation filtering (applied after grouping — SQL HAVING).
+   */
+  readonly $having?: QueryHavingMap;
+
+  /**
+   * Sort the aggregated results.
+   * Accepts entity field keys plus arbitrary alias names used in `$group`.
+   */
+  readonly $sort?: QuerySortMap<E> & { readonly [alias: string]: QuerySortDirection | undefined };
+} & QueryPager;
