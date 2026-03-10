@@ -90,9 +90,7 @@ describe('global listeners', () => {
   it('should await async afterLoad listener before returning', async () => {
     await q.findMany(User, {});
     expect(asyncWorkDone).toBe(true);
-    expect(asyncListener.afterLoad).toHaveBeenCalledWith(
-      expect.objectContaining({ entity: User, event: 'afterLoad' }),
-    );
+    expect(asyncListener.afterLoad).toHaveBeenCalledWith(expect.objectContaining({ entity: User, event: 'afterLoad' }));
   });
 
   it('should await async beforeInsert and call sync afterInsert', async () => {
