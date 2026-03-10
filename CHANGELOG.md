@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.4] - 2026-03-10
+### Bug Fixes
+- **ManyToOne / OneToOne relation filtering**: `$where` clauses referencing `m1` or `11` relations (e.g., `{ item: { name: 'Widget' } }`) now correctly generate `EXISTS` subqueries. Previously, these cardinalities were unhandled and fell through to `compareFieldOperator`, throwing an "unknown operator" error. The `compareRelation` method now supports all four cardinalities (`mm`, `1m`, `m1`, `11`) with direction-aware join resolution.
+
+### Test Coverage
+- Added tests for ManyToOne relation filtering: simple equality, operator filter (`$like`), and combined with regular fields.
+
 ## [0.2.3] - 2026-03-09
 ### Documentation
 - **Aggregate Queries guide**: Added dedicated [aggregate documentation page](https://uql-orm.dev/querying/aggregate) covering `$group`, `$having`, `$where` vs `$having`, sorting/pagination, and `$distinct`.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
-import { Company, Item, MeasureUnitCategory, User } from '../test/index.js';
+import { Company, Item, ItemAdjustment, MeasureUnitCategory, User } from '../test/index.js';
 import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -403,6 +403,32 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
       expect(ctx.sql).toContain('code IS NOT NULL');
       expect(ctx.values).toEqual([1, 'test']);
+    });
+
+    it('ManyToOne with simple filter', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, ItemAdjustment, { item: { name: 'Widget' } });
+      expect(ctx.sql).toBe(
+        ' WHERE EXISTS (SELECT 1 FROM `Item` WHERE `Item`.`id` = `ItemAdjustment`.`itemId` AND `Item`.`name` = ?)',
+      );
+      expect(ctx.values).toEqual(['Widget']);
+    });
+
+    it('ManyToOne with operator filter', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, ItemAdjustment, { item: { name: { $like: '%test%' } } });
+      expect(ctx.sql).toBe(
+        ' WHERE EXISTS (SELECT 1 FROM `Item` WHERE `Item`.`id` = `ItemAdjustment`.`itemId` AND `Item`.`name` LIKE ?)',
+      );
+      expect(ctx.values).toEqual(['%test%']);
+    });
+
+    it('ManyToOne combined with regular field', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, ItemAdjustment, { number: 5, item: { name: 'Widget' } });
+      expect(ctx.sql).toContain('`number` = ?');
+      expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `Item`');
+      expect(ctx.values).toEqual([5, 'Widget']);
     });
   });
 

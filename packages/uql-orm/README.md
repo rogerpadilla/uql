@@ -9,10 +9,10 @@
 
 ```ts
 const users = await querier.findMany(User, {
-  $select: { email: true, profile: { $select: { picture: true } } },
-  $where: { email: { $endsWith: '@domain.com' } },
+  $select: { name: true, profile: { $select: { picture: true } } },
+  $where: { name: { $istartsWith: 'a' }, posts: { tags: { name: 'typescript' } } },
   $sort: { createdAt: 'desc' },
-  $limit: 100,
+  $limit: 10,
 });
 ```
 
@@ -28,7 +28,7 @@ const users = await querier.findMany(User, {
 | **[Naming Strategies](https://uql-orm.dev/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
 | **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
 | **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
-| **[Declarative Transactions](https://uql-orm.dev/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
+| **[Declarative Transactions](https://uql-orm.dev/querying/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
 | **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, and `DISTINCT` across all dialects. |
 | **[Modern &amp; Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **Vector/JSONB/JSON** support. |
@@ -71,7 +71,7 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 }
 ```
 
-&nbsp;**Note:** UQL is Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
+&nbsp;**Note:** UQL is Modern Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
 
 ## 2. Define the Entities
 
