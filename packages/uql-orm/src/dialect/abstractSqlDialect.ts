@@ -430,9 +430,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return;
     }
 
-    // Detect relation filtering: key is a known relation with 'mm' or '1m' cardinality
+    // Detect relation filtering
     const rel = meta.relations[keyStr];
-    if (rel && (rel.cardinality === 'mm' || rel.cardinality === '1m')) {
+    if (rel) {
       this.compareRelation(ctx, entity, keyStr, val as QueryWhereMap<unknown>, rel, opts);
       return;
     }
@@ -1230,8 +1230,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * Filter by ManyToMany or OneToMany relation using an EXISTS subquery.
-   * Generates: `EXISTS (SELECT 1 FROM ... WHERE local_fk = parent.id AND ...)`
+   * Filter by relation using an EXISTS subquery.
+   * Supports all cardinalities: mm (via junction), 1m, m1, and 11.
    */
   protected compareRelation<E>(
     ctx: QueryContext,
@@ -1279,12 +1279,19 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         softDelete: false,
       });
       ctx.append(')');
-    } else if (rel.cardinality === '1m') {
-      // OneToMany: EXISTS (SELECT 1 FROM Child WHERE child.parentFk = parent.id AND ...)
-      const foreignFk = rel.references[0].foreign;
+    } else {
+      // 1m / m1 / 11: EXISTS (SELECT 1 FROM Related WHERE related.fk_or_pk = parent.pk_or_fk AND ...)
+      // Left side is always relatedTable.references[0].foreign
+      // Right side is the parent's PK (1m) or the parent's FK (m1/11)
+      const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(rel.references[0].foreign)}`;
+      const joinRight =
+        rel.cardinality === '1m'
+          ? escapedParentId
+          : (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
+            this.escapeId(rel.references[0].local);
 
       ctx.append(this.escapeId(relatedTable));
-      ctx.append(` WHERE ${this.escapeId(relatedTable, false, true)}${this.escapeId(foreignFk)} = ${escapedParentId}`);
+      ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
       this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
         prefix: relatedTable,
         clause: 'AND',

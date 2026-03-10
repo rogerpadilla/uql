@@ -1206,4 +1206,36 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
+  async shouldAggregate() {
+    await this.querier.aggregate(User, {
+      $group: { total: { $count: '*' } },
+    });
+    expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `total` FROM `User`', []);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  async shouldAggregateWithGroupAndHaving() {
+    await this.querier.insertMany(User, [
+      { companyId: 1, createdAt: 1 },
+      { companyId: 1, createdAt: 2 },
+      { companyId: 2, createdAt: 3 },
+    ]);
+
+    vi.clearAllMocks();
+
+    await this.querier.aggregate(User, {
+      $group: { companyId: true, cnt: { $count: '*' } },
+      $having: { cnt: { $gt: 1 } },
+      $sort: { cnt: -1 },
+    });
+
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      1,
+      'SELECT `companyId`, COUNT(*) `cnt` FROM `User` GROUP BY `companyId` HAVING COUNT(*) > ? ORDER BY COUNT(*) DESC',
+      [1],
+    );
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
 }
