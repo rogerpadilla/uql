@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.2.4](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.3...uql-orm@0.2.4) (2026-03-10)
-
-
-### Bug Fixes
-
-* Correctly generate `EXISTS` subqueries for ManyToOne and OneToOne relation filtering in `$where` clauses and add querier listener tests. ([4c7e97a](https://github.com/rogerpadilla/uql/commit/4c7e97a08efe62a61735f7e9f61478b43511e2ae))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
