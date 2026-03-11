@@ -545,9 +545,9 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('throws for unsupported $size comparison operator', () => {
       const ctx = dialect.createContext();
-      expect(() =>
-        dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } } as any),
-      ).toThrow('unsupported $size comparison operator: $like');
+      expect(() => dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } } as any)).toThrow(
+        'unsupported $size comparison operator: $like',
+      );
     });
 
     it('throws for relation with missing references', () => {
