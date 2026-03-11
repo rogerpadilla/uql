@@ -5,6 +5,7 @@ import type {
   NamingStrategy,
   QueryContext,
   QueryOptions,
+  QuerySizeComparisonOps,
   QueryWhereFieldOperatorMap,
   Type,
 } from '../type/index.js';
@@ -44,11 +45,16 @@ export class MySqlDialect extends AbstractSqlDialect {
         break;
       case '$size':
         // MySQL: Check JSON array length
-        // e.g., JSON_LENGTH(roles) = 3
-        ctx.append('JSON_LENGTH(');
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(') = ');
-        ctx.addValue(val);
+        // e.g., JSON_LENGTH(roles) = 3, or JSON_LENGTH(roles) >= 2
+        this.buildSizeComparison(
+          ctx,
+          () => {
+            ctx.append('JSON_LENGTH(');
+            this.getComparisonKey(ctx, entity, key, opts);
+            ctx.append(')');
+          },
+          val as number | QuerySizeComparisonOps,
+        );
         break;
       default:
         super.compareFieldOperator(ctx, entity, key, op, val, opts);

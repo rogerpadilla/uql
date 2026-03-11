@@ -463,6 +463,108 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
   });
 
+  // ─── Relation $size (count) filtering ─────────────────────────────
+  describe('relation $size', () => {
+    it('OneToMany with exact match', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: 3 } } as any);
+      expect(ctx.sql).toBe(
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`) = ? AND `deletedAt` IS NULL',
+      );
+      expect(ctx.values).toEqual([3]);
+    });
+
+    it('OneToMany with $gte comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } } as any);
+      expect(ctx.sql).toBe(
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`) >= ? AND `deletedAt` IS NULL',
+      );
+      expect(ctx.values).toEqual([2]);
+    });
+
+    it('OneToMany with $eq comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $eq: 1 } } } as any);
+      expect(ctx.sql).toContain(') = ?');
+      expect(ctx.values).toEqual([1]);
+    });
+
+    it('OneToMany with $ne comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $ne: 0 } } } as any);
+      expect(ctx.sql).toContain(') <> ?');
+      expect(ctx.values).toEqual([0]);
+    });
+
+    it('OneToMany with $lt comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $lt: 10 } } } as any);
+      expect(ctx.sql).toContain(') < ?');
+      expect(ctx.values).toEqual([10]);
+    });
+
+    it('OneToMany with $lte comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $lte: 5 } } } as any);
+      expect(ctx.sql).toContain(') <= ?');
+      expect(ctx.values).toEqual([5]);
+    });
+
+    it('ManyToMany with exact match', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { $size: 5 } } as any);
+      expect(ctx.sql).toBe(' WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) = ?');
+      expect(ctx.values).toEqual([5]);
+    });
+
+    it('ManyToMany with $gt comparison', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { $size: { $gt: 0 } } } as any);
+      expect(ctx.sql).toBe(' WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) > ?');
+      expect(ctx.values).toEqual([0]);
+    });
+
+    it('ManyToMany with $between', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { tags: { $size: { $between: [2, 8] } } } as any);
+      expect(ctx.sql).toBe(
+        ' WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) BETWEEN ? AND ?',
+      );
+      expect(ctx.values).toEqual([2, 8]);
+    });
+
+    it('combined with regular field', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Item, { companyId: 1, tags: { $size: { $gte: 2 } } } as any);
+      expect(ctx.sql).toContain('`companyId` = ?');
+      expect(ctx.sql).toContain('(SELECT COUNT(*) FROM `ItemTag`');
+      expect(ctx.sql).toContain('>= ?');
+      expect(ctx.values).toEqual([1, 2]);
+    });
+
+    it('throws for unsupported $size comparison operator', () => {
+      const ctx = dialect.createContext();
+      expect(() =>
+        dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } } as any),
+      ).toThrow('unsupported $size comparison operator: $like');
+    });
+
+    it('throws for relation with missing references', () => {
+      const meta = getMeta(Item);
+      const tagRelation = meta.relations.tags;
+      if (!tagRelation) throw new Error('Test setup: tags relation must exist');
+      const originalRefs = tagRelation.references;
+      tagRelation.references = undefined;
+      try {
+        const ctx = dialect.createContext();
+        expect(() => dialect.where(ctx, Item, { tags: { $size: 1 } } as any)).toThrow('has no references defined');
+      } finally {
+        tagRelation.references = originalRefs;
+      }
+    });
+  });
+
   // ─── $merge/$unset update tests ───────────────────────────────────
   describe('$merge/$unset in update', () => {
     it('merge only', () => {

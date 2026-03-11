@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.7] - 2026-03-11
+### New Features
+- **More `$size` Comparison Operators**: `$size` now accepts comparison operator objects in addition to exact numbers — e.g. `{ $size: { $gte: 2 } }`, `{ $size: { $gt: 0, $lte: 5 } }`, `{ $size: { $between: [1, 10] } }`. Supported operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$between`.
+- **Relation Count Filtering**: `$size` on to-many relations (OneToMany, ManyToMany) now generates efficient `COUNT(*)` subqueries. E.g. `{ tags: { $size: { $gte: 2 } } }` produces `WHERE (SELECT COUNT(*) FROM ...) >= $1`.
+
+### Test Coverage
+- Added 22 new test cases across all SQL dialects: exact match, every comparison operator, multi-op ranges, `$between`, error paths (unsupported operator, missing references). All coverage thresholds met.
+
 ## [0.2.6] - 2026-03-11
 ### Documentation
 - **README – Migrations & Synchronization**: Rewrote the section with an entity-first intro explaining that UQL auto-generates migrations from entities. Reordered CLI commands to lead with `generate:entities`, renumbered usage examples, and added a concrete quick-start snippet.

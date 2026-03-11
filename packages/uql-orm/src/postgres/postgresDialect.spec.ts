@@ -530,6 +530,40 @@ class PostgresDialectSpec {
     expect(values).toEqual([3]);
   }
 
+  shouldFind$sizeWithComparison() {
+    // Single comparison operator
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { kind: { $size: { $gte: 2 } } } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") >= $1');
+    expect(res.values).toEqual([2]);
+
+    // Multiple comparison operators
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { kind: { $size: { $gt: 0, $lte: 5 } } } as any,
+      }),
+    );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "Company" WHERE (jsonb_array_length("kind") > $1 AND jsonb_array_length("kind") <= $2)',
+    );
+    expect(res.values).toEqual([0, 5]);
+
+    // $between
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { kind: { $size: { $between: [1, 10] } } } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") BETWEEN $1 AND $2');
+    expect(res.values).toEqual([1, 10]);
+  }
+
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>

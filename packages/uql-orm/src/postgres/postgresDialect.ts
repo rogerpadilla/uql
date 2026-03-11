@@ -11,6 +11,7 @@ import {
   type QueryContext,
   type QueryOptions,
   QueryRaw,
+  type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
   type QueryWhereFieldOperatorMap,
   type Type,
@@ -129,11 +130,16 @@ export class PostgresDialect extends AbstractSqlDialect {
         break;
       case '$size':
         // PostgreSQL: Check JSONB array length
-        // e.g., jsonb_array_length(roles) = 3
-        ctx.append('jsonb_array_length(');
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(') = ');
-        ctx.addValue(val);
+        // e.g., jsonb_array_length(roles) = 3, or jsonb_array_length(roles) >= 2
+        this.buildSizeComparison(
+          ctx,
+          () => {
+            ctx.append('jsonb_array_length(');
+            this.getComparisonKey(ctx, entity, key, opts);
+            ctx.append(')');
+          },
+          val as number | QuerySizeComparisonOps,
+        );
         break;
       default:
         super.compareFieldOperator(ctx, entity, key, op, val, opts);

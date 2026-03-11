@@ -21,6 +21,7 @@ import {
   type QuerySearch,
   type QuerySelect,
   type QuerySelectOptions,
+  type QuerySizeComparisonOps,
   type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
@@ -433,6 +434,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     // Detect relation filtering
     const rel = meta.relations[keyStr];
     if (rel) {
+      // Check if this is a $size query on a relation (count filtering)
+      const valObj = val as Record<string, unknown> | undefined;
+      if (valObj && typeof valObj === 'object' && '$size' in valObj && Object.keys(valObj).length === 1) {
+        this.compareRelationSize(ctx, entity, keyStr, valObj['$size'] as number | QuerySizeComparisonOps, rel, opts);
+        return;
+      }
       this.compareRelation(ctx, entity, keyStr, val as QueryWhereMap<unknown>, rel, opts);
       return;
     }
@@ -1300,6 +1307,134 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
 
     ctx.append(')');
+  }
+
+  /**
+   * Filter by relation size using a `COUNT(*)` subquery.
+   * Supports all cardinalities: mm (via junction), 1m.
+   */
+  protected compareRelationSize<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: string,
+    sizeVal: number | QuerySizeComparisonOps,
+    rel: RelationOptions,
+    opts: QueryComparisonOptions,
+  ): void {
+    const meta = getMeta(entity);
+    const parentTable = this.resolveTableName(entity, meta);
+    const parentId = meta.id!;
+    const escapedParentId =
+      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
+      this.escapeId(parentId);
+
+    if (!rel.references?.length) {
+      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
+    }
+
+    const appendSubquery = () => {
+      ctx.append('(SELECT COUNT(*) FROM ');
+
+      if (rel.cardinality === 'mm' && rel.through) {
+        const throughEntity = rel.through();
+        const throughMeta = getMeta(throughEntity);
+        const throughTable = this.resolveTableName(throughEntity, throughMeta);
+        const localFk = rel.references![0].local;
+
+        ctx.append(this.escapeId(throughTable));
+        ctx.append(` WHERE ${this.escapeId(throughTable, false, true)}${this.escapeId(localFk)} = ${escapedParentId}`);
+      } else {
+        const relatedEntity = rel.entity!();
+        const relatedMeta = getMeta(relatedEntity);
+        const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
+        const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(rel.references![0].foreign)}`;
+
+        ctx.append(this.escapeId(relatedTable));
+        ctx.append(` WHERE ${joinLeft} = ${escapedParentId}`);
+      }
+
+      ctx.append(')');
+    };
+
+    this.buildSizeComparison(ctx, appendSubquery, sizeVal);
+  }
+
+  /**
+   * Build a complete `$size` comparison expression.
+   * Handles both single and multiple comparison operators by repeating the size expression.
+   * @param sizeExprFn - function that appends the size expression to ctx (e.g. `jsonb_array_length("col")`)
+   */
+  protected buildSizeComparison(
+    ctx: QueryContext,
+    sizeExprFn: () => void,
+    sizeVal: number | QuerySizeComparisonOps,
+  ): void {
+    if (typeof sizeVal === 'number') {
+      sizeExprFn();
+      ctx.append(' = ');
+      ctx.addValue(sizeVal);
+      return;
+    }
+
+    const entries = Object.entries(sizeVal).filter(([, v]) => v !== undefined);
+
+    if (entries.length > 1) {
+      ctx.append('(');
+    }
+
+    entries.forEach(([op, val], index) => {
+      if (index > 0) {
+        ctx.append(' AND ');
+      }
+      sizeExprFn();
+      this.appendSizeOp(ctx, op, val);
+    });
+
+    if (entries.length > 1) {
+      ctx.append(')');
+    }
+  }
+
+  /**
+   * Append a single size comparison operator and value to the context.
+   */
+  private appendSizeOp(ctx: QueryContext, op: string, val: unknown): void {
+    switch (op) {
+      case '$eq':
+        ctx.append(' = ');
+        ctx.addValue(val);
+        break;
+      case '$ne':
+        ctx.append(' <> ');
+        ctx.addValue(val);
+        break;
+      case '$gt':
+        ctx.append(' > ');
+        ctx.addValue(val);
+        break;
+      case '$gte':
+        ctx.append(' >= ');
+        ctx.addValue(val);
+        break;
+      case '$lt':
+        ctx.append(' < ');
+        ctx.addValue(val);
+        break;
+      case '$lte':
+        ctx.append(' <= ');
+        ctx.addValue(val);
+        break;
+      case '$between': {
+        const [min, max] = val as [number, number];
+        ctx.append(' BETWEEN ');
+        ctx.addValue(min);
+        ctx.append(' AND ');
+        ctx.addValue(max);
+        break;
+      }
+      default:
+        throw TypeError(`unsupported $size comparison operator: ${op}`);
+    }
   }
 
   abstract escape(value: unknown): string;

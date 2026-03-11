@@ -123,6 +123,16 @@ export type QueryWhereRootOperator<E> = {
   $nexists?: QueryRaw;
 };
 
+/**
+ * Comparison operators accepted by `$size` for range queries.
+ * Strips `null` from picked operators since array size is always numeric.
+ */
+export type QuerySizeComparisonOps = {
+  [K in '$eq' | '$ne' | '$gt' | '$gte' | '$lt' | '$lte' | '$between']?: NonNullable<
+    QueryWhereFieldOperatorMap<number>[K]
+  >;
+};
+
 export type QueryWhereFieldOperatorMap<T> = {
   /**
    * whether a value is equal to the given value.
@@ -219,9 +229,12 @@ export type QueryWhereFieldOperatorMap<T> = {
   $all?: T extends (infer U)[] ? ExpandScalar<U>[] : unknown[];
   /**
    * whether an array has the specified length.
+   * Accepts a number for exact match, or a comparison operator object for range queries.
    * @example { roles: { $size: 3 } }
+   * @example { roles: { $size: { $gte: 2 } } }
+   * @example { roles: { $size: { $gt: 0, $lte: 5 } } }
    */
-  $size?: number;
+  $size?: number | QuerySizeComparisonOps;
   /**
    * whether an array contains at least one element matching all specified conditions.
    * @example { addresses: { $elemMatch: { city: 'NYC', zip: '10001' } } }

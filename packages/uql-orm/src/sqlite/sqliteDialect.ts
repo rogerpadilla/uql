@@ -8,6 +8,7 @@ import type {
   QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
+  QuerySizeComparisonOps,
   QueryTextSearchOptions,
   QueryWhereFieldOperatorMap,
   Type,
@@ -77,11 +78,16 @@ export class SqliteDialect extends AbstractSqlDialect {
       }
       case '$size':
         // SQLite: Check JSON array length
-        // e.g., json_array_length(roles) = 3
-        ctx.append('json_array_length(');
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(') = ');
-        ctx.addValue(val);
+        // e.g., json_array_length(roles) = 3, or json_array_length(roles) >= 2
+        this.buildSizeComparison(
+          ctx,
+          () => {
+            ctx.append('json_array_length(');
+            this.getComparisonKey(ctx, entity, key, opts);
+            ctx.append(')');
+          },
+          val as number | QuerySizeComparisonOps,
+        );
         break;
       default:
         super.compareFieldOperator(ctx, entity, key, op, val, opts);
