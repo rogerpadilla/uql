@@ -1,13 +1,12 @@
-<svg width="180" height="180" viewBox="20 10 160 170" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-        <linearGradient id="mainGradient" x1="50" y1="40" x2="150" y2="150" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#4F46E5" /> <stop offset="1" stop-color="#06B6D4" />
-        </linearGradient>
-    </defs>
-
-    <path d="M50 40 V100 C50 127.614 72.3858 150 100 150 C127.614 150 150 127.614 150 100 V40"
-          stroke="url(#mainGradient)"
-          stroke-width="28"
-          stroke-linecap="round"
-          stroke-linejoin="round"/>
+<svg width="180" height="180" viewBox="65 75 240 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="skewX(-8)">
+        <path d="M 130 210
+                 C 160 180, 185 105, 160 105
+                 C 135 105, 130 185, 145 245
+                 C 160 315, 215 320, 240 230
+                 C 265 140, 275 100, 250 100
+                 C 225 100, 215 185, 230 255
+                 C 240 310, 275 305, 270 280"
+              fill="none" stroke="#4F46E5" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
 </svg>
