@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.2.5](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.4...uql-orm@0.2.5) (2026-03-11)
+
+
+### Features
+
+* redesign logo and add JPG and PNG formats. ([7f921a0](https://github.com/rogerpadilla/uql/commit/7f921a0f306997dfce36455a35513bde9b66f462))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
