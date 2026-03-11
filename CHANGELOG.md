@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.5] - 2026-03-11
+### Branding
+- **New Logo**: Introduced a new cursive "U" logo in indigo (`#4F46E5`). Available in SVG, PNG, and JPG formats under `assets/`.
+
 ## [0.2.4] - 2026-03-10
 ### Bug Fixes
 - **ManyToOne / OneToOne relation filtering**: `$where` clauses referencing `m1` or `11` relations (e.g., `{ item: { name: 'Widget' } }`) now correctly generate `EXISTS` subqueries. Previously, these cardinalities were unhandled and fell through to `compareFieldOperator`, throwing an "unknown operator" error. The `compareRelation` method now supports all four cardinalities (`mm`, `1m`, `m1`, `11`) with direction-aware join resolution.
