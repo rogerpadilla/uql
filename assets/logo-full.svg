@@ -1,0 +1,29 @@
+<svg viewBox="50 65 500 290" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g transform="skewX(-8)">
+        <!-- U -->
+        <path d="M 130 210
+                 C 160 180, 185 105, 160 105
+                 C 135 105, 130 185, 145 245
+                 C 160 315, 215 320, 240 230
+                 C 265 140, 275 100, 250 100
+                 C 225 100, 215 185, 230 255
+                 C 240 310, 275 305, 270 280"
+              fill="none" stroke="#4F46E5" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+        <!-- Q: oval body drawn as one continuous stroke, finishing with a tail -->
+        <path d="M 330 130
+                 C 300 110, 275 145, 275 200
+                 C 275 260, 300 305, 335 305
+                 C 370 305, 390 260, 390 200
+                 C 390 140, 370 110, 340 125
+                 C 315 140, 350 245, 380 305"
+              fill="none" stroke="#4F46E5" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+
+        <!-- L: vertical downstroke curving into horizontal -->
+        <path d="M 430 110
+                 C 433 170, 435 240, 430 280
+                 C 427 310, 440 320, 470 318
+                 C 495 315, 520 305, 535 290"
+              fill="none" stroke="#4F46E5" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+</svg>

@@ -446,13 +446,28 @@ try {
 
 ## 5. Migrations & Synchronization
 
+UQL takes an **Entity-First** approach: you modify your TypeScript entity classes, and UQL auto-generates the migration files for you. No need to write DDL manually — UQL diffs your entities against the live database and generates the exact SQL needed.
+
+```bash
+# 1. Update your entity (add a field, change a type, add a relation...)
+# 2. Auto-generate the migration
+npx uql-migrate generate:entities add_user_nickname
+
+# 3. Review and apply
+npx uql-migrate up
+```
+
+> **Your entities are the single source of truth.** Want manual migrations for data backfills or custom SQL? You can do that too — full automation + full control when you need it.
+
 ### 1. Unified Configuration
 
-Ideally, use the same `uql.config.ts` for your application bootstrap and the CLI:
+Reuse the same `uql.config.ts` for your app and the CLI to ensure consistent settings (naming strategies, entities, pool):
 
 ```ts
 // uql.config.ts
 import type { Config } from 'uql-orm';
+import { PgQuerierPool } from 'uql-orm/postgres';
+import { User, Profile, Post } from './entities';
 
 export default {
   pool: new PgQuerierPool({ /* ... */ }),
@@ -461,17 +476,15 @@ export default {
 } satisfies Config;
 ```
 
-**Why?** Using a single config for both your app and the CLI is recommended for consistency. It prevents bugs where your runtime uses one naming strategy (e.g. `camelCase`) but your migrations use another (e.g. `snake_case`), or where the CLI isn't aware of all your entities. It enforces a Single Source of Truth for your database connection and schema.
-
 ### 2. Manage via CLI
 
 Use the CLI to manage your database schema evolution.
 
 | Command | Description |
 | :--- | :--- |
-| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
-| `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
 | `generate:entities <name>` | **Auto-generates** a migration by diffing your entities against the current DB schema. |
+| `generate <name>` | Creates an empty timestamped file for **manual** SQL migrations (e.g., data backfills). |
+| `generate:from-db` | **Scaffolds Entities** from an existing database. Includes **Smart Relation Detection**. |
 | `drift:check` | **Drift Detection**: Compares your defined entities against the actual database schema and reports discrepancies. |
 | `up` | Applies all pending migrations. |
 | `down` | Rolls back the last applied migration batch. |
@@ -480,20 +493,20 @@ Use the CLI to manage your database schema evolution.
 #### Usage Examples
 
 ```bash
-# 1. Create a manual migration
-npx uql-migrate generate seed_default_roles
-
-# 2. Auto-generate schema changes from your code
+# 1. Auto-generate schema changes from your entities
 npx uql-migrate generate:entities add_profile_table
 
-# 3. Apply changes
+# 2. Apply changes
 npx uql-migrate up
 
-# 4. Check for schema drift (Production Safety)
+# 3. Check for schema drift (Production Safety)
 npx uql-migrate drift:check
 
-# 5. Scaffold entities from an existing DB (Legacy Adoption)
+# 4. Scaffold entities from an existing DB (Legacy Adoption)
 npx uql-migrate generate:from-db --output ./src/entities
+
+# 5. Create a manual migration (for data backfills or custom SQL)
+npx uql-migrate generate seed_default_roles
 ```
 
 > **Bun Users**: If your `uql.config.ts` uses TypeScript path aliases (e.g., `~app/...`), run migrations with the `--bun` flag to ensure proper resolution:
