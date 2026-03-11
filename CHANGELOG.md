@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.2.6] - 2026-03-11
+### Documentation
+- **README – Migrations & Synchronization**: Rewrote the section with an entity-first intro explaining that UQL auto-generates migrations from entities. Reordered CLI commands to lead with `generate:entities`, renumbered usage examples, and added a concrete quick-start snippet.
+
 ## [0.2.5] - 2026-03-11
 ### Branding
 - **New Logo**: Introduced a new cursive "U" logo in indigo (`#4F46E5`). Available in SVG, PNG, and JPG formats under `assets/`.

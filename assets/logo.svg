@@ -1,12 +1,31 @@
-<svg width="180" height="180" viewBox="65 75 240 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="65 75 240 270" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <style>
+        @keyframes draw {
+            from { stroke-dashoffset: 1; }
+            to { stroke-dashoffset: 0; }
+        }
+        @keyframes fade-in {
+            0% { opacity: 0; }
+            8% { opacity: 1; }
+            100% { opacity: 1; }
+        }
+        path {
+            stroke-dasharray: 1;
+            stroke-dashoffset: 1;
+            animation:
+                draw 2.8s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s forwards,
+                fade-in 2.8s ease-out 0.3s forwards;
+        }
+    </style>
     <g transform="skewX(-8)">
-        <path d="M 130 210
+        <path pathLength="1"
+              d="M 130 210
                  C 160 180, 185 105, 160 105
                  C 135 105, 130 185, 145 245
                  C 160 315, 215 320, 240 230
                  C 265 140, 275 100, 250 100
                  C 225 100, 215 185, 230 255
                  C 240 310, 275 305, 270 280"
-              fill="none" stroke="#4F46E5" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+              fill="none" stroke="#aaa" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
 </svg>
