@@ -1,3 +1,20 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.2.10](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.9...uql-orm@0.2.10) (2026-03-11)
+
+
+### Features
+
+* Add SVG drawing animations to the full logo and update the README to display it. ([4515203](https://github.com/rogerpadilla/uql/commit/45152032021b2a21ee4bbdf74cc3a48097003cb4))
+* enhance $size operator to support comparison objects for array lengths and relation counts. ([02037fb](https://github.com/rogerpadilla/uql/commit/02037fbb6113efab9d23c9809370704b2de3747a))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
