@@ -74,6 +74,37 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     expect(ctx.values).toEqual([3]);
   }
 
+  shouldFind$sizeWithComparison() {
+    const dialect = new MySqlDialect();
+
+    // Single comparison operator
+    let ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $gte: 2 } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) >= ?');
+    expect(ctx.values).toEqual([2]);
+
+    // Multiple comparison operators
+    ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $gt: 0, $lte: 5 } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE (JSON_LENGTH(`name`) > ? AND JSON_LENGTH(`name`) <= ?)');
+    expect(ctx.values).toEqual([0, 5]);
+
+    // $between
+    ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $between: [1, 10] } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) BETWEEN ? AND ?');
+    expect(ctx.values).toEqual([1, 10]);
+  }
+
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const dialect = new MySqlDialect();

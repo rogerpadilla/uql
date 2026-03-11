@@ -247,6 +247,40 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual([3]);
   }
 
+  shouldFind$sizeWithComparison() {
+    // Single comparison operator
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { name: { $size: { $gte: 2 } } } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) >= ?');
+    expect(res.values).toEqual([2]);
+
+    // Multiple comparison operators
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { name: { $size: { $gt: 0, $lte: 5 } } } as any,
+      }),
+    );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `User` WHERE (json_array_length(`name`) > ? AND json_array_length(`name`) <= ?)',
+    );
+    expect(res.values).toEqual([0, 5]);
+
+    // $between
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { name: { $size: { $between: [1, 10] } } } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) BETWEEN ? AND ?');
+    expect(res.values).toEqual([1, 10]);
+  }
+
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
