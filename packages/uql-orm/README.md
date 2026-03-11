@@ -1,6 +1,6 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-<a href="https://uql-orm.dev"><img src="assets/logo.svg" alt="uql" width="220" /></a>
+[![uql maku](assets/logo.svg)](https://uql-orm.dev)
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 

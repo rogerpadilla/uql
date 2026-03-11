@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.2.6](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.5...uql-orm@0.2.6) (2026-03-11)
-
-
-### Features
-
-* Introduce a new cursive "U" logo in SVG, PNG, and JPG formats, and update package dependencies. ([073239b](https://github.com/rogerpadilla/uql/commit/073239b2342eecc96b15f5099d0f9b18a7a4cf23))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
