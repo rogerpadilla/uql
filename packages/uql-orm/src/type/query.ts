@@ -261,13 +261,63 @@ export type QueryWhere<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | Query
  * direction for the sort.
  */
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
+
 /**
- * sort by map — supports field keys, JSON dot-notation paths, and relation sort.
+ * Distance metrics supported by vector similarity search.
+ * - `cosine` — best for text/LLM embeddings (default)
+ * - `l2` — Euclidean distance
+ * - `inner` — inner (dot) product
+ * - `l1` — Manhattan distance
+ * - `hamming` — for binary vectors
+ */
+export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1' | 'hamming';
+
+/**
+ * Vector similarity search options — used inside `$sort` on vector fields.
+ *
+ * @example
+ * ```ts
+ * querier.findMany(Article, {
+ *   $sort: { embedding: { $vector: queryVec } },
+ *   $limit: 10,
+ * });
+ * ```
+ */
+export interface QueryVectorSearch {
+  /** The query vector to compare against. */
+  readonly $vector: readonly number[];
+  /** Distance metric. Overrides entity-level default. Falls back to `'cosine'`. */
+  readonly $distance?: VectorDistance;
+  /** Project the computed distance as a named field in the result. */
+  readonly $project?: string;
+}
+
+/**
+ * Accepted value for a field in `$sort` — either a direction or a vector similarity search.
+ */
+export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
+
+/**
+ * Utility type to augment an entity with a projected distance field.
+ * Use with `$project` in vector similarity queries.
+ *
+ * @example
+ * ```ts
+ * const results = await querier.findMany(Article, {
+ *   $sort: { embedding: { $vector: queryVec, $project: 'similarity' } },
+ * }) as WithDistance<Article, 'similarity'>[];
+ * ```
+ */
+export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
+
+/**
+ * sort by map — supports field keys, JSON dot-notation paths, relation sort,
+ * and vector similarity search.
  * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
  * for dot-paths, matching the same approach used in `QueryWhereMap`.
  */
 export type QuerySortMap<E> = {
-  [K in FieldKey<E>]?: QuerySortDirection;
+  [K in FieldKey<E>]?: QuerySortValue;
 } & {
   [P in JsonFieldPaths<E>]?: QuerySortDirection;
 } & {

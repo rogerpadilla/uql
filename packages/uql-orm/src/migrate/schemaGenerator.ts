@@ -1,6 +1,12 @@
 import { AbstractDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { areTypesEqual, canonicalToSql, fieldOptionsToCanonical, sqlToCanonical } from '../schema/canonicalType.js';
+import {
+  areTypesEqual,
+  canonicalToSql,
+  fieldOptionsToCanonical,
+  isVectorCategory,
+  sqlToCanonical,
+} from '../schema/canonicalType.js';
 import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
 import type {
   CanonicalType,
@@ -21,10 +27,14 @@ import type {
   SchemaDiff,
   SchemaGenerator,
   Type,
+  VectorDistance,
 } from '../type/index.js';
 import { escapeSqlId, getKeys, isAutoIncrement } from '../util/index.js';
 import { formatDefaultValue } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
+
+/** Maps UQL distance metric names to inline DDL keywords (e.g. MariaDB `DISTANCE=euclidean`). */
+const INLINE_VECTOR_DISTANCE_MAP: Partial<Record<VectorDistance, string>> = { cosine: 'cosine', l2: 'euclidean' };
 
 /**
  * Unified SQL schema generator.
@@ -167,15 +177,41 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     return statements;
   }
 
-  generateCreateIndex(tableName: string, index: IndexSchema): string {
+  generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
     const unique = index.unique ? 'UNIQUE ' : '';
-    const columns = index.columns.map((c) => this.escapeId(c)).join(', ');
-    const ifNotExists = this.config.features.indexIfNotExists ? 'IF NOT EXISTS ' : '';
-    return `CREATE ${unique}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)} (${columns});`;
+    const ifNotExists = (options.ifNotExists ?? this.config.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
+    const opsClassMap = this.config.vectorOpsClass;
+    const hasOpsClass = opsClassMap && (index.type === 'hnsw' || index.type === 'ivfflat');
+
+    // For pgvector indexes: append operator class to the column
+    const columns = index.columns
+      .map((c) => {
+        const escaped = this.escapeId(c);
+        if (hasOpsClass && index.distance) {
+          const opsClass = opsClassMap[index.distance];
+          return opsClass ? `${escaped} ${opsClass}` : escaped;
+        }
+        return escaped;
+      })
+      .join(', ');
+
+    const using = index.type ? ` USING ${index.type}` : '';
+
+    // Build WITH params for vector indexes with operator class support
+    let withClause = '';
+    if (hasOpsClass) {
+      const withParams: string[] = [];
+      if (index.m !== undefined) withParams.push(`m = ${index.m}`);
+      if (index.efConstruction !== undefined) withParams.push(`ef_construction = ${index.efConstruction}`);
+      if (index.lists !== undefined) withParams.push(`lists = ${index.lists}`);
+      withClause = withParams.length > 0 ? ` WITH (${withParams.join(', ')})` : '';
+    }
+
+    return `CREATE ${unique}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)}${using} (${columns})${withClause};`;
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
-    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+    if (this.config.dropIndexSyntax === 'on-table') {
       return `DROP INDEX ${this.escapeId(indexName)} ON ${this.escapeId(tableName)};`;
     }
     return `DROP INDEX IF EXISTS ${this.escapeId(indexName)};`;
@@ -278,20 +314,17 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       );
     }
 
-    if (this.dialect === 'postgres') {
+    if (this.config.alterColumnStrategy === 'separate-clauses') {
       const statements: string[] = [];
-      // PostgreSQL uses separate ALTER COLUMN clauses for different changes
-      // 1. Change type
+      // Separate ALTER COLUMN clauses for different changes (Postgres)
       statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} TYPE ${column.type};`);
 
-      // 2. Change nullability
       if (column.nullable) {
         statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP NOT NULL;`);
       } else {
         statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} SET NOT NULL;`);
       }
 
-      // 3. Change default value
       if (column.defaultValue !== undefined) {
         statements.push(
           `ALTER TABLE ${table} ALTER COLUMN ${colName} SET DEFAULT ${this.formatDefaultValue(column.defaultValue)};`,
@@ -316,7 +349,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
    * Generate column comment clause (if supported)
    */
   public generateColumnComment(columnName: string, comment: string): string {
-    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+    if (this.config.features.columnComment) {
       const escapedComment = comment.replace(/'/g, "''");
       return ` COMMENT '${escapedComment}'`;
     }
@@ -327,7 +360,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
    * Format a default value for SQL
    */
   public formatDefaultValue(value: unknown): string {
-    if (this.dialect === 'sqlite' && typeof value === 'boolean') {
+    if (this.config.booleanLiteral === 'integer' && typeof value === 'boolean') {
       return value ? '1' : '0';
     }
     return formatDefaultValue(value);
@@ -514,6 +547,16 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       sql += constraints.map((c) => `  ${c}`).join(',\n');
     }
 
+    // Inline vector indexes (MariaDB requires them inside CREATE TABLE)
+    const isInlineVectorIdx = this.config.features.vectorIndexStyle === 'inline';
+    const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
+    const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
+
+    if (vectorIndexes.length > 0) {
+      sql += ',\n';
+      sql += vectorIndexes.map((idx) => `  ${this.generateInlineVectorIndex(idx)}`).join(',\n');
+    }
+
     sql += '\n)';
 
     if (this.config.tableOptions) {
@@ -522,10 +565,22 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
     sql += ';';
 
-    // Generate indexes as separate statements
-    const indexStatements = table.indexes.map((idx) => this.generateCreateIndexFromNode(idx, options)).join('\n');
+    // Generate regular indexes as separate statements
+    const indexStatements = regularIndexes.map((idx) => this.generateCreateIndexFromNode(idx)).join('\n');
 
-    return indexStatements ? `${sql}\n${indexStatements}` : sql;
+    if (indexStatements) {
+      sql += `\n${indexStatements}`;
+    }
+
+    // Prepend CREATE EXTENSION for dialects that require it (e.g. pgvector)
+    if (this.config.vectorExtension) {
+      const hasVectorCol = [...table.columns.values()].some((c) => isVectorCategory(c.type.category));
+      if (hasVectorCol) {
+        sql = `CREATE EXTENSION IF NOT EXISTS ${this.config.vectorExtension};\n${sql}`;
+      }
+    }
+
+    return sql;
   }
 
   /**
@@ -565,15 +620,44 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   /**
-   * Generate CREATE INDEX SQL from an IndexNode.
+   * Generate an inline VECTOR INDEX clause for use inside CREATE TABLE.
+   * Syntax: `VECTOR INDEX (col) M=n DISTANCE=metric`
    */
-  generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists?: boolean } = {}): string {
-    const uniqueStr = index.unique ? 'UNIQUE ' : '';
+  private generateInlineVectorIndex(index: IndexNode): string {
     const columns = index.columns.map((c) => this.escapeId(c.name)).join(', ');
-    const tableName = this.escapeId(index.table.name);
-    const ifNotExists = options.ifNotExists && this.config.features.indexIfNotExists ? 'IF NOT EXISTS ' : '';
+    let clause = `VECTOR INDEX (${columns})`;
 
-    return `CREATE ${uniqueStr}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${tableName} (${columns});`;
+    if (index.m !== undefined) {
+      clause += ` M=${index.m}`;
+    }
+
+    if (index.distance) {
+      const metric = INLINE_VECTOR_DISTANCE_MAP[index.distance] ?? 'euclidean';
+      clause += ` DISTANCE=${metric}`;
+    }
+
+    return clause;
+  }
+
+  /**
+   * Generate CREATE INDEX SQL from an IndexNode.
+   * Delegates to `generateCreateIndex` for unified SQL assembly.
+   */
+  generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists: boolean } = { ifNotExists: false }): string {
+    return this.generateCreateIndex(
+      index.table.name,
+      {
+        name: index.name,
+        columns: index.columns.map((c) => c.name),
+        unique: index.unique,
+        type: index.type,
+        distance: index.distance,
+        m: index.m,
+        efConstruction: index.efConstruction,
+        lists: index.lists,
+      },
+      options,
+    );
   }
 
   /**
@@ -601,7 +685,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
-    if (this.dialect === 'mysql' || this.dialect === 'mariadb') {
+    if (this.config.renameTableSyntax === 'rename-table') {
       return `RENAME TABLE ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
     }
     return `ALTER TABLE ${this.escapeId(oldName)} RENAME TO ${this.escapeId(newName)};`;

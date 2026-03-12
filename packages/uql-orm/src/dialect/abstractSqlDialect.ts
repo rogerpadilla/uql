@@ -1,4 +1,5 @@
 import { getMeta } from '../entity/index.js';
+import { resolveVectorCast, type VectorCast } from '../schema/canonicalType.js';
 import {
   type EntityMeta,
   type FieldKey,
@@ -25,6 +26,7 @@ import {
   type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
+  type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOperatorMap,
@@ -37,6 +39,7 @@ import {
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
+  type VectorDistance,
 } from '../type/index.js';
 
 import {
@@ -54,6 +57,7 @@ import {
   hasKeys,
   isJsonType,
   isSelectingRelations,
+  isVectorSearch,
   parseGroupMap,
   raw,
 } from '../util/index.js';
@@ -211,6 +215,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     select: QuerySelect<E> | QueryRaw[] | undefined,
     opts: QueryOptions = {},
     distinct?: boolean,
+    sort?: QuerySortMap<E>,
   ): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
@@ -221,6 +226,16 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     this.selectFields(ctx, entity, select, { prefix });
     // Add related fields BEFORE FROM clause
     this.selectRelationFields(ctx, entity, mapSelect, { prefix });
+    // Inject vector distance projections when $project is set
+    if (sort) {
+      const sortMap = buildSortMap(sort);
+      for (const [key, val] of Object.entries(sortMap)) {
+        if (isVectorSearch(val) && val.$project) {
+          ctx.append(', ');
+          this.appendVectorProjection(ctx, meta, key, val);
+        }
+      }
+    }
     ctx.append(` FROM ${this.escapeId(tableName)}`);
     // Add JOINs AFTER FROM clause
     this.selectRelationJoins(ctx, entity, mapSelect, { prefix });
@@ -713,14 +728,43 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return;
     }
     const meta = getMeta(entity);
-    const flattenedSort = flatObject(sortMap, prefix);
+
+    // Separate vector search entries from direction entries before flattening,
+    // because flatObject recursively destructures objects — it would break QueryVectorSearch.
+    const vectorEntries: [string, QueryVectorSearch][] = [];
+    const directionEntries: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(sortMap)) {
+      if (isVectorSearch(val)) {
+        vectorEntries.push([key, val]);
+      } else {
+        directionEntries[key] = val;
+      }
+    }
+
+    const flattenedSort = flatObject(directionEntries, prefix);
+
+    // Merge: vector entries first (primary ordering), then flattened direction entries.
+    const allEntries: [string, unknown][] = [...vectorEntries, ...Object.entries(flattenedSort)];
+
+    if (!allEntries.length) return;
 
     ctx.append(' ORDER BY ');
 
-    Object.entries(flattenedSort).forEach(([key, sort], index) => {
+    allEntries.forEach(([key, sort], index) => {
       if (index > 0) {
         ctx.append(', ');
       }
+
+      if (isVectorSearch(sort)) {
+        if (sort.$project) {
+          // Distance already projected in SELECT — reference the alias to avoid recomputation
+          ctx.append(this.escapeId(sort.$project));
+        } else {
+          this.appendVectorSort(ctx, meta, key, sort);
+        }
+        return;
+      }
+
       const direction = AbstractSqlDialect.SORT_DIRECTION_MAP[sort as QuerySortDirection];
 
       // Detect JSONB dot-notation: 'column.path'
@@ -734,6 +778,71 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const name = this.resolveColumnName(key, field);
       ctx.append(this.escapeId(name) + direction);
     });
+  }
+
+  /**
+   * Resolve common parameters for a vector similarity ORDER BY expression.
+   * Shared by all dialect overrides of `appendVectorSort`.
+   */
+  protected resolveVectorSortParams<E>(
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+  ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined; vectorCast: VectorCast } {
+    const field = meta.fields[key as FieldKey<E>];
+    const colName = this.resolveColumnName(key, field);
+    const distance = search.$distance ?? field?.distance ?? 'cosine';
+    const vectorCast = resolveVectorCast(field);
+    return { colName, distance, field, vectorCast };
+  }
+
+  /**
+   * Append a vector similarity ORDER BY expression.
+   * Base implementation throws — subclasses (Postgres, SQLite, MariaDB) override for dialect-specific operators.
+   */
+  protected appendVectorSort<E>(
+    _ctx: QueryContext,
+    _meta: EntityMeta<E>,
+    _key: string,
+    _search: QueryVectorSearch,
+  ): void {
+    throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
+  }
+
+  /**
+   * Shared helper for dialects that use function-call syntax: `fn(col, ?)`.
+   * Used by SQLite (`vec_distance_cosine`) and MariaDB (`VEC_DISTANCE_COSINE`).
+   */
+  protected appendFunctionVectorSort<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+    fnMap: Partial<Record<VectorDistance, string>>,
+    dialectName: string,
+  ): void {
+    const { colName, distance } = this.resolveVectorSortParams(meta, key, search);
+    const fn = fnMap[distance];
+    if (!fn) {
+      throw new TypeError(`${dialectName} does not support vector distance metric: ${distance}`);
+    }
+    ctx.append(`${fn}(${this.escapeId(colName)}, `);
+    ctx.addValue(`[${search.$vector.join(',')}]`);
+    ctx.append(')');
+  }
+
+  /**
+   * Append a vector distance projection (`<expr> AS <alias>`) in the SELECT clause.
+   * Delegates to `appendVectorSort()` (which emits the distance expression) then appends the alias.
+   */
+  protected appendVectorProjection<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+  ): void {
+    this.appendVectorSort(ctx, meta, key, search);
+    ctx.append(` AS ${this.escapeId(search.$project!)}`);
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {
@@ -879,7 +988,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
-    this.select(ctx, entity, q.$select, opts, q.$distinct);
+    this.select(ctx, entity, q.$select, opts, q.$distinct, q.$sort);
     this.search(ctx, entity, q, opts);
   }
 

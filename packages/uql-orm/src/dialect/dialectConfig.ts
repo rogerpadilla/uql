@@ -1,4 +1,4 @@
-import type { Dialect } from '../type/index.js';
+import type { Dialect, VectorDistance } from '../type/index.js';
 
 export type IsolationLevelStrategy = 'inline' | 'set-before' | 'none';
 
@@ -9,6 +9,10 @@ export interface DialectFeatures {
   dropTableCascade: boolean;
   renameColumn: boolean;
   foreignKeyAlter: boolean;
+  /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
+  columnComment: boolean;
+  /** How vector indexes are emitted: inline in CREATE TABLE or as standalone CREATE INDEX. */
+  vectorIndexStyle: 'inline' | 'create';
 }
 
 export interface DialectConfig {
@@ -21,8 +25,28 @@ export interface DialectConfig {
   commitTransactionCommand: string;
   rollbackTransactionCommand: string;
   isolationLevelStrategy: IsolationLevelStrategy;
+  /** How DROP INDEX is emitted: `'on-table'` = `DROP INDEX x ON t`, `'standalone'` = `DROP INDEX IF EXISTS x`. */
+  dropIndexSyntax: 'on-table' | 'standalone';
+  /** How RENAME TABLE is emitted: `'rename-table'` = `RENAME TABLE`, `'alter-table'` = `ALTER TABLE RENAME TO`. */
+  renameTableSyntax: 'rename-table' | 'alter-table';
+  /** How boolean literals are formatted: `'native'` = true/false, `'integer'` = 1/0. */
+  booleanLiteral: 'native' | 'integer';
+  /** How ALTER COLUMN is structured: `'separate-clauses'` = Postgres multi-statement, `'single-statement'` = MySQL/MariaDB MODIFY. */
+  alterColumnStrategy: 'separate-clauses' | 'single-statement';
+  /** Operator class map for pgvector indexes. Only set for Postgres. */
+  vectorOpsClass?: Readonly<Record<VectorDistance, string>>;
+  /** Extension name required for vector support (e.g. 'vector' for pgvector). */
+  vectorExtension?: string;
   features: DialectFeatures;
 }
+
+const PG_VECTOR_OPS_CLASS: Readonly<Record<VectorDistance, string>> = {
+  cosine: 'vector_cosine_ops',
+  l2: 'vector_l2_ops',
+  inner: 'vector_ip_ops',
+  l1: 'vector_l1_ops',
+  hamming: 'bit_hamming_ops',
+};
 
 export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
   postgres: {
@@ -35,6 +59,12 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     isolationLevelStrategy: 'inline',
     alterColumnSyntax: 'ALTER COLUMN',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
+    dropIndexSyntax: 'standalone',
+    renameTableSyntax: 'alter-table',
+    booleanLiteral: 'native',
+    alterColumnStrategy: 'separate-clauses',
+    vectorOpsClass: PG_VECTOR_OPS_CLASS,
+    vectorExtension: 'vector',
     features: {
       returning: true,
       ifNotExists: true,
@@ -42,6 +72,8 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       dropTableCascade: true,
       renameColumn: true,
       foreignKeyAlter: true,
+      columnComment: false,
+      vectorIndexStyle: 'create',
     },
   },
   mysql: {
@@ -54,6 +86,10 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     isolationLevelStrategy: 'set-before',
     alterColumnSyntax: 'MODIFY COLUMN',
     dropForeignKeySyntax: 'DROP FOREIGN KEY',
+    dropIndexSyntax: 'on-table',
+    renameTableSyntax: 'rename-table',
+    booleanLiteral: 'native',
+    alterColumnStrategy: 'single-statement',
     features: {
       returning: false,
       ifNotExists: true,
@@ -61,6 +97,8 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       dropTableCascade: false,
       renameColumn: true,
       foreignKeyAlter: true,
+      columnComment: true,
+      vectorIndexStyle: 'create',
     },
   },
   mariadb: {
@@ -73,6 +111,10 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     isolationLevelStrategy: 'set-before',
     alterColumnSyntax: 'MODIFY COLUMN',
     dropForeignKeySyntax: 'DROP FOREIGN KEY',
+    dropIndexSyntax: 'on-table',
+    renameTableSyntax: 'rename-table',
+    booleanLiteral: 'native',
+    alterColumnStrategy: 'single-statement',
     features: {
       returning: true,
       ifNotExists: true,
@@ -80,6 +122,8 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       dropTableCascade: false,
       renameColumn: true,
       foreignKeyAlter: true,
+      columnComment: true,
+      vectorIndexStyle: 'inline',
     },
   },
   sqlite: {
@@ -92,6 +136,10 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     isolationLevelStrategy: 'none',
     alterColumnSyntax: 'none',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
+    dropIndexSyntax: 'standalone',
+    renameTableSyntax: 'alter-table',
+    booleanLiteral: 'integer',
+    alterColumnStrategy: 'single-statement',
     features: {
       returning: true,
       ifNotExists: true,
@@ -99,6 +147,8 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       dropTableCascade: false,
       renameColumn: true,
       foreignKeyAlter: false,
+      columnComment: false,
+      vectorIndexStyle: 'create',
     },
   },
   mongodb: {
@@ -111,6 +161,10 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     isolationLevelStrategy: 'none',
     alterColumnSyntax: 'none',
     dropForeignKeySyntax: 'DROP CONSTRAINT',
+    dropIndexSyntax: 'standalone',
+    renameTableSyntax: 'alter-table',
+    booleanLiteral: 'native',
+    alterColumnStrategy: 'single-statement',
     features: {
       returning: false,
       ifNotExists: false,
@@ -118,6 +172,8 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       dropTableCascade: false,
       renameColumn: false,
       foreignKeyAlter: false,
+      columnComment: false,
+      vectorIndexStyle: 'create',
     },
   },
 };

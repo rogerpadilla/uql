@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import { InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -32,6 +33,114 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   shouldUpsertWithNoUpdateFields() {
     const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
     expect(sql).toContain('INSERT IGNORE');
+  }
+
+  shouldSortByVectorSimilarityDefaultCosine() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_COSINE(`vec`, ?) LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityExplicitL2() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
+        $limit: 5,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_EUCLIDEAN(`vec`, ?) LIMIT 5');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldThrowForUnsupportedVectorDistanceMetric() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, VectorItem, {
+          $select: { id: true },
+          $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
+          $limit: 10,
+        }),
+      ),
+    ).toThrow('MariaDB does not support vector distance metric: inner');
+  }
+
+  shouldSortByVectorSimilarityCombinedWithRegularSort() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+      @Field() name!: string;
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $where: { name: 'test' },
+        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id` FROM `VectorItem` WHERE `name` = ? ORDER BY VEC_DISTANCE_COSINE(`vec`, ?), `name` DESC LIMIT 10',
+    );
+    expect(values).toEqual(['test', '[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_EUCLIDEAN(`vec`, ?) LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldProjectVectorDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id`, VEC_DISTANCE_COSINE(`vec`, ?) AS `distance` FROM `VectorItem` ORDER BY `distance` LIMIT 10',
+    );
+    expect(values).toEqual(['[1,2,3]']);
   }
 
   override shouldInsertMany() {

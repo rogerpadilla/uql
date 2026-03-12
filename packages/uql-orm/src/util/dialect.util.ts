@@ -12,6 +12,7 @@ import {
   QueryRaw,
   type QuerySelect,
   type QuerySortMap,
+  type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereMap,
   type RelationKey,
@@ -85,6 +86,11 @@ function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {
 
 export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap<E> {
   return (sort ?? {}) as QuerySortMap<E>;
+}
+
+/** Type guard: checks whether a sort value is a vector similarity search. */
+export function isVectorSearch(value: unknown): value is QueryVectorSearch {
+  return value !== null && typeof value === 'object' && '$vector' in (value as Record<string, unknown>);
 }
 
 export function augmentWhere<E>(

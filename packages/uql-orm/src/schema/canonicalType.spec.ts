@@ -67,6 +67,8 @@ describe('canonicalType', () => {
 
     it('should parse vector types', () => {
       expect(sqlToCanonical('VECTOR(1536)')).toEqual({ category: 'vector', length: 1536 });
+      expect(sqlToCanonical('HALFVEC(1536)')).toEqual({ category: 'halfvec', length: 1536 });
+      expect(sqlToCanonical('SPARSEVEC(4000)')).toEqual({ category: 'sparsevec', length: 4000 });
     });
 
     it('should handle unknown types as raw', () => {
@@ -107,8 +109,16 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'integer', unsigned: true }, 'mysql')).toBe('INT UNSIGNED');
     });
 
-    it('should convert vector with dimensions for postgres', () => {
+    it('should convert vector types with dimensions for postgres', () => {
       expect(canonicalToSql({ category: 'vector', length: 768 }, 'postgres')).toBe('VECTOR(768)');
+      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, 'postgres')).toBe('HALFVEC(1536)');
+      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, 'postgres')).toBe('SPARSEVEC(4000)');
+    });
+
+    it('should fall back halfvec/sparsevec to VECTOR for mariadb', () => {
+      expect(canonicalToSql({ category: 'vector', length: 768 }, 'mariadb')).toBe('VECTOR(768)');
+      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, 'mariadb')).toBe('VECTOR(1536)');
+      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, 'mariadb')).toBe('VECTOR(4000)');
     });
   });
 
@@ -122,6 +132,8 @@ describe('canonicalType', () => {
       expect(canonicalToTypeScript({ category: 'uuid' })).toBe('string');
       expect(canonicalToTypeScript({ category: 'blob' })).toBe('Buffer');
       expect(canonicalToTypeScript({ category: 'vector' })).toBe('number[]');
+      expect(canonicalToTypeScript({ category: 'halfvec' })).toBe('number[]');
+      expect(canonicalToTypeScript({ category: 'sparsevec' })).toBe('number[]');
     });
   });
 
@@ -274,6 +286,8 @@ describe('canonicalType', () => {
       expect(canonicalToColumnType({ category: 'uuid' })).toBe('uuid');
       expect(canonicalToColumnType({ category: 'blob' })).toBe('bytea');
       expect(canonicalToColumnType({ category: 'vector' })).toBe('vector');
+      expect(canonicalToColumnType({ category: 'halfvec' })).toBe('halfvec');
+      expect(canonicalToColumnType({ category: 'sparsevec' })).toBe('sparsevec');
     });
   });
 

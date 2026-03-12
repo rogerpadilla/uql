@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.0] - 2026-03-12
+### New Features
+- **Semantic Search**: First-class vector similarity search across PostgreSQL (pgvector), MariaDB, and SQLite. Query via `$sort` on vector fields:
+  ```ts
+  const results = await querier.findMany(Article, {
+    $sort: { embedding: { $vector: queryVec, $distance: 'cosine' } },
+    $limit: 10,
+  });
+  ```
+  Supports 5 distance metrics (`cosine`, `l2`, `inner`, `l1`, `hamming`), distance projection via `$project`, and the `WithDistance<E>` utility type. Each dialect generates native SQL: Postgres operators (`<=>`, `<->`), MariaDB (`VEC_DISTANCE_COSINE()`), SQLite (`vec_distance_cosine()`).
+- **Vector Field Types**: `@Field({ type: 'vector', dimensions: 1536 })` for standard 32-bit embeddings, plus Postgres-specific `'halfvec'` (16-bit, 50% storage savings) and `'sparsevec'` (for SPLADE-style sparse embeddings). Automatic SQL mapping across dialects.
+- **Vector Indexes**: `@Index()` supports HNSW and IVFFlat index types with `distance`, `m`, `efConstruction`, and `lists` options. Generates pgvector operator classes for Postgres, inline `VECTOR INDEX` for MariaDB, and standard indexes for SQLite.
+- **Auto Extension Creation**: Schema generator automatically emits `CREATE EXTENSION IF NOT EXISTS vector` for Postgres tables containing vector columns.
+
+### Architecture
+- **Schema Generator Dialect Config Refactor**: Eliminated all `this.dialect ===` branches from `schemaGenerator.ts` by adding new declarative `dialectConfig` properties (`columnComment`, `vectorIndexStyle`, `dropIndexSyntax`, `renameTableSyntax`, `booleanLiteral`, `alterColumnStrategy`, `vectorOpsClass`, `vectorExtension`). All dialect-specific behavior is now config-driven.
+- **Unified CREATE INDEX**: `generateCreateIndexFromNode` now delegates to `generateCreateIndex`, eliminating duplicated SQL assembly and ensuring consistent vector index handling across both code paths.
+
 ## [0.2.7] - 2026-03-11
 ### New Features
 - **More `$size` Comparison Operators**: `$size` now accepts comparison operator objects in addition to exact numbers — e.g. `{ $size: { $gte: 2 } }`, `{ $size: { $gt: 0, $lte: 5 } }`, `{ $size: { $between: [1, 10] } }`. Supported operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$between`.

@@ -2,6 +2,7 @@ import sqlstring from 'sqlstring-sqlite';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import {
+  type EntityMeta,
   type FieldKey,
   type FieldOptions,
   type JsonMergeOp,
@@ -13,8 +14,10 @@ import {
   QueryRaw,
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
+  type QueryVectorSearch,
   type QueryWhereFieldOperatorMap,
   type Type,
+  type VectorDistance,
 } from '../type/index.js';
 import { hasKeys, isJsonType } from '../util/index.js';
 
@@ -240,6 +243,29 @@ export class PostgresDialect extends AbstractSqlDialect {
       return;
     }
     super.formatPersistableValue(ctx, field, value);
+  }
+
+  /** pgvector distance operators. */
+  private static readonly VECTOR_OPS: Record<VectorDistance, string> = {
+    cosine: '<=>',
+    l2: '<->',
+    inner: '<#>',
+    l1: '<+>',
+    hamming: '<~>',
+  };
+
+  /** Emit a pgvector distance expression: `"col" <op> $N::<vectorType>`. */
+  protected override appendVectorSort<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+  ): void {
+    const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
+    const op = PostgresDialect.VECTOR_OPS[distance];
+    ctx.append(`${this.escapeId(colName)} ${op} `);
+    ctx.addValue(`[${search.$vector.join(',')}]`);
+    ctx.append(`::${vectorCast}`);
   }
 
   protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {

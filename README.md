@@ -31,7 +31,8 @@ const users = await querier.findMany(User, {
 | **[Declarative Transactions](https://uql-orm.dev/querying/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
 | **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, and `DISTINCT` across all dialects. |
-| **[Modern &amp; Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **Vector/JSONB/JSON** support. |
+| **[Semantic Search](https://uql-orm.dev/querying/semantic-search)** | Vector similarity via `$sort` with `$vector`/`$distance`. Supports `vector`, `halfvec`, `sparsevec` types, HNSW/IVFFlat indexes, and 5 distance metrics across Postgres, MariaDB, and SQLite. |
+| **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **JSONB/JSON** support. |
 | **[Database Migrations](https://www.uql-orm.dev/migrations)**          | Built-in [Entity-First synchronization](https://uql-orm.dev/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
 | **[Logging & Monitoring](https://www.uql-orm.dev/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
 
@@ -101,7 +102,7 @@ UQL separates the **intent** of your data from its **storage**. Both properties 
 
 | Property | Purpose | Values |
 | :--- | :--- | :--- |
-| **`type`** | **Logical Type** (Abstraction). Used for runtime behavior and automatic SQL mapping. | `String`, `Number`, `Boolean`, `Date`, `BigInt`, or semantic strings: `'uuid'`, `'json'`, `'vector'`. |
+| **`type`** | **Logical Type** (Abstraction). Used for runtime behavior and automatic SQL mapping. | `String`, `Number`, `Boolean`, `Date`, `BigInt`, or semantic strings: `'uuid'`, `'json'`, `'vector'`, `'halfvec'`, `'sparsevec'`. |
 | **`columnType`** | **Physical Type** (Implementation). **Highest Priority**. Bypasses UQL's inference for exact SQL control. | Raw SQL types: `'varchar(100)'`, `'decimal(10,2)'`, `'smallint'`, etc. |
 
 ```ts
@@ -590,6 +591,7 @@ Learn more about UQL at [uql-orm.dev](https://uql-orm.dev) for details on:
 
 - [Complex Logical Operators](https://uql-orm.dev/querying/logical-operators)
 - [Aggregate Queries (GROUP BY, HAVING, DISTINCT)](https://uql-orm.dev/querying/aggregate)
+- [Semantic Search (Vector Similarity)](https://uql-orm.dev/querying/semantic-search)
 - [Relationship Mapping (1-1, 1-M, M-M)](https://uql-orm.dev/querying/relations)
 - [Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)
 - [Soft Deletes &amp; Auditing](https://uql-orm.dev/entities/soft-delete)

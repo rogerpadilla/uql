@@ -1,11 +1,29 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import { createSpec, User } from '../test/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySqlDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
     super(new MySqlDialect());
+  }
+
+  shouldThrowForVectorSort() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, VectorItem, {
+          $select: { id: true },
+          $sort: { vec: { $vector: [1, 2, 3] } },
+          $limit: 10,
+        }),
+      ),
+    ).toThrow('Vector similarity sort is not supported by this dialect');
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
