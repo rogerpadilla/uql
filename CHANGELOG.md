@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.1] - 2026-03-12
+### New Features
+- **MongoDB Atlas Vector Search**: Semantic search now supports MongoDB via the [`$vectorSearch`](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/) aggregation pipeline stage. Same `$sort` API — UQL internally translates to Atlas's native vector search with optimal pre-filtering (`$where` → `$vectorSearch.filter`), score projection via `$meta: 'vectorSearchScore'`, and secondary sort support. Configure with `@Index(['embedding'], { type: 'vectorSearch', name: 'my_index' })`.
+
 ## [0.3.0] - 2026-03-12
 ### New Features
 - **Semantic Search**: First-class vector similarity search across PostgreSQL (pgvector), MariaDB, and SQLite. Query via `$sort` on vector fields:
