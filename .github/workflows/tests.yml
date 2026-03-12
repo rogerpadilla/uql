@@ -26,6 +26,8 @@ jobs:
     name: Lint & Typecheck
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -33,6 +35,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
+      - name: Commitlint
+        if: github.event_name == 'pull_request'
+        run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
       - name: Typecheck
         run: bun run ts
 
