@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.3.1](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.0...uql-orm@0.3.1) (2026-03-12)
+
+
+### Features
+
+* implement MongoDB vector search functionality in dialect and querier ([2987574](https://github.com/rogerpadilla/uql/commit/2987574eaa10efc201ec17d0b6f72a144a1b49fb))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
