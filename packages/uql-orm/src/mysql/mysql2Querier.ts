@@ -1,6 +1,7 @@
 import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions, QueryUpdateResult } from '../type/index.js';
+import type { ExtraOptions } from '../type/index.js';
+import { extractInsertResult } from '../util/sql.util.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
@@ -21,7 +22,11 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
           .fill(insertId)
           .map((i, index) => i + index)
       : [];
-    return { changes: affectedRows, ids, firstId: ids[0] } satisfies QueryUpdateResult;
+    return extractInsertResult(
+      ids.map((id) => ({ id })),
+      affectedRows,
+      affectedRows,
+    );
   }
 
   protected override async releaseConn(conn: PoolConnection) {

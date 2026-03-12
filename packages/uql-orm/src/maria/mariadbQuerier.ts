@@ -16,7 +16,9 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const res = await this.conn!.query(query, values);
-    return extractInsertResult(res.length ? res : [], res.affectedRows);
+    // MariaDB may not set `affectedRows` when RETURNING is used; fall back to row count.
+    const changes = res.affectedRows ?? res.length ?? 0;
+    return extractInsertResult(res.length ? res : [], changes, res.affectedRows);
   }
 
   protected override async releaseConn(conn: PoolConnection) {

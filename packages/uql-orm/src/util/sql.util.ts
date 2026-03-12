@@ -110,7 +110,13 @@ export function escapeSqlId(
  * UQL's SQL dialect always aliases the entity's ID column to `id` in RETURNING clauses,
  * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
  */
-export function extractInsertResult(rows: RawRow[], changes?: number): QueryUpdateResult {
+export function extractInsertResult(rows: RawRow[], changes?: number, affectedRows?: number): QueryUpdateResult {
   const ids = rows.map((r) => r['id']) as QueryUpdateResult['ids'];
-  return { changes, ids, firstId: ids?.[0] };
+  // `_created` comes from PostgreSQL's `(xmax = 0) AS "_created"` in the RETURNING clause.
+  // `affectedRows` convention (MySQL/MariaDB `ON DUPLICATE KEY UPDATE`): 1 = insert, 2 = update, 0 = no-op.
+  // The `affectedRows <= 2` guard ensures this only applies for single-row upserts.
+  const created =
+    (rows.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
+    (affectedRows !== undefined && affectedRows <= 2 ? affectedRows === 1 : undefined);
+  return { changes, ids, firstId: ids?.[0], created };
 }

@@ -2,7 +2,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { expect } from 'vitest';
 import { getEntities, getMeta } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec } from '../test/index.js';
+import { createSpec, TaxCategory } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -53,6 +53,23 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async shouldSoftDelete() {
     return super.shouldSoftDelete();
+  }
+
+  override async shouldUpsertOne() {
+    const pk = '507f1f77bcf86cd799439011';
+
+    const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
+    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
+    expect(insertResult.firstId).toBeDefined();
+    expect(insertResult.created).toBe(true);
+
+    const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
+    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
+    expect(updateResult.firstId).toBeDefined();
+    expect(updateResult.created).toBe(false);
+
+    const record = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
+    expect(record).toMatchObject({ name: 'Some Name D' });
   }
 
   async shouldThrowOnDoubleBeginTransaction() {

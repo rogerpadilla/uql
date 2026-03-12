@@ -129,7 +129,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" \("id", "name", "createdAt", "updatedAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+      /^INSERT INTO "User" \("id", "name", "createdAt", "updatedAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
     expect(values).toEqual([1, 'Some Name', 123, expect.any(Number)]);
   }
@@ -168,7 +168,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "user_profile" \("pk", "image", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id"$/,
+      /^INSERT INTO "user_profile" \("pk", "image", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id", \(xmax = 0\) AS "_created"$/,
     );
     expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
@@ -186,7 +186,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" \("id", "email", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+      /^INSERT INTO "User" \("id", "email", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
     expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
   }
@@ -204,7 +204,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"',
+      'INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id", (xmax = 0) AS "_created"',
     );
     expect(values).toEqual([1, 'Some Name']);
   }
@@ -220,7 +220,9 @@ class PostgresDialectSpec {
         },
       ),
     );
-    expect(sql).toBe('INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"');
+    expect(sql).toBe(
+      'INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id", (xmax = 0) AS "_created"',
+    );
     expect(values).toEqual([1]);
   }
 
@@ -237,7 +239,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'INSERT INTO "ItemTag" ("itemId", "tagId") VALUES ($1, $2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"',
+      'INSERT INTO "ItemTag" ("itemId", "tagId") VALUES ($1, $2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id", (xmax = 0) AS "_created"',
     );
     expect(values).toEqual([1, 2]);
   }
@@ -274,7 +276,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "Item" \("id", "name", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id"$/,
+      /^INSERT INTO "Item" \("id", "name", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
     expect(values).toEqual([1, 'Some Item', expect.any(Number), expect.any(Number)]);
   }
