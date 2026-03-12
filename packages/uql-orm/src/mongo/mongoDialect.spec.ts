@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
-import { getMeta } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
@@ -516,6 +516,211 @@ class MongoDialectSpec implements Spec {
 
   shouldMapTableNameRow() {
     expect((this.dialect as any).mapTableNameRow({ table_name: 'users' })).toBe('users');
+  }
+  // --- Vector Search ---
+
+  shouldBuildBasicVectorSearchStage() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorItem);
+    const result = this.dialect.buildVectorSearchStage(VectorItem, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
+    expect(result).toEqual({
+      $vectorSearch: {
+        index: 'vec_index',
+        path: 'vec',
+        queryVector: [1, 2, 3],
+        numCandidates: 100,
+        limit: 10,
+      },
+    });
+  }
+
+  shouldDeriveNumCandidatesFromLimit() {
+    @Entity({ name: 'VectorNum' })
+    class VectorNum {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorNum);
+    const r5 = this.dialect.buildVectorSearchStage(VectorNum, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
+    expect((r5['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(50);
+    const r20 = this.dialect.buildVectorSearchStage(VectorNum, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 20);
+    expect((r20['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(200);
+  }
+
+  shouldPreFilterVectorSearch() {
+    @Entity({ name: 'VectorItem2' })
+    class VectorItem2 {
+      @Id() id?: number;
+      @Field() category!: string;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorItem2);
+    const result = this.dialect.buildVectorSearchStage(
+      VectorItem2,
+      meta,
+      'vec',
+      { $vector: [1, 2, 3] },
+      { category: 'science' },
+      10,
+    );
+    expect(result).toEqual({
+      $vectorSearch: {
+        index: 'vec_index',
+        path: 'vec',
+        queryVector: [1, 2, 3],
+        numCandidates: 100,
+        limit: 10,
+        filter: { category: 'science' },
+      },
+    });
+  }
+
+  shouldPreFilterWithComplexWhere() {
+    @Entity({ name: 'VectorComplex' })
+    class VectorComplex {
+      @Id() id?: number;
+      @Field() category!: string;
+      @Field() status!: string;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorComplex);
+    const result = this.dialect.buildVectorSearchStage(
+      VectorComplex,
+      meta,
+      'vec',
+      { $vector: [1, 2, 3] },
+      { $or: [{ category: 'science' }, { status: 'published' }] },
+      10,
+    );
+    expect(result).toEqual({
+      $vectorSearch: {
+        index: 'vec_index',
+        path: 'vec',
+        queryVector: [1, 2, 3],
+        numCandidates: 100,
+        limit: 10,
+        filter: { $or: [{ category: 'science' }, { status: 'published' }] },
+      },
+    });
+  }
+
+  shouldNotAddFilterForEmptyWhere() {
+    @Entity({ name: 'VectorItem3' })
+    class VectorItem3 {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorItem3);
+    const result = this.dialect.buildVectorSearchStage(VectorItem3, meta, 'vec', { $vector: [1, 2, 3] }, {}, 10);
+    expect(result).toEqual({
+      $vectorSearch: {
+        index: 'vec_index',
+        path: 'vec',
+        queryVector: [1, 2, 3],
+        numCandidates: 100,
+        limit: 10,
+      },
+    });
+  }
+
+  shouldProjectVectorSearchScore() {
+    @Entity({ name: 'VectorProj' })
+    class VectorProj {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorProj);
+    const result = this.dialect.buildVectorSearchStage(
+      VectorProj,
+      meta,
+      'vec',
+      { $vector: [1, 2, 3], $project: 'similarity' },
+      undefined,
+      10,
+    );
+    // $project is not part of the $vectorSearch stage — it's handled in mongodbQuerier via $meta
+    expect(result).toEqual({
+      $vectorSearch: {
+        index: 'vec_index',
+        path: 'vec',
+        queryVector: [1, 2, 3],
+        numCandidates: 100,
+        limit: 10,
+      },
+    });
+  }
+
+  shouldIgnoreDistanceMetricForMongo() {
+    @Entity({ name: 'VectorDist' })
+    class VectorDist {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorDist);
+    const result = this.dialect.buildVectorSearchStage(
+      VectorDist,
+      meta,
+      'vec',
+      { $vector: [1, 2, 3], $distance: 'l2' },
+      undefined,
+      10,
+    );
+    // $distance is accepted but ignored — metric lives in Atlas index
+    expect(result['$vectorSearch']).not.toHaveProperty('distance');
+    expect(result['$vectorSearch']).not.toHaveProperty('similarity');
+  }
+
+  shouldUseCustomIndexName() {
+    @Entity({ name: 'VectorCustomIdx' })
+    @Index(['vec'], { type: 'vectorSearch', name: 'my_custom_idx' })
+    class VectorCustomIdx {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const meta = getMeta(VectorCustomIdx);
+    const result = this.dialect.buildVectorSearchStage(
+      VectorCustomIdx,
+      meta,
+      'vec',
+      { $vector: [1, 2, 3] },
+      undefined,
+      10,
+    );
+    expect((result['$vectorSearch'] as Record<string, unknown>)['index']).toBe('my_custom_idx');
+  }
+
+  // --- extractVectorSort ---
+
+  shouldExtractVectorSortFromMixed() {
+    const result = this.dialect.extractVectorSort({
+      vec: { $vector: [1, 2, 3] },
+      name: -1,
+      createdAt: 'desc',
+    } as any);
+    expect(result).toBeDefined();
+    expect(result!.vectorKey).toBe('vec');
+    expect(result!.vectorSearch).toEqual({ $vector: [1, 2, 3] });
+    expect(result!.regularSort).toEqual({ name: -1, createdAt: 'desc' });
+  }
+
+  shouldExtractVectorOnlySort() {
+    const result = this.dialect.extractVectorSort({ vec: { $vector: [4, 5, 6] } } as any);
+    expect(result).toBeDefined();
+    expect(result!.vectorKey).toBe('vec');
+    expect(result!.vectorSearch).toEqual({ $vector: [4, 5, 6] });
+    expect(result!.regularSort).toEqual({});
+  }
+
+  shouldReturnUndefinedForNonVectorSort() {
+    expect(this.dialect.extractVectorSort({ name: -1, createdAt: 'desc' } as any)).toBeUndefined();
+  }
+
+  shouldReturnUndefinedForUndefinedSort() {
+    expect(this.dialect.extractVectorSort(undefined)).toBeUndefined();
   }
 }
 

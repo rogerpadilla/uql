@@ -99,7 +99,17 @@ export type RelationshipSource =
 /**
  * Index algorithm/type supported by various databases.
  */
-export type IndexType = 'btree' | 'hash' | 'gin' | 'gist' | 'brin' | 'fulltext' | 'hnsw' | 'ivfflat' | 'vector';
+export type IndexType =
+  | 'btree'
+  | 'hash'
+  | 'gin'
+  | 'gist'
+  | 'brin'
+  | 'fulltext'
+  | 'hnsw'
+  | 'ivfflat'
+  | 'vector'
+  | 'vectorSearch';
 
 /**
  * Source of where an index was defined.

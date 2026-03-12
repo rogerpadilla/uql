@@ -2,6 +2,7 @@ import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, Up
 import { getMeta } from '../entity/index.js';
 import { AbstractQuerier, Log, Serialized } from '../querier/index.js';
 import type {
+  EntityMeta,
   ExtraOptions,
   IdValue,
   Query,
@@ -16,7 +17,7 @@ import type {
 } from '../type/index.js';
 import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from '../util/index.js';
 
-import type { MongoDialect } from './mongoDialect.js';
+import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
 
 export class MongodbQuerier extends AbstractQuerier {
   private session?: ClientSession;
@@ -37,44 +38,105 @@ export class MongodbQuerier extends AbstractQuerier {
   @Log()
   protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
+    const vectorSort = this.dialect.extractVectorSort(q.$sort);
 
     let documents: E[];
-    const hasSelectedRelations = isSelectingRelations(meta, q.$select);
 
-    if (hasSelectedRelations) {
-      const pipeline = this.dialect.aggregationPipeline(entity, q);
-      documents = await this.execute((session) =>
-        this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
-      );
-      documents = this.dialect.normalizeIds(meta, documents) || [];
-      await this.fillToManyRelations(entity, documents, q.$select!);
+    if (vectorSort) {
+      const pipeline = this.buildVectorPipeline(entity, meta, q, vectorSort);
+      documents = await this.runPipeline(entity, meta, pipeline);
     } else {
-      const cursor = this.collection(entity).find<E>({}, { session: this.session });
+      const hasSelectedRelations = isSelectingRelations(meta, q.$select);
 
-      const filter = this.dialect.where(entity, q.$where);
-      if (hasKeys(filter)) {
-        cursor.filter(filter);
-      }
-      const select = this.dialect.select(entity, q.$select!);
-      if (hasKeys(select)) {
-        cursor.project(select);
-      }
-      const sort = this.dialect.sort(entity, q.$sort!);
-      if (hasKeys(sort)) {
-        cursor.sort(sort);
-      }
-      if (q.$skip) {
-        cursor.skip(q.$skip);
-      }
-      if (q.$limit) {
-        cursor.limit(q.$limit);
-      }
+      if (hasSelectedRelations) {
+        const pipeline = this.dialect.aggregationPipeline(entity, q);
+        documents = await this.runPipeline(entity, meta, pipeline);
+        await this.fillToManyRelations(entity, documents, q.$select!);
+      } else {
+        const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-      documents = await this.execute(() => cursor.toArray());
-      documents = this.dialect.normalizeIds(meta, documents) || [];
+        const filter = this.dialect.where(entity, q.$where);
+        if (hasKeys(filter)) {
+          cursor.filter(filter);
+        }
+        const select = this.dialect.select(entity, q.$select!);
+        if (hasKeys(select)) {
+          cursor.project(select);
+        }
+        const sort = this.dialect.sort(entity, q.$sort!);
+        if (hasKeys(sort)) {
+          cursor.sort(sort);
+        }
+        if (q.$skip) {
+          cursor.skip(q.$skip);
+        }
+        if (q.$limit) {
+          cursor.limit(q.$limit);
+        }
+
+        documents = await this.execute(() => cursor.toArray());
+        documents = this.dialect.normalizeIds(meta, documents) || [];
+      }
     }
 
     return documents;
+  }
+
+  /** Execute an aggregation pipeline and normalize `_id` → `id`. */
+  private async runPipeline<E extends Document>(
+    entity: Type<E>,
+    meta: EntityMeta<E>,
+    pipeline: Record<string, unknown>[],
+  ): Promise<E[]> {
+    const documents = await this.execute((session) =>
+      this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
+    );
+    return this.dialect.normalizeIds(meta, documents) || [];
+  }
+
+  /**
+   * Build an aggregation pipeline for vector similarity search.
+   * `$vectorSearch` is always the first stage; `$where` is merged into its `filter`.
+   */
+  private buildVectorPipeline<E extends Document>(
+    entity: Type<E>,
+    meta: EntityMeta<E>,
+    q: Query<E>,
+    vectorSort: ExtractedVectorSort<E>,
+  ): Record<string, unknown>[] {
+    const pipeline: Record<string, unknown>[] = [];
+
+    pipeline.push(
+      this.dialect.buildVectorSearchStage(
+        entity,
+        meta,
+        vectorSort.vectorKey,
+        vectorSort.vectorSearch,
+        q.$where,
+        q.$limit ?? 10,
+      ),
+    );
+
+    // Score projection via $meta
+    if (vectorSort.vectorSearch.$project) {
+      const select = q.$select ? this.dialect.select(entity, q.$select) : {};
+      pipeline.push({
+        $project: {
+          ...select,
+          [vectorSort.vectorSearch.$project]: { $meta: 'vectorSearchScore' },
+        },
+      });
+    } else if (q.$select && hasKeys(q.$select)) {
+      pipeline.push({ $project: this.dialect.select(entity, q.$select) });
+    }
+
+    // Secondary sort for non-vector fields
+    const regularSort = this.dialect.sort(entity, vectorSort.regularSort);
+    if (hasKeys(regularSort)) {
+      pipeline.push({ $sort: regularSort });
+    }
+
+    return pipeline;
   }
 
   @Log()

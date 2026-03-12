@@ -1,6 +1,7 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
 import { AbstractDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
+import type { IndexType } from '../schema/types.js';
 import type {
   EntityMeta,
   FieldValue,
@@ -10,6 +11,7 @@ import type {
   QueryOptions,
   QuerySelect,
   QuerySortMap,
+  QueryVectorSearch,
   QueryWhere,
   RelationKey,
   Type,
@@ -23,11 +25,13 @@ import {
   filterRelationKeys,
   getKeys,
   hasKeys,
+  isVectorSearch,
   parseGroupMap,
 } from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
   private static readonly ID_KEY = '_id';
+  private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
   private static readonly AGGREGATE_OP_MAP: Record<string, string> = {
     $count: '$sum',
@@ -406,6 +410,74 @@ export class MongoDialect extends AbstractDialect {
     }
     return filter;
   }
+
+  /**
+   * Separate vector sort entries from regular sort entries.
+   * Returns `undefined` if no vector sort is present.
+   */
+  extractVectorSort<E extends Document>(sort: QuerySortMap<E> | undefined): ExtractedVectorSort<E> | undefined {
+    if (!sort) return undefined;
+    const raw = buildSortMap(sort);
+    let vectorKey: string | undefined;
+    let vectorSearch: QueryVectorSearch | undefined;
+    const regularSort = {} as QuerySortMap<E>;
+
+    for (const [key, value] of Object.entries(raw)) {
+      if (isVectorSearch(value)) {
+        vectorKey = key;
+        vectorSearch = value;
+      } else {
+        (regularSort as Record<string, unknown>)[key] = value;
+      }
+    }
+
+    if (!vectorKey || !vectorSearch) return undefined;
+
+    return { vectorKey, vectorSearch, regularSort };
+  }
+
+  /**
+   * Build a `$vectorSearch` aggregation pipeline stage.
+   * Merges `$where` into `$vectorSearch.filter` for optimal pre-filtering.
+   */
+  buildVectorSearchStage<E extends Document>(
+    entity: Type<E>,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+    where: QueryWhere<E> | undefined,
+    limit: number,
+  ): Record<string, unknown> {
+    const field = meta.fields[key];
+    if (!field) {
+      throw new TypeError(`Field '${key}' not found in entity '${meta.name}'`);
+    }
+    const colName = this.resolveColumnName(key, field);
+
+    // Resolve index name from @Index metadata, or fall back to convention
+    const indexMeta = meta.indexes?.find(
+      (idx) => idx.columns.includes(key) && MongoDialect.VECTOR_INDEX_TYPES.has(idx.type!),
+    );
+    const indexName = indexMeta?.name ?? `${colName}_index`;
+
+    const stage: Record<string, unknown> = {
+      index: indexName,
+      path: colName,
+      queryVector: [...search.$vector],
+      numCandidates: limit * 10,
+      limit,
+    };
+
+    // Pre-filter: merge $where into $vectorSearch.filter
+    if (where) {
+      const filter = this.where(entity, where);
+      if (hasKeys(filter)) {
+        stage['filter'] = filter;
+      }
+    }
+
+    return { $vectorSearch: stage };
+  }
 }
 
 export type MongoAggregationPipelineEntry<E extends Document> = {
@@ -433,3 +505,9 @@ type MongoAggregationUnwind = {
 };
 
 type IdValue = string | ObjectId;
+
+export type ExtractedVectorSort<E> = {
+  readonly vectorKey: string;
+  readonly vectorSearch: QueryVectorSearch;
+  readonly regularSort: QuerySortMap<E>;
+};
