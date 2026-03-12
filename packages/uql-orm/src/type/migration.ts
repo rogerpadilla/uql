@@ -1,6 +1,6 @@
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { ForeignKeyAction, IndexNode, TableNode } from '../schema/types.js';
+import type { ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
   Dialect,
   EntityMeta,
@@ -10,6 +10,7 @@ import type {
   SlowQueryOptions,
   SqlQuerier,
   Type,
+  VectorIndexOptions,
 } from './index.js';
 
 /**
@@ -154,10 +155,12 @@ export interface TableSchema {
 /**
  * Represents an index in a database table
  */
-export interface IndexSchema {
+export interface IndexSchema extends VectorIndexOptions {
   readonly name: string;
   readonly columns: string[];
   readonly unique: boolean;
+  /** Index type (btree, hnsw, ivfflat, etc.) */
+  readonly type?: IndexType;
 }
 
 /**

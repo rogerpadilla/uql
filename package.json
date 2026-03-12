@@ -18,17 +18,21 @@
     "lint.fix": "biome check . --fix",
     "test": "vitest run --coverage",
     "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/uql-orm/src/mongo/mongodbQuerier.test.ts"
+    "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/uql-orm/src/mongo/mongodbQuerier.test.ts",
+    "prepare": "simple-git-hooks"
   },
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
     ]
   },
+  "simple-git-hooks": {
+    "commit-msg": "bunx commitlint --edit $1"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
-    "@commitlint/cli": "20.4.3",
-    "@commitlint/config-conventional": "20.4.3",
+    "@commitlint/cli": "20.4.4",
+    "@commitlint/config-conventional": "20.4.4",
     "@swc/core": "^1.15.18",
     "@swc/helpers": "^0.5.19",
     "@types/bun": "^1.3.10",
@@ -38,6 +42,7 @@
     "lerna": "^9.0.6",
     "mongodb-memory-server": "11.0.1",
     "rimraf": "6.1.3",
+    "simple-git-hooks": "^2.13.1",
     "supertest": "^7.2.2",
     "typescript": "^6.0.1-rc",
     "unplugin-swc": "^1.5.9",

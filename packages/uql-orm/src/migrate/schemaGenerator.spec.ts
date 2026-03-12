@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
+import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 // Test entities
@@ -81,6 +82,137 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     });
 
     expect(sql).toBe('CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");');
+  });
+
+  it('should generate CREATE INDEX for HNSW vector index', () => {
+    const sql = generator.generateCreateIndex('articles', {
+      name: 'idx_articles_embedding_hnsw',
+      columns: ['embedding'],
+      unique: false,
+      type: 'hnsw',
+      distance: 'cosine',
+    });
+    expect(sql).toBe(
+      'CREATE INDEX IF NOT EXISTS "idx_articles_embedding_hnsw" ON "articles" USING hnsw ("embedding" vector_cosine_ops);',
+    );
+  });
+
+  it('should generate CREATE INDEX for HNSW with tuning params', () => {
+    const sql = generator.generateCreateIndex('articles', {
+      name: 'idx_embedding',
+      columns: ['embedding'],
+      unique: false,
+      type: 'hnsw',
+      distance: 'l2',
+      m: 16,
+      efConstruction: 64,
+    });
+    expect(sql).toBe(
+      'CREATE INDEX IF NOT EXISTS "idx_embedding" ON "articles" USING hnsw ("embedding" vector_l2_ops) WITH (m = 16, ef_construction = 64);',
+    );
+  });
+
+  it('should generate CREATE INDEX for IVFFlat', () => {
+    const sql = generator.generateCreateIndex('articles', {
+      name: 'idx_embedding_ivf',
+      columns: ['embedding'],
+      unique: false,
+      type: 'ivfflat',
+      distance: 'inner',
+      lists: 100,
+    });
+    expect(sql).toBe(
+      'CREATE INDEX IF NOT EXISTS "idx_embedding_ivf" ON "articles" USING ivfflat ("embedding" vector_ip_ops) WITH (lists = 100);',
+    );
+  });
+
+  it('should not emit operator classes or WITH params for non-Postgres dialects', () => {
+    const mysqlGenerator = new SqlSchemaGenerator('mysql');
+    const sql = mysqlGenerator.generateCreateIndex('articles', {
+      name: 'idx_embedding',
+      columns: ['embedding'],
+      unique: false,
+      type: 'hnsw',
+      distance: 'cosine',
+      m: 16,
+      efConstruction: 64,
+    });
+    // MySQL: no operator class, no WITH params — just USING
+    expect(sql).toBe('CREATE INDEX `idx_embedding` ON `articles` USING hnsw (`embedding`);');
+  });
+  /** Build a minimal TableNode mock with an id + embedding column and the given vector indexes. */
+  function buildVectorTableNode(indexes: Partial<IndexNode>[]): TableNode {
+    const table = {
+      name: 'embeddings',
+      primaryKey: [],
+      indexes: [],
+      outgoingRelations: [],
+      incomingRelations: [],
+    } as unknown as TableNode;
+    (table as { columns: Map<string, ColumnNode> }).columns = new Map<string, ColumnNode>([
+      [
+        'id',
+        {
+          name: 'id',
+          type: { category: 'integer' },
+          nullable: false,
+          isPrimaryKey: true,
+          isAutoIncrement: true,
+          isUnique: false,
+          table,
+        } as ColumnNode,
+      ],
+      [
+        'embedding',
+        {
+          name: 'embedding',
+          type: { category: 'vector', length: 1536 },
+          nullable: false,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+          table,
+        } as ColumnNode,
+      ],
+    ]);
+    (table as { indexes: IndexNode[] }).indexes = indexes.map(
+      (idx) =>
+        ({
+          name: 'idx_vec',
+          table,
+          columns: [{ name: 'embedding' }],
+          unique: false,
+          type: 'vector',
+          ...idx,
+        }) as IndexNode,
+    );
+    return table;
+  }
+
+  it('should emit inline VECTOR INDEX for MariaDB', () => {
+    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{}]));
+    expect(sql).toContain('VECTOR INDEX (`embedding`)');
+    expect(sql).not.toContain('CREATE INDEX');
+    expect(sql).not.toContain('CREATE EXTENSION');
+  });
+
+  it('should emit inline VECTOR INDEX with M and DISTANCE for MariaDB', () => {
+    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'cosine', m: 8 }]));
+    expect(sql).toContain('VECTOR INDEX (`embedding`) M=8 DISTANCE=cosine');
+  });
+
+  it('should emit VECTOR INDEX with l2 as euclidean for MariaDB', () => {
+    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'l2' }]));
+    expect(sql).toContain('VECTOR INDEX (`embedding`) DISTANCE=euclidean');
+  });
+
+  it('should prepend CREATE EXTENSION for Postgres tables with vector columns', () => {
+    const sql = generator.generateCreateTableFromNode(buildVectorTableNode([]));
+    expect(sql).toMatch(/^CREATE EXTENSION IF NOT EXISTS vector;/);
+    expect(sql).toContain('CREATE TABLE');
   });
 
   it('should generate CREATE TABLE with IF NOT EXISTS', () => {
@@ -249,30 +381,29 @@ describe('SqlSchemaGenerator Integration', () => {
   const generator = new SqlSchemaGenerator('postgres');
 
   it('should generate CREATE TABLE from TableNode', () => {
-    const table: any = {
+    const table = {
       name: 'users',
-      columns: new Map([
-        [
-          'id',
-          {
-            name: 'id',
-            type: { category: 'integer', size: 'big' },
-            isPrimaryKey: true,
-            isAutoIncrement: true,
-            nullable: false,
-            table: null,
-          },
-        ],
-        ['name', { name: 'name', type: { category: 'string', length: 100 }, nullable: true, table: null }],
-      ]),
+      columns: new Map<string, ColumnNode>(),
       primaryKey: [],
       indexes: [],
       incomingRelations: [],
       outgoingRelations: [],
-    };
-    table.columns.get('id').table = table;
-    table.columns.get('name').table = table;
-    table.primaryKey = [table.columns.get('id')];
+    } as unknown as TableNode;
+    (table as { columns: Map<string, ColumnNode> }).columns = new Map<string, ColumnNode>([
+      [
+        'id',
+        {
+          name: 'id',
+          type: { category: 'integer', size: 'big' },
+          isPrimaryKey: true,
+          isAutoIncrement: true,
+          nullable: false,
+          table,
+        } as ColumnNode,
+      ],
+      ['name', { name: 'name', type: { category: 'string', length: 100 }, nullable: true, table } as ColumnNode],
+    ]);
+    (table as { primaryKey: ColumnNode[] }).primaryKey = [table.columns.get('id')!];
 
     const sql = generator.generateCreateTableFromNode(table);
     expect(sql).toContain('CREATE TABLE "users"');
@@ -281,11 +412,11 @@ describe('SqlSchemaGenerator Integration', () => {
   });
 
   it('should generate CREATE INDEX from IndexNode', () => {
-    const table: any = { name: 'users' };
-    const index: any = {
+    const table = { name: 'users' } as TableNode;
+    const index: IndexNode = {
       name: 'idx_name',
       table,
-      columns: [{ name: 'name' }],
+      columns: [{ name: 'name' } as ColumnNode],
       unique: true,
     };
     const sql = generator.generateCreateIndexFromNode(index);
@@ -293,7 +424,7 @@ describe('SqlSchemaGenerator Integration', () => {
   });
 
   it('should generate DROP TABLE from TableNode', () => {
-    const table: any = { name: 'users' };
+    const table = { name: 'users' } as TableNode;
     const sql = generator.generateDropTableFromNode(table, { ifExists: true });
     expect(sql).toBe('DROP TABLE IF EXISTS "users";');
   });

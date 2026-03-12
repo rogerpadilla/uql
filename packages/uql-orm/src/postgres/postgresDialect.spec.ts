@@ -492,6 +492,131 @@ class PostgresDialectSpec {
     expect(values).toEqual(['[1,2,3]']);
   }
 
+  shouldSortByVectorSimilarityDefaultCosine() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <=> $1::vector LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityExplicitL2() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
+        $limit: 5,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <-> $1::vector LIMIT 5');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityCombinedWithRegularSort() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+      @Field() name!: string;
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $where: { name: 'test' },
+        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id" FROM "VectorItem" WHERE "name" = $1 ORDER BY "vec" <=> $2::vector, "name" DESC LIMIT 10',
+    );
+    expect(values).toEqual(['test', '[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector', distance: 'inner' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <#> $1::vector LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldProjectVectorDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'similarity' } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT "id", "vec" <=> $1::vector AS "similarity" FROM "VectorItem" ORDER BY "similarity" LIMIT 10',
+    );
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldCastHalfvecSort() {
+    @Entity({ name: 'HalfvecItem' })
+    class HalfvecItem {
+      @Id() id?: number;
+      @Field({ type: 'halfvec' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, HalfvecItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 5,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "HalfvecItem" ORDER BY "vec" <=> $1::halfvec LIMIT 5');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldCastSparsevecSort() {
+    @Entity({ name: 'SparsevecItem' })
+    class SparsevecItem {
+      @Id() id?: number;
+      @Field({ type: 'sparsevec' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, SparsevecItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [0, 0, 1], $distance: 'l2' } },
+        $limit: 5,
+      }),
+    );
+    expect(sql).toBe('SELECT "id" FROM "SparsevecItem" ORDER BY "vec" <-> $1::sparsevec LIMIT 5');
+    expect(values).toEqual(['[0,0,1]']);
+  }
+
   shouldEscape() {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }

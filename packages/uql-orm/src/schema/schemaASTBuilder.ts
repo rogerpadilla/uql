@@ -11,7 +11,7 @@ import type { EntityMeta, FieldOptions, RelationOptions, Type } from '../type/in
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { SchemaAST } from './schemaAST.js';
-import type { ColumnNode, ForeignKeyAction, IndexNode, IndexType, RelationshipNode, TableNode } from './types.js';
+import type { ColumnNode, ForeignKeyAction, IndexNode, RelationshipNode, TableNode } from './types.js';
 import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
 
 /**
@@ -273,8 +273,12 @@ export class SchemaASTBuilder {
             table,
             columns,
             unique: idxMeta.unique ?? false,
-            type: idxMeta.type as IndexType,
+            type: idxMeta.type,
             where: idxMeta.where,
+            distance: idxMeta.distance,
+            m: idxMeta.m,
+            efConstruction: idxMeta.efConstruction,
+            lists: idxMeta.lists,
             source: 'entity',
             syncStatus: 'entity_only',
           };

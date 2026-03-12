@@ -12,6 +12,28 @@ import type { Dialect } from '../type/index.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 // ============================================================================
+// Vector Category Helpers
+// ============================================================================
+
+/** Type guard for all vector-family categories. */
+export function isVectorCategory(category: TypeCategory): boolean {
+  return category === 'vector' || category === 'halfvec' || category === 'sparsevec';
+}
+
+/** Vector cast types supported by pgvector. */
+export type VectorCast = 'vector' | 'halfvec' | 'sparsevec';
+
+/**
+ * Resolve the effective vector cast type from field options.
+ * Follows the canonical type system priority: `columnType > type`.
+ */
+export function resolveVectorCast(field: { type?: unknown; columnType?: unknown } | undefined): VectorCast {
+  const raw = field?.columnType ?? field?.type;
+  if (raw === 'halfvec') return 'halfvec';
+  if (raw === 'sparsevec') return 'sparsevec';
+  return 'vector';
+}
+
 // Type Mapping Tables
 // ============================================================================
 
@@ -92,6 +114,8 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
 
   // === Vector (for AI/embeddings) ===
   vector: { category: 'vector' },
+  halfvec: { category: 'halfvec' },
+  sparsevec: { category: 'sparsevec' },
 };
 
 const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
@@ -108,6 +132,8 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
     uuid: 'UUID',
     blob: 'BYTEA',
     vector: 'VECTOR',
+    halfvec: 'HALFVEC',
+    sparsevec: 'SPARSEVEC',
   },
   mysql: {
     integer: 'INT',
@@ -122,6 +148,8 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
     uuid: 'CHAR(36)',
     blob: 'BLOB',
     vector: 'JSON', // MySQL doesn't have native vector type
+    halfvec: 'JSON',
+    sparsevec: 'JSON',
   },
   sqlite: {
     integer: 'INTEGER',
@@ -136,6 +164,8 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
     uuid: 'TEXT',
     blob: 'BLOB',
     vector: 'TEXT',
+    halfvec: 'TEXT',
+    sparsevec: 'TEXT',
   },
   mariadb: {
     integer: 'INT',
@@ -149,7 +179,9 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
     json: 'JSON',
     uuid: 'CHAR(36)',
     blob: 'BLOB',
-    vector: 'JSON',
+    vector: 'VECTOR',
+    halfvec: 'VECTOR', // MariaDB only supports VECTOR; no native halfvec/sparsevec
+    sparsevec: 'VECTOR',
   },
   // MongoDB uses BSON types, not SQL types. These are placeholders for compatibility.
   mongodb: {
@@ -165,6 +197,8 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
     uuid: 'binData',
     blob: 'binData',
     vector: 'array',
+    halfvec: 'array',
+    sparsevec: 'array',
   },
 };
 
@@ -240,6 +274,8 @@ const CANONICAL_TO_TS: Record<TypeCategory, string> = {
   uuid: 'string',
   blob: 'Buffer',
   vector: 'number[]',
+  halfvec: 'number[]',
+  sparsevec: 'number[]',
 };
 
 // ============================================================================
@@ -297,8 +333,8 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
       if (scale !== undefined && !Number.isNaN(scale)) {
         (result as { scale: number }).scale = scale;
       }
-    } else if (result.category === 'vector') {
-      // VECTOR(1536) -> length (dimensions)
+    } else if (isVectorCategory(result.category)) {
+      // VECTOR(1536), HALFVEC(1536), SPARSEVEC(4000) -> length (dimensions)
       const dimensions = Number.parseInt(paramParts[0], 10);
       if (!Number.isNaN(dimensions)) {
         (result as { length: number }).length = dimensions;
@@ -326,8 +362,8 @@ export function canonicalToSql(type: CanonicalType, dialect: Dialect): string {
     sqlType = formatStringSqlType(type, dialect, sqlType);
   } else if (type.category === 'decimal') {
     sqlType = formatDecimalSqlType(type, dialect, sqlType);
-  } else if (type.category === 'vector' && type.length && dialect === 'postgres') {
-    sqlType = `VECTOR(${type.length})`;
+  } else if (isVectorCategory(type.category) && type.length && (dialect === 'postgres' || dialect === 'mariadb')) {
+    sqlType = `${sqlType}(${type.length})`;
   }
 
   if (type.category === 'timestamp' && type.withTimezone && dialect === 'postgres') {
@@ -434,7 +470,12 @@ export function fieldOptionsToCanonical(options: FieldOptions, tsType?: unknown)
   }
 
   if (typeof type === 'string') {
-    return sqlToCanonical(type);
+    const canonical = sqlToCanonical(type);
+    // Propagate explicit dimensions into CanonicalType.length for vector types
+    if (options.dimensions && isVectorCategory(canonical.category)) {
+      return { ...canonical, length: options.dimensions };
+    }
+    return canonical;
   }
 
   // Default to string
@@ -563,6 +604,10 @@ export function canonicalToColumnType(type: CanonicalType): ColumnType {
       return 'bytea';
     case 'vector':
       return 'vector';
+    case 'halfvec':
+      return 'halfvec';
+    case 'sparsevec':
+      return 'sparsevec';
     default:
       return 'varchar';
   }

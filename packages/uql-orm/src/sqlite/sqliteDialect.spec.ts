@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
   createSpec,
@@ -203,6 +204,114 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(values2).toContain(0);
+  }
+
+  shouldSortByVectorSimilarityDefaultCosine() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_cosine(`vec`, ?) LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityExplicitL2() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
+        $limit: 5,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_L2(`vec`, ?) LIMIT 5');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldThrowForUnsupportedVectorDistanceMetric() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, VectorItem, {
+          $select: { id: true },
+          $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
+          $limit: 10,
+        }),
+      ),
+    ).toThrow('SQLite does not support vector distance metric: inner');
+  }
+
+  shouldSortByVectorSimilarityCombinedWithRegularSort() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+      @Field() name!: string;
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $where: { name: 'test' },
+        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id` FROM `VectorItem` WHERE `name` = ? ORDER BY vec_distance_cosine(`vec`, ?), `name` DESC LIMIT 10',
+    );
+    expect(values).toEqual(['test', '[1,2,3]']);
+  }
+
+  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_L2(`vec`, ?) LIMIT 10');
+    expect(values).toEqual(['[1,2,3]']);
+  }
+
+  shouldProjectVectorDistance() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
+        $limit: 10,
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id`, vec_distance_cosine(`vec`, ?) AS `distance` FROM `VectorItem` ORDER BY `distance` LIMIT 10',
+    );
+    expect(values).toEqual(['[1,2,3]']);
   }
 
   shouldEscape() {

@@ -1,4 +1,5 @@
-import type { QueryRaw } from './query.js';
+import type { IndexType } from '../schema/types.js';
+import type { QueryRaw, VectorDistance } from './query.js';
 import type { Json, Scalar, Type } from './utility.js';
 
 /**
@@ -12,17 +13,18 @@ export const idKey = Symbol('idKey');
 export type Key<E> = keyof E & string;
 
 /**
- * Infers the field names of an entity
+ * Infers the field names of an entity.
+ * Includes scalar fields, JSON fields, and scalar arrays (e.g. vector `number[]`).
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Json ? K : never;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? K : never;
 }[Key<E>];
 
 /**
  * Infers the relation names of an entity
  */
 export type RelationKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Json ? never : K;
+  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? never : K;
 }[Key<E>];
 
 /**
@@ -174,7 +176,9 @@ export type ColumnType =
   | BlobColumnType
   | 'bool'
   | 'boolean'
-  | 'vector';
+  | 'vector'
+  | 'halfvec'
+  | 'sparsevec';
 
 /**
  * Logical types for a field
@@ -194,6 +198,17 @@ export type FieldOptions = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
+  /**
+   * Dimensions for vector fields. Used in schema generation.
+   * @example `@Field({ type: 'vector', dimensions: 1536 })`
+   */
+  readonly dimensions?: number;
+  /**
+   * Default distance metric for vector similarity queries on this field.
+   * Queries can override via `$distance`. Defaults to `'cosine'` if omitted.
+   * @example `@Field({ type: 'vector', dimensions: 1536, distance: 'cosine' })`
+   */
+  readonly distance?: VectorDistance;
   /**
    * @deprecated Use 'references' instead for better semantics.
    */
@@ -347,6 +362,20 @@ export type EntityMeta<E> = {
 };
 
 /**
+ * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
+ */
+export type VectorIndexOptions = {
+  /** Distance metric for vector indexes — maps to operator class. */
+  distance?: VectorDistance;
+  /** HNSW: max connections per node. */
+  m?: number;
+  /** HNSW: construction search depth. */
+  efConstruction?: number;
+  /** IVFFlat: number of inverted lists. */
+  lists?: number;
+};
+
+/**
  * Index metadata from @Index decorator.
  */
 export type EntityIndexMeta = {
@@ -356,8 +385,8 @@ export type EntityIndexMeta = {
   name?: string;
   /** Whether index is unique */
   unique: boolean;
-  /** Index type (btree, hash, etc.) */
-  type?: string;
+  /** Index type */
+  type?: IndexType;
   /** Partial index condition (WHERE clause) */
   where?: string;
-};
+} & VectorIndexOptions;

@@ -5,6 +5,8 @@
  * Enables reliable diffing, smart relation detection, and dialect-agnostic schema operations.
  */
 
+import type { VectorIndexOptions } from '../type/entity.js';
+
 // ============================================================================
 // Canonical Type System
 // ============================================================================
@@ -25,7 +27,9 @@ export type TypeCategory =
   | 'json'
   | 'uuid'
   | 'blob'
-  | 'vector';
+  | 'vector'
+  | 'halfvec'
+  | 'sparsevec';
 
 /**
  * Size variants for types that support different sizes.
@@ -95,7 +99,7 @@ export type RelationshipSource =
 /**
  * Index algorithm/type supported by various databases.
  */
-export type IndexType = 'btree' | 'hash' | 'gin' | 'gist' | 'brin' | 'fulltext';
+export type IndexType = 'btree' | 'hash' | 'gin' | 'gist' | 'brin' | 'fulltext' | 'hnsw' | 'ivfflat' | 'vector';
 
 /**
  * Source of where an index was defined.
@@ -208,7 +212,7 @@ export interface RelationshipNode {
  * Index node in the schema graph.
  * Represents a database index on one or more columns.
  */
-export interface IndexNode {
+export type IndexNode = {
   /** Index name */
   readonly name: string;
   /** Reference to the table this index belongs to */
@@ -227,7 +231,7 @@ export interface IndexNode {
   readonly source?: IndexSource;
   /** Current sync status */
   readonly syncStatus?: IndexSyncStatus;
-}
+} & VectorIndexOptions;
 
 /**
  * Root of the schema graph.
