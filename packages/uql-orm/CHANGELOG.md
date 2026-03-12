@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.3.2](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.1...uql-orm@0.3.2) (2026-03-12)
+
+
+### Features
+
+* add  to  and implement  created/updated detection for MongoDB, MariaDB, MySQL, and PostgreSQL ([e093f34](https://github.com/rogerpadilla/uql/commit/e093f343bc9635b861c3674c6a9633b880adabef))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
