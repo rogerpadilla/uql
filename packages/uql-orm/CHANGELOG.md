@@ -1,24 +1,12 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [0.3.0](https://github.com/rogerpadilla/uql/compare/uql-orm@0.2.10...uql-orm@0.3.0) (2026-03-12)
-
-
-### Features
-
-* vector index support with dialect-driven schema generation ([5bb1a6e](https://github.com/rogerpadilla/uql/commit/5bb1a6e99ae9108dad492630c55cf3ba15862a3c))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [0.3.1] - 2026-03-12
+### New Features
+- **MongoDB Atlas Vector Search**: Semantic search now supports MongoDB via the [`$vectorSearch`](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/) aggregation pipeline stage. Same `$sort` API — UQL internally translates to Atlas's native vector search with optimal pre-filtering (`$where` → `$vectorSearch.filter`), score projection via `$meta: 'vectorSearchScore'`, and secondary sort support. Configure with `@Index(['embedding'], { type: 'vectorSearch', name: 'my_index' })`.
 
 ## [0.3.0] - 2026-03-12
 ### New Features
