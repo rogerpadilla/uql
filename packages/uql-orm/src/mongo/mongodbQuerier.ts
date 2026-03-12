@@ -225,13 +225,17 @@ export class MongodbQuerier extends AbstractQuerier {
     const res = await this.execute((session) =>
       this.collection(entity).findOneAndUpdate(filter, update, {
         upsert: true,
+        returnDocument: 'after',
+        includeResultMetadata: true,
         session,
       }),
     );
 
-    const firstId = res?._id as unknown as string;
+    const firstId = res?.value?._id as unknown as string;
+    // `updatedExisting` is false when a new document was inserted (upserted).
+    const created = res?.lastErrorObject?.['updatedExisting'] === false;
 
-    return { firstId, changes: firstId ? 1 : 0 };
+    return { firstId, changes: firstId ? 1 : 0, created };
   }
 
   @Log()

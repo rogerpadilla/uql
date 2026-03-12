@@ -408,6 +408,11 @@ export type QueryUpdateResult = {
    * first inserted ID.
    */
   firstId?: number | string;
+  /**
+   * whether the record was created (`true`) or updated (`false`).
+   * `undefined` when the dialect cannot determine this (e.g. SQLite).
+   */
+  created?: boolean;
 };
 
 /**

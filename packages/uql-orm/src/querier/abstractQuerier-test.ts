@@ -371,7 +371,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $where: { pk },
     });
     expect(record1).toBeUndefined();
-    await this.querier.upsertOne(
+    const insertResult = await this.querier.upsertOne(
       TaxCategory,
       { pk: true },
       {
@@ -379,6 +379,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name C',
       },
     );
+    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
+    expect(insertResult.firstId).toBeDefined();
     const record2 = await this.querier.findOne(TaxCategory, {
       $select: { name: true },
       $where: { pk },
@@ -386,7 +388,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(record2).toMatchObject({
       name: 'Some Name C',
     });
-    await this.querier.upsertOne(
+    const updateResult = await this.querier.upsertOne(
       TaxCategory,
       { pk: true },
       {
@@ -394,6 +396,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name D',
       },
     );
+    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
+    expect(updateResult.firstId).toBeDefined();
     const record3 = await this.querier.findOne(TaxCategory, {
       $select: { name: true },
       $where: { pk },
@@ -419,10 +423,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(existing2).toBeUndefined();
 
     // Insert via upsertMany
-    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+    const insertResult = await this.querier.upsertMany(TaxCategory, { pk: true }, [
       { pk: pk1, name: 'Upsert A' },
       { pk: pk2, name: 'Upsert B' },
     ]);
+    expect(insertResult.changes).toBeGreaterThanOrEqual(2);
 
     const inserted1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
     const inserted2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
@@ -430,10 +435,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inserted2).toMatchObject({ name: 'Upsert B' });
 
     // Update via upsertMany (same keys, different names)
-    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+    const updateResult = await this.querier.upsertMany(TaxCategory, { pk: true }, [
       { pk: pk1, name: 'Updated A' },
       { pk: pk2, name: 'Updated B' },
     ]);
+    expect(updateResult.changes).toBeGreaterThanOrEqual(2);
 
     const updated1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
     const updated2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.2] - 2026-03-12
+### Improvements
+- **Upsert `created` Flag**: added `created?: boolean` to `QueryUpdateResult` — `true` when the record was inserted, `false` when updated. Supported on PostgreSQL, MySQL, and MongoDB. Returns `undefined` on SQLite and MariaDB where the driver cannot determine this.
+
+### Bug Fixes
+- **MongoDB `upsertOne`**: Fixed `firstId` always being `undefined` on insert by switching from `returnDocument: 'before'` to `returnDocument: 'after'`.
+
+### Test Coverage
+- Added dialect-specific `shouldUpsertOne` overrides for all 5 dialects asserting `created` and `firstId` behavior.
+
 ## [0.3.1] - 2026-03-12
 ### New Features
 - **MongoDB Atlas Vector Search**: Semantic search now supports MongoDB via the [`$vectorSearch`](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/) aggregation pipeline stage. Same `$sort` API — UQL internally translates to Atlas's native vector search with optimal pre-filtering (`$where` → `$vectorSearch.filter`), score projection via `$meta: 'vectorSearchScore'`, and secondary sort support. Configure with `@Index(['embedding'], { type: 'vectorSearch', name: 'my_index' })`.

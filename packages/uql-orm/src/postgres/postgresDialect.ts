@@ -46,7 +46,10 @@ export class PostgresDialect extends AbstractSqlDialect {
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     super.insert(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
+    // xmax system column is 0 for newly inserted rows, non-zero for updated rows (MVCC).
+    ctx.append(
+      ` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}, (xmax = 0) AS ${this.escapeId('_created')}`,
+    );
   }
 
   override compare<E>(
