@@ -129,9 +129,9 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" \("id", "name", "createdAt", "updatedAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
+      /^INSERT INTO "User" \("id", "name", "createdAt"\) VALUES \(\$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = \$1 RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
-    expect(values).toEqual([1, 'Some Name', 123, expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), 1, 'Some Name', 123]);
   }
 
   shouldUpsertMany() {
@@ -150,9 +150,9 @@ class PostgresDialectSpec {
       ]),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" .*VALUES \(\$1, \$2, \$3, \$4\), \(\$5, \$6, \$7, \$8\) ON CONFLICT \("id"\) DO UPDATE SET.*RETURNING/,
+      /^INSERT INTO "User" .*VALUES \(\$2, \$3, \$4\), \(\$5, \$6, \$7\) ON CONFLICT \("id"\) DO UPDATE SET.*RETURNING/,
     );
-    expect(values).toHaveLength(8);
+    expect(values).toHaveLength(7);
   }
 
   shouldUpsertWithDifferentColumnNames() {
@@ -168,9 +168,9 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "user_profile" \("pk", "image", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = EXCLUDED."updatedAt" RETURNING "pk" "id", \(xmax = 0\) AS "_created"$/,
+      /^INSERT INTO "user_profile" \("pk", "image", "createdAt"\) VALUES \(\$2, \$3, \$4\) ON CONFLICT \("pk"\) DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = \$1 RETURNING "pk" "id", \(xmax = 0\) AS "_created"$/,
     );
-    expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), 1, 'image.jpg', expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
@@ -186,9 +186,9 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" \("id", "email", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
+      /^INSERT INTO "User" \("id", "email", "createdAt"\) VALUES \(\$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "updatedAt" = \$1 RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
-    expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), 1, 'a@b.com', expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableId() {
@@ -257,9 +257,9 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "User" \(.*"id".*"name".*"updatedAt".*"createdAt".*\) VALUES \(.*\$1, \$2, \$3, \$4.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = EXCLUDED."updatedAt".*$/,
+      /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*\$2, \$3, \$4.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = \$1.*$/,
     );
-    expect(values).toEqual([1, 'Some Name', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), 1, 'Some Name', expect.any(Number)]);
   }
 
   shouldUpsertWithVirtualField() {
@@ -276,9 +276,9 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO "Item" \("id", "name", "updatedAt", "createdAt"\) VALUES \(\$1, \$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = EXCLUDED."updatedAt" RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
+      /^INSERT INTO "Item" \("id", "name", "createdAt"\) VALUES \(\$2, \$3, \$4\) ON CONFLICT \("id"\) DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = \$1 RETURNING "id" "id", \(xmax = 0\) AS "_created"$/,
     );
-    expect(values).toEqual([1, 'Some Item', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), 1, 'Some Item', expect.any(Number)]);
   }
 
   shouldFind$istartsWith() {

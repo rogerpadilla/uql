@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.3.3] - 2026-03-12
+### Bug Fixes
+- **Upsert `onUpdate` Semantics**: `onUpdate`-only fields (e.g. `updatedAt`) are no longer included in the `INSERT VALUES` clause of upserts. They now use direct parameter values in the `UPDATE SET` clause, giving correct semantics: newly inserted rows have `updatedAt = NULL`, updated rows get a fresh timestamp.
+
+### Improvements
+- **Variadic `pushValue`**: `QueryContext.pushValue()` now accepts multiple values (`...values`), simplifying internal param collection and eliminating `forEach` loops.
+
 ## [0.3.2] - 2026-03-12
 ### Improvements
 - **Upsert `created` Flag**: added `created?: boolean` to `QueryUpdateResult` — `true` when the record was inserted, `false` when updated. Supported on PostgreSQL, MySQL, and MongoDB. Returns `undefined` on SQLite and MariaDB where the driver cannot determine this.

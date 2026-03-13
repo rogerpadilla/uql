@@ -478,7 +478,7 @@ export type QueryWhereOptions = QueryComparisonOptions & {
 export interface QueryContext {
   append(sql: string): this;
   addValue(value: unknown): this;
-  pushValue(value: unknown): this;
+  pushValue(...values: unknown[]): this;
   readonly sql: string;
   readonly values: unknown[];
 }

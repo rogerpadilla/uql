@@ -1054,18 +1054,24 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `VALUES(${name})`);
+    const updateCtx = this.createContext();
+    const update = this.getUpsertUpdateAssignments(
+      updateCtx,
+      meta,
+      conflictPaths,
+      payload,
+      (name) => `VALUES(${name})`,
+    );
 
     if (update) {
       this.insert(ctx, entity, payload);
       ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
+      ctx.pushValue(...updateCtx.values);
     } else {
       const insertCtx = this.createContext();
       this.insert(insertCtx, entity, payload);
       ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
-      insertCtx.values.forEach((val) => {
-        ctx.pushValue(val);
-      });
+      ctx.pushValue(...insertCtx.values);
     }
   }
 
@@ -1077,24 +1083,51 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     callback?: (columnName: string) => string,
   ): string {
     const sample = Array.isArray(payload) ? payload[0] : payload;
-    const [filledPayload] = fillOnFields(meta, sample, 'onUpdate');
+    const cloned = { ...sample };
+    const [filledPayload] = fillOnFields(meta, cloned, 'onUpdate');
     const fields = filterFieldKeys(meta, filledPayload, 'onUpdate');
     return fields
       .filter((col) => !conflictPaths[col])
       .map((col) => {
         const field = meta.fields[col];
         const columnName = this.resolveColumnName(col, field);
-        if (callback) {
+        if (callback && Object.hasOwn(sample as object, col)) {
           return `${this.escapeId(columnName)} = ${callback(this.escapeId(columnName))}`;
         }
         const valCtx = this.createContext();
         this.formatPersistableValue(valCtx, field, filledPayload[col]);
-        valCtx.values.forEach((val) => {
-          ctx.pushValue(val);
-        });
+        ctx.pushValue(...valCtx.values);
         return `${this.escapeId(columnName)} = ${valCtx.sql}`;
       })
       .join(', ');
+  }
+
+  /**
+   * Shared ON CONFLICT ... DO UPDATE / DO NOTHING logic for positional-placeholder dialects (SQLite).
+   * Uses a deferred context for update params so they follow INSERT params.
+   * PG uses its own implementation since `$N` numbered placeholders handle param ordering natively.
+   */
+  protected onConflictUpsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    insertFn: (ctx: QueryContext, entity: Type<E>, payload: E | E[]) => void,
+  ): void {
+    const meta = getMeta(entity);
+    const updateCtx = this.createContext();
+    const update = this.getUpsertUpdateAssignments(
+      updateCtx,
+      meta,
+      conflictPaths,
+      payload,
+      (name) => `EXCLUDED.${name}`,
+    );
+    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    insertFn(ctx, entity, payload);
+    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict}`);
+    ctx.pushValue(...updateCtx.values);
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
@@ -1158,9 +1191,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         const field = meta.fields[key];
         const valCtx = this.createContext();
         this.formatPersistableValue(valCtx, field, filledPayload[key]);
-        valCtx.values.forEach((val) => {
-          ctx.pushValue(val);
-        });
+        ctx.pushValue(...valCtx.values);
         acc[key] = valCtx.sql;
         return acc;
       },

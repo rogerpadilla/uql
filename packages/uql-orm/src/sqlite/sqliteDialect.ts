@@ -157,12 +157,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
-    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    this.insert(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict}`);
+    this.onConflictUpsert(ctx, entity, conflictPaths, payload, this.insert.bind(this));
   }
 
   protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
