@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+## [0.3.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.2...uql-orm@0.3.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* correct upsert  field semantics and refactor  to accept variadic ([363283a](https://github.com/rogerpadilla/uql/commit/363283a6cea5fbae343fb8162aa33e2568a6bc91))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
