@@ -24,10 +24,6 @@ date format is [yyyy-mm-dd]
 ### Breaking Changes
 - **Removed deprecated `reference` field option**: Use `references` instead. The deprecated `FieldOptions.reference` property and its internal usage in `definition.ts` have been removed.
 
-### Test Coverage
-- **Integration Tests**: `shouldFindManyStream` (data flow, filter, empty) across all DB drivers. `shouldDistinct` and `shouldFindManyStream` (insert→stream→compare) in SQL-only spec.
-- **Unit Tests**: `findManyStream` dual-API pattern, `unflatObject` (flat, deep nested, null skipping, equivalence with `unflatObjects`), 6 `$distinct` SQL generation tests (with `$select`, `$where`+`$sort`, `$limit`+`$skip`, `false` flag).
-
 ## [0.3.3] - 2026-03-12
 ### Bug Fixes
 - **Upsert `onUpdate` Semantics**: `onUpdate`-only fields (e.g. `updatedAt`) are no longer included in the `INSERT VALUES` clause of upserts. They now use direct parameter values in the `UPDATE SET` clause, giving correct semantics: newly inserted rows have `updatedAt = NULL`, updated rows get a fresh timestamp.
