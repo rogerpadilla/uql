@@ -1,19 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-# [0.4.0](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.3...uql-orm@0.4.0) (2026-03-13)
-
-
-### Features
-
-* implement cursor-based stream with  across all queriers and deprecate  in favor of ([536b67b](https://github.com/rogerpadilla/uql/commit/536b67b6bb0ab8024449f557a83c43a3b4f09fb5))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
@@ -39,10 +23,6 @@ date format is [yyyy-mm-dd]
 
 ### Breaking Changes
 - **Removed deprecated `reference` field option**: Use `references` instead. The deprecated `FieldOptions.reference` property and its internal usage in `definition.ts` have been removed.
-
-### Test Coverage
-- **Integration Tests**: `shouldFindManyStream` (data flow, filter, empty) across all DB drivers. `shouldDistinct` and `shouldFindManyStream` (insert→stream→compare) in SQL-only spec.
-- **Unit Tests**: `findManyStream` dual-API pattern, `unflatObject` (flat, deep nested, null skipping, equivalence with `unflatObjects`), 6 `$distinct` SQL generation tests (with `$select`, `$where`+`$sort`, `$limit`+`$skip`, `false` flag).
 
 ## [0.3.3] - 2026-03-12
 ### Bug Fixes
