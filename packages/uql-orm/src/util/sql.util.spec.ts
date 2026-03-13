@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { QuerySortMap, RawRow } from '../type/index.js';
-import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObjects } from './sql.util.js';
+import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObject, unflatObjects } from './sql.util.js';
 
 it('flatObject', () => {
   expect(flatObject(undefined as any)).toEqual({});
@@ -234,4 +234,49 @@ it('unflatObjects - underscore', () => {
       USER_ROLE: 'admin',
     },
   ]);
+});
+
+it('unflatObject - flat row (no nested paths)', () => {
+  const attrsPaths = obtainAttrsPaths({ id: 1, name: 'John' });
+  const result = unflatObject<{ id: number; name: string }>({ id: 1, name: 'John' }, attrsPaths);
+  expect(result).toEqual({ id: 1, name: 'John' });
+});
+
+it('unflatObject - deep nested row', () => {
+  const row = {
+    id: 1,
+    'item.id': 10,
+    'item.name': 'Widget',
+    'item.category.name': 'Tools',
+  };
+  const attrsPaths = obtainAttrsPaths(row);
+  const result = unflatObject(row, attrsPaths);
+  expect(result).toEqual({
+    id: 1,
+    item: {
+      id: 10,
+      name: 'Widget',
+      category: { name: 'Tools' },
+    },
+  });
+});
+
+it('unflatObject - skips null values', () => {
+  const row = { id: 1, name: null, 'item.id': null };
+  const attrsPaths = obtainAttrsPaths(row);
+  const result = unflatObject(row, attrsPaths);
+  expect(result).toEqual({ id: 1 });
+});
+
+it('unflatObject - produces same result as unflatObjects for single row', () => {
+  const row = {
+    id: 5,
+    'item.id': 2,
+    'item.name': 'Test',
+    'item.tax.name': 'IVA',
+  };
+  const attrsPaths = obtainAttrsPaths(row);
+  const single = unflatObject(row, attrsPaths);
+  const batched = unflatObjects([row])[0];
+  expect(single).toEqual(batched);
 });

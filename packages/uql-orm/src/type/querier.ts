@@ -62,6 +62,13 @@ export interface Querier extends UniversalQuerier {
   findMany<E extends object>(q: QueryWithEntity<E>): Promise<E[]>;
 
   /**
+   * Stream records as an async iterable. Supports both patterns.
+   * Does not fill relations or fire lifecycle hooks.
+   */
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+  findManyStream<E extends object>(q: QueryWithEntity<E>): AsyncIterable<E>;
+
+  /**
    * Find many records and count. Supports both patterns.
    */
   findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;

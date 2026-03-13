@@ -1,3 +1,4 @@
+import type { Connection } from 'mysql2';
 import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { ExtraOptions } from '../type/index.js';
@@ -27,6 +28,18 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
       affectedRows,
       affectedRows,
     );
+  }
+
+  override async *internalStream<T>(query: string, values?: unknown[]) {
+    const rawConn = this.conn!.connection as unknown as Connection;
+    const stream = rawConn.query(query, values).stream();
+    try {
+      for await (const row of stream) {
+        yield row as T;
+      }
+    } finally {
+      stream.destroy();
+    }
   }
 
   protected override async releaseConn(conn: PoolConnection) {

@@ -1238,4 +1238,44 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
+
+  async shouldDistinct() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice1@test.com', createdAt: 1 },
+      { name: 'Alice', email: 'alice2@test.com', createdAt: 1 },
+      { name: 'Bob', email: 'bob@test.com', createdAt: 1 },
+    ]);
+
+    vi.mocked(this.querier.all).mockClear();
+    vi.mocked(this.querier.run).mockClear();
+
+    const distinctRows = await this.querier.findMany(User, {
+      $select: { name: true },
+      $distinct: true,
+    });
+
+    expect(this.querier.all).toHaveBeenCalledWith('SELECT DISTINCT `name` FROM `User`', []);
+    expect(distinctRows).toHaveLength(2);
+    expect(distinctRows.map((u) => u.name).sort()).toEqual(['Alice', 'Bob']);
+  }
+
+  async shouldFindManyStream() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com', createdAt: 1 },
+      { name: 'Bob', email: 'bob@test.com', createdAt: 1 },
+    ]);
+
+    vi.mocked(this.querier.all).mockClear();
+    vi.mocked(this.querier.run).mockClear();
+
+    const collected: User[] = [];
+    for await (const row of this.querier.findManyStream(User, {
+      $select: { name: true },
+    })) {
+      collected.push(row);
+    }
+
+    expect(collected).toHaveLength(2);
+    expect(collected.map((u) => u.name).sort()).toEqual(['Alice', 'Bob']);
+  }
 }

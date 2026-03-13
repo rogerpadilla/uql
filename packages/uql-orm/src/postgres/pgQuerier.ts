@@ -19,6 +19,18 @@ export class PgQuerier extends AbstractPoolQuerier<PoolClient> {
     return extractInsertResult(rows, rowCount ?? undefined);
   }
 
+  override async *internalStream<T>(query: string, values?: unknown[]) {
+    const { default: QueryStream } = await import('pg-query-stream');
+    const stream = this.conn!.query(new QueryStream(query, values));
+    try {
+      for await (const row of stream) {
+        yield row as T;
+      }
+    } finally {
+      stream.destroy();
+    }
+  }
+
   protected override async releaseConn(conn: PoolClient) {
     await conn.release();
   }

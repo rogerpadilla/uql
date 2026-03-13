@@ -210,10 +210,6 @@ export type FieldOptions = {
    */
   readonly distance?: VectorDistance;
   /**
-   * @deprecated Use 'references' instead for better semantics.
-   */
-  readonly reference?: EntityGetter;
-  /**
    * Entity that this field references (for foreign keys).
    */
   readonly references?: EntityGetter;

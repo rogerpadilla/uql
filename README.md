@@ -32,6 +32,7 @@ const users = await querier.findMany(User, {
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
 | **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, and `DISTINCT` across all dialects. |
 | **[Semantic Search](https://uql-orm.dev/querying/semantic-search)** | Vector similarity via `$sort` with `$vector`/`$distance`. Supports `vector`, `halfvec`, `sparsevec` types, HNSW/IVFFlat indexes, and 5 distance metrics across Postgres, MariaDB, SQLite, and MongoDB Atlas. |
+| **[Cursor Streaming](https://uql-orm.dev/querying/streaming)** | `findManyStream()` with native cursor-based iteration for SQLite, MongoDB, MariaDB, PostgreSQL, and MySQL. |
 | **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **JSONB/JSON** support. |
 | **[Database Migrations](https://www.uql-orm.dev/migrations)**          | Built-in [Entity-First synchronization](https://uql-orm.dev/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
 | **[Logging & Monitoring](https://www.uql-orm.dev/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
@@ -84,13 +85,12 @@ Annotate your classes with decorators. UQL's engine uses this metadata for both 
 | :-------------- | :----------------------------------------------------------------------------- |
 | `@Entity()`   | Marks a class as a database table/collection.                                  |
 | `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()`    | Standard column. Use `{ reference: ... }` for Foreign Keys.                  |
+| `@Field()`    | Standard column. Use `{ references: ... }` for Foreign Keys.                 |
 | `@Index()`    | Defines a composite or custom index on one or more columns.                    |
 | `@OneToOne`   | Defines a one-to-one relationship.                                             |
 | `@OneToMany`  | Defines a one-to-many relationship.                                            |
 | `@ManyToOne`  | Defines a many-to-one relationship.                                            |
 | `@ManyToMany` | Defines a many-to-many relationship.                                           |
-| `@Virtual()`  | Defines a read-only field calculated via SQL (see Advanced).                    |
 | `@BeforeInsert` / `@AfterInsert` | Lifecycle hooks fired around `insert` operations.           |
 | `@BeforeUpdate` / `@AfterUpdate` | Lifecycle hooks fired around `update` operations.           |
 | `@BeforeDelete` / `@AfterDelete` | Lifecycle hooks fired around `delete` operations.           |
@@ -176,7 +176,7 @@ export class Profile {
   @Field()
   bio?: string;
 
-  @Field({ reference: () => User, foreignKey: 'fk_profile_user' })
+  @Field({ references: () => User, foreignKey: 'fk_profile_user' })
   userId?: string;
 
   @OneToOne({ entity: () => User })
@@ -191,7 +191,7 @@ export class Post {
   @Field()
   title?: string;
 
-  @Field({ reference: () => User })
+  @Field({ references: () => User })
   authorId?: string;
 
   @ManyToOne({ entity: () => User })
@@ -218,10 +218,10 @@ export class PostTag {
   @Id({ type: 'uuid', onInsert: () => uuidv7() })
   id?: string;
 
-  @Field({ reference: () => Post })
+  @Field({ references: () => Post })
   postId?: number;
 
-  @Field({ reference: () => Tag })
+  @Field({ references: () => Tag })
   tagId?: string;
 }
 ```
@@ -390,6 +390,18 @@ const names = await querier.findMany(User, {
 ```
 
 > **Learn more**: See the full [Aggregate Queries guide](https://uql-orm.dev/querying/aggregate) for `$having` operators, MongoDB pipeline details, and advanced patterns.
+
+&nbsp;
+
+### Cursor-Based Streaming
+
+For large result sets, use `findManyStream()` to iterate row-by-row without loading everything into memory. Each driver uses its optimal native cursor API.
+
+```ts
+for await (const user of querier.findManyStream(User, { $where: { active: true } })) {
+  process.stdout.write(JSON.stringify(user) + '\n');
+}
+```
 
 &nbsp;
 

@@ -53,33 +53,49 @@ export class MongodbQuerier extends AbstractQuerier {
         documents = await this.runPipeline(entity, meta, pipeline);
         await this.fillToManyRelations(entity, documents, q.$select!);
       } else {
-        const cursor = this.collection(entity).find<E>({}, { session: this.session });
-
-        const filter = this.dialect.where(entity, q.$where);
-        if (hasKeys(filter)) {
-          cursor.filter(filter);
-        }
-        const select = this.dialect.select(entity, q.$select!);
-        if (hasKeys(select)) {
-          cursor.project(select);
-        }
-        const sort = this.dialect.sort(entity, q.$sort!);
-        if (hasKeys(sort)) {
-          cursor.sort(sort);
-        }
-        if (q.$skip) {
-          cursor.skip(q.$skip);
-        }
-        if (q.$limit) {
-          cursor.limit(q.$limit);
-        }
-
+        const cursor = this.buildFindCursor(entity, q);
         documents = await this.execute(() => cursor.toArray());
         documents = this.dialect.normalizeIds(meta, documents) || [];
       }
     }
 
     return documents;
+  }
+
+  protected override async *internalFindManyStream<E extends Document>(entity: Type<E>, q: Query<E>) {
+    const meta = getMeta(entity);
+    const cursor = this.buildFindCursor(entity, q);
+
+    for await (const doc of cursor) {
+      const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
+      yield normalized;
+    }
+  }
+
+  /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
+  private buildFindCursor<E extends Document>(entity: Type<E>, q: Query<E>) {
+    const cursor = this.collection(entity).find<E>({}, { session: this.session });
+
+    const filter = this.dialect.where(entity, q.$where);
+    if (hasKeys(filter)) {
+      cursor.filter(filter);
+    }
+    const select = this.dialect.select(entity, q.$select!);
+    if (hasKeys(select)) {
+      cursor.project(select);
+    }
+    const sort = this.dialect.sort(entity, q.$sort!);
+    if (hasKeys(sort)) {
+      cursor.sort(sort);
+    }
+    if (q.$skip) {
+      cursor.skip(q.$skip);
+    }
+    if (q.$limit) {
+      cursor.limit(q.$limit);
+    }
+
+    return cursor;
   }
 
   /** Execute an aggregation pipeline and normalize `_id` → `id`. */

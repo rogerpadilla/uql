@@ -665,4 +665,60 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->>'public') DESC");
     });
   });
+
+  // ─── $distinct ────────────────────────────────────────────────────
+  describe('$distinct', () => {
+    it('generates SELECT DISTINCT with $distinct: true', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, { $distinct: true });
+      expect(ctx.sql).toMatch(/^SELECT DISTINCT /);
+    });
+
+    it('generates plain SELECT without $distinct', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, {});
+      expect(ctx.sql).toMatch(/^SELECT /);
+      expect(ctx.sql).not.toMatch(/^SELECT DISTINCT /);
+    });
+
+    it('$distinct: false behaves same as omitted', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, { $distinct: false });
+      expect(ctx.sql).toMatch(/^SELECT /);
+      expect(ctx.sql).not.toMatch(/^SELECT DISTINCT /);
+    });
+
+    it('$distinct with $select', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, {
+        $distinct: true,
+        $select: { name: true, email: true },
+      });
+      expect(ctx.sql).toBe('SELECT DISTINCT `name`, `email` FROM `User`');
+    });
+
+    it('$distinct with $where and $sort', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, {
+        $distinct: true,
+        $select: { name: true },
+        $where: { companyId: 1 },
+        $sort: { name: 1 },
+      });
+      expect(ctx.sql).toBe('SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ? ORDER BY `name`');
+      expect(ctx.values).toEqual([1]);
+    });
+
+    it('$distinct with $limit and $skip', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, User, {
+        $distinct: true,
+        $select: { email: true },
+        $limit: 10,
+        $skip: 5,
+      });
+      expect(ctx.sql).toBe('SELECT DISTINCT `email` FROM `User` LIMIT 10 OFFSET 5');
+      expect(ctx.values).toEqual([]);
+    });
+  });
 });

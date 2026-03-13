@@ -271,13 +271,12 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
   public getSqlType(field: FieldOptions, fieldType?: unknown): string {
     // If field has a reference, inherit type from the target primary key
-    const reference = field.references ?? field.reference;
-    if (reference) {
-      const refEntity = reference();
+    if (field.references) {
+      const refEntity = field.references();
       const refMeta = getMeta(refEntity);
       const refIdField = refMeta.fields[refMeta.id!];
       return this.getSqlType(
-        { ...refIdField!, references: undefined, reference: undefined, isId: undefined, autoIncrement: false },
+        { ...refIdField!, references: undefined, isId: undefined, autoIncrement: false },
         refIdField!.type,
       );
     }

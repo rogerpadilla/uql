@@ -21,6 +21,17 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
     return extractInsertResult(res.length ? res : [], changes, res.affectedRows);
   }
 
+  override async *internalStream<T>(query: string, values?: unknown[]) {
+    const stream = this.conn!.queryStream(query, values);
+    try {
+      for await (const row of stream) {
+        yield row as T;
+      }
+    } finally {
+      stream.destroy();
+    }
+  }
+
   protected override async releaseConn(conn: PoolConnection) {
     await conn.release();
   }
