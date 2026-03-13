@@ -24,7 +24,10 @@
   "commitlint": {
     "extends": [
       "@commitlint/config-conventional"
-    ]
+    ],
+    "rules": {
+      "subject-full-stop": [0]
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.6",
