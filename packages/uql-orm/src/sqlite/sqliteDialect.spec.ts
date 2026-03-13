@@ -66,9 +66,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET/,
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET/,
     );
-    expect(values).toHaveLength(8);
+    expect(values).toHaveLength(7);
   }
 
   shouldUpsertWithDifferentColumnNames() {
@@ -84,7 +84,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*`updatedAt`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+      /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*`createdAt`.*\) VALUES \(\?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
@@ -102,7 +102,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` \(.*`id`.*`email`.*`updatedAt`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`id`\) DO UPDATE SET .*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+      /^INSERT INTO `User` \(.*`id`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\) ON CONFLICT \(`id`\) DO UPDATE SET .*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
   }

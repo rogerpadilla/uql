@@ -179,7 +179,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = VALUES\(`updatedAt`\).*$/,
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }
@@ -199,8 +199,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
-    expect(values).toHaveLength(8);
+    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
+    expect(values).toHaveLength(7);
   }
 
   shouldUpdate() {

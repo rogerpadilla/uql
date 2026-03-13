@@ -42,14 +42,14 @@ export class SqlQueryContext implements QueryContext {
   }
 
   /**
-   * Pushes a value to the parameters list without appending a placeholder to the SQL.
+   * Pushes values to the parameters list without appending placeholders to the SQL.
    * This is useful when the placeholder is already present in the SQL string or handled elsewhere.
    *
-   * @param value The value to be added to the parameters.
+   * @param values The values to be added to the parameters.
    * @returns The current context instance for method chaining.
    */
-  pushValue(value: unknown): this {
-    this.params.push(value);
+  pushValue(...values: unknown[]): this {
+    this.params.push(...values);
     return this;
   }
 

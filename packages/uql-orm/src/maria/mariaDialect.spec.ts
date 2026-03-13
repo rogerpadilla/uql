@@ -246,7 +246,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`, `updatedAt`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = VALUES(`updatedAt`) RETURNING `id` `id`',
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = ? RETURNING `id` `id`',
     );
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }

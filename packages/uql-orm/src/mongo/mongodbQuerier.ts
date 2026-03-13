@@ -206,20 +206,21 @@ export class MongodbQuerier extends AbstractQuerier {
     return matchedCount;
   }
 
+  private buildConflictFilter<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, item: E) {
+    const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
+      acc[key] = item[key];
+      return acc;
+    }, {}) as QueryWhere<E>;
+    return this.dialect.where(entity, where);
+  }
+
   @Log()
   override async upsertOne<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
     payload = clone(payload);
 
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload, 'onInsert');
-
-    const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
-      acc[key] = payload[key];
-      return acc;
-    }, {}) as QueryWhere<E>;
-
-    const filter = this.dialect.where(entity, where);
-
+    const filter = this.buildConflictFilter(entity, conflictPaths, payload);
     const update: UpdateFilter<E> = { $set: persistable };
 
     const res = await this.execute((session) =>
@@ -250,13 +251,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
     const operations = payload.map((item) => {
       const persistable = this.dialect.getPersistable(meta, item, 'onInsert');
-
-      const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = item[key];
-        return acc;
-      }, {}) as QueryWhere<E>;
-
-      const filter = this.dialect.where(entity, where);
+      const filter = this.buildConflictFilter(entity, conflictPaths, item);
       const update: UpdateFilter<E> = { $set: persistable };
 
       return {

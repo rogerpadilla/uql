@@ -32,20 +32,26 @@ export class MariaDialect extends AbstractSqlDialect {
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `VALUES(${name})`);
+    const updateCtx = this.createContext();
+    const update = this.getUpsertUpdateAssignments(
+      updateCtx,
+      meta,
+      conflictPaths,
+      payload,
+      (name) => `VALUES(${name})`,
+    );
     const returning = this.returningId(entity);
 
     if (update) {
       super.insert(ctx, entity, payload);
       ctx.append(` ON DUPLICATE KEY UPDATE ${update} ${returning}`);
+      ctx.pushValue(...updateCtx.values);
     } else {
       const insertCtx = this.createContext();
       super.insert(insertCtx, entity, payload);
       ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
       ctx.append(' ' + returning);
-      insertCtx.values.forEach((val) => {
-        ctx.pushValue(val);
-      });
+      ctx.pushValue(...insertCtx.values);
     }
   }
 
