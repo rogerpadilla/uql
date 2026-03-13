@@ -1,3 +1,19 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [0.4.0](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.3...uql-orm@0.4.0) (2026-03-13)
+
+
+### Features
+
+* implement cursor-based stream with  across all queriers and deprecate  in favor of ([536b67b](https://github.com/rogerpadilla/uql/commit/536b67b6bb0ab8024449f557a83c43a3b4f09fb5))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
