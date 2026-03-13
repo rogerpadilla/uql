@@ -203,14 +203,13 @@ function fillThroughRelations<E>(entity: Type<E>): void {
     (relations, key) => {
       const field = meta.fields[key];
       if (!field) return relations;
-      const reference = field.references ?? field.reference;
-      if (reference) {
-        const relEntity = reference();
+      if (field.references) {
+        const relEntity = field.references();
         const relMeta = ensureMeta(relEntity);
         const relIdKey = relMeta.id!;
         const relKey = key.slice(0, -relIdKey.length);
         const relOpts: RelationOptions = {
-          entity: reference,
+          entity: field.references,
           cardinality: 'm1',
           references: [{ local: key, foreign: relIdKey }],
         };

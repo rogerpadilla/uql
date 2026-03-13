@@ -15,7 +15,7 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { clone, unflatObjects } from '../util/index.js';
+import { clone, obtainAttrsPaths, unflatObject, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { Log, Serialized } from './decorator/index.js';
 
@@ -74,6 +74,26 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const founds = unflatObjects<E>(res);
     await this.fillToManyRelations(entity, founds, q.$select!);
     return founds;
+  }
+
+  protected override async *internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>) {
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, entity, q);
+    let attrsPaths: Record<string, string[]> | undefined;
+    for await (const row of this.internalStream<RawRow>(ctx.sql, ctx.values)) {
+      attrsPaths ??= obtainAttrsPaths(row);
+      yield unflatObject<E>(row, attrsPaths);
+    }
+  }
+
+  /**
+   * Internal streaming query — returns an async iterable of raw rows.
+   * Default implementation falls back to `internalAll()` then yields each row.
+   * Drivers with native cursor/streaming APIs (SQLite, Pg) should override this.
+   */
+  protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
+    const rows = await this.internalAll<T>(query, values);
+    yield* rows;
   }
 
   protected override async internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E> = {}) {

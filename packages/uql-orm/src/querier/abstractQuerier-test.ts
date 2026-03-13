@@ -724,6 +724,48 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(foundWithSoftDeleted!.name).toBe('To be soft deleted');
   }
 
+  async shouldFindManyStream() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+      { name: 'Charlie', email: 'charlie@test.com' },
+    ]);
+
+    const collected: User[] = [];
+    for await (const row of this.querier.findManyStream(User, {})) {
+      collected.push(row);
+    }
+
+    expect(collected).toHaveLength(3);
+    expect(collected.map((u) => u.name).sort()).toEqual(['Alice', 'Bob', 'Charlie']);
+  }
+
+  async shouldFindManyStreamWithFilter() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+      { name: 'Charlie', email: 'charlie@test.com' },
+    ]);
+
+    const collected: User[] = [];
+    for await (const row of this.querier.findManyStream(User, {
+      $where: { name: 'Bob' },
+    })) {
+      collected.push(row);
+    }
+
+    expect(collected).toHaveLength(1);
+    expect(collected[0].name).toBe('Bob');
+  }
+
+  async shouldFindManyStreamEmpty() {
+    const collected: User[] = [];
+    for await (const row of this.querier.findManyStream(User, {})) {
+      collected.push(row);
+    }
+    expect(collected).toHaveLength(0);
+  }
+
   async clearTables() {
     const entities = getEntities();
     await Promise.all(entities.map((entity) => this.querier.deleteMany(entity as Type<object>, {})));

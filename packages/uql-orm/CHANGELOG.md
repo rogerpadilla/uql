@@ -1,24 +1,32 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.3.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.3.2...uql-orm@0.3.3) (2026-03-13)
-
-
-### Bug Fixes
-
-* correct upsert  field semantics and refactor  to accept variadic ([363283a](https://github.com/rogerpadilla/uql/commit/363283a6cea5fbae343fb8162aa33e2568a6bc91))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [0.4.0] - 2026-03-13
+### New Features
+- **`findManyStream()` — Cursor-Based Async Iteration**: Stream query results row-by-row via `for await...of`. No relation-filling or lifecycle hooks — optimized for raw throughput on large result sets.
+  ```ts
+  for await (const user of querier.findManyStream(User, { $where: { active: true } })) {
+    process.stdout.write(user.name + '\n');
+  }
+  ```
+  Supports both the classic `(Entity, query)` and `$entity`-field dual-API patterns.
+- **Native Streaming for All Major Drivers**: Each driver now uses its optimal streaming API instead of falling back to `internalAll()`:
+  - **SQLite** (`better-sqlite3`): `.iterate()` — sync, zero-copy row iteration.
+  - **MongoDB**: `FindCursor` async iterable — native driver cursor with `buildFindCursor` helper (extracted from `findMany` for DRY reuse).
+  - **MariaDB**: `queryStream()` — first-class streaming API since v3.0, with backpressure.
+  - **PostgreSQL**: `pg-query-stream` — server-side cursors via optional peer dependency.
+  - **MySQL2**: `Connection.query().stream()` — Readable stream from non-promise connection.
+  - **LibSQL / D1 / Neon**: Graceful fallback to `internalAll()` (HTTP-based, no streaming API).
+
+### Breaking Changes
+- **Removed deprecated `reference` field option**: Use `references` instead. The deprecated `FieldOptions.reference` property and its internal usage in `definition.ts` have been removed.
+
+### Test Coverage
+- **Integration Tests**: `shouldFindManyStream` (data flow, filter, empty) across all DB drivers. `shouldDistinct` and `shouldFindManyStream` (insert→stream→compare) in SQL-only spec.
+- **Unit Tests**: `findManyStream` dual-API pattern, `unflatObject` (flat, deep nested, null skipping, equivalence with `unflatObjects`), 6 `$distinct` SQL generation tests (with `$select`, `$where`+`$sort`, `$limit`+`$skip`, `false` flag).
 
 ## [0.3.3] - 2026-03-12
 ### Bug Fixes

@@ -34,31 +34,37 @@ export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
     return objects as T[];
   }
 
-  return objects.map((row) => {
-    const dto = {} as T;
+  return objects.map((row) => unflatObject<T>(row, attrsPaths));
+}
 
-    for (const col in row) {
-      if (row[col] === null) {
-        continue;
-      }
-      const attrPath = attrsPaths[col];
-      if (attrPath) {
-        let target = dto as Record<string, unknown>;
-        for (let i = 0; i < attrPath.length - 1; i++) {
-          const seg = attrPath[i];
-          if (typeof target[seg] !== 'object') {
-            target[seg] = {};
-          }
-          target = target[seg] as Record<string, unknown>;
-        }
-        target[attrPath[attrPath.length - 1]] = row[col];
-      } else {
-        (dto as RawRow)[col] = row[col];
-      }
+/**
+ * Unflattens a single raw row using pre-computed attribute paths.
+ * Use this for streaming to avoid per-row array allocations.
+ */
+export function unflatObject<T extends object>(row: RawRow, attrsPaths: Record<string, string[]>): T {
+  const dto = {} as T;
+
+  for (const col in row) {
+    if (row[col] === null) {
+      continue;
     }
+    const attrPath = attrsPaths[col];
+    if (attrPath) {
+      let target = dto as Record<string, unknown>;
+      for (let i = 0; i < attrPath.length - 1; i++) {
+        const seg = attrPath[i];
+        if (typeof target[seg] !== 'object') {
+          target[seg] = {};
+        }
+        target = target[seg] as Record<string, unknown>;
+      }
+      target[attrPath[attrPath.length - 1]] = row[col];
+    } else {
+      (dto as RawRow)[col] = row[col];
+    }
+  }
 
-    return dto;
-  });
+  return dto;
 }
 
 export function obtainAttrsPaths<T extends object>(row: T) {

@@ -64,7 +64,8 @@
     "mariadb": ">=3.0.0",
     "mongodb": ">=6.0.0",
     "mysql2": ">=3.0.0",
-    "pg": ">=8.0.0"
+    "pg": ">=8.0.0",
+    "pg-query-stream": ">=4.0.0"
   },
   "peerDependenciesMeta": {
     "express": {
@@ -80,6 +81,9 @@
       "optional": true
     },
     "pg": {
+      "optional": true
+    },
+    "pg-query-stream": {
       "optional": true
     },
     "better-sqlite3": {
@@ -106,7 +110,8 @@
     "mariadb": "^3.5.2",
     "mongodb": "^7.1.0",
     "mysql2": "^3.19.1",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "pg-query-stream": "^4.14.0"
   },
   "author": "Roger Padilla",
   "repository": {

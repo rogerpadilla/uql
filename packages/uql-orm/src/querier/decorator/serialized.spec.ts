@@ -19,6 +19,7 @@ class MockQuerier extends AbstractQuerier {
 
   // Abstract methods required by AbstractQuerier
   protected override internalFindMany(): any {}
+  protected override async *internalFindManyStream(): any {}
   protected override internalCount(): any {}
   protected override internalAggregate(): any {}
   override internalInsertMany(): any {}

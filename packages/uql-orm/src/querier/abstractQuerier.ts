@@ -115,6 +115,23 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalFindMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
 
   /**
+   * Stream records as an async iterable.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   * No relation-filling or lifecycle hooks — raw rows for streaming performance.
+   */
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
+  findManyStream<E extends object>(
+    entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
+    maybeQuery?: Query<E>,
+  ): AsyncIterable<E> {
+    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    return this.internalFindManyStream(entity, q as Query<E>);
+  }
+
+  protected abstract internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+
+  /**
    * Find multiple records and return both the records and total count.
    * Supports both entity-as-argument and entity-as-field patterns.
    */

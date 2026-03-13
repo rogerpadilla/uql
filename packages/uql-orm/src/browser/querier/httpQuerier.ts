@@ -56,7 +56,7 @@ export class HttpQuerier implements ClientQuerier {
 
   insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return post<any>(basePath, payload, opts);
+    return post<IdValue<E>>(basePath, payload, opts);
   }
 
   updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {

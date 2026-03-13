@@ -41,6 +41,16 @@ export interface UniversalQuerier {
   findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
 
   /**
+   * streams the records matching the given search parameters as an async iterable.
+   * Does not fill relations or fire lifecycle hooks — designed for high-performance
+   * bulk reads (ETL, exports, migrations).
+   * @param entity the target entity
+   * @param q the criteria options
+   * @return an async iterable of records
+   */
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+
+  /**
    * obtains the records matching the given search parameters,
    * also counts the number of matches ignoring pagination.
    * @param entity the target entity

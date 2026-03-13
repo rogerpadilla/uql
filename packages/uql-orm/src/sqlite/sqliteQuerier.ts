@@ -15,6 +15,12 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
     return this.db.prepare(query).all(values || []) as T[];
   }
 
+  override async *internalStream<T>(query: string, values?: unknown[]) {
+    for (const row of this.db.prepare(query).iterate(values || [])) {
+      yield row as T;
+    }
+  }
+
   override async internalRun(query: string, values?: unknown[]) {
     const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
     return this.buildUpdateResult(changes, lastInsertRowid);

@@ -11,9 +11,17 @@ class MockQuerier extends AbstractQuerier {
   countMock = vi.fn().mockResolvedValue(0);
   deleteManyMock = vi.fn().mockResolvedValue(0);
 
+  findManyStreamMock = vi.fn();
+
   protected override internalFindMany<E>(entity: Type<E>, q: Query<E>): Promise<E[]> {
     this.findManyMock(entity, q);
     return Promise.resolve([]);
+  }
+
+  protected override internalFindManyStream<E>(entity: Type<E>, q: Query<E>): AsyncIterable<E> {
+    this.findManyStreamMock(entity, q);
+    // Return an empty async iterable
+    return { async *[Symbol.asyncIterator]() {} };
   }
 
   protected override internalCount<E>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
@@ -236,6 +244,61 @@ describe('Dual API Pattern: $entity field support', () => {
 
       expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeDelete', []);
       expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterDelete', []);
+    });
+  });
+
+  describe('findManyStream', () => {
+    it('should work with entity-as-argument (classic pattern)', async () => {
+      const collected: User[] = [];
+      for await (const row of querier.findManyStream(User, { $where: { companyId: 1 } })) {
+        collected.push(row);
+      }
+
+      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(collected).toEqual([]);
+    });
+
+    it('should work with entity-as-field ($entity pattern)', async () => {
+      const collected: User[] = [];
+      for await (const row of querier.findManyStream({ $entity: User, $where: { companyId: 1 } })) {
+        collected.push(row);
+      }
+
+      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(collected).toEqual([]);
+    });
+
+    it('should not emit lifecycle hooks', async () => {
+      const emitHookSpy = vi.spyOn(querier as any, 'emitHook');
+
+      for await (const _ of querier.findManyStream(User, { $where: { id: 1 } })) {
+        // consume
+      }
+
+      expect(emitHookSpy).not.toHaveBeenCalled();
+    });
+
+    it('should yield rows in order', async () => {
+      const rows = [
+        { id: 1, name: 'Alice', companyId: 1 } as User,
+        { id: 2, name: 'Bob', companyId: 1 } as User,
+        { id: 3, name: 'Charlie', companyId: 1 } as User,
+      ];
+
+      // Override the mock to yield actual data
+      vi.spyOn(querier as any, 'internalFindManyStream').mockReturnValue(
+        (async function* () {
+          yield* rows;
+        })(),
+      );
+
+      const collected: User[] = [];
+      for await (const row of querier.findManyStream(User, { $where: { companyId: 1 } })) {
+        collected.push(row);
+      }
+
+      expect(collected).toEqual(rows);
+      expect(collected).toHaveLength(3);
     });
   });
 });
