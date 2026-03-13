@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.4.1] - 2026-03-13
+### Documentation
+- Removed Discord badge from README temporarily.
+
 ## [0.4.0] - 2026-03-13
 ### New Features
 - **`findManyStream()` — Cursor-Based Async Iteration**: Stream query results row-by-row via `for await...of`. No relation-filling or lifecycle hooks — optimized for raw throughput on large result sets.
