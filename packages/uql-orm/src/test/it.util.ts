@@ -48,14 +48,14 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
     let propSql = querier.dialect.escapeId(field.name!) + ' ';
     if (field.isId) {
       propSql += field.onInsert ? `${insertableIdType} PRIMARY KEY` : primaryKeyType;
+    } else if (field.type === 'vector' || field.type === 'halfvec' || field.type === 'sparsevec') {
+      propSql += field.dimensions ? `${field.type}(${field.dimensions})` : field.type;
+    } else if (field.type === Number) {
+      propSql += 'BIGINT';
+    } else if (field.type === Date) {
+      propSql += 'TIMESTAMP';
     } else {
-      if (field.type === Number) {
-        propSql += 'BIGINT';
-      } else if (field.type === Date) {
-        propSql += 'TIMESTAMP';
-      } else {
-        propSql += defaultType;
-      }
+      propSql += defaultType;
     }
     return propSql;
   });

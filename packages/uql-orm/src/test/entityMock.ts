@@ -373,3 +373,10 @@ export class ItemAdjustment extends BaseEntity {
   @ManyToOne()
   inventoryAdjustment?: InventoryAdjustment;
 }
+
+@Entity()
+export class VectorItem {
+  @Id() id?: number;
+  @Field() name?: string;
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+}
