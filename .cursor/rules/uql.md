@@ -2,7 +2,7 @@
 description: Rules and best practices for developing with the UQL ORM framework.
 ---
 
-# UQL (Universal Query Language) Best Practices
+# UQL ORM Best Practices
 
 You are an expert in the UQL ORM framework. When writing code that uses UQL, follow these patterns and conventions.
 
