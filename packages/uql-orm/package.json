@@ -1,9 +1,9 @@
 {
   "name": "uql-orm",
   "homepage": "https://uql-orm.dev",
-  "description": "One Language. Frontend to Backend.",
+  "description": "Fast, type-safe TypeScript ORM — one API for every database",
   "license": "MIT",
-  "version": "0.4.1",
+  "version": "0.4.4",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -44,7 +44,7 @@
   ],
   "scripts": {
     "copyfiles": "copyfiles -f ../../README.md ../../CHANGELOG.md .",
-    "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js",
+    "compile.browser": "bunchee --clean false --no-dts ./src/browser/index.ts --sourcemap -o ./dist/browser/uql-browser.min.js 2>/dev/null",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run copyfiles",
     "start": "tsc --watch",
     "clean": "rimraf dist *.tsbuildinfo"
@@ -103,7 +103,7 @@
     "@types/express": "^5.0.6",
     "@types/pg": "^8.18.0",
     "@types/sqlstring": "^2.3.2",
-    "better-sqlite3": "^12.6.2",
+    "better-sqlite3": "^12.8.0",
     "bunchee": "^6.9.4",
     "copyfiles": "^2.4.1",
     "express": "^5.2.1",

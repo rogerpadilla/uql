@@ -26,7 +26,15 @@
       "@commitlint/config-conventional"
     ],
     "rules": {
-      "subject-full-stop": [0]
+      "header-max-length": [
+        2, "always", 300
+      ],
+      "subject-case": [
+        0
+      ],
+      "subject-full-stop": [
+        0
+      ]
     }
   },
   "devDependencies": {
@@ -45,7 +53,7 @@
     "supertest": "^7.2.2",
     "typescript": "^6.0.1-rc",
     "unplugin-swc": "^1.5.9",
-    "vite-tsconfig-paths": "^6.1.1",
+    "vite": "^8.0.0",
     "vitest": "^4.1.0"
   },
   "author": "Roger Padilla"

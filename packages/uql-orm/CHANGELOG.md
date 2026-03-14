@@ -1,24 +1,14 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.4.1](https://github.com/rogerpadilla/uql/compare/uql-orm@0.4.0...uql-orm@0.4.1) (2026-03-13)
-
-
-### Features
-
-* implement cursor-based stream with  across all queriers and deprecate  in favor of ([2d6c2ea](https://github.com/rogerpadilla/uql/commit/2d6c2ea0851d9c20ca9d092717087eaa65e5f937))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
 
 date format is [yyyy-mm-dd]
+
+## [0.4.4] - 2026-03-14
+### Dependencies
+- **Vite 7 → 8**: Upgraded to Vite 8 (powered by Rolldown), replacing the `vite-tsconfig-paths` plugin with Vite's built-in `resolve.tsconfigPaths` option.
+- **TypeScript 5.9 → 6.0**: Upgraded to TypeScript 6.0.1-rc. Removed 6 redundant compiler options now default in TS6: `strict`, `strictNullChecks`, `noImplicitAny`, `esModuleInterop`, `allowSyntheticDefaultImports`, `useDefineForClassFields`.
+- Removed `vite-tsconfig-paths` (replaced by built-in Vite 8 feature).
 
 ## [0.4.1] - 2026-03-13
 ### Documentation
@@ -541,7 +531,7 @@ date format is [yyyy-mm-dd]
 Reflect major changes in the package structure and dependencies.
 
 ## [2.0.0] - 2025-12-29
-- **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - this was the original name!).
+- **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - back to its original name!).
   - New Slogan: **"One Language. Frontend to Backend."**
   - Project homepage: [uql-orm.dev](https://uql-orm.dev).
 - **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `uql-orm`.

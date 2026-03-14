@@ -5,9 +5,7 @@
     "lib": ["ESNext"],
     "types": ["@types/bun"],
     "target": "ESNext",
-    "strict": true,
-    "strictNullChecks": true,
-    "noImplicitAny": true,
+
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
     "verbatimModuleSyntax": true,
@@ -16,9 +14,7 @@
     "allowUnreachableCode": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "useDefineForClassFields": true,
+
     "noFallthroughCasesInSwitch": true,
     "inlineSourceMap": true,
     "inlineSources": true,
