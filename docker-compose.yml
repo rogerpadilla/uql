@@ -32,7 +32,7 @@ services:
       retries: 10
 
   postgres:
-    image: postgres:18.3-alpine
+    image: pgvector/pgvector:pg18
     restart: always
     environment:
       POSTGRES_USER: test
