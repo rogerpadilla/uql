@@ -27,7 +27,9 @@
     ],
     "rules": {
       "header-max-length": [
-        2, "always", 300
+        2,
+        "always",
+        300
       ],
       "subject-case": [
         0
