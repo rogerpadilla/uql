@@ -3,7 +3,7 @@
   "homepage": "https://uql-orm.dev",
   "description": "Fast, type-safe TypeScript ORM — one API for every database",
   "license": "MIT",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
