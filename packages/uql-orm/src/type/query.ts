@@ -575,7 +575,7 @@ export interface QueryDialect {
 /**
  * Supported SQL dialect identifiers.
  */
-export type SqlDialect = 'postgres' | 'mysql' | 'mariadb' | 'sqlite';
+export type SqlDialect = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite';
 
 /**
  * Minimal dialect interface exposing escapeIdChar for SQL operations

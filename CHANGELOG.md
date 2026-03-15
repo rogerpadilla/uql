@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file. Please add 
 date format is [yyyy-mm-dd]
 
 ## [0.4.5] - 2026-03-14
+### New Features
+- **CockroachDB Support**: Added first-class support for `cockroachdb` dialect, leveraging its PostgreSQL wire-compatibility. Includes native `upsert` support and seamlessly mapped driver execution.
+
 ### Testing
 - **Vector search integration tests**: Added 7 end-to-end tests for `findMany` with `$sort: { $vector }` against a real Postgres+pgvector database — covers cosine/L2 similarity ordering, `$project` distance projection, filter+sort combo, `$limit`, and empty-table edge case.
 - Docker Postgres image switched to `pgvector/pgvector:pg18` for pgvector extension support.

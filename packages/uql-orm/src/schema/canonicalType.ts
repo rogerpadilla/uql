@@ -7,6 +7,7 @@
  * - TypeScript types (for entity generation)
  */
 
+import { DIALECT_CONFIG } from '../dialect/dialectConfig.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
 import type { Dialect } from '../type/index.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
@@ -118,23 +119,26 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   sparsevec: { category: 'sparsevec' },
 };
 
+const PG_TYPE_MAP: Record<TypeCategory, string> = {
+  integer: 'INTEGER',
+  float: 'REAL',
+  decimal: 'NUMERIC',
+  string: 'VARCHAR',
+  boolean: 'BOOLEAN',
+  date: 'DATE',
+  time: 'TIME',
+  timestamp: 'TIMESTAMP',
+  json: 'JSONB',
+  uuid: 'UUID',
+  blob: 'BYTEA',
+  vector: 'VECTOR',
+  halfvec: 'HALFVEC',
+  sparsevec: 'SPARSEVEC',
+};
+
 const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
-  postgres: {
-    integer: 'INTEGER',
-    float: 'REAL',
-    decimal: 'NUMERIC',
-    string: 'VARCHAR',
-    boolean: 'BOOLEAN',
-    date: 'DATE',
-    time: 'TIME',
-    timestamp: 'TIMESTAMP',
-    json: 'JSONB',
-    uuid: 'UUID',
-    blob: 'BYTEA',
-    vector: 'VECTOR',
-    halfvec: 'HALFVEC',
-    sparsevec: 'SPARSEVEC',
-  },
+  postgres: PG_TYPE_MAP,
+  cockroachdb: PG_TYPE_MAP,
   mysql: {
     integer: 'INT',
     float: 'FLOAT',
@@ -205,21 +209,24 @@ const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
 /**
  * Size variant modifiers for SQL types.
  */
-const SIZE_MODIFIERS: Record<Dialect, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
-  postgres: {
-    integer: {
-      tiny: 'SMALLINT',
-      small: 'SMALLINT',
-      medium: 'INTEGER',
-      big: 'BIGINT',
-    },
-    float: {
-      tiny: 'REAL',
-      small: 'REAL',
-      medium: 'DOUBLE PRECISION',
-      big: 'DOUBLE PRECISION',
-    },
+const PG_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string>>> = {
+  integer: {
+    tiny: 'SMALLINT',
+    small: 'SMALLINT',
+    medium: 'INTEGER',
+    big: 'BIGINT',
   },
+  float: {
+    tiny: 'REAL',
+    small: 'REAL',
+    medium: 'DOUBLE PRECISION',
+    big: 'DOUBLE PRECISION',
+  },
+};
+
+const SIZE_MODIFIERS: Record<Dialect, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
+  postgres: PG_SIZE_MODIFIERS,
+  cockroachdb: PG_SIZE_MODIFIERS,
   mysql: {
     integer: {
       tiny: 'TINYINT',
@@ -255,7 +262,7 @@ const SIZE_MODIFIERS: Record<Dialect, Partial<Record<TypeCategory, Record<SizeVa
       big: 'BIGINT',
     },
   },
-  mongodb: {}, // MongoDB uses BSON types, no size modifiers
+  mongodb: {},
 };
 
 /**
@@ -362,11 +369,11 @@ export function canonicalToSql(type: CanonicalType, dialect: Dialect): string {
     sqlType = formatStringSqlType(type, dialect, sqlType);
   } else if (type.category === 'decimal') {
     sqlType = formatDecimalSqlType(type, dialect, sqlType);
-  } else if (isVectorCategory(type.category) && type.length && (dialect === 'postgres' || dialect === 'mariadb')) {
+  } else if (isVectorCategory(type.category) && type.length && DIALECT_CONFIG[dialect].features.vectorSupportsLength) {
     sqlType = `${sqlType}(${type.length})`;
   }
 
-  if (type.category === 'timestamp' && type.withTimezone && dialect === 'postgres') {
+  if (type.category === 'timestamp' && type.withTimezone && DIALECT_CONFIG[dialect].features.supportsTimestamptz) {
     sqlType = 'TIMESTAMPTZ';
   }
 
@@ -390,7 +397,7 @@ function getBaseSqlType(type: CanonicalType, dialect: Dialect): string {
 
 function formatStringSqlType(type: CanonicalType, dialect: Dialect, baseType: string): string {
   if (dialect === 'sqlite') return 'TEXT';
-  if (dialect === 'postgres') return type.length ? `VARCHAR(${type.length})` : 'TEXT';
+  if (DIALECT_CONFIG[dialect].features.defaultStringAsText) return type.length ? `VARCHAR(${type.length})` : 'TEXT';
   if (dialect === 'mysql' || dialect === 'mariadb') {
     if (type.size === 'tiny') return 'TINYTEXT';
     if (type.size === 'small') return 'TEXT';

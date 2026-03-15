@@ -8,6 +8,15 @@ describe('dialectConfig', () => {
     expect(DIALECT_CONFIG.mariadb).toBeDefined();
     expect(DIALECT_CONFIG.sqlite).toBeDefined();
     expect(DIALECT_CONFIG.mongodb).toBeDefined();
+    expect(DIALECT_CONFIG.cockroachdb).toBeDefined();
+  });
+
+  it('should return the correct configuration for cockroachdb', () => {
+    const config = getDialectConfig('cockroachdb');
+    expect(config.quoteChar).toBe('"');
+    expect(config.serialPrimaryKey).toContain('IDENTITY');
+    expect(config.alterColumnSyntax).toBe('ALTER COLUMN');
+    expect(config.features.vectorSupportsLength).toBe(true);
   });
 
   it('should return the correct configuration for postgres', () => {

@@ -2,6 +2,7 @@ import sqlstring from 'sqlstring-sqlite';
 import { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import {
+  type Dialect,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -22,8 +23,8 @@ import {
 import { hasKeys, isJsonType } from '../util/index.js';
 
 export class PostgresDialect extends AbstractSqlDialect {
-  constructor(namingStrategy?: NamingStrategy) {
-    super('postgres', namingStrategy);
+  constructor(namingStrategy?: NamingStrategy, dialect: Dialect = 'postgres') {
+    super(dialect, namingStrategy);
   }
 
   override addValue(values: unknown[], value: unknown): string {

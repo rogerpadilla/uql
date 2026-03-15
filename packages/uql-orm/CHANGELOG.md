@@ -1,21 +1,3 @@
-# Change Log
-
-All notable changes to this project will be documented in this file.
-See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
-
-## [0.4.5](https://github.com/rogerpadilla/uql/compare/uql-orm@0.4.0...uql-orm@0.4.5) (2026-03-14)
-
-
-### Features
-
-* add vector search integration tests for `findMany` with `$sort: { $vector }` and update test infrastructure. ([c920cde](https://github.com/rogerpadilla/uql/commit/c920cde46dbb4985d07a1926dfc3ac845862244c))
-* implement cursor-based stream with  across all queriers and deprecate  in favor of ([2d6c2ea](https://github.com/rogerpadilla/uql/commit/2d6c2ea0851d9c20ca9d092717087eaa65e5f937))
-* upgrade to Vite 8 and TypeScript 6, removing redundant compiler options and `vite-tsconfig-paths` plugin. ([f81563c](https://github.com/rogerpadilla/uql/commit/f81563cfe5246bfa59966f08493fd9786a817e02))
-
-
-
-
-
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
