@@ -80,6 +80,7 @@ export class Migrator {
 
   protected createIntrospector(): SchemaIntrospector | undefined {
     switch (this.dialect) {
+      case 'cockroachdb':
       case 'postgres':
         return new PostgresSchemaIntrospector(this.pool);
       case 'mysql':

@@ -46,3 +46,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+
+  cockroachdb:
+    image: cockroachdb/cockroach:latest
+    container_name: cockroachdb_uql
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+      - "8080:8080"

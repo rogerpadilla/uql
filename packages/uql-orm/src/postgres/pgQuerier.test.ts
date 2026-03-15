@@ -65,7 +65,7 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
     await this.querier.insertMany(VectorItem, [
       { name: 'north', vec: [0, 1, 0] },
       { name: 'east', vec: [1, 0, 0] },
-      { name: 'northeast', vec: [0.707, 0.707, 0] },
+      { name: 'northeast', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
     ]);
 
     // Query vector is [0,1,0] (north) — cosine distance: north=0, northeast≈0.29, east=1
