@@ -4,7 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.4.5] - 2026-03-14
+## [0.5.1] - 2026-03-15
+### Chore
+- **Documentation**: Unified documentation strategy using NPM lifecycle scripts across subpackages.
+- **Maintenance**: Removed redundant `copyfiles` dependency and cleaned up build scripts.
+- **README**: Refined technical copy and visual feedback sections for a better developer documentation experience.
+
+## [0.5.0] - 2026-03-15
+### Features
+- **CockroachDB Support**: Full integration with a new dialect, querier, and Docker Compose configuration. Supports native upsert and mapped driver execution.
 ### New Features
 - **CockroachDB Support**: Added first-class support for `cockroachdb` dialect, leveraging its PostgreSQL wire-compatibility. Includes native `upsert` support and seamlessly mapped driver execution.
 
