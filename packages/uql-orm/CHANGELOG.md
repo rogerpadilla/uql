@@ -1,3 +1,20 @@
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
+# [0.5.0](https://github.com/rogerpadilla/uql/compare/uql-orm@0.4.5...uql-orm@0.5.0) (2026-03-15)
+
+
+### Features
+
+* add CockroachDB support with a new dialect, querier, and Docker Compose configuration, extending PostgreSQL's base implementation. ([34b94e5](https://github.com/rogerpadilla/uql/commit/34b94e5ed25fa5e68a0ab868085bb8a157990574))
+* Add CockroachDB support with native upsert and mapped driver execution. ([2b2538e](https://github.com/rogerpadilla/uql/commit/2b2538e2d6317a4729342c794cce73e6229ab038))
+
+
+
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file. Please add new changes to the top.
