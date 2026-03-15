@@ -4,11 +4,10 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is the [best TypeScript ORM](https://www.uql-orm.dev/blog/in-search-of-the-fastest-typescript-orm/). It is engineered to be **fast**, **safe**, and **universally compatible**.
-
+**[UQL](https://uql-orm.dev)** is a clean, ultra-fast TypeScript ORM designed for developers who value portability and performance. It eliminates the friction between SQL and MongoDB, providing a unified, type-safe experience without proprietary DSLs or heavy codegen steps.
 
 ```ts
-const users = await querier.findMany(User, {
+const results = await querier.findMany(User, {
   $select: { name: true, profile: { $select: { picture: true } } },
   $where: { name: { $istartsWith: 'a' }, posts: { tags: { name: 'typescript' } } },
   $sort: { createdAt: 'desc' },
@@ -20,22 +19,22 @@ const users = await querier.findMany(User, {
 
 ## Features
 
-| Feature                                                                  | Description                                                                                                                     |
-| :----------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
-| **[Intelligent Querying](https://uql-orm.dev/querying/relations)**       | Deep auto-completion for operators and [relations](https://uql-orm.dev/querying/relations) at any depth.                         |
-| **Serializable JSON**                                              | 100% valid JSON queries for easy transport over HTTP/Websockets.                                                                |
-| **Unified Dialects**                                               | Write once, run anywhere: PostgreSQL, MySQL, SQLite, MongoDB, and more.                                                         |
-| **[Naming Strategies](https://uql-orm.dev/naming-strategy)**           | Pluggable system to translate between TypeScript `camelCase` and database `snake_case`.                                     |
-| **Smart SQL Engine**                                               | Optimized sub-queries, placeholders ($1, $2), and minimal SQL generation via `QueryContext`.                                  |
-| **Thread-Safe by Design**                                          | Centralized task queue and `@Serialized()` decorator prevent race conditions.                                                 |
-| **[Declarative Transactions](https://uql-orm.dev/querying/transactions)**  | Standard `@Transactional()` and `@InjectQuerier()` decorators for NestJS/DI.                                                |
-| **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)**| `@BeforeInsert`, `@AfterLoad` and 5 more decorators for validation, timestamps, and computed fields.                        |
-| **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, and `DISTINCT` across all dialects. |
-| **[Semantic Search](https://uql-orm.dev/querying/semantic-search)** | Vector similarity via `$sort` with `$vector`/`$distance`. Supports `vector`, `halfvec`, `sparsevec` types, HNSW/IVFFlat indexes, and 5 distance metrics across Postgres, MariaDB, SQLite, and MongoDB Atlas. |
-| **[Cursor Streaming](https://uql-orm.dev/querying/streaming)** | `findManyStream()` with native cursor-based iteration for SQLite, MongoDB, MariaDB, PostgreSQL, and MySQL. |
-| **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | **Pure ESM**, high-res timing, [Soft-delete](https://uql-orm.dev/entities/soft-delete), and **JSONB/JSON** support. |
-| **[Database Migrations](https://www.uql-orm.dev/migrations)**          | Built-in [Entity-First synchronization](https://uql-orm.dev/migrations#3-entity-first-synchronization-development) and a robust CLI for version-controlled schema evolution. |
-| **[Logging & Monitoring](https://www.uql-orm.dev/logging)**               | Professional-grade monitoring with slow-query detection and colored output.                                                     |
+| Feature | Why it matters |
+| :--- | :--- |
+| **[Intelligent Querying](https://uql-orm.dev/querying/relations)** | Deep auto-completion for operators and relations at any depth—no more guessing property names. |
+| **Serializable JSON** | 100% valid JSON queries. Send your query logic over HTTP or WebSockets as easily as a string. |
+| **Unified Dialects** | Write once, run anywhere. Seamlessly switch between PostgreSQL, MySQL, SQLite, and MongoDB. |
+| **[Naming Strategies](https://uql-orm.dev/naming-strategy)** | No more `camelCase` vs `snake_case` headaches. Map your code to your database automatically. |
+| **Smart SQL Engine** | Zero-allocation SQL generation. Built for high-throughput apps where every millisecond counts. |
+| **Thread-Safe by Design** | Protect your data integrity with centralized task queues and the `@Serialized()` decorator. |
+| **[Declarative Transactions](https://uql-orm.dev/querying/transactions)** | Clean `@Transactional()` decorators that work beautifully with modern DI frameworks like NestJS. |
+| **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)** | Automate validation, timestamps, and computed logic with intuitive class-based decorators. |
+| **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | Real-time analytics with `GROUP BY`, `HAVING`, and native math operators across all dialects. |
+| **[Semantic Search](https://uql-orm.dev/querying/semantic-search)** | Native vector similarity search. Rank results by meaning using standard ORM operators. |
+| **[Cursor Streaming](https://uql-orm.dev/querying/streaming)** | Process millions of rows with a stable memory footprint using native driver-level cursors. |
+| **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | Pure ESM, high-res timing, built-in soft-delete, and first-class JSONB/JSON support. |
+| **[Database Migrations](https://www.uql-orm.dev/migrations)** | Entity-First synchronization. DDL is auto-generated by diffing your code against the live DB. |
+| **[Logging & Monitoring](https://www.uql-orm.dev/logging)** | High-visibility debugging with slow-query detection and high-contrast terminal output. |
 
 &nbsp;
 
@@ -50,15 +49,16 @@ npm install uql-orm       # or bun add / pnpm add
 
 ### Supported Drivers (pick according to your database)
 
-| Database                                               | Command                        |
-| :----------------------------------------------------- | :----------------------------- |
-| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg`             |
-| **MySQL** (incl. TiDB, Aurora)                   | `npm install mysql2`         |
-| **MariaDB**                                      | `npm install mariadb`        |
-| **SQLite**                                       | `npm install better-sqlite3` |
-| **LibSQL** (incl. Turso)                         | `npm install @libsql/client` |
-| **MongoDB**                                      | `npm install mongodb`        |
-| **Cloudflare D1**                                | _Native (no driver needed)_  |
+| Database | Command |
+| :--- | :--- |
+| **PostgreSQL** (incl. Neon, Cockroach, Yugabyte) | `npm install pg` |
+| **MySQL** (incl. TiDB, Aurora) | `npm install mysql2` |
+| **MariaDB** | `npm install mariadb` |
+| **SQLite** | `npm install better-sqlite3` |
+| **LibSQL** (incl. Turso) | `npm install @libsql/client` |
+| **MongoDB** | `npm install mongodb` |
+| **CockroachDB** | `npm install pg` |
+| **Cloudflare D1** | _Native (no driver needed)_ |
 
 ### TypeScript Configuration
 
@@ -75,30 +75,28 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 
 &nbsp;**Note:** UQL is Modern Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
 
-## 2. Define the Entities
+## 2. Define your Entities
 
 Annotate your classes with decorators. UQL's engine uses this metadata for both type-safe querying and precise DDL generation.
 
 ### Core Decorators
 
-| Decorator       | Purpose                                                                        |
-| :-------------- | :----------------------------------------------------------------------------- |
-| `@Entity()`   | Marks a class as a database table/collection.                                  |
-| `@Id()`       | Defines the Primary Key with support for `onInsert` generators (UUIDs, etc). |
-| `@Field()`    | Standard column. Use `{ references: ... }` for Foreign Keys.                 |
-| `@Index()`    | Defines a composite or custom index on one or more columns.                    |
-| `@OneToOne`   | Defines a one-to-one relationship.                                             |
-| `@OneToMany`  | Defines a one-to-many relationship.                                            |
-| `@ManyToOne`  | Defines a many-to-one relationship.                                            |
-| `@ManyToMany` | Defines a many-to-many relationship.                                           |
-| `@BeforeInsert` / `@AfterInsert` | Lifecycle hooks fired around `insert` operations.           |
-| `@BeforeUpdate` / `@AfterUpdate` | Lifecycle hooks fired around `update` operations.           |
-| `@BeforeDelete` / `@AfterDelete` | Lifecycle hooks fired around `delete` operations.           |
-| `@AfterLoad`  | Lifecycle hook fired after loading entities from the database.                  |
+| Decorator | Purpose |
+| :--- | :--- |
+| `@Entity()` | Marks a class as a database table/collection. |
+| `@Id()` | Defines the Primary Key with support for `onInsert` generators. |
+| `@Field()` | Standard column. Use `{ references: ... }` for Foreign Keys. |
+| `@Index()` | Defines a composite or custom index on one or more columns. |
+| `@OneToOne` | Defines a one-to-one relationship. |
+| `@OneToMany` | Defines a one-to-many relationship. |
+| `@ManyToOne` | Defines a many-to-one relationship. |
+| `@ManyToMany` | Defines a many-to-many relationship. |
+| `@BeforeInsert` | Lifecycle hooks fired around database operations. |
+| `@AfterLoad` | Lifecycle hook fired after loading entities. |
 
 ### Type Abstraction: Logical vs. Physical
 
-UQL separates the **intent** of your data from its **storage**. Both properties are **optional**; if omitted, UQL performs a *best-effort inference* using the TypeScript types from your class (provided `emitDecoratorMetadata` is enabled).
+UQL separates the **intent** of your data from its **storage**. Both properties are **optional**; if omitted, UQL performs a *best-effort inference* using the TypeScript types from your class.
 
 | Property | Purpose | Values |
 | :--- | :--- | :--- |
@@ -226,7 +224,7 @@ export class PostTag {
 }
 ```
 
-> **Pro Tip**: Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety.
+> **Senior Insight**: Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety throughout your app.
 
 &nbsp;
 
@@ -255,7 +253,7 @@ export default {
 } satisfies Config;
 ```
 
-> **Pro Tip**: Reusing the same connection pool for both your application and migrations is recommended. It reduces connection overhead and ensures consistent query settings (like naming strategies).
+> **Senior Insight**: Don't overcomplicate your setup. Reusing the same connection pool for both your application and migrations reduces overhead and ensures consistent behavior (like naming strategies) across your entire stack.
 
 &nbsp;
 
@@ -268,20 +266,19 @@ UQL provides a straightforward API to interact with your data. **Always ensure q
 ```ts
 const querier = await pool.getQuerier();
 try {
-  const users = await querier.findMany(User, {
+  const results = await querier.findMany(User, {
     $select: {
       name: true,
       profile: { $select: { bio: true }, $required: true } // INNER JOIN
     },
     $where: {
       status: 'active',
-      name: { $istartsWith: 'a' } // Case-insensitive search
+      name: { $istartsWith: 'a' }
     },
     $limit: 10,
-    $skip: 0
   });
 } finally {
-  await querier.release(); // Essential for pool health
+  await querier.release(); // Always release back to the pool
 }
 ```
 
@@ -347,7 +344,7 @@ const posts = await querier.findMany(Post, {
 
 **PostgreSQL:** `WHERE EXISTS (SELECT 1 FROM "PostTag" WHERE "PostTag"."postId" = "Post"."id" AND "PostTag"."tagId" IN (SELECT "Tag"."id" FROM "Tag" WHERE "Tag"."name" = $1))`
 
-> **Pro Tip**: Wrap JSONB field types with `Json<T>` (e.g., `settings?: Json<{ isArchived?: boolean }>`) to get IDE autocompletion for dot-notation paths.
+> **Senior Insight**: Wrap your JSON fields with `Json<T>` to get deep autocompletion for dot-notation paths. It turns a "guess and check" process into a type-safe workflow.
 
 &nbsp;
 
@@ -459,10 +456,10 @@ try {
 
 ## 5. Migrations & Synchronization
 
-UQL takes an **Entity-First** approach: you modify your TypeScript entity classes, and UQL auto-generates the migration files for you. No need to write DDL manually — UQL diffs your entities against the live database and generates the exact SQL needed.
+UQL takes an **Entity-First** approach. You modify your TypeScript classes, and UQL handles the heavy lifting—auto-generating migration files by diffing your code against the live database.
 
 ```bash
-# 1. Update your entity (add a field, change a type, add a relation...)
+# 1. Update your entity (add a field, change a type, etc.)
 # 2. Auto-generate the migration
 npx uql-migrate generate:entities add_user_nickname
 
@@ -470,7 +467,7 @@ npx uql-migrate generate:entities add_user_nickname
 npx uql-migrate up
 ```
 
-> **Your entities are the single source of truth.** Want manual migrations for data backfills or custom SQL? You can do that too — full automation + full control when you need it.
+> **Senior Insight**: Your entities are the single source of truth. This workflow eliminates the "drift" between what's in your code and what's in production.
 
 ### 1. Unified Configuration
 
@@ -587,7 +584,7 @@ UQL features a professional-grade, structured logging system designed for high v
 
 ### Visual Feedback
 
-The `DefaultLogger` provides high-contrast, colored output out of the box:
+The `DefaultLogger` provides high-contrast, colored output that makes debugging feel like a premium experience:
 
 ```text
 query: SELECT * FROM "user" WHERE "id" = $1 -- [123] [2ms]
@@ -595,7 +592,7 @@ slow query: UPDATE "post" SET "title" = $1 -- ["New Title"] [1250ms]
 error: Failed to connect to database: Connection timeout
 ```
 
-> **Pro Tip**: Even if you disable general query logging in production (`logger: ['error', 'warn', 'slowQuery']`), UQL stays silent *until* a query exceeds your threshold.
+> **Senior Insight**: In production, keep your logs lean. By setting `logger: ['error', 'warn', 'slowQuery']`, UQL stays silent until a performance bottleneck actually occurs.
 
 &nbsp;
 
