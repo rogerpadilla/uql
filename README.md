@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is a clean, ultra-fast TypeScript ORM designed for developers who value portability and performance. It eliminates the friction between SQL and MongoDB, providing a unified, type-safe experience without proprietary DSLs or heavy codegen steps.
+**[UQL](https://uql-orm.dev)** is a clean, ultra-fast TypeScript ORM designed for developers who value portability and performance. [Measured at **3.9M+ ops/s**](https://github.com/rogerpadilla/ts-orm-benchmark), it delivers a 4x-40x overhead advantage over traditional ORMs. It eliminates the friction between SQL and MongoDB, providing a unified, type-safe experience without proprietary DSLs or heavy codegen steps.
 
 ```ts
 const results = await querier.findMany(User, {
@@ -25,7 +25,7 @@ const results = await querier.findMany(User, {
 | **Serializable JSON** | 100% valid JSON queries. Send your query logic over HTTP, gRPC or WebSockets as easily as a string—the only ORM with a native cross-network protocol. |
 | **Unified Dialects** | Write once, run anywhere. Seamlessly switch between PostgreSQL, MySQL, SQLite, and MongoDB. |
 | **[Naming Strategies](https://uql-orm.dev/naming-strategy)** | No more `camelCase` vs `snake_case` headaches. Map your code to your database automatically. |
-| **Smart SQL Engine** | Zero-allocation SQL generation. Built for high-throughput apps where every millisecond counts. |
+| **Smart SQL Engine** | Zero-allocation SQL generation. [1st in every benchmark category](https://github.com/rogerpadilla/ts-orm-benchmark). |
 | **Thread-Safe by Design** | Protect your data integrity with centralized task queues and the `@Serialized()` decorator. |
 | **[Declarative Transactions](https://uql-orm.dev/querying/transactions)** | Clean `@Transactional()` decorators that work beautifully with modern DI frameworks like NestJS. |
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)** | Automate validation, timestamps, and computed logic with intuitive class-based decorators. |
