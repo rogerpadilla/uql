@@ -413,12 +413,11 @@ describe('SchemaAST', () => {
   });
 
   describe('Clone', () => {
-    it('should create a deep clone', () => {
+    it('should clone the AST deeply', () => {
       const users = createTable('users');
       const posts = createTable('posts');
       ast.addTable(users);
       ast.addTable(posts);
-
       ast.addRelationship(createRelationship('fk_posts_user', posts, users));
       ast.addIndex({
         name: 'idx_users_name',
@@ -432,7 +431,7 @@ describe('SchemaAST', () => {
       expect(clone.tables.size).toBe(2);
       expect(clone.relationships.length).toBe(1);
       expect(clone.indexes.length).toBe(1);
-      expect(clone.getTable('users')).not.toBe(users);
+      expect(clone.getTable('users') === users).toBe(false);
       expect(clone.getTable('users')?.name).toBe('users');
       expect(clone.getIndex('idx_users_name')).toBeDefined();
       expect(clone.getIndex('idx_users_name')?.table.name).toBe('users');
