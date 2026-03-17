@@ -451,44 +451,39 @@ for (const db of databases) {
         await cleanupTable(tableName);
       });
 
-      test.skipIf(!!db.unsafeAlterError)(
-        'should alter column type when safe: false',
-        async () => {
-          @Entity()
-          class AutoSyncUnsafeAlterTest {
-            @Id() id?: number;
-            @Field() cost?: number; // Defaults to bigint
-          }
+      test.skipIf(!!db.unsafeAlterError)('should alter column type when safe: false', async () => {
+        @Entity()
+        class AutoSyncUnsafeAlterTest {
+          @Id() id?: number;
+          @Field() cost?: number; // Defaults to bigint
+        }
 
-          const tableName = 'AutoSyncUnsafeAlterTest';
-          await cleanupTable(tableName);
+        const tableName = 'AutoSyncUnsafeAlterTest';
+        await cleanupTable(tableName);
 
-          // Create table with "cost" as DOUBLE
-          const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
-          await querier.run(
-            db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`),
-          );
+        // Create table with "cost" as DOUBLE
+        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
 
-          const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterTest] });
+        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterTest] });
 
-          // Run autoSync with safe: false
-          await migrator.autoSync({ logging: true, safe: false });
+        // Run autoSync with safe: false
+        await migrator.autoSync({ logging: true, safe: false });
 
-          const ast = await introspector.introspect();
-          const table = ast.getTable(tableName);
-          expect(table).toBeDefined();
+        const ast = await introspector.introspect();
+        const table = ast.getTable(tableName);
+        expect(table).toBeDefined();
 
-          const costCol = table!.columns.get('cost');
-          expect(costCol).toBeDefined();
-          // Should be converted to bigint (default for number)
-          const type = costCol!.type.category.toLowerCase();
+        const costCol = table!.columns.get('cost');
+        expect(costCol).toBeDefined();
+        // Should be converted to bigint (default for number)
+        const type = costCol!.type.category.toLowerCase();
 
-          expect(type).toContain('int');
-          expect(type).not.toContain('double');
+        expect(type).toContain('int');
+        expect(type).not.toContain('double');
 
-          await cleanupTable(tableName);
-        },
-      );
+        await cleanupTable(tableName);
+      });
 
       test.runIf(!!db.unsafeAlterError)(
         'should throw error when altering column type (system limitation)',
