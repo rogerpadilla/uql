@@ -6,17 +6,15 @@ import { User } from '../test/index.js';
 import type { Querier } from '../type/index.js';
 import { errorHandler, querierMiddleware } from './querierMiddleware.js';
 
-vi.mock('../options.js', async () => {
-  const actual = await vi.importActual<any>('../options.js');
-  return {
-    ...actual,
-    getQuerier: vi.fn(),
-  };
-});
+vi.mock('../options.js');
+
+type MockedQuerier = {
+  [K in keyof Querier]: Mock;
+};
 
 describe('querierMiddleware', () => {
   let app: express.Express;
-  let mockQuerier: Record<keyof Querier, Mock>;
+  let mockQuerier: MockedQuerier;
 
   beforeEach(() => {
     mockQuerier = {
@@ -30,7 +28,7 @@ describe('querierMiddleware', () => {
       commitTransaction: vi.fn(),
       rollbackTransaction: vi.fn(),
       release: vi.fn(),
-    } as unknown as Record<keyof Querier, Mock>;
+    } as unknown as MockedQuerier;
 
     (options.getQuerier as Mock).mockResolvedValue(mockQuerier);
 

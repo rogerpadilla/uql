@@ -10,20 +10,16 @@ class TestEntity {
   @Id() id?: number;
 }
 
-const { mockMigrator } = vi.hoisted(() => {
-  return {
-    mockMigrator: {
-      setSchemaGenerator: vi.fn(),
-      up: vi.fn().mockResolvedValue([]),
-      down: vi.fn().mockResolvedValue([]),
-      status: vi.fn().mockResolvedValue({ executed: [], pending: [] }),
-      generate: vi.fn().mockResolvedValue('file.ts'),
-      generateFromEntities: vi.fn().mockResolvedValue('file.ts'),
-      sync: vi.fn().mockResolvedValue(undefined),
-      pending: vi.fn().mockResolvedValue([]),
-    },
-  };
-});
+const mockMigrator = {
+  setSchemaGenerator: vi.fn(),
+  up: vi.fn().mockResolvedValue([]),
+  down: vi.fn().mockResolvedValue([]),
+  status: vi.fn().mockResolvedValue({ executed: [], pending: [] }),
+  generate: vi.fn().mockResolvedValue('file.ts'),
+  generateFromEntities: vi.fn().mockResolvedValue('file.ts'),
+  sync: vi.fn().mockResolvedValue(undefined),
+  pending: vi.fn().mockResolvedValue([]),
+};
 
 vi.mock('./migrator.js', () => {
   return {

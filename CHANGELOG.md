@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.5.2] - 2026-03-17
+### Testing
+- **Suite reliability**: Ensured the full test suite runs without runtime errors across all dialects with coverage thresholds still met (>97% statements, >90% branches).
+
 ## [0.5.1] - 2026-03-15
 ### Chore
 - **Documentation**: Unified documentation strategy using NPM lifecycle scripts across subpackages.
