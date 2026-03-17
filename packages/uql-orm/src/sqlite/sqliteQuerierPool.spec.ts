@@ -9,12 +9,12 @@ vi.mock('./sqliteQuerier.js', () => ({
   }),
 }));
 
-const mocks = vi.hoisted(() => ({
+const mocks = {
   bunDatabaseRun: vi.fn(),
   bunDatabaseClose: vi.fn(),
   betterDatabasePragma: vi.fn(),
   betterDatabaseClose: vi.fn(),
-}));
+};
 
 vi.mock('bun:sqlite', () => {
   const Database = vi.fn().mockImplementation(function (this: any) {

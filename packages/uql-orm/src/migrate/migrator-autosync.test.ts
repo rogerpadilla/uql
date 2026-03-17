@@ -1,5 +1,5 @@
 import { types } from 'pg';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, test, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariadbQuerierPool } from '../maria/mariadbQuerierPool.js';
 import { MySql2QuerierPool } from '../mysql/mysql2QuerierPool.js';
@@ -451,60 +451,70 @@ for (const db of databases) {
         await cleanupTable(tableName);
       });
 
-      it.skipIf(!!db.unsafeAlterError)('should alter column type when safe: false', async () => {
-        @Entity()
-        class AutoSyncUnsafeAlterTest {
-          @Id() id?: number;
-          @Field() cost?: number; // Defaults to bigint
-        }
+      test.skipIf(!!db.unsafeAlterError)(
+        'should alter column type when safe: false',
+        async () => {
+          @Entity()
+          class AutoSyncUnsafeAlterTest {
+            @Id() id?: number;
+            @Field() cost?: number; // Defaults to bigint
+          }
 
-        const tableName = 'AutoSyncUnsafeAlterTest';
-        await cleanupTable(tableName);
+          const tableName = 'AutoSyncUnsafeAlterTest';
+          await cleanupTable(tableName);
 
-        // Create table with "cost" as DOUBLE
-        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
-        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
+          // Create table with "cost" as DOUBLE
+          const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+          await querier.run(
+            db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`),
+          );
 
-        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterTest] });
+          const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterTest] });
 
-        // Run autoSync with safe: false
-        await migrator.autoSync({ logging: true, safe: false });
+          // Run autoSync with safe: false
+          await migrator.autoSync({ logging: true, safe: false });
 
-        const ast = await introspector.introspect();
-        const table = ast.getTable(tableName);
-        expect(table).toBeDefined();
+          const ast = await introspector.introspect();
+          const table = ast.getTable(tableName);
+          expect(table).toBeDefined();
 
-        const costCol = table!.columns.get('cost');
-        expect(costCol).toBeDefined();
-        // Should be converted to bigint (default for number)
-        const type = costCol!.type.category.toLowerCase();
+          const costCol = table!.columns.get('cost');
+          expect(costCol).toBeDefined();
+          // Should be converted to bigint (default for number)
+          const type = costCol!.type.category.toLowerCase();
 
-        expect(type).toContain('int');
-        expect(type).not.toContain('double');
+          expect(type).toContain('int');
+          expect(type).not.toContain('double');
 
-        await cleanupTable(tableName);
-      });
+          await cleanupTable(tableName);
+        },
+      );
 
-      it.runIf(!!db.unsafeAlterError)('should throw error when altering column type (system limitation)', async () => {
-        @Entity()
-        class AutoSyncUnsafeAlterErrorTest {
-          @Id() id?: number;
-          @Field() cost?: number;
-        }
+      test.runIf(!!db.unsafeAlterError)(
+        'should throw error when altering column type (system limitation)',
+        async () => {
+          @Entity()
+          class AutoSyncUnsafeAlterErrorTest {
+            @Id() id?: number;
+            @Field() cost?: number;
+          }
 
-        const tableName = 'AutoSyncUnsafeAlterErrorTest';
-        await cleanupTable(tableName);
+          const tableName = 'AutoSyncUnsafeAlterErrorTest';
+          await cleanupTable(tableName);
 
-        const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
-        await querier.run(db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`));
+          const doubleType = db.name === 'PostgreSQL' ? 'DOUBLE PRECISION' : 'DOUBLE';
+          await querier.run(
+            db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('cost')} ${doubleType}`),
+          );
 
-        const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterErrorTest] });
+          const migrator = new Migrator(db.pool, { entities: [AutoSyncUnsafeAlterErrorTest] });
 
-        // Run autoSync with safe: false - Expect Error
-        await expect(migrator.autoSync({ logging: true, safe: false })).rejects.toThrow(db.unsafeAlterError);
+          // Run autoSync with safe: false - Expect Error
+          await expect(migrator.autoSync({ logging: true, safe: false })).rejects.toThrow(db.unsafeAlterError);
 
-        await cleanupTable(tableName);
-      });
+          await cleanupTable(tableName);
+        },
+      );
     });
   });
 }
