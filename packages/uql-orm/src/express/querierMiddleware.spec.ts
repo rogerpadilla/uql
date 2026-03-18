@@ -150,6 +150,18 @@ describe('querierMiddleware', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
+  it('POST /api/user should swallow rollback errors', async () => {
+    mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
+    mockQuerier.rollbackTransaction.mockRejectedValue(new Error('Rollback error'));
+
+    const res = await request(app).post('/api/user').send({ name: 'John' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('Insert error');
+    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
+    expect(mockQuerier.release).toHaveBeenCalled();
+  });
+
   it('PATCH /api/user/:id should rollback on error', async () => {
     mockQuerier.updateMany.mockRejectedValue(new Error('Update error'));
     const res = await request(app).patch('/api/user/1').send({ name: 'John' });
