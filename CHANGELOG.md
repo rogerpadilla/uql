@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.5.3] - 2026-03-18
+### Features
+- **JSON update operators expanded**: Added `$push` for atomic JSON array append in update payloads across SQL dialects.
+- **Unified JSON update API type**: Introduced `JsonUpdateOp` with type-safe `$merge`, `$unset`, and `$push` support for `Json<T>` fields.
+
+### Bug Fixes
+- **MariaDB JSON dot-notation correctness**: Fixed JSON path extraction for MariaDB by using `JSON_VALUE(...)` instead of MySQL-style `->` / `->>` operators.
+- **PostgreSQL operator chaining semantics**: Fixed `$merge + $push` evaluation when targeting the same key so `$push` reads from the current intermediate expression (not stale column state).
+
+### Testing
+- Added multi-dialect regression tests for JSON update chaining (`$merge`, `$push`, `$unset`), including same-key `$merge + $push` behavior.
+- Added MariaDB-specific regression tests for dot-notation filtering/sorting SQL generation (`JSON_VALUE` paths).
+
 ## [0.5.2] - 2026-03-17
 ### Testing
 - **Suite reliability**: Ensured the full test suite runs without runtime errors across all dialects with coverage thresholds still met (>97% statements, >90% branches).

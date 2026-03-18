@@ -1,10 +1,11 @@
 import sqlstring from 'sqlstring-sqlite';
 import { AbstractSqlDialect } from '../dialect/index.js';
+import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
   FieldKey,
-  JsonMergeOp,
+  JsonUpdateOp,
   NamingStrategy,
   QueryComparisonOptions,
   QueryConflictPaths,
@@ -112,20 +113,15 @@ export class SqliteDialect extends AbstractSqlDialect {
     this.getComparisonKey(ctx, _entity, key, opts);
     ctx.append(') WHERE ');
 
-    const conditions: string[] = [];
-    for (const [field, value] of Object.entries(match)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        // Value is an operator object
-        const ops = value as Record<string, unknown>;
-        for (const [op, opVal] of Object.entries(ops)) {
-          conditions.push(this.buildJsonFieldOperator(ctx, field, op, opVal));
-        }
-      } else {
-        // Simple equality
+    const conditions = buildElemMatchConditions(
+      match,
+      (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
+      (field, value) => {
+        // Keep SQLite's placeholder behavior consistent with prior implementation.
         ctx.pushValue(value);
-        conditions.push(`json_extract(value, '$.${field}') = ?`);
-      }
-    }
+        return `json_extract(value, '$.${field}') = ?`;
+      },
+    );
 
     ctx.append(conditions.join(' AND '));
     ctx.append(')');
@@ -144,8 +140,8 @@ export class SqliteDialect extends AbstractSqlDialect {
     );
   }
 
-  protected override getJsonFieldConfig(escapedColumn: string, jsonPath: string) {
-    return { ...this.getBaseJsonConfig(), fieldAccessor: () => `json_extract(${escapedColumn}, '$.${jsonPath}')` };
+  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
+    return `json_extract(${escapedColumn}, '$.${jsonPath}')`;
   }
 
   protected override getBaseJsonConfig() {
@@ -160,11 +156,25 @@ export class SqliteDialect extends AbstractSqlDialect {
     this.onConflictUpsert(ctx, entity, conflictPaths, payload, this.insert.bind(this));
   }
 
-  protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+  protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
-      ctx.pushValue(JSON.stringify(value.$merge));
-      expr = `json_patch(COALESCE(${escapedCol}, '{}'), ?)`;
+      const merge = value.$merge as Record<string, unknown>;
+      expr = `json_set(COALESCE(${escapedCol}, '{}')`;
+      for (const [key, v] of Object.entries(merge)) {
+        expr += `, '$.${this.escapeJsonKey(key)}', json(?)`;
+        ctx.pushValue(JSON.stringify(v));
+      }
+      expr += ')';
+    }
+    if (hasKeys(value.$push)) {
+      const push = value.$push as Record<string, unknown>;
+      expr = `json_insert(${expr}`;
+      for (const [key, v] of Object.entries(push)) {
+        expr += `, '$.${this.escapeJsonKey(key)}[#]', json(?)`;
+        ctx.pushValue(JSON.stringify(v));
+      }
+      expr += ')';
     }
     if (value.$unset?.length) {
       const paths = value.$unset.map((k) => `'$.${this.escapeJsonKey(k)}'`).join(', ');

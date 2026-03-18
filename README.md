@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is a clean, ultra-fast TypeScript ORM designed for developers who value portability and performance. [Measured at **3.9M+ ops/s**](https://github.com/rogerpadilla/ts-orm-benchmark), it delivers a 4x-40x overhead advantage over traditional ORMs. It eliminates the friction between SQL and MongoDB, providing a unified, type-safe experience without proprietary DSLs or heavy codegen steps.
+**[UQL](https://uql-orm.dev)** is a TypeScript ORM focused on portability, performance, and a consistent query model across SQL and MongoDB. In our open benchmark, SQL generation reaches [**3.9M+ ops/s**](https://github.com/rogerpadilla/ts-orm-benchmark). UQL is designed for teams that want type safety and dialect portability without introducing a proprietary query DSL.
 
 ```ts
 const results = await querier.findMany(User, {
@@ -15,29 +15,61 @@ const results = await querier.findMany(User, {
 });
 ```
 
-&nbsp;
+## Quick Start
+
+```sh
+npm install uql-orm pg
+```
+
+```ts
+import { PgQuerierPool } from 'uql-orm/postgres';
+
+const pool = new PgQuerierPool({ host: 'localhost', database: 'app' });
+const users = await pool.withQuerier((querier) => querier.findMany(User, { $limit: 10 }));
+```
+
+For production setup and migrations, jump to:
+- [Install](#1-install)
+- [Define your Entities](#2-define-your-entities)
+- [Migrations & Synchronization](#5-migrations--synchronization)
+
+> **Note:** For explicit lifecycle control, use manual `getQuerier()` + `release()` (shown in [Core Query Pattern](#core-query-pattern)).
+
+## Guide Map
+
+Core path:
+- [1. Install](#1-install)
+- [2. Define your Entities](#2-define-your-entities)
+- [3. Set up a pool](#3-set-up-a-pool)
+- [4. Manipulate the Data](#4-manipulate-the-data)
+- [5. Migrations & Synchronization](#5-migrations--synchronization)
+
+Advanced and operations:
+- [Semantic Search](#modern-indexing-semantic-search)
+- [JSON Operators & Relation Filtering](#json-operators--relation-filtering)
+- [Thread-Safe Transactions](#thread-safe-transactions)
+- [6. Logging & Monitoring](#6-logging--monitoring)
+- [Deep Dive: Tests & Technical Resources](#deep-dive-tests--technical-resources)
 
 ## Features
 
 | Feature | Why it matters |
 | :--- | :--- |
 | **[Intelligent Querying](https://uql-orm.dev/querying/relations)** | Deep auto-completion for operators and relations at any depth—no more guessing property names. |
-| **Serializable JSON** | 100% valid JSON queries. Send your query logic over HTTP, gRPC or WebSockets as easily as a string—the only ORM with a native cross-network protocol. |
-| **Unified Dialects** | Write once, run anywhere. Seamlessly switch between PostgreSQL, MySQL, SQLite, and MongoDB. |
+| **Serializable JSON** | Query objects are valid JSON, which makes them straightforward to transport over HTTP/gRPC/WebSockets. |
+| **Unified Dialects** | Write once, run anywhere. Seamlessly switch between PostgreSQL, MySQL, MariaDB, SQLite, and MongoDB. |
 | **[Naming Strategies](https://uql-orm.dev/naming-strategy)** | No more `camelCase` vs `snake_case` headaches. Map your code to your database automatically. |
-| **Smart SQL Engine** | Zero-allocation SQL generation. [1st in every benchmark category](https://github.com/rogerpadilla/ts-orm-benchmark). |
+| **Smart SQL Engine** | Zero-allocation SQL generation with top-ranked results in our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark). |
 | **Thread-Safe by Design** | Protect your data integrity with centralized task queues and the `@Serialized()` decorator. |
 | **[Declarative Transactions](https://uql-orm.dev/querying/transactions)** | Clean `@Transactional()` decorators that work beautifully with modern DI frameworks like NestJS. |
 | **[Lifecycle Hooks](https://uql-orm.dev/entities/lifecycle-hooks)** | Automate validation, timestamps, and computed logic with intuitive class-based decorators. |
 | **[Aggregate Queries](https://uql-orm.dev/querying/aggregate)** | Real-time analytics with `GROUP BY`, `HAVING`, and native math operators across all dialects. |
 | **[Semantic Search](https://uql-orm.dev/querying/semantic-search)** | Native vector similarity search. Rank results by meaning using standard ORM operators. |
 | **[Cursor Streaming](https://uql-orm.dev/querying/streaming)** | Process millions of rows with a stable memory footprint using native driver-level cursors. |
-| **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | Pure ESM, high-res timing, built-in soft-delete, and first-class JSONB/JSON support. |
+| **[Modern & Versatile](https://uql-orm.dev/entities/virtual-fields)** | Pure ESM, high-res timing, built-in soft-delete, and first-class JSON/JSONB support. |
 | **[Database Migrations](https://www.uql-orm.dev/migrations)** | Entity-First synchronization. DDL is auto-generated by diffing your code against the live DB. |
 | **[Logging & Monitoring](https://www.uql-orm.dev/logging)** | High-visibility debugging with slow-query detection and high-contrast terminal output. |
 | **[Fullstack Bridge](https://www.uql-orm.dev/comparison#network-boundaries--apis)** | Speak to your database from the browser securely. First-party `HttpQuerier` removes API boilerplate. |
-
-&nbsp;
 
 ## 1. Install
 
@@ -58,7 +90,6 @@ npm install uql-orm       # or bun add / pnpm add
 | **SQLite** | `npm install better-sqlite3` |
 | **LibSQL** (incl. Turso) | `npm install @libsql/client` |
 | **MongoDB** | `npm install mongodb` |
-| **CockroachDB** | `npm install pg` |
 | **Cloudflare D1** | _Native (no driver needed)_ |
 
 ### TypeScript Configuration
@@ -74,7 +105,7 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 }
 ```
 
-&nbsp;**Note:** UQL is Modern Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
+> **Note:** UQL is Modern Pure ESM — ensure your project's `module` supports ESM imports (e.g., `NodeNext`, `ESNext`, `Bundler`).
 
 ## 2. Define your Entities
 
@@ -129,9 +160,6 @@ price?: number;
 @Field({ columnType: 'smallint' })
 statusCode?: number;
 ```
-
-
-&nbsp;
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -225,9 +253,7 @@ export class PostTag {
 }
 ```
 
-> **Senior Insight**: Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety throughout your app.
-
-&nbsp;
+> **Note:** Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety throughout your app.
 
 ## 3. Set up a pool
 
@@ -242,7 +268,7 @@ export const pool = new PgQuerierPool(
   { host: 'localhost', database: 'uql_app', max: 10 },
   {
     logger: ['error', 'warn', 'migration'],
-    namingStrategy: new SnakeCaseNamingStrategy()
+    namingStrategy: new SnakeCaseNamingStrategy(),
     slowQuery: { threshold: 1000 },
   }
 );
@@ -254,17 +280,15 @@ export default {
 } satisfies Config;
 ```
 
-> **Senior Insight**: Don't overcomplicate your setup. Reusing the same connection pool for both your application and migrations reduces overhead and ensures consistent behavior (like naming strategies) across your entire stack.
->
-> **Senior Insight**: In the 2026 landscape of AI and Edge, the ability to securely proxy queries via a **First-Party Bridge** (UQL) vs. running a local DB runtime (Drizzle/PGlite) or manual API mapping (Prisma) is the difference between shipping in days or weeks.
-
-&nbsp;
-
-&nbsp;
+> **Notes:**
+> - Reuse one pool for both app queries and migrations to keep behavior (for example naming strategy) consistent.
+> - If your architecture spans backend + browser, `HttpQuerier` reduces custom API mapping and keeps query semantics aligned.
 
 ## 4. Manipulate the Data
 
 UQL provides a straightforward API to interact with your data. **Always ensure queriers are released back to the pool.**
+
+### Core Query Pattern
 
 ```ts
 const querier = await pool.getQuerier();
@@ -272,11 +296,11 @@ try {
   const results = await querier.findMany(User, {
     $select: {
       name: true,
-      profile: { $select: { bio: true }, $required: true } // INNER JOIN
+      profile: { $select: { bio: true }, $required: true }, // INNER JOIN
     },
     $where: {
       status: 'active',
-      name: { $istartsWith: 'a' }
+      name: { $istartsWith: 'a' },
     },
     $limit: 10,
   });
@@ -295,7 +319,7 @@ WHERE "User"."status" = 'active' AND "User"."name" ILIKE 'a%'
 LIMIT 10 OFFSET 0
 ```
 
-&nbsp;
+### Advanced Query Patterns
 
 ### Modern Indexing: Semantic Search
 
@@ -308,8 +332,6 @@ const results = await querier.findMany(Item, {
   $limit: 10,
 });
 ```
-
-&nbsp;
 
 ### Advanced: Virtual Fields & Raw SQL
 
@@ -331,11 +353,9 @@ export class Item {
 }
 ```
 
-&nbsp;
+### JSON Operators & Relation Filtering
 
-### JSONB Operators & Relation Filtering
-
-Query nested JSON fields using **type-safe dot-notation** with full operator support. Wrap fields with `Json<T>` to get IDE autocompletion for valid paths. UQL generates the correct SQL for each dialect.
+Query nested JSON fields using **type-safe dot-notation** with full operator support. Wrap fields with `Json<T>` to get IDE autocompletion for valid paths. UQL generates native SQL per dialect.
 
 ```ts
 // Filter by nested JSONB field paths
@@ -347,8 +367,21 @@ const items = await querier.findMany(Company, {
 });
 ```
 
-**PostgreSQL:** `WHERE ("settings"->>'isArchived') IS DISTINCT FROM $1 AND (("settings"->>'priority'))::numeric >= $2`
+**PostgreSQL:** `WHERE ("settings"->>'isArchived') IS DISTINCT FROM $1 AND (("settings"->>'priority'))::numeric >= $2`  
+**MySQL:** `WHERE (\`settings\`->>'isArchived') <> ? AND CAST((\`settings\`->>'priority') AS DECIMAL) >= ?`  
+**MariaDB:** `WHERE JSON_VALUE(\`settings\`, '$.isArchived') <> ? AND CAST(JSON_VALUE(\`settings\`, '$.priority') AS DECIMAL) >= ?`  
 **SQLite:** `WHERE json_extract("settings", '$.isArchived') IS NOT ? AND CAST(json_extract("settings", '$.priority') AS REAL) >= ?`
+
+Atomic JSON updates support `$merge`, `$unset`, and `$push`:
+
+```ts
+await querier.updateOneById(Company, id, {
+  settings: { $merge: { theme: 'dark' }, $push: { tags: 'orm' }, $unset: ['deprecated'] },
+});
+```
+
+> **Modern DB Baselines used by docs/examples:** PostgreSQL 16+, MySQL 8.4+ (LTS), MariaDB 12.2+, SQLite 3.45+.
+> Full generated SQL examples: [JSON / JSONB docs](https://uql-orm.dev/querying/json).
 
 Filter parent entities by their **ManyToMany** or **OneToMany** relations using automatic EXISTS subqueries:
 
@@ -361,9 +394,7 @@ const posts = await querier.findMany(Post, {
 
 **PostgreSQL:** `WHERE EXISTS (SELECT 1 FROM "PostTag" WHERE "PostTag"."postId" = "Post"."id" AND "PostTag"."tagId" IN (SELECT "Tag"."id" FROM "Tag" WHERE "Tag"."name" = $1))`
 
-> **Senior Insight**: Wrap your JSON fields with `Json<T>` to get deep autocompletion for dot-notation paths. It turns a "guess and check" process into a type-safe workflow.
-
-&nbsp;
+> **Note:** Wrap JSON fields with `Json<T>` to get autocompletion for valid dot-notation paths.
 
 ### Aggregate Queries
 
@@ -405,8 +436,6 @@ const names = await querier.findMany(User, {
 
 > **Learn more**: See the full [Aggregate Queries guide](https://uql-orm.dev/querying/aggregate) for `$having` operators, MongoDB pipeline details, and advanced patterns.
 
-&nbsp;
-
 ### Cursor-Based Streaming
 
 For large result sets, use `findManyStream()` to iterate row-by-row without loading everything into memory. Each driver uses its optimal native cursor API.
@@ -416,8 +445,6 @@ for await (const user of querier.findManyStream(User, { $where: { active: true }
   process.stdout.write(JSON.stringify(user) + '\n');
 }
 ```
-
-&nbsp;
 
 ### Thread-Safe Transactions
 
@@ -469,8 +496,6 @@ try {
 }
 ```
 
-&nbsp;
-
 ## 5. Migrations & Synchronization
 
 UQL takes an **Entity-First** approach. You modify your TypeScript classes, and UQL handles the heavy lifting—auto-generating migration files by diffing your code against the live database.
@@ -484,7 +509,7 @@ npx uql-migrate generate:entities add_user_nickname
 npx uql-migrate up
 ```
 
-> **Senior Insight**: Your entities are the single source of truth. This workflow eliminates the "drift" between what's in your code and what's in production.
+> **Note:** Keep entities as the source of truth to minimize drift between code and database schema.
 
 ### 1. Unified Configuration
 
@@ -544,7 +569,7 @@ npx uql-migrate generate seed_default_roles
 
 ### 3. AutoSync (Development)
 
-Keep your schema in sync without manual migrations. It is **Safe by Default**: In safe mode (default), it strictly **adds** new tables and columns but **blocks** any destructive operations (column drops or type alterations) to prevent data loss. It provides **Transparent Feedback** by logging detailed warnings for any blocked changes, so you know exactly what remains to be migrated manually.
+Keep your schema in sync without manual migrations. It is **safe by default**: in safe mode (default), it adds new tables/columns and blocks destructive changes (column drops or type alterations). Blocked actions are logged so you can migrate them manually.
 
 **New Capabilities (v3.8+):**
 
@@ -582,13 +607,13 @@ const migrator = new Migrator(pool, {
 await migrator.autoSync({ logging: true });
 ```
 
-> **Senior Insight**: In development, `autoSync` is your best friend. It keeps your schema alive as you iterate, but it’s uniquely designed to never drop columns or change types—ensuring your data remains safe while you move at light speed.
+> **Note:** In development, `autoSync` accelerates iteration while still protecting data by blocking destructive schema changes.
 
-&nbsp;
+## Operations
 
-## 6. Logging & Monitoring
+### 6. Logging & Monitoring
 
-UQL features a professional-grade, structured logging system designed for high visibility and sub-millisecond performance monitoring.
+UQL includes a structured logging system for query visibility and performance monitoring.
 
 ### Log Levels
 
@@ -603,7 +628,7 @@ UQL features a professional-grade, structured logging system designed for high v
 
 ### Visual Feedback
 
-The `DefaultLogger` provides high-contrast, colored output that makes debugging feel like a premium experience:
+The `DefaultLogger` provides high-contrast, colored output for quick debugging:
 
 ```text
 query: SELECT * FROM "user" WHERE "id" = $1 -- [123] [2ms]
@@ -611,9 +636,7 @@ slow query: UPDATE "post" SET "title" = $1 -- ["New Title"] [1250ms]
 error: Failed to connect to database: Connection timeout
 ```
 
-> **Senior Insight**: In production, keep your logs lean. By setting `logger: ['error', 'warn', 'slowQuery']`, UQL stays silent until a performance bottleneck actually occurs.
-
-&nbsp;
+> **Note:** In production, keep logs lean with `logger: ['error', 'warn', 'slowQuery']`.
 
 Learn more about UQL at [uql-orm.dev](https://uql-orm.dev) for details on:
 
@@ -625,9 +648,7 @@ Learn more about UQL at [uql-orm.dev](https://uql-orm.dev) for details on:
 - [Soft Deletes &amp; Auditing](https://uql-orm.dev/entities/soft-delete)
 - [Database Migration &amp; Syncing](https://uql-orm.dev/migrations)
 
-&nbsp;
-
-## 🛠 Deep Dive: Tests & Technical Resources
+### Deep Dive: Tests & Technical Resources
 
 For those who want to see the "engine under the hood," check out these resources in the source code:
 
@@ -637,8 +658,6 @@ For those who want to see the "engine under the hood," check out these resources
   - [Abstract SQL Spec](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/dialect/abstractSqlDialect-spec.ts): Base test suite for all dialects.
   - [PostgreSQL](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/postgres/postgresDialect.spec.ts) \| [MySQL](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/mysql/mysqlDialect.spec.ts) \| [SQLite](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/sqlite/sqliteDialect.spec.ts) specs.
   - [Querier Integration Tests](https://github.com/rogerpadilla/uql/blob/main/packages/uql-orm/src/querier/abstractSqlQuerier-spec.ts): SQL generation & connection management tests.
-
-&nbsp;
 
 ## Built with ❤️ and supported by
 

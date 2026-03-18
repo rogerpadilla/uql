@@ -940,6 +940,78 @@ class PostgresDialectSpec {
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
+  shouldUpdateWithJsonPush() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(values).toEqual(['"new-tag"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonMergePushCombined() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\') || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\') || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+    );
+    expect(values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonMergePushSameKey() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { tags: ['a'] }, $push: { tags: 'b' } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\') || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\') || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+    );
+    expect(values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonPushUnsetCombined() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(values).toEqual(['"new-tag"', 123, 1]);
+  }
+
   shouldSortByJsonDotNotation() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {

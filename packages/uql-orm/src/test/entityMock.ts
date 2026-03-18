@@ -50,7 +50,7 @@ export abstract class BaseEntity {
 
 export type CompanyKindKey = 'public' | 'private';
 
-export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 };
+export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & { tags?: string[] };
 
 /**
  * `Company` will inherit all the fields (including the `Id`) declared in `BaseEntity`.

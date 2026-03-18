@@ -1,5 +1,4 @@
-import SqlString from 'sqlstring';
-import { AbstractSqlDialect } from '../dialect/index.js';
+import { MysqlLikeSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
@@ -12,17 +11,9 @@ import type {
   VectorDistance,
 } from '../type/index.js';
 
-export class MariaDialect extends AbstractSqlDialect {
+export class MariaDialect extends MysqlLikeSqlDialect {
   constructor(namingStrategy?: NamingStrategy) {
     super('mariadb', namingStrategy);
-  }
-
-  override addValue(values: unknown[], value: unknown): string {
-    if (value instanceof Date) {
-      values.push(value);
-      return '?';
-    }
-    return super.addValue(values, value);
   }
 
   override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
@@ -55,6 +46,16 @@ export class MariaDialect extends AbstractSqlDialect {
     }
   }
 
+  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
+    const escapedPath = jsonPath
+      .split('.')
+      .map((segment) => this.escapeJsonKey(segment))
+      .join('.');
+    // MariaDB does not support MySQL's -> / ->> JSON shorthand operators.
+    // JSON_VALUE keeps dot-notation access native and portable across MariaDB versions.
+    return `JSON_VALUE(${escapedColumn}, '$.${escapedPath}')`;
+  }
+
   /** MariaDB 11.7+ vector distance functions. */
   private static readonly VECTOR_FNS: Partial<Record<VectorDistance, string>> = {
     cosine: 'VEC_DISTANCE_COSINE',
@@ -69,9 +70,5 @@ export class MariaDialect extends AbstractSqlDialect {
     search: QueryVectorSearch,
   ): void {
     this.appendFunctionVectorSort(ctx, meta, key, search, MariaDialect.VECTOR_FNS, 'MariaDB');
-  }
-
-  override escape(value: unknown): string {
-    return SqlString.escape(value);
   }
 }
