@@ -571,9 +571,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_patch(COALESCE(`kind`, '{}'), ?), `updatedAt` = ? WHERE `id` = ?",
+      "UPDATE `Company` SET `kind` = json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), `updatedAt` = ? WHERE `id` = ?",
     );
-    expect(values).toEqual(['{"private":1}', 123, 1]);
+    expect(values).toEqual(['1', 123, 1]);
   }
 
   shouldUpdateWithJsonMergeUnsetOnly() {
@@ -607,9 +607,81 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_remove(json_patch(COALESCE(`kind`, '{}'), ?), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      "UPDATE `Company` SET `kind` = json_remove(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
     );
-    expect(values).toEqual(['{"private":1}', 123, 1]);
+    expect(values).toEqual(['1', 123, 1]);
+  }
+
+  shouldUpdateWithJsonPush() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      "UPDATE `Company` SET `kind` = json_insert(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+    );
+    expect(values).toEqual(['"new-tag"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonMergePushCombined() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+    );
+    expect(values).toEqual(['1', '"new-tag"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonMergePushSameKey() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { tags: ['a'] }, $push: { tags: 'b' } } as any,
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+    );
+    expect(values).toEqual(['["a"]', '"b"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonPushUnsetCombined() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe(
+      "UPDATE `Company` SET `kind` = json_remove(json_insert(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+    );
+    expect(values).toEqual(['"new-tag"', 123, 1]);
   }
 
   shouldSortByJsonDotNotation() {

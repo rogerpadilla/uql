@@ -6,7 +6,7 @@ import {
   type FieldOptions,
   type IdKey,
   type IsolationLevel,
-  type JsonMergeOp,
+  type JsonUpdateOp,
   type Key,
   type Query,
   type QueryAggregate,
@@ -1041,8 +1041,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const escapedCol = this.escapeId(columnName);
       const value = filledPayload[key];
 
-      if (this.isJsonMergeOp(value)) {
-        this.formatJsonMerge<E>(ctx, escapedCol, value);
+      if (this.isJsonUpdateOp(value)) {
+        this.formatJsonUpdate<E>(ctx, escapedCol, value);
       } else {
         ctx.append(`${escapedCol} = `);
         this.formatPersistableValue(ctx, field, value);
@@ -1217,16 +1217,32 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   /**
    * Generate SQL for a JSONB merge and/or unset operation.
-   * Called from `update()` when a field value has `$merge` and/or `$unset` operators.
+   * Called from `update()` when a field value has `$merge`, `$unset`, and/or `$push` operators.
    * Generates the full `"col" = <expression>` assignment.
    *
-   * Base implementation uses MySQL-compatible syntax. Override in dialect subclasses.
+   * Base implementation uses MySQL-compatible syntax with *shallow* merge semantics
+   * (RHS top-level keys replace LHS top-level keys, matching PostgreSQL's `jsonb || jsonb`).
+   * Override in dialect subclasses when a dialect needs different JSON function semantics.
    */
-  protected formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+  protected formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
-      expr = `JSON_MERGE_PATCH(COALESCE(${escapedCol}, '{}'), ?)`;
-      ctx.pushValue(JSON.stringify(value.$merge));
+      const merge = value.$merge as Record<string, unknown>;
+      expr = `JSON_SET(COALESCE(${escapedCol}, '{}')`;
+      for (const [key, v] of Object.entries(merge)) {
+        expr += `, '$.${this.escapeJsonKey(key)}', CAST(? AS JSON)`;
+        ctx.pushValue(JSON.stringify(v));
+      }
+      expr += ')';
+    }
+    if (hasKeys(value.$push)) {
+      const push = value.$push as Record<string, unknown>;
+      expr = `JSON_ARRAY_APPEND(${expr}`;
+      for (const [key, v] of Object.entries(push)) {
+        expr += `, '$.${this.escapeJsonKey(key)}', CAST(? AS JSON)`;
+        ctx.pushValue(JSON.stringify(v));
+      }
+      expr += ')';
     }
     if (value.$unset?.length) {
       for (const key of value.$unset) {
@@ -1236,11 +1252,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.append(`${escapedCol} = ${expr}`);
   }
 
-  /**
-   * Checks if a value is a `$merge`/`$unset` operator object.
-   */
-  protected isJsonMergeOp(value: unknown): value is JsonMergeOp {
-    return typeof value === 'object' && value !== null && ('$merge' in value || '$unset' in value);
+  protected isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
+    return typeof value === 'object' && value !== null && ('$merge' in value || '$unset' in value || '$push' in value);
   }
 
   /** Escapes a JSON key for safe interpolation into SQL string literals. */
@@ -1336,16 +1349,23 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   protected getJsonFieldConfig(escapedColumn: string, jsonPath: string): JsonFieldConfig {
     return {
       ...this.getBaseJsonConfig(),
-      fieldAccessor: () => {
-        const segments = jsonPath.split('.');
-        let expr = escapedColumn;
-        for (let i = 0; i < segments.length; i++) {
-          const op = i === segments.length - 1 ? '->>' : '->';
-          expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
-        }
-        return expr;
-      },
+      fieldAccessor: () => this.getJsonPathScalarExpr(escapedColumn, jsonPath),
     };
+  }
+
+  /**
+   * Returns SQL that extracts a scalar value from a JSON path.
+   * Dialects can override this to customize path access syntax while preserving
+   * the shared comparison/operator pipeline.
+   */
+  protected getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
+    const segments = jsonPath.split('.');
+    let expr = escapedColumn;
+    for (let i = 0; i < segments.length; i++) {
+      const op = i === segments.length - 1 ? '->>' : '->';
+      expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
+    }
+    return expr;
   }
 
   /**

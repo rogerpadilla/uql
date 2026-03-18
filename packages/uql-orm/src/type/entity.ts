@@ -52,8 +52,18 @@ export type JsonFieldPaths<E> = {
 }[FieldKey<E>];
 
 /**
+ * Extracts only the array-typed keys from `T`, mapping each to its element type.
+ * Used by `$push` to provide type-safe append targets.
+ */
+export type JsonPushFields<T> = {
+  [K in keyof T as NonNullable<T[K]> extends unknown[] ? K & string : never]?: NonNullable<T[K]> extends (infer U)[]
+    ? U
+    : never;
+};
+
+/**
  * Operator shape accepted by JSON/JSONB fields in update payloads.
- * Provides type-safe `$merge` and `$unset` operations with IDE autocomplete.
+ * Provides type-safe `$merge`, `$unset`, and `$push` operations with IDE autocomplete.
  *
  * @example
  * ```ts
@@ -61,26 +71,29 @@ export type JsonFieldPaths<E> = {
  * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } });
  * // unset only — autocompletes keys from the JSON field's inner type
  * querier.updateOneById(Company, id, { kind: { $unset: ['private'] } });
- * // merge + unset
- * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 }, $unset: ['private'] } });
+ * // push to array — autocompletes array keys, value matches element type
+ * querier.updateOneById(Company, id, { data: { $push: { tags: 'new-tag' } } });
+ * // combine all three
+ * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } });
  * ```
  */
-export type JsonMergeOp<T = unknown> = {
+export type JsonUpdateOp<T = unknown> = {
   readonly $merge?: Partial<T>;
   readonly $unset?: (keyof T & string)[];
+  readonly $push?: JsonPushFields<T>;
 };
 
 /**
  * Accepted value for a single field in an update payload.
- * - JSON/JSONB fields additionally accept `JsonMergeOp<T>` for partial merge/unset operations.
+ * - JSON/JSONB fields additionally accept `JsonUpdateOp<T>` for `$merge`/`$unset`/`$push` operations.
  * - All fields accept `QueryRaw` for raw SQL expressions (e.g. `raw('NOW()')`).
  */
-type UpdateFieldValue<V> = NonNullable<V> extends Json<infer T> ? V | JsonMergeOp<T> | QueryRaw : V | QueryRaw;
+type UpdateFieldValue<V> = NonNullable<V> extends Json<infer T> ? V | JsonUpdateOp<T> | QueryRaw : V | QueryRaw;
 
 /**
  * Payload type for update operations.
- * Widens each field to additionally accept `QueryRaw` or `JsonMergeOp` (for JSON fields),
- * providing IDE autocomplete for `$merge` keys via `Json<infer T>`.
+ * Widens each field to additionally accept `QueryRaw` or `JsonUpdateOp` (for JSON fields),
+ * providing IDE autocomplete for `$merge`/`$push` keys via `Json<infer T>`.
  */
 export type UpdatePayload<E> = {
   [K in FieldKey<E>]?: UpdateFieldValue<E[K]>;

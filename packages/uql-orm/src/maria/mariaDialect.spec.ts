@@ -1,13 +1,181 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
+import { Company, InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
     super(new MariaDialect());
+  }
+
+  // JSON operator tests
+  shouldFind$elemMatch() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $elemMatch: { city: 'NYC' } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
+    expect(ctx.values).toEqual(['[{"city":"NYC"}]']);
+  }
+
+  shouldFind$all() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $all: ['admin', 'user'] } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
+    expect(ctx.values).toEqual(['["admin","user"]']);
+  }
+
+  shouldFind$size() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: 3 } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) = ?');
+    expect(ctx.values).toEqual([3]);
+  }
+
+  shouldFind$sizeWithComparison() {
+    const dialect = new MariaDialect();
+
+    // Single comparison operator
+    let ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $gte: 2 } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) >= ?');
+    expect(ctx.values).toEqual([2]);
+
+    // Multiple comparison operators
+    ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $gt: 0, $lte: 5 } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE (JSON_LENGTH(`name`) > ? AND JSON_LENGTH(`name`) <= ?)');
+    expect(ctx.values).toEqual([0, 5]);
+
+    // $between
+    ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $size: { $between: [1, 10] } } },
+    });
+    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) BETWEEN ? AND ?');
+    expect(ctx.values).toEqual([1, 10]);
+  }
+
+  // Tests for $elemMatch with nested operators
+  shouldFind$elemMatchWithOperators() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $elemMatch: { city: { $like: 'New%' } } } },
+    });
+    expect(ctx.sql).toBe(
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`name`, '$[*]' COLUMNS (city TEXT PATH '$.city')) AS jt WHERE jt.city LIKE ?)",
+    );
+    expect(ctx.values).toEqual(['New%']);
+  }
+
+  shouldFind$elemMatchWithMultipleOperators() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: { name: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
+    });
+    expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
+    expect(ctx.sql).toContain('CAST(jt.price AS DECIMAL) >= ?');
+    expect(ctx.sql).toContain('jt.active <> ?');
+  }
+
+  shouldFind$elemMatchWithAllOperators() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, User, {
+      $select: { id: true },
+      $where: {
+        name: {
+          $elemMatch: {
+            a: { $eq: 'x' },
+            b: { $gt: 5 },
+            c: { $lt: 10 },
+            d: { $lte: 20 },
+            e: { $like: '%test%' },
+            f: { $ilike: 'HI' },
+            g: { $startsWith: 'abc' },
+            h: { $istartsWith: 'ABC' },
+            i: { $endsWith: 'xyz' },
+            j: { $iendsWith: 'XYZ' },
+            k: { $includes: 'mid' },
+            l: { $iincludes: 'MID' },
+            m: { $regex: '^A' },
+            n: { $in: [1, 2] },
+            o: { $nin: [3, 4] },
+          },
+        },
+      },
+    });
+
+    expect(ctx.sql).toContain('jt.a = ?');
+    expect(ctx.sql).toContain('CAST(jt.b AS DECIMAL) > ?');
+    expect(ctx.sql).toContain('CAST(jt.c AS DECIMAL) < ?');
+    expect(ctx.sql).toContain('CAST(jt.d AS DECIMAL) <= ?');
+    expect(ctx.sql).toContain('jt.e LIKE ?');
+    expect(ctx.sql).toContain('jt.f LIKE ?');
+    expect(ctx.sql).toContain('jt.m REGEXP ?');
+    expect(ctx.sql).toContain('jt.n IN (');
+    expect(ctx.sql).toContain('jt.o NOT IN (');
+  }
+
+  shouldFilterByJsonDotNotation() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, Company, {
+      $select: { id: true },
+      $where: {
+        'kind.public': 1,
+      },
+    });
+    expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_VALUE(`kind`, '$.public') = ?");
+    expect(ctx.values).toEqual([1]);
+  }
+
+  shouldSortByJsonDotNotation() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, Company, {
+      $select: { id: true },
+      $sort: {
+        'kind.theme.color': -1,
+      } as any,
+    });
+    expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_VALUE(`kind`, '$.theme.color') DESC");
+  }
+
+  shouldFilterByJsonDotNotationDeep() {
+    const dialect = new MariaDialect();
+    const ctx = dialect.createContext();
+    dialect.find(ctx, Company, {
+      $select: { id: true },
+      $where: {
+        'kind.theme.color': 'red',
+      } as any,
+    });
+    expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_VALUE(`kind`, '$.theme.color') = ?");
+    expect(ctx.values).toEqual(['red']);
   }
 
   shouldHandleDate() {

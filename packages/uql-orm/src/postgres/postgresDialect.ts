@@ -6,7 +6,7 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
-  type JsonMergeOp,
+  type JsonUpdateOp,
   type NamingStrategy,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -272,11 +272,22 @@ export class PostgresDialect extends AbstractSqlDialect {
     ctx.append(`::${vectorCast}`);
   }
 
-  protected override formatJsonMerge<E>(ctx: QueryContext, escapedCol: string, value: JsonMergeOp<E>): void {
+  protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
       ctx.pushValue(JSON.stringify(value.$merge));
       expr = `COALESCE(${escapedCol}, '{}') || ${this.placeholder(ctx.values.length)}::jsonb`;
+    }
+    if (hasKeys(value.$push)) {
+      const push = value.$push as Record<string, unknown>;
+      for (const [key, v] of Object.entries(push)) {
+        const currentExpr = expr;
+        ctx.pushValue(JSON.stringify(v));
+        const ph = this.placeholder(ctx.values.length);
+        expr = `jsonb_set(${currentExpr}, '{${this.escapeJsonKey(key)}}', COALESCE((${currentExpr})->'${this.escapeJsonKey(
+          key,
+        )}', '[]'::jsonb) || jsonb_build_array(${ph}::jsonb))`;
+      }
     }
     if (value.$unset?.length) {
       for (const key of value.$unset) {

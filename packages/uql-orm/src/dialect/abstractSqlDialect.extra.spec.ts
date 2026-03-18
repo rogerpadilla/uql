@@ -565,8 +565,8 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
   });
 
-  // ─── $merge/$unset update tests ───────────────────────────────────
-  describe('$merge/$unset in update', () => {
+  // ─── $merge/$unset/$push update tests ────────────────────────────
+  describe('$merge/$unset/$push in update', () => {
     it('merge only', () => {
       const ctx = dialect.createContext();
       dialect.update(
@@ -579,9 +579,9 @@ describe('AbstractSqlDialect (extra coverage)', () => {
         },
       );
       expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_MERGE_PATCH(COALESCE(`kind`, '{}'), ?), `updatedAt` = ? WHERE `id` = ?",
+        "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
       );
-      expect(ctx.values).toEqual(['{"private":1}', 123, 1]);
+      expect(ctx.values).toEqual(['1', 123, 1]);
     });
 
     it('unset only', () => {
@@ -613,9 +613,77 @@ describe('AbstractSqlDialect (extra coverage)', () => {
         },
       );
       expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_MERGE_PATCH(COALESCE(`kind`, '{}'), ?), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
       );
-      expect(ctx.values).toEqual(['{"private":1}', 123, 1]);
+      expect(ctx.values).toEqual(['1', 123, 1]);
+    });
+
+    it('push only', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(`kind`, '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['"new-tag"', 123, 1]);
+    });
+
+    it('merge + push combined', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['1', '"new-tag"', 123, 1]);
+    });
+
+    it('merge + push same key preserves merged array before append', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $merge: { tags: ['a'] } as any, $push: { tags: 'b' } as any },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', CAST(? AS JSON)), '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['["a"]', '"b"', 123, 1]);
+    });
+
+    it('push + unset combined', () => {
+      const ctx = dialect.createContext();
+      dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
+          updatedAt: 123,
+        },
+      );
+      expect(ctx.sql).toBe(
+        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_ARRAY_APPEND(`kind`, '$.tags', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      );
+      expect(ctx.values).toEqual(['"new-tag"', 123, 1]);
     });
 
     it('$unset escapes keys with single quotes', () => {
