@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.5.3] - 2026-03-18
+## [0.6.0] - 2026-03-18
 ### Features
 - **JSON update operators expanded**: Added `$push` for atomic JSON array append in update payloads across SQL dialects.
 - **Unified JSON update API type**: Introduced `JsonUpdateOp` with type-safe `$merge`, `$unset`, and `$push` support for `Json<T>` fields.
