@@ -4,7 +4,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is a TypeScript ORM focused on portability, performance, and a consistent query model across SQL and MongoDB. In our open benchmark, SQL generation reaches [**3.9M+ ops/s**](https://github.com/rogerpadilla/ts-orm-benchmark). UQL is designed for teams that want type safety and dialect portability without introducing a proprietary query DSL.
+**[UQL](https://uql-orm.dev)** is the best ORM for TypeScript and modern JavaScript designed to be fast, safe, and easy to integrate into any application — especially AI and data‑heavy workloads. Built with a unified API across SQL and MongoDB.
 
 ```ts
 const results = await querier.findMany(User, {
@@ -367,9 +367,9 @@ const items = await querier.findMany(Company, {
 });
 ```
 
-**PostgreSQL:** `WHERE ("settings"->>'isArchived') IS DISTINCT FROM $1 AND (("settings"->>'priority'))::numeric >= $2`  
-**MySQL:** `WHERE (\`settings\`->>'isArchived') <> ? AND CAST((\`settings\`->>'priority') AS DECIMAL) >= ?`  
-**MariaDB:** `WHERE JSON_VALUE(\`settings\`, '$.isArchived') <> ? AND CAST(JSON_VALUE(\`settings\`, '$.priority') AS DECIMAL) >= ?`  
+**PostgreSQL:** `WHERE ("settings"->>'isArchived') IS DISTINCT FROM $1 AND (("settings"->>'priority'))::numeric >= $2`
+**MySQL:** `WHERE (\`settings\`->>'isArchived') <> ? AND CAST((\`settings\`->>'priority') AS DECIMAL) >= ?`
+**MariaDB:** `WHERE JSON_VALUE(\`settings\`, '$.isArchived') <> ? AND CAST(JSON_VALUE(\`settings\`, '$.priority') AS DECIMAL) >= ?`
 **SQLite:** `WHERE json_extract("settings", '$.isArchived') IS NOT ? AND CAST(json_extract("settings", '$.priority') AS REAL) >= ?`
 
 Atomic JSON updates support `$merge`, `$unset`, and `$push`:

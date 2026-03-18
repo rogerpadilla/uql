@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.6.1] - 2026-03-18
+### Chore
+- **Documentation**: Improve intro of readme.md
+
 ## [0.6.0] - 2026-03-18
 ### Features
 - **JSON update operators expanded**: Added `$push` for atomic JSON array append in update payloads across SQL dialects.
