@@ -25,6 +25,7 @@ export default defineConfig({
     environment: 'node',
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
     exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts'],
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text', 'text-summary'],

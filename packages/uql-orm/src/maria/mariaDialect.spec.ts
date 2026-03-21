@@ -84,7 +84,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       $where: { name: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`name`, '$[*]' COLUMNS (city TEXT PATH '$.city')) AS jt WHERE jt.city LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`name`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -97,8 +97,8 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       $where: { name: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(jt.price AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain('jt.active <> ?');
+    expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
+    expect(ctx.sql).toContain('jt.`active` <> ?');
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -129,15 +129,15 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       },
     });
 
-    expect(ctx.sql).toContain('jt.a = ?');
-    expect(ctx.sql).toContain('CAST(jt.b AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(jt.c AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(jt.d AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('jt.e LIKE ?');
-    expect(ctx.sql).toContain('jt.f LIKE ?');
-    expect(ctx.sql).toContain('jt.m REGEXP ?');
-    expect(ctx.sql).toContain('jt.n IN (');
-    expect(ctx.sql).toContain('jt.o NOT IN (');
+    expect(ctx.sql).toContain('jt.`a` = ?');
+    expect(ctx.sql).toContain('CAST(jt.`b` AS DECIMAL) > ?');
+    expect(ctx.sql).toContain('CAST(jt.`c` AS DECIMAL) < ?');
+    expect(ctx.sql).toContain('CAST(jt.`d` AS DECIMAL) <= ?');
+    expect(ctx.sql).toContain('jt.`e` LIKE ?');
+    expect(ctx.sql).toContain('jt.`f` LIKE ?');
+    expect(ctx.sql).toContain('jt.`m` REGEXP ?');
+    expect(ctx.sql).toContain('jt.`n` IN (');
+    expect(ctx.sql).toContain('jt.`o` NOT IN (');
   }
 
   shouldFilterByJsonDotNotation() {
