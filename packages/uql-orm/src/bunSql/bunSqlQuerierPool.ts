@@ -1,5 +1,5 @@
 import type { SQL } from 'bun';
-import { CockroachDialect } from 'uql-orm/cockroachdb/cockroachDialect.js';
+import { CockroachDialect } from '../cockroachdb/index.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { MySqlDialect } from '../mysql/index.js';
 import { PostgresDialect } from '../postgres/index.js';
