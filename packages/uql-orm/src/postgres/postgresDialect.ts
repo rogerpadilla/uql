@@ -1,5 +1,6 @@
 import sqlstring from 'sqlstring-sqlite';
 import { AbstractSqlDialect } from '../dialect/index.js';
+import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
 import {
   type Dialect,
@@ -186,19 +187,11 @@ export class PostgresDialect extends AbstractSqlDialect {
     this.getComparisonKey(ctx, entity, key, opts);
     ctx.append(') AS elem WHERE ');
 
-    const conditions: string[] = [];
-    for (const [field, value] of Object.entries(match)) {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        // Value is an operator object
-        const ops = value as Record<string, unknown>;
-        for (const [op, opVal] of Object.entries(ops)) {
-          conditions.push(this.buildJsonFieldOperator(ctx, field, op, opVal));
-        }
-      } else {
-        // Simple equality
-        conditions.push(`elem->>'${field}' = ${this.addValue(ctx.values, value)}`);
-      }
-    }
+    const conditions = buildElemMatchConditions(
+      match,
+      (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
+      (field, value) => `elem->>'${field}' = ${this.addValue(ctx.values, value)}`,
+    );
 
     ctx.append(conditions.join(' AND '));
     ctx.append(')');

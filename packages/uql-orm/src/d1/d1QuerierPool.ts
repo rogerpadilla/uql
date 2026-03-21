@@ -1,17 +1,18 @@
 import { AbstractQuerierPool } from '../querier/index.js';
+import { SqliteDialect } from '../sqlite/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { type D1Database, D1Querier } from './d1Querier.js';
 
-export class D1QuerierPool extends AbstractQuerierPool<D1Querier> {
+export class D1QuerierPool extends AbstractQuerierPool<SqliteDialect, D1Querier> {
   constructor(
     readonly db: D1Database,
     extra?: ExtraOptions,
   ) {
-    super('sqlite', extra);
+    super(new SqliteDialect(extra?.namingStrategy), extra);
   }
 
   async getQuerier() {
-    return new D1Querier(this.db, this.extra);
+    return new D1Querier(this.db, this.dialectInstance, this.extra);
   }
 
   async end() {

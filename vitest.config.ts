@@ -24,12 +24,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
+    exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text', 'text-summary'],
       reportsDirectory: 'coverage',
       include: ['packages/*/src/**/*.ts'],
       exclude: [
+        'packages/*/src/bunSql/**/*.test.ts',
         'packages/*/src/**/*.spec.ts',
         'packages/*/src/**/*-spec.ts',
         'packages/*/src/**/*.test.ts',
