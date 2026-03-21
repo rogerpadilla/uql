@@ -123,7 +123,7 @@ export class SqliteDialect extends AbstractSqlDialect {
       (field, value) => {
         // Keep SQLite's placeholder behavior consistent with prior implementation.
         ctx.pushValue(value);
-        return `json_extract(value, '$.${field}') = ?`;
+        return `json_extract(value, '$.${this.escapeJsonKey(field)}') = ?`;
       },
     );
 
@@ -137,7 +137,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
     return this.buildJsonFieldCondition(
       ctx,
-      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `json_extract(value, '$.${f}')` },
+      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `json_extract(value, '$.${this.escapeJsonKey(f)}')` },
       field,
       op,
       value,
@@ -145,7 +145,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
-    return `json_extract(${escapedColumn}, '$.${jsonPath}')`;
+    return `json_extract(${escapedColumn}, '$.${this.escapeJsonKey(jsonPath)}')`;
   }
 
   protected override getBaseJsonConfig() {
