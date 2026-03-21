@@ -797,43 +797,40 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * Append a vector similarity ORDER BY expression.
-   * Base implementation throws — subclasses (Postgres, SQLite, MariaDB) override for dialect-specific operators.
+   * Mapping of UQL vector distance metrics to native SQL functions.
+   * Override in dialects that use function-call syntax (e.g. SQLite, MariaDB).
+   * Dialects with operator-based syntax (e.g. Postgres) leave this empty and override `appendVectorSort` directly.
    */
-  protected appendVectorSort<E>(
-    _ctx: QueryContext,
-    _meta: EntityMeta<E>,
-    _key: string,
-    _search: QueryVectorSearch,
-  ): void {
-    throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
-  }
+  protected readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {};
 
   /**
-   * Shared helper for dialects that use function-call syntax: `fn(col, ?)`.
-   * Used by SQLite (`vec_distance_cosine`) and MariaDB (`VEC_DISTANCE_COSINE`).
+   * Append a vector similarity function call: `fn(col, ?)`.
+   * Used by dialects that express vector distance via SQL functions (SQLite, MariaDB).
    */
   protected appendFunctionVectorSort<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     key: string,
     search: QueryVectorSearch,
-    fnMap: Partial<Record<VectorDistance, string>>,
     dialectName: string,
   ): void {
-    const { colName, distance } = this.resolveVectorSortParams(meta, key, search);
-    const fn = fnMap[distance];
+    const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
+    const fn = this.vectorDistanceFns[distance];
+
     if (!fn) {
-      throw new TypeError(`${dialectName} does not support vector distance metric: ${distance}`);
+      throw Error(`${dialectName} does not support vector distance metric: ${distance}`);
     }
+
     ctx.append(`${fn}(${this.escapeId(colName)}, `);
     ctx.addValue(`[${search.$vector.join(',')}]`);
+    if (vectorCast && dialectName === 'PostgreSQL') {
+      ctx.append(`::${vectorCast}`);
+    }
     ctx.append(')');
   }
 
   /**
-   * Append a vector distance projection (`<expr> AS <alias>`) in the SELECT clause.
-   * Delegates to `appendVectorSort()` (which emits the distance expression) then appends the alias.
+   * Append a vector distance projection.
    */
   protected appendVectorProjection<E>(
     ctx: QueryContext,
@@ -842,7 +839,20 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     search: QueryVectorSearch,
   ): void {
     this.appendVectorSort(ctx, meta, key, search);
-    ctx.append(` AS ${this.escapeId(search.$project!)}`);
+    ctx.append(` AS ${this.escapeId(search.$project as string)}`);
+  }
+
+  /**
+   * Append a vector similarity ORDER BY expression.
+   * Default: auto-delegates to `appendFunctionVectorSort` when `vectorDistanceFns` has entries.
+   * Override for operator-based syntax (e.g. PostgreSQL `<=>`, `<->` operators).
+   */
+  protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
+    if (hasKeys(this.vectorDistanceFns)) {
+      this.appendFunctionVectorSort(ctx, meta, key, search, this.dialect);
+      return;
+    }
+    throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {

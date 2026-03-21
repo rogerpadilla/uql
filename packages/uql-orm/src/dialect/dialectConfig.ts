@@ -1,6 +1,15 @@
 import type { Dialect, VectorDistance } from '../type/index.js';
 
 export type IsolationLevelStrategy = 'inline' | 'set-before' | 'none';
+export type InsertIdStrategy = 'first' | 'last';
+export type VectorIndexStyle = 'inline' | 'create';
+export type QuoteChar = '"' | '`';
+export type AlterColumnSyntax = 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none';
+export type DropForeignKeySyntax = 'DROP CONSTRAINT' | 'DROP FOREIGN KEY';
+export type DropIndexSyntax = 'on-table' | 'standalone';
+export type RenameTableSyntax = 'rename-table' | 'alter-table';
+export type BooleanLiteral = 'native' | 'integer';
+export type AlterColumnStrategy = 'separate-clauses' | 'single-statement';
 
 export interface DialectFeatures {
   returning: boolean;
@@ -12,7 +21,7 @@ export interface DialectFeatures {
   /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
   columnComment: boolean;
   /** How vector indexes are emitted: inline in CREATE TABLE or as standalone CREATE INDEX. */
-  vectorIndexStyle: 'inline' | 'create';
+  vectorIndexStyle: VectorIndexStyle;
   /** Whether the dialect requires/allows (n) length constraints on vector types. */
   vectorSupportsLength: boolean;
   /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
@@ -22,27 +31,29 @@ export interface DialectFeatures {
 }
 
 export interface DialectConfig {
-  quoteChar: '"' | '`';
+  quoteChar: QuoteChar;
   serialPrimaryKey: string;
   tableOptions: string;
-  alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none';
-  dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY';
+  alterColumnSyntax: AlterColumnSyntax;
+  dropForeignKeySyntax: DropForeignKeySyntax;
   beginTransactionCommand: string;
   commitTransactionCommand: string;
   rollbackTransactionCommand: string;
   isolationLevelStrategy: IsolationLevelStrategy;
   /** How DROP INDEX is emitted: `'on-table'` = `DROP INDEX x ON t`, `'standalone'` = `DROP INDEX IF EXISTS x`. */
-  dropIndexSyntax: 'on-table' | 'standalone';
+  dropIndexSyntax: DropIndexSyntax;
   /** How RENAME TABLE is emitted: `'rename-table'` = `RENAME TABLE`, `'alter-table'` = `ALTER TABLE RENAME TO`. */
-  renameTableSyntax: 'rename-table' | 'alter-table';
+  renameTableSyntax: RenameTableSyntax;
   /** How boolean literals are formatted: `'native'` = true/false, `'integer'` = 1/0. */
-  booleanLiteral: 'native' | 'integer';
+  booleanLiteral: BooleanLiteral;
   /** How ALTER COLUMN is structured: `'separate-clauses'` = Postgres multi-statement, `'single-statement'` = MySQL/MariaDB MODIFY. */
-  alterColumnStrategy: 'separate-clauses' | 'single-statement';
+  alterColumnStrategy: AlterColumnStrategy;
   /** Operator class map for pgvector indexes. Only set for Postgres. */
   vectorOpsClass?: Readonly<Record<VectorDistance, string>>;
   /** Extension name required for vector support (e.g. 'vector' for pgvector). */
   vectorExtension?: string;
+  /** Strategy for resolving the auto-generated ID from an INSERT operation: 'first' (MySQL/MariaDB) or 'last' (SQLite/others). */
+  insertIdStrategy: InsertIdStrategy;
   features: DialectFeatures;
 }
 
@@ -69,6 +80,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'alter-table',
     booleanLiteral: 'native',
     alterColumnStrategy: 'separate-clauses',
+    insertIdStrategy: 'last',
     vectorOpsClass: PG_VECTOR_OPS_CLASS,
     vectorExtension: 'vector',
     features: {
@@ -99,6 +111,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'alter-table',
     booleanLiteral: 'native',
     alterColumnStrategy: 'separate-clauses',
+    insertIdStrategy: 'last',
     vectorOpsClass: PG_VECTOR_OPS_CLASS,
     // CockroachDB 24.2+ has built-in pgvector support — no CREATE EXTENSION needed.
     features: {
@@ -129,6 +142,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'rename-table',
     booleanLiteral: 'native',
     alterColumnStrategy: 'single-statement',
+    insertIdStrategy: 'first',
     features: {
       returning: false,
       ifNotExists: true,
@@ -157,6 +171,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'rename-table',
     booleanLiteral: 'native',
     alterColumnStrategy: 'single-statement',
+    insertIdStrategy: 'first',
     features: {
       returning: true,
       ifNotExists: true,
@@ -185,6 +200,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'alter-table',
     booleanLiteral: 'integer',
     alterColumnStrategy: 'single-statement',
+    insertIdStrategy: 'last',
     features: {
       returning: true,
       ifNotExists: true,
@@ -213,6 +229,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
     renameTableSyntax: 'alter-table',
     booleanLiteral: 'native',
     alterColumnStrategy: 'single-statement',
+    insertIdStrategy: 'last',
     features: {
       returning: false,
       ifNotExists: false,

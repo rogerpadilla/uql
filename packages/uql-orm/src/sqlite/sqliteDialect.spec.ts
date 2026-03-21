@@ -254,7 +254,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('SQLite does not support vector distance metric: inner');
+    ).toThrow('sqlite does not support vector distance metric: inner');
   }
 
   shouldSortByVectorSimilarityCombinedWithRegularSort() {

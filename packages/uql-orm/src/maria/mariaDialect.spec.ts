@@ -251,7 +251,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('MariaDB does not support vector distance metric: inner');
+    ).toThrow('mariadb does not support vector distance metric: inner');
   }
 
   shouldSortByVectorSimilarityCombinedWithRegularSort() {
