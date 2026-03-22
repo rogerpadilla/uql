@@ -1,15 +1,10 @@
-import type { AbstractDialect } from '../dialect/index.js';
 import type { Dialect, ExtraOptions, Querier, QuerierPool, TransactionOptions } from '../type/index.js';
 
-export abstract class AbstractQuerierPool<D extends AbstractDialect, Q extends Querier> implements QuerierPool<Q> {
+export abstract class AbstractQuerierPool<Q extends Querier> implements QuerierPool<Q> {
   constructor(
-    readonly dialectInstance: D,
+    readonly dialect: Dialect,
     readonly extra?: ExtraOptions,
   ) {}
-
-  get dialect(): Dialect {
-    return this.dialectInstance.dialect;
-  }
 
   /**
    * get a querier from the pool.

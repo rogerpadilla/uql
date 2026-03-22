@@ -1,6 +1,5 @@
 import type { PoolClient, QueryResult } from '@neondatabase/serverless';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { PostgresDialect } from '../postgres/index.js';
 import { NeonQuerier } from './neonQuerier.js';
 
 describe('NeonQuerier', () => {
@@ -17,7 +16,7 @@ describe('NeonQuerier', () => {
       release: vi.fn(),
     };
     connect = vi.fn().mockResolvedValue(mockConn as unknown as PoolClient);
-    querier = new NeonQuerier(connect, new PostgresDialect());
+    querier = new NeonQuerier(connect);
   });
 
   it('should lazy connect on first query', async () => {

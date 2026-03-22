@@ -111,54 +111,18 @@ export function escapeSqlId(
 }
 
 /**
- * Payload for building a QueryUpdateResult.
- */
-export interface BuildUpdateResultPayload {
-  /** The count of rows affected by the statement. */
-  changes?: number;
-  /** The raw rows returned by the query (for RETURNING clauses). */
-  rows?: RawRow[];
-  /** The first (MySQL) or last (SQLite) auto-generated ID from the driver header. */
-  id?: number | bigint;
-  /** The ID strategy: 'first' (MySQL/MariaDB) or 'last' (SQLite/LibSQL/D1). */
-  insertIdStrategy?: 'first' | 'last';
-  /**
-   * Driver-specific upsert detection from the result header.
-   * MySQL/MariaDB `ON DUPLICATE KEY UPDATE` convention: 1 = insert, 2 = update, 0 = no-op.
-   */
-  upsertStatus?: number;
-}
-
-/**
- * Unified utility to build a QueryUpdateResult from driver-specific results.
+ * Extract INSERT result IDs from raw database rows.
  *
- * UQL's SQL dialects always alias the entity's ID column to `id` in RETURNING clauses,
+ * UQL's SQL dialect always aliases the entity's ID column to `id` in RETURNING clauses,
  * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
  */
-export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
-  const { rows, id, insertIdStrategy, upsertStatus } = payload;
-  const changes = payload.changes ?? rows?.length ?? 0;
-
-  // 1. ID Mapping
-  let firstId: any;
-  if (rows?.[0]?.['id'] !== undefined) {
-    firstId = rows[0]['id'];
-  } else if (id !== undefined) {
-    firstId = insertIdStrategy === 'last' ? Number(id) - (changes - 1) : Number(id);
-  }
-
-  const ids: any[] = rows?.length
-    ? rows.map((r) => r['id'])
-    : firstId
-      ? Array.from({ length: changes }, (_, i) => firstId + i)
-      : [];
-
-  // 2. Creation Status
-  // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
-  // MySQL/MariaDB: `affectedRows` convention — 1 = insert, 2 = update, 0 = no-op.
+export function extractInsertResult(rows: RawRow[], changes?: number, affectedRows?: number): QueryUpdateResult {
+  const ids = rows.map((r) => r['id']) as QueryUpdateResult['ids'];
+  // `_created` comes from PostgreSQL's `(xmax = 0) AS "_created"` in the RETURNING clause.
+  // `affectedRows` convention (MySQL/MariaDB `ON DUPLICATE KEY UPDATE`): 1 = insert, 2 = update, 0 = no-op.
+  // The `affectedRows <= 2` guard ensures this only applies for single-row upserts.
   const created =
-    (rows && rows.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
-    (upsertStatus !== undefined && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
-
+    (rows.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
+    (affectedRows !== undefined && affectedRows <= 2 ? affectedRows === 1 : undefined);
   return { changes, ids, firstId: ids?.[0], created };
 }

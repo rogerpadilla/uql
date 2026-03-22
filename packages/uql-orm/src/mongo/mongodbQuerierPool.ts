@@ -4,17 +4,18 @@ import type { ExtraOptions } from '../type/index.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
-export class MongodbQuerierPool extends AbstractQuerierPool<MongoDialect, MongodbQuerier> {
+export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier> {
   private readonly client: MongoClient;
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
-    super(new MongoDialect(extra?.namingStrategy), extra);
+    super('mongodb', extra);
     this.client = new MongoClient(uri, opts);
   }
 
   async getQuerier() {
     const conn = await this.client.connect();
-    return new MongodbQuerier(this.dialectInstance, conn, this.extra);
+    const querier = new MongodbQuerier(new MongoDialect(), conn, this.extra);
+    return querier;
   }
 
   async end() {

@@ -156,7 +156,6 @@
         }
       },
       "suspicious": {
-        "useIterableCallbackReturn": "off",
         "noConfusingVoidType": "off",
         "noTemplateCurlyInString": "off",
         "noAsyncPromiseExecutor": "error",
