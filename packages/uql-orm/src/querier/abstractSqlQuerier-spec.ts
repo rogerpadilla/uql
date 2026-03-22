@@ -1246,8 +1246,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { name: 'Bob', email: 'bob@test.com', createdAt: 1 },
     ]);
 
-    (this.querier.all as any).mockClear();
-    (this.querier.run as any).mockClear();
+    vi.mocked(this.querier.all).mockClear();
+    vi.mocked(this.querier.run).mockClear();
 
     const distinctRows = await this.querier.findMany(User, {
       $select: { name: true },
@@ -1265,8 +1265,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       { name: 'Bob', email: 'bob@test.com', createdAt: 1 },
     ]);
 
-    (this.querier.all as any).mockClear();
-    (this.querier.run as any).mockClear();
+    vi.mocked(this.querier.all).mockClear();
+    vi.mocked(this.querier.run).mockClear();
 
     const collected: User[] = [];
     for await (const row of this.querier.findManyStream(User, {

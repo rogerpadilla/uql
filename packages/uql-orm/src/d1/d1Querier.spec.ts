@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { SqliteDialect } from '../sqlite/index.js';
 import { type D1Database, type D1ExecResult, D1Querier, type D1Result } from './d1Querier.js';
 
 describe('D1Querier', () => {
@@ -22,7 +21,7 @@ describe('D1Querier', () => {
     mockDb = {
       prepare: vi.fn().mockReturnValue(mockStmt),
     };
-    querier = new D1Querier(mockDb as unknown as D1Database, new SqliteDialect());
+    querier = new D1Querier(mockDb as unknown as D1Database);
   });
 
   it('should execute findMany via all()', async () => {

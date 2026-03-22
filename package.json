@@ -16,9 +16,7 @@
     "build": "lerna run build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",
-    "test": "npm run test:vitest && npm run test:bun",
-    "test:vitest": "vitest run --coverage",
-    "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/",
+    "test": "vitest run --coverage",
     "test.watch": "vitest",
     "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/uql-orm/src/mongo/mongodbQuerier.test.ts",
     "prepare": "git config core.hooksPath .githooks || true"
@@ -56,7 +54,7 @@
     "supertest": "^7.2.2",
     "typescript": "^6.0.1-rc",
     "unplugin-swc": "^1.5.9",
-    "vite": "^8.0.1",
+    "vite": "^8.0.0",
     "vitest": "^4.1.0"
   },
   "author": "Roger Padilla"

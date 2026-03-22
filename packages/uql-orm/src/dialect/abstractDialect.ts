@@ -16,10 +16,6 @@ export abstract class AbstractDialect {
     this.config = getDialectConfig(dialect);
   }
 
-  get insertIdStrategy() {
-    return this.config.insertIdStrategy;
-  }
-
   /**
    * Resolve the table name for an entity, applying naming strategy if necessary.
    */

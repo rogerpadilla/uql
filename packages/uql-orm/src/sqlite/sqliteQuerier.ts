@@ -1,15 +1,14 @@
 import type { Database } from 'better-sqlite3';
 import type { ExtraOptions } from '../type/index.js';
 import { AbstractSqliteQuerier } from './abstractSqliteQuerier.js';
-import type { SqliteDialect } from './sqliteDialect.js';
+import { SqliteDialect } from './sqliteDialect.js';
 
 export class SqliteQuerier extends AbstractSqliteQuerier {
   constructor(
     readonly db: Database,
-    dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
   ) {
-    super(dialect, extra);
+    super(new SqliteDialect(extra?.namingStrategy), extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -24,7 +23,7 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
 
   override async internalRun(query: string, values?: unknown[]) {
     const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
-    return this.buildUpdateResult({ changes, id: lastInsertRowid });
+    return this.buildUpdateResult(changes, lastInsertRowid);
   }
 
   override async internalRelease() {

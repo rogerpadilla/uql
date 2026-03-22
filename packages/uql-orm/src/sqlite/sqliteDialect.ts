@@ -3,6 +3,7 @@ import { AbstractSqlDialect } from '../dialect/index.js';
 import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
 import type {
+  EntityMeta,
   FieldKey,
   JsonUpdateOp,
   NamingStrategy,
@@ -11,6 +12,7 @@ import type {
   QueryContext,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
+  QueryVectorSearch,
   QueryWhereFieldOperatorMap,
   Type,
   VectorDistance,
@@ -18,12 +20,6 @@ import type {
 import { hasKeys } from '../util/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
-  protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
-    cosine: 'vec_distance_cosine',
-    l2: 'vec_distance_L2',
-    hamming: 'vec_distance_hamming',
-  };
-
   constructor(namingStrategy?: NamingStrategy) {
     super('sqlite', namingStrategy);
   }
@@ -185,6 +181,23 @@ export class SqliteDialect extends AbstractSqlDialect {
       expr = `json_remove(${expr}, ${paths})`;
     }
     ctx.append(`${escapedCol} = ${expr}`);
+  }
+
+  /** sqlite-vec distance functions. */
+  private static readonly VECTOR_FNS: Partial<Record<VectorDistance, string>> = {
+    cosine: 'vec_distance_cosine',
+    l2: 'vec_distance_L2',
+    hamming: 'vec_distance_hamming',
+  };
+
+  /** Emit a sqlite-vec distance function: `vec_distance_<metric>(col, ?)`. */
+  protected override appendVectorSort<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+  ): void {
+    this.appendFunctionVectorSort(ctx, meta, key, search, SqliteDialect.VECTOR_FNS, 'SQLite');
   }
 
   override escape(value: unknown): string {

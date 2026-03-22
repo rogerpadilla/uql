@@ -1,6 +1,5 @@
 import type { Client, ResultSet } from '@libsql/client';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { SqliteDialect } from '../sqlite/index.js';
 import { LibsqlQuerier } from './libsqlQuerier.js';
 
 describe('LibsqlQuerier', () => {
@@ -29,7 +28,7 @@ describe('LibsqlQuerier', () => {
       transaction: vi.fn().mockResolvedValue(mockTx),
       close: vi.fn(),
     };
-    querier = new LibsqlQuerier(mockClient as unknown as Client, new SqliteDialect());
+    querier = new LibsqlQuerier(mockClient as unknown as Client);
   });
 
   it('should execute select query using client', async () => {

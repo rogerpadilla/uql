@@ -1,4 +1,3 @@
-import type { InsertIdStrategy } from '../dialect/dialectConfig.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
@@ -16,8 +15,7 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { buildUpdateResult, clone, obtainAttrsPaths, unflatObject, unflatObjects } from '../util/index.js';
-import type { BuildUpdateResultPayload } from '../util/sql.util.js';
+import { clone, obtainAttrsPaths, unflatObject, unflatObjects } from '../util/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { Log, Serialized } from './decorator/index.js';
 
@@ -40,16 +38,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * internal insert/update/delete/ddl query.
    */
   protected abstract internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
-
-  /**
-   * Build a QueryUpdateResult with affected changes and calculated IDs.
-   */
-  protected buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
-    return buildUpdateResult({
-      insertIdStrategy: this.dialect.insertIdStrategy,
-      ...payload,
-    });
-  }
 
   /**
    * Hook for subclasses (e.g. pool queriers) to establish a connection.
