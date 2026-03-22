@@ -34,18 +34,3 @@ export type QuerierPool<Q extends Querier = Querier> = {
    */
   end(): Promise<void>;
 };
-
-/**
- * Represents a high-compatibility SQL pool shim for Node.js integrations (e.g., express-session).
- */
-export interface SqlPoolCompat {
-  /**
-   * Standardized query executor compatible with pg, mysql2, etc.
-   */
-  query(text: string, values?: unknown[]): Promise<{ rows: unknown[]; rowCount: number }>;
-
-  /**
-   * Event listener support for common pool events.
-   */
-  on?: (event: string, listener: (...args: unknown[]) => void) => void;
-}

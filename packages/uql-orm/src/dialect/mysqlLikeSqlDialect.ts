@@ -101,7 +101,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     // Complex case: use EXISTS with JSON_TABLE
     // e.g., EXISTS (SELECT 1 FROM JSON_TABLE(addresses, '$[*]' COLUMNS (city VARCHAR(255) PATH '$.city')) AS jt WHERE jt.city LIKE ?)
     const fields = Object.keys(match);
-    const columns = fields.map((f) => `${this.escapeId(f, true)} TEXT PATH '$.${this.escapeJsonKey(f)}'`).join(', ');
+    const columns = fields.map((f) => `${f} TEXT PATH '$.${f}'`).join(', ');
 
     ctx.append('EXISTS (SELECT 1 FROM JSON_TABLE(');
     this.getComparisonKey(ctx, entity, key, opts);
@@ -110,7 +110,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const conditions = buildElemMatchConditions(
       match,
       (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
-      (field, value) => `jt.${this.escapeId(field, true)} = ${this.addValue(ctx.values, value)}`,
+      (field, value) => `jt.${field} = ${this.addValue(ctx.values, value)}`,
     );
 
     ctx.append(conditions.join(' AND '));
@@ -124,7 +124,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return this.buildJsonFieldCondition(
       ctx,
       {
-        fieldAccessor: (f) => `jt.${this.escapeId(f, true)}`,
+        fieldAccessor: (f) => `jt.${f}`,
         numericCast: (expr) => `CAST(${expr} AS DECIMAL)`,
         likeFn: 'LIKE',
         // MySQL/MariaDB LIKE is case-insensitive by default with the common utf8 collations.

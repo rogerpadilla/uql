@@ -91,7 +91,6 @@ npm install uql-orm       # or bun add / pnpm add
 | **LibSQL** (incl. Turso) | `npm install @libsql/client` |
 | **MongoDB** | `npm install mongodb` |
 | **Cloudflare D1** | _Native (no driver needed)_ |
-| **Bun SQL Native** (Incl. Postgres, MySQL, SQLite) | _Native (no driver needed)_ |
 
 ### TypeScript Configuration
 
@@ -262,7 +261,7 @@ A pool manages connections (queriers). Initialize it once at application bootstr
 
 ```ts
 import { SnakeCaseNamingStrategy, type Config } from 'uql-orm';
-import { PgQuerierPool } from 'uql-orm/postgres'; // or mysql2, sqlite, bunSql, etc.
+import { PgQuerierPool } from 'uql-orm/postgres'; // or mysql2, sqlite, etc.
 import { User, Profile, Post } from './entities';
 
 export const pool = new PgQuerierPool(

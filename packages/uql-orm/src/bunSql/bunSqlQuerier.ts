@@ -1,44 +1,46 @@
-import type { ReservedSQL, SQL } from 'bun';
+import type { SQL } from 'bun';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions } from '../type/index.js';
-import { buildUpdateResult } from '../util/index.js';
-import { type BunSqlResult, getAffectedRows, isReservedConnection } from './bunSql.util.js';
+import { AbstractSqlQuerier } from '../querier/abstractSqlQuerier.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
 
-export class BunSqlQuerier extends AbstractPoolQuerier<ReservedSQL> {
+export class BunSqlQuerier extends AbstractSqlQuerier {
   constructor(
     readonly sql: SQL,
     dialect: AbstractSqlDialect,
-    connFactory: () => Promise<ReservedSQL>,
     override readonly extra?: ExtraOptions,
   ) {
-    super(dialect, connFactory, extra);
+    super(dialect, extra);
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
+  override internalAll<T>(query: string, values?: unknown[]) {
     // Safe: UQL parameters are strictly bound. .unsafe() correctly bypasses Bun's tagged template
     // literal parsing requirement so we can execute our dynamically compiled AST strings natively.
-    return this.conn!.unsafe<BunSqlResult<T>>(query, values);
+    return this.sql.unsafe(query, values as unknown[]) as Promise<T[]>;
   }
 
   override async internalRun(query: string, values?: unknown[]) {
     // Safe: UQL parameters are strictly bound. .unsafe() correctly bypasses Bun's tagged template
-    const res = await this.conn!.unsafe<BunSqlResult>(query, values);
+    // literal parsing requirement so we can execute our dynamically compiled AST strings natively.
+    const res = (await this.sql.unsafe(query, values as unknown[])) as RawRow[] & {
+      count?: number;
+      affectedRows?: number;
+      lastInsertRowid?: number | bigint;
+    };
 
     // Bun's result metadata varies by query type; use the unified builder to map safely.
-    return buildUpdateResult({
+    return this.buildUpdateResult({
       rows: res,
-      changes: getAffectedRows(res),
+      changes: res.affectedRows ?? res.count ?? 0,
       id: res.lastInsertRowid,
-      insertIdStrategy: this.dialect.insertIdStrategy,
       upsertStatus: res.affectedRows,
     });
   }
 
-  protected override async releaseConn(conn: ReservedSQL) {
-    // Only release if the connection is a reserved one (e.g. native Postgres/MySQL)
-    if (isReservedConnection(conn)) {
-      conn.release();
+  override async internalRelease() {
+    if (this.hasOpenTransaction) {
+      throw TypeError('pending transaction');
     }
+    // Bun's SQL client is typically an app-level singleton or pool that doesn't
+    // require manual release at the individual querier level.
   }
 }

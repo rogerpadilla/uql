@@ -4,15 +4,6 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.7.1] - 2026-03-21
-### Security
-- **SQL Injection Prevention**: Hardened JSON-path operators across all SQL dialects with strict identifier and key escaping.
-
-### Improvements
-- **Standardized Architecture**: Unified `PrimaryKey` type and improved `buildUpdateResult` for precise batch-insert ID mapping.
-- **Bun SQL Resilience**: Optimized the `BunSqlQuerier` pool behavior to handle SQLite's native single-connection driver gracefully.
-- **Dialect Fixes**: Fixed MariaDB routing in the native Bun SQL integration.
-
 ## [0.7.0] - 2026-03-21
 ### New Features
 - **Bun SQL Support**: Added a first-class adapter for Bun's unified `sql` driver (`bunSql`). Single pool/querier implementation that dynamically routes to PostgreSQL, MySQL, or SQLite ASTs based on the connection string.

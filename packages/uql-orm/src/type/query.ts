@@ -1,5 +1,5 @@
 import type { FieldKey, IdValue, JsonFieldPaths, RelationKey, UpdatePayload } from './entity.js';
-import type { BooleanLike, ExpandScalar, PrimaryKey, Scalar, Type, Unpacked } from './utility.js';
+import type { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
   /**
@@ -403,11 +403,11 @@ export type QueryUpdateResult = {
   /**
    * the inserted IDs.
    */
-  ids?: PrimaryKey[];
+  ids?: number[] | string[];
   /**
    * first inserted ID.
    */
-  firstId?: PrimaryKey;
+  firstId?: number | string;
   /**
    * whether the record was created (`true`) or updated (`false`).
    * `undefined` when the dialect cannot determine this (e.g. SQLite).

@@ -60,8 +60,8 @@ describe('LibsqlQuerier', () => {
 
     expect(res).toEqual({
       changes: 1,
-      ids: [100n],
-      firstId: 100n,
+      ids: [100],
+      firstId: 100,
     });
   });
 

@@ -190,7 +190,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     const conditions = buildElemMatchConditions(
       match,
       (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
-      (field, value) => `elem->>'${this.escapeJsonKey(field)}' = ${this.addValue(ctx.values, value)}`,
+      (field, value) => `elem->>'${field}' = ${this.addValue(ctx.values, value)}`,
     );
 
     ctx.append(conditions.join(' AND '));
@@ -204,7 +204,7 @@ export class PostgresDialect extends AbstractSqlDialect {
   private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
     return this.buildJsonFieldCondition(
       ctx,
-      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `elem->>'${this.escapeJsonKey(f)}'` },
+      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `elem->>'${f}'` },
       field,
       op,
       value,
