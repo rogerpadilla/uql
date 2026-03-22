@@ -1,3 +1,4 @@
+import type { InsertIdStrategy } from '../dialect/dialectConfig.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {

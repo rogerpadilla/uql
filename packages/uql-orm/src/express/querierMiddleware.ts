@@ -168,10 +168,9 @@ function buildIdQuery<E extends object>(meta: EntityMeta<E>, req: Request): Quer
   const id = req.params['id'] as unknown as IdValue<E>;
   const q = req.query as Query<E>;
 
-  const where = (Array.isArray(q.$where) ? { [meta.id as string]: { $in: q.$where } } : (q.$where ?? {})) as Record<
-    string,
-    unknown
-  >;
+  const where = (
+    Array.isArray(q.$where) ? { [meta.id as string]: { $in: q.$where } } : (q.$where ?? {})
+  ) as Record<string, unknown>;
   where[meta.id as string] = id;
   q.$where = where as typeof q.$where;
 
