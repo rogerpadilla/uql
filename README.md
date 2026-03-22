@@ -446,6 +446,14 @@ for await (const user of querier.findManyStream(User, { $where: { active: true }
 }
 ```
 
+### Raw SQL
+
+For scenarios requiring full control, UQL provides `all()` and `run()` for executing vanilla SQL with type-safety.
+
+> **Learn more**: See the [Raw SQL guide](https://uql-orm.dev/querying/raw-sql) for generics, `run` vs `all`, and metadata details.
+
+---
+
 ### Thread-Safe Transactions
 
 UQL is one of the few ORMs with a **centralized serialization engine**. Transactions are guaranteed to be race-condition free.
