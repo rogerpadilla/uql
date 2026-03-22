@@ -1,5 +1,4 @@
 import type { Key, QueryUpdateResult, RawRow } from '../type/index.js';
-import type { PrimaryKey } from '../type/utility.js';
 import { getKeys, hasKeys } from './object.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
@@ -120,7 +119,7 @@ export interface BuildUpdateResultPayload {
   /** The raw rows returned by the query (for RETURNING clauses). */
   rows?: RawRow[];
   /** The first (MySQL) or last (SQLite) auto-generated ID from the driver header. */
-  id?: PrimaryKey;
+  id?: number | bigint;
   /** The ID strategy: 'first' (MySQL/MariaDB) or 'last' (SQLite/LibSQL/D1). */
   insertIdStrategy?: 'first' | 'last';
   /**
@@ -141,52 +140,25 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
   const changes = payload.changes ?? rows?.length ?? 0;
 
   // 1. ID Mapping
-  let firstId: PrimaryKey | undefined;
-  const rowId = rows?.[0]?.['id'] as PrimaryKey | undefined;
-  if (isPrimaryKey(rowId)) {
-    firstId = rowId;
-  } else if (isPrimaryKey(id)) {
-    const offset = changes - 1;
-    if (insertIdStrategy === 'last') {
-      if (typeof id === 'bigint') {
-        firstId = id - BigInt(offset);
-      } else if (typeof id === 'number') {
-        firstId = id - offset;
-      } else {
-        firstId = id;
-      }
-    } else {
-      firstId = id;
-    }
+  let firstId: any;
+  if (rows?.[0]?.['id'] !== undefined) {
+    firstId = rows[0]['id'];
+  } else if (id !== undefined) {
+    firstId = insertIdStrategy === 'last' ? Number(id) - (changes - 1) : Number(id);
   }
 
-  let ids: PrimaryKey[] = [];
-
-  if (rows?.length) {
-    ids = rows.map((r) => r['id'] as PrimaryKey);
-  } else if (isPrimaryKey(firstId)) {
-    if (typeof firstId === 'bigint' || typeof firstId === 'number') {
-      ids = Array.from({ length: changes }, (_, i) =>
-        typeof firstId === 'bigint' ? firstId + BigInt(i) : firstId + i,
-      );
-    } else if (changes === 1) {
-      ids = [firstId];
-    }
-  }
+  const ids: any[] = rows?.length
+    ? rows.map((r) => r['id'])
+    : firstId
+      ? Array.from({ length: changes }, (_, i) => firstId + i)
+      : [];
 
   // 2. Creation Status
   // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
   // MySQL/MariaDB: `affectedRows` convention — 1 = insert, 2 = update, 0 = no-op.
   const created =
-    (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
-    (typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
+    (rows && rows.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
+    (upsertStatus !== undefined && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
 
   return { changes, ids, firstId: ids?.[0], created };
-}
-
-/**
- * Checks if a value is of a primary key type (string, number, or bigint).
- */
-export function isPrimaryKey(val: unknown): val is PrimaryKey {
-  return typeof val === 'string' || typeof val === 'number' || typeof val === 'bigint';
 }

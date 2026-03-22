@@ -8,4 +8,3 @@ data
 mongodb-*
 *.tsbuildinfo
 .cursor/plans/
-test.db
