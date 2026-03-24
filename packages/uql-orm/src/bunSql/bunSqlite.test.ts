@@ -4,7 +4,7 @@ import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
 class BunSqliteSpec extends AbstractSqlQuerierSpec {
   constructor() {
-    super(new BunSqlQuerierPool('sqlite', ':memory:'), 'INTEGER PRIMARY KEY');
+    super(new BunSqlQuerierPool({ url: 'sqlite://:memory:' }), 'INTEGER PRIMARY KEY');
   }
 }
 

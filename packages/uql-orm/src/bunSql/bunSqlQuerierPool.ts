@@ -7,7 +7,7 @@ import { PostgresDialect } from '../postgres/index.js';
 import { AbstractQuerierPool } from '../querier/index.js';
 import { SqliteDialect } from '../sqlite/index.js';
 import type { ExtraOptions, NamingStrategy, SqlDialect, SqlPoolCompat } from '../type/index.js';
-import { type BunSqlResult, getAffectedRows, isBunSqlClient, isPoolableDialect } from './bunSql.util.js';
+import { type BunSqlResult, getAffectedRows, inferDialect, isPoolableDialect, normalizeBunOpts } from './bunSql.util.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 
 const DialectMap: Readonly<Record<SqlDialect, new (namingStrategy?: NamingStrategy) => AbstractSqlDialect>> = {
@@ -20,26 +20,18 @@ const DialectMap: Readonly<Record<SqlDialect, new (namingStrategy?: NamingStrate
 
 export class BunSqlQuerierPool extends AbstractQuerierPool<AbstractSqlDialect, BunSqlQuerier> {
   readonly sql: SQL;
+  readonly sqlDialect: SqlDialect;
 
   constructor(
-    readonly sqlDialect: SqlDialect,
-    readonly config: string | SQL.Options | SQL,
+    readonly config: SQL.Options,
     extra?: ExtraOptions,
   ) {
-    super(new DialectMap[sqlDialect](extra?.namingStrategy), extra);
+    const dialect = inferDialect(config);
+    super(new DialectMap[dialect](extra?.namingStrategy), extra);
+    this.sqlDialect = dialect;
 
-    // Support passing an instantiated SQL client directly, or a config string/object
-    if (isBunSqlClient(config)) {
-      this.sql = config as SQL;
-    } else {
-      const adapter = sqlDialect === 'cockroachdb' ? 'postgres' : sqlDialect;
-      if (typeof config === 'string') {
-        this.sql = new SQL(config);
-      } else {
-        const opts = 'adapter' in config ? config : { ...config, adapter };
-        this.sql = new SQL(opts);
-      }
-    }
+    const opts = normalizeBunOpts(config, dialect);
+    this.sql = new SQL(opts);
   }
 
   /**

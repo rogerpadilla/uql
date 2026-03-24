@@ -36,7 +36,8 @@
     },
     "./libsql": "./dist/libsql/index.js",
     "./neon": "./dist/neon/index.js",
-    "./d1": "./dist/d1/index.js"
+    "./d1": "./dist/d1/index.js",
+    "./bunSql": "./dist/bunSql/index.js"
   },
   "files": [
     "dist",
