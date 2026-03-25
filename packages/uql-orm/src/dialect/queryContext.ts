@@ -49,7 +49,7 @@ export class SqlQueryContext implements QueryContext {
    * @returns The current context instance for method chaining.
    */
   pushValue(...values: unknown[]): this {
-    this.params.push(...values);
+    this.params.push(...values.map((v) => this.dialect.normalizeValue(v)));
     return this;
   }
 

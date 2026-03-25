@@ -28,13 +28,13 @@ export class SqliteDialect extends AbstractSqlDialect {
     super('sqlite', namingStrategy);
   }
 
-  override addValue(values: unknown[], value: unknown): string {
-    if (value instanceof Date) {
-      value = value.getTime();
-    } else if (typeof value === 'boolean') {
-      value = value ? 1 : 0;
-    }
-    return super.addValue(values, value);
+  protected override ilikeExpr(f: string, ph: string): string {
+    return `${f} LIKE ${ph}`;
+  }
+
+  override normalizeValue(value: unknown): unknown {
+    if (value instanceof Date) return value.getTime();
+    return super.normalizeValue(value);
   }
 
   override compare<E>(
@@ -119,7 +119,8 @@ export class SqliteDialect extends AbstractSqlDialect {
 
     const conditions = buildElemMatchConditions(
       match,
-      (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
+      (field, op, opVal) =>
+        this.buildJsonFieldCondition(ctx, (f) => `json_extract(value, '$.${this.escapeJsonKey(f)}')`, field, op, opVal),
       (field, value) => {
         // Keep SQLite's placeholder behavior consistent with prior implementation.
         ctx.pushValue(value);
@@ -131,29 +132,12 @@ export class SqliteDialect extends AbstractSqlDialect {
     ctx.append(')');
   }
 
-  /**
-   * Build a comparison condition for a JSON field with an operator.
-   */
-  private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
-    return this.buildJsonFieldCondition(
-      ctx,
-      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `json_extract(value, '$.${this.escapeJsonKey(f)}')` },
-      field,
-      op,
-      value,
-    );
-  }
-
   protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
     return `json_extract(${escapedColumn}, '$.${this.escapeJsonKey(jsonPath)}')`;
   }
 
-  protected override getBaseJsonConfig() {
-    return {
-      ...super.getBaseJsonConfig(),
-      numericCast: (expr: string) => `CAST(${expr} AS REAL)`,
-      neExpr: (f: string, ph: string) => `${f} IS NOT ${ph}`,
-    };
+  protected override numericCast(expr: string): string {
+    return `CAST(${expr} AS REAL)`;
   }
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {

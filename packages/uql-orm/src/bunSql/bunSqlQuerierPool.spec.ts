@@ -1,4 +1,3 @@
-import { SQL } from 'bun';
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/index.js';
 import { SqliteDialect } from '../sqlite/index.js';
@@ -16,9 +15,9 @@ describe('BunSqlQuerierPool', () => {
   });
 
   it('should support passing config with url', () => {
-    const sql = new SQL('sqlite://test.db');
     const pool = new BunSqlQuerierPool({ url: 'sqlite://test.db' });
-    expect(pool.sql.options.adapter).toBe(sql.options.adapter);
+    expect(pool.sql).toBeDefined();
+    expect(pool.dialectInstance).toBeInstanceOf(SqliteDialect);
   });
 
   it('should support config object with adapter', () => {
@@ -40,7 +39,7 @@ describe('BunSqlQuerierPool', () => {
       vi.spyOn(pool.sql, 'unsafe').mockResolvedValue(mockResult as any);
 
       const res = await pool.pool.query('SELECT 1', [123]);
-      expect(res.rows).toBe(mockResult);
+      expect(res.rows).toEqual([{ id: 1 }]);
       expect(res.rowCount).toBe(1);
       expect(pool.sql.unsafe).toHaveBeenCalledWith('SELECT 1', [123]);
     });

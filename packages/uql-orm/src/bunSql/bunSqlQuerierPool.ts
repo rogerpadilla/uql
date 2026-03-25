@@ -7,7 +7,14 @@ import { PostgresDialect } from '../postgres/index.js';
 import { AbstractQuerierPool } from '../querier/index.js';
 import { SqliteDialect } from '../sqlite/index.js';
 import type { ExtraOptions, NamingStrategy, SqlDialect, SqlPoolCompat } from '../type/index.js';
-import { type BunSqlResult, getAffectedRows, inferDialect, isPoolableDialect, normalizeBunOpts } from './bunSql.util.js';
+import {
+  type BunSqlResult,
+  getAffectedRows,
+  inferDialect,
+  isPoolableDialect,
+  normalizeBunOpts,
+  normalizeRows,
+} from './bunSql.util.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 
 const DialectMap: Readonly<Record<SqlDialect, new (namingStrategy?: NamingStrategy) => AbstractSqlDialect>> = {
@@ -41,9 +48,9 @@ export class BunSqlQuerierPool extends AbstractQuerierPool<AbstractSqlDialect, B
   get pool(): SqlPoolCompat {
     return {
       query: (text: string, values?: unknown[]) =>
-        this.sql.unsafe<BunSqlResult>(text, values).then((rows) => ({
-          rows,
-          rowCount: getAffectedRows(rows),
+        this.sql.unsafe<BunSqlResult>(text, this.dialectInstance.normalizeValues(values)).then((res) => ({
+          rows: normalizeRows(res),
+          rowCount: getAffectedRows(res),
         })),
       on: () => {
         /* no-op for event listeners */
