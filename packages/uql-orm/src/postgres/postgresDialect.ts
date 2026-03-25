@@ -28,9 +28,10 @@ export class PostgresDialect extends AbstractSqlDialect {
     super(dialect, namingStrategy);
   }
 
-  override addValue(values: unknown[], value: unknown): string {
-    values.push(value);
-    return this.placeholder(values.length);
+  override normalizeValue(value: unknown): unknown {
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (value !== null && typeof value === 'object') return Array.isArray(value) ? toPgArray(value) : value;
+    return super.normalizeValue(value);
   }
 
   override placeholder(index: number): string {
@@ -88,43 +89,6 @@ export class PostgresDialect extends AbstractSqlDialect {
     opts: QueryOptions = {},
   ): void {
     switch (op) {
-      case '$istartsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' ILIKE ');
-        ctx.addValue(`${val}%`);
-        break;
-      case '$iendsWith':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' ILIKE ');
-        ctx.addValue(`%${val}`);
-        break;
-      case '$iincludes':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' ILIKE ');
-        ctx.addValue(`%${val}%`);
-        break;
-      case '$ilike':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' ILIKE ');
-        ctx.addValue(val);
-        break;
-      case '$in':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' = ANY(');
-        ctx.addValue(val);
-        ctx.append(')');
-        break;
-      case '$nin':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' <> ALL(');
-        ctx.addValue(val);
-        ctx.append(')');
-        break;
-      case '$regex':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' ~ ');
-        ctx.addValue(val);
-        break;
       case '$elemMatch':
         this.buildElemMatchCondition(ctx, entity, key, val as Record<string, unknown>, opts);
         break;
@@ -189,7 +153,8 @@ export class PostgresDialect extends AbstractSqlDialect {
 
     const conditions = buildElemMatchConditions(
       match,
-      (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
+      (field, op, opVal) =>
+        this.buildJsonFieldCondition(ctx, (f) => `elem->>'${this.escapeJsonKey(f)}'`, field, op, opVal),
       (field, value) => `elem->>'${this.escapeJsonKey(field)}' = ${this.addValue(ctx.values, value)}`,
     );
 
@@ -197,31 +162,22 @@ export class PostgresDialect extends AbstractSqlDialect {
     ctx.append(')');
   }
 
-  /**
-   * Build a comparison condition for a JSON field with an operator.
-   * Returns the SQL condition string.
-   */
-  private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
-    return this.buildJsonFieldCondition(
-      ctx,
-      { ...this.getBaseJsonConfig(), fieldAccessor: (f) => `elem->>'${this.escapeJsonKey(f)}'` },
-      field,
-      op,
-      value,
-    );
+  protected override get regexpOp(): string {
+    return '~';
   }
 
-  protected override getBaseJsonConfig() {
-    return {
-      numericCast: (expr: string) => `(${expr})::numeric`,
-      likeFn: 'LIKE',
-      ilikeExpr: (f: string, ph: string) => `${f} ILIKE ${ph}`,
-      regexpOp: '~',
-      addValue: (c: QueryContext, v: unknown) => this.addValue(c.values, v),
-      inExpr: (f: string, ph: string) => `${f} = ANY(${ph})`,
-      ninExpr: (f: string, ph: string) => `${f} <> ALL(${ph})`,
-      neExpr: (f: string, ph: string) => `${f} IS DISTINCT FROM ${ph}`,
-    };
+  protected override ilikeExpr(f: string, ph: string): string {
+    return `${f} ILIKE ${ph}`;
+  }
+
+  protected override formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
+    if (values.length === 0) return negate ? ' NOT IN (NULL)' : ' IN (NULL)';
+    const ph = this.addValue(ctx.values, values);
+    return negate ? ` <> ALL(${ph})` : ` = ANY(${ph})`;
+  }
+
+  protected override numericCast(expr: string): string {
+    return `(${expr})::numeric`;
   }
 
   protected override formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {
@@ -293,4 +249,26 @@ export class PostgresDialect extends AbstractSqlDialect {
   override escape(value: unknown): string {
     return sqlstring.escape(value);
   }
+}
+
+/**
+ * Converts a JS array to a Postgres array literal string: `{"val1","val2"}`.
+ * Safely handles nesting and escaping of special characters.
+ */
+function toPgArray(arr: any[]): string {
+  const elements = arr.map((val) => {
+    if (val == null) return 'NULL';
+    if (Array.isArray(val)) return toPgArray(val);
+    if (typeof val === 'boolean') return val ? 'true' : 'false';
+    if (val instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(val))) {
+      const hex = Array.from(val)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      return `"\\\\x${hex}"`;
+    }
+    const str = String(val);
+    const escaped = str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `"${escaped}"`;
+  });
+  return `{${elements.join(',')}}`;
 }

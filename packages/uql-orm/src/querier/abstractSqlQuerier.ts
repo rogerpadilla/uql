@@ -64,7 +64,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   @Log()
   private async timedAll<T>(query: string, values?: unknown[]): Promise<T[]> {
-    return this.internalAll<T>(query, values);
+    return this.internalAll<T>(query, this.dialect.normalizeValues(values));
   }
 
   @Serialized()
@@ -75,7 +75,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   @Log()
   private async timedRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
-    return this.internalRun(query, values);
+    return this.internalRun(query, this.dialect.normalizeValues(values));
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>) {
@@ -90,8 +90,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async *internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>) {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
+    const normalizedParams = this.dialect.normalizeValues(ctx.values);
     let attrsPaths: Record<string, string[]> | undefined;
-    for await (const row of this.internalStream<RawRow>(ctx.sql, ctx.values)) {
+    for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
       attrsPaths ??= obtainAttrsPaths(row);
       yield unflatObject<E>(row, attrsPaths);
     }
@@ -103,7 +104,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * Drivers with native cursor/streaming APIs (SQLite, Pg) should override this.
    */
   protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
-    const rows = await this.internalAll<T>(query, values);
+    const rows = await this.internalAll<T>(query, this.dialect.normalizeValues(values));
     yield* rows;
   }
 

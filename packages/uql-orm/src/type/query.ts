@@ -567,6 +567,12 @@ export interface QueryDialect {
   addValue(values: unknown[], value: unknown): string;
 
   /**
+   * normalizes a value according to the dialect.
+   * @param value the value to normalize
+   */
+  normalizeValue(value: unknown): unknown;
+
+  /**
    * create a new query context.
    */
   createContext(): QueryContext;

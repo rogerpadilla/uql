@@ -103,8 +103,31 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   addValue(values: unknown[], value: unknown): string {
-    values.push(value ?? null);
+    values.push(this.normalizeValue(value));
     return this.placeholder(values.length);
+  }
+
+  /**
+   * Normalizes a parameter value for the database driver.
+   * Handles bigint, boolean, and serializes plain objects/arrays to JSON strings.
+   * Date values are preserved so SQL drivers can apply native date/time binding.
+   * Postgres overrides to pass objects through to its native JSONB driver.
+   */
+  normalizeValue(value: unknown): unknown {
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (value instanceof Date) return value;
+    if (value !== null && typeof value === 'object' && !(value instanceof Uint8Array) && !(value instanceof QueryRaw)) {
+      return JSON.stringify(value);
+    }
+    return value;
+  }
+
+  /**
+   * Normalizes a list of parameter values.
+   */
+  normalizeValues(values: unknown[] | undefined): unknown[] | undefined {
+    return values?.map((v) => this.normalizeValue(v));
   }
 
   placeholder(_index: number): string {
@@ -534,20 +557,51 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     $gte: ' >= ',
     $lt: ' < ',
     $lte: ' <= ',
-    $regex: ' REGEXP ',
   };
 
-  /** String/LIKE operators: wrap the value, optionally lowercase it. */
-  private static readonly LIKE_OP_MAP: Record<string, { wrap: (v: string) => string; lower: boolean }> = {
-    $startsWith: { wrap: (v) => `${v}%`, lower: false },
-    $istartsWith: { wrap: (v) => `${v.toLowerCase()}%`, lower: false },
-    $endsWith: { wrap: (v) => `%${v}`, lower: false },
-    $iendsWith: { wrap: (v) => `%${v.toLowerCase()}`, lower: false },
-    $includes: { wrap: (v) => `%${v}%`, lower: false },
-    $iincludes: { wrap: (v) => `%${v.toLowerCase()}%`, lower: false },
-    $like: { wrap: (v) => v, lower: false },
-    $ilike: { wrap: (v) => v.toLowerCase(), lower: false },
+  private static readonly LIKE_OP_MAP: Record<string, (v: string) => string> = {
+    $startsWith: (v) => `${v}%`,
+    $istartsWith: (v) => `${v.toLowerCase()}%`,
+    $endsWith: (v) => `%${v}`,
+    $iendsWith: (v) => `%${v.toLowerCase()}`,
+    $includes: (v) => `%${v}%`,
+    $iincludes: (v) => `%${v.toLowerCase()}%`,
+    $like: (v) => v,
+    $ilike: (v) => v.toLowerCase(),
   };
+
+  protected resolveColumnWithPrefix(entity: Type<any>, key: string, { prefix }: QueryOptions = {}): string {
+    const meta = getMeta(entity);
+    const field = meta.fields[key as string];
+    const columnName = this.resolveColumnName(key, field);
+    const escapedPrefix = this.escapeId(prefix as string, true, true);
+    return escapedPrefix + this.escapeId(columnName);
+  }
+
+  /**
+   * Resolves the SQL operand for a field comparison.
+   * For QueryRaw virtuals, appends the raw expression to ctx and returns undefined.
+   */
+  private resolveOperandField(
+    ctx: QueryContext,
+    entity: Type<any>,
+    key: string,
+    opts: QueryOptions,
+  ): string | undefined {
+    const col = getMeta(entity).fields[key];
+    if (col?.virtual) {
+      if (col.virtual instanceof QueryRaw) {
+        this.getComparisonKey(ctx, entity, key as FieldKey<any>, opts);
+        return undefined;
+      }
+      return `(${col.virtual})`;
+    }
+    return this.resolveColumnWithPrefix(entity, key, opts);
+  }
+
+  private appendFieldSql(ctx: QueryContext, field: string | undefined, sql: string): void {
+    ctx.append(field ? `${field}${sql}` : sql);
+  }
 
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
     ctx: QueryContext,
@@ -557,34 +611,27 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     val: QueryWhereFieldOperatorMap<E>[K],
     opts: QueryOptions = {},
   ): void {
-    // Simple comparison operators (5 cases)
+    const field = this.resolveOperandField(ctx, entity, key as string, opts);
+
     const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP[op as string];
     if (simpleOp) {
-      this.getComparisonKey(ctx, entity, key, opts);
-      ctx.append(simpleOp);
-      ctx.addValue(val);
+      this.appendFieldSql(ctx, field, `${simpleOp}${this.addValue(ctx.values, val)}`);
       return;
     }
 
-    // LIKE string operators (8 cases)
-    const likeEntry = AbstractSqlDialect.LIKE_OP_MAP[op as string];
-    if (likeEntry) {
-      this.getComparisonKey(ctx, entity, key, opts);
-      ctx.append(' LIKE ');
-      ctx.addValue(likeEntry.wrap(val as string));
+    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP[op as string];
+    if (likeWrap) {
+      this.appendLikeOp(ctx, field, op as string, likeWrap(val as string));
       return;
     }
 
     switch (op) {
       case '$eq':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(val === null ? ' IS NULL' : ' = ');
-        if (val !== null) ctx.addValue(val);
-        break;
       case '$ne':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(val === null ? ' IS NOT NULL' : ' <> ');
-        if (val !== null) ctx.addValue(val);
+        this.appendEqNe(ctx, field, op as string, val);
+        break;
+      case '$regex':
+        this.appendFieldSql(ctx, field, ` ${this.regexpOp} ${this.addValue(ctx.values, val)}`);
         break;
       case '$not':
         ctx.append('NOT (');
@@ -592,34 +639,20 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         ctx.append(')');
         break;
       case '$in':
-      case '$nin': {
-        this.getComparisonKey(ctx, entity, key, opts);
-        const keyword = op === '$in' ? ' IN ' : ' NOT IN ';
-        if (Array.isArray(val) && val.length > 0) {
-          ctx.append(`${keyword}(`);
-          this.addValues(ctx, val as unknown[]);
-          ctx.append(')');
-        } else {
-          ctx.append(`${keyword}(NULL)`);
-        }
+      case '$nin':
+        this.appendInNin(ctx, field, op as string, val);
         break;
-      }
       case '$between': {
+        const col = this.resolveColumnWithPrefix(entity, key, opts);
         const [min, max] = val as [unknown, unknown];
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' BETWEEN ');
-        ctx.addValue(min);
-        ctx.append(' AND ');
-        ctx.addValue(max);
+        ctx.append(`${col} BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`);
         break;
       }
       case '$isNull':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(val ? ' IS NULL' : ' IS NOT NULL');
+        this.appendFieldSql(ctx, field, val ? ' IS NULL' : ' IS NOT NULL');
         break;
       case '$isNotNull':
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(val ? ' IS NOT NULL' : ' IS NULL');
+        this.appendFieldSql(ctx, field, val ? ' IS NOT NULL' : ' IS NULL');
         break;
       case '$all':
       case '$size':
@@ -628,6 +661,29 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
+  }
+
+  private appendLikeOp(ctx: QueryContext, field: string | undefined, op: string, wrappedVal: string): void {
+    const isIlike = op.startsWith('$i') || op === '$ilike';
+    const ph = this.addValue(ctx.values, wrappedVal);
+    if (isIlike && field) {
+      ctx.append(this.ilikeExpr(field, ph));
+    } else {
+      this.appendFieldSql(ctx, field, ` ${this.likeFn} ${ph}`);
+    }
+  }
+
+  private appendEqNe(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
+    if (val === null) {
+      this.appendFieldSql(ctx, field, op === '$eq' ? ' IS NULL' : ' IS NOT NULL');
+      return;
+    }
+    const ph = this.addValue(ctx.values, val);
+    this.appendFieldSql(ctx, field, op === '$eq' ? ` = ${ph}` : ` <> ${ph}`);
+  }
+
+  private appendInNin(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
+    this.appendFieldSql(ctx, field, this.formatIn(ctx, Array.isArray(val) ? val : [], op === '$nin'));
   }
 
   protected addValues(ctx: QueryContext, vals: unknown[]): void {
@@ -641,67 +697,59 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   /**
    * Build a comparison condition for a JSON field.
-   * Used by both `$elemMatch` and dot-notation paths. Each dialect provides a `JsonFieldConfig`.
+   * Used by both `$elemMatch` and dot-notation paths.
+   * All dialect-specific behavior comes from overridable methods on `this`.
    */
   protected buildJsonFieldCondition(
     ctx: QueryContext,
-    config: JsonFieldConfig,
+    fieldAccessor: (f: string) => string,
     jsonPath: string,
     op: string,
     value: unknown,
   ): string {
-    const jsonField = config.fieldAccessor(jsonPath);
+    const jsonField = fieldAccessor(jsonPath);
     switch (op) {
       case '$eq':
-        return value === null ? `${jsonField} IS NULL` : `${jsonField} = ${config.addValue(ctx, value)}`;
+        return value === null ? `${jsonField} IS NULL` : `${jsonField} = ${this.addValue(ctx.values, value)}`;
       case '$ne':
         if (value === null) return `${jsonField} IS NOT NULL`;
-        return config.neExpr
-          ? config.neExpr(jsonField, config.addValue(ctx, value))
-          : `${jsonField} <> ${config.addValue(ctx, value)}`;
+        return `${jsonField} <> ${this.addValue(ctx.values, value)}`;
       case '$gt':
-        return `${config.numericCast(jsonField)} > ${config.addValue(ctx, value)}`;
+        return `${this.numericCast(jsonField)} > ${this.addValue(ctx.values, value)}`;
       case '$gte':
-        return `${config.numericCast(jsonField)} >= ${config.addValue(ctx, value)}`;
+        return `${this.numericCast(jsonField)} >= ${this.addValue(ctx.values, value)}`;
       case '$lt':
-        return `${config.numericCast(jsonField)} < ${config.addValue(ctx, value)}`;
+        return `${this.numericCast(jsonField)} < ${this.addValue(ctx.values, value)}`;
       case '$lte':
-        return `${config.numericCast(jsonField)} <= ${config.addValue(ctx, value)}`;
+        return `${this.numericCast(jsonField)} <= ${this.addValue(ctx.values, value)}`;
       case '$like':
-        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, value)}`;
+        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, value)}`;
       case '$ilike':
-        return config.ilikeExpr(jsonField, config.addValue(ctx, (value as string).toLowerCase()));
+        return this.ilikeExpr(jsonField, this.addValue(ctx.values, (value as string).toLowerCase()));
       case '$startsWith':
-        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `${value}%`)}`;
+        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `${value}%`)}`;
       case '$istartsWith':
-        return config.ilikeExpr(jsonField, config.addValue(ctx, `${(value as string).toLowerCase()}%`));
+        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `${(value as string).toLowerCase()}%`));
       case '$endsWith':
-        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `%${value}`)}`;
+        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `%${value}`)}`;
       case '$iendsWith':
-        return config.ilikeExpr(jsonField, config.addValue(ctx, `%${(value as string).toLowerCase()}`));
+        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `%${(value as string).toLowerCase()}`));
       case '$includes':
-        return `${jsonField} ${config.likeFn} ${config.addValue(ctx, `%${value}%`)}`;
+        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `%${value}%`)}`;
       case '$iincludes':
-        return config.ilikeExpr(jsonField, config.addValue(ctx, `%${(value as string).toLowerCase()}%`));
+        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `%${(value as string).toLowerCase()}%`));
       case '$regex':
-        return `${jsonField} ${config.regexpOp} ${config.addValue(ctx, value)}`;
-      case '$in': {
-        if (config.inExpr) {
-          return config.inExpr(jsonField, config.addValue(ctx, value));
-        }
-        const inVals = value as unknown[];
-        return `${jsonField} IN (${inVals.map((v) => config.addValue(ctx, v)).join(', ')})`;
-      }
-      case '$nin': {
-        if (config.ninExpr) {
-          return config.ninExpr(jsonField, config.addValue(ctx, value));
-        }
-        const ninVals = value as unknown[];
-        return `${jsonField} NOT IN (${ninVals.map((v) => config.addValue(ctx, v)).join(', ')})`;
-      }
+        return `${jsonField} ${this.regexpOp} ${this.addValue(ctx.values, value)}`;
+      case '$in':
+      case '$nin':
+        return this.jsonInNin(ctx, jsonField, op, value);
       default:
         throw TypeError(`JSON field condition does not support operator: ${op}`);
     }
+  }
+
+  private jsonInNin(ctx: QueryContext, jsonField: string, op: string, value: unknown): string {
+    return `${jsonField}${this.formatIn(ctx, Array.isArray(value) ? value : [], op === '$nin')}`;
   }
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
@@ -770,7 +818,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       // Detect JSONB dot-notation: 'column.path'
       const jsonDot = this.resolveJsonDotPath(meta, key);
       if (jsonDot) {
-        ctx.append(jsonDot.config.fieldAccessor(jsonDot.jsonPath) + direction);
+        ctx.append(jsonDot.fieldAccessor(jsonDot.jsonPath) + direction);
         return;
       }
 
@@ -976,14 +1024,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         ctx.append(' AND ');
         ctx.addValue(max);
       } else if (op === '$in' || op === '$nin') {
-        const keyword = op === '$in' ? 'IN' : 'NOT IN';
-        if (Array.isArray(val) && val.length > 0) {
-          ctx.append(`${expr} ${keyword} (`);
-          this.addValues(ctx, val as unknown[]);
-          ctx.append(')');
-        } else {
-          ctx.append(`${expr} ${keyword} (NULL)`);
-        }
+        ctx.append(`${expr}${this.formatIn(ctx, Array.isArray(val) ? (val as unknown[]) : [], op === '$nin')}`);
       } else if (op === '$isNull') {
         ctx.append(`${expr}${val ? ' IS NULL' : ' IS NOT NULL'}`);
       } else if (op === '$isNotNull') {
@@ -1305,7 +1346,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     meta: EntityMeta<E>,
     key: string,
     prefix?: string,
-  ): { root: string; jsonPath: string; config: JsonFieldConfig } | undefined {
+  ): { root: string; jsonPath: string; fieldAccessor: (f: string) => string } | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -1318,8 +1359,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const jsonPath = key.slice(dotIndex + 1);
     const colName = this.resolveColumnName(root, field);
     const escapedCol = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    const config = this.getJsonFieldConfig(escapedCol, jsonPath);
-    return { root, jsonPath, config };
+    return { root, jsonPath, fieldAccessor: () => this.getJsonPathScalarExpr(escapedCol, jsonPath) };
   }
 
   /**
@@ -1328,10 +1368,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    */
   protected compareJsonPath(
     ctx: QueryContext,
-    resolved: { jsonPath: string; config: JsonFieldConfig },
+    resolved: { jsonPath: string; fieldAccessor: (f: string) => string },
     val: unknown,
   ): void {
-    const { jsonPath, config } = resolved;
+    const { jsonPath, fieldAccessor } = resolved;
     const value = this.normalizeWhereValue(val);
     const operators = getKeys(value);
 
@@ -1341,26 +1381,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     operators.forEach((op, index) => {
       if (index > 0) ctx.append(' AND ');
-      ctx.append(this.buildJsonFieldCondition(ctx, config, jsonPath, op, value[op]));
+      ctx.append(this.buildJsonFieldCondition(ctx, fieldAccessor, jsonPath, op, value[op]));
     });
 
     if (operators.length > 1) {
       ctx.append(')');
     }
-  }
-
-  /**
-   * Returns a dialect-specific `JsonFieldConfig` for accessing a nested JSON path.
-   * Dialects should override this to provide their specific JSON accessor syntax.
-   *
-   * @param escapedColumn - The escaped column name (possibly prefixed with table name)
-   * @param jsonPath - The dot-separated path within the JSON field (e.g. 'isArchived' or 'theme.color')
-   */
-  protected getJsonFieldConfig(escapedColumn: string, jsonPath: string): JsonFieldConfig {
-    return {
-      ...this.getBaseJsonConfig(),
-      fieldAccessor: () => this.getJsonPathScalarExpr(escapedColumn, jsonPath),
-    };
   }
 
   /**
@@ -1376,24 +1402,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
     }
     return expr;
-  }
-
-  /**
-   * Returns the dialect-invariant portion of `JsonFieldConfig`.
-   * Dialects override this to provide casts, operators, and value binding.
-   * Both `getJsonFieldConfig` (dot-notation) and `buildJsonFieldOperator` ($elemMatch) compose with this.
-   */
-  protected getBaseJsonConfig(): Omit<JsonFieldConfig, 'fieldAccessor'> {
-    return {
-      numericCast: (expr) => `CAST(${expr} AS NUMERIC)`,
-      likeFn: 'LIKE',
-      ilikeExpr: (f, ph) => `LOWER(${f}) LIKE ${ph}`,
-      regexpOp: 'REGEXP',
-      addValue: (c, v) => {
-        c.pushValue(v);
-        return '?';
-      },
-    };
   }
 
   /**
@@ -1608,32 +1616,33 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   abstract escape(value: unknown): string;
-}
 
-/**
- * Configuration for JSON field operations.
- * Each SQL dialect provides its own config to the shared buildJsonFieldCondition method.
- */
-export type JsonFieldConfig = {
-  /** Produces the field accessor expression, e.g. `elem->>'name'` or `json_extract(value, '$.name')` */
-  fieldAccessor: (field: string) => string;
-  /** Wraps an expression for numeric comparison, e.g. `(expr)::numeric` or `CAST(expr AS REAL)` */
-  numericCast: (expr: string) => string;
-  /** The LIKE keyword to use for case-sensitive matching, e.g. `'LIKE'` */
-  likeFn: string;
-  /** Builds a case-insensitive LIKE expression from a field and placeholder, e.g. `LOWER(field) LIKE ph` or `field ILIKE ph` */
-  ilikeExpr: (field: string, placeholder: string) => string;
-  /** The regexp operator, e.g. `'REGEXP'` or `'~'` */
-  regexpOp: string;
-  /** Binds a value and returns its placeholder string */
-  addValue: (ctx: QueryContext, value: unknown) => string;
-  /** Optional: custom $in expression (e.g. Postgres `= ANY()`). If omitted, uses `IN (v1, v2, ...)` */
-  inExpr?: (field: string, placeholder: string) => string;
-  /** Optional: custom $nin expression (e.g. Postgres `<> ALL()`). If omitted, uses `NOT IN (v1, v2, ...)` */
-  ninExpr?: (field: string, placeholder: string) => string;
-  /** Optional: null-safe `$ne` (e.g. Postgres `IS DISTINCT FROM`, SQLite `IS NOT`). If omitted, uses `<>` */
-  neExpr?: (field: string, placeholder: string) => string;
-};
+  protected get regexpOp(): string {
+    return 'REGEXP';
+  }
+
+  protected get likeFn(): string {
+    return 'LIKE';
+  }
+
+  protected ilikeExpr(f: string, ph: string): string {
+    return `LOWER(${f}) LIKE ${ph}`;
+  }
+
+  /**
+   * Formats an IN/NOT IN expression, binding each value individually.
+   * Postgres overrides to use `= ANY($1)` / `<> ALL($1)` with a single array parameter.
+   */
+  protected formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
+    if (values.length === 0) return negate ? ' NOT IN (NULL)' : ' IN (NULL)';
+    const phs = values.map((v) => this.addValue(ctx.values, v)).join(', ');
+    return ` ${negate ? 'NOT IN' : 'IN'} (${phs})`;
+  }
+
+  protected numericCast(expr: string): string {
+    return expr;
+  }
+}
 
 /**
  * Type guard: narrows a relation select value to a query object (with optional `$required`).

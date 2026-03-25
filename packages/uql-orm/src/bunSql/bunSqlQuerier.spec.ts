@@ -6,8 +6,9 @@ import { SqliteDialect } from '../sqlite/index.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 
 function makeSql(result: object) {
+  const res = Object.assign(Array.isArray(result) ? result : [], result);
   const conn = {
-    unsafe: vi.fn().mockResolvedValue(result),
+    unsafe: vi.fn().mockResolvedValue(res),
     release: vi.fn(),
   };
   return {
@@ -48,7 +49,7 @@ describe('BunSqlQuerier', () => {
     it('should support bigint IDs', async () => {
       const querier = createQuerier(makeSql({ count: 1, lastInsertRowid: 9007199254740991n }), new SqliteDialect());
       const res = await querier.run('INSERT...');
-      expect(res.firstId).toBe(9007199254740991n);
+      expect(res.firstId).toBe(9007199254740991);
     });
 
     it('should fallback affectedRows when count is absent', async () => {
@@ -76,7 +77,7 @@ describe('BunSqlQuerier', () => {
       const rows = [{ id: 9007199254740991n }];
       const querier = createQuerier(makeSql(rows), new SqliteDialect());
       const res = await querier.all('SELECT...');
-      expect(res).toEqual(rows);
+      expect(res).toEqual([{ id: 9007199254740991 }]);
     });
   });
 

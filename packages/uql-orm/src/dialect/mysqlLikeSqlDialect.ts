@@ -19,17 +19,16 @@ import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
  * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
-  override addValue(values: unknown[], value: unknown): string {
-    if (value instanceof Date) {
-      // Use a placeholder for Date so the driver controls serialization consistently.
-      values.push(value);
-      return '?';
-    }
-    return super.addValue(values, value);
-  }
-
   override escape(value: unknown): string {
     return SqlString.escape(value);
+  }
+
+  protected override numericCast(expr: string): string {
+    return `CAST(${expr} AS DECIMAL)`;
+  }
+
+  protected override ilikeExpr(f: string, ph: string): string {
+    return `${f} LIKE ${ph}`;
   }
 
   override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
@@ -109,32 +108,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
     const conditions = buildElemMatchConditions(
       match,
-      (field, op, opVal) => this.buildJsonFieldOperator(ctx, field, op, opVal),
+      (field, op, opVal) => this.buildJsonFieldCondition(ctx, (f) => `jt.${this.escapeId(f, true)}`, field, op, opVal),
       (field, value) => `jt.${this.escapeId(field, true)} = ${this.addValue(ctx.values, value)}`,
     );
 
     ctx.append(conditions.join(' AND '));
     ctx.append(')');
-  }
-
-  /**
-   * Build a comparison condition for a JSON_TABLE field with an operator.
-   */
-  private buildJsonFieldOperator(ctx: QueryContext, field: string, op: string, value: unknown): string {
-    return this.buildJsonFieldCondition(
-      ctx,
-      {
-        fieldAccessor: (f) => `jt.${this.escapeId(f, true)}`,
-        numericCast: (expr) => `CAST(${expr} AS DECIMAL)`,
-        likeFn: 'LIKE',
-        // MySQL/MariaDB LIKE is case-insensitive by default with the common utf8 collations.
-        ilikeExpr: (f, ph) => `${f} LIKE ${ph}`,
-        regexpOp: 'REGEXP',
-        addValue: (c, v) => this.addValue(c.values, v),
-      },
-      field,
-      op,
-      value,
-    );
   }
 }
