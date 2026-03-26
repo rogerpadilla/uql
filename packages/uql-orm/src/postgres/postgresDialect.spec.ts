@@ -304,7 +304,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
     expect(res.values).toEqual(['some%', 'Something']);
   }
@@ -332,7 +332,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
     expect(res.values).toEqual(['%some', 'Something']);
   }
@@ -360,7 +360,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
     expect(res.values).toEqual(['%some%', 'Something']);
   }
@@ -388,7 +388,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
     expect(res.values).toEqual(['some', 'Something']);
   }
@@ -429,7 +429,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" <> $2 AND "creatorId" = $3 LIMIT 10',
+      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
@@ -752,7 +752,7 @@ class PostgresDialectSpec {
         $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("elem->>'status' <> $1");
+    expect(res.sql).toContain("elem->>'status' IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -820,7 +820,7 @@ class PostgresDialectSpec {
         $where: { 'kind.private': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') <> $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') IS DISTINCT FROM $1');
     expect(values).toEqual([0]);
   }
 

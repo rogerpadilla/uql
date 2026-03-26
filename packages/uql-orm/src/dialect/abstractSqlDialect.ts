@@ -679,7 +679,15 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return;
     }
     const ph = this.addValue(ctx.values, val);
-    this.appendFieldSql(ctx, field, op === '$eq' ? ` = ${ph}` : ` <> ${ph}`);
+    if (op === '$eq') {
+      this.appendFieldSql(ctx, field, ` = ${ph}`);
+      return;
+    }
+    if (field) {
+      ctx.append(this.neExpr(field, ph));
+    } else {
+      this.appendFieldSql(ctx, field, ` ${this.neOp} ${ph}`);
+    }
   }
 
   private appendInNin(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
@@ -713,7 +721,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         return value === null ? `${jsonField} IS NULL` : `${jsonField} = ${this.addValue(ctx.values, value)}`;
       case '$ne':
         if (value === null) return `${jsonField} IS NOT NULL`;
-        return `${jsonField} <> ${this.addValue(ctx.values, value)}`;
+        return this.neExpr(jsonField, this.addValue(ctx.values, value));
       case '$gt':
         return `${this.numericCast(jsonField)} > ${this.addValue(ctx.values, value)}`;
       case '$gte':
@@ -1029,6 +1037,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         ctx.append(`${expr}${val ? ' IS NULL' : ' IS NOT NULL'}`);
       } else if (op === '$isNotNull') {
         ctx.append(`${expr}${val ? ' IS NOT NULL' : ' IS NULL'}`);
+      } else if (op === '$ne') {
+        ctx.append(this.neExpr(expr, this.addValue(ctx.values, val)));
       } else {
         const sqlOp = AbstractSqlDialect.havingOpMap[op];
         if (!sqlOp) throw TypeError(`unsupported HAVING operator: ${op}`);
@@ -1623,6 +1633,18 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   protected get likeFn(): string {
     return 'LIKE';
+  }
+
+  /**
+   * Not-equal operator token for non-null comparisons.
+   * Postgres uses `IS DISTINCT FROM`; MySQL/Maria uses custom `neExpr`.
+   */
+  protected get neOp(): string {
+    return '<>';
+  }
+
+  protected neExpr(field: string, ph: string): string {
+    return `${field} ${this.neOp} ${ph}`;
   }
 
   protected ilikeExpr(f: string, ph: string): string {

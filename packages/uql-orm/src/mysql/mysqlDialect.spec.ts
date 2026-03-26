@@ -146,7 +146,7 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
     expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain('jt.`active` <> ?');
+    expect(ctx.sql).toContain('NOT (jt.`active` <=> ?)');
   }
 
   shouldFind$elemMatchWithAllOperators() {

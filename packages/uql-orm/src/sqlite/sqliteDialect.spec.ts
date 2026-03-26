@@ -169,7 +169,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` <> ? AND `companyId` = ? LIMIT 10',
+      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
@@ -434,7 +434,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(value, '$.a') <> ?");
+    expect(res.sql).toContain("json_extract(value, '$.a') IS NOT ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
     expect(res.sql).toContain("json_extract(value, '$.active') = ?");
@@ -493,7 +493,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') <> ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') IS NOT ?");
     expect(values).toEqual([0]);
   }
 
