@@ -24,7 +24,6 @@ export function isPoolableDialect(dialect: SqlDialect): boolean {
  */
 export function inferDialect(config: SQL.Options): SqlDialect {
   if ('filename' in config) return 'sqlite';
-  if (config.adapter) return config.adapter;
   if ('url' in config && config.url) {
     const urlStr = config.url.toString();
     if (urlStr === ':memory:') return 'sqlite';
@@ -34,6 +33,7 @@ export function inferDialect(config: SQL.Options): SqlDialect {
     if (scheme === 'postgresql') return 'postgres';
     return scheme as SqlDialect;
   }
+  if (config.adapter) return config.adapter;
   return 'postgres';
 }
 
