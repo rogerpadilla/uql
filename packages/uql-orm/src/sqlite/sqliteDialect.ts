@@ -32,6 +32,10 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `${f} LIKE ${ph}`;
   }
 
+  protected override get neOp(): string {
+    return 'IS NOT';
+  }
+
   override normalizeValue(value: unknown): unknown {
     if (value instanceof Date) return value.getTime();
     return super.normalizeValue(value);

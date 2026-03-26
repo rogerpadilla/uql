@@ -31,6 +31,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `${f} LIKE ${ph}`;
   }
 
+  protected override neExpr(field: string, ph: string): string {
+    // MySQL/MariaDB null-safe inequality: true when values differ or one side is NULL.
+    return `NOT (${field} <=> ${ph})`;
+  }
+
   override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
     ctx: QueryContext,
     entity: Type<E>,

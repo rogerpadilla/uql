@@ -170,6 +170,10 @@ export class PostgresDialect extends AbstractSqlDialect {
     return `${f} ILIKE ${ph}`;
   }
 
+  protected override get neOp(): string {
+    return 'IS DISTINCT FROM';
+  }
+
   protected override formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
     if (values.length === 0) return negate ? ' NOT IN (NULL)' : ' IN (NULL)';
     const ph = this.addValue(ctx.values, values);
