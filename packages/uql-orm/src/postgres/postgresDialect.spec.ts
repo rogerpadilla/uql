@@ -292,7 +292,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['Some%']);
+    expect(res.values).toEqual(['some%']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -304,9 +304,9 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
-    expect(res.values).toEqual(['Some%', 'Something']);
+    expect(res.values).toEqual(['some%', 'Something']);
   }
 
   shouldFind$iendsWith() {
@@ -320,7 +320,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['%Some']);
+    expect(res.values).toEqual(['%some']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -332,9 +332,9 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
-    expect(res.values).toEqual(['%Some', 'Something']);
+    expect(res.values).toEqual(['%some', 'Something']);
   }
 
   shouldFind$iincludes() {
@@ -348,7 +348,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['%Some%']);
+    expect(res.values).toEqual(['%some%']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -360,9 +360,9 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
-    expect(res.values).toEqual(['%Some%', 'Something']);
+    expect(res.values).toEqual(['%some%', 'Something']);
   }
 
   shouldFind$ilike() {
@@ -376,7 +376,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['Some']);
+    expect(res.values).toEqual(['some']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -388,9 +388,9 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" <> $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
+      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
     );
-    expect(res.values).toEqual(['Some', 'Something']);
+    expect(res.values).toEqual(['some', 'Something']);
   }
 
   shouldFind$regex() {
@@ -429,7 +429,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" <> $2 AND "creatorId" = $3 LIMIT 10',
+      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
@@ -476,7 +476,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
-    expect(values).toEqual([[1, 2]]);
+    expect(values).toEqual(['{"1","2"}']);
   }
 
   shouldFormatVector() {
@@ -715,7 +715,7 @@ class PostgresDialectSpec {
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->>\'active\' = $2)',
     );
-    expect(values).toEqual([100, true]);
+    expect(values).toEqual([100, 'true']);
   }
 
   shouldFind$elemMatchWithMixedConditions() {
@@ -728,7 +728,7 @@ class PostgresDialectSpec {
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' = $1 AND elem->>\'status\' = ANY($2))',
     );
-    expect(values).toEqual(['exact', ['active', 'pending']]);
+    expect(values).toEqual(['exact', '{"active","pending"}']);
   }
 
   shouldFind$elemMatchWithStringOperators() {

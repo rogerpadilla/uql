@@ -1,5 +1,5 @@
 import type { FieldKey, IdValue, JsonFieldPaths, RelationKey, UpdatePayload } from './entity.js';
-import type { BooleanLike, ExpandScalar, Scalar, Type, Unpacked } from './utility.js';
+import type { BooleanLike, ExpandScalar, PrimaryKey, Scalar, Type, Unpacked } from './utility.js';
 
 export type QueryOptions = {
   /**
@@ -403,11 +403,11 @@ export type QueryUpdateResult = {
   /**
    * the inserted IDs.
    */
-  ids?: number[] | string[];
+  ids?: PrimaryKey[];
   /**
    * first inserted ID.
    */
-  firstId?: number | string;
+  firstId?: PrimaryKey;
   /**
    * whether the record was created (`true`) or updated (`false`).
    * `undefined` when the dialect cannot determine this (e.g. SQLite).
@@ -565,6 +565,12 @@ export interface QueryDialect {
    * @param value the value to add
    */
   addValue(values: unknown[], value: unknown): string;
+
+  /**
+   * normalizes a value according to the dialect.
+   * @param value the value to normalize
+   */
+  normalizeValue(value: unknown): unknown;
 
   /**
    * create a new query context.

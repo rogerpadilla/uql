@@ -169,7 +169,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` <> ? AND `companyId` = ? LIMIT 10',
+      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
@@ -254,7 +254,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('SQLite does not support vector distance metric: inner');
+    ).toThrow('sqlite does not support vector distance metric: inner');
   }
 
   shouldSortByVectorSimilarityCombinedWithRegularSort() {
@@ -399,7 +399,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE LOWER(json_extract(value, '$.city')) LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE json_extract(value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -414,7 +414,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toContain('EXISTS (SELECT 1 FROM json_each');
     expect(sql).toContain("CAST(json_extract(value, '$.price') AS REAL) < ?");
     expect(sql).toContain("json_extract(value, '$.active') = ?");
-    expect(values).toEqual([100, true]);
+    expect(values).toEqual([100, 1]);
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -428,7 +428,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
               a: { $ne: 'x' },
               b: { $gt: 5 },
               c: { $gte: 10 },
-              d: { $lte: 20 },
+              active: { $eq: true },
             },
           },
         } as any,
@@ -437,7 +437,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.sql).toContain("json_extract(value, '$.a') IS NOT ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("CAST(json_extract(value, '$.d') AS REAL) <= ?");
+    expect(res.sql).toContain("json_extract(value, '$.active') = ?");
+    expect(res.values).toContain(1);
 
     // Test $like, $startsWith, $endsWith
     res = this.exec((ctx) =>
@@ -459,9 +460,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toContain("json_extract(value, '$.a') LIKE ?");
-    expect(res.sql).toContain("LOWER(json_extract(value, '$.d')) LIKE ?");
-    expect(res.sql).toContain("LOWER(json_extract(value, '$.e')) LIKE ?");
-    expect(res.sql).toContain("LOWER(json_extract(value, '$.g')) LIKE ?");
+    expect(res.sql).toContain("json_extract(value, '$.d') LIKE ?");
+    expect(res.sql).toContain("json_extract(value, '$.e') LIKE ?");
+    expect(res.sql).toContain("json_extract(value, '$.g') LIKE ?");
 
     // Test $regex
     res = this.exec((ctx) =>
@@ -526,7 +527,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     // SQLite uses LOWER(...) LIKE for ILIKE
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE LOWER(json_extract(`kind`, '$.public')) LIKE ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') LIKE ?");
     expect(values).toEqual(['%active%']);
   }
 

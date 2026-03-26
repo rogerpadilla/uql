@@ -11,6 +11,11 @@ export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer
 export type Primitive = string | number | symbol;
 
 /**
+ * Represents a database primary key value.
+ */
+export type PrimaryKey = string | number | bigint;
+
+/**
  * Marker type for JSON/JSONB fields.
  * Wrapping a field's TypeScript type with `Json<T>` ensures it is classified as a `FieldKey`
  * (not a `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`.

@@ -1,21 +1,18 @@
-import pg from 'pg';
-import { AbstractQuerierPool } from '../querier/index.js';
+import { Pool, type PoolClient, type PoolConfig } from 'pg';
 import type { ExtraOptions } from '../type/index.js';
+import { AbstractPgQuerierPool } from './abstractPgQuerierPool.js';
 import { PgQuerier } from './pgQuerier.js';
+import { PostgresDialect } from './postgresDialect.js';
 
-export class PgQuerierPool extends AbstractQuerierPool<PgQuerier> {
-  readonly pool: pg.Pool;
+export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PostgresDialect, PgQuerier> {
+  readonly pool: Pool;
 
-  constructor(opts: pg.PoolConfig, extra?: ExtraOptions) {
-    super('postgres', extra);
-    this.pool = new pg.Pool(opts);
+  constructor(opts: PoolConfig, extra?: ExtraOptions) {
+    super(new PostgresDialect(extra?.namingStrategy), extra);
+    this.pool = new Pool(opts);
   }
 
   async getQuerier() {
-    return new PgQuerier(() => this.pool.connect(), this.extra);
-  }
-
-  async end() {
-    await this.pool.end();
+    return new PgQuerier(() => this.pool.connect(), this.dialectInstance, this.extra);
   }
 }

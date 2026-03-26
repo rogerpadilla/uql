@@ -24,6 +24,21 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return { sql: ctx.sql, values: ctx.values };
   }
 
+  protected neSql(field: string): string {
+    switch (this.dialect.dialect) {
+      case 'postgres':
+      case 'cockroachdb':
+        return `${field} IS DISTINCT FROM ?`;
+      case 'sqlite':
+        return `${field} IS NOT ?`;
+      case 'mysql':
+      case 'mariadb':
+        return `NOT (${field} <=> ?)`;
+      default:
+        return `${field} <> ?`;
+    }
+  }
+
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('`');
   }
@@ -243,7 +258,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { id: 123, name: { $ne: 'abc' } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `name` <> ?');
+    expect(res.sql).toBe(`SELECT \`id\` FROM \`User\` WHERE \`id\` = ? AND ${this.neSql('`name`')}`);
     expect(res.values).toEqual([123, 'abc']);
 
     res = this.exec((ctx) =>
@@ -430,7 +445,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` LIKE ? AND `name` <> ?)');
+    expect(res.sql).toBe(`SELECT \`id\` FROM \`User\` WHERE NOT (\`name\` LIKE ? AND ${this.neSql('`name`')})`);
     expect(res.values).toEqual(['Some', 'Something']);
 
     res = this.exec((ctx) =>
@@ -468,7 +483,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $nor: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` LIKE ? AND `name` <> ?)');
+    expect(res.sql).toBe(`SELECT \`id\` FROM \`User\` WHERE NOT (\`name\` LIKE ? AND ${this.neSql('`name`')})`);
     expect(res.values).toEqual(['Some', 'Something']);
 
     res = this.exec((ctx) =>
@@ -577,7 +592,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { companyId: 1 }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE (`name` = ? AND `name` <> ?) OR `companyId` = ?');
+    expect(res.sql).toBe(
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` = ? AND ${this.neSql('`name`')}) OR \`companyId\` = ?`,
+    );
     expect(res.values).toEqual(['other', 'other unwanted', 1]);
 
     res = this.exec((ctx) =>
@@ -609,7 +626,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 20,
       }),
     );
-    expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` <> ? LIMIT 20');
+    expect(sql).toBe(`SELECT \`id\` FROM \`User\` WHERE \`name\` = ? AND ${this.neSql('`companyId`')} LIMIT 20`);
     expect(values).toEqual(['some', 5]);
   }
 
@@ -745,7 +762,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`' +
         ', `tax`.`id` `tax.id`, `tax`.`name` `tax.name`' +
         ' FROM `Item`' +
-        ' INNER JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`name` <> ? AND `measureUnit`.`deletedAt` IS NULL' +
+        ` INNER JOIN \`MeasureUnit\` \`measureUnit\` ON \`measureUnit\`.\`id\` = \`Item\`.\`measureUnitId\` AND ${this.neSql('`measureUnit`.`name`')} AND \`measureUnit\`.\`deletedAt\` IS NULL` +
         ' LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId`' +
         ' WHERE `Item`.`salePrice` >= ? AND `Item`.`name` LIKE ?' +
         ' ORDER BY `tax`.`name`, `measureUnit`.`name`, `Item`.`createdAt` DESC LIMIT 100',
@@ -1086,7 +1103,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['Some%', 'Something']);
   }
@@ -1114,7 +1131,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['some%', 'Something']);
   }
@@ -1142,7 +1159,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%Some', 'Something']);
   }
@@ -1170,7 +1187,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%some', 'Something']);
   }
@@ -1198,7 +1215,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%Some%', 'Something']);
   }
@@ -1226,7 +1243,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%some%', 'Something']);
   }
@@ -1254,7 +1271,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['Some', 'Something']);
   }
@@ -1282,7 +1299,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`name` LIKE ? AND `name` <> ?) ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0',
+      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`')}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['some', 'Something']);
   }
@@ -1323,7 +1340,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE MATCH(`name`) AGAINST(?) AND `name` <> ? AND `companyId` = ? LIMIT 10',
+      `SELECT \`id\` FROM \`User\` WHERE MATCH(\`name\`) AGAINST(?) AND ${this.neSql('`name`')} AND \`companyId\` = ? LIMIT 10`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }

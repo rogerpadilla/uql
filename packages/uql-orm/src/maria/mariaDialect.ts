@@ -1,12 +1,10 @@
 import { MysqlLikeSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
-  EntityMeta,
   NamingStrategy,
   QueryConflictPaths,
   QueryContext,
   QueryOptions,
-  QueryVectorSearch,
   Type,
   VectorDistance,
 } from '../type/index.js';
@@ -57,18 +55,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /** MariaDB 11.7+ vector distance functions. */
-  private static readonly VECTOR_FNS: Partial<Record<VectorDistance, string>> = {
+  protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
     cosine: 'VEC_DISTANCE_COSINE',
     l2: 'VEC_DISTANCE_EUCLIDEAN',
   };
-
-  /** Emit a MariaDB vector distance function: `VEC_DISTANCE_<metric>(col, ?)`. */
-  protected override appendVectorSort<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-  ): void {
-    this.appendFunctionVectorSort(ctx, meta, key, search, MariaDialect.VECTOR_FNS, 'MariaDB');
-  }
 }

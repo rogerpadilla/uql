@@ -59,13 +59,7 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
   router.get(
     '/:id',
     withQuerier(async (req, res, querier) => {
-      const params = req.params as { id: string };
-      const id = params.id as unknown as IdValue<E>;
-      const q = req.query as Query<E>;
-
-      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
-      where[meta.id as string] = id;
-      q.$where = where as typeof q.$where;
+      const q = buildIdQuery(meta, req);
 
       const data = await querier.findOne(entity, q);
       res.json({ data, count: data ? 1 : 0 });
@@ -96,34 +90,22 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
     '/:id',
     withTransaction(async (req, res, querier) => {
       const payload = req.body as E;
-      const params = req.params as { id: string };
-      const id = params.id as unknown as IdValue<E>;
-      const q = req.query as Query<E>;
-
-      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
-      where[meta.id as string] = id;
-      q.$where = where as typeof q.$where;
+      const q = buildIdQuery(meta, req);
 
       const count = await querier.updateMany(entity, q, payload);
-      res.json({ data: params.id, count });
+      res.json({ data: req.params['id'], count });
     }),
   );
 
   router.delete(
     '/:id',
     withTransaction(async (req, res, querier) => {
-      const params = req.params as { id: string };
-      const id = params.id as unknown as IdValue<E>;
-      const q = req.query as Query<E>;
-
-      const where = (Array.isArray(q.$where) ? { id: { $in: q.$where } } : (q.$where ?? {})) as Record<string, unknown>;
-      where[meta.id as string] = id;
-      q.$where = where as typeof q.$where;
+      const q = buildIdQuery(meta, req);
 
       const count = await querier.deleteMany(entity, q, {
         softDelete: !!req.query.softDelete,
       });
-      res.json({ data: params.id, count });
+      res.json({ data: req.params['id'], count });
     }),
   );
 
@@ -180,6 +162,20 @@ function withTransaction(fn: (req: Request, res: Response, querier: Querier) => 
       await querier?.release();
     }
   };
+}
+
+function buildIdQuery<E extends object>(meta: EntityMeta<E>, req: Request): Query<E> {
+  const id = req.params['id'] as unknown as IdValue<E>;
+  const q = req.query as Query<E>;
+
+  const where = (Array.isArray(q.$where) ? { [meta.id as string]: { $in: q.$where } } : (q.$where ?? {})) as Record<
+    string,
+    unknown
+  >;
+  where[meta.id as string] = id;
+  q.$where = where as typeof q.$where;
+
+  return q;
 }
 
 function pre(req: Request, meta: EntityMeta<any>, extra: ExtraOptions) {

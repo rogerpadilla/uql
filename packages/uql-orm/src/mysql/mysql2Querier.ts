@@ -2,12 +2,11 @@ import type { Connection } from 'mysql2';
 import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { ExtraOptions } from '../type/index.js';
-import { extractInsertResult } from '../util/sql.util.js';
-import { MySqlDialect } from './mysqlDialect.js';
+import type { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
-  constructor(connect: () => Promise<PoolConnection>, extra?: ExtraOptions) {
-    super(new MySqlDialect(extra?.namingStrategy), connect, extra);
+  constructor(connect: () => Promise<PoolConnection>, dialect: MySqlDialect, extra?: ExtraOptions) {
+    super(dialect, connect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -17,17 +16,11 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const [res] = (await this.conn!.query(query, values)) as [ResultSetHeader, FieldPacket[]];
-    const { insertId, affectedRows } = res;
-    const ids = insertId
-      ? Array(affectedRows)
-          .fill(insertId)
-          .map((i, index) => i + index)
-      : [];
-    return extractInsertResult(
-      ids.map((id) => ({ id })),
-      affectedRows,
-      affectedRows,
-    );
+    return this.buildUpdateResult({
+      changes: res.affectedRows,
+      id: res.insertId,
+      upsertStatus: res.affectedRows,
+    });
   }
 
   override async *internalStream<T>(query: string, values?: unknown[]) {
