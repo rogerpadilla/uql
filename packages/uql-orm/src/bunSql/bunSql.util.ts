@@ -23,9 +23,10 @@ export function isPoolableDialect(dialect: SqlDialect): boolean {
  * Robustly infers the UQL SqlDialect from a Bun SQL.Options object.
  */
 export function inferDialect(config: SQL.Options): SqlDialect {
-  if ('filename' in config) return 'sqlite';
-  if ('url' in config && config.url) {
-    const urlStr = config.url.toString();
+  if ((config as SQL.SQLiteOptions).filename) return 'sqlite';
+  const opts = config as SQL.PostgresOrMySQLOptions;
+  if (opts.url) {
+    const urlStr = opts.url.toString();
     if (urlStr === ':memory:') return 'sqlite';
     const scheme = urlStr.split(':')[0];
     if (scheme === 'sqlite3') return 'sqlite';
@@ -33,7 +34,7 @@ export function inferDialect(config: SQL.Options): SqlDialect {
     if (scheme === 'postgresql') return 'postgres';
     return scheme as SqlDialect;
   }
-  if (config.adapter) return config.adapter;
+  if (opts.adapter) return opts.adapter as SqlDialect;
   return 'postgres';
 }
 
