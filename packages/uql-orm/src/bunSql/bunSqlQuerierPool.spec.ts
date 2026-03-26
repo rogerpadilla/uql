@@ -57,6 +57,19 @@ describe('BunSqlQuerierPool', () => {
     expect(querier.sql).toBe(pool.sql);
   });
 
+  it('should wire sqlite querier to sql without reserve', async () => {
+    const pool = new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
+    const reserve = vi.spyOn(pool.sql, 'reserve');
+    const mockRows = Object.assign([{ n: 1 }], {});
+    vi.spyOn(pool.sql, 'unsafe').mockResolvedValue(mockRows as any);
+
+    const querier = await pool.getQuerier();
+    expect(reserve).not.toHaveBeenCalled();
+    await querier.all('SELECT 1');
+    expect((querier as any).conn).toBe(pool.sql);
+    await querier.release();
+  });
+
   it('should close the sql client on end', async () => {
     const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
     const spy = vi.spyOn(pool.sql, 'close');

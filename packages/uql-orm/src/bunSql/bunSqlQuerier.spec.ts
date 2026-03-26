@@ -94,6 +94,14 @@ describe('BunSqlQuerier', () => {
       expect((querier as any).conn).toBeUndefined();
     });
 
+    it('should skip release when connection has no release method', async () => {
+      const conn = { unsafe: vi.fn().mockResolvedValue([]) };
+      const sql = { reserve: vi.fn().mockResolvedValue(conn) };
+      const querier = new BunSqlQuerier(sql as any, new SqliteDialect(), () => sql.reserve());
+      await querier.run('SELECT 1');
+      await expect(querier.release()).resolves.toBeUndefined();
+    });
+
     it('should throw if releasing with a transaction', async () => {
       const querier = createQuerier(makeSql({}), new SqliteDialect());
       Object.defineProperty(querier, 'hasOpenTransaction', { get: () => true });
