@@ -145,5 +145,20 @@ describe('bunSql.util', () => {
       const rows = [{ id: 5n }];
       expect(normalizeRows(rows as any)).toEqual([{ id: 5 }]);
     });
+
+    test('preserves row reference when no bigint exists', () => {
+      const row = { id: 1, name: 'a' };
+      const rows = [row];
+      const normalized = normalizeRows(rows as any);
+      expect(normalized[0]).toBe(row);
+    });
+
+    test('clones row when bigint exists', () => {
+      const row = { id: 5n, name: 'a' };
+      const rows = [row];
+      const normalized = normalizeRows(rows as any);
+      expect(normalized[0]).not.toBe(row);
+      expect(normalized[0]).toEqual({ id: 5, name: 'a' });
+    });
   });
 });
