@@ -81,8 +81,8 @@ describe('bunSql.util', () => {
     });
 
     test('should strip sslmode=no-verify from string url and set tls', () => {
-      const opts = normalizeBunOpts({ url: 'postgres://localhost/?sslmode=no-verify' } as SQL.Options, 'postgres');
-      expect(String(opts.url)).not.toContain('sslmode=no-verify');
+      const opts = normalizeBunOpts({ url: 'postgres://localhost/?sslmode=no-verify' }, 'postgres');
+      expect(String((opts as SQL.PostgresOrMySQLOptions).url)).not.toContain('sslmode=no-verify');
       expect((opts as any).tls).toMatchObject({ rejectUnauthorized: false });
     });
 
@@ -90,7 +90,7 @@ describe('bunSql.util', () => {
       const url = new URL('postgres://localhost/');
       url.searchParams.set('sslmode', 'no-verify');
       const opts = normalizeBunOpts({ url, tls: { ca: 'x' } } as SQL.Options, 'postgres');
-      expect(String(opts.url)).not.toContain('sslmode=no-verify');
+      expect(String((opts as SQL.PostgresOrMySQLOptions).url)).not.toContain('sslmode=no-verify');
       expect((opts as any).tls).toEqual({ rejectUnauthorized: false, ca: 'x' });
     });
 
