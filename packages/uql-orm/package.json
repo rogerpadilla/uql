@@ -3,7 +3,7 @@
   "homepage": "https://uql-orm.dev",
   "description": "Fast, type-safe TypeScript ORM — one API for every database",
   "license": "MIT",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -36,7 +36,8 @@
     },
     "./libsql": "./dist/libsql/index.js",
     "./neon": "./dist/neon/index.js",
-    "./d1": "./dist/d1/index.js"
+    "./d1": "./dist/d1/index.js",
+    "./bunSql": "./dist/bunSql/index.js"
   },
   "files": [
     "dist",
@@ -99,11 +100,11 @@
     }
   },
   "devDependencies": {
-    "@libsql/client": "^0.17.0",
+    "@libsql/client": "^0.17.2",
     "@neondatabase/serverless": "^1.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
-    "@types/pg": "^8.18.0",
+    "@types/pg": "^8.20.0",
     "@types/sqlstring": "^2.3.2",
     "better-sqlite3": "^12.8.0",
     "bunchee": "^6.9.4",
@@ -154,5 +155,5 @@
   "publishConfig": {
     "access": "public"
   },
-  "gitHead": "dd6ec379e77467a97fd0e7996fcebe98c42a8f47"
+  "gitHead": "0f88b305323e2f72a94b7f07eb4b23b8f8fa7b25"
 }

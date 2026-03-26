@@ -1,11 +1,12 @@
 import { expect } from 'vitest';
+import type { AbstractDialect } from '../dialect/index.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type { Spec } from '../test/index.js';
 import type { Querier } from '../type/index.js';
 import type { AbstractQuerierPool } from './abstractQuerierPool.js';
 
 export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
-  constructor(protected pool: AbstractQuerierPool<Q>) {}
+  constructor(protected pool: AbstractQuerierPool<AbstractDialect, Q>) {}
 
   async afterAll() {
     await this.pool.end();

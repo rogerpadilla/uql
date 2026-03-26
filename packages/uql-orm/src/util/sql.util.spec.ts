@@ -1,7 +1,15 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { QuerySortMap, RawRow } from '../type/index.js';
-import { escapeSqlId, flatObject, obtainAttrsPaths, unflatObject, unflatObjects } from './sql.util.js';
+import {
+  buildUpdateResult,
+  escapeSqlId,
+  flatObject,
+  isPrimaryKey,
+  obtainAttrsPaths,
+  unflatObject,
+  unflatObjects,
+} from './sql.util.js';
 
 it('flatObject', () => {
   expect(flatObject(undefined as any)).toEqual({});
@@ -279,4 +287,66 @@ it('unflatObject - produces same result as unflatObjects for single row', () => 
   const single = unflatObject(row, attrsPaths);
   const batched = unflatObjects([row])[0];
   expect(single).toEqual(batched);
+});
+
+describe('buildUpdateResult', () => {
+  it('should handle MySQL "first" strategy', () => {
+    const res = buildUpdateResult({
+      changes: 3,
+      id: 10,
+      insertIdStrategy: 'first',
+    });
+    expect(res).toEqual({
+      changes: 3,
+      ids: [10, 11, 12],
+      firstId: 10,
+      created: undefined,
+    });
+  });
+
+  it('should handle SQLite "last" strategy with BigInt', () => {
+    // lastInsertRowid=100n, changes=3 → ids=[98n, 99n, 100n], firstId=98n
+    const res = buildUpdateResult({
+      changes: 3,
+      id: 100n,
+      insertIdStrategy: 'last',
+    });
+    expect(res).toEqual({
+      changes: 3,
+      ids: [98n, 99n, 100n],
+      firstId: 98n,
+      created: undefined,
+    });
+  });
+
+  it('should detect created status from upsertStatus', () => {
+    expect(buildUpdateResult({ upsertStatus: 1 }).created).toBe(true);
+    expect(buildUpdateResult({ upsertStatus: 2 }).created).toBe(false);
+    expect(buildUpdateResult({ upsertStatus: 0 }).created).toBe(false);
+    expect(buildUpdateResult({ upsertStatus: undefined }).created).toBe(undefined);
+  });
+
+  it('should return empty ids when no id or rows provided', () => {
+    const res = buildUpdateResult({ changes: 5 });
+    expect(res.ids).toEqual([]);
+    expect(res.firstId).toBeUndefined();
+  });
+});
+
+describe('isPrimaryKey', () => {
+  it('should return true for valid primary key types', () => {
+    expect(isPrimaryKey('foo')).toBe(true);
+    expect(isPrimaryKey(123)).toBe(true);
+    expect(isPrimaryKey(0)).toBe(true);
+    expect(isPrimaryKey(100n)).toBe(true);
+    expect(isPrimaryKey('')).toBe(true);
+  });
+
+  it('should return false for invalid types', () => {
+    expect(isPrimaryKey(null)).toBe(false);
+    expect(isPrimaryKey(undefined)).toBe(false);
+    expect(isPrimaryKey({})).toBe(false);
+    expect(isPrimaryKey([])).toBe(false);
+    expect(isPrimaryKey(true)).toBe(false);
+  });
 });

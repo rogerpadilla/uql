@@ -11,6 +11,9 @@ class TestSqlDialect extends AbstractSqlDialect {
   escape(value: unknown): string {
     return String(value);
   }
+  protected override numericCast(expr: string): string {
+    return `CAST(${expr} AS NUMERIC)`;
+  }
 }
 
 describe('AbstractSqlDialect (extra coverage)', () => {
@@ -32,6 +35,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     const ctx = dialect.createContext();
     dialect.compareFieldOperator(ctx, User, 'id', '$nin', []);
     expect(ctx.sql).toBe('`id` NOT IN (NULL)');
+  });
+
+  it('normalizeValue keeps Date for driver-native binding', () => {
+    const date = new Date('2026-01-02T03:04:05.000Z');
+    expect(dialect.normalizeValue(date)).toBe(date);
   });
 
   it('upsert without update assignments (INSERT IGNORE)', () => {

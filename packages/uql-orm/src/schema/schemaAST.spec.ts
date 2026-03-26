@@ -436,6 +436,47 @@ describe('SchemaAST', () => {
       expect(clone.getIndex('idx_users_name')).toBeDefined();
       expect(clone.getIndex('idx_users_name')?.table.name).toBe('users');
     });
+
+    it('should handle cloning relationships with missing tables defensively', () => {
+      const users = createTable('users');
+      const posts = createTable('posts');
+      ast.addTable(users);
+      ast.addRelationship(createRelationship('fk_posts_user', posts, users)); // 'posts' is not added to ast.tables!
+      const clone = ast.clone();
+      expect(clone.relationships.length).toBe(0); // The relationship is skipped because fromTable doesn't exist
+    });
+  });
+
+  describe('Edge cases in Relationship Operations', () => {
+    it('should handle removing an already removed relation gracefully', () => {
+      const users = createTable('users');
+      const posts = createTable('posts');
+      ast.addTable(users);
+      ast.addTable(posts);
+      const rel = createRelationship('fk_posts_user', posts, users);
+      ast.addRelationship(rel);
+
+      // Corrupt the relationships manually to test the defense branch
+      posts.outgoingRelations = [];
+      users.incomingRelations = [];
+      rel.from.columns.forEach((c) => (c.references = undefined));
+      rel.to.columns.forEach((c) => (c.referencedBy = []));
+
+      expect(ast.removeRelationship('fk_posts_user')).toBe(true);
+    });
+  });
+
+  describe('Edge cases in Index Operations', () => {
+    it('should ignore duplicate addIndex calls on table.indexes', () => {
+      const users = createTable('users');
+      ast.addTable(users);
+      const idx: IndexNode = { name: 'idx_users_email', table: users, columns: [], unique: false };
+      ast.addIndex(idx);
+      // add the identical object again
+      ast.addIndex(idx);
+      expect(users.indexes.length).toBe(1); // Not duplicated
+      expect(ast.indexes.length).toBe(2); // The global array pushes unconditionally
+    });
   });
 
   describe('Statistics', () => {

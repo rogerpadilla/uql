@@ -1,4 +1,5 @@
 import type { Key, QueryUpdateResult, RawRow } from '../type/index.js';
+import type { PrimaryKey } from '../type/utility.js';
 import { getKeys, hasKeys } from './object.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
@@ -111,18 +112,81 @@ export function escapeSqlId(
 }
 
 /**
- * Extract INSERT result IDs from raw database rows.
+ * Payload for building a QueryUpdateResult.
+ */
+export interface BuildUpdateResultPayload {
+  /** The count of rows affected by the statement. */
+  changes?: number;
+  /** The raw rows returned by the query (for RETURNING clauses). */
+  rows?: RawRow[];
+  /** The first (MySQL) or last (SQLite) auto-generated ID from the driver header. */
+  id?: PrimaryKey;
+  /** The ID strategy: 'first' (MySQL/MariaDB) or 'last' (SQLite/LibSQL/D1). */
+  insertIdStrategy?: 'first' | 'last';
+  /**
+   * Driver-specific upsert detection from the result header.
+   * MySQL/MariaDB `ON DUPLICATE KEY UPDATE` convention: 1 = insert, 2 = update, 0 = no-op.
+   */
+  upsertStatus?: number;
+}
+
+/**
+ * Unified utility to build a QueryUpdateResult from driver-specific results.
  *
- * UQL's SQL dialect always aliases the entity's ID column to `id` in RETURNING clauses,
+ * UQL's SQL dialects always alias the entity's ID column to `id` in RETURNING clauses,
  * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
  */
-export function extractInsertResult(rows: RawRow[], changes?: number, affectedRows?: number): QueryUpdateResult {
-  const ids = rows.map((r) => r['id']) as QueryUpdateResult['ids'];
-  // `_created` comes from PostgreSQL's `(xmax = 0) AS "_created"` in the RETURNING clause.
-  // `affectedRows` convention (MySQL/MariaDB `ON DUPLICATE KEY UPDATE`): 1 = insert, 2 = update, 0 = no-op.
-  // The `affectedRows <= 2` guard ensures this only applies for single-row upserts.
+export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
+  const { rows, id, insertIdStrategy, upsertStatus } = payload;
+  const changes = payload.changes ?? rows?.length ?? 0;
+
+  // 1. ID Mapping
+  let firstId: PrimaryKey | undefined;
+  const rowId = rows?.[0]?.['id'] as PrimaryKey | undefined;
+  if (isPrimaryKey(rowId)) {
+    firstId = rowId;
+  } else if (isPrimaryKey(id)) {
+    const offset = changes - 1;
+    if (insertIdStrategy === 'last') {
+      if (typeof id === 'bigint') {
+        firstId = id - BigInt(offset);
+      } else if (typeof id === 'number') {
+        firstId = id - offset;
+      } else {
+        firstId = id;
+      }
+    } else {
+      firstId = id;
+    }
+  }
+
+  let ids: PrimaryKey[] = [];
+
+  if (rows?.length) {
+    ids = rows.map((r) => r['id'] as PrimaryKey);
+  } else if (isPrimaryKey(firstId)) {
+    if (typeof firstId === 'bigint' || typeof firstId === 'number') {
+      ids = Array.from({ length: changes }, (_, i) =>
+        typeof firstId === 'bigint' ? firstId + BigInt(i) : firstId + i,
+      );
+    } else if (changes === 1) {
+      ids = [firstId];
+    }
+  }
+
+  // 2. Creation Status
+  // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
+  // MySQL/MariaDB: `affectedRows` convention — 1 = insert, 2 = update, 0 = no-op.
   const created =
-    (rows.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
-    (affectedRows !== undefined && affectedRows <= 2 ? affectedRows === 1 : undefined);
+    (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
+    (typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
+
   return { changes, ids, firstId: ids?.[0], created };
+}
+
+/**
+ * Checks if a value is of a primary key type (string, number, or bigint).
+ */
+export function isPrimaryKey(val: unknown): val is PrimaryKey {
+  return typeof val === 'string' || typeof val === 'number' || typeof val === 'bigint';
 }

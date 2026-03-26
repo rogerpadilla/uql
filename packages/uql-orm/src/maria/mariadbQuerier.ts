@@ -1,24 +1,23 @@
 import type { PoolConnection } from 'mariadb';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { ExtraOptions } from '../type/index.js';
-import { extractInsertResult } from '../util/sql.util.js';
-import { MariaDialect } from './mariaDialect.js';
+import type { MariaDialect } from './mariaDialect.js';
 
 export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
-  constructor(connect: () => Promise<PoolConnection>, extra?: ExtraOptions) {
-    super(new MariaDialect(extra?.namingStrategy), connect, extra);
+  constructor(connect: () => Promise<PoolConnection>, dialect: MariaDialect, extra?: ExtraOptions) {
+    super(dialect, connect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const res: T[] = await this.conn!.query(query, values);
-    return res.slice(0, res.length);
+    const res = await this.conn!.query(query, values);
+    return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
     const res = await this.conn!.query(query, values);
     // MariaDB may not set `affectedRows` when RETURNING is used; fall back to row count.
     const changes = res.affectedRows ?? res.length ?? 0;
-    return extractInsertResult(res.length ? res : [], changes, res.affectedRows);
+    return this.buildUpdateResult({ rows: res.length ? res : [], changes, upsertStatus: res.affectedRows });
   }
 
   override async *internalStream<T>(query: string, values?: unknown[]) {

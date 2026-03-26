@@ -1,5 +1,5 @@
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
-import { SqliteDialect } from '../sqlite/index.js';
+import type { SqliteDialect } from '../sqlite/index.js';
 import type { ExtraOptions } from '../type/index.js';
 
 export interface D1Meta {
@@ -44,9 +44,10 @@ export interface D1Database {
 export class D1Querier extends AbstractSqliteQuerier {
   constructor(
     readonly db: D1Database,
+    dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect(extra?.namingStrategy), extra);
+    super(dialect, extra);
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -64,7 +65,7 @@ export class D1Querier extends AbstractSqliteQuerier {
     // though the runtime meta often has it.
     const changes = res.meta?.changes ?? res.count ?? 0;
     const lastInsertRowid = res.meta?.last_row_id;
-    return this.buildUpdateResult(changes, lastInsertRowid);
+    return this.buildUpdateResult({ changes, id: lastInsertRowid });
   }
 
   override async internalRelease() {
