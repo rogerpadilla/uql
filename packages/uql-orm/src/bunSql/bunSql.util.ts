@@ -79,13 +79,17 @@ export function normalizeBunOpts(config: SQL.Options, dialect: SqlDialect): SQL.
 export function normalizeRows<T>(res: BunSqlResult<T>): T[] {
   const rows: T[] = [];
   for (const row of res) {
-    const cleanRow = { ...row };
-    for (const key in cleanRow) {
-      if (typeof cleanRow[key] === 'bigint') {
-        cleanRow[key] = Number(cleanRow[key]) as T[typeof key];
+    let cleanRow: RawRow | undefined;
+    const sourceRow = row as RawRow;
+    for (const key in sourceRow) {
+      const value = sourceRow[key];
+      if (typeof value === 'bigint') {
+        // Clone only when needed so non-bigint rows can pass through untouched.
+        cleanRow ??= { ...sourceRow };
+        cleanRow[key] = Number(value);
       }
     }
-    rows.push(cleanRow);
+    rows.push((cleanRow ?? sourceRow) as T);
   }
   return rows;
 }
