@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.3] - 2026-03-26
+### Bug Fixes
+- **Bun SQL Dialect Inference**: Improved logic for detecting `sqlite` from URLs and handling custom schemes in `SQL.Options`.
+- **Schema Synchronization**: Added null-safety check in `formatType` to prevent crashes when encountering specific user-defined column types.
+
 ## [0.7.2] - 2026-03-22
 ### Bug Fixes
 - **MySQL/MariaDB Upsert Detection**: Fine-tuned the `created` flag detection by correctly interpreting the MySQL `affectedRows` convention (1 for insert, 2 for update, 0 for no-op).

@@ -27,16 +27,27 @@ export function inferDialect(config: SQL.Options): SqlDialect {
   const opts = config as SQL.PostgresOrMySQLOptions;
   if (opts.url) {
     const urlStr = opts.url.toString();
-    if (urlStr === ':memory:') return 'sqlite';
-    const scheme = urlStr.split(':')[0];
-    if (scheme === 'sqlite3') return 'sqlite';
-    if (scheme === 'mysql2') return 'mysql';
-    if (scheme === 'postgresql') return 'postgres';
-    return scheme as SqlDialect;
+    if (urlStr === ':memory:' || urlStr.endsWith('.db') || urlStr.endsWith('.sqlite')) {
+      return 'sqlite';
+    }
+    const scheme = urlStr.split(':')[0] as SqlDialect;
+    const dialect = DialectMap[scheme];
+    if (dialect) return dialect;
   }
   if (opts.adapter) return opts.adapter as SqlDialect;
   return 'postgres';
 }
+
+const DialectMap = {
+  postgres: 'postgres',
+  postgresql: 'postgres',
+  mysql: 'mysql',
+  mysql2: 'mysql',
+  mariadb: 'mariadb',
+  sqlite: 'sqlite',
+  sqlite3: 'sqlite',
+  cockroachdb: 'cockroachdb',
+} as const satisfies Record<SqlDialect | string, SqlDialect>;
 
 /**
  * Normalizes SQL.Options into a structure that Bun's SQL engine expects for a given dialect.

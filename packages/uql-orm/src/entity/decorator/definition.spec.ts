@@ -16,7 +16,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
+import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getEntities, getMeta } from './definition.js';
 import { Entity } from './entity.js';
 import { Field } from './field.js';
@@ -80,7 +80,7 @@ it('User', () => {
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
     },
-  };
+  } satisfies EntityMeta<User>;
 
   expect(meta).toMatchObject(expectedMeta);
 });
@@ -120,7 +120,7 @@ it('Profile', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<Profile>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -218,7 +218,7 @@ it('Item', () => {
         ],
       },
     },
-  };
+  } satisfies EntityMeta<Item>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -289,7 +289,7 @@ it('Tag', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<Tag>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -325,7 +325,7 @@ it('ItemTag', () => {
         references: [{ local: 'tagId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<ItemTag>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -365,7 +365,7 @@ it('TaxCategory', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<TaxCategory>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -424,7 +424,7 @@ it('Tax', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<Tax>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -505,7 +505,7 @@ it('ItemAdjustment', () => {
         ],
       },
     },
-  };
+  } satisfies EntityMeta<ItemAdjustment>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -552,7 +552,7 @@ it('InventoryAdjustment', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<InventoryAdjustment>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -599,7 +599,7 @@ it('MeasureUnitCategory', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<MeasureUnitCategory>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -651,7 +651,7 @@ it('MeasureUnit', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  };
+  } satisfies EntityMeta<MeasureUnit>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
