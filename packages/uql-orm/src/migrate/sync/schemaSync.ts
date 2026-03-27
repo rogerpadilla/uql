@@ -346,7 +346,7 @@ export class SchemaSync {
    * Format type for display.
    */
   private formatType(type?: { category?: string; length?: number }): string {
-    if (!type || !type.category) return 'unknown';
+    if (!type?.category) return 'unknown';
     return type.length ? `${type.category}(${type.length})` : type.category;
   }
 }
