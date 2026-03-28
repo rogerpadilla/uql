@@ -1,5 +1,5 @@
 import { AbstractQuerierPool } from '../querier/index.js';
-import { SqliteDialect } from '../sqlite/index.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 import { type D1Database, D1Querier } from './d1Querier.js';
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.4] - 2026-03-28
+### Bug Fixes
+- **Module Imports**: Fixed an issue where the `index.js` barrels incorrectly exported driver-specific querier pools (like `mariadbQuerierPool`), which caused the module bundler/runtime to attempt to load optional peer dependencies (like `mariadb`) when importing unrelated modules from `uql-orm`.
+
 ## [0.7.3] - 2026-03-26
 ### Bug Fixes
 - **Bun SQL Dialect Inference**: Improved logic for detecting `sqlite` from URLs and handling custom schemes in `SQL.Options`.

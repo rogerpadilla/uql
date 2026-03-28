@@ -1,7 +1,7 @@
 import type { Client, InValue, Transaction } from '@libsql/client';
 import { Serialized } from '../querier/decorator/index.js';
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
-import type { SqliteDialect } from '../sqlite/index.js';
+import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, TransactionOptions } from '../type/index.js';
 
 export class LibsqlQuerier extends AbstractSqliteQuerier {

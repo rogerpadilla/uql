@@ -1,5 +1,5 @@
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
-import type { SqliteDialect } from '../sqlite/index.js';
+import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 
 export interface D1Meta {
