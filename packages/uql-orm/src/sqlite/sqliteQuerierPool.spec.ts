@@ -33,18 +33,16 @@ vi.mock('better-sqlite3', () => {
 });
 
 describe('Sqlite3QuerierPool', () => {
-  const originalBun = (globalThis as any).Bun;
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    (globalThis as any).Bun = originalBun;
+    vi.unstubAllGlobals();
   });
 
   it('should use bun:sqlite when Bun is defined', async () => {
-    (globalThis as any).Bun = {}; // Simulate Bun environment
+    vi.stubGlobal('Bun', {}); // Simulate Bun environment
 
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier = await pool.getQuerier();
@@ -54,7 +52,7 @@ describe('Sqlite3QuerierPool', () => {
   });
 
   it('should use better-sqlite3 when Bun is undefined', async () => {
-    (globalThis as any).Bun = undefined; // Simulate Node environment
+    vi.stubGlobal('Bun', undefined); // Simulate Node environment
 
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier = await pool.getQuerier();
@@ -64,7 +62,7 @@ describe('Sqlite3QuerierPool', () => {
   });
 
   it('should reuse the same querier', async () => {
-    (globalThis as any).Bun = undefined;
+    vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier1 = await pool.getQuerier();
     const querier2 = await pool.getQuerier();
@@ -72,7 +70,7 @@ describe('Sqlite3QuerierPool', () => {
   });
 
   it('should close the database on end', async () => {
-    (globalThis as any).Bun = undefined;
+    vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier = await pool.getQuerier();
     await pool.end();

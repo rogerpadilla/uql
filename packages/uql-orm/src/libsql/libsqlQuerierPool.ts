@@ -1,6 +1,6 @@
 import { type Client, type Config, createClient } from '@libsql/client';
 import { AbstractQuerierPool } from '../querier/index.js';
-import { SqliteDialect } from '../sqlite/index.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 import { LibsqlQuerier } from './libsqlQuerier.js';
 

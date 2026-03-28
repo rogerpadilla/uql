@@ -1,11 +1,11 @@
 import { type ReservedSQL, SQL } from 'bun';
-import { CockroachDialect } from '../cockroachdb/index.js';
-import type { AbstractSqlDialect } from '../dialect/index.js';
-import { MariaDialect } from '../maria/index.js';
-import { MySqlDialect } from '../mysql/index.js';
-import { PostgresDialect } from '../postgres/index.js';
-import { AbstractQuerierPool } from '../querier/index.js';
-import { SqliteDialect } from '../sqlite/index.js';
+import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
+import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
+import { MariaDialect } from '../maria/mariaDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { AbstractQuerierPool } from '../querier/abstractQuerierPool.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, NamingStrategy, SqlDialect, SqlPoolCompat } from '../type/index.js';
 import {
   type BunSqlResult,

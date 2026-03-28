@@ -1,6 +1,6 @@
 import { Pool, type PoolClient, type PoolConfig } from '@neondatabase/serverless';
 import { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
-import { PostgresDialect } from '../postgres/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 import { NeonQuerier } from './neonQuerier.js';
 

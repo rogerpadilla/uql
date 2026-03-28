@@ -1,4 +1,4 @@
-import { PostgresDialect } from '../postgres/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { NamingStrategy } from '../type/index.js';
 
 /**
