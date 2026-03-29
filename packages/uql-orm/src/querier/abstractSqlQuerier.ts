@@ -5,6 +5,7 @@ import type {
   IdValue,
   Query,
   QueryAggregate,
+  QueryAggregateResult,
   QueryConflictPaths,
   QueryOptions,
   QuerySearch,
@@ -115,10 +116,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return Number(res[0].count);
   }
 
-  protected override async internalAggregate<E extends object>(entity: Type<E>, q: QueryAggregate<E>) {
+  protected override async internalAggregate<E extends object, Q extends QueryAggregate<E>>(
+    entity: Type<E>,
+    q: Q,
+  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q);
-    return this.all<Record<string, unknown>>(ctx.sql, ctx.values);
+    return this.all<any>(ctx.sql, ctx.values);
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, payload: E[]) {

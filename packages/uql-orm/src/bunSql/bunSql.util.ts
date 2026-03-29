@@ -8,7 +8,10 @@ export type BunSqlResult<T = RawRow> = T[] & {
 };
 
 export function getAffectedRows(res: BunSqlResult): number {
-  return res.affectedRows ?? res.count ?? 0;
+  if (Array.isArray(res) && res.length) {
+    return res.length;
+  }
+  return res.affectedRows || res.count || 0;
 }
 
 export function isReservedConnection(conn: unknown): conn is ReservedSQL {

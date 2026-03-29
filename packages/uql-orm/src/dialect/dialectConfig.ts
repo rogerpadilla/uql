@@ -1,4 +1,4 @@
-import type { Dialect, VectorDistance } from '../type/index.js';
+import type { Dialect, DialectFeatures, VectorDistance } from '../type/index.js';
 
 export type IsolationLevelStrategy = 'inline' | 'set-before' | 'none';
 export type InsertIdStrategy = 'first' | 'last';
@@ -11,50 +11,31 @@ export type RenameTableSyntax = 'rename-table' | 'alter-table';
 export type BooleanLiteral = 'native' | 'integer';
 export type AlterColumnStrategy = 'separate-clauses' | 'single-statement';
 
-export interface DialectFeatures {
-  returning: boolean;
-  ifNotExists: boolean;
-  indexIfNotExists: boolean;
-  dropTableCascade: boolean;
-  renameColumn: boolean;
-  foreignKeyAlter: boolean;
-  /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
-  columnComment: boolean;
-  /** How vector indexes are emitted: inline in CREATE TABLE or as standalone CREATE INDEX. */
-  vectorIndexStyle: VectorIndexStyle;
-  /** Whether the dialect requires/allows (n) length constraints on vector types. */
-  vectorSupportsLength: boolean;
-  /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
-  supportsTimestamptz: boolean;
-  /** Whether the dialect defaults to TEXT for strings when no length is specified (e.g. Postgres). */
-  defaultStringAsText: boolean;
-}
-
 export interface DialectConfig {
-  quoteChar: QuoteChar;
-  serialPrimaryKey: string;
-  tableOptions: string;
-  alterColumnSyntax: AlterColumnSyntax;
-  dropForeignKeySyntax: DropForeignKeySyntax;
-  beginTransactionCommand: string;
-  commitTransactionCommand: string;
-  rollbackTransactionCommand: string;
-  isolationLevelStrategy: IsolationLevelStrategy;
+  readonly quoteChar: QuoteChar;
+  readonly serialPrimaryKey: string;
+  readonly tableOptions: string;
+  readonly alterColumnSyntax: AlterColumnSyntax;
+  readonly dropForeignKeySyntax: DropForeignKeySyntax;
+  readonly beginTransactionCommand: string;
+  readonly commitTransactionCommand: string;
+  readonly rollbackTransactionCommand: string;
+  readonly isolationLevelStrategy: IsolationLevelStrategy;
   /** How DROP INDEX is emitted: `'on-table'` = `DROP INDEX x ON t`, `'standalone'` = `DROP INDEX IF EXISTS x`. */
-  dropIndexSyntax: DropIndexSyntax;
+  readonly dropIndexSyntax: DropIndexSyntax;
   /** How RENAME TABLE is emitted: `'rename-table'` = `RENAME TABLE`, `'alter-table'` = `ALTER TABLE RENAME TO`. */
-  renameTableSyntax: RenameTableSyntax;
+  readonly renameTableSyntax: RenameTableSyntax;
   /** How boolean literals are formatted: `'native'` = true/false, `'integer'` = 1/0. */
-  booleanLiteral: BooleanLiteral;
+  readonly booleanLiteral: BooleanLiteral;
   /** How ALTER COLUMN is structured: `'separate-clauses'` = Postgres multi-statement, `'single-statement'` = MySQL/MariaDB MODIFY. */
-  alterColumnStrategy: AlterColumnStrategy;
+  readonly alterColumnStrategy: AlterColumnStrategy;
   /** Operator class map for pgvector indexes. Only set for Postgres. */
-  vectorOpsClass?: Readonly<Record<VectorDistance, string>>;
+  readonly vectorOpsClass?: Readonly<Record<VectorDistance, string>>;
   /** Extension name required for vector support (e.g. 'vector' for pgvector). */
-  vectorExtension?: string;
+  readonly vectorExtension?: string;
   /** Strategy for resolving the auto-generated ID from an INSERT operation: 'first' (MySQL/MariaDB) or 'last' (SQLite/others). */
-  insertIdStrategy: InsertIdStrategy;
-  features: DialectFeatures;
+  readonly insertIdStrategy: InsertIdStrategy;
+  readonly features: DialectFeatures;
 }
 
 const PG_VECTOR_OPS_CLASS: Readonly<Record<VectorDistance, string>> = {
@@ -95,6 +76,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: true,
       supportsTimestamptz: true,
       defaultStringAsText: true,
+      supportsJsonb: true,
     },
   },
   cockroachdb: {
@@ -126,6 +108,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: true,
       supportsTimestamptz: true,
       defaultStringAsText: true,
+      supportsJsonb: true,
     },
   },
   mysql: {
@@ -155,6 +138,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: false,
       supportsTimestamptz: false,
       defaultStringAsText: false,
+      supportsJsonb: false,
     },
   },
   mariadb: {
@@ -184,6 +168,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: true,
       supportsTimestamptz: false,
       defaultStringAsText: false,
+      supportsJsonb: false,
     },
   },
   sqlite: {
@@ -213,6 +198,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: false,
       supportsTimestamptz: false,
       defaultStringAsText: false, // SQLite falls back to generic TEXT explicitly elsewhere
+      supportsJsonb: false,
     },
   },
   mongodb: {
@@ -242,6 +228,7 @@ export const DIALECT_CONFIG: Record<Dialect, DialectConfig> = {
       vectorSupportsLength: false,
       supportsTimestamptz: false,
       defaultStringAsText: false,
+      supportsJsonb: false,
     },
   },
 };

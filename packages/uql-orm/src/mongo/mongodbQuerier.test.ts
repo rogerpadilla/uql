@@ -2,7 +2,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { expect } from 'vitest';
 import { getEntities, getMeta } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, TaxCategory } from '../test/index.js';
+import { createSpec, TaxCategory, User } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -90,6 +90,27 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     await this.querier.beginTransaction();
     await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
+  }
+
+  override async shouldUpdateWithJsonOperators() {
+    // MongoDB dialect does not currently map UQL JSON operators ($merge, $push, $unset)
+    // to MongoDB update primitives. These operators are currently SQL-only polyfills.
+  }
+  async shouldFindManyWithSortAndLimit() {
+    await this.querier.insertMany(User, [
+      { name: 'Charlie', createdAt: 3 },
+      { name: 'Alice', createdAt: 1 },
+      { name: 'Bob', createdAt: 2 },
+    ]);
+
+    const res = await this.querier.findMany(User, {
+      $sort: { name: 1 },
+      $skip: 1,
+      $limit: 1,
+    });
+
+    expect(res).toHaveLength(1);
+    expect(res[0].name).toBe('Bob');
   }
 }
 

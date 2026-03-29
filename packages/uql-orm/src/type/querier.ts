@@ -5,6 +5,7 @@ import type { NamingStrategy } from './namingStrategy.js';
 import type {
   Query,
   QueryAggregate,
+  QueryAggregateResult,
   QueryConflictPaths,
   QueryOne,
   QueryOptions,
@@ -115,10 +116,10 @@ export interface Querier extends UniversalQuerier {
   /**
    * Run an aggregate query (GROUP BY with aggregate functions).
    */
-  aggregate<E extends object, R extends Record<string, unknown> = Record<string, unknown>>(
+  aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
-    q: QueryAggregate<E>,
-  ): Promise<R[]>;
+    q: Q,
+  ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 
   /**
    * whether this querier is in a transaction or not.

@@ -54,6 +54,11 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     return `JSON_VALUE(${escapedColumn}, '$.${escapedPath}')`;
   }
 
+  /** MariaDB does not support CAST(val AS JSON). We use JSON_EXTRACT to convert string to JSON. */
+  protected override getJsonCastExpr(): string {
+    return "JSON_EXTRACT(?, '$')";
+  }
+
   /** MariaDB 11.7+ vector distance functions. */
   protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
     cosine: 'VEC_DISTANCE_COSINE',

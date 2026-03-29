@@ -5,40 +5,34 @@ import { getKeys } from '../util/index.js';
 
 export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: string) {
   const entities = getEntities();
-  await Promise.all(
-    entities.map((entity) => {
-      const sql = getDdlForTable(entity, querier, primaryKeyType);
-      return querier.run(sql);
-    }),
-  );
+  for (const entity of entities) {
+    const sql = getDdlForTable(entity, querier, primaryKeyType);
+    await querier.run(sql);
+  }
 }
 
 export async function dropTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
-  await Promise.all(
-    entities.map((entity) => {
-      const meta = getMeta(entity);
-      const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name!)}`;
-      return querier.run(sql);
-    }),
-  );
+  for (const entity of entities) {
+    const meta = getMeta(entity);
+    const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name!)}`;
+    await querier.run(sql);
+  }
 }
 
 export async function clearTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
-  await Promise.all(
-    entities.map((entity) => {
-      const ctx = querier.dialect.createContext();
-      querier.dialect.delete(ctx, entity, {});
-      return querier.run(ctx.sql, ctx.values);
-    }),
-  );
+  for (const entity of entities) {
+    const ctx = querier.dialect.createContext();
+    querier.dialect.delete(ctx, entity, {});
+    await querier.run(ctx.sql, ctx.values);
+  }
 }
 
 function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primaryKeyType: string) {
   const meta = getMeta(entity);
 
-  let sql = `CREATE TABLE ${querier.dialect.escapeId(meta.name!)} (\n\t`;
+  let sql = `CREATE TABLE IF NOT EXISTS ${querier.dialect.escapeId(meta.name!)} (\n\t`;
 
   const insertableIdType = 'VARCHAR(36)';
   const defaultType = querier.dialect.escapeIdChar === '"' ? 'TEXT' : 'VARCHAR(255)';
@@ -54,6 +48,8 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
       propSql += 'BIGINT';
     } else if (field.type === Date) {
       propSql += 'TIMESTAMP';
+    } else if (field.type === 'json' || field.type === 'jsonb') {
+      propSql += field.type === 'jsonb' && querier.dialect.features.supportsJsonb ? 'JSONB' : 'JSON';
     } else {
       propSql += defaultType;
     }

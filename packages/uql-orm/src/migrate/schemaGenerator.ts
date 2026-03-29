@@ -179,7 +179,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
     const unique = index.unique ? 'UNIQUE ' : '';
-    const ifNotExists = (options.ifNotExists ?? this.config.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = (options.ifNotExists ?? this.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
     const opsClassMap = this.config.vectorOpsClass;
     const hasOpsClass = opsClassMap && (index.type === 'hnsw' || index.type === 'ivfflat');
 
@@ -348,7 +348,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
    * Generate column comment clause (if supported)
    */
   public generateColumnComment(columnName: string, comment: string): string {
-    if (this.config.features.columnComment) {
+    if (this.features.columnComment) {
       const escapedComment = comment.replace(/'/g, "''");
       return ` COMMENT '${escapedComment}'`;
     }
@@ -537,7 +537,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       }
     }
 
-    const ifNotExists = options.ifNotExists && this.config.features.ifNotExists ? 'IF NOT EXISTS ' : '';
+    const ifNotExists = options.ifNotExists && this.features.ifNotExists ? 'IF NOT EXISTS ' : '';
     let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
     sql += columns.map((col) => `  ${col}`).join(',\n');
 
@@ -547,7 +547,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     }
 
     // Inline vector indexes (MariaDB requires them inside CREATE TABLE)
-    const isInlineVectorIdx = this.config.features.vectorIndexStyle === 'inline';
+    const isInlineVectorIdx = this.features.vectorIndexStyle === 'inline';
     const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
     const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
 
@@ -679,7 +679,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string {
     const ifExists = options?.ifExists ? 'IF EXISTS ' : '';
     // Use dialect-specific cascade support from config
-    const cascade = options?.cascade && this.config.features.dropTableCascade ? ' CASCADE' : '';
+    const cascade = options?.cascade && this.features.dropTableCascade ? ' CASCADE' : '';
     return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
   }
 
@@ -725,7 +725,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       ? this.escapeId(foreignKey.name)
       : this.escapeId(`fk_${tableName}_${foreignKey.columns.join('_')}`);
 
-    if (!this.config.features.foreignKeyAlter) {
+    if (!this.features.foreignKeyAlter) {
       throw new Error(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
     }
 

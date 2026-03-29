@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.5] - 2026-03-29
+### New Features
+- **Type-Safe Aggregate Inference**: Enhanced `querier.aggregate()` to automatically infer return types from the `$group` definition. Aggregate results (e.g. `$sum`, `$avg`, `$max`) are now precisely typed without requiring manual casts or `any`.
+- **Centralized Dialect Features**: Introduced a declarative `DialectFeatures` system to manage database capabilities (e.g. `supportsJsonb`, `returning`, `ifNotExists`).
+
+### Improvements
+- **Dialect Architecture Hardening**: Replaced brittle runtime dialect-name checks with formal feature flags across the codebase.
+- **Immutability**: Marked all dialect configuration and feature properties as `readonly` for increased runtime stability.
+
+
 ## [0.7.4] - 2026-03-28
 ### Bug Fixes
 - **Module Imports**: Fixed an issue where the `index.js` barrels incorrectly exported driver-specific querier pools (like `mariadbQuerierPool`), which caused the module bundler/runtime to attempt to load optional peer dependencies (like `mariadb`) when importing unrelated modules from `uql-orm`.

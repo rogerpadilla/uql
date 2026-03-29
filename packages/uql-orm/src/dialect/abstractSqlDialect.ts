@@ -1285,13 +1285,17 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * (RHS top-level keys replace LHS top-level keys, matching PostgreSQL's `jsonb || jsonb`).
    * Override in dialect subclasses when a dialect needs different JSON function semantics.
    */
+  protected getJsonCastExpr(): string {
+    return 'CAST(? AS JSON)';
+  }
+
   protected formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
       const merge = value.$merge as Record<string, unknown>;
       expr = `JSON_SET(COALESCE(${escapedCol}, '{}')`;
       for (const [key, v] of Object.entries(merge)) {
-        expr += `, '$.${this.escapeJsonKey(key)}', CAST(? AS JSON)`;
+        expr += `, '$.${this.escapeJsonKey(key)}', ${this.getJsonCastExpr()}`;
         ctx.pushValue(JSON.stringify(v));
       }
       expr += ')';
@@ -1300,7 +1304,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const push = value.$push as Record<string, unknown>;
       expr = `JSON_ARRAY_APPEND(${expr}`;
       for (const [key, v] of Object.entries(push)) {
-        expr += `, '$.${this.escapeJsonKey(key)}', CAST(? AS JSON)`;
+        expr += `, '$.${this.escapeJsonKey(key)}', ${this.getJsonCastExpr()}`;
         ctx.pushValue(JSON.stringify(v));
       }
       expr += ')';
