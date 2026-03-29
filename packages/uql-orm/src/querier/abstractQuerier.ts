@@ -9,6 +9,7 @@ import type {
   Querier,
   Query,
   QueryAggregate,
+  QueryAggregateResult,
   QueryConflictPaths,
   QueryOne,
   QueryOptions,
@@ -170,17 +171,17 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * Run an aggregate query.
    */
-  aggregate<E extends object, R extends Record<string, unknown> = Record<string, unknown>>(
+  aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
-    q: QueryAggregate<E>,
-  ): Promise<R[]> {
-    return this.internalAggregate(entity, q) as Promise<R[]>;
+    q: Q,
+  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
+    return this.internalAggregate(entity, q);
   }
 
-  protected abstract internalAggregate<E extends object>(
+  protected abstract internalAggregate<E extends object, Q extends QueryAggregate<E>>(
     entity: Type<E>,
-    q: QueryAggregate<E>,
-  ): Promise<Record<string, unknown>[]>;
+    q: Q,
+  ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: E) {
     const [id] = await this.insertMany(entity, [payload]);

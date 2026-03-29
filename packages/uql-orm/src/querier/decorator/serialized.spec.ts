@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import type { QueryAggregate } from '../../type/index.js';
 import { AbstractQuerier } from '../abstractQuerier.js';
 import { Serialized } from './serialized.js';
 
@@ -21,7 +22,7 @@ class MockQuerier extends AbstractQuerier {
   protected override internalFindMany(): any {}
   protected override async *internalFindManyStream(): any {}
   protected override internalCount(): any {}
-  protected override internalAggregate(): any {}
+  protected override internalAggregate<E extends object, Q extends QueryAggregate<E>>(): any {}
   override internalInsertMany(): any {}
   override internalUpdateMany(): any {}
   override upsertOne(): any {}

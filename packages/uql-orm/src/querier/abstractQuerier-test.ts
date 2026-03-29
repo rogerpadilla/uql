@@ -364,6 +364,42 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  async shouldUpdateWithJsonOperators() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Merge',
+      kind: { public: 1, tags: ['a', 'b'] } as any,
+    });
+
+    const mergeResult = await this.querier.updateOneById(Company, id, {
+      kind: { $merge: { private: 1 } },
+    });
+    expect(mergeResult).toBe(1);
+
+    let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toBeDefined();
+    let kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
+    expect(kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b'] });
+
+    const pushResult = await this.querier.updateOneById(Company, id, {
+      kind: { $push: { tags: 'c' } },
+    });
+    expect(pushResult).toBe(1);
+
+    found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
+    expect(kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b', 'c'] });
+
+    const unsetResult = await this.querier.updateOneById(Company, id, {
+      kind: { $unset: ['public'] },
+    });
+    expect(unsetResult).toBe(1);
+
+    found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
+    expect(kind).toMatchObject({ private: 1, tags: ['a', 'b', 'c'] });
+    expect(kind).not.toHaveProperty('public');
+  }
+
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
     const record1 = await this.querier.findOne(TaxCategory, {
@@ -764,6 +800,25 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       collected.push(row);
     }
     expect(collected).toHaveLength(0);
+  }
+
+  async shouldAggregate() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', createdAt: 100 },
+      { name: 'Bob', createdAt: 200 },
+      { name: 'Charlie', createdAt: 300 },
+    ]);
+
+    const res = await this.querier.aggregate(User, {
+      $where: { createdAt: { $gte: 200 } },
+      $group: { total: { $sum: 'createdAt' } },
+    });
+
+    expect(res).toHaveLength(1);
+    // MongoDB returns _id: null, while SQL dialects might return it differently depending on group by.
+    // We are mainly checking that the task was executed.
+    expect(res[0]).toHaveProperty('total');
+    expect(Number(res[0].total)).toBe(500);
   }
 
   async clearTables() {

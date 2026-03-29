@@ -98,7 +98,7 @@ export class PostgresDialect extends AbstractSqlDialect {
         this.getComparisonKey(ctx, entity, key, opts);
         ctx.append(' @> ');
         ctx.addValue(JSON.stringify(val));
-        ctx.append('::jsonb');
+        ctx.append('::text::jsonb');
         break;
       case '$size':
         // PostgreSQL: Check JSONB array length
@@ -141,7 +141,7 @@ export class PostgresDialect extends AbstractSqlDialect {
       this.getComparisonKey(ctx, entity, key, opts);
       ctx.append(' @> ');
       ctx.addValue(JSON.stringify([match]));
-      ctx.append('::jsonb');
+      ctx.append('::text::jsonb');
       return;
     }
 
@@ -191,7 +191,7 @@ export class PostgresDialect extends AbstractSqlDialect {
     }
     if (isJsonType(field.type)) {
       ctx.addValue(value ? JSON.stringify(value) : null);
-      ctx.append(`::${field.type}`);
+      ctx.append(`::text::${field.type}`);
       return;
     }
     if (field.type === 'vector' && Array.isArray(value)) {
@@ -229,17 +229,17 @@ export class PostgresDialect extends AbstractSqlDialect {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
       ctx.pushValue(JSON.stringify(value.$merge));
-      expr = `COALESCE(${escapedCol}, '{}') || ${this.placeholder(ctx.values.length)}::jsonb`;
+      expr = `COALESCE(${escapedCol}, '{}') || ${this.placeholder(ctx.values.length)}::text::jsonb`;
     }
     if (hasKeys(value.$push)) {
       const push = value.$push as Record<string, unknown>;
       for (const [key, v] of Object.entries(push)) {
         const currentExpr = expr;
         ctx.pushValue(JSON.stringify(v));
-        const ph = this.placeholder(ctx.values.length);
+        const ph = `${this.placeholder(ctx.values.length)}`;
         expr = `jsonb_set(${currentExpr}, '{${this.escapeJsonKey(key)}}', COALESCE((${currentExpr})->'${this.escapeJsonKey(
           key,
-        )}', '[]'::jsonb) || jsonb_build_array(${ph}::jsonb))`;
+        )}', '[]'::jsonb) || jsonb_build_array(${ph}::text::jsonb))`;
       }
     }
     if (value.$unset?.length) {

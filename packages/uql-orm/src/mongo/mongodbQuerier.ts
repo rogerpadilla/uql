@@ -7,6 +7,7 @@ import type {
   IdValue,
   Query,
   QueryAggregate,
+  QueryAggregateResult,
   QueryConflictPaths,
   QueryOptions,
   QuerySearch,
@@ -156,11 +157,12 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  protected override async internalAggregate<E extends Document>(entity: Type<E>, q: QueryAggregate<E>) {
+  protected override async internalAggregate<E extends Document, Q extends QueryAggregate<E>>(
+    entity: Type<E>,
+    q: Q,
+  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q);
-    return this.execute((session) =>
-      this.collection(entity).aggregate<Record<string, unknown>>(pipeline, { session }).toArray(),
-    );
+    return this.execute((session) => this.collection(entity).aggregate<any>(pipeline, { session }).toArray());
   }
 
   @Log()

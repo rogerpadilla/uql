@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { User } from '../test/index.js';
-import type { Query, QuerySearch, Type } from '../type/index.js';
+import type { Query, QueryAggregate, QuerySearch, Type } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 /**
@@ -50,7 +50,7 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  protected override internalAggregate(): any {
+  protected override internalAggregate<E extends object, Q extends QueryAggregate<E>>(): any {
     return Promise.resolve([]);
   }
 

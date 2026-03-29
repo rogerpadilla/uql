@@ -483,7 +483,33 @@ export interface QueryContext {
   readonly values: unknown[];
 }
 
+export interface DialectFeatures {
+  readonly returning: boolean;
+  readonly ifNotExists: boolean;
+  readonly indexIfNotExists: boolean;
+  readonly dropTableCascade: boolean;
+  readonly renameColumn: boolean;
+  readonly foreignKeyAlter: boolean;
+  /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
+  readonly columnComment: boolean;
+  /** How vector indexes are emitted: inline in CREATE TABLE or as standalone CREATE INDEX. */
+  readonly vectorIndexStyle: 'inline' | 'create';
+  /** Whether the dialect requires/allows (n) length constraints on vector types. */
+  readonly vectorSupportsLength: boolean;
+  /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
+  readonly supportsTimestamptz: boolean;
+  /** Whether the dialect defaults to TEXT for strings when no length is specified (e.g. Postgres). */
+  readonly defaultStringAsText: boolean;
+  /** Whether the dialect natively supports the JSONB binary JSON type (Postgres/CockroachDB). */
+  readonly supportsJsonb: boolean;
+}
+
 export interface QueryDialect {
+  /**
+   * The dialect features.
+   */
+  readonly features: DialectFeatures;
+
   /**
    * obtains the records matching the given search parameters.
    * @param ctx the query context
@@ -646,7 +672,30 @@ export type QueryAggregateFn<E> =
 export type QueryGroupMap<E> = {
   readonly [K in FieldKey<E>]?: true | QueryAggregateFn<E>;
 } & {
-  readonly [alias: string]: true | QueryAggregateFn<E> | undefined;
+  readonly [alias: string]: true | null | QueryAggregateFn<E> | undefined;
+};
+
+/**
+ * Infers the aggregated result type based on a QueryGroupMap.
+ */
+export type QueryAggregateResult<E, G> = {
+  -readonly [K in keyof G as G[K] extends undefined ? never : K]: G[K] extends true
+    ? K extends keyof E
+      ? E[K]
+      : unknown
+    : G[K] extends { readonly $count: any } | { readonly $sum: any } | { readonly $avg: any }
+      ? number
+      : G[K] extends { readonly $min: infer F }
+        ? F extends keyof E
+          ? E[F]
+          : unknown
+        : G[K] extends { readonly $max: infer F }
+          ? F extends keyof E
+            ? E[F]
+            : unknown
+          : G[K] extends null
+            ? null
+            : unknown;
 };
 
 /**
