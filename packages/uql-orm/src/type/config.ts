@@ -1,6 +1,7 @@
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ForeignKeyAction } from '../schema/types.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type { Dialect } from './querier.js';
+import type { Querier } from './querier.js';
 import type { QuerierPool } from './querierPool.js';
 import type { Type } from './utility.js';
 
@@ -11,8 +12,9 @@ export interface Config {
   /**
    * The connection pool used to interact with the database.
    * This is required for both the application and the migrations CLI.
+   * Must expose {@link QuerierPool.dialect}; migrations and the CLI read `pool.dialect.dialectName`.
    */
-  pool: QuerierPool;
+  pool: QuerierPool<Querier, AbstractDialect>;
 
   /**
    * List of entity classes to be managed by the ORM.
@@ -31,12 +33,6 @@ export interface Config {
    * @default 'uql_migrations'
    */
   tableName?: string;
-
-  /**
-   * The SQL dialect to be used (e.g., 'postgres', 'mysql', 'sqlite').
-   * If not provided, it is inferred from the `pool` instance.
-   */
-  dialect?: Dialect;
 
   /**
    * The naming strategy for mapping class/property names to database table/column names.

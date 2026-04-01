@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MongoDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import type { QuerierPool } from '../type/index.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
+import type { Querier, QuerierPool } from '../type/index.js';
 import { Migrator } from './migrator.js';
 
 @Entity()
@@ -31,10 +33,7 @@ describe('Migrator autoSync MongoDB Integration', () => {
       release: vi.fn<any>().mockResolvedValue(undefined),
     };
 
-    pool = {
-      getQuerier: vi.fn<any>().mockResolvedValue(querier),
-      dialect: 'mongodb',
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new MongoDialect(), async () => querier as unknown as Querier);
 
     migrator = new Migrator(pool, {
       entities: [SyncMongoUser],

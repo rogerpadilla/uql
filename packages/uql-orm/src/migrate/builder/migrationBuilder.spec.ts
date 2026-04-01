@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { createDryRunBuilder, MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
 import type {
   AddColumnOperation,
@@ -348,7 +349,7 @@ describe('OperationRecorder', () => {
 describe('MigrationBuilder', () => {
   const createMockQuerier = () => ({
     run: vi.fn().mockResolvedValue({}),
-    dialect: { dialect: 'postgres' as const, escapeIdChar: '"' as const, placeholder: () => '?' },
+    dialect: new PostgresDialect(),
   });
 
   describe('execution', () => {

@@ -6,15 +6,18 @@ import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends AbstractSqlDialectSpec {
+  private mariaDialect: MariaDialect;
+
   constructor() {
-    super(new MariaDialect());
+    const dialect = new MariaDialect({});
+    super(dialect);
+    this.mariaDialect = dialect;
   }
 
   // JSON operator tests
   shouldFind$elemMatch() {
-    const dialect = new MariaDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    const ctx = this.mariaDialect.createContext();
+    this.mariaDialect.find(ctx, User, {
       $select: { id: true },
       $where: { name: { $elemMatch: { city: 'NYC' } } },
     });
@@ -23,7 +26,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFind$all() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
       $select: { id: true },
@@ -34,7 +37,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFind$size() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
       $select: { id: true },
@@ -45,7 +48,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFind$sizeWithComparison() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
 
     // Single comparison operator
     let ctx = dialect.createContext();
@@ -77,7 +80,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
       $select: { id: true },
@@ -90,7 +93,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFind$elemMatchWithMultipleOperators() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
       $select: { id: true },
@@ -102,7 +105,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFind$elemMatchWithAllOperators() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, User, {
       $select: { id: true },
@@ -141,7 +144,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFilterByJsonDotNotation() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, Company, {
       $select: { id: true },
@@ -154,7 +157,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldSortByJsonDotNotation() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, Company, {
       $select: { id: true },
@@ -166,7 +169,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFilterByJsonDotNotationDeep() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
     dialect.find(ctx, Company, {
       $select: { id: true },
@@ -179,7 +182,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldHandleDate() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const values: unknown[] = [];
     expect(dialect.addValue(values, new Date())).toBe('?');
     expect(values).toHaveLength(1);
@@ -187,19 +190,19 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldEscape() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     expect(dialect.escape("va'lue")).toBe("'va\\'lue'");
   }
 
   shouldHandleOtherValues() {
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const values: unknown[] = [];
     expect(dialect.addValue(values, 123)).toBe('?');
     expect(values[0]).toBe(123);
   }
 
   shouldUpsertWithNoUpdateFields() {
-    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
+    const { sql } = this.exec((ctx) => this.mariaDialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
     expect(sql).toContain('INSERT IGNORE');
   }
 
@@ -210,7 +213,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
+      this.mariaDialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3] } },
         $limit: 10,
@@ -227,7 +230,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
+      this.mariaDialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
         $limit: 5,
@@ -245,7 +248,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     }
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
+        this.mariaDialect.find(ctx, VectorItem, {
           $select: { id: true },
           $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
           $limit: 10,
@@ -262,7 +265,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field() name!: string;
     }
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
+      this.mariaDialect.find(ctx, VectorItem, {
         $select: { id: true },
         $where: { name: 'test' },
         $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
@@ -282,7 +285,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
+      this.mariaDialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3] } },
         $limit: 10,
@@ -299,7 +302,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
+      this.mariaDialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
         $limit: 10,
@@ -313,7 +316,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertMany() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, [
+      this.mariaDialect.insert(ctx, User, [
         {
           name: 'Some name 1',
           email: 'someemail1@example.com',
@@ -349,7 +352,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldBeSecure() {
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.mariaDialect.find(ctx, User, {
         $select: { id: true, something: true } as any,
         $where: {
           id: 1,
@@ -365,7 +368,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual([1, 1]);
 
     res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
+      this.mariaDialect.insert(ctx, User, {
         name: 'Some Name',
         something: 'anything',
         createdAt: 1,
@@ -375,7 +378,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 1]);
 
     res = this.exec((ctx) =>
-      this.dialect.update(
+      this.mariaDialect.update(
         ctx,
         User,
         {
@@ -392,7 +395,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
     res = this.exec((ctx) =>
-      this.dialect.delete(ctx, User, {
+      this.mariaDialect.delete(ctx, User, {
         $where: { something: 'anything' } as any,
       }),
     );
@@ -402,7 +405,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.upsert(
+      this.mariaDialect.upsert(
         ctx,
         User,
         { email: true },
@@ -421,7 +424,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, [
+      this.mariaDialect.insert(ctx, TaxCategory, [
         {
           name: 'Some Name A',
         },
@@ -459,7 +462,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertOne() {
     let res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
+      this.mariaDialect.insert(ctx, User, {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
@@ -469,7 +472,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
     res = this.exec((ctx) =>
-      this.dialect.insert(ctx, InventoryAdjustment, {
+      this.mariaDialect.insert(ctx, InventoryAdjustment, {
         date: new Date(2021, 11, 31, 23, 59, 59, 999),
         createdAt: 123,
       }),
@@ -480,7 +483,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertWithOnInsertId() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, {
+      this.mariaDialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),

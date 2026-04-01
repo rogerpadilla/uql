@@ -6,7 +6,7 @@ describe('MariadbQuerier', () => {
   it('should calculate changes from affectedRows', async () => {
     const query = vi.fn().mockResolvedValue({ affectedRows: 5, length: 0 });
     const conn = { query } as any;
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const querier = new MariadbQuerier(() => Promise.resolve(conn), dialect);
     (querier as any).conn = conn;
 
@@ -17,7 +17,7 @@ describe('MariadbQuerier', () => {
   it('should calculate changes from length if affectedRows is missing', async () => {
     const query = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
     const conn = { query } as any;
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const querier = new MariadbQuerier(() => Promise.resolve(conn), dialect);
     (querier as any).conn = conn;
 
@@ -28,7 +28,7 @@ describe('MariadbQuerier', () => {
   it('should default changes to 0 if both affectedRows and length are missing', async () => {
     const query = vi.fn().mockResolvedValue({});
     const conn = { query } as any;
-    const dialect = new MariaDialect();
+    const dialect = new MariaDialect({});
     const querier = new MariadbQuerier(() => Promise.resolve(conn), dialect);
     (querier as any).conn = conn;
 

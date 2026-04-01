@@ -25,7 +25,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   protected neSql(field: string): string {
-    switch (this.dialect.dialect) {
+    switch (this.dialect.dialectName) {
       case 'postgres':
       case 'cockroachdb':
         return `${field} IS DISTINCT FROM ?`;

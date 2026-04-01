@@ -483,7 +483,29 @@ export interface QueryContext {
   readonly values: unknown[];
 }
 
-export interface DialectFeatures {
+/**
+ * Capabilities of the database driver (transport layer).
+ */
+export interface DriverCapabilities {
+  /**
+   * Whether JSON bind parameters are cast via text first (`($n::text)::jsonb`).
+   * Bun SQL PostgreSQL uses this for reliable jsonb merge/push; `pg` does not.
+   */
+  readonly explicitJsonCast: boolean;
+  /**
+   * Whether the driver natively supports JS arrays for the underlying database type.
+   * `PgDialect` keeps this `true` for node-postgres; Bun SQL PostgreSQL uses `false` and
+   * `toPgArray` string literals instead.
+   */
+  readonly nativeArrays: boolean;
+  /** Whether the dialect natively supports the JSONB binary JSON type (Postgres/CockroachDB). */
+  readonly supportsJsonb: boolean;
+}
+
+/**
+ * Features of the database engine (SQL syntax layer).
+ */
+export interface EngineFeatures {
   readonly returning: boolean;
   readonly ifNotExists: boolean;
   readonly indexIfNotExists: boolean;
@@ -500,9 +522,9 @@ export interface DialectFeatures {
   readonly supportsTimestamptz: boolean;
   /** Whether the dialect defaults to TEXT for strings when no length is specified (e.g. Postgres). */
   readonly defaultStringAsText: boolean;
-  /** Whether the dialect natively supports the JSONB binary JSON type (Postgres/CockroachDB). */
-  readonly supportsJsonb: boolean;
 }
+
+export interface DialectFeatures extends EngineFeatures, DriverCapabilities {}
 
 export interface QueryDialect {
   /**
@@ -607,7 +629,7 @@ export interface QueryDialect {
 /**
  * Supported SQL dialect identifiers.
  */
-export type SqlDialect = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite';
+export type SqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite';
 
 /**
  * Minimal dialect interface exposing escapeIdChar for SQL operations
@@ -616,7 +638,7 @@ export interface SqlQueryDialect extends QueryDialect {
   /**
    * The SQL dialect name (postgres, mysql, mariadb, sqlite).
    */
-  readonly dialect: SqlDialect;
+  readonly dialectName: SqlDialectName;
 
   /**
    * the escape character for identifiers.

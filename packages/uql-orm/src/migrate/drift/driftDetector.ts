@@ -5,11 +5,11 @@
  * actual database schema.
  */
 
+import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { SchemaASTDiffer } from '../../schema/schemaASTDiffer.js';
 import type { CanonicalType, Drift, DriftReport, DriftStatus } from '../../schema/types.js';
-import type { Dialect } from '../../type/index.js';
 
 /**
  * Options for drift detection.
@@ -25,8 +25,8 @@ export interface DriftDetectorOptions {
   checkForeignKeys?: boolean;
   /** Include default value differences */
   checkDefaults?: boolean;
-  /** SQL dialect for type formatting */
-  dialect?: Dialect;
+  /** Dialect instance for type formatting */
+  dialect?: AbstractDialect;
 }
 
 /**
@@ -34,7 +34,6 @@ export interface DriftDetectorOptions {
  */
 export class DriftDetector {
   private readonly options: Required<DriftDetectorOptions>;
-  private readonly dialect: Dialect;
 
   constructor(
     private readonly expectedAST: SchemaAST,
@@ -46,10 +45,9 @@ export class DriftDetector {
       checkNullable: options.checkNullable ?? true,
       checkIndexes: options.checkIndexes ?? true,
       checkForeignKeys: options.checkForeignKeys ?? true,
-      checkDefaults: options.checkDefaults ?? false, // Often differ between SQL and entity
-      dialect: options.dialect ?? 'postgres',
-    };
-    this.dialect = this.options.dialect;
+      checkDefaults: options.checkDefaults ?? false,
+      dialect: options.dialect,
+    } as Required<DriftDetectorOptions>;
   }
 
   /**
@@ -277,8 +275,9 @@ export class DriftDetector {
    * Format type for display.
    */
   private formatType(type?: CanonicalType): string {
-    if (!type) return 'unknown';
-    return canonicalToSql(type, this.dialect);
+    const dialect = this.options.dialect;
+    if (!type || !dialect) return 'unknown';
+    return canonicalToSql(type, dialect);
   }
 }
 

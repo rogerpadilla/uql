@@ -215,6 +215,23 @@ it('escapeSqlId', () => {
   expect(escapeSqlId(undefined as any)).toBe('');
 });
 
+describe('escapeSqlId — identifier injection hardening', () => {
+  it('cannot break out of double-quoted identifier with embedded quotes', () => {
+    const evil = 'u"; SELECT 1; --';
+    expect(escapeSqlId(evil, '"')).toBe('"u""; SELECT 1; --"');
+  });
+
+  it('cannot break out of backtick-quoted identifier', () => {
+    const evil = 't`; DROP TABLE x; --';
+    expect(escapeSqlId(evil, '`')).toBe('`t``; DROP TABLE x; --`');
+  });
+
+  it('qualifies each segment so dots in malicious names stay inside quotes', () => {
+    const evil = 'a.b"; --';
+    expect(escapeSqlId(evil, '"')).toBe('"a"."b""; --"');
+  });
+});
+
 it('obtainAttrsPaths - underscore', () => {
   const res1 = obtainAttrsPaths({
     prop1_a_b: 1,

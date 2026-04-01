@@ -2,8 +2,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { AbstractDialect } from '../dialect/index.js';
 import { type Drift, type DriftReport, SchemaASTBuilder } from '../schema/index.js';
-import type { Config, Dialect, MigratorOptions, NamingStrategy } from '../type/index.js';
+import type { Config, MigratorOptions, NamingStrategy } from '../type/index.js';
+import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { detectDrift } from './drift/driftDetector.js';
@@ -11,7 +13,7 @@ import { Migrator } from './migrator.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 import { createSchemaSync } from './sync/schemaSync.js';
 
-export function getSchemaGenerator(dialect: Dialect, namingStrategy?: NamingStrategy) {
+export function getSchemaGenerator(dialect: AbstractDialect, namingStrategy?: NamingStrategy) {
   return createSchemaGenerator(dialect, namingStrategy);
 }
 
@@ -36,26 +38,22 @@ export async function main(args = process.argv.slice(2)) {
 
   try {
     const config = await loadConfig(customPath);
+    assertCliConfig(config);
 
-    if (!config.pool) {
-      throw new TypeError('pool is required in configuration');
-    }
+    const dialectName = config.pool.dialect.dialectName ?? 'postgres';
 
-    const dialect = config.dialect ?? config.pool.dialect ?? 'postgres';
-
-    const options: MigratorOptions & { dialect: Dialect } = {
+    const options: MigratorOptions = {
       migrationsPath: config.migrationsPath ?? './migrations',
       tableName: config.tableName,
       logger: console.log,
       entities: config.entities,
-      dialect,
       namingStrategy: config.namingStrategy,
     };
 
     const migrator = new Migrator(config.pool, options);
-    const generator = getSchemaGenerator(dialect, config.namingStrategy);
+    const generator = getSchemaGenerator(config.pool.dialect, config.namingStrategy);
     if (!generator) {
-      throw new TypeError(`Could not find a schema generator for dialect: ${dialect}`);
+      throw new TypeError(`Could not find a schema generator for dialect: ${dialectName}`);
     }
     migrator.setSchemaGenerator(generator);
 
@@ -423,10 +421,11 @@ Commands:
 Configuration:
   Create a uql.config.ts or uql.config.js file in your project root.
   You can also specify a custom config path using --config or -c.
+  The CLI requires pool.dialect (dialect id = pool.dialect.dialectName).
+  See the repo README section "Driver → pool → dialect class".
 
   export default {
     pool: new PgQuerierPool({ ... }),
-    // dialect: 'postgres', // optional, inferred from pool
     migrationsPath: './migrations',
     tableName: 'uql_migrations',
     entities: [User, Post, ...],

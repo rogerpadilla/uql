@@ -1,14 +1,31 @@
-import { AbstractDialect } from '../../dialect/index.js';
+import { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { getMeta } from '../../entity/index.js';
+import { MongoDialect } from '../../mongo/mongoDialect.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
-import type { FieldOptions, IndexSchema, NamingStrategy, SchemaDiff, SchemaGenerator, Type } from '../../type/index.js';
+import type {
+  DialectName,
+  FieldOptions,
+  IndexSchema,
+  NamingStrategy,
+  SchemaDiff,
+  SchemaGenerator,
+  Type,
+} from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import type { TableDefinition } from '../builder/types.js';
 
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
-  constructor(namingStrategy?: NamingStrategy, defaultForeignKeyAction?: ForeignKeyAction) {
-    super('mongodb', namingStrategy, defaultForeignKeyAction);
+  readonly dialectName = 'mongodb' satisfies DialectName;
+
+  constructor(
+    namingStrategy?: NamingStrategy,
+    protected readonly defaultForeignKeyAction?: ForeignKeyAction,
+  ) {
+    super(MongoDialect.defaultDialectFeatures, { namingStrategy });
   }
+
+  override readonly insertIdStrategy: 'first' | 'last' = 'last';
+
   generateCreateTable<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(entity, meta);

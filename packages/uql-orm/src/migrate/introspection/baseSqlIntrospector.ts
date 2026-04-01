@@ -1,8 +1,7 @@
-import { type DialectConfig, getDialectConfig } from '../../dialect/index.js';
+import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
-import type { Dialect } from '../../type/index.js';
 import type { ColumnSchema, TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
 
@@ -10,14 +9,10 @@ import { escapeSqlId } from '../../util/index.js';
  * Base class for SQL introspectors with shared AST building logic.
  */
 export abstract class BaseSqlIntrospector {
-  protected readonly config: DialectConfig;
-
-  constructor(protected readonly dialect: Dialect) {
-    this.config = getDialectConfig(dialect);
-  }
+  constructor(protected readonly dialect: AbstractSqlDialect) {}
 
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.config.quoteChar);
+    return escapeSqlId(identifier, this.dialect.quoteChar);
   }
   /**
    * Introspect entire database schema and return SchemaAST.

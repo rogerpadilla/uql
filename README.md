@@ -284,6 +284,27 @@ export default {
 > **Notes:**
 > - Reuse one pool for both app queries and migrations to keep behavior (for example naming strategy) consistent.
 > - If your architecture spans backend + browser, `HttpQuerier` reduces custom API mapping and keeps query semantics aligned.
+> - **Upgrading:** use `pool.dialect` (not `pool.dialectInstance`), read `pool.dialect.dialectName`, and remove any top-level `dialect` from migrate config (see `CHANGELOG.md`).
+
+### Driver → pool → dialect class
+
+Migrations and the CLI read **`pool.dialect.dialectName`** only (there is no separate top-level `dialect` in config). Pick the pool (and thus the dialect class) for your driver.
+
+| Import path | Pool class | Dialect class (on the pool) | Notes |
+| :--- | :--- | :--- | :--- |
+| `uql-orm/postgres` | `PgQuerierPool` | `PgDialect` | Node `pg`; base Postgres capabilities (native arrays, `$n::jsonb`). |
+| `uql-orm/postgres` | — | `PostgresDialect` | Base Postgres AST; subclass for other Postgres wire drivers. |
+| `uql-orm/neon` | `NeonQuerierPool` | `NeonDialect` | `@neondatabase/serverless`; extends `PostgresDialect` with Neon-oriented defaults. |
+| `uql-orm/cockroachdb` | `CrdbQuerierPool` | `CockroachDialect` | `dialectName` is `cockroachdb`; extends `PostgresDialect`. |
+| `uql-orm/mysql` | `Mysql2QuerierPool` | `MySql2Dialect` | `mysql2` driver. |
+| `uql-orm/maria` | `MariadbQuerierPool` | `MariaDialect` | `mariadb` driver. |
+| `uql-orm/sqlite` | `Sqlite3QuerierPool` | `BetterSqlite3Dialect` | `better-sqlite3` (or Bun SQLite in that pool). |
+| `uql-orm/libsql` | `LibsqlQuerierPool` | `LibsqlDialect` | `@libsql/client`. |
+| `uql-orm/d1` | `D1QuerierPool` | `D1SqliteDialect` | Cloudflare D1. |
+| `uql-orm/mongo` | `MongodbQuerierPool` | `MongodbNativeDialect` | Official `mongodb` driver. |
+| `uql-orm/bunSql` | `BunSqlQuerierPool` | _inferred_ | Dialect class chosen from `SQL.Options` (Postgres / MySQL / MariaDB / SQLite / Cockroach). |
+
+For **wire-level** differences on PostgreSQL (e.g. Bun SQL vs `pg`), `BunSqlPostgresDialect` merges `POSTGRES_WIRE_DRIVER_CAPABILITIES` from `uql-orm/postgres/wireCapabilities` (array literals + JSON text cast); `PgDialect` does not.
 
 ## 4. Manipulate the Data
 

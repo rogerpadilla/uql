@@ -1,4 +1,5 @@
 import type { Db } from 'mongodb';
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { HookEvent, IdValue, UpdatePayload } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
@@ -11,10 +12,8 @@ import type {
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
-  SqlDialect,
-  SqlQueryDialect,
+  SqlDialectName,
 } from './query.js';
-
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -38,9 +37,9 @@ export type TransactionOptions = {
 };
 
 // Re-export SqlDialect for backwards compatibility
-export type { SqlDialect };
+export type { SqlDialectName };
 
-export type Dialect = SqlDialect | 'mongodb';
+export type DialectName = SqlDialectName | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
   findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E | undefined>;
@@ -152,15 +151,11 @@ export interface Querier extends UniversalQuerier {
   release(): Promise<void>;
 }
 
-/**
- * Extended querier interface for raw SQL execution.
- * Implemented by AbstractSqlQuerier and all SQL-based queriers.
- */
 export interface SqlQuerier extends Querier {
   /**
-   * The SQL dialect (provides escapeIdChar and other dialect-specific info)
+   * The SQL dialect
    */
-  readonly dialect: SqlQueryDialect;
+  readonly dialect: AbstractSqlDialect;
 
   /**
    * Execute a raw SQL query and return results
@@ -182,7 +177,7 @@ export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
     typeof q.all === 'function' &&
     typeof q.run === 'function' &&
     q.dialect !== undefined &&
-    typeof q.dialect.escapeIdChar === 'string'
+    typeof q.dialect.quoteChar === 'string'
   );
 }
 

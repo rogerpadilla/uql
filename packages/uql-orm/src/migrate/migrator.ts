@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import { introspectSchema } from '../schema/index.js';
 import type {
-  Dialect,
+  DialectName,
   LoggingOptions,
   Migration,
   MigrationDefinition,
@@ -20,7 +20,7 @@ import type {
   SchemaIntrospector,
   Type,
 } from '../type/index.js';
-import { isSqlQuerier } from '../type/index.js';
+import { isKnownMigratorDialect, isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import {
@@ -50,7 +50,7 @@ export class Migrator {
   public get entities(): Type<unknown>[] {
     return this._entities ?? getEntities();
   }
-  public readonly dialect: Dialect;
+  public readonly dialectName: DialectName;
   public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector?: SchemaIntrospector;
 
@@ -58,7 +58,7 @@ export class Migrator {
     private readonly pool: QuerierPool,
     options: MigratorOptions = {},
   ) {
-    this.dialect = options.dialect ?? pool.dialect ?? 'postgres';
+    this.dialectName = pool.dialect.dialectName ?? 'postgres';
     this.storage =
       options.storage ??
       new DatabaseMigrationStorage(pool, {
@@ -79,9 +79,13 @@ export class Migrator {
   }
 
   protected createIntrospector(): SchemaIntrospector | undefined {
-    switch (this.dialect) {
-      case 'cockroachdb':
+    const d = this.dialectName;
+    if (!isKnownMigratorDialect(d)) {
+      return undefined;
+    }
+    switch (d) {
       case 'postgres':
+      case 'cockroachdb':
         return new PostgresSchemaIntrospector(this.pool);
       case 'mysql':
       case 'mariadb':
@@ -96,14 +100,10 @@ export class Migrator {
   }
 
   protected createGenerator(namingStrategy?: NamingStrategy): SchemaGenerator | undefined {
-    return createSchemaGenerator(this.dialect, namingStrategy);
-  }
-
-  /**
-   * Get the SQL dialect
-   */
-  getDialect(): Dialect {
-    return this.dialect;
+    if (!isKnownMigratorDialect(this.dialectName)) {
+      return undefined;
+    }
+    return createSchemaGenerator(this.pool.dialect, namingStrategy);
   }
 
   /**
@@ -487,14 +487,14 @@ export class Migrator {
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
     const querier = await this.pool.getQuerier();
     try {
-      if (this.dialect === 'mongodb') {
+      if (this.dialectName === 'mongodb') {
         await this.executeMongoSyncStatements(statements, options, querier as MongoQuerier);
       } else {
         await this.executeSqlSyncStatements(statements, options, querier);
       }
       if (options.logging) this.logger.logSchema('Schema synchronization completed');
     } catch (error) {
-      if (this.dialect !== 'mongodb' && isSqlQuerier(querier)) {
+      if (this.dialectName !== 'mongodb' && isSqlQuerier(querier)) {
         await querier.rollbackTransaction();
       }
       throw error;

@@ -1,7 +1,7 @@
 // Re-export core types for convenience
 export type {
   ColumnSchema,
-  Dialect,
+  DialectName,
   ForeignKeySchema,
   IndexSchema,
   Migration,
@@ -13,13 +13,13 @@ export type {
   SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,
-  SqlDialect,
+  SqlDialectName,
   SqlQuerier,
   SqlQueryDialect,
   TableSchema,
 } from '../type/index.js';
 export { type Config, isSqlQuerier } from '../type/index.js';
-
+export { assertCliConfig } from './assertCliConfig.js';
 // Type-safe migration builder
 export * from './builder/index.js';
 export { loadConfig } from './cli-config.js';

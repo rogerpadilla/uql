@@ -1,16 +1,50 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, User } from '../test/index.js';
+import type { SqlDialectName } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { MysqlLikeSqlDialect } from './mysqlLikeSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
+  override readonly dialectName: SqlDialectName = 'mysql';
+
   constructor() {
-    super('mysql');
+    super(MysqlLikeSqlDialect.defaultDialectFeatures, {});
   }
+
+  get quoteChar() {
+    return '`' as const;
+  }
+
+  get serialPrimaryKey() {
+    return 'SERIAL PRIMARY KEY';
+  }
+
+  get tableOptions() {
+    return '';
+  }
+
+  get beginTransactionCommand() {
+    return 'BEGIN';
+  }
+
+  get commitTransactionCommand() {
+    return 'COMMIT';
+  }
+
+  get rollbackTransactionCommand() {
+    return 'ROLLBACK';
+  }
+
+  override get insertIdStrategy(): 'last' {
+    return 'last';
+  }
+
   escape(value: unknown): string {
     return String(value);
   }
+
   protected override numericCast(expr: string): string {
     return `CAST(${expr} AS NUMERIC)`;
   }

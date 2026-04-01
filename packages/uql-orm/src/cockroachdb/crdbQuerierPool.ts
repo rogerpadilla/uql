@@ -11,11 +11,11 @@ export class CrdbQuerierPool extends AbstractPgQuerierPool<PoolClient, Cockroach
   readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(new CockroachDialect(extra?.namingStrategy), extra);
+    super(new CockroachDialect({ namingStrategy: extra?.namingStrategy }), extra);
     this.pool = new Pool(opts);
   }
 
   async getQuerier() {
-    return new CrdbQuerier(() => this.pool.connect(), this.dialectInstance, this.extra);
+    return new CrdbQuerier(() => this.pool.connect(), this.dialect, this.extra);
   }
 }

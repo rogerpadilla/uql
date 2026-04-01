@@ -1,17 +1,21 @@
-import { MysqlLikeSqlDialect } from '../dialect/index.js';
+import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import type {
-  NamingStrategy,
-  QueryConflictPaths,
-  QueryContext,
-  QueryOptions,
-  Type,
-  VectorDistance,
-} from '../type/index.js';
+import type { QueryConflictPaths, QueryContext, QueryOptions, Type, VectorDistance } from '../type/index.js';
 
 export class MariaDialect extends MysqlLikeSqlDialect {
-  constructor(namingStrategy?: NamingStrategy) {
-    super('mariadb', namingStrategy);
+  override readonly dialectName = 'mariadb';
+
+  override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
+
+  constructor(options: DialectOptions = {}) {
+    super({
+      ...options,
+      driverCapabilities: {
+        vectorSupportsLength: true,
+        ...options.driverCapabilities,
+      },
+    });
   }
 
   override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {

@@ -11,14 +11,23 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../test/index.js';
+import type { QueryContext, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
+import { BunSqlPostgresDialect } from '../bunSql/bunSqlPostgresDialect.js';
+import { PgDialect } from './pgDialect.js';
 import { PostgresDialect } from './postgresDialect.js';
+import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilities.js';
 
 class PostgresDialectSpec {
-  readonly dialect = new PostgresDialect();
+  readonly dialect = new PostgresDialect({});
+  readonly pgDialect = new PgDialect();
+  readonly wireArrayPostgresDialect = new PostgresDialect({
+    driverCapabilities: { ...POSTGRES_WIRE_DRIVER_CAPABILITIES },
+  });
+  readonly bunSqlPostgresDialect = new BunSqlPostgresDialect();
 
-  protected exec(fn: (ctx: any) => void): { sql: string; values: unknown[] } {
-    const ctx = this.dialect.createContext();
+  protected exec(fn: (ctx: QueryContext) => void, dialect = this.dialect): { sql: string; values: unknown[] } {
+    const ctx = dialect.createContext();
     fn(ctx);
     return { sql: ctx.sql, values: ctx.values };
   }
@@ -28,25 +37,23 @@ class PostgresDialectSpec {
   }
 
   shouldBeginTransaction() {
-    expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
+    expect(this.dialect.beginTransactionCommand).toBe('BEGIN');
   }
 
   shouldGetBeginTransactionStatementsWithoutIsolationLevel() {
-    expect(this.dialect.getBeginTransactionStatements()).toEqual(['BEGIN TRANSACTION']);
+    expect(this.dialect.getBeginTransactionStatements()).toEqual(['BEGIN']);
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
-      'BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED',
+      'BEGIN ISOLATION LEVEL READ COMMITTED',
     ]);
-    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
-      'BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE',
-    ]);
+    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual(['BEGIN ISOLATION LEVEL SERIALIZABLE']);
     expect(this.dialect.getBeginTransactionStatements('repeatable read')).toEqual([
-      'BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ',
+      'BEGIN ISOLATION LEVEL REPEATABLE READ',
     ]);
     expect(this.dialect.getBeginTransactionStatements('read uncommitted')).toEqual([
-      'BEGIN TRANSACTION ISOLATION LEVEL READ UNCOMMITTED',
+      'BEGIN ISOLATION LEVEL READ UNCOMMITTED',
     ]);
   }
 
@@ -453,30 +460,55 @@ class PostgresDialectSpec {
   }
 
   shouldUpdateWithJsonbField() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { private: 1 },
-          updatedAt: 123,
-        },
-      ),
+    const payload = { private: 1 };
+    // Standard
+    let res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, {
+        kind: payload as any,
+        updatedAt: 123,
+      } as UpdatePayload<Company>),
     );
-    expect(sql).toBe('UPDATE "Company" SET "kind" = ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3');
-    expect(values).toEqual(['{"private":1}', 123, 1]);
+    expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
+    expect(res.values).toEqual(['{"private":1}', 123, 1]);
+
+    // Pg Driver
+    res = this.exec(
+      (ctx) =>
+        this.pgDialect.update(ctx, Company, { $where: { id: 1 } }, {
+          kind: payload as any,
+          updatedAt: 123,
+        } as UpdatePayload<Company>),
+      this.pgDialect,
+    );
+    expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
+    expect(res.values).toEqual(['{"private":1}', 123, 1]);
   }
 
   shouldFind$nin() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { id: { $nin: [1, 2] } },
-      }),
+    const values = [1, 2];
+    // Standard (native arrays)
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
     );
-    expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
-    expect(values).toEqual(['{"1","2"}']);
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
+    expect(res.values).toEqual([values]);
+
+    // node-pg (`PgDialect`): same native array binding as base Postgres dialect
+    res = this.exec(
+      (ctx) => this.pgDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
+      this.pgDialect,
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
+    expect(res.values).toEqual([values]);
+
+    // Bun SQL / wire clients: array literal strings (`toPgArray`)
+    res = this.exec(
+      (ctx) =>
+        this.wireArrayPostgresDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
+      this.wireArrayPostgresDialect,
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
+    expect(res.values).toEqual(['{"1","2"}']);
   }
 
   shouldFormatVector() {
@@ -623,6 +655,15 @@ class PostgresDialectSpec {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
 
+  /** Array text format (`{...}`) is distinct from scalar SQL string literals; see `toPgArray` JSDoc. */
+  shouldNormalizeArrayToPostgresArrayTextFormatWhenNativeArraysFalse() {
+    const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
+    const tricky = 'b"\\'; // b, double-quote, one backslash
+    const escaped = tricky.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    expect(d.normalizeValue(['a', tricky, null])).toBe(`{"a","${escaped}",NULL}`);
+    expect(d.normalizeValue([[1, 2], 3])).toBe('{{"1","2"},"3"}');
+  }
+
   // JSONB operator tests
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
@@ -631,7 +672,7 @@ class PostgresDialectSpec {
         $where: { kind: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> ($1::text)::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
     expect(values).toEqual(['[{"city":"NYC","zip":"10001"}]']);
   }
 
@@ -642,7 +683,7 @@ class PostgresDialectSpec {
         $where: { kind: { $all: ['admin', 'user'] } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> ($1::text)::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
     expect(values).toEqual(['["admin","user"]']);
   }
 
@@ -728,7 +769,7 @@ class PostgresDialectSpec {
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' = $1 AND elem->>\'status\' = ANY($2))',
     );
-    expect(values).toEqual(['exact', '{"active","pending"}']);
+    expect(values).toEqual(['exact', ['active', 'pending']]);
   }
 
   shouldFind$elemMatchWithStringOperators() {
@@ -798,7 +839,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toContain("elem->>'code' ~ $1");
-    expect(res.sql).toContain("elem->>'tag' <> ALL");
+    expect(res.sql).toContain("elem->>'tag' <> ALL($2)");
   }
 
   // JSONB dot-notation tests (Postgres-specific)
@@ -899,7 +940,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
@@ -935,81 +976,101 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || $1::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
-  shouldUpdateWithJsonPush() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(values).toEqual(['"new-tag"', 123, 1]);
-  }
-
   shouldUpdateWithJsonMergePushCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      ),
+    const payload = { $merge: { private: 1 }, $push: { tags: 'new-tag' } };
+    const updatedAt = 123;
+    // Standard
+    let res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
     );
-    expect(sql).toBe(
+    expect(res.sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+    );
+    expect(res.values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
+
+    // Bun SQL Postgres
+    res = this.exec(
+      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      this.bunSqlPostgresDialect,
+    );
+    expect(res.sql).toBe(
       'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
     );
-    expect(values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
+    expect(res.values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
   }
 
   shouldUpdateWithJsonMergePushSameKey() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { tags: ['a'] }, $push: { tags: 'b' } },
-          updatedAt: 123,
-        },
-      ),
+    const payload = { $merge: { tags: ['a'] }, $push: { tags: 'b' } };
+    const updatedAt = 123;
+    // Standard
+    let res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
     );
-    expect(sql).toBe(
+    expect(res.sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+    );
+    expect(res.values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
+
+    // Bun SQL Postgres
+    res = this.exec(
+      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      this.bunSqlPostgresDialect,
+    );
+    expect(res.sql).toBe(
       'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
     );
-    expect(values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
+    expect(res.values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
+  }
+
+  shouldUpdateWithJsonPush() {
+    const payload = { $push: { tags: 'a' } };
+    const updatedAt = 123;
+    // Standard
+    let res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+    );
+    expect(res.sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(res.values).toEqual(['"a"', 123, 1]);
+
+    // Bun SQL Postgres
+    res = this.exec(
+      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      this.bunSqlPostgresDialect,
+    );
+    expect(res.sql).toBe(
+      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(res.values).toEqual(['"a"', 123, 1]);
   }
 
   shouldUpdateWithJsonPushUnsetCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      ),
+    const payload = { $push: { tags: 'a' }, $unset: ['public'] };
+    const updatedAt = 123;
+    // Standard
+    let res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
     );
-    expect(sql).toBe(
+    expect(res.sql).toBe(
+      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(res.values).toEqual(['"a"', 123, 1]);
+
+    // Bun SQL Postgres
+    res = this.exec(
+      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      this.bunSqlPostgresDialect,
+    );
+    expect(res.sql).toBe(
       'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
     );
-    expect(values).toEqual(['"new-tag"', 123, 1]);
+    expect(res.values).toEqual(['"a"', 123, 1]);
   }
 
   shouldSortByJsonDotNotation() {
@@ -1040,7 +1101,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" = ANY($1)');
-    expect(values).toEqual(['{"\\\\x010203"}']);
+    expect(values).toEqual([[new Uint8Array([1, 2, 3])]]);
   }
 }
 

@@ -6,18 +6,20 @@ import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 describe('BunSqlQuerierPool', () => {
   it('should initialize with correct dialect', () => {
     const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
-    expect(pool.dialectInstance).toBeInstanceOf(PostgresDialect);
+    expect(pool.dialect).toBeInstanceOf(PostgresDialect);
+    expect(pool.dialect.features.explicitJsonCast).toBe(true);
+    expect(pool.dialect.features.nativeArrays).toBe(false);
   });
 
   it('should initialize with sqlite dialect', () => {
     const pool = new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
-    expect(pool.dialectInstance).toBeInstanceOf(SqliteDialect);
+    expect(pool.dialect).toBeInstanceOf(SqliteDialect);
   });
 
   it('should support passing config with url', () => {
     const pool = new BunSqlQuerierPool({ url: 'sqlite://test.db' });
     expect(pool.sql).toBeDefined();
-    expect(pool.dialectInstance).toBeInstanceOf(SqliteDialect);
+    expect(pool.dialect).toBeInstanceOf(SqliteDialect);
   });
 
   it('should support config object with adapter', () => {
@@ -27,7 +29,7 @@ describe('BunSqlQuerierPool', () => {
 
   it('should handle cockroachdb alias', () => {
     const pool = new BunSqlQuerierPool({ adapter: 'cockroachdb', hostname: 'localhost' } as any);
-    expect(pool.dialectInstance.dialect).toBe('cockroachdb');
+    expect(pool.dialect.dialectName).toBe('cockroachdb');
   });
 
   describe('pool shim', () => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PostgresDialect } from '../../dialect/index.js';
 import { getQuerier, setQuerierPool } from '../../options.js';
 import type { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';
@@ -14,7 +15,7 @@ describe('transactional', () => {
     setQuerierPool({
       getQuerier: async () => querierSingleton,
       end: async () => undefined,
-      dialect: 'postgres',
+      dialect: new PostgresDialect(),
       transaction: async (cb) => cb(querierSingleton),
       withQuerier: async (cb) => cb(querierSingleton),
     });
@@ -22,7 +23,7 @@ describe('transactional', () => {
     anotherQuerierPool = {
       getQuerier: async () => anotherQuerierSingleton,
       end: async () => undefined,
-      dialect: 'postgres',
+      dialect: new PostgresDialect(),
       transaction: async (cb) => cb(anotherQuerierSingleton),
       withQuerier: async (cb) => cb(anotherQuerierSingleton),
     };

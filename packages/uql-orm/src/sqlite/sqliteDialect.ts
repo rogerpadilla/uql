@@ -1,11 +1,11 @@
-import sqlstring from 'sqlstring-sqlite';
-import { AbstractSqlDialect } from '../dialect/index.js';
+import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
 import type {
+  DialectFeatures,
   FieldKey,
   JsonUpdateOp,
-  NamingStrategy,
   QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
@@ -15,18 +15,59 @@ import type {
   Type,
   VectorDistance,
 } from '../type/index.js';
+import { escapeAnsiSqlLiteral } from '../util/ansiSqlLiteral.js';
 import { hasKeys } from '../util/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
+  /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
+  static readonly defaultDialectFeatures: DialectFeatures = {
+    explicitJsonCast: false,
+    nativeArrays: false,
+    supportsJsonb: false,
+    returning: true,
+    ifNotExists: true,
+    indexIfNotExists: true,
+    dropTableCascade: false,
+    renameColumn: true,
+    foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
+    columnComment: false, // SQLite does not support column comments
+    vectorIndexStyle: 'create',
+    vectorSupportsLength: false,
+    supportsTimestamptz: false,
+    defaultStringAsText: true,
+  };
+
+  override readonly dialectName = 'sqlite';
+
+  override readonly quoteChar = '`';
+
+  override readonly serialPrimaryKey = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+
+  override readonly tableOptions = '';
+
+  override readonly beginTransactionCommand = 'BEGIN TRANSACTION';
+
+  override readonly commitTransactionCommand = 'COMMIT';
+
+  override readonly rollbackTransactionCommand = 'ROLLBACK';
+
+  override readonly isolationLevelStrategy = 'none';
+
+  override readonly alterColumnSyntax = 'none';
+
+  override readonly booleanLiteral = 'integer';
+
+  override readonly insertIdStrategy = 'last';
+
+  constructor(options: DialectOptions = {}) {
+    super(SqliteDialect.defaultDialectFeatures, options);
+  }
+
   protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
     cosine: 'vec_distance_cosine',
     l2: 'vec_distance_L2',
     hamming: 'vec_distance_hamming',
   };
-
-  constructor(namingStrategy?: NamingStrategy) {
-    super('sqlite', namingStrategy);
-  }
 
   protected override ilikeExpr(f: string, ph: string): string {
     return `${f} LIKE ${ph}`;
@@ -176,6 +217,6 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override escape(value: unknown): string {
-    return sqlstring.escape(value);
+    return escapeAnsiSqlLiteral(value);
   }
 }

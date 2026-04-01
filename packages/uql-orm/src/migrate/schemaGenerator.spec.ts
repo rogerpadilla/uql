@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -44,7 +45,7 @@ class TestPost {
 }
 
 describe('SqlSchemaGenerator (Postgres)', () => {
-  const generator = new SqlSchemaGenerator('postgres');
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should generate CREATE TABLE for simple entity', () => {
     const sql = generator.generateCreateTable(TestUser);
@@ -127,7 +128,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   });
 
   it('should not emit operator classes or WITH params for non-Postgres dialects', () => {
-    const mysqlGenerator = new SqlSchemaGenerator('mysql');
+    const mysqlGenerator = new SqlSchemaGenerator(new MySqlDialect());
     const sql = mysqlGenerator.generateCreateIndex('articles', {
       name: 'idx_embedding',
       columns: ['embedding'],
@@ -190,7 +191,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   }
 
   it('should emit inline VECTOR INDEX for MariaDB', () => {
-    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{}]));
     expect(sql).toContain('VECTOR INDEX (`embedding`)');
     expect(sql).not.toContain('CREATE INDEX');
@@ -198,13 +199,13 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   });
 
   it('should emit inline VECTOR INDEX with M and DISTANCE for MariaDB', () => {
-    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'cosine', m: 8 }]));
     expect(sql).toContain('VECTOR INDEX (`embedding`) M=8 DISTANCE=cosine');
   });
 
   it('should emit VECTOR INDEX with l2 as euclidean for MariaDB', () => {
-    const mariaGenerator = new SqlSchemaGenerator('mariadb');
+    const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'l2' }]));
     expect(sql).toContain('VECTOR INDEX (`embedding`) DISTANCE=euclidean');
   });
@@ -329,7 +330,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
 });
 
 describe('SqlSchemaGenerator (MySQL)', () => {
-  const generator = new SqlSchemaGenerator('mysql');
+  const generator = new SqlSchemaGenerator(new MySqlDialect());
 
   it('should generate CREATE TABLE for simple entity', () => {
     const sql = generator.generateCreateTable(TestUser);
@@ -353,7 +354,7 @@ describe('SqlSchemaGenerator (MySQL)', () => {
 });
 
 describe('SqlSchemaGenerator (SQLite)', () => {
-  const generator = new SqlSchemaGenerator('sqlite');
+  const generator = new SqlSchemaGenerator(new SqliteDialect());
 
   it('should generate CREATE TABLE for simple entity', () => {
     const sql = generator.generateCreateTable(TestUser);
@@ -378,7 +379,7 @@ describe('SqlSchemaGenerator (SQLite)', () => {
 });
 
 describe('SqlSchemaGenerator Integration', () => {
-  const generator = new SqlSchemaGenerator('postgres');
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should generate CREATE TABLE from TableNode', () => {
     const table = {

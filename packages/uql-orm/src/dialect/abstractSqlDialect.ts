@@ -1,6 +1,7 @@
 import { getMeta } from '../entity/index.js';
 import { resolveVectorCast, type VectorCast } from '../schema/canonicalType.js';
 import {
+  type DialectFeatures,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -35,7 +36,7 @@ import {
   RAW_ALIAS,
   RAW_VALUE,
   type RelationOptions,
-  type SqlDialect,
+  type SqlDialectName,
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
@@ -62,40 +63,57 @@ import {
   raw,
 } from '../util/index.js';
 
-import { AbstractDialect } from './abstractDialect.js';
+import { AbstractDialect, type DialectOptions } from './abstractDialect.js';
 import { SqlQueryContext } from './queryContext.js';
 
 export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
-  declare readonly dialect: SqlDialect;
+  abstract override readonly dialectName: SqlDialectName;
 
-  get escapeIdChar() {
-    return this.config.quoteChar;
+  abstract readonly quoteChar: '"' | '`';
+  abstract readonly serialPrimaryKey: string;
+  abstract readonly tableOptions: string;
+  abstract readonly beginTransactionCommand: string;
+  abstract readonly commitTransactionCommand: string;
+  abstract readonly rollbackTransactionCommand: string;
+
+  constructor(engineDefaults: DialectFeatures, options: DialectOptions = {}) {
+    super(engineDefaults, options);
   }
 
-  get beginTransactionCommand() {
-    return this.config.beginTransactionCommand;
+  readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
+
+  readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
+
+  readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none' = 'ALTER COLUMN';
+
+  readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
+
+  readonly dropIndexSyntax: 'on-table' | 'standalone' = 'standalone';
+
+  readonly renameTableSyntax: 'rename-table' | 'alter-table' = 'alter-table';
+
+  readonly booleanLiteral: 'native' | 'integer' = 'native';
+
+  readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = undefined;
+
+  readonly vectorExtension: string | undefined = undefined;
+
+  get escapeIdChar() {
+    return this.quoteChar;
   }
 
   getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
     const level = isolationLevel?.toUpperCase();
-    const strategy = this.config.isolationLevelStrategy;
+    const strategy = this.isolationLevelStrategy;
     if (!level || strategy === 'none') {
-      return [this.config.beginTransactionCommand];
+      return [this.beginTransactionCommand];
     }
     if (strategy === 'inline') {
-      return [`${this.config.beginTransactionCommand} ISOLATION LEVEL ${level}`];
+      return [`${this.beginTransactionCommand} ISOLATION LEVEL ${level}`];
     }
     // 'set-before' — MySQL/MariaDB pattern
-    return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.config.beginTransactionCommand];
-  }
-
-  get commitTransactionCommand() {
-    return this.config.commitTransactionCommand;
-  }
-
-  get rollbackTransactionCommand() {
-    return this.config.rollbackTransactionCommand;
+    return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
   }
 
   createContext(): QueryContext {
@@ -121,7 +139,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return Number(value);
     }
     if (typeof value === 'boolean') {
-      return this.config.booleanLiteral === 'native' ? value : value ? 1 : 0;
+      return this.booleanLiteral === 'native' ? value : value ? 1 : 0;
     }
     return value;
   }
@@ -938,7 +956,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    */
   protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
     if (hasKeys(this.vectorDistanceFns)) {
-      this.appendFunctionVectorSort(ctx, meta, key, search, this.dialect);
+      this.appendFunctionVectorSort(ctx, meta, key, search, this.dialectName);
       return;
     }
     throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
@@ -1726,6 +1744,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   protected numericCast(expr: string): string {
     return expr;
+  }
+
+  override toString(): string {
+    return this.dialectName;
   }
 }
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { PostgresDialect } from '../../dialect/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {
-  const generator = new SqlSchemaGenerator('postgres');
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should format default values correctly', () => {
     expect(generator.formatDefaultValue('test')).toBe("'test'");

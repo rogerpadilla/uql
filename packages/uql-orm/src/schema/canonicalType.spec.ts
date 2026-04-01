@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { MariaDialect } from '../maria/mariaDialect.js';
+import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { BetterSqlite3Dialect } from '../sqlite/betterSqlite3Dialect.js';
 import {
   areTypesEqual,
   canonicalToColumnType,
@@ -9,6 +14,12 @@ import {
   sqlToCanonical,
 } from './canonicalType.js';
 import type { CanonicalType } from './types.js';
+
+const pg = new PostgresDialect();
+const mysql = new MySqlDialect();
+const maria = new MariaDialect();
+const sqlite = new BetterSqlite3Dialect();
+const mongo = new MongodbNativeDialect();
 
 describe('canonicalType', () => {
   describe('sqlToCanonical', () => {
@@ -84,41 +95,41 @@ describe('canonicalType', () => {
 
   describe('canonicalToSql', () => {
     it('should convert integer to SQL for postgres', () => {
-      expect(canonicalToSql({ category: 'integer' }, 'postgres')).toBe('INTEGER');
-      expect(canonicalToSql({ category: 'integer', size: 'big' }, 'postgres')).toBe('BIGINT');
+      expect(canonicalToSql({ category: 'integer' }, pg)).toBe('INTEGER');
+      expect(canonicalToSql({ category: 'integer', size: 'big' }, pg)).toBe('BIGINT');
     });
 
     it('should convert string to SQL for mysql', () => {
-      expect(canonicalToSql({ category: 'string', length: 100 }, 'mysql')).toBe('VARCHAR(100)');
-      expect(canonicalToSql({ category: 'string' }, 'mysql')).toBe('VARCHAR(255)');
+      expect(canonicalToSql({ category: 'string', length: 100 }, mysql)).toBe('VARCHAR(100)');
+      expect(canonicalToSql({ category: 'string' }, mysql)).toBe('VARCHAR(255)');
     });
 
     it('should convert decimal to SQL with precision', () => {
-      expect(canonicalToSql({ category: 'decimal', precision: 10, scale: 2 }, 'postgres')).toBe('NUMERIC(10, 2)');
+      expect(canonicalToSql({ category: 'decimal', precision: 10, scale: 2 }, pg)).toBe('NUMERIC(10, 2)');
     });
 
     it('should convert timestamp with timezone for postgres', () => {
-      expect(canonicalToSql({ category: 'timestamp', withTimezone: true }, 'postgres')).toBe('TIMESTAMPTZ');
+      expect(canonicalToSql({ category: 'timestamp', withTimezone: true }, pg)).toBe('TIMESTAMPTZ');
     });
 
     it('should handle raw types', () => {
-      expect(canonicalToSql({ category: 'string', raw: 'CUSTOM' }, 'postgres')).toBe('CUSTOM');
+      expect(canonicalToSql({ category: 'string', raw: 'CUSTOM' }, pg)).toBe('CUSTOM');
     });
 
     it('should add UNSIGNED for mysql integers', () => {
-      expect(canonicalToSql({ category: 'integer', unsigned: true }, 'mysql')).toBe('INT UNSIGNED');
+      expect(canonicalToSql({ category: 'integer', unsigned: true }, mysql)).toBe('INT UNSIGNED');
     });
 
     it('should convert vector types with dimensions for postgres', () => {
-      expect(canonicalToSql({ category: 'vector', length: 768 }, 'postgres')).toBe('VECTOR(768)');
-      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, 'postgres')).toBe('HALFVEC(1536)');
-      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, 'postgres')).toBe('SPARSEVEC(4000)');
+      expect(canonicalToSql({ category: 'vector', length: 768 }, pg)).toBe('VECTOR(768)');
+      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, pg)).toBe('HALFVEC(1536)');
+      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, pg)).toBe('SPARSEVEC(4000)');
     });
 
     it('should fall back halfvec/sparsevec to VECTOR for mariadb', () => {
-      expect(canonicalToSql({ category: 'vector', length: 768 }, 'mariadb')).toBe('VECTOR(768)');
-      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, 'mariadb')).toBe('VECTOR(1536)');
-      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, 'mariadb')).toBe('VECTOR(4000)');
+      expect(canonicalToSql({ category: 'vector', length: 768 }, maria)).toBe('VECTOR(768)');
+      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, maria)).toBe('VECTOR(1536)');
+      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, maria)).toBe('VECTOR(4000)');
     });
   });
 
@@ -293,36 +304,36 @@ describe('canonicalType', () => {
 
   describe('canonicalToSql edge cases', () => {
     it('should format string for mongodb dialect', () => {
-      expect(canonicalToSql({ category: 'string', length: 100 }, 'mongodb')).toBe('VARCHAR(100)');
-      expect(canonicalToSql({ category: 'string' }, 'mongodb')).toBe('VARCHAR(255)');
+      expect(canonicalToSql({ category: 'string', length: 100 }, mongo)).toBe('VARCHAR(100)');
+      expect(canonicalToSql({ category: 'string' }, mongo)).toBe('VARCHAR(255)');
     });
 
     it('should format string with size variants for mysql', () => {
-      expect(canonicalToSql({ category: 'string', size: 'tiny' }, 'mysql')).toBe('TINYTEXT');
-      expect(canonicalToSql({ category: 'string', size: 'small' }, 'mysql')).toBe('TEXT');
-      expect(canonicalToSql({ category: 'string', size: 'medium' }, 'mysql')).toBe('MEDIUMTEXT');
-      expect(canonicalToSql({ category: 'string', size: 'big' }, 'mysql')).toBe('LONGTEXT');
+      expect(canonicalToSql({ category: 'string', size: 'tiny' }, mysql)).toBe('TINYTEXT');
+      expect(canonicalToSql({ category: 'string', size: 'small' }, mysql)).toBe('TEXT');
+      expect(canonicalToSql({ category: 'string', size: 'medium' }, mysql)).toBe('MEDIUMTEXT');
+      expect(canonicalToSql({ category: 'string', size: 'big' }, mysql)).toBe('LONGTEXT');
     });
 
     it('should format string for sqlite', () => {
-      expect(canonicalToSql({ category: 'string', length: 100 }, 'sqlite')).toBe('TEXT');
+      expect(canonicalToSql({ category: 'string', length: 100 }, sqlite)).toBe('TEXT');
     });
 
     it('should format string without length for postgres', () => {
-      expect(canonicalToSql({ category: 'string' }, 'postgres')).toBe('TEXT');
+      expect(canonicalToSql({ category: 'string' }, pg)).toBe('TEXT');
     });
 
     it('should format decimal without precision for postgres', () => {
-      expect(canonicalToSql({ category: 'decimal' }, 'postgres')).toBe('NUMERIC');
+      expect(canonicalToSql({ category: 'decimal' }, pg)).toBe('NUMERIC');
     });
 
     it('should format decimal with precision only', () => {
-      expect(canonicalToSql({ category: 'decimal', precision: 8 }, 'postgres')).toBe('NUMERIC(8)');
+      expect(canonicalToSql({ category: 'decimal', precision: 8 }, pg)).toBe('NUMERIC(8)');
     });
 
     it('should format integer with size for mysql', () => {
-      expect(canonicalToSql({ category: 'integer', size: 'tiny' }, 'mysql')).toBe('TINYINT');
-      expect(canonicalToSql({ category: 'integer', size: 'medium' }, 'mysql')).toBe('MEDIUMINT');
+      expect(canonicalToSql({ category: 'integer', size: 'tiny' }, mysql)).toBe('TINYINT');
+      expect(canonicalToSql({ category: 'integer', size: 'medium' }, mysql)).toBe('MEDIUMINT');
     });
   });
 });

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   getAffectedRows,
   getInsertId,
-  inferDialect,
+  inferDialectName,
   isPoolableDialect,
   isReservedConnection,
   normalizeBunOpts,
@@ -11,49 +11,49 @@ import {
 } from './bunSql.util.js';
 
 describe('bunSql.util', () => {
-  describe('inferDialect', () => {
+  describe('inferDialectName', () => {
     test('should infer sqlite from filename', () => {
-      expect(inferDialect({ filename: 'test.db' } as SQL.Options)).toBe('sqlite');
+      expect(inferDialectName({ filename: 'test.db' } as SQL.Options)).toBe('sqlite');
     });
 
     test('should infer sqlite from :memory: url', () => {
-      expect(inferDialect({ url: ':memory:' } as SQL.Options)).toBe('sqlite');
+      expect(inferDialectName({ url: ':memory:' } as SQL.Options)).toBe('sqlite');
     });
 
     test('should infer sqlite from sqlite:// url', () => {
-      expect(inferDialect({ url: 'sqlite://test.db' } as SQL.Options)).toBe('sqlite');
+      expect(inferDialectName({ url: 'sqlite://test.db' } as SQL.Options)).toBe('sqlite');
     });
 
     test('should infer sqlite from sqlite3:// url', () => {
-      expect(inferDialect({ url: 'sqlite3://test.db' } as SQL.Options)).toBe('sqlite');
+      expect(inferDialectName({ url: 'sqlite3://test.db' } as SQL.Options)).toBe('sqlite');
     });
 
     test('should infer mysql from mysql:// url', () => {
-      expect(inferDialect({ url: 'mysql://localhost' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ url: 'mysql://localhost' } as SQL.Options)).toBe('mysql');
     });
 
     test('should infer mysql from mysql2:// url', () => {
-      expect(inferDialect({ url: 'mysql2://localhost' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ url: 'mysql2://localhost' } as SQL.Options)).toBe('mysql');
     });
 
     test('should infer postgres from postgres:// url', () => {
-      expect(inferDialect({ url: 'postgres://localhost' } as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({ url: 'postgres://localhost' } as SQL.Options)).toBe('postgres');
     });
 
     test('should infer postgres from postgresql:// url', () => {
-      expect(inferDialect({ url: 'postgresql://localhost' } as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({ url: 'postgresql://localhost' } as SQL.Options)).toBe('postgres');
     });
 
     test('should infer mariadb from mariadb:// url', () => {
-      expect(inferDialect({ url: 'mariadb://localhost' } as SQL.Options)).toBe('mariadb');
+      expect(inferDialectName({ url: 'mariadb://localhost' } as SQL.Options)).toBe('mariadb');
     });
 
     test('should return adapter if provided', () => {
-      expect(inferDialect({ adapter: 'mysql' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ adapter: 'mysql' } as SQL.Options)).toBe('mysql');
     });
 
     test('should default to postgres', () => {
-      expect(inferDialect({} as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({} as SQL.Options)).toBe('postgres');
     });
   });
 

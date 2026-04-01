@@ -1,3 +1,4 @@
+import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, SqlQuerier } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
@@ -5,11 +6,8 @@ import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.j
  * SQLite schema introspector
  */
 export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected readonly pool: QuerierPool;
-
-  constructor(pool: QuerierPool) {
-    super('sqlite');
-    this.pool = pool;
+  constructor(protected readonly pool: QuerierPool) {
+    super(pool.dialect as AbstractSqlDialect);
   }
 
   // ============================================================================
@@ -222,9 +220,17 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (/^-?\d+$/.test(defaultValue)) {
       return Number.parseInt(defaultValue, 10);
     }
+    if (typeof defaultValue !== 'string') {
+      return defaultValue;
+    }
+
     if (/^-?\d+\.\d+$/.test(defaultValue)) {
       return Number.parseFloat(defaultValue);
     }
+
+    const upper = defaultValue.toUpperCase();
+    if (upper === 'TRUE') return 1;
+    if (upper === 'FALSE') return 0;
 
     return defaultValue;
   }

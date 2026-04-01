@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MariaDialect, MongoDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Id } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import * as cli from './cli.js';
@@ -41,7 +42,13 @@ describe('CLI', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPool = { dialect: 'sqlite', end: vi.fn() };
+    mockPool = {
+      dialect: new SqliteDialect(),
+      getQuerier: vi.fn(),
+      end: vi.fn(),
+      transaction: vi.fn(),
+      withQuerier: vi.fn(),
+    };
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: mockPool });
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -172,17 +179,17 @@ describe('CLI', () => {
   });
 
   it('getSchemaGenerator', () => {
-    expect(cli.getSchemaGenerator('postgres')).toBeDefined();
-    expect(cli.getSchemaGenerator('mysql')).toBeDefined();
-    expect(cli.getSchemaGenerator('sqlite')).toBeDefined();
-    expect(cli.getSchemaGenerator('mongodb')).toBeDefined();
+    expect(cli.getSchemaGenerator(new PostgresDialect())).toBeDefined();
+    expect(cli.getSchemaGenerator(new MySqlDialect())).toBeDefined();
+    expect(cli.getSchemaGenerator(new SqliteDialect())).toBeDefined();
+    expect(cli.getSchemaGenerator(new MongoDialect())).toBeDefined();
     expect(cli.getSchemaGenerator('unknown' as any)).toBeUndefined();
   });
 
   it('main should throw if pool is missing', async () => {
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: undefined as any });
     await cli.main(['up']);
-    expect(console.error).toHaveBeenCalledWith('Error:', 'pool is required in configuration');
+    expect(console.error).toHaveBeenCalledWith('Error:', 'Config.pool is required and must be an object');
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
@@ -219,7 +226,7 @@ describe('CLI', () => {
   });
 
   it('getSchemaGenerator mariadb', () => {
-    expect(cli.getSchemaGenerator('mariadb')).toBeDefined();
+    expect(cli.getSchemaGenerator(new MariaDialect())).toBeDefined();
   });
 
   it('runSync with --push should use entity-to-db direction', async () => {
@@ -322,7 +329,12 @@ describe('CLI', () => {
   });
 
   it('main should not call pool.end if pool has no end method', async () => {
-    const poolWithoutEnd = { dialect: 'sqlite' };
+    const poolWithoutEnd = {
+      dialect: new SqliteDialect(),
+      getQuerier: vi.fn(),
+      transaction: vi.fn(),
+      withQuerier: vi.fn(),
+    };
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: poolWithoutEnd as any });
 
     await cli.main(['up']);

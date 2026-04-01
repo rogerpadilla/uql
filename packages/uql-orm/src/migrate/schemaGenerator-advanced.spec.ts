@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PostgresDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { sqlToCanonical } from '../schema/canonicalType.js';
 import { SchemaAST } from '../schema/schemaAST.js';
@@ -14,7 +15,7 @@ class DiffUser {
 }
 
 describe('SqlSchemaGenerator Advanced', () => {
-  const generator = new SqlSchemaGenerator('postgres');
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
   const ast = new SchemaAST();
 
   it('diffSchema should detect new columns', () => {

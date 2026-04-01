@@ -1,3 +1,4 @@
+import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, RawRow, SqlQuerier } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
@@ -5,11 +6,8 @@ import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.j
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected readonly pool: QuerierPool;
-
-  constructor(pool: QuerierPool) {
-    super('postgres');
-    this.pool = pool;
+  constructor(protected readonly pool: QuerierPool) {
+    super(pool.dialect as AbstractSqlDialect);
   }
 
   // ============================================================================

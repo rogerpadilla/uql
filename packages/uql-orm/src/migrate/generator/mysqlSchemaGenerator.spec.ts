@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { MySqlDialect } from '../../dialect/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MysqlSchemaGenerator Specifics', () => {
-  const generator = new SqlSchemaGenerator('mysql');
+  const generator = new SqlSchemaGenerator(new MySqlDialect());
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');

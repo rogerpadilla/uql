@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PostgresDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -12,7 +13,7 @@ class UserProfileMigrate {
 
 describe('Schema Generator with Naming Strategy', () => {
   it('should generate CREATE TABLE with translated names', () => {
-    const generator = new SqlSchemaGenerator('postgres', new SnakeCaseNamingStrategy());
+    const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
     const sql = generator.generateCreateTable(UserProfileMigrate);
 
     expect(sql).toContain('CREATE TABLE "user_profile_migrate"');

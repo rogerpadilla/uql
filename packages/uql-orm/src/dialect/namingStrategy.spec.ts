@@ -15,7 +15,7 @@ class UserProfileDialect {
 
 describe('Naming Strategy SQL Generation', () => {
   describe('Postgres with SnakeCaseNamingStrategy', () => {
-    const dialect = new PostgresDialect(new SnakeCaseNamingStrategy());
+    const dialect = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();
@@ -31,7 +31,7 @@ describe('Naming Strategy SQL Generation', () => {
   });
 
   describe('MySQL with SnakeCaseNamingStrategy', () => {
-    const dialect = new MySqlDialect(new SnakeCaseNamingStrategy());
+    const dialect = new MySqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();
@@ -41,7 +41,7 @@ describe('Naming Strategy SQL Generation', () => {
   });
 
   describe('SQLite with SnakeCaseNamingStrategy', () => {
-    const dialect = new SqliteDialect(new SnakeCaseNamingStrategy());
+    const dialect = new SqliteDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
 
     it('should translate table and column names', () => {
       const ctx = dialect.createContext();

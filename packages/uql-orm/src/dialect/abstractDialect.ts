@@ -1,27 +1,36 @@
-import { DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../schema/types.js';
-import type { Dialect, EntityMeta, FieldOptions, NamingStrategy, Type } from '../type/index.js';
-import { type DialectConfig, getDialectConfig } from './dialectConfig.js';
+import type { DialectFeatures, DialectName, EntityMeta, FieldOptions, NamingStrategy, Type } from '../type/index.js';
+
+/**
+ * Options for initializing a dialect.
+ */
+export interface DialectOptions {
+  readonly namingStrategy?: NamingStrategy;
+  readonly driverCapabilities?: Partial<DialectFeatures>;
+}
+
+/**
+ * Merge dialect capability defaults with optional overrides from {@link DialectOptions.driverCapabilities}.
+ */
+export function mergeDialectFeatures(defaults: DialectFeatures, patch?: Partial<DialectFeatures>): DialectFeatures {
+  return patch ? { ...defaults, ...patch } : defaults;
+}
 
 /**
  * Base abstract class for all database dialects (SQL and NoSQL).
  */
 export abstract class AbstractDialect {
-  protected readonly config: DialectConfig;
+  abstract readonly dialectName: DialectName;
+
+  abstract readonly insertIdStrategy: 'first' | 'last';
+  readonly namingStrategy: NamingStrategy | undefined;
+  readonly features: DialectFeatures;
 
   constructor(
-    readonly dialect: Dialect,
-    readonly namingStrategy?: NamingStrategy,
-    readonly defaultForeignKeyAction: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION,
+    featureDefaults: DialectFeatures,
+    protected readonly options: DialectOptions = {},
   ) {
-    this.config = getDialectConfig(dialect);
-  }
-
-  get insertIdStrategy() {
-    return this.config.insertIdStrategy;
-  }
-
-  get features() {
-    return this.config.features;
+    this.namingStrategy = options.namingStrategy;
+    this.features = mergeDialectFeatures(featureDefaults, options.driverCapabilities);
   }
 
   /**

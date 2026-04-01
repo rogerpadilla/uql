@@ -17,6 +17,7 @@
     "./entity": "./dist/entity/index.js",
     "./querier": "./dist/querier/index.js",
     "./type": "./dist/type/index.js",
+    "./type/migratorDialect": "./dist/type/migratorDialect.js",
     "./util": "./dist/util/index.js",
     "./namingStrategy": "./dist/namingStrategy/index.js",
     "./migrate": "./dist/migrate/index.js",
@@ -24,6 +25,7 @@
     "./test": "./dist/test/index.js",
     "./mysql": "./dist/mysql/index.js",
     "./postgres": "./dist/postgres/index.js",
+    "./postgres/wireCapabilities": "./dist/postgres/postgresWireDriverCapabilities.js",
     "./cockroachdb": "./dist/cockroachdb/index.js",
     "./maria": "./dist/maria/index.js",
     "./sqlite": "./dist/sqlite/index.js",
@@ -56,7 +58,6 @@
     "jiti": "^2.6.1",
     "reflect-metadata": "^0.2.2",
     "sqlstring": "^2.3.3",
-    "sqlstring-sqlite": "^0.1.1",
     "tslib": "^2.8.1"
   },
   "peerDependencies": {

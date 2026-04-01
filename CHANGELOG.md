@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.7] - 2026-03-31
+
+### Breaking Changes (Internal API)
+- **Pools and config**: `QuerierPool` exposes `dialect` (renamed from `dialectInstance`). The engine id string is `dialect.dialectName` (replacing the old `dialect` property on the dialect instance). Removed top-level `dialect` from `Config` and `MigratorOptions`—migrations and `uql-migrate` use **`pool.dialect.dialectName`** only.
+- **Dialect API**: Removed `dialectConfig` / `DialectConfig` from the public dialect barrel. Configure behavior with `DialectOptions`, `DialectFeatures` on `AbstractDialect.features`, and **per-driver dialect classes** attached to each pool.
+
+### Improvements
+
+- **Per-driver dialect classes**: Pools use explicit dialect types (e.g. `PgDialect`, `NeonDialect`, `MySql2Dialect`, `BetterSqlite3Dialect`, `LibsqlDialect`, `D1SqliteDialect`, `MongodbNativeDialect`, `BunSqlPostgresDialect`). Migrator and schema generation read **`pool.dialect.dialectName`** instead of a separate config field.
+- **PostgreSQL (`pg` vs Bun SQL)**: `PgDialect` uses base Postgres defaults (native JS arrays for `ANY`/`ALL`, `$n::jsonb` for JSON). Bun SQL Postgres uses `BunSqlPostgresDialect` with `POSTGRES_WIRE_DRIVER_CAPABILITIES` from `uql-orm/postgres/wireCapabilities` plus `explicitJsonCast` where Bun’s bindings require `( $n::text )::jsonb` and array literal encoding.
+- **Migrations CLI**: Exported **`assertCliConfig`** (`uql-orm/migrate`) validates the default-exported config shape before commands run.
+- **Escaping**: Inlined **`escapeAnsiSqlLiteral`** for Postgres/SQLite literal escaping; dropped **`sqlstring-sqlite`** from those code paths. Prefer bound parameters for user input in production.
+- **Types and tests**: `Config.pool` is typed as `QuerierPool<Querier, AbstractDialect>`. **`createMockQuerierPool`** is available from `uql-orm/test`.
+
 ## [0.7.6] - 2026-03-31
 ### Improvements
 - **Bulletproof Postgres JSONB Serialization**: We've standardized how JSONB data travels to the database to ensure absolute reliability. By handling stringification at the ORM level and using explicit Postgres casts (`::text::jsonb`), we've eliminated subtle ambiguities between JSON arrays and native Postgres arrays. This ensures your data always arrives exactly as intended.

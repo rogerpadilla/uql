@@ -334,9 +334,9 @@ export class MigrationBuilder extends OperationRecorder {
     options: MigrationBuilderOptions = {},
   ) {
     super();
-    const generator = createSchemaGenerator(querier.dialect.dialect, options.namingStrategy);
+    const generator = createSchemaGenerator(querier.dialect, options.namingStrategy);
     if (!generator) {
-      throw new TypeError(`Could not find a schema generator for dialect: ${querier.dialect.dialect}`);
+      throw new TypeError(`Could not find a schema generator for dialect: ${querier.dialect.dialectName}`);
     }
     this.sqlGenerator = generator;
   }
