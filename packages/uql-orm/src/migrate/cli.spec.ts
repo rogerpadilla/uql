@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MariaDialect, MongoDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
+import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Id } from '../entity/index.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import * as cli from './cli.js';
 import * as cliConfig from './cli-config.js';
@@ -182,8 +183,12 @@ describe('CLI', () => {
     expect(cli.getSchemaGenerator(new PostgresDialect())).toBeDefined();
     expect(cli.getSchemaGenerator(new MySqlDialect())).toBeDefined();
     expect(cli.getSchemaGenerator(new SqliteDialect())).toBeDefined();
-    expect(cli.getSchemaGenerator(new MongoDialect())).toBeDefined();
+    expect(cli.getSchemaGenerator(new MongoDialect())).toBeUndefined();
     expect(cli.getSchemaGenerator('unknown' as any)).toBeUndefined();
+  });
+
+  it('createSchemaGeneratorAsync loads MongoDB generator', async () => {
+    expect(await cli.createSchemaGeneratorAsync(new MongoDialect())).toBeDefined();
   });
 
   it('main should throw if pool is missing', async () => {

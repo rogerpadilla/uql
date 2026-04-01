@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.8] - 2026-03-31
+
+### Breaking Changes
+- **Dialect barrel**: **`MongoDialect`** is no longer re-exported from **`uql-orm/dialect`** or the root **`uql-orm`** package (it previously pulled the Mongo dialect graph into SQL-only apps). Import it from **`uql-orm/mongo`**.
+- **Migrate and optional `mongodb` peer**: `createSchemaGenerator` is **SQL-only** (returns `undefined` for non-`AbstractSqlDialect`). For MongoDB use **`createSchemaGeneratorAsync`** from `uql-orm/migrate` (or the CLI re-export). **`MongoSchemaGenerator`** is exported from **`uql-orm/mongo`**, not from the `uql-orm/migrate` barrel, so importing migrate alone does not evaluate the Mongo generator graph. **`Migrator.findEntityForTable`** is now **async**. **`getSchemaGenerator`** (CLI) returns **`undefined`** for MongoDB; `uql-migrate` resolves the generator with **`createSchemaGeneratorAsync`**.
+
 ## [0.7.7] - 2026-03-31
 
 ### Breaking Changes (Internal API)
