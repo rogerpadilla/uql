@@ -1,0 +1,5 @@
+CREATE DATABASE IF NOT EXISTS test_maria;
+CREATE DATABASE IF NOT EXISTS test_bun_maria;
+GRANT ALL PRIVILEGES ON test_maria.* TO 'test'@'%';
+GRANT ALL PRIVILEGES ON test_bun_maria.* TO 'test'@'%';
+FLUSH PRIVILEGES;

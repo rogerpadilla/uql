@@ -445,7 +445,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('unsupported JSON operator throws TypeError', () => {
       const ctx = dialect.createContext();
       expect(() => dialect.where(ctx, Company, { 'kind.public': { $unsupported: 1 } } as any)).toThrow(
-        'JSON field condition does not support operator: $unsupported',
+        'unknown operator: $unsupported',
       );
     });
 

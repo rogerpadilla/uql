@@ -1,0 +1,5 @@
+CREATE DATABASE IF NOT EXISTS test_mysql;
+CREATE DATABASE IF NOT EXISTS test_bun_mysql;
+GRANT ALL PRIVILEGES ON test_mysql.* TO 'test'@'%';
+GRANT ALL PRIVILEGES ON test_bun_mysql.* TO 'test'@'%';
+FLUSH PRIVILEGES;

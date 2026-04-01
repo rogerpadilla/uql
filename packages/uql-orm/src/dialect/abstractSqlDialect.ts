@@ -114,11 +114,14 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * Postgres overrides to pass objects through to its native JSONB driver.
    */
   normalizeValue(value: unknown): unknown {
-    if (typeof value === 'bigint') return Number(value);
-    if (typeof value === 'boolean') return value ? 1 : 0;
-    if (value instanceof Date) return value;
-    if (value !== null && typeof value === 'object' && !(value instanceof Uint8Array) && !(value instanceof QueryRaw)) {
-      return JSON.stringify(value);
+    if (value == null || value instanceof Date || value instanceof Uint8Array || value instanceof QueryRaw) {
+      return value;
+    }
+    if (typeof value === 'bigint') {
+      return Number(value);
+    }
+    if (typeof value === 'boolean') {
+      return this.config.booleanLiteral === 'native' ? value : value ? 1 : 0;
     }
     return value;
   }
@@ -462,23 +465,26 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
 
     // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
-    const keyStr = key as string;
-    const jsonDot = this.resolveJsonDotPath(meta, keyStr, opts.prefix);
+    const jsonDot = this.resolveJsonDotPath(meta, key, opts.prefix);
     if (jsonDot) {
       this.compareJsonPath(ctx, jsonDot, val);
       return;
     }
 
+    if (key.includes('.')) {
+      throw new TypeError(`path ${key} does not exist in ${meta.name}`);
+    }
+
     // Detect relation filtering
-    const rel = meta.relations[keyStr];
+    const rel = meta.relations[key];
     if (rel) {
       // Check if this is a $size query on a relation (count filtering)
       const valObj = val as Record<string, unknown> | undefined;
       if (valObj && typeof valObj === 'object' && '$size' in valObj && Object.keys(valObj).length === 1) {
-        this.compareRelationSize(ctx, entity, keyStr, valObj['$size'] as number | QuerySizeComparisonOps, rel, opts);
+        this.compareRelationSize(ctx, entity, key, valObj['$size'] as number | QuerySizeComparisonOps, rel, opts);
         return;
       }
-      this.compareRelation(ctx, entity, keyStr, val as QueryWhereMap<unknown>, rel, opts);
+      this.compareRelation(ctx, entity, key, val as QueryWhereMap<unknown>, rel, opts);
       return;
     }
 
@@ -582,7 +588,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * Resolves the SQL operand for a field comparison.
    * For QueryRaw virtuals, appends the raw expression to ctx and returns undefined.
    */
-  private resolveOperandField(
+  protected resolveOperandField(
     ctx: QueryContext,
     entity: Type<any>,
     key: string,
@@ -655,9 +661,14 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         this.appendFieldSql(ctx, field, val ? ' IS NOT NULL' : ' IS NULL');
         break;
       case '$all':
+        ctx.append(this.jsonAll(ctx, field ?? '', val));
+        break;
       case '$size':
+        ctx.append(this.jsonSize(ctx, field ?? '', val as number | QuerySizeComparisonOps));
+        break;
       case '$elemMatch':
-        throw TypeError(`${op} is not supported in the base SQL dialect - override in dialect subclass`);
+        ctx.append(this.jsonElemMatch(ctx, field ?? '', val as Record<string, unknown>));
+        break;
       default:
         throw TypeError(`unknown operator: ${op}`);
     }
@@ -751,13 +762,35 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       case '$in':
       case '$nin':
         return this.jsonInNin(ctx, jsonField, op, value);
+      case '$all':
+        return this.jsonAll(ctx, jsonField, value);
+      case '$size':
+        return this.jsonSize(ctx, jsonField, value as number | QuerySizeComparisonOps);
+      case '$elemMatch':
+        return this.jsonElemMatch(ctx, jsonField, value as Record<string, unknown>);
       default:
-        throw TypeError(`JSON field condition does not support operator: ${op}`);
+        throw TypeError(`unknown operator: ${op}`);
     }
   }
 
   private jsonInNin(ctx: QueryContext, jsonField: string, op: string, value: unknown): string {
     return `${jsonField}${this.formatIn(ctx, Array.isArray(value) ? value : [], op === '$nin')}`;
+  }
+
+  protected jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
+    throw TypeError(`$all is not supported in the base SQL dialect - override in dialect subclass`);
+  }
+
+  protected jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
+    throw TypeError(`$size is not supported in the base SQL dialect - override in dialect subclass`);
+  }
+
+  protected jsonElemMatch(ctx: QueryContext, jsonField: string, value: Record<string, unknown>): string {
+    throw TypeError(`$elemMatch is not supported in the base SQL dialect - override in dialect subclass`);
+  }
+
+  protected isJsonbOp(op: string): boolean {
+    return op === '$all' || op === '$size' || op === '$elemMatch';
   }
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
@@ -826,7 +859,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       // Detect JSONB dot-notation: 'column.path'
       const jsonDot = this.resolveJsonDotPath(meta, key);
       if (jsonDot) {
-        ctx.append(jsonDot.fieldAccessor(jsonDot.jsonPath) + direction);
+        ctx.append(jsonDot.accessor() + direction);
         return;
       }
 
@@ -1266,7 +1299,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       return;
     }
     if (isJsonType(field?.type)) {
-      ctx.addValue(value ? JSON.stringify(value) : null);
+      ctx.addValue(value == null ? null : JSON.stringify(value));
       return;
     }
     if (field?.type === 'vector' && Array.isArray(value)) {
@@ -1360,7 +1393,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     meta: EntityMeta<E>,
     key: string,
     prefix?: string,
-  ): { root: string; jsonPath: string; fieldAccessor: (f: string) => string } | undefined {
+  ):
+    | {
+        root: string;
+        jsonPath: string;
+        accessor: (asJsonb?: boolean) => string;
+      }
+    | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -1373,7 +1412,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const jsonPath = key.slice(dotIndex + 1);
     const colName = this.resolveColumnName(root, field);
     const escapedCol = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    return { root, jsonPath, fieldAccessor: () => this.getJsonPathScalarExpr(escapedCol, jsonPath) };
+    return {
+      root,
+      jsonPath,
+      accessor: (asJsonb?: boolean) =>
+        asJsonb ? this.getJsonPathJsonbExpr(escapedCol, jsonPath) : this.getJsonPathScalarExpr(escapedCol, jsonPath),
+    };
   }
 
   /**
@@ -1382,10 +1426,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    */
   protected compareJsonPath(
     ctx: QueryContext,
-    resolved: { jsonPath: string; fieldAccessor: (f: string) => string },
+    resolved: {
+      jsonPath: string;
+      accessor: (asJsonb?: boolean) => string;
+    },
     val: unknown,
   ): void {
-    const { jsonPath, fieldAccessor } = resolved;
+    const { jsonPath, accessor } = resolved;
     const value = this.normalizeWhereValue(val);
     const operators = getKeys(value);
 
@@ -1395,7 +1442,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     operators.forEach((op, index) => {
       if (index > 0) ctx.append(' AND ');
-      ctx.append(this.buildJsonFieldCondition(ctx, fieldAccessor, jsonPath, op, value[op]));
+      const sql = this.buildJsonFieldCondition(ctx, (f) => accessor(this.isJsonbOp(op)), jsonPath, op, value[op]);
+      if (sql) {
+        ctx.append(sql);
+      }
     });
 
     if (operators.length > 1) {
@@ -1414,6 +1464,15 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     for (let i = 0; i < segments.length; i++) {
       const op = i === segments.length - 1 ? '->>' : '->';
       expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
+    }
+    return expr;
+  }
+
+  protected getJsonPathJsonbExpr(escapedColumn: string, jsonPath: string): string {
+    const segments = jsonPath.split('.');
+    let expr = escapedColumn;
+    for (const segment of segments) {
+      expr = `(${expr}->'${this.escapeJsonKey(segment)}')`;
     }
     return expr;
   }

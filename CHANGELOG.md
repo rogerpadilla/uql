@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.6] - 2026-03-31
+### Improvements
+- **Bulletproof Postgres JSONB Serialization**: We've standardized how JSONB data travels to the database to ensure absolute reliability. By handling stringification at the ORM level and using explicit Postgres casts (`::text::jsonb`), we've eliminated subtle ambiguities between JSON arrays and native Postgres arrays. This ensures your data always arrives exactly as intended.
+- **Unified Driver Experience**: Whether you're running on `node-postgres` or the high-performance `bun:sql`, the behavior is now identical. This refactor definitively resolves "double-stringification" and "invalid syntax" edge cases, providing a truly seamless experience across all supported environments.
+- **Internal Architectural Polish**: Simplified the core normalization logic in the base SQL dialect, keeping the ORM engine lean while making the Postgres-specific implementation more declarative and easier to maintain.
+
 ## [0.7.5] - 2026-03-29
 ### New Features
 - **Type-Safe Aggregate Inference**: Enhanced `querier.aggregate()` to automatically infer return types from the `$group` definition. Aggregate results (e.g. `$sum`, `$avg`, `$max`) are now precisely typed without requiring manual casts or `any`.

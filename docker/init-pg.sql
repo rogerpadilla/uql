@@ -1,0 +1,2 @@
+CREATE DATABASE test_pg;
+CREATE DATABASE test_bun_pg;

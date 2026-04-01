@@ -14,6 +14,8 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 5s
       retries: 10
+    volumes:
+      - ./docker/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql
 
   mariadb:
     image: mariadb:12.3-rc
@@ -30,6 +32,8 @@ services:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       timeout: 5s
       retries: 10
+    volumes:
+      - ./docker/init-maria.sql:/docker-entrypoint-initdb.d/init-maria.sql
 
   postgres:
     image: pgvector/pgvector:pg18
@@ -46,6 +50,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    volumes:
+      - ./docker/init-pg.sql:/docker-entrypoint-initdb.d/init-pg.sql
 
 
   cockroachdb:
