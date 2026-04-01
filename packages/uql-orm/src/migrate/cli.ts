@@ -11,11 +11,15 @@ import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
+import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { createSchemaSync } from './sync/schemaSync.js';
 
+/** Sync helper for SQL dialects only; returns `undefined` for MongoDB — use {@link createSchemaGeneratorAsync}. */
 export function getSchemaGenerator(dialect: AbstractDialect, namingStrategy?: NamingStrategy) {
   return createSchemaGenerator(dialect, namingStrategy);
 }
+
+export { createSchemaGeneratorAsync };
 
 export async function main(args = process.argv.slice(2)) {
   let customPath: string | undefined;
@@ -51,11 +55,13 @@ export async function main(args = process.argv.slice(2)) {
     };
 
     const migrator = new Migrator(config.pool, options);
-    const generator = getSchemaGenerator(config.pool.dialect, config.namingStrategy);
-    if (!generator) {
-      throw new TypeError(`Could not find a schema generator for dialect: ${dialectName}`);
+    if (!migrator.schemaGenerator) {
+      const generator = await createSchemaGeneratorAsync(config.pool.dialect, config.namingStrategy);
+      if (!generator) {
+        throw new TypeError(`Could not find a schema generator for dialect: ${dialectName}`);
+      }
+      migrator.setSchemaGenerator(generator);
     }
-    migrator.setSchemaGenerator(generator);
 
     switch (command) {
       case 'up':

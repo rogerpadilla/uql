@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MongoDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { Querier, QuerierPool } from '../type/index.js';
 import { Migrator } from './migrator.js';

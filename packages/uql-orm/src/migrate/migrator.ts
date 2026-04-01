@@ -30,6 +30,7 @@ import {
   SqliteSchemaIntrospector,
 } from './introspection/index.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
+import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 
 /**
@@ -53,12 +54,15 @@ export class Migrator {
   public readonly dialectName: DialectName;
   public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector?: SchemaIntrospector;
+  private readonly _namingStrategy?: NamingStrategy;
+  private _mongoSchemaLoadPromise?: Promise<void>;
 
   constructor(
     private readonly pool: QuerierPool,
     options: MigratorOptions = {},
   ) {
     this.dialectName = pool.dialect.dialectName ?? 'postgres';
+    this._namingStrategy = options.namingStrategy;
     this.storage =
       options.storage ??
       new DatabaseMigrationStorage(pool, {
@@ -68,7 +72,24 @@ export class Migrator {
     this._logger = new LoggerWrapper(options.logger!, options.slowQuery);
     this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
-    this.schemaGenerator = options.schemaGenerator ?? this.createGenerator(options.namingStrategy);
+    this.schemaGenerator =
+      options.schemaGenerator ??
+      (this.dialectName === 'mongodb' ? undefined : this.createGenerator(options.namingStrategy));
+  }
+
+  /** Loads MongoDB schema generator on first use; SQL generators are set in the constructor (or via {@link setSchemaGenerator}). */
+  private async ensureSchemaGenerator(): Promise<void> {
+    if (this.schemaGenerator || this.dialectName !== 'mongodb') {
+      return;
+    }
+    if (!this._mongoSchemaLoadPromise) {
+      this._mongoSchemaLoadPromise = createSchemaGeneratorAsync(this.pool.dialect, this._namingStrategy).then((gen) => {
+        if (gen) {
+          this.schemaGenerator = gen;
+        }
+      });
+    }
+    await this._mongoSchemaLoadPromise;
   }
 
   /**
@@ -289,6 +310,7 @@ export class Migrator {
    * Generate a migration based on entity schema differences
    */
   async generateFromEntities(name: string): Promise<string> {
+    await this.ensureSchemaGenerator();
     if (!this.schemaGenerator) {
       throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
     }
@@ -299,7 +321,7 @@ export class Migrator {
 
     for (const diff of diffs) {
       if (diff.type === 'create') {
-        const entity = this.findEntityForTable(diff.tableName);
+        const entity = await this.findEntityForTable(diff.tableName);
         if (entity) {
           upStatements.push(this.schemaGenerator.generateCreateTable(entity));
           downStatements.push(this.schemaGenerator.generateDropTable(entity));
@@ -335,6 +357,7 @@ export class Migrator {
    * Get all schema differences between entities and database
    */
   async getDiffs(): Promise<SchemaDiff[]> {
+    await this.ensureSchemaGenerator();
     if (!this.schemaGenerator || !this.schemaIntrospector) {
       throw new Error('Schema generator and introspector must be set');
     }
@@ -355,10 +378,14 @@ export class Migrator {
     return diffs;
   }
 
-  public findEntityForTable(tableName: string): Type<unknown> | undefined {
+  public async findEntityForTable(tableName: string): Promise<Type<unknown> | undefined> {
+    await this.ensureSchemaGenerator();
+    if (!this.schemaGenerator) {
+      return undefined;
+    }
     for (const entity of this.entities) {
       const meta = getMeta(entity);
-      const name = this.schemaGenerator!.resolveTableName(entity, meta);
+      const name = this.schemaGenerator.resolveTableName(entity, meta);
       if (name === tableName) {
         return entity;
       }
@@ -380,6 +407,7 @@ export class Migrator {
    * Drops and recreates all tables (Development only!)
    */
   public async syncForce(): Promise<void> {
+    await this.ensureSchemaGenerator();
     if (!this.schemaGenerator) {
       throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
     }
@@ -422,6 +450,7 @@ export class Migrator {
    * Safely synchronizes the schema by only adding missing tables and columns.
    */
   async autoSync(options: { safe?: boolean; drop?: boolean; logging?: boolean } = {}): Promise<void> {
+    await this.ensureSchemaGenerator();
     if (!this.schemaGenerator || !this.schemaIntrospector) {
       throw new Error('Schema generator and introspector must be set');
     }
@@ -431,7 +460,7 @@ export class Migrator {
 
     for (const diff of diffs) {
       if (diff.type === 'create') {
-        const entity = this.findEntityForTable(diff.tableName);
+        const entity = await this.findEntityForTable(diff.tableName);
         if (entity) {
           statements.push(this.schemaGenerator.generateCreateTable(entity));
         }

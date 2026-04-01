@@ -848,22 +848,15 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 }
 
-import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
-
-export { MongoSchemaGenerator };
-
 /**
- * Factory function to create a SchemaGenerator for a specific dialect.
- * Returns undefined for unsupported dialects.
+ * Synchronous factory for SQL schema generators only.
+ * For MongoDB, use `createSchemaGeneratorAsync` from `./schemaGeneratorAsync.js` so the optional `mongodb` peer is not loaded at import time.
  */
 export function createSchemaGenerator(
   dialect: AbstractDialect,
   namingStrategy?: NamingStrategy,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaGenerator | undefined {
-  if (dialect.dialectName === 'mongodb') {
-    return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
-  }
   if (!(dialect instanceof AbstractSqlDialect)) {
     return undefined;
   }

@@ -34,7 +34,8 @@ export * from './introspection/index.js';
 // Main migrator
 export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 // Schema generators
-export { createSchemaGenerator, MongoSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
+export { createSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
+export { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 
 // Storage implementations
 export { DatabaseMigrationStorage } from './storage/databaseStorage.js';

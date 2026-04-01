@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
-import { MongoDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
+import { MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Id } from '../entity/index.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { User } from '../test/entityMock.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
@@ -247,11 +248,19 @@ describe('Migrator Core Methods', () => {
       expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
-    it('should infer MongoDB generator and introspector', () => {
+    it('should defer MongoDB schema generator until async use', () => {
       const mongoPool = { ...pool, dialect: new MongoDialect() };
       const m = new Migrator(mongoPool);
-      expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
+      expect(m.schemaGenerator).toBeUndefined();
       expect(m.schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
+    });
+
+    it('should load MongoDB schema generator on getDiffs', async () => {
+      const mongoPool = { ...pool, dialect: new MongoDialect() };
+      const m = new Migrator(mongoPool, { storage, entities: [] });
+      vi.spyOn(MongoSchemaIntrospector.prototype, 'introspect').mockResolvedValue(new SchemaAST());
+      await m.getDiffs();
+      expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
     });
 
     it('should allow overriding generator in options', () => {
@@ -579,7 +588,7 @@ describe('Migrator Core Methods', () => {
 
     it('findEntityForTable should return undefined if not found', async () => {
       const m = new Migrator(pool, { entities: [] });
-      expect(m.findEntityForTable('Unknown')).toBeUndefined();
+      expect(await m.findEntityForTable('Unknown')).toBeUndefined();
     });
 
     it('getMigrations should load and sort migrations', async () => {
@@ -611,7 +620,7 @@ describe('Migrator Core Methods', () => {
         { type: 'alter', tableName: 'Profile' },
       ];
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
-      vi.spyOn(m, 'findEntityForTable').mockReturnValue(User);
+      vi.spyOn(m, 'findEntityForTable').mockResolvedValue(User);
       vi.spyOn(m.schemaGenerator!, 'generateCreateTable').mockReturnValue('CREATE');
       vi.spyOn(m.schemaGenerator!, 'generateDropTable').mockReturnValue('DROP');
       vi.spyOn(m.schemaGenerator!, 'generateAlterTable').mockReturnValue(['ALTER UP']);
@@ -624,7 +633,7 @@ describe('Migrator Core Methods', () => {
     it('generateFromEntities and autoSync should skip table if entity not found', async () => {
       const m = new Migrator(pool, { storage });
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
-      vi.spyOn(m, 'findEntityForTable').mockReturnValue(undefined);
+      vi.spyOn(m, 'findEntityForTable').mockResolvedValue(undefined);
 
       const result = await m.generateFromEntities('test-skip');
       expect(result).toBe('');
