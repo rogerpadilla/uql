@@ -464,9 +464,7 @@ class PostgresDialectSpec {
         },
       ),
     );
-    expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3',
-    );
+    expect(sql).toBe('UPDATE "Company" SET "kind" = ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3');
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
