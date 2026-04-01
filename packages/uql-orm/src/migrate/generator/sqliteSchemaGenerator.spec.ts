@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { SqliteDialect } from '../../dialect/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('SqliteSchemaGenerator Specifics', () => {
-  const generator = new SqlSchemaGenerator('sqlite');
+  const generator = new SqlSchemaGenerator(new SqliteDialect());
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('TEXT');

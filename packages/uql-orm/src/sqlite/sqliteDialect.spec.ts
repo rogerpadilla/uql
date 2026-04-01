@@ -17,7 +17,7 @@ import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
-    super(new SqliteDialect());
+    super(new SqliteDialect({}));
   }
 
   override shouldBeginTransaction() {

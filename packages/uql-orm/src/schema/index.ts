@@ -11,9 +11,6 @@
 import type { SchemaIntrospector } from '../type/migration.js';
 import type { SchemaAST } from './schemaAST.js';
 
-export type { DialectConfig } from '../dialect/index.js';
-// Dialect configuration
-export { DIALECT_CONFIG, getDialectConfig } from '../dialect/index.js';
 // Canonical type utilities
 export {
   areTypesEqual,

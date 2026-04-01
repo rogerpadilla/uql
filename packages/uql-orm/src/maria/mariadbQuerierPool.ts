@@ -10,12 +10,12 @@ export class MariadbQuerierPool extends AbstractQuerierPool<MariaDialect, Mariad
   readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(new MariaDialect(extra?.namingStrategy), extra);
+    super(new MariaDialect({ namingStrategy: extra?.namingStrategy }), extra);
     this.pool = createPool(opts);
   }
 
   async getQuerier() {
-    return new MariadbQuerier(() => this.pool.getConnection(), this.dialectInstance, this.extra);
+    return new MariadbQuerier(() => this.pool.getConnection(), this.dialect, this.extra);
   }
 
   async end() {

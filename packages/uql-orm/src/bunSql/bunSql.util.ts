@@ -1,5 +1,5 @@
 import type { ReservedSQL, SQL } from 'bun';
-import type { PrimaryKey, RawRow, SqlDialect } from '../type/index.js';
+import type { PrimaryKey, RawRow, SqlDialectName } from '../type/index.js';
 
 export type BunSqlResult<T = RawRow> = T[] & {
   count?: number;
@@ -18,14 +18,14 @@ export function isReservedConnection(conn: unknown): conn is ReservedSQL {
   return !!(conn && typeof (conn as ReservedSQL).release === 'function');
 }
 
-export function isPoolableDialect(dialect: SqlDialect): boolean {
-  return dialect !== 'sqlite';
+export function isPoolableDialect(dialectName: SqlDialectName): boolean {
+  return dialectName !== 'sqlite';
 }
 
 /**
  * Robustly infers the UQL SqlDialect from a Bun SQL.Options object.
  */
-export function inferDialect(config: SQL.Options): SqlDialect {
+export function inferDialectName(config: SQL.Options): SqlDialectName {
   if ((config as SQL.SQLiteOptions).filename) return 'sqlite';
   const opts = config as SQL.PostgresOrMySQLOptions;
   if (opts.url) {
@@ -33,11 +33,11 @@ export function inferDialect(config: SQL.Options): SqlDialect {
     if (urlStr === ':memory:' || urlStr.endsWith('.db') || urlStr.endsWith('.sqlite')) {
       return 'sqlite';
     }
-    const scheme = urlStr.split(':')[0] as SqlDialect;
+    const scheme = urlStr.split(':')[0] as SqlDialectName;
     const dialect = DialectMap[scheme];
     if (dialect) return dialect;
   }
-  if (opts.adapter) return opts.adapter as SqlDialect;
+  if (opts.adapter) return opts.adapter as SqlDialectName;
   return 'postgres';
 }
 
@@ -50,14 +50,14 @@ const DialectMap = {
   sqlite: 'sqlite',
   sqlite3: 'sqlite',
   cockroachdb: 'cockroachdb',
-} as const satisfies Record<SqlDialect | string, SqlDialect>;
+} as const satisfies Record<SqlDialectName | string, SqlDialectName>;
 
 /**
  * Normalizes SQL.Options into a structure that Bun's SQL engine expects for a given dialect.
  * Crucially handles 'filename' mapping for SQLite and alias resolution for Cockroach/MariaDB.
  */
-export function normalizeBunOpts(config: SQL.Options, dialect: SqlDialect): SQL.Options {
-  if (dialect === 'sqlite') {
+export function normalizeBunOpts(config: SQL.Options, dialectName: SqlDialectName): SQL.Options {
+  if (dialectName === 'sqlite') {
     const rawFilename =
       ('filename' in config ? config.filename : null) || ('url' in config ? config.url : null) || ':memory:';
     return {
@@ -67,8 +67,8 @@ export function normalizeBunOpts(config: SQL.Options, dialect: SqlDialect): SQL.
     } satisfies SQL.SQLiteOptions;
   }
 
-  const bunAdapter = dialect === 'cockroachdb' ? 'postgres' : dialect;
-  const opts: SQL.PostgresOrMySQLOptions = { bigint: true, ...config, adapter: bunAdapter };
+  const adapter = dialectName === 'cockroachdb' ? 'postgres' : dialectName;
+  const opts: SQL.PostgresOrMySQLOptions = { bigint: true, ...config, adapter };
 
   if (!opts.url) {
     return opts;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MySqlDialect } from '../../dialect/index.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../../schema/types.js';
 import { createDriftDetector, DriftDetector, detectDrift } from './driftDetector.js';
@@ -53,7 +54,7 @@ describe('DriftDetector', () => {
       expected.addTable(table1);
       actual.addTable(table2);
 
-      const detector = new DriftDetector(expected, actual, { dialect: 'mysql' });
+      const detector = new DriftDetector(expected, actual, { dialect: new MySqlDialect() });
       const report = detector.detect();
 
       expect(report.status).toBe('critical');
@@ -78,7 +79,7 @@ describe('DriftDetector', () => {
       expected.addTable(table1);
       actual.addTable(table2);
 
-      const detector = new DriftDetector(expected, actual, { dialect: 'mysql' });
+      const detector = new DriftDetector(expected, actual, { dialect: new MySqlDialect() });
       const report = detector.detect();
 
       expect(report.status).toBe('critical');
@@ -101,7 +102,7 @@ describe('DriftDetector', () => {
       expected.addTable(table1);
       actual.addTable(table2);
 
-      const detector = new DriftDetector(expected, actual, { dialect: 'mysql' });
+      const detector = new DriftDetector(expected, actual, { dialect: new MySqlDialect() });
       const report = detector.detect();
 
       expect(report.drifts.some((d) => d.type === 'constraint_mismatch')).toBe(true);
@@ -179,7 +180,7 @@ describe('DriftDetector', () => {
       expected.addTable(table1);
       actual.addTable(table2);
 
-      const detector = new DriftDetector(expected, actual, { dialect: 'mysql' });
+      const detector = new DriftDetector(expected, actual, { dialect: new MySqlDialect() });
       const report = detector.detect();
 
       expect(report.drifts.some((d) => d.type === 'unexpected_column')).toBe(true);
@@ -282,7 +283,7 @@ describe('DriftDetector', () => {
       expected.addTable(table1);
       actual.addTable(table2);
 
-      const detector = new DriftDetector(expected, actual, { dialect: 'mysql' });
+      const detector = new DriftDetector(expected, actual, { dialect: new MySqlDialect() });
       const report = detector.detect();
 
       expect(report.drifts[0].expected).toBe('DECIMAL(10, 2)');

@@ -1,5 +1,6 @@
 import SqlString from 'sqlstring';
-import type { QueryContext, QuerySizeComparisonOps } from '../type/index.js';
+import type { DialectFeatures, QueryContext, QuerySizeComparisonOps } from '../type/index.js';
+import type { DialectOptions } from './abstractDialect.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 
@@ -12,6 +13,52 @@ import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
  * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
+  /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
+  static readonly defaultDialectFeatures: DialectFeatures = {
+    explicitJsonCast: false,
+    nativeArrays: false,
+    supportsJsonb: false,
+    returning: false,
+    ifNotExists: true,
+    indexIfNotExists: false,
+    dropTableCascade: false,
+    renameColumn: true,
+    foreignKeyAlter: true,
+    columnComment: true,
+    vectorIndexStyle: 'inline',
+    vectorSupportsLength: false,
+    supportsTimestamptz: false,
+    defaultStringAsText: false,
+  };
+
+  override readonly quoteChar = '`';
+
+  override readonly tableOptions = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
+
+  override readonly beginTransactionCommand = 'START TRANSACTION';
+
+  override readonly commitTransactionCommand = 'COMMIT';
+
+  override readonly rollbackTransactionCommand = 'ROLLBACK';
+
+  override readonly isolationLevelStrategy = 'set-before';
+
+  override readonly dropForeignKeySyntax = 'DROP FOREIGN KEY';
+
+  override readonly dropIndexSyntax = 'on-table';
+
+  override readonly renameTableSyntax = 'rename-table';
+
+  override readonly alterColumnSyntax = 'MODIFY COLUMN';
+
+  override readonly booleanLiteral = 'integer';
+
+  override readonly insertIdStrategy = 'first';
+
+  constructor(options: DialectOptions = {}) {
+    super(MysqlLikeSqlDialect.defaultDialectFeatures, options);
+  }
+
   override escape(value: unknown): string {
     return SqlString.escape(value);
   }

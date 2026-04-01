@@ -3,10 +3,10 @@ import { User } from '../test/index.js';
 import { CockroachDialect } from './cockroachDialect.js';
 
 describe('CockroachDialect', () => {
-  const dialect = new CockroachDialect();
+  const dialect = new CockroachDialect({});
 
   it('should use cockroachdb identifier', () => {
-    expect(dialect.dialect).toBe('cockroachdb');
+    expect(dialect.dialectName).toBe('cockroachdb');
   });
 
   it('upsert should support xmax just like postgres', () => {

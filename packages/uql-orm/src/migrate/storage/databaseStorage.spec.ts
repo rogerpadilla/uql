@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { DatabaseMigrationStorage } from './databaseStorage.js';
 
@@ -16,16 +18,10 @@ describe('DatabaseMigrationStorage', () => {
       all: mockAll,
       run: mockRun,
       release: vi.fn().mockResolvedValue(undefined),
-      dialect: {
-        escapeId: (id: string) => `"${id}"`,
-        placeholder: (index: number) => `$${index}`,
-        escapeIdChar: '"',
-      },
+      dialect: new PostgresDialect(),
     } as unknown as SqlQuerier;
 
-    pool = {
-      getQuerier: vi.fn().mockResolvedValue(querier),
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new PostgresDialect(), vi.fn().mockResolvedValue(querier));
 
     storage = new DatabaseMigrationStorage(pool);
   });

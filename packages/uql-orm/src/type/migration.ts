@@ -2,7 +2,6 @@ import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition }
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
-  Dialect,
   EntityMeta,
   FieldOptions,
   LoggingOptions,
@@ -62,11 +61,6 @@ export interface MigrationStorage {
  */
 export interface MigratorOptions {
   /**
-   * The database dialect. Defaults to 'postgres'.
-   */
-  readonly dialect?: Dialect;
-
-  /**
    * Directory containing migration files. Defaults to './migrations'.
    */
   readonly migrationsPath?: string;
@@ -108,7 +102,7 @@ export interface MigratorOptions {
 
   /**
    * Custom schema generator for DDL operations.
-   * If not provided, it will be inferred from the dialect.
+   * If not provided, it will be inferred from `pool.dialect`.
    */
   readonly schemaGenerator?: SchemaGenerator;
 }

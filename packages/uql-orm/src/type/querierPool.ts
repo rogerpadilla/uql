@@ -1,13 +1,17 @@
-import type { Dialect, ExtraOptions, Querier, TransactionOptions } from './querier.js';
+import type { AbstractDialect } from '../dialect/index.js';
+import type { ExtraOptions, Querier, TransactionOptions } from './querier.js';
 
 /**
- * querier pool.
+ * Querier pool. Read the dialect id via `pool.dialect.dialectName` (see {@link AbstractDialect.dialectName}); queriers expose the same on `querier.dialect`.
+ *
+ * @typeParam Q - Querier implementation returned from the pool.
+ * @typeParam D - Concrete dialect class held by the pool.
  */
-export type QuerierPool<Q extends Querier = Querier> = {
+export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect = AbstractDialect> = {
   /**
-   * the database dialect.
+   * Database dialect instance (single source of truth for dialect id and SQL/NoSQL behavior).
    */
-  readonly dialect: Dialect;
+  readonly dialect: D;
 
   /**
    * extra options
@@ -34,6 +38,12 @@ export type QuerierPool<Q extends Querier = Querier> = {
    */
   end(): Promise<void>;
 };
+
+/** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
+export type QuerierPoolDialect<P> = P extends QuerierPool<any, infer D> ? D : never;
+
+/** Querier type produced by pool `P`. */
+export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, any> ? Q : never;
 
 /**
  * Represents a high-compatibility SQL pool shim for Node.js integrations (e.g., express-session).

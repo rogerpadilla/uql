@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
@@ -36,13 +38,11 @@ describe('PostgresSchemaIntrospector', () => {
       all: mockAll,
       run: mockRun,
       release: mockRelease,
-      dialect: { escapeIdChar: '"' },
+      dialect: new PostgresDialect(),
     } as unknown as SqlQuerier;
 
     mockGetQuerier = vi.fn().mockResolvedValue(querier);
-    pool = {
-      getQuerier: mockGetQuerier,
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new PostgresDialect(), mockGetQuerier);
 
     introspector = new TestPostgresIntrospector(pool);
   });

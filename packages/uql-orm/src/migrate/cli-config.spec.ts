@@ -13,24 +13,24 @@ describe('cli-config', () => {
   });
 
   it('loadConfig should load config from uql.config.js', async () => {
-    const configContent = 'export default { pool: { dialect: "sqlite" } }';
+    const configContent = 'export default { pool: { dialect: { dialectName: "sqlite" } } }';
     await fs.writeFile(configPath, configContent);
     const config = await loadConfig();
-    expect(config.pool.dialect).toBe('sqlite');
+    expect(config.pool.dialect.dialectName).toBe('sqlite');
   });
 
   it('loadConfig should load TypeScript config using jiti', async () => {
     const tsConfigPath = path.resolve(process.cwd(), 'uql.config.ts');
     const configContent = /** ts */ `
       export default {
-        pool: { dialect: "postgres" },
+        pool: { dialect: { dialectName: "postgres" } },
         entities: []
       } satisfies any; // dummy type check
     `;
     try {
       await fs.writeFile(tsConfigPath, configContent);
       const config = await loadConfig();
-      expect(config.pool.dialect).toBe('postgres');
+      expect(config.pool.dialect.dialectName).toBe('postgres');
     } finally {
       await fs.unlink(tsConfigPath).catch(() => {});
     }
@@ -38,11 +38,11 @@ describe('cli-config', () => {
 
   it('loadConfig should load config from custom path', async () => {
     const customConfigPath = path.resolve(process.cwd(), 'custom-uql.config.js');
-    const configContent = 'export default { pool: { dialect: "mysql" } }';
+    const configContent = 'export default { pool: { dialect: { dialectName: "mysql" } } }';
     try {
       await fs.writeFile(customConfigPath, configContent);
       const config = await loadConfig('custom-uql.config.js');
-      expect(config.pool.dialect).toBe('mysql');
+      expect(config.pool.dialect.dialectName).toBe('mysql');
     } finally {
       await fs.unlink(customConfigPath).catch(() => {});
     }

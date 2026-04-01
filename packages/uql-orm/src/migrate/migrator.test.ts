@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
 import { Migrator } from './migrator.js';
 
@@ -22,6 +24,7 @@ describe('Migrator autoSync Integration', () => {
 
   beforeEach(() => {
     // Mock pool and querier for testing
+    const sqliteDialect = new SqliteDialect();
     const querier = {
       run: vi.fn().mockResolvedValue({}),
       all: vi.fn().mockResolvedValue([]),
@@ -29,15 +32,9 @@ describe('Migrator autoSync Integration', () => {
       commitTransaction: vi.fn().mockResolvedValue(undefined),
       rollbackTransaction: vi.fn().mockResolvedValue(undefined),
       release: vi.fn().mockResolvedValue(undefined),
-      dialect: {
-        escapeIdChar: '"',
-        placeholder: vi.fn().mockReturnValue('?'),
-      },
+      dialect: sqliteDialect,
     } as unknown as SqlQuerier;
-    pool = {
-      getQuerier: vi.fn().mockResolvedValue(querier),
-      dialect: 'postgres',
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(sqliteDialect, vi.fn().mockResolvedValue(querier));
 
     migrator = new Migrator(pool, {
       entities: [SyncUser, SyncProfile],
@@ -62,8 +59,8 @@ describe('Migrator autoSync Integration', () => {
     await migrator.autoSync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE "SyncUser"'));
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE "SyncProfile"'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE `SyncUser`'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE `SyncProfile`'));
   });
 
   it('should generate alter statements for missing columns', async () => {
@@ -107,7 +104,7 @@ describe('Migrator autoSync Integration', () => {
     await migrator.autoSync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE "SyncUser" ADD COLUMN "name" TEXT'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE `SyncUser` ADD COLUMN `name` TEXT'));
   });
 
   it('should detect and sync new properties added to existing entities', async () => {
@@ -206,11 +203,11 @@ describe('Migrator autoSync Integration', () => {
     expect(introspector.introspect).toHaveBeenCalled();
 
     // Verify that ALTER TABLE was called to add the missing 'userId' column to SyncProfile
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE "SyncProfile" ADD COLUMN "userId"'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE `SyncProfile` ADD COLUMN `userId`'));
 
     // Verify that no changes were made to SyncUser (all columns already exist)
     const allCalls = (querier.run as ReturnType<typeof vi.fn>).mock.calls;
-    const syncUserAlterCalls = allCalls.filter((call) => String(call[0]).includes('ALTER TABLE "SyncUser"'));
+    const syncUserAlterCalls = allCalls.filter((call) => String(call[0]).includes('ALTER TABLE `SyncUser`'));
     expect(syncUserAlterCalls).toHaveLength(0);
   });
 
@@ -280,8 +277,8 @@ describe('Migrator autoSync Integration', () => {
     const querier = (await pool.getQuerier()) as SqlQuerier;
 
     // Should add all three missing columns: email, age, isActive
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN "email"'));
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN "age"'));
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN "isActive"'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN `email`'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN `age`'));
+    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ADD COLUMN `isActive`'));
   });
 });

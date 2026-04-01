@@ -1,5 +1,5 @@
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import type { NamingStrategy } from '../type/index.js';
+import type { VectorDistance } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -8,7 +8,11 @@ import type { NamingStrategy } from '../type/index.js';
  * to perform `upsert` queries without custom overrides.
  */
 export class CockroachDialect extends PostgresDialect {
-  constructor(namingStrategy?: NamingStrategy) {
-    super(namingStrategy, 'cockroachdb');
-  }
+  override readonly dialectName = 'cockroachdb';
+
+  override readonly serialPrimaryKey = 'SERIAL PRIMARY KEY';
+
+  override readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = undefined;
+
+  override readonly vectorExtension: string | undefined = undefined;
 }

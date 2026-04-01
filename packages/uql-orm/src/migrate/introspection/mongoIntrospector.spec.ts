@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { MongoDialect } from '../../mongo/mongoDialect.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { MongoQuerier, QuerierPool } from '../../type/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
@@ -26,9 +28,7 @@ describe('MongoSchemaIntrospector', () => {
       release: vi.fn().mockResolvedValue(undefined),
     } as unknown as MongoQuerier;
 
-    pool = {
-      getQuerier: vi.fn().mockResolvedValue(querier),
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new MongoDialect(), vi.fn().mockResolvedValue(querier));
 
     introspector = new MongoSchemaIntrospector(pool);
   });

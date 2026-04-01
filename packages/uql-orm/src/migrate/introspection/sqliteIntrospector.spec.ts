@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -36,13 +38,11 @@ describe('SqliteSchemaIntrospector', () => {
       all: mockAll,
       run: mockRun,
       release: mockRelease,
-      dialect: { escapeIdChar: '`' },
+      dialect: new SqliteDialect(),
     } as unknown as SqlQuerier;
 
     mockGetQuerier = vi.fn().mockResolvedValue(querier);
-    pool = {
-      getQuerier: mockGetQuerier,
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new SqliteDialect(), mockGetQuerier);
 
     introspector = new TestSqliteIntrospector(pool);
   });
@@ -278,13 +278,13 @@ describe('SqliteSchemaIntrospector', () => {
     expect(introspector.normalizeType('123')).toBe('123');
   });
 
-  it('escapeId should handle backticks', async () => {
+  it('escapeId should handle double quotes', async () => {
     mockAll.mockImplementation((sql: string) => {
       if (sql.includes('sqlite_master')) return Promise.resolve([{ count: 1 }]);
       return Promise.resolve([]);
     });
-    await introspector.getTableSchema('my`table');
-    expect(mockAll).toHaveBeenCalledWith(expect.stringContaining('`my``table`'));
+    await introspector.getTableSchema('my"table');
+    expect(mockAll).toHaveBeenCalledWith(expect.stringContaining('`my"table`'));
   });
 
   it('tableExists should return false if results are empty', async () => {

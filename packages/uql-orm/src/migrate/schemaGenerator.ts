@@ -1,4 +1,4 @@
-import { AbstractDialect } from '../dialect/index.js';
+import { type AbstractDialect, AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import {
   areTypesEqual,
@@ -18,7 +18,7 @@ import type {
 } from '../schema/types.js';
 import type {
   ColumnSchema,
-  Dialect,
+  DialectFeatures,
   EntityMeta,
   FieldKey,
   FieldOptions,
@@ -40,19 +40,40 @@ const INLINE_VECTOR_DISTANCE_MAP: Partial<Record<VectorDistance, string>> = { co
  * Unified SQL schema generator.
  * Parameterized by dialect to handle Postgres, MySQL, MariaDB, and SQLite.
  */
-export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerator {
+export class SqlSchemaGenerator implements SchemaGenerator {
+  constructor(
+    protected readonly dialect: AbstractSqlDialect,
+    protected readonly defaultForeignKeyAction: ForeignKeyAction = 'NO ACTION',
+  ) {}
+
+  get namingStrategy(): NamingStrategy | undefined {
+    return this.dialect.namingStrategy;
+  }
+
+  get features(): DialectFeatures {
+    return this.dialect.features;
+  }
+
+  resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string {
+    return this.dialect.resolveTableName(entity, meta);
+  }
+
+  resolveColumnName(key: string, field: FieldOptions): string {
+    return this.dialect.resolveColumnName(key, field);
+  }
+
   /**
    * Escape an identifier (table name, column name, etc.)
    */
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.config.quoteChar);
+    return escapeSqlId(identifier, this.dialect.quoteChar);
   }
 
   /**
    * Primary key type for auto-increment integer IDs
    */
   protected get serialPrimaryKeyType(): string {
-    return this.config.serialPrimaryKey;
+    return this.dialect.serialPrimaryKey;
   }
 
   // ============================================================================
@@ -83,18 +104,15 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   // ============================================================================
 
   generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string {
-    const builder = new SchemaASTBuilder(this.namingStrategy);
-    const ast = builder.fromEntities([entity], {
-      resolveTableName: this.resolveTableName.bind(this),
-      resolveColumnName: this.resolveColumnName.bind(this),
-    });
+    const builder = new SchemaASTBuilder(this.dialect.namingStrategy);
+    const ast = builder.fromEntities([entity]);
     const tableNode = ast.getTables()[0];
     return this.generateCreateTableFromNode(tableNode, options);
   }
 
   generateDropTable<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
+    const tableName = this.dialect.resolveTableName(entity, meta);
     return `DROP TABLE IF EXISTS ${this.escapeId(tableName)};`;
   }
 
@@ -180,7 +198,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (options.ifNotExists ?? this.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
-    const opsClassMap = this.config.vectorOpsClass;
+    const opsClassMap = this.dialect.vectorOpsClass;
     const hasOpsClass = opsClassMap && (index.type === 'hnsw' || index.type === 'ivfflat');
 
     // For pgvector indexes: append operator class to the column
@@ -211,7 +229,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
-    if (this.config.dropIndexSyntax === 'on-table') {
+    if (this.dialect.dropIndexSyntax === 'on-table') {
       return `DROP INDEX ${this.escapeId(indexName)} ON ${this.escapeId(tableName)};`;
     }
     return `DROP INDEX IF EXISTS ${this.escapeId(indexName)};`;
@@ -286,7 +304,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
     // Special case for serial primary keys
     if (isAutoIncrement(field, field.isId === true)) {
-      return this.serialPrimaryKeyType;
+      return this.dialect.serialPrimaryKey;
     }
 
     return this.canonicalTypeToSql(canonical);
@@ -306,14 +324,14 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     const table = this.escapeId(tableName);
     const colName = this.escapeId(column.name);
 
-    if (this.config.alterColumnSyntax === 'none') {
+    if (this.dialect.alterColumnSyntax === 'none') {
       throw new Error(
         `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
           `This database does not support ALTER COLUMN.`,
       );
     }
 
-    if (this.config.alterColumnStrategy === 'separate-clauses') {
+    if (this.dialect.alterColumnStrategy === 'separate-clauses') {
       const statements: string[] = [];
       // Separate ALTER COLUMN clauses for different changes (Postgres)
       statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} TYPE ${column.type};`);
@@ -334,14 +352,14 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       return statements;
     }
 
-    return [`ALTER TABLE ${table} ${this.config.alterColumnSyntax} ${newDefinition};`];
+    return [`ALTER TABLE ${table} ${this.dialect.alterColumnSyntax} ${newDefinition};`];
   }
 
   /**
    * Get table options (e.g., ENGINE for MySQL)
    */
   public getTableOptions<E>(_meta: EntityMeta<E>): string {
-    return this.config.tableOptions ? ` ${this.config.tableOptions}` : '';
+    return this.dialect.tableOptions ? ` ${this.dialect.tableOptions}` : '';
   }
 
   /**
@@ -359,7 +377,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
    * Format a default value for SQL
    */
   public formatDefaultValue(value: unknown): string {
-    if (this.config.booleanLiteral === 'integer' && typeof value === 'boolean') {
+    if (this.dialect.booleanLiteral === 'integer' && typeof value === 'boolean') {
       return value ? '1' : '0';
     }
     return formatDefaultValue(value);
@@ -373,7 +391,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
     if (!currentTable) {
       return {
-        tableName: this.resolveTableName(entity, meta),
+        tableName: this.dialect.resolveTableName(entity, meta),
         type: 'create',
       };
     }
@@ -389,7 +407,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
       const field = meta.fields[key];
       if (!field || field.virtual) continue;
 
-      const columnName = this.resolveColumnName(key, field);
+      const columnName = this.dialect.resolveColumnName(key, field);
       const currentColumn = currentColumns.get(columnName);
 
       if (!currentColumn) {
@@ -413,7 +431,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     }
 
     return {
-      tableName: this.resolveTableName(entity, meta),
+      tableName: this.dialect.resolveTableName(entity, meta),
       type: 'alter',
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
@@ -441,7 +459,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     const isPrimaryKey = field.isId === true && meta.id === fieldKey;
 
     return {
-      name: this.resolveColumnName(fieldKey, field),
+      name: this.dialect.resolveColumnName(fieldKey, field),
       type: this.getSqlType(field, field.type),
       nullable: field.nullable ?? !isPrimaryKey,
       defaultValue: field.defaultValue,
@@ -558,8 +576,8 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
 
     sql += '\n)';
 
-    if (this.config.tableOptions) {
-      sql += ` ${this.config.tableOptions}`;
+    if (this.dialect.tableOptions) {
+      sql += ` ${this.dialect.tableOptions}`;
     }
 
     sql += ';';
@@ -572,10 +590,10 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
     }
 
     // Prepend CREATE EXTENSION for dialects that require it (e.g. pgvector)
-    if (this.config.vectorExtension) {
+    if (this.dialect.vectorExtension) {
       const hasVectorCol = [...table.columns.values()].some((c) => isVectorCategory(c.type.category));
       if (hasVectorCol) {
-        sql = `CREATE EXTENSION IF NOT EXISTS ${this.config.vectorExtension};\n${sql}`;
+        sql = `CREATE EXTENSION IF NOT EXISTS ${this.dialect.vectorExtension};\n${sql}`;
       }
     }
 
@@ -684,7 +702,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
-    if (this.config.renameTableSyntax === 'rename-table') {
+    if (this.dialect.renameTableSyntax === 'rename-table') {
       return `RENAME TABLE ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
     }
     return `ALTER TABLE ${this.escapeId(oldName)} RENAME TO ${this.escapeId(newName)};`;
@@ -737,7 +755,7 @@ export class SqlSchemaGenerator extends AbstractDialect implements SchemaGenerat
   }
 
   generateDropForeignKeySql(tableName: string, constraintName: string): string {
-    return `ALTER TABLE ${this.escapeId(tableName)} ${this.config.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
+    return `ALTER TABLE ${this.escapeId(tableName)} ${this.dialect.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
   }
 
   private tableDefinitionToNode(def: TableDefinition): TableNode {
@@ -839,17 +857,15 @@ export { MongoSchemaGenerator };
  * Returns undefined for unsupported dialects.
  */
 export function createSchemaGenerator(
-  dialect: Dialect,
+  dialect: AbstractDialect,
   namingStrategy?: NamingStrategy,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaGenerator | undefined {
-  if (dialect === 'mongodb') {
+  if (dialect.dialectName === 'mongodb') {
     return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
   }
-  // Check if dialect is supported (has config)
-  const supportedDialects: Dialect[] = ['postgres', 'mysql', 'mariadb', 'sqlite'];
-  if (!supportedDialects.includes(dialect)) {
+  if (!(dialect instanceof AbstractSqlDialect)) {
     return undefined;
   }
-  return new SqlSchemaGenerator(dialect, namingStrategy, defaultForeignKeyAction);
+  return new SqlSchemaGenerator(dialect, defaultForeignKeyAction);
 }

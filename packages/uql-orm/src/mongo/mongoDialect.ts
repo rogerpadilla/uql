@@ -1,11 +1,12 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
-import { AbstractDialect } from '../dialect/index.js';
+import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
 import type {
+  DialectFeatures,
   EntityMeta,
   FieldValue,
-  NamingStrategy,
   Query,
   QueryAggregate,
   QueryOptions,
@@ -30,6 +31,32 @@ import {
 } from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
+  /** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoSchemaGenerator}. */
+  static readonly defaultDialectFeatures: DialectFeatures = {
+    explicitJsonCast: false,
+    nativeArrays: false,
+    supportsJsonb: false,
+    returning: false,
+    ifNotExists: false,
+    indexIfNotExists: false,
+    dropTableCascade: false,
+    renameColumn: false,
+    foreignKeyAlter: false,
+    columnComment: false,
+    vectorIndexStyle: 'create',
+    vectorSupportsLength: false,
+    supportsTimestamptz: false,
+    defaultStringAsText: false,
+  };
+
+  readonly dialectName = 'mongodb';
+
+  override readonly insertIdStrategy = 'last';
+
+  constructor(options: DialectOptions = {}) {
+    super(MongoDialect.defaultDialectFeatures, options);
+  }
+
   private static readonly ID_KEY = '_id';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
@@ -40,10 +67,6 @@ export class MongoDialect extends AbstractDialect {
     $min: '$min',
     $max: '$max',
   };
-
-  constructor(namingStrategy?: NamingStrategy) {
-    super('mongodb', namingStrategy);
-  }
 
   public where<E extends Document>(
     entity: Type<E>,

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import { MongoDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Id } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { User } from '../test/entityMock.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type {
   Migration,
   MigrationStorage,
@@ -38,6 +41,7 @@ describe('Migrator Core Methods', () => {
 
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
+    const postgresDialect = new PostgresDialect();
     querier = {
       beginTransaction: vi.fn().mockResolvedValue(undefined),
       commitTransaction: vi.fn().mockResolvedValue(undefined),
@@ -45,15 +49,10 @@ describe('Migrator Core Methods', () => {
       release: vi.fn().mockResolvedValue(undefined),
       all: vi.fn().mockResolvedValue([]),
       run: vi.fn().mockResolvedValue({}),
-      dialect: {
-        escapeIdChar: '"',
-      },
+      dialect: postgresDialect,
     } as unknown as SqlQuerier;
 
-    pool = {
-      getQuerier: vi.fn().mockResolvedValue(querier),
-      dialect: 'postgres',
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(postgresDialect, vi.fn().mockResolvedValue(querier));
 
     mockExecuted = vi.fn().mockResolvedValue([]);
     storage = {
@@ -234,34 +233,30 @@ describe('Migrator Core Methods', () => {
     });
 
     it('should infer MySQL generator and introspector', () => {
-      const mysqlPool = { ...pool, dialect: 'mysql' } as QuerierPool;
+      const mysqlPool = { ...pool, dialect: new MySqlDialect() };
       const m = new Migrator(mysqlPool);
+      expect(m.dialectName).toBe('mysql');
       expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', () => {
-      const sqlitePool = { ...pool, dialect: 'sqlite' } as QuerierPool;
+      const sqlitePool = { ...pool, dialect: new SqliteDialect() };
       const m = new Migrator(sqlitePool);
       expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
     it('should infer MongoDB generator and introspector', () => {
-      const mongoPool = { ...pool, dialect: 'mongodb' } as QuerierPool;
+      const mongoPool = { ...pool, dialect: new MongoDialect() };
       const m = new Migrator(mongoPool);
       expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
     });
 
-    it('should allow overriding dialect in options', () => {
-      const m = new Migrator(pool, { dialect: 'mysql' });
-      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
-    });
-
     it('should allow overriding generator in options', () => {
       const customGenerator = {} as unknown as SchemaGenerator;
-      const m = new Migrator(pool, { dialect: 'postgres', schemaGenerator: customGenerator });
+      const m = new Migrator(pool, { schemaGenerator: customGenerator });
       expect(m.schemaGenerator).toBe(customGenerator);
     });
   });
@@ -274,7 +269,7 @@ describe('Migrator Core Methods', () => {
   });
 
   it('getDialect should return the dialect', () => {
-    expect(migrator.getDialect()).toBe('postgres');
+    expect(migrator.dialectName).toBe('postgres');
   });
 
   it('status should return pending and executed migrations', async () => {
@@ -329,7 +324,7 @@ describe('Migrator Core Methods', () => {
     });
 
     it('autoSync should execute statements from diffs', async () => {
-      const generator = new SqlSchemaGenerator('postgres');
+      const generator = new SqlSchemaGenerator(new PostgresDialect());
       const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       const migratorSync = new Migrator(pool, {
         entities: [MigratorUser],
@@ -342,7 +337,7 @@ describe('Migrator Core Methods', () => {
     });
 
     it('should default to all entities if none provided', async () => {
-      const generator = new SqlSchemaGenerator('postgres');
+      const generator = new SqlSchemaGenerator(new PostgresDialect());
       const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       const migratorDefault = new Migrator(pool, {
         schemaGenerator: generator,
@@ -558,7 +553,11 @@ describe('Migrator Core Methods', () => {
     });
 
     it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
-      const m = new Migrator(pool, { dialect: 'unknown' as any });
+      const unknownPool = {
+        ...pool,
+        dialect: { dialectName: 'unknown' } as unknown as AbstractDialect,
+      };
+      const m = new Migrator(unknownPool, { storage });
       expect(m.schemaGenerator).toBeUndefined();
       expect(m.schemaIntrospector).toBeUndefined();
     });
@@ -570,7 +569,11 @@ describe('Migrator Core Methods', () => {
     });
 
     it('syncForce should throw if schemaGenerator is missing', async () => {
-      const m = new Migrator(pool, { dialect: 'unknown' as any });
+      const unknownPool = {
+        ...pool,
+        dialect: { dialectName: 'unknown' } as unknown as AbstractDialect,
+      };
+      const m = new Migrator(unknownPool, { storage });
       await expect(m.syncForce()).rejects.toThrow('Schema generator not set');
     });
 
@@ -652,7 +655,7 @@ describe('Migrator Core Methods', () => {
         all: vi.fn(),
         run: vi.fn(),
         commitTransaction: vi.fn(),
-        dialect: { escapeIdChar: '"' },
+        dialect: new PostgresDialect(),
       } as any;
 
       await migrator.executeSqlSyncStatements(['STMT1', 'STMT2'], { logging: true }, mockQuerier);

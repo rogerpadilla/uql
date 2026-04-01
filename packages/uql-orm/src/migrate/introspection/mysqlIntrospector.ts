@@ -1,3 +1,4 @@
+import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, SqlQuerier } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
@@ -6,11 +7,8 @@ import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.j
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
 export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected readonly pool: QuerierPool;
-
-  constructor(pool: QuerierPool) {
-    super('mysql');
-    this.pool = pool;
+  constructor(protected readonly pool: QuerierPool) {
+    super(pool.dialect as AbstractSqlDialect);
   }
 
   // ============================================================================

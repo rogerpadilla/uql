@@ -1,6 +1,11 @@
 import { readdir } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import type { Dialect, MigrationStorage, MongoQuerier, Querier, QuerierPool, SqlQuerier } from '../type/index.js';
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import { MariaDialect } from '../maria/mariaDialect.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
+import type { MigrationStorage, MongoQuerier, Querier, QuerierPool, SqlQuerier } from '../type/index.js';
 import { defineMigration, Migrator } from './migrator.js';
 
 vi.mock('node:fs/promises', () => ({
@@ -25,15 +30,10 @@ describe('Migrator (extra coverage)', () => {
       release: vi.fn(),
       run: vi.fn(),
       all: vi.fn(),
-      dialect: {
-        escapeId: (id: string) => `"${id}"`,
-      },
+      dialect: new PostgresDialect(),
     } as unknown as SqlQuerier;
 
-    pool = {
-      dialect: 'postgres',
-      getQuerier: vi.fn().mockResolvedValue(mockQuerier),
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new PostgresDialect(), vi.fn().mockResolvedValue(mockQuerier));
 
     mockStorage = {
       executed: vi.fn().mockResolvedValue([]),
@@ -51,13 +51,18 @@ describe('Migrator (extra coverage)', () => {
   });
 
   it('createIntrospector and createGenerator for mariadb', () => {
-    const migrator = new Migrator(pool, { dialect: 'mariadb' });
-    expect(migrator.getDialect()).toBe('mariadb');
+    const mariaPool = { ...pool, dialect: new MariaDialect() };
+    const migrator = new Migrator(mariaPool);
+    expect(migrator.dialectName).toBe('mariadb');
     expect(migrator.schemaIntrospector).toBeDefined();
   });
 
   it('createIntrospector and createGenerator default case', () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any as Dialect });
+    const invalidPool = {
+      ...pool,
+      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+    };
+    const migrator = new Migrator(invalidPool);
     expect(migrator.schemaIntrospector).toBeUndefined();
   });
 
@@ -83,7 +88,11 @@ describe('Migrator (extra coverage)', () => {
   });
 
   it('generateFromEntities should throw if no schema generator', async () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any as Dialect });
+    const invalidPool = {
+      ...pool,
+      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+    };
+    const migrator = new Migrator(invalidPool);
     await expect(migrator.generateFromEntities('test')).rejects.toThrow('Schema generator not set');
   });
 
@@ -102,7 +111,11 @@ describe('Migrator (extra coverage)', () => {
   });
 
   it('autoSync should throw if no generator/introspector', async () => {
-    const migrator = new Migrator(pool, { dialect: 'invalid' as any as Dialect });
+    const invalidPool = {
+      ...pool,
+      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+    };
+    const migrator = new Migrator(invalidPool);
     await expect(migrator.autoSync()).rejects.toThrow('Schema generator and introspector must be set');
   });
 
@@ -115,14 +128,16 @@ describe('Migrator (extra coverage)', () => {
   });
 
   it('executeMongoSyncStatements should throw if collection name is missing', async () => {
-    const migrator = new Migrator(pool, { dialect: 'mongodb' });
+    const mongoPool = { ...pool, dialect: new MongoDialect() };
+    const migrator = new Migrator(mongoPool, { storage: mockStorage });
     const mongoQuerier = { db: { collection: vi.fn() }, release: vi.fn() } as unknown as MongoQuerier;
-    (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
+    (mongoPool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
     await expect(migrator.executeSyncStatements(['{}'], {})).rejects.toThrow('MongoDB command missing collection name');
   });
 
   it('executeMongoSyncStatements should handle various actions', async () => {
-    const migrator = new Migrator(pool, { dialect: 'mongodb' });
+    const mongoPool = { ...pool, dialect: new MongoDialect() };
+    const migrator = new Migrator(mongoPool, { storage: mockStorage });
     const createCollection = vi.fn();
     const dropCollection = vi.fn();
     const createIndex = vi.fn();
@@ -130,7 +145,7 @@ describe('Migrator (extra coverage)', () => {
     const collection = { createIndex, drop: dropCollection, dropIndex };
     const db = { collection: () => collection, createCollection };
     const mongoQuerier = { db, release: vi.fn() } as unknown as MongoQuerier;
-    (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
+    (mongoPool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
 
     const stmts = [
       JSON.stringify({

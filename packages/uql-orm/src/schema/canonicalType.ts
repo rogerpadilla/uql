@@ -7,9 +7,9 @@
  * - TypeScript types (for entity generation)
  */
 
-import { DIALECT_CONFIG } from '../dialect/dialectConfig.js';
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
-import type { Dialect } from '../type/index.js';
+import type { DialectName } from '../type/index.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 // ============================================================================
@@ -136,7 +136,7 @@ const PG_TYPE_MAP: Record<TypeCategory, string> = {
   sparsevec: 'SPARSEVEC',
 };
 
-const CANONICAL_TO_SQL: Record<Dialect, Record<TypeCategory, string>> = {
+const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
   postgres: PG_TYPE_MAP,
   cockroachdb: PG_TYPE_MAP,
   mysql: {
@@ -224,7 +224,7 @@ const PG_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string
   },
 };
 
-const SIZE_MODIFIERS: Record<Dialect, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
+const SIZE_MODIFIERS: Record<DialectName, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
   postgres: PG_SIZE_MODIFIERS,
   cockroachdb: PG_SIZE_MODIFIERS,
   mysql: {
@@ -358,33 +358,34 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
 }
 
 /**
- * Convert a canonical type to a SQL type string for a specific dialect.
+ * Convert a canonical type to a SQL type string for a specific dialect instance.
  */
-export function canonicalToSql(type: CanonicalType, dialect: Dialect): string {
+export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): string {
   if (type.raw) return type.raw;
 
-  let sqlType = getBaseSqlType(type, dialect);
+  const dialectName = dialect.dialectName;
+  let sqlType = getBaseSqlType(type, dialectName);
 
   if (type.category === 'string') {
-    sqlType = formatStringSqlType(type, dialect, sqlType);
+    sqlType = formatStringSqlType(type, dialect);
   } else if (type.category === 'decimal') {
-    sqlType = formatDecimalSqlType(type, dialect, sqlType);
-  } else if (isVectorCategory(type.category) && type.length && DIALECT_CONFIG[dialect].features.vectorSupportsLength) {
+    sqlType = formatDecimalSqlType(type, dialectName, sqlType);
+  } else if (isVectorCategory(type.category) && type.length && dialect.features.vectorSupportsLength) {
     sqlType = `${sqlType}(${type.length})`;
   }
 
-  if (type.category === 'timestamp' && type.withTimezone && DIALECT_CONFIG[dialect].features.supportsTimestamptz) {
+  if (type.category === 'timestamp' && type.withTimezone && dialect.features.supportsTimestamptz) {
     sqlType = 'TIMESTAMPTZ';
   }
 
-  if (type.unsigned && (dialect === 'mysql' || dialect === 'mariadb')) {
+  if (type.unsigned && (dialectName === 'mysql' || dialectName === 'mariadb')) {
     sqlType = `${sqlType} UNSIGNED`;
   }
 
   return sqlType;
 }
 
-function getBaseSqlType(type: CanonicalType, dialect: Dialect): string {
+function getBaseSqlType(type: CanonicalType, dialect: DialectName): string {
   let sqlType = CANONICAL_TO_SQL[dialect][type.category];
   if (type.size) {
     const sizeMap = SIZE_MODIFIERS[dialect][type.category];
@@ -395,10 +396,11 @@ function getBaseSqlType(type: CanonicalType, dialect: Dialect): string {
   return sqlType;
 }
 
-function formatStringSqlType(type: CanonicalType, dialect: Dialect, baseType: string): string {
-  if (dialect === 'sqlite') return 'TEXT';
-  if (DIALECT_CONFIG[dialect].features.defaultStringAsText) return type.length ? `VARCHAR(${type.length})` : 'TEXT';
-  if (dialect === 'mysql' || dialect === 'mariadb') {
+function formatStringSqlType(type: CanonicalType, dialect: AbstractDialect): string {
+  const { dialectName, features } = dialect;
+  if (dialectName === 'sqlite') return 'TEXT';
+  if (features.defaultStringAsText) return type.length ? `VARCHAR(${type.length})` : 'TEXT';
+  if (dialectName === 'mysql' || dialectName === 'mariadb') {
     if (type.size === 'tiny') return 'TINYTEXT';
     if (type.size === 'small') return 'TEXT';
     if (type.size === 'medium') return 'MEDIUMTEXT';
@@ -408,7 +410,7 @@ function formatStringSqlType(type: CanonicalType, dialect: Dialect, baseType: st
   return type.length ? `VARCHAR(${type.length})` : 'VARCHAR(255)';
 }
 
-function formatDecimalSqlType(type: CanonicalType, dialect: Dialect, baseType: string): string {
+function formatDecimalSqlType(type: CanonicalType, dialect: DialectName, baseType: string): string {
   const p = type.precision ?? (dialect === 'mysql' || dialect === 'mariadb' ? 10 : undefined);
   const s = type.scale ?? (dialect === 'mysql' || dialect === 'mariadb' ? 2 : undefined);
   if (p !== undefined) {

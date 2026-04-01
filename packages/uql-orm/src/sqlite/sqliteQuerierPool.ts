@@ -1,18 +1,18 @@
 import type { Database, Options } from 'better-sqlite3';
 import { AbstractQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { SqliteDialect } from './sqliteDialect.js';
+import { BetterSqlite3Dialect } from './betterSqlite3Dialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
-export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteDialect, SqliteQuerier> {
+export class Sqlite3QuerierPool extends AbstractQuerierPool<BetterSqlite3Dialect, SqliteQuerier> {
   private querier?: SqliteQuerier;
 
   constructor(
-    readonly filename?: string | Buffer,
+    readonly filename: string | Buffer = ':memory:',
     readonly opts?: Options,
     extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect(extra?.namingStrategy), extra);
+    super(new BetterSqlite3Dialect({ namingStrategy: extra?.namingStrategy }), extra);
   }
 
   async getQuerier() {
@@ -28,7 +28,7 @@ export class Sqlite3QuerierPool extends AbstractQuerierPool<SqliteDialect, Sqlit
         db = new BetterSqlite3(this.filename, this.opts);
         db.pragma('journal_mode = WAL');
       }
-      this.querier = new SqliteQuerier(db, this.dialectInstance, this.extra);
+      this.querier = new SqliteQuerier(db, this.dialect, this.extra);
     }
     return this.querier;
   }

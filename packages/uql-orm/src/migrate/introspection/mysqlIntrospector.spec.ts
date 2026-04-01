@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { MySqlDialect } from '../../mysql/mysqlDialect.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { MysqlSchemaIntrospector } from './mysqlIntrospector.js';
 
@@ -30,13 +32,11 @@ describe('MysqlSchemaIntrospector', () => {
       all: mockAll,
       run: mockRun,
       release: mockRelease,
-      dialect: { escapeIdChar: '`' },
+      dialect: new MySqlDialect(),
     } as unknown as SqlQuerier;
 
     mockGetQuerier = vi.fn().mockResolvedValue(querier);
-    pool = {
-      getQuerier: mockGetQuerier,
-    } as unknown as QuerierPool;
+    pool = createMockQuerierPool(new MySqlDialect(), mockGetQuerier);
 
     introspector = new TestMysqlIntrospector(pool);
   });
