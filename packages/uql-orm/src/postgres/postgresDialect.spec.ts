@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { BunSqlPostgresDialect } from '../bunSql/bunSqlPostgresDialect.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
@@ -13,7 +14,6 @@ import {
 } from '../test/index.js';
 import type { QueryContext, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
-import { BunSqlPostgresDialect } from '../bunSql/bunSqlPostgresDialect.js';
 import { PgDialect } from './pgDialect.js';
 import { PostgresDialect } from './postgresDialect.js';
 import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilities.js';
@@ -995,7 +995,8 @@ class PostgresDialectSpec {
 
     // Bun SQL Postgres
     res = this.exec(
-      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      (ctx) =>
+        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
       this.bunSqlPostgresDialect,
     );
     expect(res.sql).toBe(
@@ -1018,7 +1019,8 @@ class PostgresDialectSpec {
 
     // Bun SQL Postgres
     res = this.exec(
-      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      (ctx) =>
+        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
       this.bunSqlPostgresDialect,
     );
     expect(res.sql).toBe(
@@ -1041,7 +1043,8 @@ class PostgresDialectSpec {
 
     // Bun SQL Postgres
     res = this.exec(
-      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      (ctx) =>
+        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
       this.bunSqlPostgresDialect,
     );
     expect(res.sql).toBe(
@@ -1064,7 +1067,8 @@ class PostgresDialectSpec {
 
     // Bun SQL Postgres
     res = this.exec(
-      (ctx) => this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
+      (ctx) =>
+        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
       this.bunSqlPostgresDialect,
     );
     expect(res.sql).toBe(
