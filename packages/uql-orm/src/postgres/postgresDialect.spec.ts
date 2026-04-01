@@ -464,7 +464,9 @@ class PostgresDialectSpec {
         },
       ),
     );
-    expect(sql).toBe('UPDATE "Company" SET "kind" = $1::text::jsonb, "updatedAt" = $2 WHERE "id" = $3');
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+    );
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
@@ -631,7 +633,7 @@ class PostgresDialectSpec {
         $where: { kind: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::text::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> ($1::text)::jsonb');
     expect(values).toEqual(['[{"city":"NYC","zip":"10001"}]']);
   }
 
@@ -642,7 +644,7 @@ class PostgresDialectSpec {
         $where: { kind: { $all: ['admin', 'user'] } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::text::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> ($1::text)::jsonb');
     expect(values).toEqual(['["admin","user"]']);
   }
 
@@ -715,7 +717,7 @@ class PostgresDialectSpec {
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->>\'active\' = $2)',
     );
-    expect(values).toEqual([100, 'true']);
+    expect(values).toEqual([100, true]);
   }
 
   shouldFind$elemMatchWithMixedConditions() {
@@ -899,7 +901,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\') || $1::text::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
@@ -935,7 +937,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\') || $1::text::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
@@ -953,7 +955,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::text::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['"new-tag"', 123, 1]);
   }
@@ -971,7 +973,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\') || $1::text::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\') || $1::text::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::text::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
     );
     expect(values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
   }
@@ -989,7 +991,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\') || $1::text::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\') || $1::text::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::text::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
     );
     expect(values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
   }
@@ -1007,7 +1009,7 @@ class PostgresDialectSpec {
       ),
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::text::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['"new-tag"', 123, 1]);
   }

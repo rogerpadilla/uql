@@ -5,8 +5,8 @@ import { getMeta } from '../entity/index.js';
 import {
   type Dialect,
   type EntityMeta,
-  type FieldKey,
   type FieldOptions,
+  type JsonColumnType,
   type JsonUpdateOp,
   type NamingStrategy,
   type QueryComparisonOptions,
@@ -17,7 +17,6 @@ import {
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
   type QueryVectorSearch,
-  type QueryWhereFieldOperatorMap,
   type Type,
   type VectorDistance,
 } from '../type/index.js';
@@ -29,8 +28,7 @@ export class PostgresDialect extends AbstractSqlDialect {
   }
 
   override normalizeValue(value: unknown): unknown {
-    if (typeof value === 'boolean') return value ? 'true' : 'false';
-    if (value !== null && typeof value === 'object') return Array.isArray(value) ? toPgArray(value) : value;
+    if (value != null && typeof value === 'object') return Array.isArray(value) ? toPgArray(value) : value;
     return super.normalizeValue(value);
   }
 
@@ -80,86 +78,43 @@ export class PostgresDialect extends AbstractSqlDialect {
     super.compare(ctx, entity, key, val, opts);
   }
 
-  override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    key: FieldKey<E>,
-    op: K,
-    val: QueryWhereFieldOperatorMap<E>[K],
-    opts: QueryOptions = {},
-  ): void {
-    switch (op) {
-      case '$elemMatch':
-        this.buildElemMatchCondition(ctx, entity, key, val as Record<string, unknown>, opts);
-        break;
-      case '$all':
-        // PostgreSQL: JSONB array contains all specified values
-        // e.g., tags @> '["typescript", "orm"]'::jsonb
-        this.getComparisonKey(ctx, entity, key, opts);
-        ctx.append(' @> ');
-        ctx.addValue(JSON.stringify(val));
-        ctx.append('::text::jsonb');
-        break;
-      case '$size':
-        // PostgreSQL: Check JSONB array length
-        // e.g., jsonb_array_length(roles) = 3, or jsonb_array_length(roles) >= 2
-        this.buildSizeComparison(
-          ctx,
-          () => {
-            ctx.append('jsonb_array_length(');
-            this.getComparisonKey(ctx, entity, key, opts);
-            ctx.append(')');
-          },
-          val as number | QuerySizeComparisonOps,
-        );
-        break;
-      default:
-        super.compareFieldOperator(ctx, entity, key, op, val, opts);
-    }
+  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
+    return `${jsonField} @> ${this.jsonVal(ctx, value)}`;
   }
 
-  /**
-   * Build $elemMatch condition for PostgreSQL JSONB arrays.
-   * - Simple objects (no operators): Use fast @> containment
-   * - Objects with operators ($ilike, $regex, etc.): Use EXISTS subquery
-   */
-  private buildElemMatchCondition<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    key: FieldKey<E>,
-    match: Record<string, unknown>,
-    opts: QueryOptions,
-  ): void {
-    // Check if any field value contains operators
+  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
+    const tmpCtx = this.createContext();
+    this.buildSizeComparison(tmpCtx, () => tmpCtx.append(`jsonb_array_length(${jsonField})`), value);
+    ctx.pushValue(...tmpCtx.values);
+    return tmpCtx.sql;
+  }
+
+  protected override jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
+    // Primitive element match: keys are operators (e.g. { $startsWith: 'ad' } on a string[])
+    const isPrimitiveElement = Object.keys(match).some((k) => k.startsWith('$'));
+    if (isPrimitiveElement) {
+      const conditions = Object.entries(match).map(([op, opVal]) =>
+        this.buildJsonFieldCondition(ctx, () => 'elem', '', op, opVal),
+      );
+      return `EXISTS (SELECT 1 FROM jsonb_array_elements_text(${jsonField}) AS elem WHERE ${conditions.join(' AND ')})`;
+    }
+
     const hasOperators = Object.values(match).some(
       (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith('$')),
     );
 
     if (!hasOperators) {
-      // Simple case: use fast @> containment operator
-      // e.g., addresses @> '[{"city": "NYC"}]'::jsonb
-      this.getComparisonKey(ctx, entity, key, opts);
-      ctx.append(' @> ');
-      ctx.addValue(JSON.stringify([match]));
-      ctx.append('::text::jsonb');
-      return;
+      return `${jsonField} @> ${this.jsonVal(ctx, [match])}`;
     }
-
-    // Complex case: use EXISTS with jsonb_array_elements
-    // e.g., EXISTS (SELECT 1 FROM jsonb_array_elements(addresses) AS elem WHERE elem->>'city' ILIKE $1)
-    ctx.append('EXISTS (SELECT 1 FROM jsonb_array_elements(');
-    this.getComparisonKey(ctx, entity, key, opts);
-    ctx.append(') AS elem WHERE ');
 
     const conditions = buildElemMatchConditions(
       match,
       (field, op, opVal) =>
         this.buildJsonFieldCondition(ctx, (f) => `elem->>'${this.escapeJsonKey(f)}'`, field, op, opVal),
-      (field, value) => `elem->>'${this.escapeJsonKey(field)}' = ${this.addValue(ctx.values, value)}`,
+      (field, val) => `elem->>'${this.escapeJsonKey(field)}' = ${this.addValue(ctx.values, val)}`,
     );
 
-    ctx.append(conditions.join(' AND '));
-    ctx.append(')');
+    return `EXISTS (SELECT 1 FROM jsonb_array_elements(${jsonField}) AS elem WHERE ${conditions.join(' AND ')})`;
   }
 
   protected override get regexpOp(): string {
@@ -190,8 +145,7 @@ export class PostgresDialect extends AbstractSqlDialect {
       return;
     }
     if (isJsonType(field.type)) {
-      ctx.addValue(value ? JSON.stringify(value) : null);
-      ctx.append(`::text::${field.type}`);
+      ctx.append(this.jsonVal(ctx, value, field.type as JsonColumnType));
       return;
     }
     if (field.type === 'vector' && Array.isArray(value)) {
@@ -228,18 +182,16 @@ export class PostgresDialect extends AbstractSqlDialect {
   protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
     let expr = escapedCol;
     if (hasKeys(value.$merge)) {
-      ctx.pushValue(JSON.stringify(value.$merge));
-      expr = `COALESCE(${escapedCol}, '{}') || ${this.placeholder(ctx.values.length)}::text::jsonb`;
+      expr = `COALESCE(${escapedCol}, '{}'::jsonb) || ${this.jsonVal(ctx, value.$merge)}`;
     }
     if (hasKeys(value.$push)) {
       const push = value.$push as Record<string, unknown>;
       for (const [key, v] of Object.entries(push)) {
         const currentExpr = expr;
-        ctx.pushValue(JSON.stringify(v));
-        const ph = `${this.placeholder(ctx.values.length)}`;
+        const ph = this.jsonVal(ctx, v);
         expr = `jsonb_set(${currentExpr}, '{${this.escapeJsonKey(key)}}', COALESCE((${currentExpr})->'${this.escapeJsonKey(
           key,
-        )}', '[]'::jsonb) || jsonb_build_array(${ph}::text::jsonb))`;
+        )}', '[]'::jsonb) || jsonb_build_array(${ph}))`;
       }
     }
     if (value.$unset?.length) {
@@ -248,6 +200,17 @@ export class PostgresDialect extends AbstractSqlDialect {
       }
     }
     ctx.append(`${escapedCol} = ${expr}`);
+  }
+
+  /**
+   * Helper to add a JSON value to context with appropriate stringification and cast.
+   */
+  private jsonVal(ctx: QueryContext, value: unknown, type: JsonColumnType = 'jsonb'): string {
+    if (value instanceof QueryRaw) return this.addValue(ctx.values, value);
+    if (value == null) return `${this.addValue(ctx.values, null)}::${type}`;
+
+    const json = JSON.stringify(value);
+    return `(${this.addValue(ctx.values, json)}::text)::${type}`;
   }
 
   override escape(value: unknown): string {
@@ -259,7 +222,7 @@ export class PostgresDialect extends AbstractSqlDialect {
  * Converts a JS array to a Postgres array literal string: `{"val1","val2"}`.
  * Safely handles nesting and escaping of special characters.
  */
-function toPgArray(arr: any[]): string {
+function toPgArray(arr: unknown[]): string {
   const elements = arr.map((val) => {
     if (val == null) return 'NULL';
     if (Array.isArray(val)) return toPgArray(val);

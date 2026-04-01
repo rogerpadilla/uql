@@ -6,7 +6,7 @@ class BunMysqlIt extends AbstractSqlQuerierIt {
   constructor() {
     super(
       new BunSqlQuerierPool({
-        url: 'mysql://test:test@0.0.0.0:3316/test',
+        url: 'mysql://test:test@0.0.0.0:3316/test_bun_mysql',
       }),
       'BIGINT AUTO_INCREMENT PRIMARY KEY',
     );
