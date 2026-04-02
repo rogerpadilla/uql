@@ -83,7 +83,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
     const res = await this.all<RawRow>(ctx.sql, ctx.values);
-    const founds = unflatObjects<E>(res);
+    const founds = unflatObjects<E>(res).map((row) => this.hydrateJsonFields(entity, row));
     await this.fillToManyRelations(entity, founds, q.$select!);
     return founds;
   }
@@ -95,7 +95,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     let attrsPaths: Record<string, string[]> | undefined;
     for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
       attrsPaths ??= obtainAttrsPaths(row);
-      yield unflatObject<E>(row, attrsPaths);
+      yield this.hydrateJsonFields(entity, unflatObject<E>(row, attrsPaths));
     }
   }
 
@@ -107,6 +107,55 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
     const rows = await this.internalAll<T>(query, this.dialect.normalizeValues(values));
     yield* rows;
+  }
+
+  private hydrateJsonFields<E extends object>(entity: Type<E>, dto: E): E {
+    this.hydrateJsonFieldsRecursive(entity, dto, new WeakSet<object>());
+    return dto;
+  }
+
+  private hydrateJsonFieldsRecursive<E extends object>(entity: Type<E>, dto: E, visited: WeakSet<object>) {
+    if (!dto || typeof dto !== 'object' || visited.has(dto)) {
+      return;
+    }
+    visited.add(dto);
+
+    const meta = getMeta(entity);
+    const row = dto as Record<string, unknown>;
+
+    for (const key in meta.fields) {
+      const field = meta.fields[key];
+      if (!field || (field.type !== 'json' && field.type !== 'jsonb')) {
+        continue;
+      }
+      const value = row[key];
+      if (typeof value !== 'string') {
+        continue;
+      }
+      try {
+        row[key] = JSON.parse(value);
+      } catch {
+        // Keep the original value when the driver returns non-JSON text.
+      }
+    }
+
+    for (const key in meta.relations) {
+      const rel = meta.relations[key];
+      const relEntity = rel?.entity?.();
+      if (!relEntity) {
+        continue;
+      }
+      const value = row[key];
+      if (Array.isArray(value)) {
+        for (const it of value) {
+          this.hydrateJsonFieldsRecursive(relEntity, it, visited);
+        }
+        continue;
+      }
+      if (value && typeof value === 'object') {
+        this.hydrateJsonFieldsRecursive(relEntity, value, visited);
+      }
+    }
   }
 
   protected override async internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E> = {}) {

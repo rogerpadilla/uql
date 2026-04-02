@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.7.10] - 2026-04-02
+
+### Bug Fixes
+
+- **SQL JSON / JSONB read hydration**: `AbstractSqlQuerier` now parses string values for fields declared as `json` or `jsonb` after `find` results are unflattened, so drivers that return JSON columns as text (e.g. SQLite, some Bun SQL stacks) yield plain objects again. Already-parsed values are left unchanged; invalid JSON strings are kept as-is. Hydration runs for `findMany` / `findOne` paths and for streamed rows, and recurses into loaded relation objects with cycle protection (`WeakSet`).
+
+### Tests
+
+- **Regression**: JSONB `$merge` with boolean `true` and `false` on `Company.kind` (integration suite); Postgres dialect expectation for `$merge` with `isArchived: false`.
+
 ## [0.7.9] - 2026-03-31
 
 ### Breaking Changes
