@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.7.8] - 2026-03-31
+## [0.7.9] - 2026-03-31
 
 ### Breaking Changes
 - **Dialect barrel**: **`MongoDialect`** is no longer re-exported from **`uql-orm/dialect`** or the root **`uql-orm`** package (it previously pulled the Mongo dialect graph into SQL-only apps). Import it from **`uql-orm/mongo`**.
