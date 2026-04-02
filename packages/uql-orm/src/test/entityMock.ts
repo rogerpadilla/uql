@@ -55,6 +55,7 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
   description?: string;
   country?: string;
   meta?: Record<string, unknown>;
+  isArchived?: boolean;
 };
 
 /**

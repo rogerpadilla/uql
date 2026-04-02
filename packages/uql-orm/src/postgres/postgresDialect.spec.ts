@@ -945,6 +945,21 @@ class PostgresDialectSpec {
     expect(values).toEqual(['{"private":1}', 123, 1]);
   }
 
+  shouldUpdateWithJsonMergeBooleanFalse() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        { kind: { $merge: { isArchived: false } }, updatedAt: 1 },
+      ),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+    );
+    expect(values).toEqual(['{"isArchived":false}', 1, 1]);
+  }
+
   shouldUpdateWithJsonMergeUnsetOnly() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(

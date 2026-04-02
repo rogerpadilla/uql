@@ -20,7 +20,7 @@
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/",
     "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldInsertOneAndCascadeOneToOne' packages/uql-orm/src/mongo/mongodbQuerier.test.ts",
+    "test.focus": "vitest run -t 'shouldMergeJsonBooleanField'",
     "prepare": "git config core.hooksPath .githooks || true"
   },
   "commitlint": {

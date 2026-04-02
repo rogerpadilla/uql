@@ -1,5 +1,6 @@
 import { expect, vi } from 'vitest';
 import {
+  Company,
   clearTables,
   createTables,
   dropTables,
@@ -13,6 +14,15 @@ import {
 import type { QuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
+
+/**
+ * Bun's `vi` shim (used by `bun test` on bunSql specs) omits `vi.mocked`, but
+ * `vi.spyOn(querier, 'all')` still attaches `mockResolvedValueOnce` on the function.
+ */
+function mockAllResolvedValueOnce(all: AbstractSqlQuerier['all'], value: unknown): void {
+  const spy = all as typeof all & { mockResolvedValueOnce: (v: unknown) => void };
+  spy.mockResolvedValueOnce(value);
+}
 
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier!: AbstractSqlQuerier;
@@ -67,6 +77,33 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  async shouldHydrateJsonFieldFromDriverString() {
+    mockAllResolvedValueOnce(this.querier.all, [{ kind: '{"label":"x","isArchived":true}' }]);
+
+    const found = await this.querier.findOne(Company, { $select: { kind: true } });
+
+    expect(found?.kind).toMatchObject({ label: 'x', isArchived: true });
+    expect(typeof found?.kind).toBe('object');
+  }
+
+  async shouldKeepJsonFieldAsObjectWhenDriverAlreadyParsesIt() {
+    mockAllResolvedValueOnce(this.querier.all, [{ kind: { label: 'x', isArchived: false } }]);
+
+    const found = await this.querier.findOne(Company, { $select: { kind: true } });
+
+    expect(found?.kind).toMatchObject({ label: 'x', isArchived: false });
+    expect(typeof found?.kind).toBe('object');
+  }
+
+  async shouldKeepInvalidJsonStringUntouched() {
+    const invalidJson = '{label:"x"';
+    mockAllResolvedValueOnce(this.querier.all, [{ kind: invalidJson }]);
+
+    const found = await this.querier.findOne(Company, { $select: { kind: true } });
+
+    expect(found?.kind as unknown).toBe(invalidJson);
   }
 
   async shouldFindOneAndSelectOneToMany() {

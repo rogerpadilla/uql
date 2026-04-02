@@ -377,8 +377,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
     expect(found?.kind).toBeDefined();
-    let kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
-    expect(kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b'] });
+    expect(found?.kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b'] });
 
     const pushResult = await this.querier.updateOneById(Company, id, {
       kind: { $push: { tags: 'c' } },
@@ -386,8 +385,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(pushResult).toBe(1);
 
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
-    expect(kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b', 'c'] });
+    expect(found?.kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b', 'c'] });
 
     const unsetResult = await this.querier.updateOneById(Company, id, {
       kind: { $unset: ['public'] },
@@ -395,9 +393,29 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(unsetResult).toBe(1);
 
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    kind = typeof found?.kind === 'string' ? JSON.parse(found.kind) : found?.kind;
-    expect(kind).toMatchObject({ private: 1, tags: ['a', 'b', 'c'] });
-    expect(kind).not.toHaveProperty('public');
+    expect(found?.kind).toMatchObject({ private: 1, tags: ['a', 'b', 'c'] });
+    expect(found?.kind).not.toHaveProperty('public');
+  }
+
+  /** Regression: JSONB $merge must persist boolean true and false (not only numeric/string values). */
+  async shouldMergeJsonBooleanField() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'Bool JSON merge',
+      kind: { label: 'x' } as any,
+    });
+
+    await this.querier.updateOneById(Company, id, {
+      kind: { $merge: { isArchived: true } },
+    });
+    let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found!.kind).toBeInstanceOf(Object);
+    expect(found!.kind!.isArchived).toBe(true);
+
+    await this.querier.updateOneById(Company, id, {
+      kind: { $merge: { isArchived: false } },
+    });
+    found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found!.kind!.isArchived).toBe(false);
   }
 
   async shouldUpsertOne() {

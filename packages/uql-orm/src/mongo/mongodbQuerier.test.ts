@@ -96,6 +96,11 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     // MongoDB dialect does not currently map UQL JSON operators ($merge, $push, $unset)
     // to MongoDB update primitives. These operators are currently SQL-only polyfills.
   }
+
+  override async shouldMergeJsonBooleanField() {
+    // Same as shouldUpdateWithJsonOperators — $merge is SQL-only.
+  }
+
   async shouldFindManyWithSortAndLimit() {
     await this.querier.insertMany(User, [
       { name: 'Charlie', createdAt: 3 },
