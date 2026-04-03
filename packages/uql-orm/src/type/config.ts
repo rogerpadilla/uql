@@ -18,7 +18,7 @@ export interface Config {
 
   /**
    * List of entity classes to be managed by the ORM.
-   * If not provided, UQL will attempt to infer them from the `@Entity` decorators if `emitDecoratorMetadata` is enabled.
+   * If omitted, classes that completed `defineEntity` (including via `@Entity()`) are discovered via `getEntities()`.
    */
   entities?: Type<unknown>[];
 

@@ -6,7 +6,7 @@
  * - Database introspection results (TableSchema[])
  */
 
-import { getMeta } from '../entity/decorator/definition.js';
+import { getMeta } from '../entity/metadata/definition.js';
 import type { EntityMeta, FieldOptions, RelationOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMeta } from './definition.js';
+import { getMeta } from '../metadata/definition.js';
 import { Entity } from './entity.js';
 import { Field } from './field.js';
 import { AfterInsert, AfterLoad, AfterUpdate, BeforeDelete, BeforeInsert, BeforeUpdate } from './hook.js';

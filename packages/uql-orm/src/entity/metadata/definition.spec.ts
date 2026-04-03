@@ -17,9 +17,9 @@ import {
   UserWithNonUpdatableId,
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
+import { Entity } from '../decorator/entity.js';
+import { Field } from '../decorator/field.js';
 import { getEntities, getMeta } from './definition.js';
-import { Entity } from './entity.js';
-import { Field } from './field.js';
 
 it('User', () => {
   const meta = getMeta(User);
@@ -700,7 +700,9 @@ it('no @Id', () => {
       @Field()
       id!: string;
     }
-  }).toThrow(`'SomeEntity' must have one field decorated with @Id`);
+  }).toThrow(
+    `'SomeEntity' must have exactly one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
+  );
 });
 
 it('no fields', () => {

@@ -130,14 +130,6 @@ export type IdValue<E> = E[IdKey<E>];
 export type RelationValue<E> = E[RelationKey<E>];
 
 /**
- * Configurable options for an entity
- */
-export type EntityOptions = {
-  readonly name?: string;
-  readonly softDelete?: boolean;
-};
-
-/**
  * SQL numeric column types
  */
 export type NumericColumnType =
@@ -352,24 +344,6 @@ export type HookRegistration = {
   readonly methodName: string;
 };
 
-export type EntityMeta<E> = {
-  readonly entity: Type<E>;
-  name?: string;
-  id?: IdKey<E>;
-  softDelete?: FieldKey<E>;
-  fields: {
-    [K in FieldKey<E>]?: FieldOptions;
-  } & { [key: string]: FieldOptions | undefined };
-  relations: {
-    [K in RelationKey<E>]?: RelationOptions;
-  } & { [key: string]: RelationOptions | undefined };
-  /** Composite indexes defined via @Index decorator */
-  indexes?: EntityIndexMeta[];
-  /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
-  hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
-  processed?: boolean;
-};
-
 /**
  * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
  */
@@ -392,10 +366,45 @@ export type EntityIndexMeta = {
   columns: string[];
   /** Custom index name */
   name?: string;
-  /** Whether index is unique */
-  unique: boolean;
+  /** Whether index is unique; omit or `false` for a non-unique index (default). */
+  unique?: boolean;
   /** Index type */
   type?: IndexType;
   /** Partial index condition (WHERE clause) */
   where?: string;
 } & VectorIndexOptions;
+
+export type EntityMeta<E> = {
+  readonly entity: Type<E>;
+  name?: string;
+  id?: IdKey<E>;
+  softDelete?: FieldKey<E>;
+  fields: {
+    [K in FieldKey<E>]?: FieldOptions;
+  } & { [key: string]: FieldOptions | undefined };
+  relations: {
+    [K in RelationKey<E>]?: RelationOptions;
+  } & { [key: string]: RelationOptions | undefined };
+  /** Composite indexes defined via @Index decorator */
+  indexes?: EntityIndexMeta[];
+  /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
+  hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
+  processed?: boolean;
+};
+
+/**
+ * Configurable options for an entity (`@Entity()` / `defineEntity`).
+ *
+ * Optional `fields`, `relations`, `indexes`, and `hooks` register metadata in one call for
+ * decorator-free setups. Omit them when using `@Field` / `@ManyToOne` / etc.
+ */
+export type EntityOptions<E = unknown> = {
+  readonly name?: string;
+  readonly softDelete?: boolean;
+  /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
+  readonly fields?: Record<string, FieldOptions>;
+  readonly relations?: Record<string, RelationOptions<E>>;
+  readonly indexes?: readonly EntityIndexMeta[];
+  /** Map hook events to method names on the entity class. */
+  readonly hooks?: Partial<Record<HookEvent, readonly string[]>>;
+};

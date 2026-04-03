@@ -6,7 +6,7 @@ import type {
   RelationOptions,
   Type,
 } from '../../type/index.js';
-import { defineRelation } from './definition.js';
+import { defineRelation } from '../metadata/definition.js';
 
 function Relation<E>(opts: RelationOptions<E>) {
   return (target: object, key: string) => {

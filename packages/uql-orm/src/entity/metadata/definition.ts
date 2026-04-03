@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import type {
+  EntityIndexMeta,
   EntityMeta,
   EntityOptions,
   FieldKey,
@@ -13,12 +14,23 @@ import type {
   Type,
 } from '../../type/index.js';
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
+import { LoggerWrapper } from '../../util/logger.js';
 
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
 const holder = globalThis as unknown as Record<symbol, Meta>;
-const metaKey = Symbol.for('uql-orm/entity/decorator');
+const metaKey = Symbol.for('uql-orm/entity/metadata');
 const metas: Meta = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
+
+const registrationLogger = new LoggerWrapper(true);
+
+/**
+ * Append a composite index entry with normalized `unique` (default false).
+ */
+export function appendEntityIndex<E>(meta: EntityMeta<E>, index: EntityIndexMeta): void {
+  if (!meta.indexes) meta.indexes = [];
+  meta.indexes.push({ ...index, unique: index.unique ?? false });
+}
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
@@ -35,25 +47,83 @@ export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): E
   const meta = ensureMeta(entity);
   const id = getIdKey(meta);
   if (id) {
-    console.info(`Overriding ID property for '${entity.name}' from '${id}' to '${key}'`);
+    registrationLogger.logInfo(`Overriding ID property for '${entity.name}' from '${id}' to '${key}'`);
     delete meta.fields[id];
   }
   return defineField(entity, key, { ...opts, isId: true });
 }
 
 export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOptions<E>): EntityMeta<E> {
-  if (!opts.entity) {
-    const inferredType = inferEntityType(entity, key);
-    opts.entity = () => inferredType;
-  }
+  const resolved: RelationOptions<E> = opts.entity
+    ? opts
+    : (() => {
+        const inferredType = inferEntityType(entity, key);
+        return { ...opts, entity: () => inferredType };
+      })();
   const meta = ensureMeta(entity);
   const relKey = key as RelationKey<E>;
-  meta.relations[relKey] = { ...meta.relations[relKey], ...opts };
+  meta.relations[relKey] = { ...meta.relations[relKey], ...resolved };
   return meta;
 }
 
-export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): EntityMeta<E> {
+export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
   const meta = ensureMeta(entity);
+  if (!meta.hooks) meta.hooks = {};
+  if (!meta.hooks[event]) meta.hooks[event] = [];
+  meta.hooks[event].push({ methodName });
+  return meta;
+}
+
+function applyBulkFields<E>(entity: Type<E>, fields: Record<string, FieldOptions>): void {
+  for (const key of Object.keys(fields)) {
+    const spec = fields[key];
+    if (!spec) continue;
+    if (spec.isId) {
+      defineId(entity, key, spec);
+    } else {
+      defineField(entity, key, spec);
+    }
+  }
+}
+
+function applyBulkRelations<E>(entity: Type<E>, relations: Record<string, RelationOptions<E>>): void {
+  for (const key of Object.keys(relations)) {
+    const spec = relations[key];
+    if (spec) defineRelation(entity, key, spec);
+  }
+}
+
+function applyBulkIndexes<E>(entity: Type<E>, indexes: readonly EntityIndexMeta[]): void {
+  const meta = ensureMeta(entity);
+  for (const idx of indexes) {
+    appendEntityIndex(meta, idx);
+  }
+}
+
+function applyBulkHooks<E>(entity: Type<E>, hooks: NonNullable<EntityOptions<E>['hooks']>): void {
+  for (const event of Object.keys(hooks) as HookEvent[]) {
+    const methodNames = hooks[event];
+    if (!methodNames?.length) continue;
+    for (const methodName of methodNames) {
+      defineHook(entity, methodName, event);
+    }
+  }
+}
+
+/**
+ * Applies `fields`, `relations`, `indexes`, and `hooks` from {@link EntityOptions} before
+ * entity finalization. Used by `defineEntity` for decorator-free registration.
+ */
+function applyBulkEntityOptions<E>(entity: Type<E>, opts: EntityOptions<E>): void {
+  if (opts.fields) applyBulkFields(entity, opts.fields);
+  if (opts.relations) applyBulkRelations(entity, opts.relations);
+  if (opts.indexes?.length) applyBulkIndexes(entity, opts.indexes);
+  if (opts.hooks) applyBulkHooks(entity, opts.hooks);
+}
+
+export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
+  const meta = ensureMeta(entity);
+  applyBulkEntityOptions(entity, opts);
 
   if (!hasKeys(meta.fields)) {
     throw TypeError(`'${entity.name}' must have fields`);
@@ -83,7 +153,9 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions = {}): Enti
 
   const id = getIdKey(meta);
   if (!id) {
-    throw TypeError(`'${entity.name}' must have one field decorated with @Id`);
+    throw TypeError(
+      `'${entity.name}' must have exactly one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
+    );
   }
   meta.id = id;
 
@@ -99,15 +171,7 @@ export function getEntities(): Type<unknown>[] {
   }, [] as Type<unknown>[]);
 }
 
-export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
-  const meta = ensureMeta(entity);
-  if (!meta.hooks) meta.hooks = {};
-  if (!meta.hooks[event]) meta.hooks[event] = [];
-  meta.hooks[event].push({ methodName });
-  return meta;
-}
-
-function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
+export function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   let meta = metas.get(entity);
   if (meta) {
     return meta;
@@ -297,15 +361,3 @@ export function isValidEntityType(type: unknown): type is Type<unknown> {
   );
 }
 
-export function getOrCreateMeta<E>(entity: Type<E>): EntityMeta<E> {
-  const metas: Map<Type<unknown>, EntityMeta<any>> = (holder[metaKey] as Map<Type<unknown>, EntityMeta<any>>) ??
-  new Map();
-  holder[metaKey] = metas;
-
-  let meta = metas.get(entity);
-  if (!meta) {
-    meta = { entity, fields: {}, relations: {} };
-    metas.set(entity, meta);
-  }
-  return meta;
-}
