@@ -360,4 +360,3 @@ export function isValidEntityType(type: unknown): type is Type<unknown> {
     type !== Symbol
   );
 }
-
