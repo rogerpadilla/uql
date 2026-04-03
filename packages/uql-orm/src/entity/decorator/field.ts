@@ -1,5 +1,5 @@
 import type { FieldOptions, Type } from '../../type/index.js';
-import { defineField } from './definition.js';
+import { defineField } from '../metadata/definition.js';
 
 export function Field<E>(opts?: FieldOptions) {
   return (target: object, key: string): void => {

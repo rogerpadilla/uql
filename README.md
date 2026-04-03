@@ -20,6 +20,7 @@ const results = await querier.findMany(User, {
 ```sh
 npm install uql-orm pg
 ```
+_(Example using PostgreSQL; see [Install](#1-install) for other databases)_
 
 ```ts
 import { PgQuerierPool } from 'uql-orm/postgres';
@@ -91,11 +92,12 @@ npm install uql-orm       # or bun add / pnpm add
 | **LibSQL** (incl. Turso) | `npm install @libsql/client` |
 | **MongoDB** | `npm install mongodb` |
 | **Cloudflare D1** | _Native (no driver needed)_ |
-| **Bun SQL Native** (Incl. Postgres, MySQL, SQLite) | _Native (no driver needed)_ |
+| **Bun SQL Native** (Incl. Postgres, MySQL, SQLite) | _Native (via `bun:sql`)_ |
 
 ### TypeScript Configuration
 
-Ensure your `tsconfig.json` is configured to support decorators and metadata:
+If you use the **decorator-based approach**, make sure your `tsconfig.json` is configured to support decorators and metadata:
+
 
 ```json
 {
@@ -110,7 +112,7 @@ Ensure your `tsconfig.json` is configured to support decorators and metadata:
 
 ## 2. Define your Entities
 
-Annotate your classes with decorators. UQL's engine uses this metadata for both type-safe querying and precise DDL generation.
+[Declare](https://uql-orm.dev/entities/basic) your classes with decorators, or use the [imperative](https://uql-orm.dev/entities/imperative) approach for decorator-free registration. UQL's engine uses this metadata for both type-safe querying and precise DDL generation. This includes the new **`defineEntity`** API which works without requiring `experimentalDecorators` in your `tsconfig.json`.
 
 ### Core Decorators
 
@@ -161,6 +163,8 @@ price?: number;
 @Field({ columnType: 'smallint' })
 statusCode?: number;
 ```
+
+> **Note:** Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety throughout your app.
 
 ```ts
 import { v7 as uuidv7 } from 'uuid';
@@ -252,9 +256,34 @@ export class PostTag {
   @Field({ references: () => Tag })
   tagId?: string;
 }
+
+### Alternative: Imperative (Decorator-free) Definition
+
+If you prefer a functional approach or are in an environment where decorators are disabled (e.g., some edge runtimes or specific build pipelines), you can register entities imperatively using `defineEntity`. **Crucially, this approach works without requiring `experimentalDecorators` or `emitDecoratorMetadata` in your `tsconfig.json`.**
+
+This API supports bulk configuration of `fields`, `relations`, `indexes`, and `hooks` directly within the options object. UQL also exports helper functions like `defineField`, `defineId`, and `defineRelation` to assist with type-safe imperative setup.
+
+```ts
+import { defineEntity } from 'uql-orm';
+
+class User {}
+
+defineEntity(User, {
+  name: 'users',
+  fields: {
+    id: { type: 'uuid', isId: true },
+    name: { type: 'string' },
+    email: { type: 'string', unique: true },
+  },
+
+  indexes: [
+    { columns: ['email'], unique: true },
+  ],
+  // You can also define hooks and relations here
+});
+```
 ```
 
-> **Note:** Use the `Relation<T>` utility type for relationship properties. It prevents TypeScript circular dependency errors while maintaining full type-safety throughout your app.
 
 ## 3. Set up a pool
 
@@ -591,7 +620,7 @@ npx uql-migrate generate seed_default_roles
 
 ### 3. AutoSync (Development)
 
-Keep your schema in sync without manual migrations. It is **safe by default**: in safe mode (default), it adds new tables/columns and blocks destructive changes (column drops or type alterations). Blocked actions are logged so you can migrate them manually.
+Keep your schema in sync without manual migrations. It is **safe by default**: in safe mode (default), it adds new tables/columns and blocks destructive changes (e.g., dropping a column or changing a `VARCHAR` to an `INTEGER`). Blocked actions are logged so you can migrate them manually.
 
 **New Capabilities (v3.8+):**
 
@@ -631,9 +660,9 @@ await migrator.autoSync({ logging: true });
 
 > **Note:** In development, `autoSync` accelerates iteration while still protecting data by blocking destructive schema changes.
 
-## Operations
+## 6. Operations
 
-### 6. Logging & Monitoring
+### 6.1 Logging & Monitoring
 
 UQL includes a structured logging system for query visibility and performance monitoring.
 

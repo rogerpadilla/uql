@@ -1,4 +1,12 @@
-export { defineHook, getEntities, getMeta } from './definition.js';
+export {
+  defineEntity,
+  defineField,
+  defineHook,
+  defineId,
+  defineRelation,
+  getEntities,
+  getMeta,
+} from '../metadata/definition.js';
 export * from './entity.js';
 export * from './field.js';
 export * from './hook.js';

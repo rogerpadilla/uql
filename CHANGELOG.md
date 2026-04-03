@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.8.0] - 2026-04-03
+
+### Features
+
+- **Decorator-free entities**: `defineEntity` accepts optional bulk `fields`, `relations`, `indexes`, and `hooks` on `EntityOptions` (same shapes as `@Field` / relations / `@Index` / hook decorators). Exported `defineEntity`, `defineField`, `defineId`, and `defineRelation` from `uql-orm` for imperative registration. Clarified `Config.entities` discovery comment and README guidance for non-decorator usage. **`EntityIndexMeta.unique`** is optional (omit = non-unique); schema building still normalizes with `?? false` where a strict boolean is required.
+
+### Breaking Changes (Internal API)
+
+- **Entity metadata registry**: Runtime storage uses `Symbol.for('uql-orm/entity/metadata')` (replaces `uql-orm/entity/decorator`). Code that reached into `globalThis` with the old symbol will not see entities registered under the new key. Deep imports of `.../entity/decorator/definition.js` should use `.../entity/metadata/definition.js`. **`getOrCreateMeta` removed** — use **`ensureMeta`** from the same module if you need imperative “get or init” behavior.
+
 ## [0.7.10] - 2026-04-02
 
 ### Bug Fixes

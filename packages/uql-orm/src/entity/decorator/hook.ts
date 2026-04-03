@@ -1,5 +1,5 @@
 import type { HookEvent, Type } from '../../type/index.js';
-import { defineHook } from './definition.js';
+import { defineHook } from '../metadata/definition.js';
 
 function createHookDecorator(event: HookEvent): () => MethodDecorator {
   return () =>

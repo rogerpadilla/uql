@@ -1,6 +1,6 @@
 import type { IndexType } from '../../schema/types.js';
 import type { Type, VectorIndexOptions } from '../../type/index.js';
-import { getOrCreateMeta } from './definition.js';
+import { appendEntityIndex, ensureMeta } from '../metadata/definition.js';
 
 /**
  * Options for the @Index decorator.
@@ -38,10 +38,6 @@ export interface IndexDecoratorOptions extends VectorIndexOptions {
  */
 export function Index<E>(columns: string[], options: IndexDecoratorOptions = {}) {
   return (target: Type<E>): void => {
-    const meta = getOrCreateMeta(target);
-    if (!meta.indexes) {
-      meta.indexes = [];
-    }
-    meta.indexes.push({ ...options, columns, unique: options.unique ?? false });
+    appendEntityIndex(ensureMeta(target), { ...options, columns });
   };
 }
