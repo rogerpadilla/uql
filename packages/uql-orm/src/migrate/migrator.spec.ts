@@ -33,6 +33,11 @@ vi.mock('node:fs/promises', () => ({
   rm: vi.fn().mockResolvedValue(undefined),
 }));
 
+function lastWriteFileUtf8(writeFile: Mock): string {
+  const calls = writeFile.mock.calls;
+  return calls[calls.length - 1]![1] as string;
+}
+
 describe('Migrator Core Methods', () => {
   let migrator: Migrator;
   let storage: MigrationStorage;
@@ -180,11 +185,50 @@ describe('Migrator Core Methods', () => {
     expect(filePath).not.toBe('');
     expect(filePath).toContain('add_age.ts');
     expect(mkdir).toHaveBeenCalled();
-    expect(writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining('ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;'),
-      'utf-8',
-    );
+    const written = lastWriteFileUtf8(writeFile as Mock);
+    expect(written).toContain('await querier.run("ALTER TABLE \\"DiffUser\\" ADD COLUMN \\"age\\" INTEGER;");');
+  });
+
+  it('generateFromEntities emits valid JS for SQL with backticks (SQLite/LibSQL identifiers)', async () => {
+    @Entity()
+    class Article {
+      @Id() id?: number;
+    }
+
+    migrator = new Migrator(pool, { entities: [Article] });
+    vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
+
+    const createSql = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY\n);';
+    const indexSql = 'CREATE INDEX `idx_Article_id` ON `Article` (`id`);';
+    const dropSql = 'DROP TABLE IF EXISTS `Article`;';
+    const generator = {
+      resolveTableName: vi.fn().mockReturnValue('Article'),
+      diffSchema: vi.fn(),
+      generateCreateTable: vi.fn().mockReturnValue([createSql, indexSql]),
+      generateDropTable: vi.fn().mockReturnValue(dropSql),
+      generateAlterTable: vi.fn(),
+      generateAlterTableDown: vi.fn(),
+    };
+    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+
+    const introspector = {
+      introspect: vi.fn().mockResolvedValue(new SchemaAST()),
+      getTableNames: vi.fn().mockResolvedValue([]),
+      tableExists: vi.fn().mockResolvedValue(false),
+    };
+    migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
+
+    vi.spyOn(migrator, 'getDiffs').mockResolvedValue([{ type: 'create', tableName: 'Article' }]);
+    vi.spyOn(migrator, 'findEntityForTable').mockResolvedValue(Article);
+
+    const { writeFile } = await import('node:fs/promises');
+
+    await migrator.generateFromEntities('initial_schema');
+
+    const written = lastWriteFileUtf8(writeFile as Mock);
+    expect(written).toContain('await querier.run("CREATE TABLE `Article` (\\n  `id` INTEGER PRIMARY KEY\\n);");');
+    expect(written).toContain('await querier.run("CREATE INDEX `idx_Article_id` ON `Article` (`id`);");');
+    expect(written).toContain('await querier.run("DROP TABLE IF EXISTS `Article`;");');
   });
 
   it('status should return pending and executed migrations', async () => {
@@ -212,7 +256,7 @@ describe('Migrator Core Methods', () => {
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('SyncEntity'),
       generateDropTable: vi.fn().mockReturnValue('DROP TABLE "SyncEntity"'),
-      generateCreateTable: vi.fn().mockReturnValue('CREATE TABLE "SyncEntity"'),
+      generateCreateTable: vi.fn().mockReturnValue(['CREATE TABLE "SyncEntity"']),
       generateAlterTable: vi.fn(),
       generateAlterTableDown: vi.fn(),
       diffSchema: vi.fn(),
@@ -621,7 +665,7 @@ describe('Migrator Core Methods', () => {
       ];
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
       vi.spyOn(m, 'findEntityForTable').mockResolvedValue(User);
-      vi.spyOn(m.schemaGenerator!, 'generateCreateTable').mockReturnValue('CREATE');
+      vi.spyOn(m.schemaGenerator!, 'generateCreateTable').mockReturnValue(['CREATE']);
       vi.spyOn(m.schemaGenerator!, 'generateDropTable').mockReturnValue('DROP');
       vi.spyOn(m.schemaGenerator!, 'generateAlterTable').mockReturnValue(['ALTER UP']);
       vi.spyOn(m.schemaGenerator!, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);

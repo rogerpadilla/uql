@@ -14,7 +14,7 @@ class UserProfileMigrate {
 describe('Schema Generator with Naming Strategy', () => {
   it('should generate CREATE TABLE with translated names', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
-    const sql = generator.generateCreateTable(UserProfileMigrate);
+    const sql = generator.generateCreateTable(UserProfileMigrate).join('\n');
 
     expect(sql).toContain('CREATE TABLE "user_profile_migrate"');
     expect(sql).toContain('"first_name"');

@@ -103,7 +103,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   // SchemaGenerator Implementation
   // ============================================================================
 
-  generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string {
+  generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string[] {
     const builder = new SchemaASTBuilder(this.dialect.namingStrategy);
     const ast = builder.fromEntities([entity]);
     const tableNode = ast.getTables()[0];
@@ -525,10 +525,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   // SchemaAST Support Methods
   // ============================================================================
 
-  /**
-   * Generate CREATE TABLE SQL from a TableNode.
-   */
-  generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string {
+  generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string[] {
     const columns: string[] = [];
     const constraints: string[] = [];
 
@@ -542,7 +539,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       constraints.push(`PRIMARY KEY (${pkCols})`);
     }
 
-    // Add table-level foreign keys if any
     for (const rel of table.outgoingRelations) {
       if (rel.from.columns.length > 0) {
         const fromCols = rel.from.columns.map((c) => this.escapeId(c.name)).join(', ');
@@ -556,48 +552,43 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     const ifNotExists = options.ifNotExists && this.features.ifNotExists ? 'IF NOT EXISTS ' : '';
-    let sql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
-    sql += columns.map((col) => `  ${col}`).join(',\n');
+    let createSql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
+    createSql += columns.map((col) => `  ${col}`).join(',\n');
 
     if (constraints.length > 0) {
-      sql += ',\n';
-      sql += constraints.map((c) => `  ${c}`).join(',\n');
+      createSql += ',\n';
+      createSql += constraints.map((c) => `  ${c}`).join(',\n');
     }
 
-    // Inline vector indexes (MariaDB requires them inside CREATE TABLE)
     const isInlineVectorIdx = this.features.vectorIndexStyle === 'inline';
     const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
     const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
 
     if (vectorIndexes.length > 0) {
-      sql += ',\n';
-      sql += vectorIndexes.map((idx) => `  ${this.generateInlineVectorIndex(idx)}`).join(',\n');
+      createSql += ',\n';
+      createSql += vectorIndexes.map((idx) => `  ${this.generateInlineVectorIndex(idx)}`).join(',\n');
     }
 
-    sql += '\n)';
+    createSql += '\n)';
 
     if (this.dialect.tableOptions) {
-      sql += ` ${this.dialect.tableOptions}`;
+      createSql += ` ${this.dialect.tableOptions}`;
     }
 
-    sql += ';';
+    createSql += ';';
 
-    // Generate regular indexes as separate statements
-    const indexStatements = regularIndexes.map((idx) => this.generateCreateIndexFromNode(idx)).join('\n');
-
-    if (indexStatements) {
-      sql += `\n${indexStatements}`;
-    }
-
-    // Prepend CREATE EXTENSION for dialects that require it (e.g. pgvector)
+    const statements: string[] = [];
     if (this.dialect.vectorExtension) {
       const hasVectorCol = [...table.columns.values()].some((c) => isVectorCategory(c.type.category));
       if (hasVectorCol) {
-        sql = `CREATE EXTENSION IF NOT EXISTS ${this.dialect.vectorExtension};\n${sql}`;
+        statements.push(`CREATE EXTENSION IF NOT EXISTS ${this.dialect.vectorExtension};`);
       }
     }
-
-    return sql;
+    statements.push(createSql);
+    for (const idx of regularIndexes) {
+      statements.push(this.generateCreateIndexFromNode(idx));
+    }
+    return statements;
   }
 
   /**
@@ -689,7 +680,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   // Phase 3: Builder Operation Methods (Moved forward for unification)
   // ============================================================================
 
-  generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string {
+  generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
     const tableNode = this.tableDefinitionToNode(table);
     return this.generateCreateTableFromNode(tableNode, options);
   }

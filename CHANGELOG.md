@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.8.2] - 2026-04-04
+
+### Bug Fixes
+
+- **[#86](https://github.com/rogerpadilla/uql/issues/86) — Invalid generated migration TypeScript with LibSQL**: `uql-migrate generate:entities` embedded SQL inside a JS **template literal**; SQLite/LibSQL identifier quotes use **backticks**, which **terminated** the outer literal and produced invalid `.ts` (so `uql-migrate up` could not even load the migration). Generated files now use **`JSON.stringify`** for each `querier.run(...)` argument (double-quoted string literals), so SQL may contain backticks, `"`, newlines, `${` inside string data, etc., without breaking TypeScript.
+
+- **[#87](https://github.com/rogerpadilla/uql/issues/87) — `uql-migrate` against libsql + sqld (HTTP) with multiple statements in one `run`**: **sqld** does not accept **multiple SQL statements** in a single `execute` / `run` call; a migration that bundled `CREATE TABLE …;` and `CREATE INDEX …;` in one string failed at runtime even when the TypeScript was valid. **Entity-generated migrations** now emit **one `await querier.run("…")` per statement**, and **`Migrator` / `syncForce` / `autoSync` / `MigrationBuilder`** apply create-table DDL **statement-by-statement**, matching sqld’s behavior.
+
+### Breaking Changes
+
+- **`SchemaGenerator` create-table DDL** (supports the [#87](https://github.com/rogerpadilla/uql/issues/87) fix end-to-end): **`generateCreateTable`**, **`generateCreateTableFromNode`**, and **`generateCreateTableFromDefinition`** now return **`string[]`** — one string per logical statement (`CREATE EXTENSION` if needed, `CREATE TABLE`, each separate `CREATE INDEX`, …). They used to return a **single** newline-joined `string`. **Migrate custom code** by taking the array and either calling `querier.run(stmt)` for each element or using **`.join('\n')`** when you need one script blob. **`MongoSchemaGenerator`** uses the same signatures; each method returns a **one-element** array containing the JSON sync command string.
+
 ## [0.8.0] - 2026-04-03
 
 ### Features
