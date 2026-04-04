@@ -312,6 +312,7 @@ export default {
 
 > **Notes:**
 > - Reuse one pool for both app queries and migrations to keep behavior (for example naming strategy) consistent.
+> - **LibSQL embedded replica** (`file:` + `syncUrl`): `LibsqlQuerierPool` runs **migrations and the `uql_migrations` table** against **`syncUrl`**, while **`getQuerier`** stays on the local file. **`getDiffs` / introspection** (e.g. `generate:entities`) still use the normal pool connection—often the local replica—so compare with your remote if needed.
 > - If your architecture spans backend + browser, `HttpQuerier` reduces custom API mapping and keeps query semantics aligned.
 > - **Upgrading:** use `pool.dialect` (not `pool.dialectInstance`), read `pool.dialect.dialectName`, and remove any top-level `dialect` from migrate config (see `CHANGELOG.md`).
 
@@ -561,6 +562,12 @@ npx uql-migrate up
 ```
 
 > **Note:** Keep entities as the source of truth to minimize drift between code and database schema.
+
+**Generated `generate:entities` files** emit **one `await querier.run("…")` per SQL statement** (table vs indexes, etc.), with the SQL passed as a **double-quoted string literal** (`JSON.stringify`) so dialects that quote identifiers with **backticks** (SQLite, LibSQL, MySQL-style) do not produce invalid TypeScript.
+
+If you implement a **custom `SchemaGenerator`**, note that **`generateCreateTable`**, **`generateCreateTableFromNode`**, and **`generateCreateTableFromDefinition`** return **`string[]`** (one entry per `querier.run`). Use **`.join('\n')`** only when you need a single combined script. See the **[changelog](CHANGELOG.md)** for **0.8.2**.
+
+**Advanced:** custom tools can use **`acquireQuerierForMigrations(pool)`** from **`uql-orm/migrate`** to match the same connection choice as **`Migrator`** and **`DatabaseMigrationStorage`** (including optional **`pool.getMigrationQuerier`**).
 
 ### 1. Unified Configuration
 

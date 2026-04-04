@@ -19,9 +19,17 @@ export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect =
   readonly extra?: ExtraOptions;
 
   /**
-   * get a querier from the pool.
+   * Default connection for application queries, transactions, and anything that should use the pool’s primary URL.
    */
   getQuerier: () => Promise<Q>;
+
+  /**
+   * When omitted, migrations use {@link getQuerier} — same type (`Q`), same dialect, often the same physical connection
+   * (e.g. `:memory:` or a single remote URL). When set, **DDL and the migration journal** use this handle instead so they
+   * can target another server while the app keeps using the replica (LibSQL `file:` + `syncUrl`). Call sites use
+   * `acquireQuerierForMigrations` from `uql-orm/migrate`.
+   */
+  getMigrationQuerier?: () => Promise<Q>;
 
   /**
    * get a querier from the pool and run the given callback inside a transaction.

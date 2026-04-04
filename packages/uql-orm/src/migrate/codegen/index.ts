@@ -27,6 +27,14 @@ export {
   MigrationCodeGenerator,
   type MigrationCodeOptions,
 } from './migrationCodeGenerator.js';
+export {
+  buildSqlQuerierMigrationModule,
+  EMPTY_MANUAL_MIGRATION_DOWN_INNER,
+  EMPTY_MANUAL_MIGRATION_UP_INNER,
+  emitSqlRunCall,
+  emitSqlRunCalls,
+  type SqlMigrationModuleOptions,
+} from './migrationFile.js';
 // Smart relation detector
 export {
   createRelationDetector,

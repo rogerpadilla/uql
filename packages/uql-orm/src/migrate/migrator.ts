@@ -22,7 +22,14 @@ import type {
 } from '../type/index.js';
 import { isKnownMigratorDialect, isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
+import { acquireQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import type { IMigrationBuilder } from './builder/types.js';
+import {
+  buildSqlQuerierMigrationModule,
+  EMPTY_MANUAL_MIGRATION_DOWN_INNER,
+  EMPTY_MANUAL_MIGRATION_UP_INNER,
+  emitSqlRunCalls,
+} from './codegen/migrationFile.js';
 import {
   MongoSchemaIntrospector,
   MysqlSchemaIntrospector,
@@ -39,6 +46,7 @@ import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 export class Migrator {
   public readonly storage: MigrationStorage;
   public readonly migrationsPath: string;
+
   private _logger: LoggerWrapper;
   public get logger(): LoggerWrapper {
     return this._logger;
@@ -236,7 +244,7 @@ export class Migrator {
    */
   public async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
-    const querier = await this.pool.getQuerier();
+    const querier = await acquireQuerierForMigrations(this.pool);
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -297,7 +305,12 @@ export class Migrator {
     const fileName = `${timestamp}_${this.slugify(name)}.ts`;
     const filePath = join(this.migrationsPath, fileName);
 
-    const content = this.generateMigrationContent(name);
+    const content = buildSqlQuerierMigrationModule({
+      migrationName: name,
+      createdAt: new Date(),
+      upInner: EMPTY_MANUAL_MIGRATION_UP_INNER,
+      downInner: EMPTY_MANUAL_MIGRATION_DOWN_INNER,
+    });
 
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
@@ -323,7 +336,7 @@ export class Migrator {
       if (diff.type === 'create') {
         const entity = await this.findEntityForTable(diff.tableName);
         if (entity) {
-          upStatements.push(this.schemaGenerator.generateCreateTable(entity));
+          upStatements.push(...this.schemaGenerator.generateCreateTable(entity));
           downStatements.push(this.schemaGenerator.generateDropTable(entity));
         }
       } else if (diff.type === 'alter') {
@@ -344,7 +357,14 @@ export class Migrator {
     const fileName = `${timestamp}_${this.slugify(name)}.ts`;
     const filePath = join(this.migrationsPath, fileName);
 
-    const content = this.generateMigrationContentWithStatements(name, upStatements, downStatements.reverse());
+    const down = [...downStatements].reverse();
+    const content = buildSqlQuerierMigrationModule({
+      migrationName: name,
+      createdAt: new Date(),
+      docExtraLines: ['Generated from entity definitions'],
+      upInner: emitSqlRunCalls(upStatements),
+      downInner: emitSqlRunCalls(down),
+    });
 
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
@@ -412,7 +432,7 @@ export class Migrator {
       throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
     }
 
-    const querier = await this.pool.getQuerier();
+    const querier = await acquireQuerierForMigrations(this.pool);
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -431,9 +451,11 @@ export class Migrator {
 
       // Create all tables
       for (const entity of this.entities) {
-        const createSql = this.schemaGenerator.generateCreateTable(entity);
-        this.logger.logSchema(`Executing: ${createSql}`);
-        await querier.run(createSql);
+        const createStmts = this.schemaGenerator.generateCreateTable(entity);
+        for (const createSql of createStmts) {
+          this.logger.logSchema(`Executing: ${createSql}`);
+          await querier.run(createSql);
+        }
       }
 
       await querier.commitTransaction();
@@ -462,7 +484,7 @@ export class Migrator {
       if (diff.type === 'create') {
         const entity = await this.findEntityForTable(diff.tableName);
         if (entity) {
-          statements.push(this.schemaGenerator.generateCreateTable(entity));
+          statements.push(...this.schemaGenerator.generateCreateTable(entity));
         }
       } else if (diff.type === 'alter') {
         const filteredDiff = this.filterDiff(diff, options);
@@ -514,7 +536,7 @@ export class Migrator {
   }
 
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    const querier = await this.pool.getQuerier();
+    const querier = await acquireQuerierForMigrations(this.pool);
     try {
       if (this.dialectName === 'mongodb') {
         await this.executeMongoSyncStatements(statements, options, querier as MongoQuerier);
@@ -686,69 +708,6 @@ export class Migrator {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '');
-  }
-
-  /**
-   * Generate migration file content
-   */
-  protected generateMigrationContent(name: string): string {
-    return /*ts*/ `import type { SqlQuerier } from 'uql-orm/migrate';
-
-/**
- * Migration: ${name}
- * Created: ${new Date().toISOString()}
- */
-export default {
-  async up(querier: SqlQuerier): Promise<void> {
-    // Add your migration logic here
-    // Example:
-    // await querier.run(\`
-    //   CREATE TABLE "users" (
-    //     "id" SERIAL PRIMARY KEY,
-    //     "name" VARCHAR(255) NOT NULL,
-    //     "email" VARCHAR(255) UNIQUE NOT NULL,
-    //     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    //   )
-    // \`);
-  },
-
-  async down(querier: SqlQuerier): Promise<void> {
-    // Add your rollback logic here
-    // Example:
-    // await querier.run(\`DROP TABLE IF EXISTS "users"\`);
-  },
-};
-`;
-  }
-
-  /**
-   * Generate migration file content with SQL statements
-   */
-  protected generateMigrationContentWithStatements(
-    name: string,
-    upStatements: string[],
-    downStatements: string[],
-  ): string {
-    const upSql = upStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
-    const downSql = downStatements.map((s) => /*ts*/ `    await querier.run(\`${s}\`);`).join('\n');
-
-    return /*ts*/ `import type { SqlQuerier } from 'uql-orm/migrate';
-
-/**
- * Migration: ${name}
- * Created: ${new Date().toISOString()}
- * Generated from entity definitions
- */
-export default {
-  async up(querier: SqlQuerier): Promise<void> {
-${upSql}
-  },
-
-  async down(querier: SqlQuerier): Promise<void> {
-${downSql}
-  },
-};
-`;
   }
 }
 
