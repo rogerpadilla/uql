@@ -272,8 +272,8 @@ defineEntity(User, {
   name: 'users',
   fields: {
     id: { type: 'uuid', isId: true },
-    name: { type: 'string' },
-    email: { type: 'string', unique: true },
+    name: { type: String },
+    email: { type: String, unique: true },
   },
 
   indexes: [

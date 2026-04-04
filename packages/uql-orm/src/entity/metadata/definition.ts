@@ -338,6 +338,7 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
 function inferType<E>(entity: Type<E>, key: string): any {
   return Reflect.getMetadata('design:type', entity.prototype, key);
 }
+
 function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);
