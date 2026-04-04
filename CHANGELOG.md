@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.8.3] - 2026-04-04
+
+### Improvements
+
+- **Robust SQL Statement Splitting**: Refactored the `splitSqlStatements` utility with a high-performance, declarative Master-Regex scanner. This production-grade implementation correctly handles complex SQL syntax across all supported dialects, including nested string literals, escaped quotes (`''`, `\'`), double-quoted identifiers, MySQL backticks, and PostgreSQL dollar-quoting (`$$` and `$tag$`). It also correctly preserves semicolons within single-line (`--`) and multi-line (`/* ... */`) comments while ensuring $O(n)$ performance and full backward compatibility. Covered with full test suite.
+
 ## [0.8.2] - 2026-04-04
 
 ### Bug Fixes
