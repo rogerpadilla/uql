@@ -19,6 +19,7 @@ export type {
   TableSchema,
 } from '../type/index.js';
 export { type Config, isSqlQuerier } from '../type/index.js';
+export { acquireQuerierForMigrations } from './acquireQuerierForMigrations.js';
 export { assertCliConfig } from './assertCliConfig.js';
 // Type-safe migration builder
 export * from './builder/index.js';

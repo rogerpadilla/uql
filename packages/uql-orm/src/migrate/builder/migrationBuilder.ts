@@ -12,6 +12,7 @@ import type { NamingStrategy } from '../../type/namingStrategy.js';
 import type { SqlQuerier } from '../../type/querier.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
 import { ColumnBuilder } from './columnBuilder.js';
+import { splitSqlStatementsOnSemicolons } from './splitSqlStatements.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
@@ -516,14 +517,21 @@ export class MigrationBuilder extends OperationRecorder {
   // Private Methods
   // ============================================================================
 
+  private getCreateTableStatements(operation: Extract<AnyMigrationOperation, { type: 'createTable' }>): string[] {
+    return this.sqlGenerator.generateCreateTableFromDefinition(operation.table);
+  }
+
   private async execute(operation: AnyMigrationOperation): Promise<void> {
+    if (operation.type === 'createTable') {
+      for (const statement of this.getCreateTableStatements(operation)) {
+        await this.querier.run(statement);
+      }
+      return;
+    }
+
     const sql = this.operationToSql(operation);
     if (sql) {
-      const statements = sql
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      for (const statement of statements) {
+      for (const statement of splitSqlStatementsOnSemicolons(sql)) {
         await this.querier.run(statement);
       }
     }
@@ -532,7 +540,8 @@ export class MigrationBuilder extends OperationRecorder {
   private operationToSql(operation: AnyMigrationOperation): string | undefined {
     switch (operation.type) {
       case 'createTable':
-        return this.sqlGenerator.generateCreateTableFromDefinition(operation.table);
+        // One line per statement in preview; execute() runs each separately (#87).
+        return this.getCreateTableStatements(operation).join('\n');
       case 'dropTable':
         return this.sqlGenerator.generateDropTableSql(operation.tableName, {
           ifExists: operation.ifExists,

@@ -23,7 +23,7 @@ describe('SqlSchemaGenerator (unified)', () => {
         @Field() name?: string;
       }
 
-      const sql = generator.generateCreateTable(User);
+      const sql = generator.generateCreateTable(User).join('\n');
       expect(sql).toContain('CREATE TABLE');
       expect(sql).toContain('users');
       expect(sql).toContain('id');

@@ -26,7 +26,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
 
   override readonly insertIdStrategy: 'first' | 'last' = 'last';
 
-  generateCreateTable<E>(entity: Type<E>): string {
+  generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(entity, meta);
     const indexes: IndexSchema[] = [];
@@ -44,7 +44,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       }
     }
 
-    return JSON.stringify({ action: 'createCollection', name: collectionName, indexes });
+    return [JSON.stringify({ action: 'createCollection', name: collectionName, indexes })];
   }
 
   generateDropTable<E>(entity: Type<E>): string {
@@ -135,8 +135,8 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return '';
   }
 
-  generateCreateTableFromNode(table: TableNode): string {
-    return JSON.stringify({ action: 'createCollection', name: table.name });
+  generateCreateTableFromNode(table: TableNode, _options?: { ifNotExists?: boolean }): string[] {
+    return [JSON.stringify({ action: 'createCollection', name: table.name })];
   }
 
   generateCreateIndexFromNode(index: IndexNode): string {
@@ -157,8 +157,8 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return JSON.stringify({ action: 'dropCollection', name: table.name });
   }
 
-  generateCreateTableFromDefinition(table: TableDefinition): string {
-    return JSON.stringify({ action: 'createCollection', name: table.name });
+  generateCreateTableFromDefinition(table: TableDefinition, _options?: { ifNotExists?: boolean }): string[] {
+    return [JSON.stringify({ action: 'createCollection', name: table.name })];
   }
 
   generateDropTableSql(tableName: string): string {

@@ -99,6 +99,14 @@ describe('LibsqlQuerier', () => {
     expect(mockTx.close).toHaveBeenCalled();
   });
 
+  it('should close client on internalRelease when closeClientOnRelease', async () => {
+    const q = new LibsqlQuerier(mockClient as unknown as Client, new SqliteDialect(), undefined, {
+      closeClientOnRelease: true,
+    });
+    await q.internalRelease();
+    expect(mockClient.close).toHaveBeenCalled();
+  });
+
   it('should throw error on double beginTransaction', async () => {
     await querier.beginTransaction();
     await expect(querier.beginTransaction()).rejects.toThrow(TypeError);

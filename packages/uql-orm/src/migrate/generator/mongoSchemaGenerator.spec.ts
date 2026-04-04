@@ -14,7 +14,7 @@ describe('MongoSchemaGenerator', () => {
   const generator = new MongoSchemaGenerator();
 
   it('should generate createCollection statement', () => {
-    const json = generator.generateCreateTable(MongoUser);
+    const json = generator.generateCreateTable(MongoUser)[0];
     const cmd = JSON.parse(json);
 
     expect(cmd).toMatchObject({
@@ -175,7 +175,7 @@ describe('MongoSchemaGenerator', () => {
     };
 
     it('should generate createTable from node', () => {
-      expect(JSON.parse(generator.generateCreateTableFromNode(tableNode))).toMatchObject({
+      expect(JSON.parse(generator.generateCreateTableFromNode(tableNode)[0])).toMatchObject({
         action: 'createCollection',
         name: 'users',
       });
@@ -208,7 +208,7 @@ describe('MongoSchemaGenerator', () => {
   describe('Definition-based generation', () => {
     it('should generate createTable from definition', () => {
       const def: any = { name: 'posts' };
-      expect(JSON.parse(generator.generateCreateTableFromDefinition(def))).toMatchObject({
+      expect(JSON.parse(generator.generateCreateTableFromDefinition(def)[0])).toMatchObject({
         action: 'createCollection',
         name: 'posts',
       });
