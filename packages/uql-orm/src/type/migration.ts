@@ -189,9 +189,10 @@ export interface SchemaDiff {
  */
 export interface SchemaGenerator {
   /**
-   * Generate CREATE TABLE statement for an entity
+   * DDL to create an entity’s table: one element per `querier.run` (optional `CREATE EXTENSION`, `CREATE TABLE`, each `CREATE INDEX`, …).
+   * Join with `'\n'` if you need a single script blob.
    */
-  generateCreateTable<E>(entity: Type<E>, options?: { ifNotExists?: boolean }): string;
+  generateCreateTable<E>(entity: Type<E>, options?: { ifNotExists?: boolean }): string[];
 
   /**
    * Generate DROP TABLE statement for an entity
@@ -239,16 +240,16 @@ export interface SchemaGenerator {
   resolveColumnName(key: string, field: FieldOptions): string;
 
   // === SchemaAST / TableNode Support ===
-  /** Generate CREATE TABLE statement from a TableNode */
-  generateCreateTableFromNode(table: TableNode, options?: { ifNotExists?: boolean }): string;
+  /** DDL from a `TableNode`, one string per `querier.run`. */
+  generateCreateTableFromNode(table: TableNode, options?: { ifNotExists?: boolean }): string[];
   /** Generate CREATE INDEX statement from an IndexNode */
   generateCreateIndexFromNode(index: IndexNode, options?: { ifNotExists?: boolean }): string;
   /** Generate DROP TABLE statement from a TableNode */
   generateDropTableFromNode(table: TableNode, options?: { ifExists?: boolean }): string;
 
   // === Migration Builder Support ===
-  /** Generate CREATE TABLE statement from a TableDefinition */
-  generateCreateTableFromDefinition(table: TableDefinition, options?: { ifNotExists?: boolean }): string;
+  /** DDL from a `TableDefinition`, one string per `querier.run`. */
+  generateCreateTableFromDefinition(table: TableDefinition, options?: { ifNotExists?: boolean }): string[];
   /** Generate DROP TABLE statement */
   generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string;
   /** Generate RENAME TABLE statement */

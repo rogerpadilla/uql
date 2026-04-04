@@ -1,5 +1,6 @@
 import type { MigrationStorage, QuerierPool, SqlQuerier } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { acquireQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 
 /**
  * Migration metadata stored in the database
@@ -31,7 +32,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       return;
     }
 
-    const querier = await this.pool.getQuerier();
+    const querier = await acquireQuerierForMigrations(this.pool);
 
     if (!isSqlQuerier(querier)) {
       await querier.release();
@@ -61,7 +62,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   async executed(): Promise<string[]> {
     await this.ensureStorage();
 
-    const querier = await this.pool.getQuerier();
+    const querier = await acquireQuerierForMigrations(this.pool);
 
     if (!isSqlQuerier(querier)) {
       await querier.release();

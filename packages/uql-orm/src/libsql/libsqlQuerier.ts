@@ -4,15 +4,24 @@ import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, TransactionOptions } from '../type/index.js';
 
+/** Connection lifecycle for a {@link LibsqlQuerier} (separate from {@link ExtraOptions}). */
+export type LibsqlQuerierConnectionOptions = {
+  /** When set, {@link release} closes {@link LibsqlQuerier.client} (one-shot migration connections). */
+  closeClientOnRelease?: boolean;
+};
+
 export class LibsqlQuerier extends AbstractSqliteQuerier {
   private tx?: Transaction;
+  private readonly closeClientOnRelease: boolean;
 
   constructor(
     readonly client: Client,
     dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
+    connection?: LibsqlQuerierConnectionOptions,
   ) {
     super(dialect, extra);
+    this.closeClientOnRelease = connection?.closeClientOnRelease ?? false;
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
@@ -60,6 +69,9 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   override async internalRelease() {
     if (this.tx) {
       this.tx.close();
+    }
+    if (this.closeClientOnRelease) {
+      this.client.close();
     }
   }
 }
