@@ -2,6 +2,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
+import { getRelationRequestSummary } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
 class MongoDialectSpec implements Spec {
@@ -60,8 +61,8 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldSelect() {
-    expect(this.dialect.select(Tax, { name: true })).toEqual({ name: true });
-    expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ id: true, name: true });
+    expect(this.dialect.select(Tax, { name: true })).toEqual({ name: 1 });
+    expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ id: 1, name: 1 });
   }
 
   shouldBuildSort() {
@@ -102,11 +103,11 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
-    expect(this.dialect.aggregationPipeline(User, { $select: { users: true } })).toEqual([]);
+    expect(this.dialect.aggregationPipeline(User, { $populate: { users: true } })).toEqual([]);
 
     expect(
       this.dialect.aggregationPipeline(TaxCategory, {
-        $select: { creator: true },
+        $populate: { creator: true },
         $where: { pk: '507f1f77bcf86cd799439011' },
         $sort: { creatorId: -1 },
       }),
@@ -137,7 +138,7 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(Item, {
-        $select: { measureUnit: true, tax: true },
+        $populate: { measureUnit: true, tax: true },
         $where: { code: '123' },
       }),
     ).toEqual([
@@ -172,7 +173,7 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(User, {
-        $select: { profile: true },
+        $populate: { profile: true },
         $where: '65496146f8f7899f63768df1' as any,
         $limit: 1,
       }),
@@ -205,7 +206,7 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.aggregationPipeline(User, {
-        $select: { profile: true },
+        $populate: { profile: true },
         $where: { id: '65496146f8f7899f63768df1' as any },
         $limit: 1,
       }),
@@ -239,7 +240,7 @@ class MongoDialectSpec implements Spec {
     // Test referenceSort branch for 11 relation with $sort
     expect(
       this.dialect.aggregationPipeline(User, {
-        $select: { profile: true },
+        $populate: { profile: true },
         $where: { id: '65496146f8f7899f63768df1' as any },
         $sort: { name: 1 },
         $limit: 1,
@@ -276,6 +277,13 @@ class MongoDialectSpec implements Spec {
         },
       },
     ]);
+  }
+
+  shouldMatchAggregationPipelineWithPrecomputedRelationSummary() {
+    const meta = getMeta(User);
+    const summary = getRelationRequestSummary(meta, { profile: true });
+    const baseline = this.dialect.aggregationPipeline(User, { $populate: { profile: true } });
+    expect(this.dialect.aggregationPipeline(User, { $populate: { profile: true } }, summary)).toEqual(baseline);
   }
 
   // New operator tests

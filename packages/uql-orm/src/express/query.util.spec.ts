@@ -15,8 +15,9 @@ it('parseQuery -- empty', () => {
 
 it('parseQuery stringified', () => {
   const queryStr = {
-    $select:
-      '{ "id": true, "name": true, "measureUnit": {"$select":{"id":true, "name":true}}, "tax": {"$select":{"id":true, "name":true}} }',
+    $select: '{ "id": true, "name": true }',
+    $populate: '{ "measureUnit": true, "tax": true }',
+    $exclude: '{ "createdAt": true }',
     $where: '{ "name": "lorem", "companyId": 40 }',
     $sort: '{ "name": -1, "companyId": 1 }',
     $skip: '200',
@@ -26,9 +27,12 @@ it('parseQuery stringified', () => {
     $select: {
       id: true,
       name: true,
-      measureUnit: { $select: { id: true, name: true } },
-      tax: { $select: { id: true, name: true } },
     },
+    $populate: {
+      measureUnit: true,
+      tax: true,
+    },
+    $exclude: { createdAt: true },
     $where: { name: 'lorem', companyId: 40 },
     $sort: { name: -1, companyId: 1 },
     $skip: 200,

@@ -441,6 +441,22 @@ class PostgresDialectSpec {
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 
+  shouldFindWithPopulateOnly() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $populate: {
+          profile: {
+            $select: { picture: true },
+          },
+        },
+        $where: { id: 123 },
+      }),
+    );
+    expect(res.sql).toContain('LEFT JOIN "user_profile" "profile" ON "profile"."creatorId" = "User"."id"');
+    expect(res.sql).toContain('"profile"."image" "profile.picture"');
+    expect(res.values).toEqual([123]);
+  }
+
   shouldUpdateWithRawString() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(

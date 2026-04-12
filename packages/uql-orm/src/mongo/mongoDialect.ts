@@ -9,6 +9,7 @@ import type {
   FieldValue,
   Query,
   QueryAggregate,
+  QueryExclude,
   QueryOptions,
   QuerySelect,
   QuerySortMap,
@@ -23,11 +24,13 @@ import {
   type CallbackKey,
   fillOnFields,
   filterFieldKeys,
-  filterRelationKeys,
   getKeys,
+  getRelationRequestSummary,
   hasKeys,
   isVectorSearch,
+  normalizeScalarFieldSelection,
   parseGroupMap,
+  type RelationRequestSummary,
 } from '../util/index.js';
 
 export class MongoDialect extends AbstractDialect {
@@ -194,11 +197,23 @@ export class MongoDialect extends AbstractDialect {
     return result;
   }
 
-  public select<E extends Document>(entity: Type<E>, select: QuerySelect<E>): QuerySelect<E> {
-    return select;
+  public select<E extends Document>(
+    entity: Type<E>,
+    select?: QuerySelect<E>,
+    exclude?: QueryExclude<E>,
+  ): Record<string, 1> {
+    const meta = getMeta(entity);
+    if (!select && !exclude) {
+      return {};
+    }
+    const selectedFields = normalizeScalarFieldSelection(meta, select, exclude);
+    return selectedFields.reduce<Record<string, 1>>((acc, key) => {
+      acc[key] = 1;
+      return acc;
+    }, {});
   }
 
-  public sort<E extends Document>(entity: Type<E>, sort: QuerySortMap<E>): Sort {
+  public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>): Sort {
     const raw = buildSortMap(sort);
     const normalized: Record<string, 1 | -1> = {};
     for (const [key, dir] of Object.entries(raw)) {
@@ -207,10 +222,14 @@ export class MongoDialect extends AbstractDialect {
     return normalized as Sort;
   }
 
-  public aggregationPipeline<E extends Document>(entity: Type<E>, q: Query<E>): MongoAggregationPipelineEntry<E>[] {
+  public aggregationPipeline<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    relationSummary?: RelationRequestSummary<E>,
+  ): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
     const where = this.where(entity, q.$where);
-    const sort = this.sort(entity, q.$sort!);
+    const sort = this.sort(entity, q.$sort);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
     if (hasKeys(where)) {
@@ -226,7 +245,7 @@ export class MongoDialect extends AbstractDialect {
       pipeline.push(firstPipelineEntry);
     }
 
-    const relKeys = filterRelationKeys(meta, q.$select!);
+    const relKeys = (relationSummary ?? getRelationRequestSummary(meta, q.$populate)).joinableKeys;
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
@@ -254,7 +273,7 @@ export class MongoDialect extends AbstractDialect {
         const foreignField = relMeta.fields[relOpts.references![0].foreign];
         const foreignFieldName = this.resolveColumnName(relOpts.references![0].foreign, foreignField!);
         const referenceWhere = this.where(relEntity, where);
-        const referenceSort = this.sort(relEntity, q.$sort!);
+        const referenceSort = this.sort(relEntity, q.$sort);
         const _id = MongoDialect.ID_KEY;
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
           $match: { [foreignFieldName]: referenceWhere[_id] },

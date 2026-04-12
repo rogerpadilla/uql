@@ -1,18 +1,23 @@
 import { expect, it } from 'vitest';
 import { getMeta } from '../entity/decorator/index.js';
-import { User } from '../test/entityMock.js';
+import { type Item, User } from '../test/entityMock.js';
+import type { QueryGroupMap, QuerySelect } from '../type/index.js';
 import {
   augmentWhere,
   buildSortMap,
   fillOnFields,
   filterFieldKeys,
-  filterRelationKeys,
   getFieldCallbackValue,
   isCascadable,
-  isSelectingRelations,
+  normalizeScalarFieldSelection,
   parseGroupMap,
 } from './dialect.util.js';
 import { raw } from './raw.js';
+
+/** Deliberately invalid entries plus one valid key — exercises parseGroupMap defensive parsing. */
+function malformedGroupMapFixture(): QueryGroupMap<Item> {
+  return { a: false, b: 0, c: '', d: true } as unknown as QueryGroupMap<Item>;
+}
 
 it('augmentWhere empty', () => {
   const meta = getMeta(User);
@@ -49,21 +54,18 @@ it('filterFieldKeys', () => {
 
 it('fillOnFields', () => {
   const meta = getMeta(User);
-  const payload: any = { id: 1 };
+  const payload: Partial<User> & { id: number } = { id: 1 };
   fillOnFields(meta, payload, 'onInsert');
   expect(payload.createdAt).toBeLessThanOrEqual(Date.now());
 });
 
-it('filterRelationKeys', () => {
+it('normalizeScalarFieldSelection', () => {
   const meta = getMeta(User);
-  expect(filterRelationKeys(meta, { id: 1, profile: 1 })).toEqual(['profile']);
-  expect(filterRelationKeys(meta, { id: true, profile: true })).toEqual(['profile']);
-});
-
-it('isSelectingRelations', () => {
-  const meta = getMeta(User);
-  expect(isSelectingRelations(meta, { id: 1 })).toBe(false);
-  expect(isSelectingRelations(meta, { profile: 1 })).toBe(true);
+  expect(normalizeScalarFieldSelection(meta, { name: true } satisfies QuerySelect<User>)).toEqual(['name']);
+  expect(normalizeScalarFieldSelection(meta, undefined, { name: true } satisfies QuerySelect<User>)).not.toContain(
+    'name',
+  );
+  expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain('name');
 });
 
 it('isCascadable', () => {
@@ -74,30 +76,26 @@ it('isCascadable', () => {
 });
 
 it('buildSortMap', () => {
-  expect(buildSortMap({ id: 1 } as any)).toEqual({ id: 1 });
+  expect(buildSortMap<User>({ name: 1 })).toEqual({ name: 1 });
   expect(buildSortMap(undefined)).toEqual({});
 });
 
 it('parseGroupMap keys and fns', () => {
-  const entries = parseGroupMap({
+  const group = {
     code: true,
     count: { $count: '*' },
-    total: { $sum: 'price' },
-  } as any);
+    total: { $sum: 'salePrice' },
+  } satisfies QueryGroupMap<Item>;
+  const entries = parseGroupMap(group);
   expect(entries).toEqual([
     { kind: 'key', alias: 'code' },
     { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*' },
-    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'price' },
+    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice' },
   ]);
 });
 
 it('parseGroupMap skips falsy and non-object values', () => {
-  const entries = parseGroupMap({
-    a: false,
-    b: 0,
-    c: '',
-    d: true,
-  } as any);
+  const entries = parseGroupMap(malformedGroupMapFixture());
   // Only `true` is a valid group key; false/0/'' are ignored
   expect(entries).toEqual([{ kind: 'key', alias: 'd' }]);
 });

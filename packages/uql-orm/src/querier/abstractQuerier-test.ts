@@ -154,7 +154,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     } satisfies User;
     const id = await this.querier.insertOne(User, payload);
     expect(id).toBeDefined();
-    const found = await this.querier.findOneById(User, id, { $select: { profile: true } });
+    const found = await this.querier.findOneById(User, id, { $populate: { profile: true } });
     expect(found).toMatchObject({ id, profile: payload.profile });
   }
 
@@ -169,7 +169,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     expect(id).toBeDefined();
 
-    const found = await this.querier.findOneById(MeasureUnit, id, { $select: { category: true } });
+    const found = await this.querier.findOneById(MeasureUnit, id, { $populate: { category: true } });
 
     expect(found).toMatchObject({ id, category: payload.category });
   }
@@ -203,7 +203,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: true },
+      $populate: { itemAdjustments: true },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -227,7 +227,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inventoryAdjustmentId).toBeDefined();
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: { $select: { buyPrice: true } } },
+      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -238,6 +238,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $where: { inventoryAdjustmentId } });
 
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+  }
+
+  async shouldThrowWhenSelectAndExcludeConflict() {
+    await expect(
+      this.querier.findMany(User, {
+        $select: { name: true },
+        $exclude: { createdAt: true },
+      }),
+    ).rejects.toThrow('Cannot combine $select and $exclude');
   }
 
   async shouldUpdateOneAndCascadeOneToMany() {
@@ -256,7 +265,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(changes).toBe(1);
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: { $select: { buyPrice: true } } },
+      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({
@@ -318,7 +327,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(id).toBeDefined();
 
     const foundItem = await this.querier.findOneById(Item, id, {
-      $select: { name: true, createdAt: true, tags: { $select: { name: true, createdAt: true } } },
+      $select: { name: true, createdAt: true },
+      $populate: { tags: { $select: { name: true, createdAt: true } } },
     });
 
     expect(foundItem).toMatchObject({
@@ -327,7 +337,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const foundTags = await this.querier.findMany(Tag, {
-      $select: { name: true, createdAt: true, items: { $select: { name: true, createdAt: true } } },
+      $select: { name: true, createdAt: true },
+      $populate: { items: { $select: { name: true, createdAt: true } } },
     });
 
     delete (foundItem as any).tags;
@@ -355,7 +366,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.updateOneById(Item, id, payload);
 
     const found = await this.querier.findOneById(Item, id, {
-      $select: { name: true, updatedAt: true, tags: true },
+      $select: { name: true, updatedAt: true },
+      $populate: { tags: true },
     });
 
     expect(found).toMatchObject({
@@ -696,12 +708,12 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async shouldSelectOneToManyEmpty() {
     const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, -1, {
-      $select: { itemAdjustments: true, creator: true },
+      $populate: { itemAdjustments: true, creator: true },
     });
     expect(inventoryAdjustment).toBeUndefined();
 
     const inventoryAdjustments = await this.querier.findMany(InventoryAdjustment, {
-      $select: { itemAdjustments: true },
+      $populate: { itemAdjustments: true },
     });
     expect(inventoryAdjustments).toHaveLength(0);
   }
@@ -741,7 +753,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $select: { itemAdjustments: true, creator: true },
+      $populate: { itemAdjustments: true, creator: true },
     });
 
     expect(inventoryAdjustmentFound).toMatchObject({

@@ -282,6 +282,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual([123, 'abc']);
   }
 
+  shouldFindWithPopulateOnly() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $populate: {
+          profile: {
+            $select: { picture: true },
+          },
+        },
+        $where: { id: 123 },
+      }),
+    );
+    expect(res.sql).toContain('LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`');
+    expect(res.sql).toContain('`profile`.`image` `profile.picture`');
+    expect(res.values).toEqual([123]);
+  }
+
   shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -687,7 +703,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$selectFields() {
-    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true, company: true } }));
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $populate: { company: true } }),
+    );
     expect(sql).toBe(
       'SELECT `User`.`id`, `company`.`id` `company.id`, `company`.`companyId` `company.companyId`, `company`.`creatorId` `company.creatorId`' +
         ', `company`.`createdAt` `company.createdAt`, `company`.`updatedAt` `company.updatedAt`' +
@@ -699,7 +717,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$selectOneToOne() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: { id: true, name: true, profile: { $select: { id: true, picture: true } } },
+        $select: { id: true, name: true },
+        $populate: { profile: { $select: { id: true, picture: true } } },
       }),
     );
     expect(res.sql).toBe(
@@ -707,7 +726,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ' LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`',
     );
 
-    res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { profile: true } }));
+    res = this.exec((ctx) => this.dialect.find(ctx, User, { $populate: { profile: true } }));
     expect(res.sql).toBe(
       'SELECT `User`.`id`, `User`.`companyId`, `User`.`creatorId`, `User`.`createdAt`' +
         ', `User`.`updatedAt`, `User`.`name`, `User`.`email`' +
@@ -726,6 +745,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: true,
           name: true,
           code: true,
+        },
+        $populate: {
           tax: { $select: { id: true, name: true }, $required: true },
           measureUnit: { $select: { id: true, name: true, categoryId: true } },
         },
@@ -749,8 +770,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $select: {
           id: true,
           name: true,
+        },
+        $populate: {
           measureUnit: { $select: { id: true, name: true }, $where: { name: { $ne: 'unidad' } }, $required: true },
-          tax: ['id', 'name'] as any,
+          tax: { $select: { id: true, name: true } },
         },
         $where: { salePrice: { $gte: 1000 }, name: { $istartsWith: 'A' } },
         $sort: { tax: { name: 1 }, measureUnit: { name: 1 }, createdAt: -1 },
@@ -793,8 +816,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           name: 1,
           code: 1,
           tagsCount: 1,
+        },
+        $populate: {
           measureUnit: {
-            $select: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+            $select: { id: 1, name: 1, categoryId: 1 },
+            $populate: { category: { $select: { name: 1 } } },
           },
         },
         $limit: 100,
@@ -818,8 +844,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: 1,
           name: 1,
           code: 1,
+        },
+        $populate: {
           measureUnit: {
-            $select: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+            $select: { id: 1, name: 1, categoryId: 1 },
+            $populate: { category: { $select: { name: 1 } } },
           },
         },
         $limit: 100,
@@ -841,8 +870,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: true,
           name: true,
           code: true,
+        },
+        $populate: {
           measureUnit: {
-            $select: { id: true, name: true, category: { $select: { id: true, name: true } } },
+            $select: { id: true, name: true },
+            $populate: { category: { $select: { id: true, name: true } } },
           },
         },
         $limit: 100,
@@ -863,12 +895,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
           id: true,
           buyPrice: true,
           number: true,
+        },
+        $populate: {
           item: {
             $select: {
               id: true,
               name: true,
+            },
+            $populate: {
               measureUnit: {
-                $select: { id: true, name: true, category: ['id', 'name'] },
+                $select: { id: true, name: true },
+                $populate: { category: { $select: { id: true, name: true } } },
               },
             },
             $required: true,

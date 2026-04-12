@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.8.4] - 2026-04-11
+
+### Features
+
+- Added first-class `$populate` (relations) and `$exclude` (subtractive scalar projection), while keeping backward compatibility for legacy relation keys in `$select`.
+
+### Breaking Changes (Public util surface)
+
+- Removed support for specifying relations in `$select`; use `$populate` instead.
+
+### Improvements
+
+- Populate-only relation loading now works consistently in SQL dialects.
+- Relation keys in `$select` now emit a deduplicated deprecation warning (use `$populate`).
+- `$select` and `$exclude` conflicts are validated recursively, including nested relation queries.
+- `findManyStream` now rejects unsupported relation loading early: **MongoDB** throws if any relation is requested in `$select` / `$populate` (streams use `find` only). **SQL** throws if **to-many** relations are requested (they are filled only after `findMany`, not while streaming).
+
+### Documentation
+
+- README and docs site clarify projection keys (`$select` / `$exclude` / `$populate`) and streaming behavior across SQL vs MongoDB.
+
 ## [0.8.3] - 2026-04-04
 
 ### Improvements

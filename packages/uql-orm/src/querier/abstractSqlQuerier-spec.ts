@@ -79,6 +79,46 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
 
+  async shouldThrowWhenSelectAndExcludeConflictOnFindOne() {
+    await expect(
+      this.querier.findOne(User, {
+        $select: { name: true },
+        $exclude: { createdAt: true },
+      }),
+    ).rejects.toThrow('Cannot combine $select and $exclude');
+  }
+
+  async shouldThrowWhenSelectAndExcludeConflictOnFindManyAndCount() {
+    await expect(
+      this.querier.findManyAndCount(User, {
+        $select: { name: true },
+        $exclude: { createdAt: true },
+      }),
+    ).rejects.toThrow('Cannot combine $select and $exclude');
+  }
+
+  shouldThrowWhenSelectAndExcludeConflictOnFindManyStream() {
+    expect(() =>
+      this.querier.findManyStream(User, {
+        $select: { name: true },
+        $exclude: { createdAt: true },
+      }),
+    ).toThrow('Cannot combine $select and $exclude');
+  }
+
+  async shouldThrowWhenNestedSelectAndExcludeConflict() {
+    await expect(
+      this.querier.findMany(User, {
+        $populate: {
+          profile: {
+            $select: { picture: true },
+            $exclude: { createdAt: true },
+          },
+        },
+      }),
+    ).rejects.toThrow('Cannot combine $select and $exclude');
+  }
+
   async shouldHydrateJsonFieldFromDriverString() {
     mockAllResolvedValueOnce(this.querier.all, [{ kind: '{"label":"x","isArchived":true}' }]);
 
@@ -120,7 +160,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOne(InventoryAdjustment, {
-      $select: { id: true, description: true, itemAdjustments: { $where: { id: [5, 6, 7] } } },
+      $select: { id: true, description: true },
+      $populate: { itemAdjustments: { $where: { id: [5, 6, 7] } } },
       $where: { id: 1 },
     });
 
@@ -162,8 +203,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         name: 1,
         code: 1,
         tagsCount: 1,
+      },
+      $populate: {
         measureUnit: {
-          $select: { id: 1, name: 1, categoryId: 1, category: ['name'] },
+          $select: { id: 1, name: 1, categoryId: 1 },
+          $populate: { category: { $select: { name: 1 } } },
         },
       },
       $limit: 100,
@@ -271,7 +315,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: {
+      $populate: {
         itemAdjustments: {
           $select: { id: true, buyPrice: true, itemId: true, creatorId: true, createdAt: true },
         },
@@ -340,7 +384,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: { id: true, itemAdjustments: { $select: { buyPrice: true }, $skip: 1, $limit: 2 } },
+      $select: { id: true },
+      $populate: { itemAdjustments: { $select: { buyPrice: true }, $skip: 1, $limit: 2 } },
       $where: { createdAt: 1 },
     });
 
@@ -372,7 +417,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findMany(InventoryAdjustment, {
-      $select: { id: true, itemAdjustments: true },
+      $select: { id: true },
+      $populate: { itemAdjustments: true },
       $where: { createdAt: 1 },
     });
 
@@ -402,7 +448,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOne(Item, {
-      $select: { id: true, createdAt: true, tags: { $select: { id: true } as any } as any },
+      $select: { id: true, createdAt: true },
+      $populate: { tags: { $select: { id: true } as any } },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -432,7 +479,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
 
     await this.querier.findOneById(Item, 123, {
-      $select: { id: 1, createdAt: 1, tags: { $select: { id: true } as any } as any },
+      $select: { id: 1, createdAt: 1 },
+      $populate: { tags: { $select: { id: true } as any } },
     });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
@@ -1224,6 +1272,8 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(InventoryAdjustment, {
       $select: {
         id: true,
+      },
+      $populate: {
         itemAdjustments: { $select: { buyPrice: true, itemId: true } },
       },
       $where: { id: 999 },
@@ -1314,5 +1364,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(collected).toHaveLength(2);
     expect(collected.map((u) => u.name).sort()).toEqual(['Alice', 'Bob']);
+  }
+
+  async shouldThrowWhenStreamRequestsToManyRelation() {
+    await expect(
+      (async () => {
+        for await (const _ of this.querier.findManyStream(User, { $populate: { users: true } })) {
+        }
+      })(),
+    ).rejects.toThrow('findManyStream does not load to-many relations');
   }
 }

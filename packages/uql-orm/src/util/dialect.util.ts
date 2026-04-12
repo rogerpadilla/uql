@@ -4,10 +4,10 @@ import {
   type FieldKey,
   type FieldOptions,
   type IdValue,
-  type Key,
   type MongoId,
   type OnFieldCallback,
   type QueryAggregateOp,
+  type QueryExclude,
   type QueryGroupMap,
   QueryRaw,
   type QuerySelect,
@@ -17,7 +17,7 @@ import {
   type QueryWhereMap,
   type RelationKey,
 } from '../type/index.js';
-import { getKeys } from './object.util.js';
+import { getFieldKeys, getKeys } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
@@ -64,24 +64,34 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
   return configuration === action;
 }
 
-export function filterRelationKeys<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): RelationKey<E>[] {
-  const keys = filterPositiveKeys(select);
-  return keys.filter((key) => key in meta.relations) as RelationKey<E>[];
-}
+export function normalizeScalarFieldSelection<E>(
+  meta: EntityMeta<E>,
+  select?: QuerySelect<E>,
+  exclude?: QueryExclude<E>,
+): FieldKey<E>[] {
+  const positiveFields: FieldKey<E>[] = [];
+  const excludedFields = new Set<FieldKey<E>>();
 
-export function isSelectingRelations<E>(meta: EntityMeta<E>, select?: QuerySelect<E>): boolean {
-  if (!select) return false;
-  for (const key in select) {
-    if (key in meta.relations && select[key as keyof typeof select]) return true;
+  for (const [key, value] of Object.entries(select ?? {})) {
+    if (!(key in meta.fields)) continue;
+    if (value) {
+      positiveFields.push(key as FieldKey<E>);
+    } else {
+      excludedFields.add(key as FieldKey<E>);
+    }
   }
-  return false;
-}
 
-function filterPositiveKeys<E>(select?: QuerySelect<E>): Key<E>[] {
-  if (!select) {
-    return [];
+  for (const [key, value] of Object.entries(exclude ?? {})) {
+    if (value && key in meta.fields) {
+      excludedFields.add(key as FieldKey<E>);
+    }
   }
-  return getKeys(select).filter((key) => select[key]) as Key<E>[];
+
+  if (positiveFields.length) {
+    return positiveFields;
+  }
+
+  return getFieldKeys(meta.fields).filter((it) => !excludedFields.has(it)) as FieldKey<E>[];
 }
 
 export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap<E> {

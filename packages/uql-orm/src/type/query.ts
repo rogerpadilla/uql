@@ -28,10 +28,9 @@ export type QuerySelectOptions = {
 };
 
 /**
- * query selection as a map — field and relation selections combined.
- * Uses intersection of two mapped types to enforce strict key validation.
+ * query selection of scalar fields as a map.
  */
-export type QuerySelect<E> = QuerySelectFieldMap<E> & QuerySelectRelationMap<E>;
+export type QuerySelect<E> = QuerySelectFieldMap<E>;
 
 /**
  * query selection of fields as a map.
@@ -41,10 +40,17 @@ export type QuerySelectFieldMap<E> = {
 };
 
 /**
- * query selection of relations as a map.
+ * query exclusion of fields as a map.
  */
-export type QuerySelectRelationMap<E> = {
-  [K in RelationKey<E>]?: BooleanLike | QuerySelectRelationOptions<E[K]>;
+export type QueryExclude<E> = {
+  [K in FieldKey<E>]?: BooleanLike;
+};
+
+/**
+ * relation population map.
+ */
+export type QueryPopulate<E> = {
+  [K in RelationKey<E>]?: BooleanLike | QueryPopulateRelationOptions<E[K]>;
 };
 
 /**
@@ -55,9 +61,9 @@ export type QueryConflictPaths<E> = {
 };
 
 /**
- * options to select a relation.
+ * options to populate a relation.
  */
-export type QuerySelectRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
+export type QueryPopulateRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
   $required?: boolean;
 };
 
@@ -370,6 +376,16 @@ export type Query<E> = {
   $select?: QuerySelect<E>;
 
   /**
+   * relation population options.
+   */
+  $populate?: QueryPopulate<E>;
+
+  /**
+   * field exclusion options.
+   */
+  $exclude?: QueryExclude<E>;
+
+  /**
    * whether to return only distinct rows.
    */
   $distinct?: boolean;
@@ -383,7 +399,7 @@ export type QueryOne<E> = Omit<Query<E>, '$limit'>;
 /**
  * options to get an unique record.
  */
-export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$where'>;
+export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$populate' | '$where'>;
 
 /**
  * stringified query.
