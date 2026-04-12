@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
+import { User } from '../test/entityMock.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -11,6 +12,21 @@ class Article {
   @Field() title?: string;
   @Field() category?: string;
   @Field({ type: 'vector' }) embedding?: number[];
+}
+
+@Entity({ name: 'Author' })
+class Author {
+  @Id() id?: number;
+  @Field() name?: string;
+}
+
+@Entity({ name: 'Post' })
+class Post {
+  @Id() id?: number;
+  @Field({ references: () => Author }) authorId?: number;
+  @ManyToOne({ entity: () => Author }) author?: Author;
+  @Field({ references: () => Author }) reviewerId?: number;
+  @ManyToOne({ entity: () => Author }) reviewer?: Author;
 }
 
 function createMockedQuerier(aggregateResults: unknown[] = []) {
@@ -71,8 +87,8 @@ describe('MongodbQuerier vector search', () => {
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
     expect(projectStage).toBeDefined();
     expect(projectStage.$project.score).toEqual({ $meta: 'vectorSearchScore' });
-    expect(projectStage.$project.id).toBe(true);
-    expect(projectStage.$project.title).toBe(true);
+    expect(projectStage.$project.id).toBe(1);
+    expect(projectStage.$project.title).toBe(1);
   });
 
   it('should add $project for $select without score projection', async () => {
@@ -87,7 +103,22 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = aggregate.mock.calls[0][0];
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
     expect(projectStage).toBeDefined();
-    expect(projectStage.$project).toEqual({ id: true, title: true });
+    expect(projectStage.$project).toEqual({ id: 1, title: 1 });
+  });
+
+  it('should add $project for $exclude only without score projection in vector pipeline', async () => {
+    const { querier, aggregate } = createMockedQuerier([]);
+
+    await querier.findMany(Article, {
+      $exclude: { category: true },
+      $sort: { embedding: { $vector: [1, 2, 3] } },
+      $limit: 10,
+    });
+
+    const pipeline = aggregate.mock.calls[0][0];
+    const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
+    expect(projectStage).toBeDefined();
+    expect(projectStage.$project).toEqual({ id: 1, title: 1, embedding: 1 });
   });
 
   it('should add secondary $sort for regular sort fields', async () => {
@@ -127,5 +158,23 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = aggregate.mock.calls[0][0];
     expect(pipeline[0].$vectorSearch.limit).toBe(10);
     expect(pipeline[0].$vectorSearch.numCandidates).toBe(100);
+  });
+});
+
+describe('MongodbQuerier findManyStream', () => {
+  it('throws when relations are requested (stream uses find cursor only)', async () => {
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any, {});
+    await expect(
+      (async () => {
+        for await (const _ of querier.findManyStream(User, { $populate: { profile: true } })) {
+        }
+      })(),
+    ).rejects.toThrow('findManyStream does not load relations on MongoDB');
+    await expect(
+      (async () => {
+        for await (const _ of querier.findManyStream(User, { $populate: { profile: true } })) {
+        }
+      })(),
+    ).rejects.toThrow('findManyStream does not load relations on MongoDB');
   });
 });

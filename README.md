@@ -8,7 +8,8 @@
 
 ```ts
 const results = await querier.findMany(User, {
-  $select: { name: true, profile: { $select: { picture: true } } },
+  $select: { name: true },
+  $populate: { profile: { $select: { picture: true } } },
   $where: { name: { $istartsWith: 'a' }, posts: { tags: { name: 'typescript' } } },
   $sort: { createdAt: 'desc' },
   $limit: 10,
@@ -346,10 +347,8 @@ UQL provides a straightforward API to interact with your data. **Always ensure q
 const querier = await pool.getQuerier();
 try {
   const results = await querier.findMany(User, {
-    $select: {
-      name: true,
-      profile: { $select: { bio: true }, $required: true }, // INNER JOIN
-    },
+    $select: { name: true },
+    $populate: { profile: { $select: { bio: true }, $required: true } }, // INNER JOIN
     $where: {
       status: 'active',
       name: { $istartsWith: 'a' },
@@ -370,6 +369,34 @@ INNER JOIN "Profile" AS "profile" ON "profile"."userId" = "User"."id"
 WHERE "User"."status" = 'active' AND "User"."name" ILIKE 'a%'
 LIMIT 10 OFFSET 0
 ```
+
+### Projection & Relation Loading
+
+Use these query keys with clear separation of concerns:
+
+- `$select`: scalar field whitelist (projection)
+- `$exclude`: scalar field subtraction from default eager set
+- `$populate`: relation loading (including nested relation query options)
+
+`$select` and `$exclude` are mutually exclusive when `$select` includes positive scalar keys.
+
+```ts
+const rows = await querier.findMany(User, {
+  $exclude: { password: true },
+  $populate: { profile: { $select: { picture: true } } },
+});
+```
+
+> **Migration note:** selecting relations inside `$select` is still supported for backward compatibility, but deprecated. Move relations to `$populate`.
+
+### Streaming (`findManyStream`) and relations
+
+`findManyStream` is optimized for **scalar** reads and a stable memory footprint. Relation loading differs by backend:
+
+- **SQL:** Joinable relations (e.g. many-to-one, one-to-one) are still included in the streamed `SELECT` / joins. **To-many** collections are not filled on the stream path (that uses extra queries in `findMany`); requesting them in `$select` / `$populate` throws a `TypeError` with a short explanation.
+- **MongoDB:** Streams use a plain `find` cursor, so **any** relation keys in `$select` or `$populate` throw a `TypeError`. Use `findMany` for relation loading (aggregation + fill).
+
+See [Cursor Streaming](https://uql-orm.dev/querying/streaming) on the docs site for details.
 
 ### Advanced Query Patterns
 

@@ -16,7 +16,7 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { clone, getFieldCallbackValue, getKeys, hasKeys, isSelectingRelations } from '../util/index.js';
+import { clone, getFieldCallbackValue, getKeys, getRelationRequestSummary, hasKeys } from '../util/index.js';
 
 import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
 
@@ -47,12 +47,12 @@ export class MongodbQuerier extends AbstractQuerier {
       const pipeline = this.buildVectorPipeline(entity, meta, q, vectorSort);
       documents = await this.runPipeline(entity, meta, pipeline);
     } else {
-      const hasSelectedRelations = isSelectingRelations(meta, q.$select);
+      const relationSummary = getRelationRequestSummary(meta, q.$populate);
 
-      if (hasSelectedRelations) {
-        const pipeline = this.dialect.aggregationPipeline(entity, q);
+      if (relationSummary.requestedKeys.length) {
+        const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary);
         documents = await this.runPipeline(entity, meta, pipeline);
-        await this.fillToManyRelations(entity, documents, q.$select!);
+        await this.fillToManyRelations(entity, documents, q.$populate);
       } else {
         const cursor = this.buildFindCursor(entity, q);
         documents = await this.execute(() => cursor.toArray());
@@ -65,12 +65,25 @@ export class MongodbQuerier extends AbstractQuerier {
 
   protected override async *internalFindManyStream<E extends Document>(entity: Type<E>, q: Query<E>) {
     const meta = getMeta(entity);
+    const { joinableKeys, toManyKeys } = getRelationRequestSummary(meta, q.$populate);
+    if (joinableKeys.length || toManyKeys.length) {
+      const parts: string[] = [];
+      if (joinableKeys.length) parts.push(`joinable: ${joinableKeys.join(', ')}`);
+      if (toManyKeys.length) parts.push(`toMany: ${toManyKeys.join(', ')}`);
+      throw new TypeError(
+        `findManyStream does not load relations on MongoDB (${parts.join('; ')}). Use findMany with $populate (or legacy relation keys in $select) so aggregation and fill logic can run.`,
+      );
+    }
     const cursor = this.buildFindCursor(entity, q);
 
     for await (const doc of cursor) {
       const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
       yield normalized;
     }
+  }
+
+  private buildScalarProjection<E extends Document>(entity: Type<E>, q: Query<E>) {
+    return this.dialect.select(entity, q.$select, q.$exclude);
   }
 
   /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
@@ -81,11 +94,11 @@ export class MongodbQuerier extends AbstractQuerier {
     if (hasKeys(filter)) {
       cursor.filter(filter);
     }
-    const select = this.dialect.select(entity, q.$select!);
+    const select = this.buildScalarProjection(entity, q);
     if (hasKeys(select)) {
       cursor.project(select);
     }
-    const sort = this.dialect.sort(entity, q.$sort!);
+    const sort = this.dialect.sort(entity, q.$sort);
     if (hasKeys(sort)) {
       cursor.sort(sort);
     }
@@ -136,15 +149,15 @@ export class MongodbQuerier extends AbstractQuerier {
 
     // Score projection via $meta
     if (vectorSort.vectorSearch.$project) {
-      const select = q.$select ? this.dialect.select(entity, q.$select) : {};
+      const select = q.$select || q.$exclude ? this.buildScalarProjection(entity, q) : {};
       pipeline.push({
         $project: {
           ...select,
           [vectorSort.vectorSearch.$project]: { $meta: 'vectorSearchScore' },
         },
       });
-    } else if (q.$select && hasKeys(q.$select)) {
-      pipeline.push({ $project: this.dialect.select(entity, q.$select) });
+    } else if ((q.$select && hasKeys(q.$select)) || (q.$exclude && hasKeys(q.$exclude))) {
+      pipeline.push({ $project: this.buildScalarProjection(entity, q) });
     }
 
     // Secondary sort for non-vector fields

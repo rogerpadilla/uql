@@ -76,6 +76,8 @@ describe('Query with $exists and nested relation filtering', () => {
         $select: {
           id: true,
           description: true,
+        },
+        $populate: {
           itemAdjustments: {
             $select: { buyPrice: true, number: true },
             $where: {
@@ -139,6 +141,8 @@ describe('Query with $exists and nested relation filtering', () => {
         $select: {
           id: true,
           name: true,
+        },
+        $populate: {
           tax: {
             $select: { name: true, percentage: true },
             $where: {

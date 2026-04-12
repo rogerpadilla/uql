@@ -1,6 +1,7 @@
 import { getMeta } from '../entity/decorator/index.js';
 
 import type {
+  EntityMeta,
   ExtraOptions,
   HookEvent,
   IdKey,
@@ -13,8 +14,8 @@ import type {
   QueryConflictPaths,
   QueryOne,
   QueryOptions,
+  QueryPopulate,
   QuerySearch,
-  QuerySelect,
   QueryUpdateResult,
   QueryWhere,
   RawRow,
@@ -29,9 +30,13 @@ import {
   augmentWhere,
   clone,
   filterPersistableRelationKeys,
-  filterRelationKeys,
+  forEachRequestedRelation,
   getKeys,
+  getRelationRequestSummary,
   LoggerWrapper,
+  parseRelationAtKey,
+  parseRelationQueryValue,
+  type RelationQuery,
   runHooks,
 } from '../util/index.js';
 import { Serialized } from './decorator/index.js';
@@ -41,6 +46,13 @@ import { Serialized } from './decorator/index.js';
  * It provides a standardized way to execute tasks serially to prevent race conditions on database connections.
  */
 export abstract class AbstractQuerier implements Querier {
+  private static readonly emittedWarnings = new Set<string>();
+
+  /** Clears process-wide warning deduplication. For tests only. */
+  static clearEmittedWarningsForTests(): void {
+    AbstractQuerier.emittedWarnings.clear();
+  }
+
   /**
    * Internal promise used to queue database operations.
    * This ensures that each operation is executed serially, preventing race conditions
@@ -51,6 +63,37 @@ export abstract class AbstractQuerier implements Querier {
 
   constructor(readonly extra?: ExtraOptions) {
     this.logger = new LoggerWrapper(extra?.logger as LoggingOptions, extra?.slowQuery);
+  }
+
+  protected validateProjectionQuery<E extends object>(entity: Type<E>, q: Query<E>): void {
+    this.validateProjectionQueryRecursive(entity, q, getMeta(entity).name ?? entity.name);
+  }
+
+  private validateProjectionQueryRecursive<E extends object>(
+    entity: Type<E>,
+    q: Query<E> | RelationQuery<E>,
+    path: string,
+  ): void {
+    const meta = getMeta(entity);
+    if (q.$select && q.$exclude) {
+      for (const [key, value] of Object.entries(q.$select)) {
+        if (key in meta.fields && value) {
+          throw new TypeError(
+            `Cannot combine $select and $exclude when $select includes positive scalar fields (${key}) at ${path}. Use either $select (whitelist) or $exclude (subtractive) in a single query.`,
+          );
+        }
+      }
+    }
+    forEachRequestedRelation(meta, q.$populate, (relKey, relValue) => {
+      const relOpts = meta.relations[relKey];
+      if (!relOpts?.entity) return;
+      type Related = InstanceType<ReturnType<NonNullable<typeof relOpts.entity>>>;
+      const relEntity = relOpts.entity();
+      const parsed = parseRelationQueryValue<Related>(relValue);
+      if (parsed.nested) {
+        this.validateProjectionQueryRecursive(relEntity, parsed.query, `${path}.${relKey}`);
+      }
+    });
   }
 
   /**
@@ -108,7 +151,8 @@ export abstract class AbstractQuerier implements Querier {
     maybeQuery?: Query<E>,
   ): Promise<E[]> {
     const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    const founds = await this.internalFindMany(entity, q as Query<E>);
+    this.validateProjectionQuery(entity, q);
+    const founds = await this.internalFindMany(entity, q);
     await this.emitHook(entity, 'afterLoad', founds);
     return founds;
   }
@@ -118,7 +162,14 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * Stream records as an async iterable.
    * Supports both entity-as-argument and entity-as-field patterns.
-   * No relation-filling or lifecycle hooks — raw rows for streaming performance.
+   *
+   * **SQL:** Joinable relations (e.g. m1 / one-to-one) are still emitted in the streamed SQL; **to-many**
+   * relations are not filled (no second query) — requesting them throws a clear `TypeError`.
+   *
+   * **MongoDB:** Relation loading uses aggregation + follow-up queries in `findMany`; **streams use a plain
+   * find cursor**, so any requested relation keys in `$select` / `$populate` throw a `TypeError`.
+   *
+   * No `afterLoad` hooks on streamed rows.
    */
   findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
   findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
@@ -127,7 +178,8 @@ export abstract class AbstractQuerier implements Querier {
     maybeQuery?: Query<E>,
   ): AsyncIterable<E> {
     const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    return this.internalFindManyStream(entity, q as Query<E>);
+    this.validateProjectionQuery(entity, q);
+    return this.internalFindManyStream(entity, q);
   }
 
   protected abstract internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
@@ -143,11 +195,9 @@ export abstract class AbstractQuerier implements Querier {
     maybeQuery?: Query<E>,
   ): Promise<[E[], number]> {
     const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q as Query<E>;
-    const [founds, count] = await Promise.all([
-      this.internalFindMany(entity, q as Query<E>),
-      this.internalCount(entity, qCount),
-    ]);
+    this.validateProjectionQuery(entity, q);
+    const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q;
+    const [founds, count] = await Promise.all([this.internalFindMany(entity, q), this.internalCount(entity, qCount)]);
     await this.emitHook(entity, 'afterLoad', founds);
     return [founds, count];
   }
@@ -308,61 +358,84 @@ export abstract class AbstractQuerier implements Querier {
     return [...existingIds, ...insertedIds, ...updatedIds];
   }
 
-  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], select: QuerySelect<E>) {
+  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], populate?: QueryPopulate<E>) {
     if (!payload.length) {
       return;
     }
 
     const meta = getMeta(entity);
-    const relKeys = filterRelationKeys(meta, select);
+    const relKeys = getRelationRequestSummary(meta, populate).toManyKeys;
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;
       const relEntity = relOpts.entity!();
       type RelEntity = typeof relEntity;
-      const relSelect = clone((select as Record<string, unknown>)[relKey]);
-      const relQuery: Query<RelEntity> = relSelect === true || !relSelect ? {} : relSelect;
-      const ids = payload.map((it) => it[meta.id!]);
+      const relationQuery = clone(parseRelationAtKey(relKey, populate).query) as RelationQuery<RelEntity>;
 
       if (relOpts.through) {
-        const localField = relOpts.references![0].local;
-        const throughEntity = relOpts.through();
-        const throughMeta = getMeta(throughEntity);
-        const targetRelKey = getKeys(throughMeta.relations).find((key) =>
-          throughMeta.relations[key]!.references!.some(({ local }) => local === relOpts.references![1].local),
-        );
-        const throughFounds = await this.findMany(throughEntity, {
-          ...relQuery,
-          $select: {
-            [localField!]: true,
-            [targetRelKey!]: {
-              ...relQuery,
-              $required: true,
-            },
-          },
-          $where: {
-            ...relQuery.$where,
-            [localField!]: ids,
-          },
-        });
-        const founds = (throughFounds as unknown as RawRow[]).map((it) => ({
-          ...(it[targetRelKey!] as RawRow),
-          [localField!]: it[localField!],
-        }));
-        this.putChildrenInParents(payload, founds, meta.id!, localField!, relKey);
+        await this.fillToManyThroughRelation(payload, meta, relKey, relOpts, relationQuery as RelationQuery);
       } else if (relOpts.cardinality === '1m') {
-        const foreignField = relOpts.references![0].foreign;
-        if (relQuery.$select) {
-          if (!(relQuery.$select as Record<string, unknown>)[foreignField]) {
-            (relQuery.$select as Record<string, unknown>)[foreignField] = true;
-          }
-        }
-        relQuery.$where = { ...relQuery.$where, [foreignField!]: ids };
-        const founds = await this.findMany(relEntity, relQuery);
-        this.putChildrenInParents(payload, founds, meta.id!, foreignField!, relKey);
+        await this.fillToManyOneToMany(payload, meta, relKey, relOpts, relationQuery as RelationQuery, relEntity);
       }
     }
+  }
+
+  private async fillToManyThroughRelation<E>(
+    payload: E[],
+    meta: EntityMeta<E>,
+    relKey: RelationKey<E>,
+    relOpts: RelationOptions,
+    relationQuery: RelationQuery,
+  ): Promise<void> {
+    const localField = relOpts.references![0].local;
+    const throughEntity = relOpts.through!();
+    const throughMeta = getMeta(throughEntity);
+    const targetRelKey = getKeys(throughMeta.relations).find((key) =>
+      throughMeta.relations[key]!.references!.some(({ local }) => local === relOpts.references![1].local),
+    );
+    const ids = payload.map((it) => it[meta.id!]);
+    const throughFounds = await this.findMany(throughEntity, {
+      ...relationQuery,
+      $select: {
+        [localField!]: true,
+      },
+      $populate: {
+        [targetRelKey!]: {
+          ...relationQuery,
+          $required: true,
+        },
+      },
+      $where: {
+        ...relationQuery.$where,
+        [localField!]: ids,
+      },
+    });
+    const founds = (throughFounds as unknown as RawRow[]).map((it) => ({
+      ...(it[targetRelKey!] as RawRow),
+      [localField!]: it[localField!],
+    }));
+    this.putChildrenInParents(payload, founds, meta.id!, localField!, relKey);
+  }
+
+  private async fillToManyOneToMany<E>(
+    payload: E[],
+    meta: EntityMeta<E>,
+    relKey: RelationKey<E>,
+    relOpts: RelationOptions,
+    relationQuery: RelationQuery,
+    relEntity: Type<object>,
+  ): Promise<void> {
+    const foreignField = relOpts.references![0].foreign;
+    if (relationQuery.$select) {
+      if (!(relationQuery.$select as Record<string, unknown>)[foreignField]) {
+        (relationQuery.$select as Record<string, unknown>)[foreignField] = true;
+      }
+    }
+    const ids = payload.map((it) => it[meta.id!]);
+    relationQuery.$where = { ...relationQuery.$where, [foreignField!]: ids };
+    const founds = await this.findMany(relEntity, relationQuery);
+    this.putChildrenInParents(payload, founds as RawRow[], meta.id!, foreignField!, relKey);
   }
 
   protected putChildrenInParents<E>(

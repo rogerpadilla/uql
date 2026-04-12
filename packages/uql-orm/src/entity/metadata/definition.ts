@@ -5,6 +5,7 @@ import type {
   EntityOptions,
   FieldKey,
   FieldOptions,
+  FieldType,
   HookEvent,
   IdKey,
   Key,
@@ -241,12 +242,12 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   const mappedBy = getMappedByRelationKey(relOpts);
   relOpts.mappedBy = mappedBy;
 
-  if (relMeta.fields[mappedBy as FieldKey<any>]) {
+  if (relMeta.fields[mappedBy]) {
     relOpts.references = [{ local: relMeta.id!, foreign: mappedBy }];
     return;
   }
 
-  const mappedByRelation = relMeta.relations[mappedBy as RelationKey<any>];
+  const mappedByRelation = relMeta.relations[mappedBy];
   if (!mappedByRelation) return;
 
   if (relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm') {
@@ -335,7 +336,7 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   }
 }
 
-function inferType<E>(entity: Type<E>, key: string): any {
+function inferType<E>(entity: Type<E>, key: string): FieldType {
   return Reflect.getMetadata('design:type', entity.prototype, key);
 }
 

@@ -16,7 +16,14 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { buildUpdateResult, clone, obtainAttrsPaths, unflatObject, unflatObjects } from '../util/index.js';
+import {
+  buildUpdateResult,
+  clone,
+  getRelationRequestSummary,
+  obtainAttrsPaths,
+  unflatObject,
+  unflatObjects,
+} from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { Log, Serialized } from './decorator/index.js';
@@ -84,11 +91,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     this.dialect.find(ctx, entity, q);
     const res = await this.all<RawRow>(ctx.sql, ctx.values);
     const founds = unflatObjects<E>(res).map((row) => this.hydrateJsonFields(entity, row));
-    await this.fillToManyRelations(entity, founds, q.$select!);
+    await this.fillToManyRelations(entity, founds, q.$populate);
     return founds;
   }
 
   protected override async *internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>) {
+    const meta = getMeta(entity);
+    const { toManyKeys } = getRelationRequestSummary(meta, q.$populate);
+    if (toManyKeys.length) {
+      throw new TypeError(
+        `findManyStream does not load to-many relations (${toManyKeys.join(', ')}). Use findMany so fillToManyRelations can run, or omit those keys from the stream query.`,
+      );
+    }
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q);
     const normalizedParams = this.dialect.normalizeValues(ctx.values);

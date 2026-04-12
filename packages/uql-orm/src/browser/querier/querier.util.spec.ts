@@ -23,13 +23,14 @@ it('stringifyQuery', () => {
   expect(stringifyQuery({})).toBe('');
   expect(stringifyQuery({ $sort: undefined })).toBe('');
   const source: Query<Item> = {
-    $select: { id: 1, name: 1, tax: true, measureUnit: { $select: { id: 1, name: 1, categoryId: 1 } } },
+    $select: { id: 1, name: 1 },
+    $populate: { tax: true, measureUnit: { $select: { id: 1, name: 1, categoryId: 1 } } },
     $where: { name: 'Batman', companyId: 38 },
     $sort: { companyId: 1, name: -1 },
     $limit: 5,
   };
   const result = stringifyQuery(source);
   const expected =
-    '?$select={"id":1,"name":1,"tax":true,"measureUnit":{"$select":{"id":1,"name":1,"categoryId":1}}}&$where={"name":"Batman","companyId":38}&$sort={"companyId":1,"name":-1}&$limit=5';
+    '?$select={"id":1,"name":1}&$populate={"tax":true,"measureUnit":{"$select":{"id":1,"name":1,"categoryId":1}}}&$where={"name":"Batman","companyId":38}&$sort={"companyId":1,"name":-1}&$limit=5';
   expect(result).toBe(expected);
 });

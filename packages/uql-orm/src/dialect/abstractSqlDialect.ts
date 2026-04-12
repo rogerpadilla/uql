@@ -15,9 +15,11 @@ import {
   type QueryConflictPaths,
   type QueryContext,
   type QueryDialect,
+  type QueryExclude,
   type QueryHavingMap,
   type QueryOptions,
   type QueryPager,
+  type QueryPopulate,
   QueryRaw,
   type QueryRawFnOptions,
   type QuerySearch,
@@ -50,16 +52,19 @@ import {
   escapeSqlId,
   fillOnFields,
   filterFieldKeys,
-  filterRelationKeys,
   flatObject,
   getFieldCallbackValue,
   getFieldKeys,
   getKeys,
+  getRelationRequestSummary,
   hasKeys,
   isJsonType,
-  isSelectingRelations,
+  isPopulatingRelations,
   isVectorSearch,
+  normalizeScalarFieldSelection,
   parseGroupMap,
+  parseRelationAtKey,
+  type RelationQuery,
   raw,
 } from '../util/index.js';
 
@@ -165,7 +170,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, q.$select))) ? tableName : undefined;
+    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$select, q.$populate);
     opts = { ...opts, prefix };
     this.where<E>(ctx, entity, q.$where, opts);
     this.sort<E>(ctx, entity, q.$sort, opts);
@@ -177,6 +182,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     entity: Type<E>,
     select: QuerySelect<E> | QueryRaw[] | undefined,
     opts: QuerySelectOptions = {},
+    exclude?: QueryExclude<E>,
   ): void {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
@@ -189,24 +195,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         // Internal-only path: raw SQL expressions passed as QueryRaw[]
         selectArr = select;
       } else {
-        const positiveFields: FieldKey<E>[] = [];
-        const negativeFields: FieldKey<E>[] = [];
-
-        for (const prop in select) {
-          if (!(prop in meta.fields)) {
-            continue;
-          }
-          const val = select[prop as FieldKey<E>];
-          if (val) {
-            positiveFields.push(prop as FieldKey<E>);
-          } else {
-            negativeFields.push(prop as FieldKey<E>);
-          }
-        }
-
-        selectArr = positiveFields.length
-          ? positiveFields
-          : (getFieldKeys(meta.fields).filter((it) => !negativeFields.includes(it)) as FieldKey<E>[]);
+        selectArr = normalizeScalarFieldSelection(meta, select, exclude);
       }
 
       const id = meta.id;
@@ -214,7 +203,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         selectArr = [id, ...selectArr];
       }
     } else {
-      selectArr = getFieldKeys(meta.fields) as FieldKey<E>[];
+      selectArr = normalizeScalarFieldSelection(meta, undefined, exclude);
     }
 
     if (!selectArr.length) {
@@ -257,6 +246,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx: QueryContext,
     entity: Type<E>,
     select: QuerySelect<E> | QueryRaw[] | undefined,
+    exclude?: QueryExclude<E>,
+    populate?: QueryPopulate<E>,
     opts: QueryOptions = {},
     distinct?: boolean,
     sort?: QuerySortMap<E>,
@@ -264,12 +255,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const mapSelect = Array.isArray(select) ? undefined : select;
-    const prefix = (opts.prefix ?? (opts.autoPrefix || isSelectingRelations(meta, mapSelect))) ? tableName : undefined;
+    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, mapSelect, populate);
 
     ctx.append(distinct ? 'SELECT DISTINCT ' : 'SELECT ');
-    this.selectFields(ctx, entity, select, { prefix });
+    this.selectFields(ctx, entity, select, { prefix }, exclude);
     // Add related fields BEFORE FROM clause
-    this.selectRelationFields(ctx, entity, mapSelect, { prefix });
+    this.selectRelationFields(ctx, entity, mapSelect, populate, { prefix });
     // Inject vector distance projections when $project is set
     if (sort) {
       const sortMap = buildSortMap(sort);
@@ -282,19 +273,36 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
     ctx.append(` FROM ${this.escapeId(tableName)}`);
     // Add JOINs AFTER FROM clause
-    this.selectRelationJoins(ctx, entity, mapSelect, { prefix });
+    this.selectRelationJoins(ctx, entity, mapSelect, populate, { prefix });
+  }
+
+  private resolveRelationAwarePrefix<E>(
+    tableName: string,
+    meta: EntityMeta<E>,
+    opts: QueryOptions,
+    select?: QuerySelect<E>,
+    populate?: QueryPopulate<E>,
+  ): string | undefined {
+    return (opts.prefix ?? (opts.autoPrefix || isPopulatingRelations(meta, populate))) ? tableName : undefined;
   }
 
   protected selectRelationFields<E>(
     ctx: QueryContext,
     entity: Type<E>,
     select: QuerySelect<E> | undefined,
+    populate: QueryPopulate<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
-    this.forEachJoinableRelation(entity, select, opts, (relEntity, relQuery, joinRelAlias) => {
+    this.forEachJoinableRelation(entity, select, populate, opts, (relEntity, relQuery, joinRelAlias) => {
       ctx.append(', ');
-      this.selectFields(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias, autoPrefixAlias: true });
-      this.selectRelationFields(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias });
+      this.selectFields(
+        ctx,
+        relEntity,
+        relQuery.$select,
+        { prefix: joinRelAlias, autoPrefixAlias: true },
+        relQuery.$exclude,
+      );
+      this.selectRelationFields(ctx, relEntity, relQuery.$select, relQuery.$populate, { prefix: joinRelAlias });
     });
   }
 
@@ -302,11 +310,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx: QueryContext,
     entity: Type<E>,
     select: QuerySelect<E> | undefined,
+    populate: QueryPopulate<E> | undefined,
     opts: { prefix?: string } = {},
   ): void {
     this.forEachJoinableRelation(
       entity,
       select,
+      populate,
       opts,
       (relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required) => {
         const relMeta = getMeta(relEntity);
@@ -333,7 +343,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           this.where(ctx, relEntity, relQuery.$where, { prefix: joinRelAlias, clause: false });
         }
 
-        this.selectRelationJoins(ctx, relEntity, relQuery.$select, { prefix: joinRelAlias });
+        this.selectRelationJoins(ctx, relEntity, relQuery.$select, relQuery.$populate, { prefix: joinRelAlias });
       },
     );
   }
@@ -345,10 +355,11 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   private forEachJoinableRelation<E>(
     entity: Type<E>,
     select: QuerySelect<E> | undefined,
+    populate: QueryPopulate<E> | undefined,
     opts: { prefix?: string },
     callback: (
-      relEntity: Type<unknown>,
-      relQuery: Query<unknown>,
+      relEntity: Type<object>,
+      relQuery: RelationQuery,
       joinRelAlias: string,
       relOpts: RelationOptions,
       meta: EntityMeta<E>,
@@ -356,32 +367,20 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       required: boolean,
     ) => void,
   ): void {
-    if (!select) return;
+    if (!select && !populate) return;
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const relKeys = filterRelationKeys(meta, select);
+    const relKeys = getRelationRequestSummary(meta, populate).joinableKeys;
     const prefix = opts.prefix;
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
-      if (!relOpts || relOpts.cardinality === '1m' || relOpts.cardinality === 'mm' || !relOpts.entity) continue;
+      if (!relOpts?.entity) continue;
 
       const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? relKey : prefix ? `${prefix}.${relKey}` : relKey;
       const relEntity = relOpts.entity();
-      const relSelect = select?.[relKey];
-
-      let relQuery: Query<unknown>;
-      let required = false;
-
-      if (isRelationSelectQuery(relSelect)) {
-        relQuery = relSelect;
-        required = relSelect.$required === true;
-      } else if (Array.isArray(relSelect)) {
-        relQuery = { $select: relSelect };
-      } else {
-        relQuery = {};
-      }
+      const { query: relQuery, required } = parseRelationAtKey<E>(relKey, populate);
 
       callback(relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required);
     }
@@ -1100,7 +1099,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
-    this.select(ctx, entity, q.$select, opts, q.$distinct, q.$sort);
+    this.select(ctx, entity, q.$select, q.$exclude, q.$populate, opts, q.$distinct, q.$sort);
     this.search(ctx, entity, q, opts);
   }
 
@@ -1749,11 +1748,4 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   override toString(): string {
     return this.dialectName;
   }
-}
-
-/**
- * Type guard: narrows a relation select value to a query object (with optional `$required`).
- */
-function isRelationSelectQuery(val: unknown): val is Query<unknown> & { $required?: boolean } {
-  return val !== null && typeof val === 'object' && !Array.isArray(val);
 }
