@@ -8,7 +8,6 @@ date format is [yyyy-mm-dd]
 
 ### Improvements
 
-- **`noExplicitAny` lint rule relaxed**: `noExplicitAny` in Biome configuration changed from `"off"` to `"warn"` to encourage stricter typing without being a hard error.
 - **`tsconfig.json`**: Added `"strict": true` to the compiler options.
 - **SQLite module**: Re-exported `AbstractSqliteQuerier` from the `uql-orm/sqlite` entry point (`abstractSqliteQuerier.js`).
 
