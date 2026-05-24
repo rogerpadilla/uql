@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.8.5] - 2026-05-24
+
+### Improvements
+
+- **`noExplicitAny` lint rule relaxed**: `noExplicitAny` in Biome configuration changed from `"off"` to `"warn"` to encourage stricter typing without being a hard error.
+- **`tsconfig.json`**: Added `"strict": true` to the compiler options.
+- **SQLite module**: Re-exported `AbstractSqliteQuerier` from the `uql-orm/sqlite` entry point (`abstractSqliteQuerier.js`).
+
+### Dependencies
+
+- Updated dev and prod dependencies and fully tested.
+
 ## [0.8.4] - 2026-04-11
 
 ### Features
