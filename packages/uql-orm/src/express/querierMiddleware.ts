@@ -103,7 +103,7 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       const q = buildIdQuery(meta, req);
 
       const count = await querier.deleteMany(entity, q, {
-        softDelete: !!req.query.softDelete,
+        softDelete: req.query.softDelete === 'true',
       });
       res.json({ data: req.params['id'], count });
     }),
@@ -116,13 +116,13 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       const founds = await querier.findMany(entity, q);
       let ids: IdValue<E>[] = [];
       let count = 0;
-      if (founds.length) {
-        ids = founds.map((found) => found[meta.id!]);
+      if (founds.length && meta.id) {
+        ids = founds.map((found) => found[meta.id] as IdValue<E>);
         count = await querier.deleteMany(
           entity,
           { $where: ids },
           {
-            softDelete: !!req.query.softDelete,
+            softDelete: req.query.softDelete === 'true',
           },
         );
       }

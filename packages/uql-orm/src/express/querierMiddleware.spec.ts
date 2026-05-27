@@ -186,6 +186,13 @@ describe('querierMiddleware', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
+  it('GET /api/user with $limit', async () => {
+    mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'John' }]);
+    const res = await request(app).get('/api/user?$limit=5');
+    expect(res.status).toBe(200);
+    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 5 }));
+  });
+
   it('should throw error if no entities provided', () => {
     expect(() => querierMiddleware({ include: [] })).toThrow('no entities for the uql express middleware');
   });
@@ -195,6 +202,16 @@ describe('querierMiddleware', () => {
     const res = await request(app).get('/api/user/123?$where[]=1');
     expect(res.status).toBe(200);
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
+  });
+
+  it('GET /api/user/:id with $where as object', async () => {
+    mockQuerier.findOne.mockResolvedValue({ id: 123 });
+    const res = await request(app).get('/api/user/123?$where=' + encodeURIComponent('{"name":"John"}'));
+    expect(res.status).toBe(200);
+    expect(mockQuerier.findOne).toHaveBeenCalledWith(
+      User,
+      expect.objectContaining({ $where: { id: '123', name: 'John' } }),
+    );
   });
 
   it('PATCH /api/user/:id with $where as array', async () => {
