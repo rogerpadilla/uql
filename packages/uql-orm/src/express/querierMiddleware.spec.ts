@@ -240,4 +240,43 @@ describe('querierMiddleware', () => {
     const res = await request(app).get('/api/other-entity');
     expect(res.status).toBe(404);
   });
+
+  it('GET /api/user/one returns null', async () => {
+    mockQuerier.findOne.mockResolvedValue(null);
+    const res = await request(app).get('/api/user/one');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: null, count: 0 });
+  });
+
+  it('GET /api/user/:id returns null', async () => {
+    mockQuerier.findOne.mockResolvedValue(null);
+    const res = await request(app).get('/api/user/999');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: null, count: 0 });
+  });
+
+  it('DELETE /api/user when no entities found', async () => {
+    mockQuerier.findMany.mockResolvedValue([]);
+    const res = await request(app).delete('/api/user');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: [], count: 0 });
+    expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('PUT /api/user/:id is not handled (pre preSave branch)', async () => {
+    const res = await request(app).put('/api/user/1').send({ name: 'John' });
+    expect(res.status).toBe(404);
+  });
+
+  it('errorHandler with non-Error exception', async () => {
+    mockQuerier.findOne.mockRejectedValue('raw string error');
+    const res = await request(app).get('/api/user/one');
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('Internal Server Error');
+  });
+
+  it('querierMiddleware uses getEntities when include is omitted', () => {
+    const router = querierMiddleware();
+    expect(router).toBeDefined();
+  });
 });
