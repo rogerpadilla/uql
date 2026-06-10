@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:9.6
+    image: mysql:9.7
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -18,7 +18,7 @@ services:
       - ./docker/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql
 
   mariadb:
-    image: mariadb:12.3-rc
+    image: mariadb:12.3
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
