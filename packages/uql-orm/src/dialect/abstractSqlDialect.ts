@@ -593,6 +593,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     $ilike: (v) => v.toLowerCase(),
   };
 
+  // biome-ignore lint/suspicious/noExplicitAny: method works with any entity type
   protected resolveColumnWithPrefix(entity: Type<any>, key: string, { prefix }: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const field = meta.fields[key as string];
@@ -607,6 +608,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    */
   protected resolveOperandField(
     ctx: QueryContext,
+    // biome-ignore lint/suspicious/noExplicitAny: method works with any entity type
     entity: Type<any>,
     key: string,
     opts: QueryOptions,
@@ -614,6 +616,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const col = getMeta(entity).fields[key];
     if (col?.virtual) {
       if (col.virtual instanceof QueryRaw) {
+        // biome-ignore lint/suspicious/noExplicitAny: field key type erased at runtime
         this.getComparisonKey(ctx, entity, key as FieldKey<any>, opts);
         return undefined;
       }

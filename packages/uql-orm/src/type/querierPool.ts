@@ -48,9 +48,11 @@ export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect =
 };
 
 /** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
+// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction — `any` is required to match all pool instantiations
 export type QuerierPoolDialect<P> = P extends QuerierPool<any, infer D> ? D : never;
 
 /** Querier type produced by pool `P`. */
+// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction — `any` is required to match all pool instantiations
 export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, any> ? Q : never;
 
 /**

@@ -47,6 +47,18 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.spec.ts", "**/*-spec.ts", "**/*.test.ts", "**/*-test.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off" },
+          "style": { "noNonNullAssertion": "off" },
+          "correctness": {}
+        }
+      }
+    }
+  ],
   "linter": {
     "enabled": true,
     "rules": {
@@ -147,7 +159,7 @@
         "noInferrableTypes": "error",
         "noUselessElse": "error",
         "useArrayLiterals": "off",
-        "noNonNullAssertion": "off",
+        "noNonNullAssertion": "warn",
         "useConsistentObjectDefinitions": {
           "level": "error",
           "options": {
@@ -172,7 +184,7 @@
         "noDuplicateObjectKeys": "error",
         "noDuplicateParameters": "error",
         "noEmptyBlockStatements": "off",
-        "noExplicitAny": "off",
+        "noExplicitAny": "error",
         "noExtraNonNullAssertion": "error",
         "noFallthroughSwitchClause": "error",
         "noFunctionAssign": "error",

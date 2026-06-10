@@ -7,10 +7,10 @@
   ],
   "scripts": {
     "release": "bun run build && lerna publish",
-    "release.patch": "bun run release patch && git pull && git push",
-    "release.minor": "bun run release minor && git pull && git push",
-    "release.major": "bun run release major && git pull && git push",
-    "release.current": "bun run release from-package && git pull && git push",
+    "release.patch": "bun run release patch && git push --follow-tags",
+    "release.minor": "bun run release minor && git push --follow-tags",
+    "release.major": "bun run release major && git push --follow-tags",
+    "release.current": "bun run release from-package && git push --follow-tags",
     "check": "bun run --parallel ts lint.fix",
     "ts": "tsc --noEmit",
     "build": "lerna run build",
@@ -59,5 +59,17 @@
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
   },
-  "author": "Roger Padilla"
+  "author": "Roger Padilla",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rogerpadilla/uql.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rogerpadilla/uql/issues"
+  },
+  "homepage": "https://uql-orm.dev",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }
