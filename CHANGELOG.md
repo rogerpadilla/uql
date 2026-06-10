@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.9.2] - 2026-06-10
+
+### Bug Fixes
+
+- **Express middleware**: `parseQuery` now correctly coerces `$limit` and `$skip` to numbers and parses JSON-encoded `$where` strings before route handlers run. Previously, Express's lazy `req.query` getter re-parsed the URL on every access, silently discarding the middleware's mutations.
+
+### Dependencies
+
+- Updated dev and prod dependencies.
+- Docker images bumped: MySQL `9.6` → `9.7`, MariaDB `12.3-rc` → `12.3` (now stable).
+
 ## [0.8.5] - 2026-05-24
 
 ### Improvements
