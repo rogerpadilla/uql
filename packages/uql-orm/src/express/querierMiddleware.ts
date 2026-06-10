@@ -33,7 +33,7 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
   const meta = getMeta(entity);
   const router = expressRouter();
 
-  router.use((req, res, next) => {
+  router.use((req, _res, next) => {
     pre(req, meta, opts);
     next();
   });
@@ -179,7 +179,7 @@ function buildIdQuery<E extends object>(meta: EntityMeta<E>, req: Request): Quer
   return q;
 }
 
-function pre(req: Request, meta: EntityMeta<any>, extra: ExtraOptions) {
+function pre<E extends object>(req: Request, meta: EntityMeta<E>, extra: ExtraOptions) {
   const method = req.method;
   parseQuery(req);
   extra.pre?.(req, meta);
@@ -190,13 +190,13 @@ function pre(req: Request, meta: EntityMeta<any>, extra: ExtraOptions) {
   }
 }
 
-export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
   const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
   const message = err instanceof Error ? err.message : 'Internal Server Error';
   res.status(status).json({ error: message });
 }
 
-type Pre = (req: Request, meta: EntityMeta<any>) => void;
+type Pre = <E extends object>(req: Request, meta: EntityMeta<E>) => void;
 
 type ExtraOptions = {
   /**
@@ -214,6 +214,8 @@ type ExtraOptions = {
 };
 
 export type MiddlewareOptions = ExtraOptions & {
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
   include?: Type<any>[];
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
   exclude?: Type<any>[];
 };

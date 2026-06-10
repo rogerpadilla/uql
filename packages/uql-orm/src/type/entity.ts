@@ -274,10 +274,12 @@ export type FieldOptions = {
 
 export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
 
+// biome-ignore lint/suspicious/noExplicitAny: public generic default — changing would break callers
 export type EntityGetter<E = any> = () => Type<E>;
 
 export type CascadeType = 'persist' | 'delete';
 
+// biome-ignore lint/suspicious/noExplicitAny: public generic default — changing would break callers
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   cardinality: RelationCardinality;

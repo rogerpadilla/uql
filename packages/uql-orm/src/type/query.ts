@@ -721,7 +721,7 @@ export type QueryAggregateResult<E, G> = {
     ? K extends keyof E
       ? E[K]
       : unknown
-    : G[K] extends { readonly $count: any } | { readonly $sum: any } | { readonly $avg: any }
+    : G[K] extends { readonly $count: unknown } | { readonly $sum: unknown } | { readonly $avg: unknown }
       ? number
       : G[K] extends { readonly $min: infer F }
         ? F extends keyof E

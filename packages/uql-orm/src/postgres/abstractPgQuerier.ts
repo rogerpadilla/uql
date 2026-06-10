@@ -1,10 +1,11 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions } from '../type/index.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
 
 export interface PgAnyClient {
-  query: (query: any, values?: any[]) => Promise<any>;
-  release: () => void | Promise<void>;
+  query(text: string, values?: unknown[]): Promise<{ rows: RawRow[]; rowCount: number | null }>;
+  query(stream: object): AsyncIterable<RawRow> & { destroy(): void };
+  release(): void | Promise<void>;
 }
 
 /**
@@ -30,7 +31,7 @@ export abstract class AbstractPgQuerier<
 
   override async *internalStream<T>(query: string, values?: unknown[]) {
     const { default: QueryStream } = await import('pg-query-stream');
-    const stream = (this.conn as any).query(new QueryStream(query, values));
+    const stream = this.conn!.query(new QueryStream(query, values));
     try {
       for await (const row of stream) {
         yield row as T;
