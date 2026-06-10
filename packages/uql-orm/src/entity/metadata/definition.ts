@@ -17,6 +17,7 @@ import type {
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 import { LoggerWrapper } from '../../util/logger.js';
 
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry — stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
 const holder = globalThis as unknown as Record<symbol, Meta>;
 const metaKey = Symbol.for('uql-orm/entity/metadata');
@@ -340,6 +341,7 @@ function inferType<E>(entity: Type<E>, key: string): FieldType {
   return Reflect.getMetadata('design:type', entity.prototype, key);
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: reflected type is unknown at compile time
 function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
   const inferredType = inferType(entity, key);
   const isValidType = isValidEntityType(inferredType);

@@ -22,4 +22,4 @@ type RequestBaseNotification = { readonly opts?: RequestOptions };
 type RequestSuccessNotification = { readonly phase: 'start' | 'success' | 'complete' } & RequestBaseNotification;
 type RequestErrorNotification = { readonly phase: 'error' } & RequestErrorResponse & RequestBaseNotification;
 export type RequestNotification = RequestSuccessNotification | RequestErrorNotification;
-export type RequestCallback = (msg: RequestNotification) => any;
+export type RequestCallback = (msg: RequestNotification) => void;
