@@ -29,4 +29,6 @@ export function parseQuery(req: Request): void {
   if (qmsSrc.$limit) {
     qm.$limit = Number(qmsSrc.$limit);
   }
+
+  Object.defineProperty(req, 'query', { value: qm, writable: true, configurable: true });
 }
