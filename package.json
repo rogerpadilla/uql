@@ -42,22 +42,22 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.15",
-    "@commitlint/cli": "21.0.1",
-    "@commitlint/config-conventional": "21.0.1",
-    "@swc/core": "^1.15.40",
-    "@swc/helpers": "^0.5.21",
+    "@biomejs/biome": "2.4.16",
+    "@commitlint/cli": "21.0.2",
+    "@commitlint/config-conventional": "21.0.2",
+    "@swc/core": "^1.15.41",
+    "@swc/helpers": "^0.5.23",
     "@types/bun": "^1.3.14",
     "@types/supertest": "^7.2.0",
-    "@vitest/coverage-v8": "^4.1.7",
+    "@vitest/coverage-v8": "^4.1.8",
     "lerna": "^9.0.7",
-    "mongodb-memory-server": "11.1.0",
+    "mongodb-memory-server": "11.2.0",
     "rimraf": "6.1.3",
     "supertest": "^7.2.2",
     "typescript": "^6.0.3",
     "unplugin-swc": "^1.5.9",
-    "vite": "^8.0.14",
-    "vitest": "^4.1.7"
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
   },
   "author": "Roger Padilla"
 }
