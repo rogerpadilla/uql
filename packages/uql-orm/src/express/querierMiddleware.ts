@@ -117,7 +117,8 @@ export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: Extr
       let ids: IdValue<E>[] = [];
       let count = 0;
       if (founds.length && meta.id) {
-        ids = founds.map((found) => found[meta.id] as IdValue<E>);
+        const idKey = meta.id;
+        ids = founds.map((found) => found[idKey]);
         count = await querier.deleteMany(
           entity,
           { $where: ids },
