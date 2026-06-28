@@ -3,6 +3,23 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## [0.9.3](https://github.com/rogerpadilla/uql/compare/uql-orm@0.9.1...uql-orm@0.9.3) (2026-06-28)
+
+
+### Bug Fixes
+
+* cache parsed query to survive Express req.query getter re-invocation ([ee934eb](https://github.com/rogerpadilla/uql/commit/ee934ebe9f32a11307e46535d2407bbbf604dcaa))
+* narrow meta.id in closure and add 0.9.2 changelog entry ([9fb427b](https://github.com/rogerpadilla/uql/commit/9fb427baf78d7987977a8b4c40bfee587a022e46))
+
+
+### Features
+
+* add tests for $limit and $where query parameters in querierMiddleware ([7fe4ff3](https://github.com/rogerpadilla/uql/commit/7fe4ff3170167180b655c0aac3a286bfa5c91336))
+
+
+
+
+
 ## 0.9.2 (2026-06-10)
 
 
