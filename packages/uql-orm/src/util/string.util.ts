@@ -7,20 +7,18 @@ export function kebabCase(val: string): string {
 }
 
 export function upperFirst(text: string): string {
+  if (!text) return text;
   return text[0].toUpperCase() + text.slice(1);
 }
 
 export function lowerFirst(text: string): string {
+  if (!text) return text;
   return text[0].toLowerCase() + text.slice(1);
 }
 
 export function snakeCase(val: string): string {
-  if (val === undefined || val === null) {
-    return val;
-  }
-  if (!val) {
-    return '';
-  }
+  if (val === null || val === undefined) return val as string;
+  if (!val) return '';
   let resp = val.charAt(0).toLowerCase();
   for (let i = 1; i < val.length; ++i) {
     const char = val[i];

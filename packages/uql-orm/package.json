@@ -101,20 +101,20 @@
     }
   },
   "devDependencies": {
-    "@libsql/client": "^0.17.3",
+    "@libsql/client": "^0.17.4",
     "@neondatabase/serverless": "^1.1.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.20.0",
     "@types/sqlstring": "^2.3.2",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^12.11.1",
     "bunchee": "^6.11.0",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
-    "mongodb": "^7.3.0",
+    "mongodb": "^7.4.0",
     "mysql2": "^3.22.5",
-    "pg": "^8.21.0",
-    "pg-query-stream": "^4.15.0"
+    "pg": "^8.22.0",
+    "pg-query-stream": "^4.16.0"
   },
   "author": "Roger Padilla",
   "repository": {

@@ -9,19 +9,19 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.conn!.query(query, values);
+    const res = await this.getConn().query(query, values);
     return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const res = await this.conn!.query(query, values);
+    const res = await this.getConn().query(query, values);
     // MariaDB may not set `affectedRows` when RETURNING is used; fall back to row count.
     const changes = res.affectedRows ?? res.length ?? 0;
     return this.buildUpdateResult({ rows: res.length ? res : [], changes, upsertStatus: res.affectedRows });
   }
 
   override async *internalStream<T>(query: string, values?: unknown[]) {
-    const stream = this.conn!.queryStream(query, values);
+    const stream = this.getConn().queryStream(query, values);
     try {
       for await (const row of stream) {
         yield row as T;

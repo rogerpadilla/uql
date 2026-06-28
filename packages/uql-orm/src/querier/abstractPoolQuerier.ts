@@ -1,9 +1,15 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { ExtraOptions } from '../type/index.js';
+import { throwPendingTransaction } from '../util/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
-  protected conn?: C;
+  protected conn: C | undefined;
+
+  protected getConn(): C {
+    if (!this.conn) throw new TypeError('pool querier not connected');
+    return this.conn;
+  }
 
   constructor(
     dialect: AbstractSqlDialect,
@@ -19,7 +25,7 @@ export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
 
   override async internalRelease() {
     if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     if (!this.conn) {
       return;

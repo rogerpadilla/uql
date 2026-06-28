@@ -1049,7 +1049,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     entries.forEach(([alias, condition], index) => {
       if (index > 0) ctx.append(' AND ');
       const expr = aggregateExpressions[alias] ?? this.escapeId(alias);
-      this.havingCondition(ctx, expr, condition!);
+      this.havingCondition(ctx, expr, condition);
     });
   }
 
@@ -1521,7 +1521,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   ): void {
     const meta = getMeta(entity);
     const parentTable = this.resolveTableName(entity, meta);
-    const parentId = meta.id!;
+    const parentId = meta.id;
     const escapedParentId =
       (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
       this.escapeId(parentId);
@@ -1543,7 +1543,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const throughTable = this.resolveTableName(throughEntity, throughMeta);
       const localFk = rel.references[0].local;
       const foreignFk = rel.references[1].local;
-      const relatedId = relatedMeta.id!;
+      const relatedId = relatedMeta.id;
 
       ctx.append(this.escapeId(throughTable));
       ctx.append(` WHERE ${this.escapeId(throughTable, false, true)}${this.escapeId(localFk)} = ${escapedParentId}`);
@@ -1594,7 +1594,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   ): void {
     const meta = getMeta(entity);
     const parentTable = this.resolveTableName(entity, meta);
-    const parentId = meta.id!;
+    const parentId = meta.id;
     const escapedParentId =
       (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
       this.escapeId(parentId);

@@ -46,7 +46,7 @@ function isByteSource(val: object): val is Uint8Array {
 function bytesToHexLiteral(buf: Uint8Array): string {
   let hex = '';
   for (let i = 0; i < buf.length; i++) {
-    hex += buf[i]!.toString(16).padStart(2, '0');
+    hex += buf[i].toString(16).padStart(2, '0');
   }
   return `X'${hex}'`;
 }
@@ -54,7 +54,7 @@ function bytesToHexLiteral(buf: Uint8Array): string {
 function arrayToSqlList(arr: unknown[]): string {
   let sql = '';
   for (let i = 0; i < arr.length; i++) {
-    const val = arr[i]!;
+    const val = arr[i];
     if (Array.isArray(val)) {
       sql += `${i === 0 ? '' : ', '}(${arrayToSqlList(val)})`;
     } else {

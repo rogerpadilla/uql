@@ -20,18 +20,18 @@ export abstract class AbstractPgQuerier<
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = await this.conn!.query(query, values);
+    const res = await this.getConn().query(query, values);
     return res.rows as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const res = await this.conn!.query(query, values);
+    const res = await this.getConn().query(query, values);
     return this.buildUpdateResult({ rows: res.rows, changes: res.rowCount ?? 0 });
   }
 
   override async *internalStream<T>(query: string, values?: unknown[]) {
     const { default: QueryStream } = await import('pg-query-stream');
-    const stream = this.conn!.query(new QueryStream(query, values));
+    const stream = this.getConn().query(new QueryStream(query, values));
     try {
       for await (const row of stream) {
         yield row as T;

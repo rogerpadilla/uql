@@ -35,7 +35,7 @@ export class BunSqlQuerier extends AbstractPoolQuerier<ReservedSQL> {
   private async execute<T>(query: string, values?: unknown[]): Promise<BunSqlResult<T>> {
     // Safe: UQL parameters are strictly bound. .unsafe() correctly bypasses Bun's tagged template
     // literal parsing requirement so we can execute our dynamically compiled AST strings natively.
-    return this.conn!.unsafe<BunSqlResult<T>>(query, values);
+    return this.getConn().unsafe<BunSqlResult<T>>(query, values);
   }
 
   protected override async releaseConn(conn: ReservedSQL) {
