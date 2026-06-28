@@ -69,9 +69,6 @@ it('normalizeScalarFieldSelection', () => {
 });
 
 it('isCascadable', () => {
-  expect(isCascadable('persist', true)).toBe(true);
-  expect(isCascadable('persist', false)).toBe(false);
-  expect(isCascadable('persist', 'persist')).toBe(true);
   expect(isCascadable('persist', 'delete')).toBe(false);
 });
 

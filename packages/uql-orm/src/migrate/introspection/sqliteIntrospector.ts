@@ -36,7 +36,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected parseTableExistsResult(results: SqliteCountRow[]): boolean {
     const row = results[0];
     if (row?.count !== undefined) {
-      return (this.toNumber(row.count!) ?? 0) > 0;
+      return (this.toNumber(row.count) ?? 0) > 0;
     }
     return false;
   }

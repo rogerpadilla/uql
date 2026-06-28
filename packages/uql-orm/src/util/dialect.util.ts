@@ -24,7 +24,7 @@ export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'on
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
   return (Object.keys(payload as object) as string[]).filter((key) => {
     const fieldOpts = meta.fields[key];
-    return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || (fieldOpts.updatable ?? true));
+    return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
   }) as FieldKey<E>[];
 }
 
@@ -34,7 +34,7 @@ export function getFieldCallbackValue(val: OnFieldCallback) {
 
 export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]?.[callbackKey]) as FieldKey<E>[];
+  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];
   return payloads.map((it) => {
     for (const key of keys) {
       if (it[key] === undefined) {
@@ -122,7 +122,7 @@ export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<
   }
   if (isIdValue(filter)) {
     return {
-      [meta.id!]: filter,
+      [meta.id]: filter,
     } as QueryWhereMap<E>;
   }
   return filter as QueryWhereMap<E>;

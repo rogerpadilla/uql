@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.9.3] - 2026-06-26
+
+### Bug Fixes
+
+- **`snakeCase` null pass-through**: Restored `null`/`undefined` passthrough (was collapsed to `''`). `upperFirst`/`lowerFirst` now also guard early on falsy input.
+
+### Improvements
+
+- **`QueryPopulateRelationOptions` nullable fix**: Uses `NonNullable<E>` so nullable relations (`Profile | null`) correctly infer `QueryUnique<Profile>` rather than `QueryUnique<Profile | null>`.
+- **`JsonFieldPaths` array support**: Now handles arrays of JSON (`Json<T>[]`) for MongoDB.
+
 ## [0.9.2] - 2026-06-10
 
 ### Bug Fixes

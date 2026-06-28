@@ -16,7 +16,15 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import { clone, getFieldCallbackValue, getKeys, getRelationRequestSummary, hasKeys } from '../util/index.js';
+import {
+  clone,
+  getFieldCallbackValue,
+  getKeys,
+  getRelationRequestSummary,
+  hasKeys,
+  throwNoPendingTransaction,
+  throwPendingTransaction,
+} from '../util/index.js';
 
 import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
 
@@ -362,7 +370,7 @@ export class MongodbQuerier extends AbstractQuerier {
   @Serialized()
   override async beginTransaction(_opts?: TransactionOptions) {
     if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     this.logger.logInfo('beginTransaction');
     await this.session?.endSession();
@@ -373,7 +381,7 @@ export class MongodbQuerier extends AbstractQuerier {
   @Serialized()
   override async commitTransaction() {
     if (!this.hasOpenTransaction) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     this.logger.logInfo('commitTransaction');
     await this.session!.commitTransaction();
@@ -382,7 +390,7 @@ export class MongodbQuerier extends AbstractQuerier {
   @Serialized()
   override async rollbackTransaction() {
     if (!this.hasOpenTransaction) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     this.logger.logInfo('rollbackTransaction');
     await this.session!.abortTransaction();
@@ -390,7 +398,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
   override async internalRelease() {
     if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     await this.session?.endSession();
     this.session = undefined;

@@ -178,7 +178,7 @@ export function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity, fields: {}, relations: {} };
+  meta = { entity, id: '', fields: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
 }
@@ -225,7 +225,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
         { local: target, foreign: relIdKey },
       ];
     } else {
-      const relIdKey = relMeta.id!;
+      const relIdKey = relMeta.id;
       relOpts.references = [{ local: `${relKey}Id`, foreign: relIdKey }];
     }
 
@@ -244,7 +244,7 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   relOpts.mappedBy = mappedBy;
 
   if (relMeta.fields[mappedBy]) {
-    relOpts.references = [{ local: relMeta.id!, foreign: mappedBy }];
+    relOpts.references = [{ local: relMeta.id, foreign: mappedBy }];
     return;
   }
 
@@ -272,7 +272,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
       if (field.references) {
         const relEntity = field.references();
         const relMeta = ensureMeta(relEntity);
-        const relIdKey = relMeta.id!;
+        const relIdKey = relMeta.id;
         const relKey = key.slice(0, -relIdKey.length);
         const relOpts: RelationOptions = {
           entity: field.references,

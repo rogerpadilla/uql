@@ -1,11 +1,19 @@
 import type { FieldKey, FieldOptions } from '../type/index.js';
 
+export function throwPendingTransaction(): never {
+  throw TypeError('pending transaction');
+}
+
+export function throwNoPendingTransaction(): never {
+  throw TypeError('not a pending transaction');
+}
+
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map((it) => clone(it)) as unknown as T;
+    return value.map((it) => clone(it)) as T;
   }
   return { ...value };
 }

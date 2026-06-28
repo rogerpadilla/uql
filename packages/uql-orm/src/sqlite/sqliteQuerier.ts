@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import type { ExtraOptions } from '../type/index.js';
+import { throwPendingTransaction } from '../util/index.js';
 import { AbstractSqliteQuerier } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
@@ -29,7 +30,7 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
 
   override async internalRelease() {
     if (this.hasOpenTransaction) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     // no-op
   }
