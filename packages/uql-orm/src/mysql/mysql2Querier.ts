@@ -10,12 +10,12 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const [res] = await this.conn!.query(query, values);
+    const [res] = await this.getConn().query(query, values);
     return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const [res] = (await this.conn!.query(query, values)) as [ResultSetHeader, FieldPacket[]];
+    const [res] = (await this.getConn().query(query, values)) as [ResultSetHeader, FieldPacket[]];
     return this.buildUpdateResult({
       changes: res.affectedRows,
       id: res.insertId,
@@ -24,7 +24,7 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async *internalStream<T>(query: string, values?: unknown[]) {
-    const rawConn = this.conn!.connection as unknown as Connection;
+    const rawConn = this.getConn().connection as unknown as Connection;
     const stream = rawConn.query(query, values).stream();
     try {
       for await (const row of stream) {

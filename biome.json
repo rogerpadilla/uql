@@ -62,7 +62,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "performance": {
         "noDelete": "off"
       },
@@ -159,7 +159,7 @@
         "noInferrableTypes": "error",
         "noUselessElse": "error",
         "useArrayLiterals": "off",
-        "noNonNullAssertion": "warn",
+        "noNonNullAssertion": "off",
         "useConsistentObjectDefinitions": {
           "level": "error",
           "options": {

@@ -21,6 +21,8 @@ import {
   clone,
   getRelationRequestSummary,
   obtainAttrsPaths,
+  throwNoPendingTransaction,
+  throwPendingTransaction,
   unflatObject,
   unflatObjects,
 } from '../util/index.js';
@@ -258,7 +260,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   @Serialized()
   override async beginTransaction(opts?: TransactionOptions) {
     if (this.hasPendingTransaction) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     await this.lazyConnect();
     const statements = this.dialect.getBeginTransactionStatements(opts?.isolationLevel);
@@ -271,7 +273,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   @Serialized()
   override async commitTransaction() {
     if (!this.hasPendingTransaction) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     await this.internalRun(this.dialect.commitTransactionCommand);
     this.hasPendingTransaction = false;
@@ -280,7 +282,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   @Serialized()
   override async rollbackTransaction() {
     if (!this.hasPendingTransaction) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     await this.internalRun(this.dialect.rollbackTransactionCommand);
     this.hasPendingTransaction = false;

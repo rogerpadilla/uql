@@ -3,6 +3,7 @@ import { Serialized } from '../querier/decorator/index.js';
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, TransactionOptions } from '../type/index.js';
+import { throwNoPendingTransaction, throwPendingTransaction } from '../util/index.js';
 
 /** Connection lifecycle for a {@link LibsqlQuerier} (separate from {@link ExtraOptions}). */
 export type LibsqlQuerierConnectionOptions = {
@@ -43,7 +44,7 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   @Serialized()
   override async beginTransaction(_opts?: TransactionOptions) {
     if (this.tx) {
-      throw TypeError('pending transaction');
+      throwPendingTransaction();
     }
     this.tx = await this.client.transaction('write');
   }
@@ -51,7 +52,7 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   @Serialized()
   override async commitTransaction() {
     if (!this.tx) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     await this.tx.commit();
     this.tx = undefined;
@@ -60,7 +61,7 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   @Serialized()
   override async rollbackTransaction() {
     if (!this.tx) {
-      throw TypeError('not a pending transaction');
+      throwNoPendingTransaction();
     }
     await this.tx.rollback();
     this.tx = undefined;

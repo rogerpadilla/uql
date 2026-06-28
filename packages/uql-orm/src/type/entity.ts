@@ -41,14 +41,20 @@ type DeepJsonKeys<T, D extends unknown[] = []> = D['length'] extends 5
     }[keyof T & string];
 
 /**
- * Derives valid dot-notation paths from `Json<T>` fields (up to 5 levels deep).
+ * Extracts dot-notation paths from `Json<T>` values, handling both scalar JSON
+ * and arrays of JSON (e.g., `Json<{foo: string}>[]` in MongoDB).
  * For `kind?: Json<{ public: number; theme: { color: string } }>`,
- * this produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
+ * produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
+ * For `items?: Json<{id: string}>[]`, produces `'items.id'`.
  */
 export type JsonFieldPaths<E> = {
-  readonly [K in FieldKey<E>]: NonNullable<E[K]> extends Json
-    ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<E[K]>>, '__json'>}`
-    : never;
+  readonly [K in FieldKey<E>]: NonNullable<E[K]> extends Json<infer T>
+    ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<T>>, '__json'>}`
+    : NonNullable<E[K]> extends readonly (infer U)[]
+      ? U extends Json<infer T>
+        ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<T>>, '__json'>}`
+        : never
+      : never;
 }[FieldKey<E>];
 
 /**
@@ -120,7 +126,7 @@ export type IdKey<E> = E extends { [idKey]?: infer K }
         : FieldKey<E>;
 
 /**
- * Infers the value of the key identifier on an entity
+ * Infers the value of the key identifier on an entity.
  */
 export type IdValue<E> = E[IdKey<E>];
 
@@ -379,7 +385,7 @@ export type EntityIndexMeta = {
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name?: string;
-  id?: IdKey<E>;
+  id: IdKey<E>;
   softDelete?: FieldKey<E>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;

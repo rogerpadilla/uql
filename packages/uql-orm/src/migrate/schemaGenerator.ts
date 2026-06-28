@@ -294,7 +294,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       const refMeta = getMeta(refEntity);
       const refIdField = refMeta.fields[refMeta.id!];
       return this.getSqlType(
-        { ...refIdField!, references: undefined, isId: undefined, autoIncrement: false },
+        { ...refIdField, references: undefined, isId: undefined, autoIncrement: false },
         refIdField!.type,
       );
     }
