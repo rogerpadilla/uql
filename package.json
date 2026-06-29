@@ -11,17 +11,16 @@
     "release.minor": "bun run release minor && git push --follow-tags",
     "release.major": "bun run release major && git push --follow-tags",
     "release.current": "bun run release from-package && git push --follow-tags",
-    "check": "bun run --parallel ts lint.fix",
+    "prepare": "simple-git-hooks",
     "ts": "tsc --noEmit",
     "build": "lerna run build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",
-    "test": "npm run test:vitest && npm run test:bun",
+    "test": "bun run test:vitest && bun run test:bun",
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/",
     "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldMergeJsonBooleanField'",
-    "prepare": "git config core.hooksPath .githooks || true"
+    "test.focus": "vitest run -t 'shouldMergeJsonBooleanField'"
   },
   "commitlint": {
     "extends": [
@@ -51,25 +50,23 @@
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.9",
     "lerna": "^9.0.7",
+    "lint-staged": "^17.0.8",
     "mongodb-memory-server": "11.2.0",
     "rimraf": "6.1.3",
+    "simple-git-hooks": "^2.13.1",
     "supertest": "^7.2.2",
     "typescript": "^6.0.3",
     "unplugin-swc": "^1.5.9",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
   },
-  "author": "Roger Padilla",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/rogerpadilla/uql.git"
+  "simple-git-hooks": {
+    "commit-msg": "bunx commitlint --edit $1",
+    "pre-commit": "bunx lint-staged"
   },
-  "bugs": {
-    "url": "https://github.com/rogerpadilla/uql/issues"
-  },
-  "homepage": "https://uql-orm.dev",
-  "engines": {
-    "node": ">=18.0.0"
+  "lint-staged": {
+    "*.{js,ts,tsx,json,css,md}": [
+      "biome check --fix"
+    ]
   }
 }

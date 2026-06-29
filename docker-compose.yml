@@ -61,3 +61,8 @@ services:
     ports:
       - "26257:26257"
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "cockroach", "health", "--insecure"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

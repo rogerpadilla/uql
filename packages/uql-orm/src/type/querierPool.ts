@@ -7,7 +7,7 @@ import type { ExtraOptions, Querier, TransactionOptions } from './querier.js';
  * @typeParam Q - Querier implementation returned from the pool.
  * @typeParam D - Concrete dialect class held by the pool.
  */
-export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect = AbstractDialect> = {
+export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDialect = AbstractDialect> {
   /**
    * Database dialect instance (single source of truth for dialect id and SQL/NoSQL behavior).
    */
@@ -19,7 +19,7 @@ export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect =
   readonly extra?: ExtraOptions;
 
   /**
-   * Default connection for application queries, transactions, and anything that should use the pool’s primary URL.
+   * Default connection for application queries, transactions, and anything that should use the pool's primary URL.
    */
   getQuerier: () => Promise<Q>;
 
@@ -45,7 +45,7 @@ export type QuerierPool<Q extends Querier = Querier, D extends AbstractDialect =
    * end the pool.
    */
   end(): Promise<void>;
-};
+}
 
 /** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
 // biome-ignore lint/suspicious/noExplicitAny: conditional type extraction — `any` is required to match all pool instantiations

@@ -6,11 +6,8 @@
       "conventionalCommits": true,
       "message": "chore(release): publish",
       "allowBranch": "main",
-      "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"],
-      "push": false,
-      "gitRemote": "origin"
+      "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"]
     }
   },
-  "npmClient": "bun",
   "packages": ["packages/*"]
 }

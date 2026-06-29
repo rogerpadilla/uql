@@ -5,10 +5,10 @@ on:
     branches: [main]
     paths-ignore:
       - '**.md'
-      - 'LICENSE'
+      - 'LICENSE*'
       - '.gitignore'
   pull_request:
-    branches: ['**']
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_OPTIONS: --max-old-space-size=4096
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -30,14 +33,14 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1
+          bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
       - name: Commitlint
         if: github.event_name == 'pull_request'
-        run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        run: bunx commitlint --from ${{ github.event.pull_request.base_sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
       - name: Typecheck
         run: bun run ts
 
@@ -54,43 +57,25 @@ jobs:
             version: lts/*
           - runtime: node
             version: latest
-
     name: Test (${{ matrix.runtime }} ${{ matrix.version }})
-
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v6
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1
-
-      - name: Setup Node.js
-        if: matrix.runtime == 'node'
-        uses: actions/setup-node@v6
+          bun-version: latest
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.version }}
-
       - name: Install OS dependencies
         run: |
           sudo apt-get update
           sudo apt-get -y install libkrb5-dev
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
       - name: Start services
         run: docker compose up -d --wait
-
-      - name: Run Tests
-        run: |
-          if [ "${{ matrix.runtime }}" = "node" ]; then
-            npm test
-          else
-            bun run test
-          fi
-
+      - name: Run tests
+        run: bun run test
       - name: Submit coverage
         if: matrix.runtime == 'node' && matrix.version == 'lts/*'
         uses: coverallsapp/github-action@v2
