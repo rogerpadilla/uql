@@ -283,8 +283,6 @@ defineEntity(User, {
   // You can also define hooks and relations here
 });
 ```
-```
-
 
 ## 3. Set up a pool
 
@@ -397,8 +395,6 @@ const rows = await querier.findMany(User, {
 - **MongoDB:** Streams use a plain `find` cursor, so **any** relation keys in `$select` or `$populate` throw a `TypeError`. Use `findMany` for relation loading (aggregation + fill).
 
 See [Cursor Streaming](https://uql-orm.dev/querying/streaming) on the docs site for details.
-
-### Advanced Query Patterns
 
 ### Modern Indexing: Semantic Search
 
