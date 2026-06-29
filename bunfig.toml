@@ -4,6 +4,3 @@ lockfile = true
 
 [test]
 timeout = 10000
-coverage = true
-coverageDirectory = "coverage/bun"
-coverageReporter = ["lcov", "text"]
