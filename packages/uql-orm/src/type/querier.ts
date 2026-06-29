@@ -18,13 +18,6 @@ import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
 /**
- * Query with $entity for entity-as-field pattern.
- */
-export type QueryWithEntity<E extends object> = Query<E> & { $entity: Type<E> };
-export type QueryOneWithEntity<E extends object> = QueryOne<E> & { $entity: Type<E> };
-export type QuerySearchWithEntity<E extends object> = QuerySearch<E> & { $entity: Type<E> };
-
-/**
  * Isolation levels for transactions.
  */
 export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
@@ -46,39 +39,34 @@ export interface Querier extends UniversalQuerier {
 
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
-   * @example
-   * // Entity as argument (classic)
-   * querier.findOne(User, { $where: { id: 1 } })
-   * // Entity as field (RPC-friendly)
-   * querier.findOne({ $entity: User, $where: { id: 1 } })
    */
   findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
-  findOne<E extends object>(q: QueryOneWithEntity<E>): Promise<E | undefined>;
+  findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }): Promise<E | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
    */
   findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
-  findMany<E extends object>(q: QueryWithEntity<E>): Promise<E[]>;
+  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
 
   /**
    * Stream records as an async iterable. Supports both patterns.
    * Does not fill relations or fire lifecycle hooks.
    */
   findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
-  findManyStream<E extends object>(q: QueryWithEntity<E>): AsyncIterable<E>;
+  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
 
   /**
    * Find many records and count. Supports both patterns.
    */
   findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(q: QueryWithEntity<E>): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
 
   /**
    * Count records. Supports both patterns.
    */
   count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
-  count<E extends object>(q: QuerySearchWithEntity<E>): Promise<number>;
+  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
 
   insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
@@ -110,7 +98,7 @@ export interface Querier extends UniversalQuerier {
    * Delete many records. Supports both entity-as-argument and entity-as-field patterns.
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object>(q: QuerySearchWithEntity<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
 
   /**
    * Run an aggregate query (GROUP BY with aggregate functions).

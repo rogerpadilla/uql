@@ -28,19 +28,15 @@ export type QuerySelectOptions = {
 };
 
 /**
- * query selection of scalar fields as a map.
+ * Query field selection — `{ name: true }` whitelists specific fields.
  */
-export type QuerySelect<E> = QuerySelectFieldMap<E>;
-
-/**
- * query selection of fields as a map.
- */
-export type QuerySelectFieldMap<E> = {
+export type QuerySelect<E> = {
   [K in FieldKey<E>]?: BooleanLike;
 };
 
 /**
- * query exclusion of fields as a map.
+ * Fields to exclude from the query result — `{ name: true }` blacklists fields.
+ * Mutually exclusive with positive field selections in `$select`.
  */
 export type QueryExclude<E> = {
   [K in FieldKey<E>]?: BooleanLike;
@@ -371,7 +367,7 @@ export type QuerySearch<E> = {
  */
 export type Query<E> = {
   /**
-   * selection options.
+   * field selection — `{ name: true }` whitelists fields. Mutually exclusive with `$exclude`.
    */
   $select?: QuerySelect<E>;
 
@@ -381,7 +377,7 @@ export type Query<E> = {
   $populate?: QueryPopulate<E>;
 
   /**
-   * field exclusion options.
+   * field exclusion — array of field names to exclude. Mutually exclusive with positive `$select`.
    */
   $exclude?: QueryExclude<E>;
 
