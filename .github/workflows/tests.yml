@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Lint & Typecheck
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -59,7 +59,7 @@ jobs:
             version: latest
     name: Test (${{ matrix.runtime }} ${{ matrix.version }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
