@@ -377,7 +377,7 @@ export type Query<E> = {
   $populate?: QueryPopulate<E>;
 
   /**
-   * field exclusion — array of field names to exclude. Mutually exclusive with positive `$select`.
+   * field exclusion — `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
    */
   $exclude?: QueryExclude<E>;
 
