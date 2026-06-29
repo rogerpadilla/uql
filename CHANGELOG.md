@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.9.3] - 2026-06-26
+## [0.9.4] - 2026-06-29
+
+### Bug Fixes
+
+- **`$entity` dual-API restored**: Querier read/delete methods (`findOne`, `findMany`, `findManyAndCount`, `count`, `deleteMany`, `findManyStream`) now use TypeScript overloads instead of union types, enabling correct entity inference for both `(Entity, query)` and `({ $entity: Entity, ...query })` call patterns.
+- **`$select` / `$exclude` overlap resolved**: Both are now structurally identical map types (`{ [K in FieldKey<E>]?: BooleanLike }`) — whitelist (`$select`) vs. blacklist (`$exclude`). `$exclude` reverted to map form (was incorrectly changed to array), matching runtime `Object.entries()` usage.
+- **`$exclude` JSDoc**: Updated comment from "array of field names" to map syntax `{ name: true }`.
+
+### Security
+
+- **Comprehensive security tests** (`querySecurity.spec.ts`): 33+ tests covering prototype pollution via `$where`/`$select`/`$exclude`/`$populate`, SQL injection in WHERE values and identifiers, `$skip`/`$limit` coercion edge cases, `$ne`/`$or`/`$in` operator safety, relation field safety, and field validation across all entity types.
+
+### [0.9.3] - 2026-06-26
 
 ### Bug Fixes
 
