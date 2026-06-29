@@ -5,6 +5,7 @@
     "lib": ["ESNext"],
     "types": ["@types/bun"],
     "target": "ESNext",
+    "moduleDetection": "force",
 
     "strict": true,
     "noImplicitReturns": true,
