@@ -62,7 +62,8 @@ services:
       - "26257:26257"
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "cockroach", "health", "--insecure"]
-      interval: 5s
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/26257; exit $?"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 30s
