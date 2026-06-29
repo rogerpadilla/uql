@@ -55,7 +55,7 @@ services:
 
 
   cockroachdb:
-    image: cockroachdb/cockroach:latest
+    image: cockroachdb/cockroach:v25.1.10
     container_name: cockroachdb_uql
     command: start-single-node --insecure
     ports:

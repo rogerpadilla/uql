@@ -51,7 +51,6 @@ export default defineConfig({
         lines: 97.5,
       },
     },
-    pool: 'threads',
     css: false,
   },
 });

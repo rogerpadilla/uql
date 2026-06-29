@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [Unreleased]
+
+### Chore
+
+- **Removed `simple-git-hooks`**: Replaced with tracked `.githooks/` shell scripts (`commit-msg`, `pre-commit`). Removes the Bun/Node incompatibility where Bun hoists packages into `node_modules/.bun/` but Node's `require.resolve` can't find them. Git now uses `core.hooksPath = .githooks` via `git config`. New contributors should run `git config core.hooksPath .githooks` after cloning.
+- **CI**: Restored `bun install --frozen-lockfile` (no `--ignore-scripts` needed).
+
+## [0.9.5] - 2026-06-29
+
+### Chore
+
+- **Removed `uql-codemod`**: Empty subpackage deleted from workspaces.
+- **Removed `simple-git-hooks`**: Replaced with tracked `.githooks/` shell scripts (`commit-msg`, `pre-commit`). Removes the Bun/Node incompatibility where Bun hoists packages into `node_modules/.bun/` but Node's `require.resolve` can't find them. Git now uses `core.hooksPath = .githooks` via `git config`. New contributors should run `git config core.hooksPath .githooks` after cloning.
+- **CI**: Restored `bun install --frozen-lockfile` (no `--ignore-scripts` needed).
+
 ## [0.9.4] - 2026-06-29
 
 ### Bug Fixes

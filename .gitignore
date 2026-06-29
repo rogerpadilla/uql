@@ -1,11 +1,10 @@
 .DS_Store
 node_modules
-tsconfig.tsbuildinfo
-lerna-debug.log
+*.tsbuildinfo
+*.db
+*.log
 dist
 coverage
 data
 mongodb-*
-*.tsbuildinfo
 .cursor/plans/
-test.db
