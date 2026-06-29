@@ -121,9 +121,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-    * Find a single record matching the query.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    */
+   * Find a single record matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
   async findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
   async findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }): Promise<E | undefined>;
   async findOne<E extends object>(
@@ -136,9 +136,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-    * Find multiple records matching the query.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    */
+   * Find multiple records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
   findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
   findMany<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
   async findMany<E extends object>(
@@ -155,17 +155,17 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalFindMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
 
   /**
-    * Stream records as an async iterable.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    *
-    * **SQL:** Joinable relations (e.g. m1 / one-to-one) are still emitted in the streamed SQL; **to-many**
-    * relations are not filled (no second query) — requesting them throws a clear `TypeError`.
-    *
-    * **MongoDB:** Relation loading uses aggregation + follow-up queries in `findMany`; **streams use a plain
-    * find cursor**, so any requested relation keys in `$select` / `$populate` throw a `TypeError`.
-    *
-    * No `afterLoad` hooks on streamed rows.
-    */
+   * Stream records as an async iterable.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   *
+   * **SQL:** Joinable relations (e.g. m1 / one-to-one) are still emitted in the streamed SQL; **to-many**
+   * relations are not filled (no second query) — requesting them throws a clear `TypeError`.
+   *
+   * **MongoDB:** Relation loading uses aggregation + follow-up queries in `findMany`; **streams use a plain
+   * find cursor**, so any requested relation keys in `$select` / `$populate` throw a `TypeError`.
+   *
+   * No `afterLoad` hooks on streamed rows.
+   */
   findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
   findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
   findManyStream<E extends object>(
@@ -180,9 +180,9 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
 
   /**
-    * Find multiple records and return both the records and total count.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    */
+   * Find multiple records and return both the records and total count.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
   findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
   findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
   async findManyAndCount<E extends object>(
@@ -198,9 +198,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-    * Count records matching the query.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    */
+   * Count records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
   count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
   count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
   count<E extends object>(
@@ -276,9 +276,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-    * Delete records matching the query.
-    * Supports both entity-as-argument and entity-as-field patterns.
-    */
+   * Delete records matching the query.
+   * Supports both entity-as-argument and entity-as-field patterns.
+   */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   async deleteMany<E extends object>(

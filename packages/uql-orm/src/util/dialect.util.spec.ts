@@ -62,12 +62,10 @@ it('fillOnFields', () => {
 it('normalizeScalarFieldSelection', () => {
   const meta = getMeta(User);
   expect(normalizeScalarFieldSelection(meta, { name: true } satisfies QuerySelect<User>)).toEqual(['name']);
-  expect(
-    normalizeScalarFieldSelection(meta, undefined, { name: true } satisfies QuerySelect<User>),
-  ).not.toContain('name');
-  expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain(
+  expect(normalizeScalarFieldSelection(meta, undefined, { name: true } satisfies QuerySelect<User>)).not.toContain(
     'name',
   );
+  expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain('name');
 });
 
 it('isCascadable', () => {
