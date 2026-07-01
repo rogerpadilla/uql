@@ -12,18 +12,11 @@
 <!-- DEMO: Record an animated GIF showing IDE autocompletion for $select/$populate/$where and embed here. Example: ![demo](/assets/demo.gif) -->
 
 ```ts
-import { PgQuerierPool } from 'uql-orm/postgres';
-
-const pool = new PgQuerierPool({ host: 'localhost', database: 'app' });
-
-const users = await pool.withQuerier((q) =>
-  q.findMany(User, {
-    $select: { id: true, name: true },
-    $populate: { profile: { $select: { bio: true } } },
-    $where: { name: { $istartsWith: 'A' } },
-    $limit: 10,
-  }),
-);
+await querier.findMany(User, {
+  $select: { id: true, name: true },
+  $where: { email: { $endsWith: '@uql-orm.dev' } },
+  $limit: 10,
+});
 ```
 
 Full docs: **[uql-orm.dev](https://uql-orm.dev)**
@@ -78,18 +71,12 @@ export class User {
 
 ## Querying
 
-`pool.withQuerier()` acquires a querier, runs the callback, and guarantees release:
-
 ```ts
-const users = await pool.withQuerier((q) =>
-  q.findMany(User, {
-    $select: { id: true, name: true },
-    $populate: { profile: { $select: { bio: true } } },
-    $where: { status: 'active', name: { $istartsWith: 'A' } },
-    $sort: { createdAt: 'desc' },
-    $limit: 10,
-  }),
-);
+await querier.findMany(User, {
+  $select: { id: true, name: true },
+  $where: { email: { $endsWith: '@uql-orm.dev' } },
+  $limit: 10,
+});
 ```
 
 25+ comparison operators (`$eq`, `$in`, `$between`, `$like`, `$elemMatch`), logical operators (`$and`, `$or`, `$not`, `$nor`), and type-safe JSON/JSONB dot-notation queries.
