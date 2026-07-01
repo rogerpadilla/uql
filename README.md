@@ -1,10 +1,15 @@
 <!-- ![code](/assets/code.webp 'code') -->
 
-<a href="https://uql-orm.dev"><img src="assets/logo.svg" alt="uql" width="80" /></a>
+<picture>
+  <source srcset="assets/logo-dark.svg" media="(prefers-color-scheme: dark)">
+  <a href="https://uql-orm.dev"><img src="assets/logo.svg" alt="uql" width="80" /></a>
+</picture>
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is a type-safe ORM with a unified API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB.
+**[UQL](https://uql-orm.dev)** is a type-safe TypeScript ORM with a single unified API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB. Define entities once, query everywhere.
+
+<!-- DEMO: Record an animated GIF showing IDE autocompletion for $select/$populate/$where and embed here. Example: ![demo](/assets/demo.gif) -->
 
 ```ts
 import { PgQuerierPool } from 'uql-orm/postgres';
