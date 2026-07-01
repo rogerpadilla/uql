@@ -85,7 +85,7 @@ await querier.findMany(User, {
 
 ## Transactions
 
-Functional `pool.transaction()` or `@Transactional()` decorator with centralized serialization for race-condition free transactions:
+Functional `pool.transaction()` or `@Transactional()` decorator with centralized serialization:
 
 ```ts
 const userId = await pool.transaction(async (q) => {
@@ -111,4 +111,10 @@ Safe `autoSync()` mode adds new tables/columns and blocks destructive changes in
 
 ---
 
-Built with ❤️ and supported by **[Variability.ai](https://variability.ai)**.
+## Made with UQL
+
+### [Variability.ai](https://variability.ai)
+
+AI meeting recorder and video summarizer for Zoom, Meet, Teams, and more. Generates instant summaries with action items in 45+ languages.
+
+[![Made with UQL](https://img.shields.io/badge/made%20with-UQL-6e6e6e?style=flat)](https://uql-orm.dev)
