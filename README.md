@@ -7,7 +7,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is a type-safe TypeScript ORM with a single unified API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB. Define entities once, query everywhere.
+**[UQL](https://uql-orm.dev)** is the smartest TypeScript ORM. A JSON-native ORM for TypeScript — serializable queries, no codegen, and one API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB. Define entities once, query everywhere.
 
 <!-- DEMO: Record an animated GIF showing IDE autocompletion for $select/$populate/$where and embed here. Example: ![demo](/assets/demo.gif) -->
 
@@ -22,6 +22,13 @@ await querier.findMany(User, {
 Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 
 ---
+
+## Why UQL?
+
+- **Queries are data, not method chains.** A UQL query is a plain JSON object. Build them dynamically, store them, or send them from client to server without a DSL.
+- **No codegen, no build step.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` files or generated clients to keep in sync.
+- **One API everywhere.** The same syntax runs on PostgreSQL, MySQL, MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, MongoDB, and Bun's native SQL.
+- **Fast by design.** A zero-allocation engine measured at [3.9M+ ops/s](https://uql-orm.dev/comparison#performance) — on average ~2.4× faster than the next ORM in our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark).
 
 ## Features
 
