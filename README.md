@@ -49,7 +49,7 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/client
 ```
 
-Supports PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, MongoDB, Cloudflare D1, and Bun SQL.
+Supports PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, LibSQL/Turso, Neon, MongoDB, Cloudflare D1, and Bun SQL.
 
 ## Define Entities
 
@@ -97,9 +97,9 @@ Functional `pool.transaction()` or `@Transactional()` decorator with centralized
 
 ```ts
 const userId = await pool.transaction(async (q) => {
-  const user = await q.findOne(User, { $where: { email: 'a@b.com' } });
-  await q.insertOne(Profile, { userId: user.id, bio: '...' });
-  return user.id;
+  const id = await q.insertOne(User, { email: 'a@b.com' });
+  await q.insertOne(Profile, { userId: id, bio: '...' });
+  return id;
 });
 ```
 
