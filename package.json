@@ -60,7 +60,7 @@
   },
   "lint-staged": {
     "*.{js,ts,tsx,json,css,md}": [
-      "biome check --fix"
+      "biome check --fix --no-errors-on-unmatched"
     ]
   }
 }
