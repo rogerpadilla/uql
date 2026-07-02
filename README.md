@@ -7,7 +7,7 @@
 
 [![tests](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml/badge.svg)](https://github.com/rogerpadilla/uql/actions/workflows/tests.yml) [![Coverage Status](https://coveralls.io/repos/github/rogerpadilla/uql/badge.svg?branch=main)](https://coveralls.io/github/rogerpadilla/uql?branch=main) [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/rogerpadilla/uql/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/uql-orm.svg)](https://www.npmjs.com/package/uql-orm)
 
-**[UQL](https://uql-orm.dev)** is the smartest TypeScript ORM. A JSON-native ORM for TypeScript — serializable queries, no codegen, and one API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB. Define entities once, query everywhere.
+**[UQL](https://uql-orm.dev)** is the JSON-native TypeScript ORM: serializable queries, no codegen, and one API across PostgreSQL, MySQL, SQLite, MariaDB, and MongoDB. Define entities once, query everywhere.
 
 <!-- DEMO: Record an animated GIF showing IDE autocompletion for $select/$populate/$where and embed here. Example: ![demo](/assets/demo.gif) -->
 
@@ -28,7 +28,7 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 - **Queries are data, not method chains.** A UQL query is a plain JSON object. Build them dynamically, store them, or send them from client to server without a DSL.
 - **No codegen, no build step.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` files or generated clients to keep in sync.
 - **One API everywhere.** The same syntax runs on PostgreSQL, MySQL, MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, MongoDB, and Bun's native SQL.
-- **Fast by design.** A zero-allocation engine measured at [3.9M+ ops/s](https://uql-orm.dev/comparison#performance) — on average ~2.4× faster than the next ORM in our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark).
+- **Fast by design.** Fastest in [all 8 categories](https://uql-orm.dev/comparison#performance) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark): on average ~2.1× faster than the runner-up, reaching 3.5M ops/s on simple SELECTs and DELETEs.
 
 ## Features
 
@@ -56,6 +56,7 @@ Supports PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, MongoDB, Cloudflare D1
 [Declare](https://uql-orm.dev/entities/basic) your classes with decorators. UQL uses this metadata for type-safe querying and DDL generation.
 
 ```ts
+import { v7 as uuidv7 } from 'uuid';
 import { Entity, Id, Field, OneToOne, OneToMany, type Relation } from 'uql-orm';
 
 @Entity()
