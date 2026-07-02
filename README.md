@@ -28,7 +28,7 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 - **Queries are data, not method chains.** A UQL query is a plain JSON object. Build them dynamically, store them, or send them from client to server without a DSL.
 - **No codegen, no build step.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` files or generated clients to keep in sync.
 - **One API everywhere.** The same syntax runs on PostgreSQL, MySQL, MariaDB, SQLite, LibSQL, Neon, Cloudflare D1, MongoDB, and Bun's native SQL.
-- **Fast by design.** Fastest in [all 8 categories](https://uql-orm.dev/comparison#performance) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark): on average ~2.1× faster than the runner-up, reaching 3.5M ops/s on simple SELECTs and DELETEs.
+- **Fast by design.** Fastest in [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark): on average ~2.1× faster than the runner-up, reaching 3.5M ops/s on SELECTs and DELETEs.
 
 ## Features
 
