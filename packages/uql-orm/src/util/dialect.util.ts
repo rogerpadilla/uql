@@ -22,7 +22,7 @@ import { getFieldKeys, getKeys } from './object.util.js';
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
 
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
-  return (Object.keys(payload as object) as string[]).filter((key) => {
+  return getKeys(payload as object).filter((key) => {
     const fieldOpts = meta.fields[key];
     return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
   }) as FieldKey<E>[];
@@ -50,7 +50,7 @@ export function filterPersistableRelationKeys<E>(
   payload: E,
   action: CascadeType,
 ): RelationKey<E>[] {
-  const keys = Object.keys(payload as object) as string[];
+  const keys = getKeys(payload as object);
   return keys.filter((key) => {
     const relOpts = meta.relations[key];
     return relOpts && isCascadable(action, relOpts.cascade);

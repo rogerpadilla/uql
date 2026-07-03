@@ -119,7 +119,7 @@ export class SchemaASTBuilder {
     };
 
     // Add columns from fields
-    const fields = meta.fields as Record<string, FieldOptions | undefined>;
+    const fields = meta.fields;
     for (const key of Object.keys(fields)) {
       const field = fields[key];
       if (!field) continue;
@@ -168,7 +168,7 @@ export class SchemaASTBuilder {
     const table = this.ast.getTable(tableName);
     if (!table) return;
 
-    const relations = meta.relations as Record<string, RelationOptions | undefined>;
+    const relations = meta.relations;
     for (const key of Object.keys(relations)) {
       const relation = relations[key];
       if (!relation?.entity) continue;
@@ -229,7 +229,7 @@ export class SchemaASTBuilder {
     if (!table) return;
 
     // 1. Single column indexes from @Field({ index: true })
-    const indexFields = meta.fields as Record<string, FieldOptions | undefined>;
+    const indexFields = meta.fields;
     for (const key of Object.keys(indexFields)) {
       const field = indexFields[key];
       if (!field?.index) continue;
