@@ -19,7 +19,7 @@ export function querierMiddleware(opts: MiddlewareOptions = {}): Router {
       method: req.method,
       entityPath: req.params.entityPath,
       subPath: req.params.subPath,
-      query: req.query as Record<string, unknown>,
+      query: req.query,
       body: req.body,
       context: req,
     });
