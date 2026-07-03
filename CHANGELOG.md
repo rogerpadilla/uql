@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **`uql-orm@0.10.0` on npm shipped only the browser bundle** (5 files; `dist/index.js` missing, so every server-side import failed). The package build shared the repo root's `tsBuildInfoFile`: after `clean` wiped `dist`, `tsc -b` trusted the stale build info and emitted nothing, and the release published the partial `dist`. The build info is now package-local, `clean` removes it, and `prepack` refuses to pack without `dist/index.js`. Use 0.10.1 instead of 0.10.0.
+
 ## [0.10.0] - 2026-07-02
 
 ### Breaking Changes
