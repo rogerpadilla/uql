@@ -26,7 +26,6 @@
     "importHelpers": true,
     "skipLibCheck": true,
     "noImplicitOverride": true,
-    "tsBuildInfoFile": "./.tsconfig.tsbuildinfo",
     "paths": {
       "uql-orm": ["./packages/uql-orm/src/index.ts"],
       "uql-orm/*": ["./packages/uql-orm/src/*"]

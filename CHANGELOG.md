@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [Unreleased]
+## [0.10.1] - 2026-07-03
 
 ### Features
 
@@ -12,7 +12,7 @@ date format is [yyyy-mm-dd]
 
 ### Bug Fixes
 
-- **`uql-orm@0.10.0` on npm shipped only the browser bundle** (5 files; `dist/index.js` missing, so every server-side import failed). The package build shared the repo root's `tsBuildInfoFile`: after `clean` wiped `dist`, `tsc -b` trusted the stale build info and emitted nothing, and the release published the partial `dist`. The build info is now package-local, `clean` removes it, and `prepack` refuses to pack without `dist/index.js`. Use 0.10.1 instead of 0.10.0.
+- **`uql-orm@0.10.0` on npm shipped only the browser bundle** (5 files; `dist/index.js` missing, so every server-side import failed). The package build shared the repo root's `tsBuildInfoFile` (introduced 2026-06-29 in an unrelated config cleanup): after `clean` wiped `dist`, `tsc -b` trusted the stale build info and emitted nothing, and the release published the partial `dist`. The build info is now package-local and the errant root-level one has been removed entirely, restoring the isolation each package had before that cleanup. `prepack` no longer checks two hardcoded files (which would have missed this exact failure — neither covered `uql-orm/migrate`); it now verifies every path declared in `main`, `types`, `bin`, and `exports` exists in `dist` before packing, derived straight from `package.json` so the check can't go stale as exports are added. Use 0.10.1 instead of 0.10.0.
 
 ## [0.10.0] - 2026-07-02
 
