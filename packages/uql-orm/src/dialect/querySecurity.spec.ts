@@ -1,4 +1,3 @@
-import type { Request } from 'express';
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -6,83 +5,6 @@ import { Company, Item, Profile, Tag, User } from '../test/index.js';
 import type { Query } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { escapeSqlId } from '../util/sql.util.js';
-import { parseQuery } from './query.util.js';
-
-describe('parseQuery — prototype pollution defense', () => {
-  it('rejects __proto__ pollution via $where', () => {
-    const req = {
-      query: { $where: '{"__proto__": {"polluted": true}}' },
-    } as Request;
-    parseQuery(req);
-    // Object.prototype should NOT have been polluted
-    expect({} as Record<string, unknown>).not.toHaveProperty('polluted');
-    // The parsed value should have __proto__ as a plain key, not a prototype
-    const parsedWhere = (req.query as Query<unknown>).$where as Record<string, unknown>;
-    expect(parsedWhere).toHaveProperty('__proto__');
-    const protoEntry = Object.entries(parsedWhere).find(([k]) => k === '__proto__');
-    expect(protoEntry).toBeTruthy();
-    expect(protoEntry?.[1]).toEqual({ polluted: true });
-  });
-
-  it('rejects __proto__ pollution via $select', () => {
-    const req = {
-      query: { $select: '{"__proto__": {"polluted2": true}}' },
-    } as Request;
-    parseQuery(req);
-    expect({} as Record<string, unknown>).not.toHaveProperty('polluted2');
-  });
-
-  it('rejects __proto__ pollution via $exclude', () => {
-    const req = {
-      query: { $exclude: '{"__proto__": {"polluted3": true}}' },
-    } as Request;
-    parseQuery(req);
-    expect({} as Record<string, unknown>).not.toHaveProperty('polluted3');
-  });
-
-  it('rejects constructor.prototype pollution via $populate', () => {
-    const req = {
-      query: { $populate: '{"constructor": {"prototype": {"polluted4": true}}}' },
-    } as Request;
-    parseQuery(req);
-    expect({} as Record<string, unknown>).not.toHaveProperty('polluted4');
-  });
-});
-
-describe('parseQuery — number coercion defense', () => {
-  it('coerces valid numeric strings for $skip', () => {
-    const req = { query: { $skip: '42' } } as Request;
-    parseQuery(req);
-    expect(req.query.$skip).toBe(42);
-  });
-
-  it('coerces NaN for non-numeric $skip', () => {
-    const req = { query: { $skip: 'abc' } } as Request;
-    parseQuery(req);
-    expect(req.query.$skip).toBeNaN();
-  });
-
-  it('coerces valid numeric strings for $limit', () => {
-    const req = { query: { $limit: '100' } } as Request;
-    parseQuery(req);
-    expect(req.query.$limit).toBe(100);
-  });
-
-  it('coerces NaN for non-numeric $limit', () => {
-    const req = { query: { $limit: 'DROP TABLE' } } as Request;
-    parseQuery(req);
-    expect(req.query.$limit).toBeNaN();
-  });
-});
-
-describe('parseQuery — unknown keys are passthrough', () => {
-  it('preserves unknown query keys', () => {
-    const req = { query: { $customKey: 'value' } } as Request;
-    parseQuery(req);
-    expect(req.query).toHaveProperty('$customKey');
-    expect((req.query as Record<string, unknown>)['$customKey']).toBe('value');
-  });
-});
 
 describe('escapeSqlId — identifier injection hardening', () => {
   it('escapes double-quote in table name', () => {

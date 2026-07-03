@@ -1,221 +1,44 @@
 import { Router as expressRouter, type NextFunction, type Request, type Response, type Router } from 'express';
-import { getEntities, getMeta } from '../entity/index.js';
-import { getQuerier } from '../index.js';
-import type { EntityMeta, IdValue, Querier, Query, Type } from '../type/index.js';
-import { kebabCase } from '../util/index.js';
-import { parseQuery } from './query.util.js';
+import { toErrorResponse } from '../http/contract.js';
+import { createRequestHandler, type RequestHandlerOptions } from '../http/handler.js';
 
+export type MiddlewareOptions = RequestHandlerOptions<Request>;
+
+/**
+ * Express adapter over the framework-agnostic {@link createRequestHandler}.
+ * Unknown entities and routes fall through via `next()` so the middleware
+ * composes with custom routes; errors go to `next(err)` so user error
+ * middleware (e.g. {@link errorHandler}) keeps working.
+ */
 export function querierMiddleware(opts: MiddlewareOptions = {}): Router {
+  const handle = createRequestHandler<Request>(opts);
   const router = expressRouter();
 
-  const { include, exclude, ...extra } = opts;
-
-  let entities = include ?? getEntities();
-
-  if (exclude) {
-    entities = entities.filter((entity) => !exclude.includes(entity));
-  }
-
-  if (!entities.length) {
-    throw new TypeError('no entities for the uql express middleware');
-  }
-
-  for (const entity of entities) {
-    const path = kebabCase(entity.name);
-    const subRouter = buildQuerierRouter(entity, extra);
-    router.use('/' + path, subRouter);
-  }
-
-  return router;
-}
-
-export function buildQuerierRouter<E extends object>(entity: Type<E>, opts: ExtraOptions): Router {
-  const meta = getMeta(entity);
-  const router = expressRouter();
-
-  router.use((req, _res, next) => {
-    pre(req, meta, opts);
-    next();
+  router.all('/:entityPath{/:subPath}', async (req, res, next) => {
+    const pending = handle({
+      method: req.method,
+      entityPath: req.params.entityPath,
+      subPath: req.params.subPath,
+      query: req.query as Record<string, unknown>,
+      body: req.body,
+      context: req,
+    });
+    if (!pending) {
+      next();
+      return;
+    }
+    try {
+      const { status, body } = await pending;
+      res.status(status).json(body);
+    } catch (err) {
+      next(err);
+    }
   });
 
-  router.get(
-    '/one',
-    withQuerier(async (req, res, querier) => {
-      const q = req.query as Query<E>;
-      const data = await querier.findOne(entity, q);
-      res.json({ data, count: data ? 1 : 0 });
-    }),
-  );
-
-  router.get(
-    '/count',
-    withQuerier(async (req, res, querier) => {
-      const q = req.query as Query<E>;
-      const count = await querier.count(entity, q);
-      res.json({ data: count, count });
-    }),
-  );
-
-  router.get(
-    '/:id',
-    withQuerier(async (req, res, querier) => {
-      const q = buildIdQuery(meta, req);
-
-      const data = await querier.findOne(entity, q);
-      res.json({ data, count: data ? 1 : 0 });
-    }),
-  );
-
-  router.get(
-    '/',
-    withQuerier(async (req, res, querier) => {
-      const q = req.query as Query<E>;
-      const findManyPromise = querier.findMany(entity, q);
-      const countPromise = req.query.count ? querier.count(entity, q) : undefined;
-      const [data, count] = await Promise.all([findManyPromise, countPromise]);
-      res.json({ data, count });
-    }),
-  );
-
-  router.post(
-    '/',
-    withTransaction(async (req, res, querier) => {
-      const payload = req.body as E;
-      const id = await querier.insertOne(entity, payload);
-      res.json({ data: id, count: id ? 1 : 0 });
-    }),
-  );
-
-  router.patch(
-    '/:id',
-    withTransaction(async (req, res, querier) => {
-      const payload = req.body as E;
-      const q = buildIdQuery(meta, req);
-
-      const count = await querier.updateMany(entity, q, payload);
-      res.json({ data: req.params['id'], count });
-    }),
-  );
-
-  router.delete(
-    '/:id',
-    withTransaction(async (req, res, querier) => {
-      const q = buildIdQuery(meta, req);
-
-      const count = await querier.deleteMany(entity, q, {
-        softDelete: req.query.softDelete === 'true',
-      });
-      res.json({ data: req.params['id'], count });
-    }),
-  );
-
-  router.delete(
-    '/',
-    withTransaction(async (req, res, querier) => {
-      const q = req.query as Query<E>;
-      const founds = await querier.findMany(entity, q);
-      let ids: IdValue<E>[] = [];
-      let count = 0;
-      if (founds.length && meta.id) {
-        const idKey = meta.id;
-        ids = founds.map((found) => found[idKey]);
-        count = await querier.deleteMany(
-          entity,
-          { $where: ids },
-          {
-            softDelete: req.query.softDelete === 'true',
-          },
-        );
-      }
-      res.json({ data: ids, count });
-    }),
-  );
-
   return router;
-}
-
-function withQuerier(fn: (req: Request, res: Response, querier: Querier) => Promise<void>) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    let querier: Querier | undefined;
-    try {
-      querier = await getQuerier();
-      await fn(req, res, querier);
-    } catch (err) {
-      next(err);
-    } finally {
-      await querier?.release();
-    }
-  };
-}
-
-function withTransaction(fn: (req: Request, res: Response, querier: Querier) => Promise<void>) {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    let querier: Querier | undefined;
-    try {
-      querier = await getQuerier();
-      await querier.beginTransaction();
-      await fn(req, res, querier);
-      await querier.commitTransaction();
-    } catch (err) {
-      await querier?.rollbackTransaction().catch(() => {});
-      next(err);
-    } finally {
-      await querier?.release();
-    }
-  };
-}
-
-function buildIdQuery<E extends object>(meta: EntityMeta<E>, req: Request): Query<E> {
-  const id = req.params['id'] as unknown as IdValue<E>;
-  const q = req.query as Query<E>;
-
-  const where = (Array.isArray(q.$where) ? { [meta.id as string]: { $in: q.$where } } : (q.$where ?? {})) as Record<
-    string,
-    unknown
-  >;
-  where[meta.id as string] = id;
-  q.$where = where as typeof q.$where;
-
-  return q;
-}
-
-function pre<E extends object>(req: Request, meta: EntityMeta<E>, extra: ExtraOptions) {
-  const method = req.method;
-  parseQuery(req);
-  extra.pre?.(req, meta);
-  if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
-    extra.preSave?.(req, meta);
-  } else if (method === 'GET' || method === 'DELETE') {
-    extra.preFilter?.(req, meta);
-  }
 }
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
-  const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 500;
-  const message = err instanceof Error ? err.message : 'Internal Server Error';
-  res.status(status).json({ error: message });
+  const { status, body } = toErrorResponse(err);
+  res.status(status).json(body);
 }
-
-type Pre = <E extends object>(req: Request, meta: EntityMeta<E>) => void;
-
-type ExtraOptions = {
-  /**
-   * Allow augment any kind of request before it runs
-   */
-  readonly pre?: Pre;
-  /**
-   * Allow augment a save request before it runs
-   */
-  readonly preSave?: Pre;
-  /**
-   * Allow augment a filter request before it runs
-   */
-  readonly preFilter?: Pre;
-};
-
-export type MiddlewareOptions = ExtraOptions & {
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
-  include?: Type<any>[];
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
-  exclude?: Type<any>[];
-};

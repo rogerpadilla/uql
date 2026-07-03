@@ -2,34 +2,22 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import * as options from '../options.js';
-import { User } from '../test/index.js';
-import type { Querier } from '../type/index.js';
+import { createMockQuerier, type MockedQuerier, User } from '../test/index.js';
 import { errorHandler, querierMiddleware } from './querierMiddleware.js';
 
 vi.mock('../options.js');
 
-type MockedQuerier = {
-  [K in keyof Querier]: Mock;
-};
-
+/**
+ * The handler logic (operations, hooks, transactions, envelopes) is covered by
+ * src/http/handler.spec.ts; this suite covers the express-specific wiring only.
+ */
 describe('querierMiddleware', () => {
   let app: express.Express;
   let mockQuerier: MockedQuerier;
 
   beforeEach(() => {
-    mockQuerier = {
-      findOne: vi.fn(),
-      findMany: vi.fn(),
-      count: vi.fn(),
-      insertOne: vi.fn(),
-      updateMany: vi.fn(),
-      deleteMany: vi.fn(),
-      beginTransaction: vi.fn(),
-      commitTransaction: vi.fn(),
-      rollbackTransaction: vi.fn(),
-      release: vi.fn(),
-    } as unknown as MockedQuerier;
-
+    vi.clearAllMocks();
+    mockQuerier = createMockQuerier();
     (options.getQuerier as Mock).mockResolvedValue(mockQuerier);
 
     app = express();
@@ -40,57 +28,37 @@ describe('querierMiddleware', () => {
     app.use(errorHandler);
   });
 
-  it('GET /api/user/one', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
-    const res = await request(app).get('/api/user/one?name=John');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: { id: 1, name: 'John' }, count: 1 });
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ name: 'John' }));
-  });
-
-  it('GET /api/user/:id', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 123, name: 'John' });
-    const res = await request(app).get('/api/user/123');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: { id: 123, name: 'John' }, count: 1 });
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
-  });
-
-  it('GET /api/user', async () => {
+  it('GET routes with query-string parsing', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'John' }]);
-    const res = await request(app).get('/api/user');
+    const res = await request(app).get('/api/user?$limit=5');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: [{ id: 1, name: 'John' }] });
-    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.any(Object));
+    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 5 }));
   });
 
-  it('GET /api/user with count', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'John' }]);
-    mockQuerier.count.mockResolvedValue(1);
-    const res = await request(app).get('/api/user?count=true');
+  it('tolerates a trailing slash', async () => {
+    mockQuerier.findMany.mockResolvedValue([]);
+    const res = await request(app).get('/api/user/');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: [{ id: 1, name: 'John' }], count: 1 });
   });
 
-  it('GET /api/user/count', async () => {
-    mockQuerier.count.mockResolvedValue(5);
-    const res = await request(app).get('/api/user/count');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: 5, count: 5 });
-  });
-
-  it('POST /api/user', async () => {
+  it('POST routes with the parsed JSON body', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
     const res = await request(app).post('/api/user').send({ name: 'John' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: 1, count: 1 });
-    expect(mockQuerier.beginTransaction).toHaveBeenCalled();
     expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'John' });
     expect(mockQuerier.commitTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('PATCH /api/user/:id', async () => {
+  it('PUT routes (saveOne upsert)', async () => {
+    mockQuerier.saveOne.mockResolvedValue(1);
+    const res = await request(app).put('/api/user').send({ id: 1, name: 'John' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: 1, count: 1 });
+  });
+
+  it('PATCH routes with the id sub-path', async () => {
     mockQuerier.updateMany.mockResolvedValue(1);
     const res = await request(app).patch('/api/user/1').send({ name: 'John' });
     expect(res.status).toBe(200);
@@ -100,139 +68,51 @@ describe('querierMiddleware', () => {
     });
   });
 
-  it('DELETE /api/user/:id', async () => {
+  it('DELETE routes with the id sub-path', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const res = await request(app).delete('/api/user/1');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: '1', count: 1 });
   });
 
-  it('DELETE /api/user', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
-    mockQuerier.deleteMany.mockResolvedValue(2);
-    const res = await request(app).delete('/api/user');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: [1, 2], count: 2 });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: [1, 2] }, expect.any(Object));
-  });
-
-  it('GET /api/user/one should handle error', async () => {
-    mockQuerier.findOne.mockRejectedValue(new Error('One error'));
-    const res = await request(app).get('/api/user/one');
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('One error');
-  });
-
-  it('GET /api/user/count should handle error', async () => {
-    mockQuerier.count.mockRejectedValue(new Error('Count error'));
-    const res = await request(app).get('/api/user/count');
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Count error');
-  });
-
-  it('GET /api/user/:id should handle error', async () => {
-    mockQuerier.findOne.mockRejectedValue(new Error('ID error'));
-    const res = await request(app).get('/api/user/123');
-    expect(res.status).toBe(500);
-  });
-
-  it('GET /api/user should handle error', async () => {
-    mockQuerier.findMany.mockRejectedValue(new Error('Many error'));
-    const res = await request(app).get('/api/user');
-    expect(res.status).toBe(500);
-  });
-
-  it('POST /api/user should rollback on error', async () => {
-    mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
-    const res = await request(app).post('/api/user').send({ name: 'John' });
-    expect(res.status).toBe(500);
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('POST /api/user should swallow rollback errors', async () => {
-    mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
-    mockQuerier.rollbackTransaction.mockRejectedValue(new Error('Rollback error'));
-
-    const res = await request(app).post('/api/user').send({ name: 'John' });
-
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Insert error');
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('PATCH /api/user/:id should rollback on error', async () => {
-    mockQuerier.updateMany.mockRejectedValue(new Error('Update error'));
-    const res = await request(app).patch('/api/user/1').send({ name: 'John' });
-    expect(res.status).toBe(500);
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('DELETE /api/user/:id should rollback on error', async () => {
-    mockQuerier.deleteMany.mockRejectedValue(new Error('Delete error'));
-    const res = await request(app).delete('/api/user/1');
-    expect(res.status).toBe(500);
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('DELETE /api/user should rollback on error', async () => {
-    mockQuerier.findMany.mockRejectedValue(new Error('Find error'));
-    const res = await request(app).delete('/api/user');
-    expect(res.status).toBe(500);
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('GET /api/user with $limit', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'John' }]);
-    const res = await request(app).get('/api/user?$limit=5');
-    expect(res.status).toBe(200);
-    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 5 }));
-  });
-
-  it('should throw error if no entities provided', () => {
-    expect(() => querierMiddleware({ include: [] })).toThrow('no entities for the uql express middleware');
-  });
-
-  it('GET /api/user/:id with $where as array', async () => {
+  it('the extended query parser yields arrays for bracket params ($where[]=1)', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const res = await request(app).get('/api/user/123?$where[]=1');
     expect(res.status).toBe(200);
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
-  });
-
-  it('GET /api/user/:id with $where as object', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const res = await request(app).get('/api/user/123?$where=' + encodeURIComponent('{"name":"John"}'));
-    expect(res.status).toBe(200);
     expect(mockQuerier.findOne).toHaveBeenCalledWith(
       User,
-      expect.objectContaining({ $where: { id: '123', name: 'John' } }),
+      expect.objectContaining({ $where: { $and: [{ id: { $in: ['1'] } }, { id: '123' }] } }),
     );
   });
 
-  it('PATCH /api/user/:id with $where as array', async () => {
-    mockQuerier.updateMany.mockResolvedValue(1);
-    const res = await request(app).patch('/api/user/1?$where[]=2').send({ name: 'John' });
-    expect(res.status).toBe(200);
-    expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
-      name: 'John',
-    });
+  it('QUERY /api/user (RFC 10008) reads with the query in the body', async () => {
+    mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
+    const server = app.listen(0);
+    try {
+      const { port } = server.address() as { port: number };
+      const res = await fetch(`http://localhost:${port}/api/user`, {
+        method: 'QUERY',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ $where: { name: 'John' }, $limit: 5 }),
+      });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ data: [{ id: 1 }] });
+      expect(mockQuerier.findMany).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({ $where: { name: 'John' }, $limit: 5 }),
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
-  it('DELETE /api/user/:id with $where as array', async () => {
-    mockQuerier.deleteMany.mockResolvedValue(1);
-    const res = await request(app).delete('/api/user/1?$where[]=3');
-    expect(res.status).toBe(200);
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
-      softDelete: false,
-    });
+  it('unknown methods fall through to 404', async () => {
+    const res = await request(app).options('/api/user/1');
+    expect(res.status).toBe(404);
+    expect(options.getQuerier).not.toHaveBeenCalled();
   });
 
-  it('querierMiddleware should respect exclude', async () => {
+  it('unknown entities fall through to 404 (respects exclude)', async () => {
     class OtherEntity {}
     const router = querierMiddleware({ include: [User, OtherEntity], exclude: [OtherEntity] });
     app = express();
@@ -241,42 +121,44 @@ describe('querierMiddleware', () => {
     expect(res.status).toBe(404);
   });
 
-  it('GET /api/user/one returns null', async () => {
-    mockQuerier.findOne.mockResolvedValue(null);
-    const res = await request(app).get('/api/user/one');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: null, count: 0 });
-  });
-
-  it('GET /api/user/:id returns null', async () => {
-    mockQuerier.findOne.mockResolvedValue(null);
-    const res = await request(app).get('/api/user/999');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: null, count: 0 });
-  });
-
-  it('DELETE /api/user when no entities found', async () => {
-    mockQuerier.findMany.mockResolvedValue([]);
-    const res = await request(app).delete('/api/user');
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: [], count: 0 });
-    expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
-  });
-
-  it('PUT /api/user/:id is not handled (pre preSave branch)', async () => {
-    const res = await request(app).put('/api/user/1').send({ name: 'John' });
-    expect(res.status).toBe(404);
-  });
-
-  it('errorHandler with non-Error exception', async () => {
+  it('errorHandler maps non-Error exceptions to a generic 500', async () => {
     mockQuerier.findOne.mockRejectedValue('raw string error');
     const res = await request(app).get('/api/user/one');
     expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Internal Server Error');
+    expect(res.body).toEqual({ error: { message: 'Internal Server Error', code: 500 } });
   });
 
-  it('querierMiddleware uses getEntities when include is omitted', () => {
-    const router = querierMiddleware();
-    expect(router).toBeDefined();
+  it('errorHandler honors a numeric error status', async () => {
+    mockQuerier.findOne.mockRejectedValue(Object.assign(new Error('forbidden'), { status: 403 }));
+    const res = await request(app).get('/api/user/one');
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: { message: 'forbidden', code: 403 } });
+  });
+
+  it('throws if no entities are provided', () => {
+    expect(() => querierMiddleware({ include: [] })).toThrow('no entities for the uql middleware');
+  });
+
+  it('uses getEntities when include is omitted', () => {
+    expect(querierMiddleware()).toBeDefined();
+  });
+
+  it('hooks receive the express req as context', async () => {
+    mockQuerier.findMany.mockResolvedValue([]);
+    app = express();
+    app.use(express.json());
+    app.use(
+      '/api',
+      querierMiddleware({
+        include: [User],
+        preFilter: ({ query, context }) => {
+          query.$where ??= {};
+          Object.assign(query.$where as object, { companyId: context.get('x-company-id') });
+        },
+      }),
+    );
+    const res = await request(app).get('/api/user').set('x-company-id', '40');
+    expect(res.status).toBe(200);
+    expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { companyId: '40' } }));
   });
 });
