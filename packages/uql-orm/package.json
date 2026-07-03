@@ -3,7 +3,7 @@
   "homepage": "https://uql-orm.dev",
   "description": "Fast, type-safe TypeScript ORM — one API for every database",
   "license": "MIT",
-  "version": "0.9.5",
+  "version": "0.10.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -62,8 +62,8 @@
   },
   "peerDependencies": {
     "@libsql/client": ">=0.6.0",
-    "@nestjs/common": ">=10.0.0",
     "@neondatabase/serverless": ">=0.9.0",
+    "@nestjs/common": ">=10.0.0",
     "better-sqlite3": ">=9.0.0",
     "express": ">=5.0.0",
     "mariadb": ">=3.0.0",
@@ -110,7 +110,6 @@
     "@nestjs/common": "^11.1.27",
     "@nestjs/core": "^11.1.27",
     "@nestjs/testing": "^11.1.27",
-    "rxjs": "^7.8.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.20.0",
@@ -121,7 +120,8 @@
     "mongodb": "^7.4.0",
     "mysql2": "^3.22.5",
     "pg": "^8.22.0",
-    "pg-query-stream": "^4.16.0"
+    "pg-query-stream": "^4.16.0",
+    "rxjs": "^7.8.2"
   },
   "author": "Roger Padilla",
   "repository": {
