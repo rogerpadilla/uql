@@ -596,7 +596,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   // biome-ignore lint/suspicious/noExplicitAny: method works with any entity type
   protected resolveColumnWithPrefix(entity: Type<any>, key: string, { prefix }: QueryOptions = {}): string {
     const meta = getMeta(entity);
-    const field = meta.fields[key as string];
+    const field = meta.fields[key];
     const columnName = this.resolveColumnName(key, field);
     const escapedPrefix = this.escapeId(prefix as string, true, true);
     return escapedPrefix + this.escapeId(columnName);
