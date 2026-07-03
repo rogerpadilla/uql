@@ -47,12 +47,12 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "prepack": "cp ../../README.md . && cp ../../CHANGELOG.md .",
+    "prepack": "test -f dist/index.js && test -f dist/http/index.js && cp ../../README.md . && cp ../../CHANGELOG.md .",
     "postpack": "rm README.md CHANGELOG.md",
     "compile.browser": "bun build src/browser/index.ts --minify --sourcemap=linked --format=esm --target=browser --outdir=dist/browser --entry-naming 'uql-browser.min.[ext]'",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser",
     "start": "tsc --watch",
-    "clean": "rimraf dist *.tsbuildinfo"
+    "clean": "rimraf dist .tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "jiti": "^2.7.0",
