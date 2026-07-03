@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [Unreleased]
+## [0.10.0] - 2026-07-02
 
 ### Breaking Changes
 
