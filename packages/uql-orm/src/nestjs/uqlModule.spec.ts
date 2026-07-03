@@ -25,4 +25,14 @@ describe('UqlModule', () => {
     expect(UqlModule.forRoot({ pool }).global).toBe(true);
     expect(UqlModule.forRoot({ pool, global: false }).global).toBe(false);
   });
+
+  it('ends the pool on application shutdown', async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [UqlModule.forRoot({ pool })],
+    }).compile();
+
+    expect(pool.end).not.toHaveBeenCalled();
+    await moduleRef.close();
+    expect(pool.end).toHaveBeenCalledTimes(1);
+  });
 });
