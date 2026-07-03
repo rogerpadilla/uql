@@ -4,6 +4,7 @@
   "command": {
     "publish": {
       "conventionalCommits": true,
+      "changelog": false,
       "message": "chore(release): publish",
       "allowBranch": "main",
       "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"]
