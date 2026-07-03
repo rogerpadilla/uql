@@ -1,4 +1,4 @@
-import { type DynamicModule, Module } from '@nestjs/common';
+import { type DynamicModule, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { setQuerierPool } from '../options.js';
 import type { QuerierPool } from '../type/index.js';
 
@@ -19,13 +19,19 @@ export type UqlModuleOptions = {
 };
 
 /**
- * Minimal NestJS integration: provides the pool via DI and sets it as the default pool,
- * so `getQuerier()`, `querierMiddleware` (express platform), `createFetchHandler`,
- * and the `@Transactional` decorator work unchanged.
+ * Minimal NestJS integration: provides the pool via DI, sets it as the default pool
+ * (so `getQuerier()`, `querierMiddleware` (express platform), `createFetchHandler`,
+ * and the `@Transactional` decorator work unchanged), and ends the pool on
+ * application shutdown.
  */
 @Module({})
-// biome-ignore lint/complexity/noStaticOnlyClass: NestJS dynamic modules are classes by contract
-export class UqlModule {
+export class UqlModule implements OnApplicationShutdown {
+  constructor(@Inject(UQL_QUERIER_POOL) private readonly pool: QuerierPool) {}
+
+  onApplicationShutdown(): Promise<void> {
+    return this.pool.end();
+  }
+
   static forRoot({ pool, global = true }: UqlModuleOptions): DynamicModule {
     setQuerierPool(pool);
     return {
