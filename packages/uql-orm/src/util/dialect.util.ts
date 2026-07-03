@@ -153,7 +153,7 @@ export type ParsedGroupEntry =
 export function parseGroupMap<E>(group: QueryGroupMap<E>): ParsedGroupEntry[] {
   const entries: ParsedGroupEntry[] = [];
   for (const alias of getKeys(group)) {
-    const value = (group as Record<string, unknown>)[alias];
+    const value = group[alias];
     if (value === true) {
       entries.push({ kind: 'key', alias });
     } else if (value && typeof value === 'object') {

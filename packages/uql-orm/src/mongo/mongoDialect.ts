@@ -305,7 +305,7 @@ export class MongoDialect extends AbstractDialect {
       return doc;
     }
 
-    const res = doc as unknown as Record<string, unknown>;
+    const res = doc as Record<string, unknown>;
     const _id = MongoDialect.ID_KEY;
 
     if (res[_id]) {
@@ -335,7 +335,7 @@ export class MongoDialect extends AbstractDialect {
         : this.normalizeId(relMeta, res[relKey] as Document);
     }
 
-    return res as unknown as E;
+    return res as E;
   }
 
   public getIdValue<T extends IdValue>(value: T): T {
