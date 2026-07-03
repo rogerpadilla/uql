@@ -13,7 +13,7 @@
 
 ```ts
 await querier.findMany(User, {
-  $select: { id: true, name: true },
+  $select: { id: true, email: true },
   $where: { email: { $endsWith: '@uql-orm.dev' } },
   $limit: 10,
 });
