@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [Unreleased]
+
+### Breaking Changes
+
+- **HTTP transport redesigned around a framework-agnostic core (`uql-orm/http`)**: the wire contract (routes, envelopes, query serialization) is defined once and shared by the server adapters and the browser client; `uql-orm/express` is now a thin adapter over it.
+  - **Hooks**: `pre`/`preSave`/`preFilter` receive a single `HookContext` (`{ meta, op, method, query, body, context }`) instead of `(req, meta)`, may be `async`, and abort by throwing (a numeric `status` on the error becomes the HTTP status). Migration is mechanical: `req.query` becomes `ctx.query`, `req.body` becomes `ctx.body`.
+  - **Error responses** are now `{ error: { message, code } }` (was `{ error: string }`).
+  - **`HttpQuerier.saveOne`** issues `PUT /<entity>` (server-side upsert) instead of client-side POST/PATCH branching.
+  - **Removed**: `buildQuerierRouter`, express `parseQuery` (use `parseQueryParams` from `uql-orm/http`), the `express.Request.query` type augmentation, and the browser re-exports of `stringifyQuery` and the envelope types (import them from `uql-orm/http`).
+  - **`uql-orm/browser` no longer loads `reflect-metadata`**: import it (or `uql-orm`) directly if you relied on that side effect.
+
+### Features
+
+- **`uql-orm/http`**: `createFetchHandler` mounts natively on Hono, Next.js route handlers, Bun.serve, Deno.serve, Cloudflare Workers, and SvelteKit; `createRequestHandler` bridges any other framework.
+- **Extended wire protocol**: new routes for `insertMany`, `saveOne` (upsert), `saveMany`, and bulk `updateMany`, with matching `HttpQuerier` methods.
+- **`uql-orm/nestjs`**: `UqlModule.forRoot({ pool })` registers the pool with Nest DI and as UQL's default pool.
+- **HTTP QUERY method (RFC 10008)**: reads can send the JSON query in the request body, avoiding URL-length limits; the client opts in via `new HttpQuerier('/api', { readMethod: 'QUERY' })`.
+- **Better client ergonomics**: per-call and per-instance `headers`, `AbortSignal` support, and non-2xx responses throw `RequestError` carrying the HTTP `status`.
+- **`post` hook**: shape the success envelope before it is sent (strip secrets, derive presentation fields).
+
+### Bug Fixes
+
+- **The published browser bundle was broken** (it contained test helpers instead of the client); it is now a 4 KB bundle with no `reflect-metadata`.
+- **The express middleware falls through** (`next()`) on unknown routes, so it composes with custom routes on the same prefix.
+- Hooks can now enforce `softDelete`; malformed JSON returns `400` instead of `500`; `HEAD` is served as `GET`; query strings are percent-encoded; `GET /<entity>/:id` merges an array `$where` via `$and` instead of overwriting it.
+
 ## [0.9.5] - 2026-07-02
 
 ### Documentation
