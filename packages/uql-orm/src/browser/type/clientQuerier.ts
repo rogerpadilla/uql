@@ -1,5 +1,6 @@
+import type { CrudOperation, RequestSuccessResponse } from '../../http/contract.js';
 import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
-import type { RequestOptions, RequestSuccessResponse } from './request.js';
+import type { RequestOptions } from './request.js';
 
 /**
  * Client-side querier — mirrors {@link UniversalQuerier} method names and semantics but with two structural differences:
@@ -28,6 +29,8 @@ export interface ClientQuerier {
 
   insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
 
+  insertMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+
   updateOneById<E>(
     entity: Type<E>,
     id: IdValue<E>,
@@ -35,7 +38,16 @@ export interface ClientQuerier {
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 
+  updateMany<E>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<number>>;
+
   saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
+
+  saveMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
   deleteOneById<E>(
     entity: Type<E>,
@@ -49,3 +61,12 @@ export interface ClientQuerier {
     opts?: QueryOptions & RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 }
+
+type AssertEmpty<T extends never> = T;
+
+/**
+ * Compile-time guarantee (module-private, not part of the public API) that {@link ClientQuerier}
+ * implements every wire operation in CRUD_ROUTES: adding a route without a matching client
+ * method breaks this alias.
+ */
+type ClientQuerierCoversAllCrudOperations = AssertEmpty<Exclude<CrudOperation, keyof ClientQuerier>>;

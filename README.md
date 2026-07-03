@@ -41,7 +41,8 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 | Aggregate queries, grouping, HAVING | [Aggregate](https://uql-orm.dev/querying/aggregate) |
 | Semantic search & vector similarity | [Semantic Search](https://uql-orm.dev/ai-semantic-search) |
 | Streaming, transactions, raw SQL | [Querying](https://uql-orm.dev/querying/querier) |
-| NestJS integration & HttpQuerier | [Fullstack](https://uql-orm.dev/comparison) |
+| REST API from your entities (any framework) | [HTTP](https://uql-orm.dev/extensions-http) |
+| Typed browser client, NestJS module | [Browser](https://uql-orm.dev/extensions-browser) · [NestJS](https://uql-orm.dev/nestjs) |
 
 ## Install
 
