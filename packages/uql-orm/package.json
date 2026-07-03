@@ -47,7 +47,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "prepack": "test -f dist/index.js && test -f dist/http/index.js && cp ../../README.md . && cp ../../CHANGELOG.md .",
+    "prepack": "bun run verify-dist.ts && cp ../../README.md . && cp ../../CHANGELOG.md .",
     "postpack": "rm README.md CHANGELOG.md",
     "compile.browser": "bun build src/browser/index.ts --minify --sourcemap=linked --format=esm --target=browser --outdir=dist/browser --entry-naming 'uql-browser.min.[ext]'",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser",
