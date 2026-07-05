@@ -146,3 +146,27 @@ export class LoggerWrapper implements Logger {
     }
   }
 }
+
+/**
+ * Structural type for any EventEmitter-like connection pool that emits an
+ * `'error'` event on a dropped connection (node-postgres, `mariadb`, etc.).
+ */
+export interface ErrorEmittingPool {
+  on(event: 'error', listener: (err: Error) => void): unknown;
+}
+
+/**
+ * Attaches an error listener to a connection pool so a dropped connection is
+ * logged instead of left unhandled — which crashes the process for drivers
+ * that don't guard against it themselves (node-postgres), or silently
+ * swallowed with zero visibility for drivers that already install their own
+ * no-op safety net (`mariadb`'s `createPool`). Always logs via a dedicated
+ * logger (ignoring the consumer's configured log level) since a silently
+ * swallowed pool error is exactly the failure mode this guards against.
+ */
+export function attachPoolErrorHandler(pool: ErrorEmittingPool, message: string): void {
+  const logger = new LoggerWrapper(true);
+  pool.on('error', (err) => {
+    logger.logError(message, err);
+  });
+}

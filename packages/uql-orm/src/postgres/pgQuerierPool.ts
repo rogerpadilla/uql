@@ -5,11 +5,12 @@ import { PgDialect } from './pgDialect.js';
 import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PgDialect, PgQuerier> {
-  readonly pool: Pool;
+  declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(new PgDialect({ namingStrategy: extra?.namingStrategy }), extra);
-    this.pool = new Pool(opts);
+    // keepAlive reduces (but can't eliminate) idle connections being silently
+    // dropped by NATs/firewalls on long-lived remote connections.
+    super(new PgDialect({ namingStrategy: extra?.namingStrategy }), new Pool({ keepAlive: true, ...opts }), extra);
   }
 
   async getQuerier() {

@@ -5,6 +5,7 @@ import { NeonQuerierPool } from './neonQuerierPool.js';
 const mockPoolInstance = {
   connect: vi.fn(),
   end: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
 };
 
 vi.mock('@neondatabase/serverless', () => {

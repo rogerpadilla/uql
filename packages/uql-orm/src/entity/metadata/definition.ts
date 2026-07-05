@@ -36,9 +36,10 @@ export function appendEntityIndex<E>(meta: EntityMeta<E>, index: EntityIndexMeta
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  if (!opts.type) {
-    const type = inferType(entity, key);
-    opts = { ...opts, type };
+  if (opts.type) {
+    opts = { ...opts, typeInferred: false };
+  } else {
+    opts = { ...opts, type: inferType(entity, key), typeInferred: true };
   }
   const fieldKey = key as FieldKey<E>;
   meta.fields[fieldKey] = { ...meta.fields[fieldKey], ...{ name: key, ...opts } };

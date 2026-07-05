@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DefaultLogger, LoggerWrapper } from './logger.js';
+import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.js';
 
 // Helper to strip ANSI escape codes
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes are necessary for testing color output
@@ -233,5 +233,33 @@ describe('LoggerWrapper', () => {
     wrapper.logQuery('SELECT 1');
     expect(spyInfo).not.toHaveBeenCalled();
     expect(spyLog).not.toHaveBeenCalled();
+  });
+});
+
+describe('attachPoolErrorHandler', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('registers an error listener that logs instead of throwing', () => {
+    let errorListener: ((err: Error) => void) | undefined;
+    const pool = {
+      on: vi.fn((event: string, listener: (err: Error) => void) => {
+        if (event === 'error') errorListener = listener;
+      }),
+    };
+    const logErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    attachPoolErrorHandler(pool, 'Idle test pool encountered an error');
+
+    expect(pool.on).toHaveBeenCalledWith('error', expect.any(Function));
+    expect(errorListener).toBeDefined();
+
+    const connectionError = new Error('Connection terminated unexpectedly');
+    expect(() => errorListener?.(connectionError)).not.toThrow();
+    expect(logErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Idle test pool encountered an error'),
+      connectionError,
+    );
   });
 });

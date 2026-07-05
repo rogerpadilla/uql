@@ -5,11 +5,10 @@ import { NeonDialect } from './neonDialect.js';
 import { NeonQuerier } from './neonQuerier.js';
 
 export class NeonQuerierPool extends AbstractPgQuerierPool<PoolClient, NeonDialect, NeonQuerier> {
-  readonly pool: Pool;
+  declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(new NeonDialect({ namingStrategy: extra?.namingStrategy }), extra);
-    this.pool = new Pool(opts);
+    super(new NeonDialect({ namingStrategy: extra?.namingStrategy }), new Pool(opts), extra);
   }
 
   async getQuerier() {
