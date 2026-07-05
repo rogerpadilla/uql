@@ -7,11 +7,12 @@
  */
 
 import { getMeta } from '../entity/metadata/definition.js';
+import type { EntityGetter } from '../type/entity.js';
 import type { EntityMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { SchemaAST } from './schemaAST.js';
-import type { ColumnNode, ForeignKeyAction, IndexNode, RelationshipNode, TableNode } from './types.js';
+import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, RelationshipNode, TableNode } from './types.js';
 import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
 
 /**
@@ -94,6 +95,38 @@ export class SchemaASTBuilder {
   }
 
   /**
+   * Resolve the canonical type for a field, inheriting from the referenced
+   * entity's primary key when the field is a foreign-key reference
+   * (`@Field({ references: () => SomeEntity })`) with no explicit type of its
+   * own.
+   *
+   * Without this, a field like `creatorId?: UUID` (a bare TypeScript alias for
+   * `string`, erased at runtime) falls back to the generic string inference in
+   * {@link fieldOptionsToCanonical} and gets typed as TEXT/VARCHAR — producing a
+   * foreign key column whose type doesn't match the UUID primary key it
+   * references, which Postgres (and most databases) reject outright.
+   *
+   * `field.typeInferred` (set by `defineField`, see entity/metadata/definition.ts)
+   * is what distinguishes "no type was given" from "the decorator explicitly set
+   * a type" — including explicit constructor overrides like `type: BigInt`, which
+   * a value-based check (e.g. `typeof field.type === 'string'`) would miss since
+   * reflection also produces constructor values like `String`/`Number`.
+   * `columnType` remains the unambiguous, always-respected explicit override.
+   */
+  private resolveColumnCanonicalType(field: FieldOptions, seen: Set<EntityGetter> = new Set()): CanonicalType {
+    const hasExplicitType = !!field.columnType || !field.typeInferred;
+    if (!hasExplicitType && field.references && !seen.has(field.references)) {
+      seen.add(field.references);
+      const referencedMeta = getMeta(field.references());
+      const referencedIdField = referencedMeta.fields[referencedMeta.id as string];
+      if (referencedIdField) {
+        return this.resolveColumnCanonicalType(referencedIdField, seen);
+      }
+    }
+    return fieldOptionsToCanonical(field, field.type);
+  }
+
+  /**
    * Add a table from entity metadata.
    */
   private addTableFromEntity(
@@ -128,7 +161,7 @@ export class SchemaASTBuilder {
       if (field.virtual) continue;
 
       const columnName = resolveColumnName(key, field);
-      const type = fieldOptionsToCanonical(field, field.type);
+      const type = this.resolveColumnCanonicalType(field);
 
       const column: ColumnNode = {
         name: columnName,

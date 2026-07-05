@@ -210,6 +210,12 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: FieldType;
   /**
+   * Set by `defineField` when `type` was inferred via reflection rather than
+   * given explicitly. Internal bookkeeping — do not set this from a decorator.
+   * @internal
+   */
+  readonly typeInferred?: boolean;
+  /**
    * Dimensions for vector fields. Used in schema generation.
    * @example `@Field({ type: 'vector', dimensions: 1536 })`
    */

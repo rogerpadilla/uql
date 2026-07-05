@@ -84,6 +84,78 @@ describe('SchemaASTBuilder', () => {
       expect(nameCol?.type.category).toBe('string');
     });
 
+    it('should infer a FK field type from its referenced entity primary key when no type is given', () => {
+      @Entity()
+      class Account {
+        @Id({ type: 'uuid' })
+        id?: string;
+      }
+      @Entity()
+      class Item {
+        @Id({ type: 'uuid' })
+        id?: string;
+        // No explicit type/columnType — should inherit 'uuid' from Account.id,
+        // not fall back to the generic TypeScript-inferred 'string' (TEXT).
+        @Field({ references: () => Account })
+        accountId?: string;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Account, Item]);
+
+      const itemTable = ast.getTable('Item');
+      const accountIdCol = itemTable?.columns.get('accountId');
+
+      expect(accountIdCol?.type.category).toBe('uuid');
+    });
+
+    it('should still respect an explicit type on a FK field over the referenced entity', () => {
+      @Entity()
+      class Parent2 {
+        @Id({ type: 'uuid' })
+        id?: string;
+      }
+      @Entity()
+      class Child2 {
+        @Id() id?: number;
+        @Field({ references: () => Parent2, type: 'text' })
+        parentRef?: string;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Parent2, Child2]);
+
+      const childTable = ast.getTable('Child2');
+      const col = childTable?.columns.get('parentRef');
+
+      expect(col?.type.category).toBe('string');
+    });
+
+    it('should respect an explicit constructor type (e.g. BigInt) on a FK field over the referenced entity', () => {
+      @Entity()
+      class Parent3 {
+        @Id({ type: 'uuid' })
+        id?: string;
+      }
+      @Entity()
+      class Child3 {
+        @Id() id?: number;
+        // Explicit `type: BigInt` overriding the reflected `string` type of this
+        // property — must win over inheriting 'uuid' from Parent3.id.
+        @Field({ references: () => Parent3, type: BigInt })
+        parentRef?: string;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Parent3, Child3]);
+
+      const childTable = ast.getTable('Child3');
+      const col = childTable?.columns.get('parentRef');
+
+      expect(col?.type.category).toBe('integer');
+      expect(col?.type.size).toBe('big');
+    });
+
     it('should handle nullable fields', () => {
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([User]);

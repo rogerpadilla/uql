@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.10.2] - 2026-07-05
+
+### Bug Fixes
+
+- **Dropped idle connections no longer crash the process**: `pg`-based pools (Postgres, CockroachDB, Neon) now handle the pool's `'error'` event instead of leaving it unhandled. Postgres and CockroachDB also default to `keepAlive: true`, so idle connections drop less often to begin with.
+- **Foreign key columns now match their referenced primary key type**: `@Field({ references: () => User })` with no explicit `type` fell back to the TypeScript property type (e.g. `string` → TEXT) instead of `User`'s actual primary key type (e.g. `UUID`), which could fail inserts and joins. Explicit types are still respected.
+
 ## [0.10.1] - 2026-07-03
 
 ### Features
