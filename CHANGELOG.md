@@ -13,7 +13,7 @@ date format is [yyyy-mm-dd]
 
 ### Features
 
-- **Foreign-key columns are auto-created from relations**: declaring an owning relation (e.g. `@ManyToOne({ entity: () => Company })`) without an explicit `@Field({ references })` now auto-generates the `<relation>Id` column in metadata. Declaring the FK field explicitly (needed to query/read it by name in typed code) still works and takes precedence.
+- **Foreign-key columns are auto-created from relations**: declaring an owning relation (e.g. `@ManyToOne({ entity: () => Company })`) without an explicit `@Field({ references })` now auto-generates the `<relation>Id` column in metadata, inheriting the referenced primary key's type (e.g. `UUID`) rather than defaulting to an integer. Declaring the FK field explicitly (needed to query/read it by name in typed code) still works and takes precedence.
 
 ## [0.10.2] - 2026-07-05
 
