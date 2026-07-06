@@ -18,7 +18,6 @@ import type {
 } from '../type/index.js';
 import {
   clone,
-  getFieldCallbackValue,
   getKeys,
   getRelationRequestSummary,
   hasKeys,
@@ -333,11 +332,13 @@ export class MongodbQuerier extends AbstractQuerier {
     let changes: number;
     if (meta.softDelete && !opts.softDelete) {
       const field = meta.fields[meta.softDelete];
-      const onDeleteValue = getFieldCallbackValue(field!.onDelete!);
+      if (!field) {
+        throw TypeError(`'${entity.name}' softDelete field '${meta.softDelete}' not found in entity fields`);
+      }
       const updateResult = await this.execute((session) =>
         this.collection(entity).updateMany(
           { _id: { $in: ids } },
-          { $set: { [meta.softDelete as string]: onDeleteValue } } as UpdateFilter<E>,
+          { $set: { [meta.softDelete as string]: Date.now() } } as UpdateFilter<E>,
           {
             session,
           },

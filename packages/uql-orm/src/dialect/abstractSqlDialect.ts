@@ -53,7 +53,6 @@ import {
   fillOnFields,
   filterFieldKeys,
   flatObject,
-  getFieldCallbackValue,
   getFieldKeys,
   getKeys,
   getRelationRequestSummary,
@@ -593,8 +592,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     $ilike: (v) => v.toLowerCase(),
   };
 
-  // biome-ignore lint/suspicious/noExplicitAny: method works with any entity type
-  protected resolveColumnWithPrefix(entity: Type<any>, key: string, { prefix }: QueryOptions = {}): string {
+  protected resolveColumnWithPrefix(entity: Type<unknown>, key: string, { prefix }: QueryOptions = {}): string {
     const meta = getMeta(entity);
     const field = meta.fields[key];
     const columnName = this.resolveColumnName(key, field);
@@ -606,18 +604,16 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * Resolves the SQL operand for a field comparison.
    * For QueryRaw virtuals, appends the raw expression to ctx and returns undefined.
    */
-  protected resolveOperandField(
+  protected resolveOperandField<E>(
     ctx: QueryContext,
-    // biome-ignore lint/suspicious/noExplicitAny: method works with any entity type
-    entity: Type<any>,
+    entity: Type<E>,
     key: string,
     opts: QueryOptions,
   ): string | undefined {
     const col = getMeta(entity).fields[key];
     if (col?.virtual) {
       if (col.virtual instanceof QueryRaw) {
-        // biome-ignore lint/suspicious/noExplicitAny: field key type erased at runtime
-        this.getComparisonKey(ctx, entity, key as FieldKey<any>, opts);
+        this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
         return undefined;
       }
       return `(${col.virtual})`;
@@ -1261,8 +1257,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     if (opts.softDelete || opts.softDelete === undefined) {
       if (meta.softDelete) {
         const field = meta.fields[meta.softDelete];
-        if (!field?.onDelete) return;
-        const value = getFieldCallbackValue(field.onDelete);
+        if (!field) return;
+        const value = Date.now();
         const columnName = this.resolveColumnName(meta.softDelete, field);
         ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
         ctx.addValue(value);

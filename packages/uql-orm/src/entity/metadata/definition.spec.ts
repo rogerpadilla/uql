@@ -16,9 +16,11 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
+import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, type Relation } from '../../type/index.js';
 import { Entity } from '../decorator/entity.js';
 import { Field } from '../decorator/field.js';
+import { Id } from '../decorator/id.js';
+import { ManyToOne } from '../decorator/relation.js';
 import { getEntities, getMeta } from './definition.js';
 
 it('User', () => {
@@ -579,7 +581,7 @@ it('MeasureUnitCategory', () => {
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.anything() },
+      deletedAt: { name: 'deletedAt', type: Number },
     },
     relations: {
       measureUnits: {
@@ -631,7 +633,7 @@ it('MeasureUnit', () => {
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
       updatedAt: { name: 'updatedAt', type: Number, onUpdate: expect.anything() },
-      deletedAt: { name: 'deletedAt', type: Number, onDelete: expect.anything() },
+      deletedAt: { name: 'deletedAt', type: Number },
     },
     relations: {
       category: {
@@ -714,24 +716,35 @@ it('no fields', () => {
   }).toThrow(`'SomeEntity' must have fields`);
 });
 
-it('softDelete onDelete', () => {
+it('softDelete field not found', () => {
   expect(() => {
-    @Entity({ softDelete: true })
+    // deliberately points to a non-existent field to exercise the runtime guard
+    @Entity({ softDelete: 'deletedAt' as never })
     class SomeEntity {
       @Field()
       id!: string;
     }
-  }).toThrow(`'SomeEntity' must have one field with 'onDelete' to enable 'softDelete'`);
+  }).toThrow(`'SomeEntity' softDelete field 'deletedAt' not found in entity fields`);
 });
 
-it('max 1 onDelete', () => {
-  expect(() => {
-    @Entity({ softDelete: true })
-    class SomeEntity {
-      @Field({ onDelete: Date.now })
-      deletedAt!: number;
-      @Field({ onDelete: () => true })
-      deleted!: boolean;
-    }
-  }).toThrow(`'SomeEntity' must have one field with 'onDelete' as maximum`);
+it('auto-generates the FK column from a relation-only declaration', () => {
+  @Entity()
+  class AutoFkTarget {
+    @Id()
+    id?: number;
+    @Field()
+    name?: string;
+  }
+
+  @Entity()
+  class AutoFkOwner {
+    @Id()
+    id?: number;
+    @ManyToOne({ entity: () => AutoFkTarget })
+    target?: Relation<AutoFkTarget>;
+  }
+
+  const meta = getMeta(AutoFkOwner);
+  expect(meta.fields['targetId']).toEqual({ name: 'targetId', type: Number });
+  expect(meta.relations.target!.references).toEqual([{ local: 'targetId', foreign: 'id' }]);
 });
