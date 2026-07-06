@@ -19,6 +19,8 @@ import { LoggerWrapper } from '../../util/logger.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry — stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
+// Held on `globalThis` via the global symbol registry so a single metadata map survives multiple
+// evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading).
 const holder = globalThis as unknown as Record<symbol, Meta>;
 const metaKey = Symbol.for('uql-orm/entity/metadata');
 const metas: Meta = holder[metaKey] ?? new Map();
@@ -132,17 +134,11 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  const onDeleteKeys = getKeys(meta.fields).filter((key) => meta.fields[key]?.onDelete) as FieldKey<E>[];
-
-  if (onDeleteKeys.length > 1) {
-    throw TypeError(`'${entity.name}' must have one field with 'onDelete' as maximum`);
-  }
-
   if (opts.softDelete) {
-    if (!onDeleteKeys.length) {
-      throw TypeError(`'${entity.name}' must have one field with 'onDelete' to enable 'softDelete'`);
+    if (!(opts.softDelete in meta.fields)) {
+      throw TypeError(`'${entity.name}' softDelete field '${opts.softDelete}' not found in entity fields`);
     }
-    meta.softDelete = onDeleteKeys[0];
+    meta.softDelete = opts.softDelete as FieldKey<E>;
   }
 
   meta.name = opts.name ?? entity.name;
@@ -227,7 +223,14 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
       ];
     } else {
       const relIdKey = relMeta.id;
-      relOpts.references = [{ local: `${relKey}Id`, foreign: relIdKey }];
+      const fkKey = `${relKey}Id` as FieldKey<E>;
+      relOpts.references = [{ local: fkKey, foreign: relIdKey }];
+
+      // Auto-create the FK column when only the relation is declared (no explicit `@Field`).
+      if (!meta.fields[fkKey]) {
+        const relatedIdField = relMeta.fields[relIdKey];
+        meta.fields[fkKey] = { ...meta.fields[fkKey], name: fkKey, type: relatedIdField?.type ?? Number };
+      }
     }
 
     if (relOpts.through) {

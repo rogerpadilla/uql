@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.11.0] - 2026-07-06
+
+### Breaking Changes
+
+- **`softDelete` is configured by field name instead of `boolean`**: use `@Entity({ softDelete: 'deletedAt' })` — naming the timestamp field — instead of `@Entity({ softDelete: true })` paired with `@Field({ onDelete: Date.now })`. On delete, the named field is stamped with `Date.now()`.
+- **Removed `onDelete` and `foreignKey` from `@Field` options** (`FieldOptions`). `onDelete` was only a soft-delete marker, now superseded by the entity-level `softDelete` above; `foreignKey` was non-functional (never read) — foreign keys are derived from `references`/relations.
+
+### Features
+
+- **Foreign-key columns are auto-created from relations**: declaring an owning relation (e.g. `@ManyToOne({ entity: () => Company })`) without an explicit `@Field({ references })` now auto-generates the `<relation>Id` column in metadata. Declaring the FK field explicitly (needed to query/read it by name in typed code) still works and takes precedence.
+
 ## [0.10.2] - 2026-07-05
 
 ### Bug Fixes

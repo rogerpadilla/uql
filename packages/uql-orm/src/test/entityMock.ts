@@ -15,7 +15,7 @@ export abstract class BaseEntity {
   id?: number;
 
   /**
-   * foreign-keys are really simple to specify with the `reference` property.
+   * foreign-keys are really simple to specify with the `references` property.
    */
   @Field({ references: () => Company })
   companyId?: number;
@@ -181,9 +181,9 @@ export class Tax extends BaseEntity {
 }
 
 /**
- * `softDelete` will make the entity "soft deletable".
+ * `softDelete` will make the entity "soft deletable"; its value names the timestamp field to set on delete.
  */
-@Entity({ softDelete: true })
+@Entity({ softDelete: 'deletedAt' })
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
@@ -191,14 +191,11 @@ export class MeasureUnitCategory extends BaseEntity {
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId! })
   measureUnits?: MeasureUnit[];
 
-  /**
-   * `onDelete` callback allows to specify which field will be used when deleting/querying this entity.
-   */
-  @Field({ onDelete: Date.now })
+  @Field()
   deletedAt?: number;
 }
 
-@Entity({ softDelete: true })
+@Entity({ softDelete: 'deletedAt' })
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
@@ -209,7 +206,7 @@ export class MeasureUnit extends BaseEntity {
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
 
-  @Field({ onDelete: Date.now })
+  @Field()
   deletedAt?: number;
 }
 

@@ -235,7 +235,6 @@ export type FieldOptions = {
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
-  readonly onDelete?: OnFieldCallback;
 
   // Schema/migration properties
   /**
@@ -274,10 +273,6 @@ export type FieldOptions = {
    * Index configuration. true for simple index, string for named index.
    */
   readonly index?: boolean | string;
-  /**
-   * Foreign key configuration. true for simple FK (default if reference is set), string for named FK, false to disable.
-   */
-  readonly foreignKey?: boolean | string;
   /**
    * Column comment/description for database documentation.
    */
@@ -414,7 +409,7 @@ export type EntityMeta<E> = {
  */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
-  readonly softDelete?: boolean;
+  readonly softDelete?: FieldKey<E>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: Record<string, FieldOptions>;
   readonly relations?: Record<string, RelationOptions<E>>;

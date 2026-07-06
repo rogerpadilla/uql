@@ -19,7 +19,7 @@ import {
 } from '../type/index.js';
 import { getFieldKeys, getKeys } from './object.util.js';
 
-export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate' | 'onDelete'>;
+export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
 export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
   return getKeys(payload as object).filter((key) => {
