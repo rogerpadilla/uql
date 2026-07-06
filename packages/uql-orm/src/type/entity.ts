@@ -240,12 +240,13 @@ export type FieldOptions = {
    * a `delete` becomes an `UPDATE` that stamps this field instead of removing the row, and reads
    * filter it out (`<field> IS NULL`). An entity may have at most one soft-delete field.
    *
-   * The value controls what is stamped on delete: `true` stamps `Date.now()`; a `Scalar`/`QueryRaw`
-   * or `() => Scalar | QueryRaw` callback stamps that value (e.g. `() => new Date()`).
-   * @example `@Field({ softDelete: true }) deletedAt?: number;`
-   * @example `@Field({ softDelete: () => new Date() }) deletedAt?: Date;`
+   * The value controls what is stamped on delete: `true` stamps the current timestamp
+   * (`new Date()`); any other `Scalar`/`QueryRaw` or `() => Scalar | QueryRaw` callback stamps
+   * that value (e.g. `() => Date.now()` for an epoch-millis column).
+   * @example `@Field({ softDelete: true }) deletedAt?: Date;`
+   * @example `@Field({ softDelete: () => Date.now() }) deletedAt?: number;`
    */
-  readonly softDelete?: boolean | OnFieldCallback;
+  readonly softDelete?: OnFieldCallback;
 
   // Schema/migration properties
   /**

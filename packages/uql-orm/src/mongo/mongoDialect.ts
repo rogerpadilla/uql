@@ -81,7 +81,9 @@ export class MongoDialect extends AbstractDialect {
 
     if (meta.softDelete && (softDelete || softDelete === undefined) && !whereMap[meta.softDelete]) {
       const field = meta.fields[meta.softDelete];
-      (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field!)] = null;
+      if (field) {
+        (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field)] = null;
+      }
     }
 
     const filter: Record<string, unknown> = {};

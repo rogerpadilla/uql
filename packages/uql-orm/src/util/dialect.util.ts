@@ -34,10 +34,10 @@ export function getFieldCallbackValue(val: OnFieldCallback) {
 
 /**
  * Resolves the value stamped on the soft-delete field when deleting a row.
- * `true` defaults to `Date.now()`; any other marker is treated as an {@link OnFieldCallback}.
+ * `true` stamps the current timestamp (`new Date()`); any other marker is an {@link OnFieldCallback}.
  */
 export function getSoftDeleteValue(field: FieldOptions) {
-  return field.softDelete === true ? Date.now() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
+  return field.softDelete === true ? new Date() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
 }
 
 export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
