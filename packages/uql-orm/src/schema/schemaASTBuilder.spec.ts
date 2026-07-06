@@ -109,6 +109,29 @@ describe('SchemaASTBuilder', () => {
       expect(accountIdCol?.type.category).toBe('uuid');
     });
 
+    it('should infer an auto-created FK column type from the referenced primary key for a relation-only entity', () => {
+      @Entity()
+      class Owner {
+        @Id({ type: 'uuid' })
+        id?: string;
+      }
+      @Entity()
+      class Holding {
+        @Id() id?: number;
+        // Relation only, no explicit `@Field` FK column — the auto-created `ownerId`
+        // column must inherit 'uuid' from Owner.id just like an explicit FK column would.
+        @ManyToOne({ entity: () => Owner })
+        owner?: Owner;
+      }
+
+      const builder = new SchemaASTBuilder();
+      const ast = builder.fromEntities([Owner, Holding]);
+
+      const ownerIdCol = ast.getTable('Holding')?.columns.get('ownerId');
+
+      expect(ownerIdCol?.type.category).toBe('uuid');
+    });
+
     it('should still respect an explicit type on a FK field over the referenced entity', () => {
       @Entity()
       class Parent2 {

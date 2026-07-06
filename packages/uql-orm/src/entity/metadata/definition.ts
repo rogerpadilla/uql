@@ -227,9 +227,18 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
       relOpts.references = [{ local: fkKey, foreign: relIdKey }];
 
       // Auto-create the FK column when only the relation is declared (no explicit `@Field`).
+      // Mirror an explicit `@Field({ references })` column: carry `references` and mark the type
+      // as inferred so schema generation resolves the exact referenced primary-key type
+      // (columnType, length, chained keys) via `resolveColumnCanonicalType`.
       if (!meta.fields[fkKey]) {
         const relatedIdField = relMeta.fields[relIdKey];
-        meta.fields[fkKey] = { ...meta.fields[fkKey], name: fkKey, type: relatedIdField?.type ?? Number };
+        meta.fields[fkKey] = {
+          ...meta.fields[fkKey],
+          name: fkKey,
+          type: relatedIdField?.type ?? Number,
+          references: relOpts.entity,
+          typeInferred: true,
+        };
       }
     }
 

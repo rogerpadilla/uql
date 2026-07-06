@@ -745,6 +745,8 @@ it('auto-generates the FK column from a relation-only declaration', () => {
   }
 
   const meta = getMeta(AutoFkOwner);
-  expect(meta.fields['targetId']).toEqual({ name: 'targetId', type: Number });
+  // auto-created FK column mirrors an explicit `@Field({ references })` column
+  expect(meta.fields['targetId']).toMatchObject({ name: 'targetId', type: Number, typeInferred: true });
+  expect(meta.fields['targetId']!.references!()).toBe(AutoFkTarget);
   expect(meta.relations.target!.references).toEqual([{ local: 'targetId', foreign: 'id' }]);
 });
