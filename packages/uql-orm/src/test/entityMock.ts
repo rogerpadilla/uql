@@ -181,9 +181,10 @@ export class Tax extends BaseEntity {
 }
 
 /**
- * `softDelete` will make the entity "soft deletable"; its value names the timestamp field to set on delete.
+ * A `softDelete` field makes the entity "soft deletable": deletes stamp the field instead of
+ * removing the row. `true` stamps `Date.now()`.
  */
-@Entity({ softDelete: 'deletedAt' })
+@Entity()
 export class MeasureUnitCategory extends BaseEntity {
   @Field()
   name?: string;
@@ -191,11 +192,11 @@ export class MeasureUnitCategory extends BaseEntity {
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId! })
   measureUnits?: MeasureUnit[];
 
-  @Field()
+  @Field({ softDelete: true })
   deletedAt?: number;
 }
 
-@Entity({ softDelete: 'deletedAt' })
+@Entity()
 export class MeasureUnit extends BaseEntity {
   @Field()
   name?: string;
@@ -206,7 +207,7 @@ export class MeasureUnit extends BaseEntity {
   @ManyToOne({ cascade: 'persist' })
   category?: MeasureUnitCategory;
 
-  @Field()
+  @Field({ softDelete: true })
   deletedAt?: number;
 }
 

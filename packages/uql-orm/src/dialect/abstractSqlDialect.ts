@@ -56,6 +56,7 @@ import {
   getFieldKeys,
   getKeys,
   getRelationRequestSummary,
+  getSoftDeleteValue,
   hasKeys,
   isJsonType,
   isPopulatingRelations,
@@ -1258,7 +1259,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (meta.softDelete) {
         const field = meta.fields[meta.softDelete];
         if (!field) return;
-        const value = Date.now();
+        const value = getSoftDeleteValue(field);
         const columnName = this.resolveColumnName(meta.softDelete, field);
         ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
         ctx.addValue(value);

@@ -134,11 +134,17 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  if (opts.softDelete) {
-    if (!(opts.softDelete in meta.fields)) {
-      throw TypeError(`'${entity.name}' softDelete field '${opts.softDelete}' not found in entity fields`);
-    }
-    meta.softDelete = opts.softDelete as FieldKey<E>;
+  const softDeleteKeys = getKeys(meta.fields).filter((key) => {
+    const softDelete = meta.fields[key]?.softDelete;
+    return softDelete !== undefined && softDelete !== false;
+  }) as FieldKey<E>[];
+
+  if (softDeleteKeys.length > 1) {
+    throw TypeError(`'${entity.name}' must have at most one field with 'softDelete'`);
+  }
+
+  if (softDeleteKeys.length) {
+    meta.softDelete = softDeleteKeys[0];
   }
 
   meta.name = opts.name ?? entity.name;
