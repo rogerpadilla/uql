@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
   InventoryAdjustment,
@@ -14,6 +15,15 @@ import {
 import type { QueryContext } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
+
+/** Exercises a soft-delete stamp whose value is a raw SQL expression. */
+@Entity()
+class SoftDeleteRaw {
+  @Id()
+  id?: number;
+  @Field({ softDelete: () => raw(() => 'NOW()') })
+  deletedAt?: Date;
+}
 
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}
@@ -249,6 +259,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toBe('UPDATE `user_profile` SET `image` = ?, `updatedAt` = ? WHERE `pk` = ?');
     expect(values).toEqual(['a base64 image', 321, 123]);
+  }
+
+  shouldSoftDelete() {
+    // MeasureUnit stamps `() => Date.now()`; delete becomes an UPDATE that only touches live rows.
+    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: 1 } }));
+    const deletedAt = this.dialect.escapeId('deletedAt');
+    expect(sql).toContain(`UPDATE ${this.dialect.escapeId('MeasureUnit')} SET ${deletedAt} = `);
+    expect(sql).toContain(`${deletedAt} IS NULL`);
+    expect(typeof values[0]).toBe('number');
+    expect(values).toContain(1);
+  }
+
+  shouldSoftDeleteWithRawValue() {
+    // A raw stamp is emitted inline, not bound as a parameter.
+    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, SoftDeleteRaw, { $where: { id: 1 } }));
+    expect(sql).toContain(`SET ${this.dialect.escapeId('deletedAt')} = NOW()`);
+    expect(values).toEqual([1]);
   }
 
   shouldFind() {

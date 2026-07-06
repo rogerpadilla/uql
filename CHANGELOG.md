@@ -8,7 +8,7 @@ date format is [yyyy-mm-dd]
 
 ### Breaking Changes
 
-- **`softDelete` moves from `@Entity` to `@Field`.** Mark the field itself — `@Field({ softDelete: true })` — instead of naming it on the entity (`@Entity({ softDelete: 'deletedAt' })`). This makes the field reference typo-proof (it's the decorated property, not a string) and lets the marker carry the value stamped on delete: `true` stamps `Date.now()`, or pass a callback for anything else, e.g. `@Field({ softDelete: () => new Date() })` for a native timestamp column. At most one field per entity may be marked. Reads still filter deleted rows via `<field> IS NULL`, and the `deleteMany(..., { softDelete })` query option is unchanged.
+- **`softDelete` moves from `@Entity` to `@Field`.** Mark the field itself — `@Field({ softDelete: true })` — instead of naming it on the entity (`@Entity({ softDelete: 'deletedAt' })`). This makes the field reference typo-proof (it's the decorated property, not a string) and lets the marker carry the value stamped on delete: `true` stamps the current timestamp (`new Date()`), or pass a callback for anything else, e.g. `@Field({ softDelete: () => Date.now() })` for an epoch-millis column. The stamp goes through the same value formatter as `onInsert`/`onUpdate`, so a `QueryRaw` (e.g. `() => raw(() => 'NOW()')`) is emitted inline. At most one field per entity may be marked. Reads still filter deleted rows via `<field> IS NULL`, and the `deleteMany(..., { softDelete })` query option is unchanged.
 
 ## [0.11.0] - 2026-07-06
 

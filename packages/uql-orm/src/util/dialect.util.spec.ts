@@ -8,6 +8,7 @@ import {
   fillOnFields,
   filterFieldKeys,
   getFieldCallbackValue,
+  getSoftDeleteValue,
   isCascadable,
   normalizeScalarFieldSelection,
   parseGroupMap,
@@ -43,6 +44,15 @@ it('augmentWhere', () => {
 it('getFieldCallbackValue', () => {
   expect(getFieldCallbackValue(() => 'fn')).toBe('fn');
   expect(getFieldCallbackValue('val')).toBe('val');
+});
+
+it('getSoftDeleteValue', () => {
+  // `true` stamps the current timestamp
+  expect(getSoftDeleteValue({ softDelete: true })).toBeInstanceOf(Date);
+  // a callback stamps its result
+  expect(getSoftDeleteValue({ softDelete: () => 42 })).toBe(42);
+  // a scalar stamps as-is
+  expect(getSoftDeleteValue({ softDelete: 'DELETED' })).toBe('DELETED');
 });
 
 it('filterFieldKeys', () => {
