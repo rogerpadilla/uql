@@ -32,6 +32,14 @@ export function getFieldCallbackValue(val: OnFieldCallback) {
   return typeof val === 'function' ? val() : val;
 }
 
+/**
+ * Resolves the value stamped on the soft-delete field when deleting a row.
+ * `true` defaults to `Date.now()`; any other marker is treated as an {@link OnFieldCallback}.
+ */
+export function getSoftDeleteValue(field: FieldOptions) {
+  return field.softDelete === true ? Date.now() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
+}
+
 export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];

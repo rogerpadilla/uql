@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.12.0] - 2026-07-06
+
+### Breaking Changes
+
+- **`softDelete` moves from `@Entity` to `@Field`.** Mark the field itself — `@Field({ softDelete: true })` — instead of naming it on the entity (`@Entity({ softDelete: 'deletedAt' })`). This makes the field reference typo-proof (it's the decorated property, not a string) and lets the marker carry the value stamped on delete: `true` stamps `Date.now()`, or pass a callback for anything else, e.g. `@Field({ softDelete: () => new Date() })` for a native timestamp column. At most one field per entity may be marked. Reads still filter deleted rows via `<field> IS NULL`, and the `deleteMany(..., { softDelete })` query option is unchanged.
+
 ## [0.11.0] - 2026-07-06
 
 ### Breaking Changes

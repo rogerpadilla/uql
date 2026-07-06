@@ -716,15 +716,18 @@ it('no fields', () => {
   }).toThrow(`'SomeEntity' must have fields`);
 });
 
-it('softDelete field not found', () => {
+it('at most one softDelete field', () => {
   expect(() => {
-    // deliberately points to a non-existent field to exercise the runtime guard
-    @Entity({ softDelete: 'deletedAt' as never })
+    @Entity()
     class SomeEntity {
-      @Field()
+      @Field({ isId: true })
       id!: string;
+      @Field({ softDelete: true })
+      deletedAt?: number;
+      @Field({ softDelete: () => new Date() })
+      archivedAt?: Date;
     }
-  }).toThrow(`'SomeEntity' softDelete field 'deletedAt' not found in entity fields`);
+  }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
 });
 
 it('auto-generates the FK column from a relation-only declaration', () => {

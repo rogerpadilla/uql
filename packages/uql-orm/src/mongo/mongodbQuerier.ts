@@ -20,6 +20,7 @@ import {
   clone,
   getKeys,
   getRelationRequestSummary,
+  getSoftDeleteValue,
   hasKeys,
   throwNoPendingTransaction,
   throwPendingTransaction,
@@ -338,7 +339,7 @@ export class MongodbQuerier extends AbstractQuerier {
       const updateResult = await this.execute((session) =>
         this.collection(entity).updateMany(
           { _id: { $in: ids } },
-          { $set: { [meta.softDelete as string]: Date.now() } } as UpdateFilter<E>,
+          { $set: { [meta.softDelete as string]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
           {
             session,
           },

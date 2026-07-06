@@ -235,6 +235,17 @@ export type FieldOptions = {
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback;
   readonly onUpdate?: OnFieldCallback;
+  /**
+   * Marks this field as the soft-delete field. Its presence makes the entity "soft deletable":
+   * a `delete` becomes an `UPDATE` that stamps this field instead of removing the row, and reads
+   * filter it out (`<field> IS NULL`). An entity may have at most one soft-delete field.
+   *
+   * The value controls what is stamped on delete: `true` stamps `Date.now()`; a `Scalar`/`QueryRaw`
+   * or `() => Scalar | QueryRaw` callback stamps that value (e.g. `() => new Date()`).
+   * @example `@Field({ softDelete: true }) deletedAt?: number;`
+   * @example `@Field({ softDelete: () => new Date() }) deletedAt?: Date;`
+   */
+  readonly softDelete?: boolean | OnFieldCallback;
 
   // Schema/migration properties
   /**
@@ -409,7 +420,6 @@ export type EntityMeta<E> = {
  */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
-  readonly softDelete?: FieldKey<E>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: Record<string, FieldOptions>;
   readonly relations?: Record<string, RelationOptions<E>>;
