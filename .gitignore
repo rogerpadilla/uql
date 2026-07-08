@@ -8,3 +8,7 @@ coverage
 data
 mongodb-*
 .cursor/plans/
+
+# prepack copies (removed by postpack; stale if a pack is interrupted)
+packages/uql-orm/README.md
+packages/uql-orm/CHANGELOG.md
