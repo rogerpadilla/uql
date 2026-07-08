@@ -3,10 +3,13 @@
   "homepage": "https://uql-orm.dev",
   "description": "Fast, type-safe TypeScript ORM - one API for every database",
   "license": "MIT",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "browser": {
+    "./dist/context/context.js": "./dist/context/context.browser.js"
+  },
   "bin": {
     "uql-migrate": "./dist/migrate/bin.js"
   },
@@ -49,6 +52,7 @@
   "scripts": {
     "prepack": "bun run verify-dist.ts && cp ../../README.md . && cp ../../CHANGELOG.md .",
     "postpack": "rm README.md CHANGELOG.md",
+    "verify.package": "bun run build && bun run verify-dist.ts",
     "compile.browser": "bun build src/browser/index.ts --minify --sourcemap=linked --format=esm --target=browser --outdir=dist/browser --entry-naming 'uql-browser.min.[ext]'",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser",
     "start": "tsc --watch",
@@ -115,9 +119,9 @@
   "devDependencies": {
     "@libsql/client": "^0.17.4",
     "@neondatabase/serverless": "^1.1.0",
-    "@nestjs/common": "^11.1.27",
-    "@nestjs/core": "^11.1.27",
-    "@nestjs/testing": "^11.1.27",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/testing": "^11.1.28",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.20.0",
@@ -125,7 +129,7 @@
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
-    "mongodb": "^7.4.0",
+    "mongodb": "^7.5.0",
     "mysql2": "^3.22.6",
     "pg": "^8.22.0",
     "pg-query-stream": "^4.16.0",
@@ -134,7 +138,7 @@
   "author": "Roger Padilla",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rogerpadilla/uql.git"
+    "url": "git+https://github.com/rogerpadilla/uql.git"
   },
   "bugs": {
     "url": "https://github.com/rogerpadilla/uql/issues"

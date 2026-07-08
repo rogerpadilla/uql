@@ -4,59 +4,61 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.13.0] - 2026-07-07
+## [0.14.0] - 2026-07-08
+
+Query filters, multi-tenancy / row-level security, and soft-delete restore. Upgrade straight from 0.12.0 - 0.13.0 was pulled before anyone could install it (its root import dragged `node:async_hooks` into browser bundles), so 0.14.0 is the first published build of these features and bundles cleanly on the client again.
 
 ### Features
 
-- **Query filters** - attach a named condition to an entity and it's applied to every query automatically (until you turn it off). Perfect for "active only", visibility rules, and the like:
+- **Query filters** - attach a named condition to an entity and it applies to every query automatically until you turn it off. Great for "active only" or visibility rules:
 
   ```ts
   @Filter('active', { condition: { status: 'active' }, default: false })
   @Entity()
   class Task {}
 
-  querier.findMany(Task, {}, { filters: { active: true } }); // enable it for this call
-  querier.findMany(Task, {}, { filters: false }); // disable all filters
+  querier.findMany(Task, {}, { filters: { active: true } }); // on for this call
+  querier.findMany(Task, {}, { filters: false }); // all filters off
   ```
 
-- **Multi-tenancy / row-level security** - mark a filter `security` and resolve it from a per-request context. It's applied to every query (including relations and cascades), can't be turned off, and a client can't widen it with their own `$where`:
+- **Multi-tenancy / row-level security** - mark a filter `security` and resolve it from a per-request context. It applies to every query (relations and cascades included), can't be turned off, and a client can't widen it with their own `$where`:
 
   ```ts
-  @Filter('tenant', { condition: (ctx) => ({ companyId: ctx.tenantId }), security: true })
+  @Filter('tenant', {
+    // no tenant in context -> the query throws instead of running unscoped
+    condition: (ctx) => (ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined),
+    security: true,
+  })
   @Entity()
   class Invoice {}
 
-  await withContext({ tenantId }, () => querier.findMany(Invoice, {})); // scoped to the tenant
+  await withContext({ tenantId }, () => querier.findMany(Invoice, {}));
   ```
 
-  Over HTTP, set it once and every request is scoped - and the tenant filter can't be bypassed from the client:
+  Set the context once at the HTTP boundary and every request is scoped automatically:
 
   ```ts
   createRequestHandler({ getContext: (req) => ({ tenantId: req.user.tenantId }) });
   // NestJS: UqlModule.forRoot({ pool, getContext: (req) => ({ tenantId: req.user.tenantId }) })
   ```
 
-- **Restore soft-deleted rows** - `restoreOneById` / `restoreMany` bring rows back. List only trashed rows with a plain serializable query (`{ $where: { deletedAt: { $ne: null } } }`), or include them in any read with `withDeleted()`.
+- **Restore soft-deleted rows** - `restoreOneById` / `restoreMany` bring rows back. Include trashed rows in any read with `withDeleted()`, or list only trashed ones with a plain query (`{ $where: { deletedAt: { $ne: null } } }`). Reads and updates take an options argument now too, so these toggles work on every operation, not just delete.
 
-- **Filter toggles work on every operation** - reads and updates now take an options argument too, so `withDeleted()` and friends are usable everywhere (previously only on delete).
-
-- **NestJS `forRootAsync`** - build the pool from injected providers such as `ConfigService`; `forRoot({ getContext })` scopes every request for multi-tenancy.
+- **NestJS `forRootAsync`** - build the pool from injected providers such as `ConfigService`.
 
 ### Breaking Changes
 
-- **Permanent deletes now use `hardDelete`** (replaces the old `{ softDelete: false }`). A delete soft-deletes by default when the entity has a soft-delete field; pass `{ hardDelete: true }` to remove rows for good:
+- **Permanent deletes now use `hardDelete`** (was `{ softDelete: false }`). With a soft-delete field, delete soft-deletes by default; pass `{ hardDelete: true }` to remove rows for good. Over HTTP, `DELETE ?hardDelete=true` (was `?softDelete=true`):
 
   ```ts
-  await querier.deleteOneById(User, id); // soft delete (stamps the field)
+  await querier.deleteOneById(User, id); // soft delete
   await querier.deleteOneById(User, id, { hardDelete: true }); // permanent
   ```
-
-  To include deleted rows in a read, use `withDeleted()`. Over HTTP, `DELETE` soft-deletes by default - add `?hardDelete=true` to remove permanently (was `?softDelete=true`).
 
 ### Bug Fixes
 
 - Soft-delete now works on **subclasses** that inherit the soft-delete field from a base entity.
-- A cascading delete no longer throws when a related entity isn't soft-deletable - it's removed instead. MongoDB delete behavior now matches SQL.
+- A cascading delete no longer throws when a related entity isn't soft-deletable - it's removed instead; MongoDB delete behavior now matches SQL.
 
 ## [0.12.0] - 2026-07-06
 
