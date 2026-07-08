@@ -17,10 +17,11 @@ describe('createFetchHandler', () => {
   it('GET /user/one', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
     const handler = createFetchHandler({ include: [User] });
-    const resp = await handler(new Request('http://localhost/user/one?name=John'));
+    const where = encodeURIComponent(JSON.stringify({ name: 'John' }));
+    const resp = await handler(new Request(`http://localhost/user/one?$where=${where}`));
     expect(resp.status).toBe(200);
     expect(await resp.json()).toEqual({ data: { id: 1, name: 'John' }, count: 1 });
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ name: 'John' }));
+    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
   });
 
   it('strips the basePath prefix', async () => {

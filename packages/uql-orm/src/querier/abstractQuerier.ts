@@ -97,41 +97,49 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * Resolves entity from either a separate argument or from $entity field in query.
+   * Resolves `[entity, query, opts]` for the dual call pattern: `(entity, q, opts)` (entity argument)
+   * vs `(query, opts)` (entity via the query's `$entity` field).
    */
-  protected resolveEntityAndQuery<E extends object>(
+  protected resolveEntityQuery<E extends object>(
     entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
-    maybeQuery?: QuerySearch<E>,
-  ): [Type<E>, QuerySearch<E>] {
+    maybeQueryOrOpts?: QuerySearch<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
+  ): [Type<E>, QuerySearch<E>, QueryOptions | undefined] {
     if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      return [entityOrQuery as Type<E>, maybeQuery ?? {}];
+      return [entityOrQuery as Type<E>, (maybeQueryOrOpts as QuerySearch<E>) ?? {}, maybeOpts];
     }
     const q = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
     if (!q.$entity) {
       throw new TypeError('$entity is required when using query-object syntax');
     }
     const { $entity, ...query } = q;
-    return [$entity, query as QuerySearch<E>];
+    return [$entity, query as QuerySearch<E>, maybeQueryOrOpts as QueryOptions | undefined];
   }
 
-  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q: QueryOne<E> = {}): Promise<E | undefined> {
+  findOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    q: QueryOne<E> = {},
+    opts?: QueryOptions,
+  ): Promise<E | undefined> {
     const meta = getMeta(entity);
     q.$where = augmentWhere(meta, q.$where, id);
-    return this.findOne(entity, q);
+    return this.findOne(entity, q, opts);
   }
 
   /**
    * Find a single record matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  async findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
-  async findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }): Promise<E | undefined>;
+  async findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
+  async findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E | undefined>;
   async findOne<E extends object>(
     entityOrQuery: Type<E> | (QueryOne<E> & { $entity: Type<E> }),
-    maybeQuery?: QueryOne<E>,
+    maybeQueryOrOpts?: QueryOne<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
   ): Promise<E | undefined> {
-    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    const rows = await this.findMany(entity, { ...q, $limit: 1 });
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const rows = await this.findMany(entity, { ...q, $limit: 1 }, opts);
     return rows[0];
   }
 
@@ -139,60 +147,74 @@ export abstract class AbstractQuerier implements Querier {
    * Find multiple records matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
-  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E[]>;
   async findMany<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQuery?: Query<E>,
+    maybeQueryOrOpts?: Query<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
   ): Promise<E[]> {
-    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    const founds = await this.internalFindMany(entity, q);
+    const founds = await this.internalFindMany(entity, q, opts);
     await this.emitHook(entity, 'afterLoad', founds);
     return founds;
   }
 
-  protected abstract internalFindMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  protected abstract internalFindMany<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): Promise<E[]>;
 
   /**
    * Stream records as an async iterable.
    * Supports both entity-as-argument and entity-as-field patterns.
    *
    * **SQL:** Joinable relations (e.g. m1 / one-to-one) are still emitted in the streamed SQL; **to-many**
-   * relations are not filled (no second query) — requesting them throws a clear `TypeError`.
+   * relations are not filled (no second query) - requesting them throws a clear `TypeError`.
    *
    * **MongoDB:** Relation loading uses aggregation + follow-up queries in `findMany`; **streams use a plain
    * find cursor**, so any requested relation keys in `$select` / `$populate` throw a `TypeError`.
    *
    * No `afterLoad` hooks on streamed rows.
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
-  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): AsyncIterable<E>;
   findManyStream<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQuery?: Query<E>,
+    maybeQueryOrOpts?: Query<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
   ): AsyncIterable<E> {
-    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    return this.internalFindManyStream(entity, q);
+    return this.internalFindManyStream(entity, q, opts);
   }
 
-  protected abstract internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+  protected abstract internalFindManyStream<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): AsyncIterable<E>;
 
   /**
    * Find multiple records and return both the records and total count.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<[E[], number]>;
   async findManyAndCount<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQuery?: Query<E>,
+    maybeQueryOrOpts?: Query<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
   ): Promise<[E[], number]> {
-    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
     const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q;
-    const [founds, count] = await Promise.all([this.internalFindMany(entity, q), this.internalCount(entity, qCount)]);
+    const [founds, count] = await Promise.all([
+      this.internalFindMany(entity, q, opts),
+      this.internalCount(entity, qCount, opts),
+    ]);
     await this.emitHook(entity, 'afterLoad', founds);
     return [founds, count];
   }
@@ -201,17 +223,22 @@ export abstract class AbstractQuerier implements Querier {
    * Count records matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
-  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
+  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   count<E extends object>(
     entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
-    maybeQuery?: QuerySearch<E>,
+    maybeQueryOrOpts?: QuerySearch<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
   ): Promise<number> {
-    const [entity, q] = this.resolveEntityAndQuery(entityOrQuery, maybeQuery);
-    return this.internalCount(entity, q);
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    return this.internalCount(entity, q, opts);
   }
 
-  protected abstract internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  protected abstract internalCount<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions,
+  ): Promise<number>;
 
   /**
    * Run an aggregate query.
@@ -219,13 +246,15 @@ export abstract class AbstractQuerier implements Querier {
   aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
-    return this.internalAggregate(entity, q);
+    return this.internalAggregate(entity, q, opts);
   }
 
   protected abstract internalAggregate<E extends object, Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: E) {
@@ -242,13 +271,18 @@ export abstract class AbstractQuerier implements Querier {
 
   protected abstract internalInsertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>) {
-    return this.updateMany(entity, { $where: id }, payload);
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: QueryOptions) {
+    return this.updateMany(entity, { $where: id }, payload, opts);
   }
 
-  async updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number> {
+  async updateMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): Promise<number> {
     await this.emitHook(entity, 'beforeUpdate', [payload as E]);
-    const changes = await this.internalUpdateMany(entity, q, payload);
+    const changes = await this.internalUpdateMany(entity, q, payload, opts);
     await this.emitHook(entity, 'afterUpdate', [payload as E]);
     return changes;
   }
@@ -257,7 +291,23 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
+    opts?: QueryOptions,
   ): Promise<number>;
+
+  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number> {
+    return this.restoreMany(entity, { $where: id });
+  }
+
+  async restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
+    const meta = getMeta(entity);
+    if (!meta.softDelete) {
+      throw new TypeError(`'${entity.name}' has not enabled 'softDelete'`);
+    }
+    const $where = augmentWhere(meta, q.$where, { [meta.softDelete]: { $ne: null } } as QuerySearch<E>['$where']);
+    return this.updateMany(entity, { ...q, $where }, { [meta.softDelete]: null } as UpdatePayload<E>, {
+      filters: { softDelete: false },
+    });
+  }
 
   abstract upsertOne<E extends object>(
     entity: Type<E>,
@@ -276,8 +326,8 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * Delete records matching the query.
-   * Supports both entity-as-argument and entity-as-field patterns.
+   * Delete records matching the query. Soft-deletes when the entity has a soft-delete field (unless
+   * `opts.hardDelete`), otherwise removes the rows. Supports both entity-as-argument and entity-as-field patterns.
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
@@ -286,20 +336,7 @@ export abstract class AbstractQuerier implements Querier {
     qOrOpts?: QuerySearch<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
-    let entity: Type<E>;
-    let q: QuerySearch<E>;
-    let opts: QueryOptions | undefined;
-
-    if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      entity = entityOrQuery as Type<E>;
-      q = qOrOpts as QuerySearch<E>;
-      opts = maybeOpts;
-    } else {
-      const { $entity, ...rest } = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
-      entity = $entity;
-      q = rest as QuerySearch<E>;
-      opts = qOrOpts as QueryOptions;
-    }
+    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, qOrOpts, maybeOpts);
 
     await this.emitHook(entity, 'beforeDelete', []);
     const changes = await this.internalDeleteMany(entity, q, opts);
@@ -464,7 +501,12 @@ export abstract class AbstractQuerier implements Querier {
     );
   }
 
-  protected async updateRelations<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
+  protected async updateRelations<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ) {
     const meta = getMeta(entity);
     const relKeys = filterPersistableRelationKeys(meta, payload as E, 'persist');
 
@@ -472,7 +514,7 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
-    const founds = await this.findMany(entity, { ...q, $select: { [meta.id!]: true } } as Query<E>);
+    const founds = await this.findMany(entity, { ...q, $select: { [meta.id!]: true } } as Query<E>, opts);
     const ids = founds.map((found) => found[meta.id!]);
 
     await Promise.all(
@@ -487,7 +529,7 @@ export abstract class AbstractQuerier implements Querier {
   protected async deleteRelations<E extends object>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
     const relKeys = filterPersistableRelationKeys(meta, meta.relations as unknown as E, 'delete');
-
+    // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;

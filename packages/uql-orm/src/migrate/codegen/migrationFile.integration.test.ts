@@ -8,12 +8,12 @@ import { buildSqlQuerierMigrationModule, emitSqlRunCalls } from './migrationFile
 
 /**
  * Integration checks for GitHub #86 (generated TS must tolerate SQLite/LibSQL backticks and `${` in SQL)
- * and #87 (one `querier.run` per statement — matches sqld-over-HTTP behavior).
+ * and #87 (one `querier.run` per statement - matches sqld-over-HTTP behavior).
  */
 
 const uqlOrmPackageRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
-/** SQLite/LibSQL DDL with backticks — would break if emitted inside an outer template literal (#86). */
+/** SQLite/LibSQL DDL with backticks - would break if emitted inside an outer template literal (#86). */
 const createTableSql =
   'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);';
 const createIndexSql = 'CREATE INDEX `idx_Article_title` ON `Article` (`title`);';

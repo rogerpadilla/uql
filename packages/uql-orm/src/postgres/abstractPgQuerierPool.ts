@@ -13,7 +13,7 @@ export interface PgAnyPool<C extends PgAnyClient> extends ErrorEmittingPool {
  * Shared base class for Postgres-compatible querier pools.
  *
  * Wires the crash-preventing error handler here, once, so a new pg-compatible
- * pool subclass can't be added without it — the constructor takes the already
+ * pool subclass can't be added without it - the constructor takes the already
  * constructed pool and attaches the handler unconditionally.
  */
 export abstract class AbstractPgQuerierPool<

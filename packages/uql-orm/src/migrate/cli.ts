@@ -14,7 +14,7 @@ import { createSchemaGenerator } from './schemaGenerator.js';
 import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { createSchemaSync } from './sync/schemaSync.js';
 
-/** Sync helper for SQL dialects only; returns `undefined` for MongoDB — use {@link createSchemaGeneratorAsync}. */
+/** Sync helper for SQL dialects only; returns `undefined` for MongoDB - use {@link createSchemaGeneratorAsync}. */
 export function getSchemaGenerator(dialect: AbstractDialect, namingStrategy?: NamingStrategy) {
   return createSchemaGenerator(dialect, namingStrategy);
 }

@@ -16,7 +16,7 @@ export class MariadbQuerierPool extends AbstractQuerierPool<MariaDialect, Mariad
     // `mariadb`'s own `createPool` already attaches a silent no-op 'error'
     // listener (so a dropped connection can't crash the process), but its
     // `Pool` type only declares `on` for 'acquire' | 'connection' | 'enqueue'
-    // | 'release' — 'error' genuinely fires at runtime (see `lib/pool.js`)
+    // | 'release' - 'error' genuinely fires at runtime (see `lib/pool.js`)
     // but isn't in the declaration, hence the cast. Re-attaching our own
     // listener here just makes the error visible instead of a silent no-op.
     attachPoolErrorHandler(

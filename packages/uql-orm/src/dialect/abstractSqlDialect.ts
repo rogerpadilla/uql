@@ -46,6 +46,7 @@ import {
 } from '../type/index.js';
 
 import {
+  applyFilters,
   buildQueryWhereAsMap,
   buildSortMap,
   type CallbackKey,
@@ -66,6 +67,7 @@ import {
   parseRelationAtKey,
   type RelationQuery,
   raw,
+  withoutSoftDeleteFilter,
 } from '../util/index.js';
 
 import { AbstractDialect, type DialectOptions } from './abstractDialect.js';
@@ -117,7 +119,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     if (strategy === 'inline') {
       return [`${this.beginTransactionCommand} ISOLATION LEVEL ${level}`];
     }
-    // 'set-before' — MySQL/MariaDB pattern
+    // 'set-before' - MySQL/MariaDB pattern
     return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
   }
 
@@ -388,17 +390,22 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   where<E>(ctx: QueryContext, entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
     const meta = getMeta(entity);
-    const { usePrecedence, clause = 'WHERE', softDelete } = opts;
+    // Apply this entity's filters once, at the scope entry point; recursion uses `renderWhere`.
+    const whereMap = applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
+    this.renderWhere(ctx, entity, whereMap, opts);
+  }
+
+  /** Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or` recursion). */
+  protected renderWhere<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    where: QueryWhere<E> = {},
+    opts: QueryWhereOptions = {},
+  ): void {
+    const meta = getMeta(entity);
+    const { usePrecedence, clause = 'WHERE' } = opts;
 
     where = buildQueryWhereAsMap(meta, where);
-
-    if (
-      meta.softDelete &&
-      (softDelete || softDelete === undefined) &&
-      !(where as Record<string, unknown>)[meta.softDelete]
-    ) {
-      (where as Record<string, unknown>)[meta.softDelete] = null;
-    }
 
     const entries = Object.entries(where);
 
@@ -559,7 +566,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           value: whereEntry,
         });
       } else if (whereEntry) {
-        this.where(ctx, entity, whereEntry, {
+        this.renderWhere(ctx, entity, whereEntry, {
           prefix: opts.prefix,
           usePrecedence: hasManyItems && !Array.isArray(whereEntry) && Object.keys(whereEntry as object).length > 1,
           clause: false,
@@ -836,7 +843,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const meta = getMeta(entity);
 
     // Separate vector search entries from direction entries before flattening,
-    // because flatObject recursively destructures objects — it would break QueryVectorSearch.
+    // because flatObject recursively destructures objects - it would break QueryVectorSearch.
     const vectorEntries: [string, QueryVectorSearch][] = [];
     const directionEntries: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(sortMap)) {
@@ -863,7 +870,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
       if (isVectorSearch(sort)) {
         if (sort.$project) {
-          // Distance already projected in SELECT — reference the alias to avoid recomputation
+          // Distance already projected in SELECT - reference the alias to avoid recomputation
           ctx.append(this.escapeId(sort.$project));
         } else {
           this.appendVectorSort(ctx, meta, key, sort);
@@ -1019,7 +1026,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * ORDER BY for aggregate queries — handles both entity-field and alias references.
+   * ORDER BY for aggregate queries - handles both entity-field and alias references.
    */
   private aggregateSort(
     ctx: QueryContext,
@@ -1255,23 +1262,22 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
 
-    if (opts.softDelete || opts.softDelete === undefined) {
-      if (meta.softDelete) {
-        const field = meta.fields[meta.softDelete];
-        if (!field) return;
+    // Soft-delete (stamp only live rows) unless `hardDelete` is requested or the entity has no
+    // soft-delete field (e.g. a cascade onto a non-soft-deletable child).
+    if (!opts.hardDelete && meta.softDelete) {
+      const field = meta.fields[meta.softDelete];
+      if (field) {
         const columnName = this.resolveColumnName(meta.softDelete, field);
         ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
         this.formatPersistableValue(ctx, field, getSoftDeleteValue(field));
         this.search(ctx, entity, q, opts);
         return;
       }
-      if (opts.softDelete) {
-        throw TypeError(`'${tableName}' has not enabled 'softDelete'`);
-      }
     }
 
+    // Hard delete removes matching rows regardless of soft-delete state (keeps other filters, e.g. tenant).
     ctx.append(`DELETE FROM ${this.escapeId(tableName)}`);
-    this.search(ctx, entity, q, opts);
+    this.search(ctx, entity, q, { ...opts, filters: withoutSoftDeleteFilter(opts.filters) });
   }
 
   escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {
@@ -1550,7 +1556,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
         prefix: relatedTable,
         clause: 'WHERE',
-        softDelete: false,
+        filters: { softDelete: false },
       });
       ctx.append(')');
     } else {
@@ -1569,7 +1575,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
         prefix: relatedTable,
         clause: 'AND',
-        softDelete: false,
+        filters: { softDelete: false },
       });
     }
 

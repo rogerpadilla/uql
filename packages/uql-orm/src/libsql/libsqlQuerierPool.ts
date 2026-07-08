@@ -4,7 +4,7 @@ import type { ExtraOptions } from '../type/index.js';
 import { LibsqlDialect } from './libsqlDialect.js';
 import { LibsqlQuerier } from './libsqlQuerier.js';
 
-/** Embedded replica: local `file:` DB + `syncUrl` remote — DDL should run on the remote (sqld). */
+/** Embedded replica: local `file:` DB + `syncUrl` remote - DDL should run on the remote (sqld). */
 export function libsqlUseRemoteForMigrations(config: Pick<Config, 'url' | 'syncUrl'>): boolean {
   return Boolean(config.syncUrl && config.url.startsWith('file:'));
 }

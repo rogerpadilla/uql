@@ -43,7 +43,7 @@ export interface UniversalQuerier {
 
   /**
    * streams the records matching the given search parameters as an async iterable.
-   * Does not fill relations or fire lifecycle hooks — designed for high-performance
+   * Does not fill relations or fire lifecycle hooks - designed for high-performance
    * bulk reads (ETL, exports, migrations).
    * @param entity the target entity
    * @param q the criteria options

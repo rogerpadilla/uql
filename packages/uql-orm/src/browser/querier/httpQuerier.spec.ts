@@ -94,18 +94,18 @@ describe('HttpQuerier', () => {
     await querier.deleteOneById(User, 1);
     expect(http.remove).toHaveBeenCalledWith('/api/user/1', {});
 
-    await querier.deleteOneById(User, 1, { softDelete: true });
-    expect(http.remove).toHaveBeenCalledWith('/api/user/1?softDelete=true', { softDelete: true });
+    await querier.deleteOneById(User, 1, { hardDelete: true });
+    expect(http.remove).toHaveBeenCalledWith('/api/user/1?hardDelete=true', { hardDelete: true });
   });
 
   it('deleteMany', async () => {
     await querier.deleteMany(User, { $where: { name: 'Mario' } });
     expect(http.remove).toHaveBeenCalledWith(`/api/user${stringifyQuery({ $where: { name: 'Mario' } })}`, {});
 
-    await querier.deleteMany(User, { $where: { name: 'Mario' } }, { softDelete: true });
+    await querier.deleteMany(User, { $where: { name: 'Mario' } }, { hardDelete: true });
     expect(http.remove).toHaveBeenCalledWith(
-      `/api/user${stringifyQuery({ $where: { name: 'Mario' }, softDelete: true })}`,
-      { softDelete: true },
+      `/api/user${stringifyQuery({ $where: { name: 'Mario' }, hardDelete: true })}`,
+      { hardDelete: true },
     );
   });
 

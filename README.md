@@ -38,6 +38,7 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 | Type-safe queries with autocomplete | [Querying](https://uql-orm.dev/querying/querier) |
 | Entity-first migrations & autoSync | [Migrations](https://uql-orm.dev/migrations) |
 | Soft-delete, lifecycle hooks, relations | [Entities](https://uql-orm.dev/entities/basic) |
+| Query filters, multi-tenancy & row-level security | [Filters](https://uql-orm.dev/querying/filters) · [Multi-tenancy](https://uql-orm.dev/multi-tenancy) |
 | Aggregate queries, grouping, HAVING | [Aggregate](https://uql-orm.dev/querying/aggregate) |
 | Semantic search & vector similarity | [Semantic Search](https://uql-orm.dev/ai-semantic-search) |
 | Streaming, transactions, raw SQL | [Querying](https://uql-orm.dev/querying/querier) |

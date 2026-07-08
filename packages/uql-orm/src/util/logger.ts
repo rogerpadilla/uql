@@ -157,7 +157,7 @@ export interface ErrorEmittingPool {
 
 /**
  * Attaches an error listener to a connection pool so a dropped connection is
- * logged instead of left unhandled — which crashes the process for drivers
+ * logged instead of left unhandled - which crashes the process for drivers
  * that don't guard against it themselves (node-postgres), or silently
  * swallowed with zero visibility for drivers that already install their own
  * no-op safety net (`mariadb`'s `createPool`). Always logs via a dedicated

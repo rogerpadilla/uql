@@ -1,3 +1,4 @@
+export * from './context/context.js';
 export * from './dialect/index.js';
 export * from './entity/index.js';
 export * from './namingStrategy/index.js';

@@ -4,7 +4,7 @@ import type { DialectFeatures } from '../type/index.js';
  * Wire-style parameter shaping for **Bun SQL** (and similar clients) on PostgreSQL: arrays are
  * sent as string literals (`nativeArrays: false`) via the {@link PostgresDialect} `toPgArray` path.
  *
- * `PgDialect` does **not** use this constant — it keeps base {@link PostgresDialect} defaults
+ * `PgDialect` does **not** use this constant - it keeps base {@link PostgresDialect} defaults
  * (`nativeArrays: true`, `explicitJsonCast: false`). `BunSqlPostgresDialect` spreads this
  * and sets `explicitJsonCast: true`.
  *

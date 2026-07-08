@@ -24,6 +24,7 @@ import {
   hasKeys,
   throwNoPendingTransaction,
   throwPendingTransaction,
+  withoutSoftDeleteFilter,
 } from '../util/index.js';
 
 import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
@@ -45,24 +46,24 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>) {
+  protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
     const vectorSort = this.dialect.extractVectorSort(q.$sort);
 
     let documents: E[];
 
     if (vectorSort) {
-      const pipeline = this.buildVectorPipeline(entity, meta, q, vectorSort);
+      const pipeline = this.buildVectorPipeline(entity, meta, q, vectorSort, opts);
       documents = await this.runPipeline(entity, meta, pipeline);
     } else {
       const relationSummary = getRelationRequestSummary(meta, q.$populate);
 
       if (relationSummary.requestedKeys.length) {
-        const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary);
+        const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary, opts);
         documents = await this.runPipeline(entity, meta, pipeline);
         await this.fillToManyRelations(entity, documents, q.$populate);
       } else {
-        const cursor = this.buildFindCursor(entity, q);
+        const cursor = this.buildFindCursor(entity, q, opts);
         documents = await this.execute(() => cursor.toArray());
         documents = this.dialect.normalizeIds(meta, documents) || [];
       }
@@ -71,7 +72,11 @@ export class MongodbQuerier extends AbstractQuerier {
     return documents;
   }
 
-  protected override async *internalFindManyStream<E extends Document>(entity: Type<E>, q: Query<E>) {
+  protected override async *internalFindManyStream<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ) {
     const meta = getMeta(entity);
     const { joinableKeys, toManyKeys } = getRelationRequestSummary(meta, q.$populate);
     if (joinableKeys.length || toManyKeys.length) {
@@ -82,7 +87,7 @@ export class MongodbQuerier extends AbstractQuerier {
         `findManyStream does not load relations on MongoDB (${parts.join('; ')}). Use findMany with $populate (or legacy relation keys in $select) so aggregation and fill logic can run.`,
       );
     }
-    const cursor = this.buildFindCursor(entity, q);
+    const cursor = this.buildFindCursor(entity, q, opts);
 
     for await (const doc of cursor) {
       const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
@@ -95,10 +100,10 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
-  private buildFindCursor<E extends Document>(entity: Type<E>, q: Query<E>) {
+  private buildFindCursor<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     const cursor = this.collection(entity).find<E>({}, { session: this.session });
 
-    const filter = this.dialect.where(entity, q.$where);
+    const filter = this.dialect.where(entity, q.$where, opts);
     if (hasKeys(filter)) {
       cursor.filter(filter);
     }
@@ -141,6 +146,7 @@ export class MongodbQuerier extends AbstractQuerier {
     meta: EntityMeta<E>,
     q: Query<E>,
     vectorSort: ExtractedVectorSort<E>,
+    opts?: QueryOptions,
   ): Record<string, unknown>[] {
     const pipeline: Record<string, unknown>[] = [];
 
@@ -152,6 +158,7 @@ export class MongodbQuerier extends AbstractQuerier {
         vectorSort.vectorSearch,
         q.$where,
         q.$limit ?? 10,
+        opts,
       ),
     );
 
@@ -181,15 +188,16 @@ export class MongodbQuerier extends AbstractQuerier {
   protected override async internalAggregate<E extends Document, Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
-    const pipeline = this.dialect.buildAggregateStages(entity, q);
+    const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: aggregate result type matches QueryAggregateResult at runtime but TS can't verify
     return this.execute((session) => this.collection(entity).aggregate<any>(pipeline, { session }).toArray());
   }
 
   @Log()
-  protected override internalCount<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}) {
-    const filter = this.dialect.where(entity, qm.$where);
+  protected override internalCount<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}, opts?: QueryOptions) {
+    const filter = this.dialect.where(entity, qm.$where, opts);
     return this.execute((session) =>
       this.collection(entity).countDocuments(filter, {
         session,
@@ -228,11 +236,12 @@ export class MongodbQuerier extends AbstractQuerier {
     entity: Type<E>,
     qm: QuerySearch<E>,
     payload: UpdatePayload<E>,
+    opts?: QueryOptions,
   ) {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
-    const where = this.dialect.where(entity, qm.$where);
+    const where = this.dialect.where(entity, qm.$where, opts);
     const update: UpdateFilter<E> = { $set: persistable };
 
     const { matchedCount } = await this.execute((session) =>
@@ -241,7 +250,7 @@ export class MongodbQuerier extends AbstractQuerier {
       }),
     );
 
-    await this.updateRelations(entity, qm, payload);
+    await this.updateRelations(entity, qm, payload, opts);
 
     return matchedCount;
   }
@@ -317,7 +326,11 @@ export class MongodbQuerier extends AbstractQuerier {
     opts: QueryOptions = {},
   ) {
     const meta = getMeta(entity);
-    const where = this.dialect.where(entity, qm.$where);
+    // Soft-delete (stamp) unless `hardDelete` is requested or the entity has no soft-delete field.
+    const field = !opts.hardDelete && meta.softDelete ? meta.fields[meta.softDelete] : undefined;
+    // Hard delete targets matching rows regardless of soft-delete state (keeps other filters).
+    const findOpts = field ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
+    const where = this.dialect.where(entity, qm.$where, findOpts);
     const founds = await this.execute((session) =>
       this.collection(entity)
         .find(where, {
@@ -331,11 +344,7 @@ export class MongodbQuerier extends AbstractQuerier {
     }
     const ids = (this.dialect.normalizeIds(meta, founds as unknown as E[]) || []).map((found) => found[meta.id!]);
     let changes: number;
-    if (meta.softDelete && !opts.softDelete) {
-      const field = meta.fields[meta.softDelete];
-      if (!field) {
-        throw TypeError(`'${entity.name}' softDelete field '${meta.softDelete}' not found in entity fields`);
-      }
+    if (field) {
       const updateResult = await this.execute((session) =>
         this.collection(entity).updateMany(
           { _id: { $in: ids } },

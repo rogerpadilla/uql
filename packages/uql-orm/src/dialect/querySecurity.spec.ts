@@ -6,7 +6,7 @@ import type { Query } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { escapeSqlId } from '../util/sql.util.js';
 
-describe('escapeSqlId — identifier injection hardening', () => {
+describe('escapeSqlId - identifier injection hardening', () => {
   it('escapes double-quote in table name', () => {
     const payload = 'users"; DROP TABLE users; --';
     expect(escapeSqlId(payload, '"')).toBe('"users""; DROP TABLE users; --"');
@@ -27,7 +27,7 @@ describe('escapeSqlId — identifier injection hardening', () => {
   });
 });
 
-describe('normalizeScalarFieldSelection — field validation', () => {
+describe('normalizeScalarFieldSelection - field validation', () => {
   const userMeta = getMeta(User);
 
   it('filters out unknown fields from $select', () => {
@@ -41,12 +41,12 @@ describe('normalizeScalarFieldSelection — field validation', () => {
     expect(result).toContain('name');
   });
 
-  it('handles empty $select — falls back to all fields', () => {
+  it('handles empty $select - falls back to all fields', () => {
     const result = normalizeScalarFieldSelection(userMeta, {}, undefined);
     expect(result).toContain('name');
   });
 
-  it('handles empty $exclude — returns all fields', () => {
+  it('handles empty $exclude - returns all fields', () => {
     const result = normalizeScalarFieldSelection(userMeta, undefined, {});
     expect(result).toContain('name');
   });
@@ -67,7 +67,7 @@ describe('normalizeScalarFieldSelection — field validation', () => {
   });
 });
 
-describe('SQL generation — WHERE parameterization', () => {
+describe('SQL generation - WHERE parameterization', () => {
   it('parameterizes WHERE values instead of inlining them', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -112,7 +112,7 @@ describe('SQL generation — WHERE parameterization', () => {
   });
 });
 
-describe('SQL generation — $select field name validation', () => {
+describe('SQL generation - $select field name validation', () => {
   it('rejects unknown field keys from $select at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -132,7 +132,7 @@ describe('SQL generation — $select field name validation', () => {
   });
 });
 
-describe('SQL generation — $exclude field name validation', () => {
+describe('SQL generation - $exclude field name validation', () => {
   it('ignores unknown field keys in $exclude at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -151,7 +151,7 @@ describe('SQL generation — $exclude field name validation', () => {
   });
 });
 
-describe('SQL generation — $where operator safety', () => {
+describe('SQL generation - $where operator safety', () => {
   it('handles $ne operator safely', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -179,7 +179,7 @@ describe('SQL generation — $where operator safety', () => {
   });
 });
 
-describe('SQL generation — relation field safety', () => {
+describe('SQL generation - relation field safety', () => {
   it('does not include relation fields in scalar select at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -190,7 +190,7 @@ describe('SQL generation — relation field safety', () => {
   });
 });
 
-describe('SQL generation — edge cases', () => {
+describe('SQL generation - edge cases', () => {
   it('handles empty query', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();

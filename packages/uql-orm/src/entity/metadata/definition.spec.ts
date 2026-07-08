@@ -19,6 +19,7 @@ import {
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, type Relation } from '../../type/index.js';
 import { Entity } from '../decorator/entity.js';
 import { Field } from '../decorator/field.js';
+import { Filter } from '../decorator/filter.js';
 import { Id } from '../decorator/id.js';
 import { ManyToOne } from '../decorator/relation.js';
 import { getEntities, getMeta } from './definition.js';
@@ -752,4 +753,61 @@ it('auto-generates the FK column from a relation-only declaration', () => {
   expect(meta.fields['targetId']).toMatchObject({ name: 'targetId', type: Number, typeInferred: true });
   expect(meta.fields['targetId']!.references!()).toBe(AutoFkTarget);
   expect(meta.relations.target!.references).toEqual([{ local: 'targetId', foreign: 'id' }]);
+});
+
+it('auto-registers the built-in softDelete filter from @Field({ softDelete })', () => {
+  const meta = getMeta(MeasureUnit);
+  expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
+});
+
+it('registers @Filter and bulk filters', () => {
+  @Filter('active', { condition: { status: 'active' }, default: false })
+  @Entity({ filters: { recent: { condition: { status: 'new' } } } })
+  class FilteredEntity {
+    @Id()
+    id?: number;
+    @Field()
+    status?: string;
+  }
+  const meta = getMeta(FilteredEntity);
+  expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
+  expect(meta.filters?.['recent']).toEqual({ condition: { status: 'new' } });
+});
+
+it('softDelete is a reserved filter name', () => {
+  expect(() => {
+    @Filter('softDelete', { condition: { status: 'bogus' } })
+    @Entity()
+    class ReservedFilter {
+      @Id()
+      id?: number;
+      @Field()
+      status?: string;
+    }
+    return ReservedFilter;
+  }).toThrow("filter name 'softDelete' is reserved");
+});
+
+it('subclass inherits parent softDelete field key and filters', () => {
+  @Filter('active', { condition: { status: 'active' }, default: false })
+  @Entity()
+  class SoftBase {
+    @Id()
+    id?: number;
+    @Field()
+    status?: string;
+    @Field({ softDelete: true })
+    deletedAt?: Date;
+  }
+
+  @Entity()
+  class SoftChild extends SoftBase {
+    @Field()
+    name?: string;
+  }
+
+  const meta = getMeta(SoftChild);
+  expect(meta.softDelete).toBe('deletedAt');
+  expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
+  expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
 });

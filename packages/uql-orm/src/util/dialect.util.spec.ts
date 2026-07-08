@@ -1,8 +1,10 @@
 import { expect, it } from 'vitest';
-import { getMeta } from '../entity/decorator/index.js';
+import { UqlSecurityError, withContext } from '../context/context.js';
+import { Entity, Field, Filter, getMeta } from '../entity/decorator/index.js';
 import { type Item, User } from '../test/entityMock.js';
-import type { QueryGroupMap, QuerySelect } from '../type/index.js';
+import type { QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
 import {
+  applyFilters,
   augmentWhere,
   buildSortMap,
   fillOnFields,
@@ -15,7 +17,98 @@ import {
 } from './dialect.util.js';
 import { raw } from './raw.js';
 
-/** Deliberately invalid entries plus one valid key — exercises parseGroupMap defensive parsing. */
+@Filter('active', { condition: { status: 'active' }, default: false })
+@Filter('recent', { condition: () => ({ status: 'new' }), default: false })
+@Entity()
+class Filtered {
+  @Field({ isId: true })
+  id?: number;
+  @Field()
+  status?: string;
+  @Field({ softDelete: true })
+  deletedAt?: Date;
+}
+
+function applied(where: QueryWhereMap<Filtered>, opts?: Parameters<typeof applyFilters>[2]) {
+  return applyFilters(getMeta(Filtered), where, opts);
+}
+
+it('applyFilters applies default-on filters (soft-delete) and skips default-off', () => {
+  expect(applied({})).toEqual({ deletedAt: null });
+});
+
+it('applyFilters filters:false disables all', () => {
+  expect(applied({}, { filters: false })).toEqual({});
+});
+
+it('applyFilters disables one by name, force-enables a default-off one', () => {
+  expect(applied({}, { filters: { softDelete: false } })).toEqual({});
+  expect(applied({}, { filters: { active: true } })).toEqual({ status: 'active', deletedAt: null });
+});
+
+it('applyFilters resolves thunk conditions', () => {
+  expect(applied({}, { filters: { recent: true } })).toEqual({ status: 'new', deletedAt: null });
+});
+
+it('applyFilters escape hatch: does not overwrite a key already in $where', () => {
+  const d = new Date();
+  expect(applied({ deletedAt: d })).toEqual({ deletedAt: d });
+});
+
+@Filter('tenant', {
+  condition: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
+  security: true,
+})
+@Entity()
+class Tenanted {
+  @Field({ isId: true })
+  id?: number;
+  @Field()
+  companyId?: number;
+  @Field({ softDelete: true })
+  deletedAt?: Date;
+}
+
+function tenantApplied(where: QueryWhereMap<Tenanted>, opts?: Parameters<typeof applyFilters>[2]) {
+  return applyFilters(getMeta(Tenanted), where, opts);
+}
+
+it('security filter AND-appends its condition from ambient context', () => {
+  const where = withContext({ tenantId: 5 }, () => tenantApplied({}));
+  expect(where).toEqual({ deletedAt: null, $and: [{ companyId: 5 }] });
+});
+
+it('security filter is not bypassable (filters:false ignored)', () => {
+  const where = withContext({ tenantId: 5 }, () => tenantApplied({}, { filters: false }));
+  expect(where).toEqual({ $and: [{ companyId: 5 }] }); // softDelete bypassed, tenant still applied
+});
+
+it('security filter cannot be overridden by a client $where on the same field', () => {
+  const where = withContext({ tenantId: 5 }, () => tenantApplied({ companyId: 99 }));
+  // client value stays, but the security predicate is AND-ed, so it is self-contradictory: no leak
+  expect(where).toEqual({ companyId: 99, deletedAt: null, $and: [{ companyId: 5 }] });
+});
+
+it('security filter fails closed when context is missing', () => {
+  expect(() => tenantApplied({})).toThrow(UqlSecurityError);
+});
+
+it('applyFilters never mutates the input where map (returns a new object)', () => {
+  const input: QueryWhereMap<Filtered> = { status: 'x' };
+  const out = applied(input);
+  expect(input).toEqual({ status: 'x' }); // input untouched - no injected `deletedAt`
+  expect(out).not.toBe(input);
+});
+
+it('applyFilters does not mutate a client $and array when AND-merging a security filter', () => {
+  const clientAnd: QueryWhereMap<Tenanted>[] = [{ companyId: 1 }];
+  const input: QueryWhereMap<Tenanted> = { $and: clientAnd };
+  const out = withContext({ tenantId: 5 }, () => tenantApplied(input));
+  expect(clientAnd).toEqual([{ companyId: 1 }]); // original array untouched
+  expect(out.$and).toEqual([{ companyId: 1 }, { companyId: 5 }]);
+});
+
+/** Deliberately invalid entries plus one valid key - exercises parseGroupMap defensive parsing. */
 function malformedGroupMapFixture(): QueryGroupMap<Item> {
   return { a: false, b: 0, c: '', d: true } as unknown as QueryGroupMap<Item>;
 }

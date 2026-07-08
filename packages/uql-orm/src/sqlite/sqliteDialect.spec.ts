@@ -25,7 +25,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    // SQLite uses 'none' strategy — isolation level is silently ignored
+    // SQLite uses 'none' strategy - isolation level is silently ignored
     expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual(['BEGIN TRANSACTION']);
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual(['BEGIN TRANSACTION']);
   }

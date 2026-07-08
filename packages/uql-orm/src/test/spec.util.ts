@@ -55,6 +55,6 @@ const hooks = {
 type SpecHooks = Partial<typeof hooks>;
 
 export type Spec = SpecHooks & {
-  // biome-ignore lint/suspicious/noExplicitAny: `any` is required — `unknown` makes index signature incompatible with concrete spec classes
+  // biome-ignore lint/suspicious/noExplicitAny: `any` is required - `unknown` makes index signature incompatible with concrete spec classes
   readonly [k: string]: (() => void | Promise<void>) | any;
 };

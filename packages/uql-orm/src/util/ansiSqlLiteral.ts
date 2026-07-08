@@ -11,7 +11,7 @@
  *
  * PostgreSQL **array** literals (`{...}` with double-quoted elements and their own escape rules)
  * are separate from this helper; see {@link PostgresDialect} (array text format when
- * `nativeArrays` is false) — do not “unify” that path with this function.
+ * `nativeArrays` is false) - do not "unify" that path with this function.
  */
 
 const SINGLE_QUOTE = /'/g;

@@ -35,46 +35,68 @@ export type { SqlDialectName };
 export type DialectName = SqlDialectName | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E | undefined>;
+  findOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    q?: QueryOne<E>,
+    opts?: QueryOptions,
+  ): Promise<E | undefined>;
 
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
-  findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }): Promise<E | undefined>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
+  findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
-  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<E[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E[]>;
 
   /**
    * Stream records as an async iterable. Supports both patterns.
    * Does not fill relations or fire lifecycle hooks.
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
-  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }): AsyncIterable<E>;
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): AsyncIterable<E>;
 
   /**
    * Find many records and count. Supports both patterns.
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<[E[], number]>;
 
   /**
    * Count records. Supports both patterns.
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
-  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }): Promise<number>;
+  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
 
   insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
   insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<number>;
+  updateOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): Promise<number>;
 
-  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
+  updateMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): Promise<number>;
+
+  /**
+   * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the
+   * entity has no soft-delete field.
+   */
+  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number>;
+  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   upsertOne<E extends object>(
     entity: Type<E>,
@@ -95,7 +117,8 @@ export interface Querier extends UniversalQuerier {
   deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
   /**
-   * Delete many records. Supports both entity-as-argument and entity-as-field patterns.
+   * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).
+   * Supports both entity-as-argument and entity-as-field patterns.
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
@@ -106,6 +129,7 @@ export interface Querier extends UniversalQuerier {
   aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 
   /**
@@ -183,7 +207,7 @@ export interface MongoQuerier extends Querier {
  * Configuration for slow query detection and logging.
  */
 export type SlowQueryOptions = {
-  /** Threshold in milliseconds — queries exceeding this are logged as slow. */
+  /** Threshold in milliseconds - queries exceeding this are logged as slow. */
   readonly threshold: number;
   /** Whether to include query parameters in slow-query logs. Defaults to `true`. */
   readonly logParams?: boolean;

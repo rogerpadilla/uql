@@ -1,7 +1,7 @@
 {
   "name": "uql-orm",
   "homepage": "https://uql-orm.dev",
-  "description": "Fast, type-safe TypeScript ORM — one API for every database",
+  "description": "Fast, type-safe TypeScript ORM - one API for every database",
   "license": "MIT",
   "version": "0.12.0",
   "type": "module",
@@ -64,16 +64,24 @@
     "@libsql/client": ">=0.6.0",
     "@neondatabase/serverless": ">=0.9.0",
     "@nestjs/common": ">=10.0.0",
+    "@nestjs/core": ">=10.0.0",
     "better-sqlite3": ">=9.0.0",
     "express": ">=5.0.0",
     "mariadb": ">=3.0.0",
     "mongodb": ">=6.0.0",
     "mysql2": ">=3.0.0",
     "pg": ">=8.0.0",
-    "pg-query-stream": ">=4.0.0"
+    "pg-query-stream": ">=4.0.0",
+    "rxjs": ">=7.0.0"
   },
   "peerDependenciesMeta": {
     "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "rxjs": {
       "optional": true
     },
     "express": {
@@ -118,7 +126,7 @@
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
     "mongodb": "^7.4.0",
-    "mysql2": "^3.22.5",
+    "mysql2": "^3.22.6",
     "pg": "^8.22.0",
     "pg-query-stream": "^4.16.0",
     "rxjs": "^7.8.2"

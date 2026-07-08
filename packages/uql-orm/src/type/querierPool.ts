@@ -24,7 +24,7 @@ export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDial
   getQuerier: () => Promise<Q>;
 
   /**
-   * When omitted, migrations use {@link getQuerier} — same type (`Q`), same dialect, often the same physical connection
+   * When omitted, migrations use {@link getQuerier} - same type (`Q`), same dialect, often the same physical connection
    * (e.g. `:memory:` or a single remote URL). When set, **DDL and the migration journal** use this handle instead so they
    * can target another server while the app keeps using the replica (LibSQL `file:` + `syncUrl`). Call sites use
    * `acquireQuerierForMigrations` from `uql-orm/migrate`.
@@ -48,11 +48,11 @@ export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDial
 }
 
 /** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
-// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction — `any` is required to match all pool instantiations
+// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction - `any` is required to match all pool instantiations
 export type QuerierPoolDialect<P> = P extends QuerierPool<any, infer D> ? D : never;
 
 /** Querier type produced by pool `P`. */
-// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction — `any` is required to match all pool instantiations
+// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction - `any` is required to match all pool instantiations
 export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, any> ? Q : never;
 
 /**

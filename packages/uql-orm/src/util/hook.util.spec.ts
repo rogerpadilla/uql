@@ -196,7 +196,7 @@ describe('runHooks', () => {
 
     const payloads = [{ password: 'secret123' } as TestEntity];
     await runHooks(TestEntity, 'afterLoad', payloads, ctx);
-    // afterLoad IS mutating — its purpose is to transform loaded data
+    // afterLoad IS mutating - its purpose is to transform loaded data
     expect(payloads[0].password).toBe('***');
   });
 

@@ -13,6 +13,7 @@ import {
   User,
 } from '../test/index.js';
 import type { Querier, QuerierPool, Type } from '../type/index.js';
+import { withDeleted } from '../util/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier!: Q;
@@ -849,6 +850,44 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     // We are mainly checking that the task was executed.
     expect(res[0]).toHaveProperty('total');
     expect(Number(res[0].total)).toBe(500);
+  }
+
+  async shouldSoftDeleteExcludeFromReadsAndRestore() {
+    const id = await this.querier.insertOne(MeasureUnit, { name: 'unit' });
+
+    // soft-delete stamps the row instead of removing it
+    expect(await this.querier.deleteOneById(MeasureUnit, id)).toBe(1);
+
+    // excluded from normal reads, included via withDeleted()
+    expect(await this.querier.findOneById(MeasureUnit, id)).toBeUndefined();
+    expect(await this.querier.findOneById(MeasureUnit, id, {}, withDeleted())).toMatchObject({ id, name: 'unit' });
+
+    // restore brings it back
+    expect(await this.querier.restoreOneById(MeasureUnit, id)).toBe(1);
+    expect(await this.querier.findOneById(MeasureUnit, id)).toMatchObject({ id, name: 'unit' });
+  }
+
+  async shouldListOnlyTrashed() {
+    const [liveId, deadId] = await this.querier.insertMany(MeasureUnit, [{ name: 'live' }, { name: 'dead' }]);
+    await this.querier.deleteOneById(MeasureUnit, deadId);
+
+    // "only trashed" is a plain, serializable query - constraining the soft-delete field makes the
+    // default `deletedAt IS NULL` filter step aside (no helper, no bypass needed).
+    const trashedIds = (await this.querier.findMany(MeasureUnit, { $where: { deletedAt: { $ne: null } } })).map((it) =>
+      String(it.id),
+    ); // stringify so ObjectId/number ids compare by value
+    expect(trashedIds).toContain(String(deadId));
+    expect(trashedIds).not.toContain(String(liveId));
+
+    // the live row is still readable normally
+    expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ id: liveId, name: 'live' });
+  }
+
+  async shouldHardDeletePermanently() {
+    const id = await this.querier.insertOne(MeasureUnit, { name: 'gone' });
+    expect(await this.querier.deleteOneById(MeasureUnit, id, { hardDelete: true })).toBe(1);
+    // not recoverable - the row is physically removed
+    expect(await this.querier.findOneById(MeasureUnit, id, {}, withDeleted())).toBeUndefined();
   }
 
   async clearTables() {

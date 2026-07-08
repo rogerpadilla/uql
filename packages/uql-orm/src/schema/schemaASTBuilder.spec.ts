@@ -94,7 +94,7 @@ describe('SchemaASTBuilder', () => {
       class Item {
         @Id({ type: 'uuid' })
         id?: string;
-        // No explicit type/columnType — should inherit 'uuid' from Account.id,
+        // No explicit type/columnType - should inherit 'uuid' from Account.id,
         // not fall back to the generic TypeScript-inferred 'string' (TEXT).
         @Field({ references: () => Account })
         accountId?: string;
@@ -118,7 +118,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Holding {
         @Id() id?: number;
-        // Relation only, no explicit `@Field` FK column — the auto-created `ownerId`
+        // Relation only, no explicit `@Field` FK column - the auto-created `ownerId`
         // column must inherit 'uuid' from Owner.id just like an explicit FK column would.
         @ManyToOne({ entity: () => Owner })
         owner?: Owner;
@@ -164,7 +164,7 @@ describe('SchemaASTBuilder', () => {
       class Child3 {
         @Id() id?: number;
         // Explicit `type: BigInt` overriding the reflected `string` type of this
-        // property — must win over inheriting 'uuid' from Parent3.id.
+        // property - must win over inheriting 'uuid' from Parent3.id.
         @Field({ references: () => Parent3, type: BigInt })
         parentRef?: string;
       }
