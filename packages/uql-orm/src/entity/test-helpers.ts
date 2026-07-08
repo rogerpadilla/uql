@@ -4,7 +4,7 @@ import { getMeta } from './metadata/definition.js';
 /** Stable projection for parity assertions (drops `entity` and `processed`). */
 export function metaCore<E>(
   entity: Type<E>,
-): Pick<EntityMeta<E>, 'id' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete'> {
+): Pick<EntityMeta<E>, 'id' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
   const m = getMeta(entity);
   return {
     id: m.id,
@@ -14,5 +14,6 @@ export function metaCore<E>(
     indexes: m.indexes,
     hooks: m.hooks,
     softDelete: m.softDelete,
+    filters: m.filters,
   };
 }

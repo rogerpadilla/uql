@@ -27,7 +27,7 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    // MySQL uses 'set-before' strategy — two separate statements
+    // MySQL uses 'set-before' strategy - two separate statements
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
       'SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
       'START TRANSACTION',

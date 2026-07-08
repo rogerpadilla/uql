@@ -159,7 +159,7 @@ export class EntityMerger {
 
       if (braceCount !== 0) continue;
 
-      // Found the closing brace — calculate insertion position
+      // Found the closing brace - calculate insertion position
       const insertLineIndex = lastPropertyLine >= 0 ? lastPropertyLine + 1 : i;
       let pos = 0;
       for (let j = 0; j < insertLineIndex; j++) {

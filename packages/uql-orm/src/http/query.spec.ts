@@ -102,9 +102,11 @@ describe('parseQueryParams', () => {
     );
   });
 
-  it('preserves unknown query keys', () => {
-    const query = parseQueryParams({ $customKey: 'value' }) as Record<string, unknown>;
-    expect(query['$customKey']).toBe('value');
+  it('drops unknown query keys (allowlist) so clients cannot inject filters/context', () => {
+    const query = parseQueryParams({ $customKey: 'value', filters: 'false', context: '{}' }) as Record<string, unknown>;
+    expect(query['$customKey']).toBeUndefined();
+    expect(query['filters']).toBeUndefined();
+    expect(query['context']).toBeUndefined();
   });
 });
 

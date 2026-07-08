@@ -57,7 +57,7 @@ describe('escapeAnsiSqlLiteral', () => {
   });
 });
 
-describe('escapeAnsiSqlLiteral — SQL injection hardening (string literals)', () => {
+describe('escapeAnsiSqlLiteral - SQL injection hardening (string literals)', () => {
   const payloads = [
     `admin'--`,
     `' OR '1'='1`,
@@ -66,7 +66,7 @@ describe('escapeAnsiSqlLiteral — SQL injection hardening (string literals)', (
     String.raw`\' OR 1=1--`,
     `name'; DELETE FROM t WHERE '1'='1`,
     `'\nOR\n1=1`,
-    `％＇ＯＲ％＇１％＝％１`, // fullwidth — still a string; must stay inside quotes
+    `％＇ＯＲ％＇１％＝％１`, // fullwidth - still a string; must stay inside quotes
     `\x00'\x00OR\x001=1`,
     `multi''quote'break`,
   ];

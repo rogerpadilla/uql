@@ -12,7 +12,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { QueryContext } from '../type/index.js';
+import type { QueryContext, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -276,6 +276,36 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, SoftDeleteRaw, { $where: { id: 1 } }));
     expect(sql).toContain(`SET ${this.dialect.escapeId('deletedAt')} = NOW()`);
     expect(values).toEqual([1]);
+  }
+
+  shouldReadWithDeleted() {
+    const deletedAtIsNull = `${this.dialect.escapeId('deletedAt')} IS NULL`;
+    // default read applies the soft-delete filter
+    let res = this.exec((ctx) => this.dialect.find(ctx, MeasureUnit, { $select: { id: true } }));
+    expect(res.sql).toContain(deletedAtIsNull);
+    // bypass by name
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnit, { $select: { id: true } }, { filters: { softDelete: false } }),
+    );
+    expect(res.sql).not.toContain(deletedAtIsNull);
+    // bypass all filters
+    res = this.exec((ctx) => this.dialect.find(ctx, MeasureUnit, { $select: { id: true } }, { filters: false }));
+    expect(res.sql).not.toContain(deletedAtIsNull);
+  }
+
+  shouldGenerateRestoreUpdate() {
+    // Restore = UPDATE set the soft-delete field to null, with the soft-delete read filter disabled.
+    const field: string = 'deletedAt';
+    const payload = { [field]: null } as UpdatePayload<MeasureUnit>;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(ctx, MeasureUnit, { $where: { id: 1, deletedAt: { $ne: null } } }, payload, {
+        filters: { softDelete: false },
+      }),
+    );
+    const deletedAt = this.dialect.escapeId('deletedAt');
+    expect(sql).toContain(`SET ${deletedAt} = ?`);
+    expect(sql).not.toContain(`${deletedAt} IS NULL`); // soft-delete read filter disabled
+    expect(values).toContain(1);
   }
 
   shouldFind() {
@@ -1032,27 +1062,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldDelete() {
+    // Entity without a soft-delete field: always a plain DELETE.
     let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }));
     expect(res.sql).toBe('DELETE FROM `User` WHERE `id` = ?');
     expect(res.values).toEqual([123]);
 
-    expect(() => this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { softDelete: true }))).toThrow(
-      "'User' has not enabled 'softDelete'",
-    );
-
-    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { softDelete: false }));
+    // `hardDelete` on a non-soft-deletable entity is still a plain DELETE (e.g. a cascade onto one).
+    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { hardDelete: true }));
     expect(res.sql).toBe('DELETE FROM `User` WHERE `id` = ?');
     expect(res.values).toEqual([123]);
 
+    // Soft-deletable entity: UPDATE stamping only live rows.
     res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }));
     expect(res.sql).toMatch(/^UPDATE `MeasureUnit` SET `deletedAt` = \? WHERE `id` = \? AND `deletedAt` IS NULL$/);
     expect(res.values).toEqual([expect.any(Number), 123]);
 
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { softDelete: true }));
-    expect(res.sql).toMatch(/^UPDATE `MeasureUnit` SET `deletedAt` = \? WHERE `id` = \? AND `deletedAt` IS NULL$/);
-    expect(res.values).toEqual([expect.any(Number), 123]);
-
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { softDelete: false }));
+    // `hardDelete` removes the row regardless of soft-delete state (no `IS NULL` filter).
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { hardDelete: true }));
     expect(res.sql).toBe('DELETE FROM `MeasureUnit` WHERE `id` = ?');
     expect(res.values).toEqual([123]);
   }
@@ -1443,7 +1469,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(ctx.sql).toBe('SELECT *');
   }
 
-  // Aggregate tests — shared across all SQL dialects
+  // Aggregate tests - shared across all SQL dialects
   shouldAggregateGroupByWithCount() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
@@ -1585,7 +1611,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(sql).toContain('GROUP BY');
   }
 
-  // $distinct tests — shared across all SQL dialects
+  // $distinct tests - shared across all SQL dialects
   shouldFindDistinct() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>

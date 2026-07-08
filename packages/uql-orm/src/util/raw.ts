@@ -4,7 +4,7 @@ import { QueryRaw, type QueryRawFn, type Scalar } from '../type/index.js';
  * Create a raw SQL expression that bypasses the ORM's automatic escaping.
  *
  * **⚠️ Security:** This function bypasses SQL parameterization. Never pass
- * unsanitized user input directly as the `value` argument — doing so may
+ * unsanitized user input directly as the `value` argument - doing so may
  * introduce SQL injection vulnerabilities. Use parameterized queries
  * (e.g. `$where` operators) for any user-supplied data.
  *

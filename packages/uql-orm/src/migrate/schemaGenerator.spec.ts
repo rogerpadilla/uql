@@ -145,7 +145,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       m: 16,
       efConstruction: 64,
     });
-    // MySQL: no operator class, no WITH params — just USING
+    // MySQL: no operator class, no WITH params - just USING
     expect(sql).toBe('CREATE INDEX `idx_embedding` ON `articles` USING hnsw (`embedding`);');
   });
   /** Build a minimal TableNode mock with an id + embedding column and the given vector indexes. */

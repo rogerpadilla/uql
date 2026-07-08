@@ -1,5 +1,5 @@
 import type { IndexType } from '../schema/types.js';
-import type { QueryRaw, VectorDistance } from './query.js';
+import type { FilterMeta, FilterOptions, QueryRaw, VectorDistance } from './query.js';
 import type { Json, Scalar, Type } from './utility.js';
 
 /**
@@ -73,11 +73,11 @@ export type JsonPushFields<T> = {
  *
  * @example
  * ```ts
- * // merge only — autocompletes keys from the JSON field's inner type
+ * // merge only - autocompletes keys from the JSON field's inner type
  * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } });
- * // unset only — autocompletes keys from the JSON field's inner type
+ * // unset only - autocompletes keys from the JSON field's inner type
  * querier.updateOneById(Company, id, { kind: { $unset: ['private'] } });
- * // push to array — autocompletes array keys, value matches element type
+ * // push to array - autocompletes array keys, value matches element type
  * querier.updateOneById(Company, id, { data: { $push: { tags: 'new-tag' } } });
  * // combine all three
  * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } });
@@ -211,7 +211,7 @@ export type FieldOptions = {
   readonly type?: FieldType;
   /**
    * Set by `defineField` when `type` was inferred via reflection rather than
-   * given explicitly. Internal bookkeeping — do not set this from a decorator.
+   * given explicitly. Internal bookkeeping - do not set this from a decorator.
    * @internal
    */
   readonly typeInferred?: boolean;
@@ -293,12 +293,12 @@ export type FieldOptions = {
 
 export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
 
-// biome-ignore lint/suspicious/noExplicitAny: public generic default — changing would break callers
+// biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
 export type EntityGetter<E = any> = () => Type<E>;
 
 export type CascadeType = 'persist' | 'delete';
 
-// biome-ignore lint/suspicious/noExplicitAny: public generic default — changing would break callers
+// biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
 export type RelationOptions<E = any> = {
   entity?: EntityGetter<E>;
   cardinality: RelationCardinality;
@@ -369,7 +369,7 @@ export type HookRegistration = {
  * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
  */
 export type VectorIndexOptions = {
-  /** Distance metric for vector indexes — maps to operator class. */
+  /** Distance metric for vector indexes - maps to operator class. */
   distance?: VectorDistance;
   /** HNSW: max connections per node. */
   m?: number;
@@ -400,6 +400,8 @@ export type EntityMeta<E> = {
   name?: string;
   id: IdKey<E>;
   softDelete?: FieldKey<E>;
+  /** Named, default-on `$where` filters applied to every query unless bypassed. */
+  filters?: Record<string, FilterMeta<E>>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;
   } & { [key: string]: FieldOptions | undefined };
@@ -421,6 +423,8 @@ export type EntityMeta<E> = {
  */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
+  /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
+  readonly filters?: Record<string, FilterOptions<E>>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: Record<string, FieldOptions>;
   readonly relations?: Record<string, RelationOptions<E>>;

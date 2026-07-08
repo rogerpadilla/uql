@@ -448,7 +448,7 @@ describe('DriftDetector', () => {
       ]);
       actual.addTable(t2);
 
-      // No type check, no nullable check — only warning-level unexpected column
+      // No type check, no nullable check - only warning-level unexpected column
       const report = detectDrift(expected, actual, { checkTypes: false });
       expect(report.status).toBe('drifted');
       expect(report.summary.warning).toBeGreaterThan(0);

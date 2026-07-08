@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { User } from '../test/index.js';
+import { MeasureUnitCategory, User } from '../test/index.js';
 import type { Query, QueryAggregate, QuerySearch, Type } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
@@ -173,15 +173,15 @@ describe('Dual API Pattern: $entity field support', () => {
     });
 
     it('should pass options correctly with entity-as-argument pattern', async () => {
-      await querier.deleteMany(User, { $where: { id: 1 } }, { softDelete: true });
+      await querier.deleteMany(User, { $where: { id: 1 } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { softDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { hardDelete: true });
     });
 
     it('should pass options correctly with entity-as-field pattern', async () => {
-      await querier.deleteMany({ $entity: User, $where: { id: 1 } }, { softDelete: true });
+      await querier.deleteMany({ $entity: User, $where: { id: 1 } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { softDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { hardDelete: true });
     });
   });
 
@@ -299,6 +299,36 @@ describe('Dual API Pattern: $entity field support', () => {
 
       expect(collected).toEqual(rows);
       expect(collected).toHaveLength(3);
+    });
+  });
+
+  describe('restore', () => {
+    it('restoreMany updates the soft-delete field to null with the filter disabled', async () => {
+      const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
+      await querier.restoreMany(MeasureUnitCategory, { $where: { id: 1 } });
+      expect(updateSpy).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        expect.objectContaining({ $where: expect.objectContaining({ id: 1, deletedAt: { $ne: null } }) }),
+        { deletedAt: null },
+        { filters: { softDelete: false } },
+      );
+    });
+
+    it('restoreOneById delegates to restoreMany', async () => {
+      const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
+      await querier.restoreOneById(MeasureUnitCategory, 7);
+      expect(updateSpy).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        expect.objectContaining({ $where: expect.objectContaining({ id: 7, deletedAt: { $ne: null } }) }),
+        { deletedAt: null },
+        { filters: { softDelete: false } },
+      );
+    });
+
+    it('restoreMany throws when the entity has no soft-delete field', async () => {
+      await expect(querier.restoreMany(User, { $where: { id: 1 } })).rejects.toThrow(
+        "'User' has not enabled 'softDelete'",
+      );
     });
   });
 });

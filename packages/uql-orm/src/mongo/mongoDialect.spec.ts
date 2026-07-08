@@ -650,7 +650,7 @@ class MongoDialectSpec implements Spec {
       undefined,
       10,
     );
-    // $project is not part of the $vectorSearch stage — it's handled in mongodbQuerier via $meta
+    // $project is not part of the $vectorSearch stage - it's handled in mongodbQuerier via $meta
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -677,7 +677,7 @@ class MongoDialectSpec implements Spec {
       undefined,
       10,
     );
-    // $distance is accepted but ignored — metric lives in Atlas index
+    // $distance is accepted but ignored - metric lives in Atlas index
     expect(result['$vectorSearch']).not.toHaveProperty('distance');
     expect(result['$vectorSearch']).not.toHaveProperty('similarity');
   }

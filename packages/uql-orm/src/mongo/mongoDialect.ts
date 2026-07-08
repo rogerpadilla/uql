@@ -19,6 +19,7 @@ import type {
   Type,
 } from '../type/index.js';
 import {
+  applyFilters,
   buildQueryWhereAsMap,
   buildSortMap,
   type CallbackKey,
@@ -71,27 +72,24 @@ export class MongoDialect extends AbstractDialect {
     $max: '$max',
   };
 
-  public where<E extends Document>(
-    entity: Type<E>,
-    where: QueryWhere<E> = {},
-    { softDelete }: QueryOptions = {},
-  ): Filter<E> {
+  public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
+    const meta = getMeta(entity);
+    // Apply this entity's filters once, at the scope entry point; recursion uses `renderFilter`.
+    const whereMap = applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
+    return this.renderFilter(entity, whereMap);
+  }
+
+  /** Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or` recursion). */
+  private renderFilter<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}): Filter<E> {
     const meta = getMeta(entity);
     const whereMap = buildQueryWhereAsMap(meta, where);
-
-    if (meta.softDelete && (softDelete || softDelete === undefined) && !whereMap[meta.softDelete]) {
-      const field = meta.fields[meta.softDelete];
-      if (field) {
-        (whereMap as Record<string, unknown>)[this.resolveColumnName(meta.softDelete, field)] = null;
-      }
-    }
 
     const filter: Record<string, unknown> = {};
     for (const [rawKey, rawVal] of Object.entries(whereMap)) {
       let key = rawKey;
       let val: unknown = rawVal;
       if (key === '$and' || key === '$or') {
-        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => this.where(entity, filterIt));
+        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => this.renderFilter(entity, filterIt));
       } else {
         const field = meta.fields[key];
         if (key === MongoDialect.ID_KEY || key === meta.id) {
@@ -139,7 +137,7 @@ export class MongoDialect extends AbstractDialect {
     $ilike: { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true },
   };
 
-  /** MongoDB native operators — pass through as-is. */
+  /** MongoDB native operators - pass through as-is. */
   private static readonly NATIVE_OPS = new Set([
     '$all',
     '$size',
@@ -162,7 +160,7 @@ export class MongoDialect extends AbstractDialect {
   private transformOperators(ops: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(ops)) {
-      // Native MongoDB operators — pass through directly
+      // Native MongoDB operators - pass through directly
       if (MongoDialect.NATIVE_OPS.has(op)) {
         result[op] = val;
         continue;
@@ -228,9 +226,10 @@ export class MongoDialect extends AbstractDialect {
     entity: Type<E>,
     q: Query<E>,
     relationSummary?: RelationRequestSummary<E>,
+    opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
     const meta = getMeta(entity);
-    const where = this.where(entity, q.$where);
+    const where = this.where(entity, q.$where, opts);
     const sort = this.sort(entity, q.$sort);
     const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
 
@@ -377,12 +376,16 @@ export class MongoDialect extends AbstractDialect {
   /**
    * Build MongoDB aggregation pipeline stages from a QueryAggregate.
    */
-  public buildAggregateStages<E extends Document>(entity: Type<E>, q: QueryAggregate<E>): Record<string, unknown>[] {
+  public buildAggregateStages<E extends Document>(
+    entity: Type<E>,
+    q: QueryAggregate<E>,
+    opts?: QueryOptions,
+  ): Record<string, unknown>[] {
     const pipeline: Record<string, unknown>[] = [];
 
-    // $match stage (WHERE equivalent — before grouping)
+    // $match stage (WHERE equivalent - before grouping)
     if (q.$where) {
-      const filter = this.where(entity, q.$where);
+      const filter = this.where(entity, q.$where, opts);
       if (hasKeys(filter)) {
         pipeline.push({ $match: filter });
       }
@@ -403,7 +406,7 @@ export class MongoDialect extends AbstractDialect {
 
     pipeline.push({ $group: { _id: hasKeys(groupId) ? groupId : null, ...groupAccumulators } });
 
-    // Project stage — rename _id fields back to their original names
+    // Project stage - rename _id fields back to their original names
     if (hasKeys(groupId)) {
       const project: Record<string, unknown> = { _id: 0 };
       for (const alias of Object.keys(groupId)) {
@@ -491,6 +494,7 @@ export class MongoDialect extends AbstractDialect {
     search: QueryVectorSearch,
     where: QueryWhere<E> | undefined,
     limit: number,
+    opts?: QueryOptions,
   ): Record<string, unknown> {
     const field = meta.fields[key];
     if (!field) {
@@ -514,7 +518,7 @@ export class MongoDialect extends AbstractDialect {
 
     // Pre-filter: merge $where into $vectorSearch.filter
     if (where) {
-      const filter = this.where(entity, where);
+      const filter = this.where(entity, where, opts);
       if (hasKeys(filter)) {
         stage['filter'] = filter;
       }

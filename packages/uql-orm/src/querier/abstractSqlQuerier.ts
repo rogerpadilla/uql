@@ -25,6 +25,7 @@ import {
   throwPendingTransaction,
   unflatObject,
   unflatObjects,
+  withoutSoftDeleteFilter,
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
@@ -88,16 +89,20 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.internalRun(query, this.dialect.normalizeValues(values));
   }
 
-  protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>) {
+  protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q);
+    this.dialect.find(ctx, entity, q, opts);
     const res = await this.all<RawRow>(ctx.sql, ctx.values);
     const founds = unflatObjects<E>(res).map((row) => this.hydrateJsonFields(entity, row));
     await this.fillToManyRelations(entity, founds, q.$populate);
     return founds;
   }
 
-  protected override async *internalFindManyStream<E extends object>(entity: Type<E>, q: Query<E>) {
+  protected override async *internalFindManyStream<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ) {
     const meta = getMeta(entity);
     const { toManyKeys } = getRelationRequestSummary(meta, q.$populate);
     if (toManyKeys.length) {
@@ -106,7 +111,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       );
     }
     const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q);
+    this.dialect.find(ctx, entity, q, opts);
     const normalizedParams = this.dialect.normalizeValues(ctx.values);
     let attrsPaths: Record<string, string[]> | undefined;
     for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
@@ -116,7 +121,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Internal streaming query — returns an async iterable of raw rows.
+   * Internal streaming query - returns an async iterable of raw rows.
    * Default implementation falls back to `internalAll()` then yields each row.
    * Drivers with native cursor/streaming APIs (SQLite, Pg) should override this.
    */
@@ -174,9 +179,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
-  protected override async internalCount<E extends object>(entity: Type<E>, q: QuerySearch<E> = {}) {
+  protected override async internalCount<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E> = {},
+    opts?: QueryOptions,
+  ) {
     const ctx = this.dialect.createContext();
-    this.dialect.count(ctx, entity, q);
+    this.dialect.count(ctx, entity, q, opts);
     const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
     return Number(res[0].count);
   }
@@ -184,9 +193,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalAggregate<E extends object, Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
     const ctx = this.dialect.createContext();
-    this.dialect.aggregate(ctx, entity, q);
+    this.dialect.aggregate(ctx, entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify
     return this.all<any>(ctx.sql, ctx.values);
   }
@@ -210,12 +220,17 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return payloadIds as IdValue<E>[];
   }
 
-  override async internalUpdateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>) {
+  override async internalUpdateMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ) {
     payload = clone(payload);
     const ctx = this.dialect.createContext();
-    this.dialect.update(ctx, entity, q, payload);
+    this.dialect.update(ctx, entity, q, payload, opts);
     const { changes = 0 } = await this.run(ctx.sql, ctx.values);
-    await this.updateRelations(entity, q, payload);
+    await this.updateRelations(entity, q, payload, opts);
     return changes;
   }
 
@@ -239,8 +254,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     const meta = getMeta(entity);
+    // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
+    const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
     const findCtx = this.dialect.createContext();
-    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id!]: true } } as Query<E>);
+    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id!]: true } } as Query<E>, findOpts);
     const founds = await this.all<E>(findCtx.sql, findCtx.values);
     if (!founds.length) {
       return 0;

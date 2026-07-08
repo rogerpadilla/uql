@@ -1,6 +1,16 @@
+import { withContext } from '../context/context.js';
 import { getEntities, getMeta } from '../entity/index.js';
 import { getQuerier } from '../options.js';
-import type { EntityMeta, IdValue, Querier, Query, QuerySearch, Type, UpdatePayload } from '../type/index.js';
+import type {
+  EntityMeta,
+  IdValue,
+  Querier,
+  Query,
+  QuerySearch,
+  Type,
+  UpdatePayload,
+  UqlContext,
+} from '../type/index.js';
 import {
   type CrudOperation,
   entityPath,
@@ -40,10 +50,10 @@ export type HandlerResponse = {
 
 /**
  * Wire flags ride inside the query object (as strings on GET, booleans on QUERY),
- * so hooks can enforce them, e.g. force `softDelete: true` in `preFilter`.
+ * so hooks can set/override them, e.g. force `hardDelete: true` in `preFilter`.
  */
 type WireFlags = {
-  readonly softDelete?: unknown;
+  readonly hardDelete?: unknown;
   readonly count?: unknown;
 };
 
@@ -52,15 +62,15 @@ export type HookContext<E extends object, Ctx = unknown> = {
   readonly op: CrudOperation;
   readonly method: HttpMethod;
   /**
-   * parsed query — mutate in place or reassign to enforce filters (tenant scoping, row-level rules).
+   * parsed query - mutate in place or reassign to enforce filters (tenant scoping, row-level rules).
    */
   query: Query<E>;
   /**
-   * request payload — reassignable for sanitization or field injection.
+   * request payload - reassignable for sanitization or field injection.
    */
   body?: unknown;
   /**
-   * adapter-supplied request context — the auth/tenant source (e.g. `req.user`).
+   * adapter-supplied request context - the auth/tenant source (e.g. `req.user`).
    */
   readonly context: Ctx;
 };
@@ -96,6 +106,12 @@ export type RequestHandlerOptions<Ctx = unknown> = {
    * or reassign it. Runs after the operation (and after commit for writes).
    */
   post?: ResponseHook<Ctx>;
+  /**
+   * Derive the ambient {@link UqlContext} (e.g. `{ tenantId, userId }`) from the adapter request.
+   * The whole request runs inside `withContext`, so parameterized/`security` filters are scoped
+   * automatically. Derive tenant/auth from a verified source (session, JWT) - never trust the client.
+   */
+  getContext?: (context: Ctx) => UqlContext | undefined | Promise<UqlContext | undefined>;
 };
 
 /**
@@ -106,7 +122,7 @@ export type RequestHandlerOptions<Ctx = unknown> = {
 export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse> | undefined;
 
 export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx> = {}): RequestHandler<Ctx> {
-  const { include, exclude, pre, preSave, preFilter, post } = opts;
+  const { include, exclude, pre, preSave, preFilter, post, getContext } = opts;
 
   let entities = include ?? getEntities();
   if (exclude) {
@@ -148,24 +164,28 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
       body: req.body,
       context: req.context,
     };
-    await pre?.(hookCtx);
-    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-      await preSave?.(hookCtx);
-    } else {
-      await preFilter?.(hookCtx);
-    }
+    const appContext = (await getContext?.(req.context)) ?? {};
+    // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
+    return withContext(appContext, async () => {
+      await pre?.(hookCtx);
+      if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+        await preSave?.(hookCtx);
+      } else {
+        await preFilter?.(hookCtx);
+      }
 
-    const resp = await dispatch();
-    if (post) {
-      await post(hookCtx, resp.body as RequestSuccessResponse<unknown>);
-    }
-    return resp;
+      const resp = await dispatch();
+      if (post) {
+        await post(hookCtx, resp.body as RequestSuccessResponse<unknown>);
+      }
+      return resp;
+    });
 
     function dispatch(): Promise<HandlerResponse> {
       // read post-hooks so both in-place mutation and reassignment of hookCtx.query apply
       const query = hookCtx.query;
       const flags = query as WireFlags;
-      const softDelete = flags.softDelete === 'true' || flags.softDelete === true;
+      const hardDelete = flags.hardDelete === 'true' || flags.hardDelete === true;
       switch (op) {
         case 'findOne':
           return withQuerier(async (querier) => {
@@ -225,7 +245,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
           });
         case 'deleteOneById':
           return withTransaction(async (querier) => {
-            const count = await querier.deleteMany(entity, buildIdQuery(meta, id, query), { softDelete });
+            const count = await querier.deleteMany(entity, buildIdQuery(meta, id, query), { hardDelete });
             return ok({ data: id, count });
           });
         case 'deleteMany':
@@ -236,7 +256,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
             if (founds.length && meta.id) {
               const idKey = meta.id;
               ids = founds.map((found) => found[idKey]);
-              count = await querier.deleteMany(entity, { $where: ids }, { softDelete });
+              count = await querier.deleteMany(entity, { $where: ids }, { hardDelete });
             }
             return ok({ data: ids, count });
           });

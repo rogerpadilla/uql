@@ -6,9 +6,11 @@ import type {
   FieldKey,
   FieldOptions,
   FieldType,
+  FilterOptions,
   HookEvent,
   IdKey,
   Key,
+  QueryWhere,
   RelationKey,
   RelationKeyMap,
   RelationOptions,
@@ -17,7 +19,7 @@ import type {
 import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
 import { LoggerWrapper } from '../../util/logger.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry — stores EntityMeta for all entity types
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
 // Held on `globalThis` via the global symbol registry so a single metadata map survives multiple
 // evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading).
@@ -79,6 +81,21 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
   return meta;
 }
 
+export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptions<E>): EntityMeta<E> {
+  const meta = ensureMeta(entity);
+  if (name === 'softDelete') {
+    throw TypeError(
+      `'${entity.name}' filter name 'softDelete' is reserved; it is auto-registered from @Field({ softDelete })`,
+    );
+  }
+  if (opts.security && opts.onMissing === 'skip') {
+    throw TypeError(`'${entity.name}' security filter '${name}' cannot use onMissing: 'skip' (it must fail closed)`);
+  }
+  if (!meta.filters) meta.filters = {};
+  meta.filters[name] = opts;
+  return meta;
+}
+
 function applyBulkFields<E>(entity: Type<E>, fields: Record<string, FieldOptions>): void {
   for (const key of Object.keys(fields)) {
     const spec = fields[key];
@@ -115,6 +132,13 @@ function applyBulkHooks<E>(entity: Type<E>, hooks: NonNullable<EntityOptions<E>[
   }
 }
 
+function applyBulkFilters<E>(entity: Type<E>, filters: NonNullable<EntityOptions<E>['filters']>): void {
+  for (const name of Object.keys(filters)) {
+    const spec = filters[name];
+    if (spec) defineFilter(entity, name, spec);
+  }
+}
+
 /**
  * Applies `fields`, `relations`, `indexes`, and `hooks` from {@link EntityOptions} before
  * entity finalization. Used by `defineEntity` for decorator-free registration.
@@ -124,6 +148,7 @@ function applyBulkEntityOptions<E>(entity: Type<E>, opts: EntityOptions<E>): voi
   if (opts.relations) applyBulkRelations(entity, opts.relations);
   if (opts.indexes?.length) applyBulkIndexes(entity, opts.indexes);
   if (opts.hooks) applyBulkHooks(entity, opts.hooks);
+  if (opts.filters) applyBulkFilters(entity, opts.filters);
 }
 
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
@@ -134,19 +159,6 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  const softDeleteKeys = getKeys(meta.fields).filter((key) => {
-    const softDelete = meta.fields[key]?.softDelete;
-    return softDelete !== undefined && softDelete !== false;
-  }) as FieldKey<E>[];
-
-  if (softDeleteKeys.length > 1) {
-    throw TypeError(`'${entity.name}' must have at most one field with 'softDelete'`);
-  }
-
-  if (softDeleteKeys.length) {
-    meta.softDelete = softDeleteKeys[0];
-  }
-
   meta.name = opts.name ?? entity.name;
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
@@ -154,6 +166,22 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     const parentMeta = ensureMeta(proto.constructor as Type<E>);
     extendMeta(meta, parentMeta);
     proto = Object.getPrototypeOf(proto);
+  }
+
+  // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
+  // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
+  // filter (a reserved name - see defineFilter - so it never clobbers a user filter).
+  const softDeleteKeys = getKeys(meta.fields).filter((key) => {
+    const softDelete = meta.fields[key]?.softDelete;
+    return softDelete !== undefined && softDelete !== false;
+  }) as FieldKey<E>[];
+  if (softDeleteKeys.length > 1) {
+    throw TypeError(`'${entity.name}' must have at most one field with 'softDelete'`);
+  }
+  if (softDeleteKeys.length) {
+    meta.softDelete = softDeleteKeys[0];
+    if (!meta.filters) meta.filters = {};
+    meta.filters['softDelete'] = { condition: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
   const id = getIdKey(meta);
@@ -343,6 +371,12 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   }
   target.fields = { ...sourceFields, ...target.fields };
   target.relations = { ...source.relations, ...target.relations };
+
+  // Inherit user-defined filters from the parent (child overrides by name). The built-in soft-delete
+  // filter + `meta.softDelete` are (re)derived from the merged fields in `defineEntity`.
+  if (source.filters) {
+    target.filters = { ...source.filters, ...target.filters };
+  }
 
   // Merge hooks from parent entity (parent hooks execute first)
   if (source.hooks) {

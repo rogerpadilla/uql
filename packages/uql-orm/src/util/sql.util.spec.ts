@@ -215,7 +215,7 @@ it('escapeSqlId', () => {
   expect(escapeSqlId(undefined as any)).toBe('');
 });
 
-describe('escapeSqlId — identifier injection hardening', () => {
+describe('escapeSqlId - identifier injection hardening', () => {
   it('cannot break out of double-quoted identifier with embedded quotes', () => {
     const evil = 'u"; SELECT 1; --';
     expect(escapeSqlId(evil, '"')).toBe('"u""; SELECT 1; --"');

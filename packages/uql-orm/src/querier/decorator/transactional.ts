@@ -12,7 +12,7 @@ export function Transactional({
   readonly isolationLevel?: IsolationLevel;
 } = {}) {
   return (target: object, key: string, propDescriptor: PropertyDescriptor): void => {
-    // biome-ignore lint/suspicious/noExplicitAny: decorator pattern — runtime constructor type is erased
+    // biome-ignore lint/suspicious/noExplicitAny: decorator pattern - runtime constructor type is erased
     const theClass = target.constructor as Type<any>;
     const originalMethod = propDescriptor.value;
     const injectedQuerierIndex = getInjectedQuerierIndex(theClass, key);

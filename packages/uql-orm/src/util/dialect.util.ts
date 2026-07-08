@@ -1,14 +1,17 @@
+import { getContext, UqlSecurityError } from '../context/context.js';
 import {
   type CascadeType,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
+  type FilterOnMissing,
   type IdValue,
   type MongoId,
   type OnFieldCallback,
   type QueryAggregateOp,
   type QueryExclude,
   type QueryGroupMap,
+  type QueryOptions,
   QueryRaw,
   type QuerySelect,
   type QuerySortMap,
@@ -16,6 +19,7 @@ import {
   type QueryWhere,
   type QueryWhereMap,
   type RelationKey,
+  type UqlContext,
 } from '../type/index.js';
 import { getFieldKeys, getKeys } from './object.util.js';
 
@@ -124,6 +128,11 @@ export function augmentWhere<E>(
   };
 }
 
+/**
+ * Normalizes any `$where` shape (id, id[], raw, or map) to a `QueryWhereMap`. Read-only: for a map
+ * input it returns that same object by reference (no copy), so callers must not mutate the result -
+ * {@link applyFilters} and {@link augmentWhere} return new objects instead.
+ */
 export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryWhereMap<E>;
@@ -134,6 +143,80 @@ export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<
     } as QueryWhereMap<E>;
   }
   return filter as QueryWhereMap<E>;
+}
+
+/** Returns a `QueryOptions.filters` value with the built-in soft-delete filter disabled (used by hard delete). */
+export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): QueryOptions['filters'] {
+  return filters === false ? false : { ...filters, softDelete: false };
+}
+
+/**
+ * Returns a new `$where` map with every active entity filter's condition merged in, resolving
+ * parameterized conditions against the explicit or ambient {@link UqlContext}. Never mutates the input.
+ *
+ * Convenience filters are active by default (unless `opts.filters === false` or bypassed by name), and
+ * their keys are applied only when absent from the map, so an explicit `$where` on that key opts out.
+ *
+ * `security` filters are always active (bypass is ignored) and AND-merged, so a client `$where` on the
+ * same field can't override them. A security condition that returns `undefined` fails the query closed
+ * (throws {@link UqlSecurityError}) unless its `onMissing` is `skip`.
+ */
+export function applyFilters<E>(
+  meta: EntityMeta<E>,
+  whereMap: QueryWhereMap<E>,
+  opts?: QueryOptions,
+): QueryWhereMap<E> {
+  if (!meta.filters) {
+    return whereMap;
+  }
+  const context = getContext();
+  const result: Record<string, unknown> = { ...whereMap };
+  const securityConditions: unknown[] = [];
+
+  for (const name of getKeys(meta.filters)) {
+    const filter = meta.filters[name];
+
+    let active: boolean;
+    if (filter.security) {
+      active = true;
+    } else if (opts?.filters === false) {
+      active = false;
+    } else {
+      active = opts?.filters?.[name] ?? filter.default !== false;
+    }
+    if (!active) {
+      continue;
+    }
+
+    const raw = filter.condition;
+    const condition =
+      typeof raw === 'function' ? (raw as (c: UqlContext | undefined) => QueryWhere<E> | undefined)(context) : raw;
+    if (condition === undefined) {
+      const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
+      if (onMissing === 'throw') {
+        throw new UqlSecurityError(`filter '${name}' on '${meta.name ?? ''}' could not resolve (missing context)`);
+      }
+      continue;
+    }
+
+    const conditionMap = buildQueryWhereAsMap(meta, condition) as Record<string, unknown>;
+    if (filter.security) {
+      securityConditions.push(conditionMap);
+    } else {
+      for (const key of getKeys(conditionMap)) {
+        if (result[key] === undefined) {
+          result[key] = conditionMap[key];
+        }
+      }
+    }
+  }
+
+  if (securityConditions.length) {
+    const existing = result['$and'] as unknown[] | undefined;
+    result['$and'] = existing ? [...existing, ...securityConditions] : securityConditions;
+  }
+
+  return result as QueryWhereMap<E>;
 }
 
 function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[] {
@@ -148,7 +231,7 @@ function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[
 }
 
 /**
- * Parsed entry from a `$group` map — either a raw group key or an aggregate function call.
+ * Parsed entry from a `$group` map - either a raw group key or an aggregate function call.
  */
 export type ParsedGroupEntry =
   | { readonly kind: 'key'; readonly alias: string }

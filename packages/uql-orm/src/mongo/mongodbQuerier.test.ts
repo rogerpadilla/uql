@@ -98,7 +98,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   }
 
   override async shouldMergeJsonBooleanField() {
-    // Same as shouldUpdateWithJsonOperators — $merge is SQL-only.
+    // Same as shouldUpdateWithJsonOperators - $merge is SQL-only.
   }
 
   async shouldFindManyWithSortAndLimit() {

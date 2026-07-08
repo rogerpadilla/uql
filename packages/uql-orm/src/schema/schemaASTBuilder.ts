@@ -102,13 +102,13 @@ export class SchemaASTBuilder {
    *
    * Without this, a field like `creatorId?: UUID` (a bare TypeScript alias for
    * `string`, erased at runtime) falls back to the generic string inference in
-   * {@link fieldOptionsToCanonical} and gets typed as TEXT/VARCHAR — producing a
+   * {@link fieldOptionsToCanonical} and gets typed as TEXT/VARCHAR - producing a
    * foreign key column whose type doesn't match the UUID primary key it
    * references, which Postgres (and most databases) reject outright.
    *
    * `field.typeInferred` (set by `defineField`, see entity/metadata/definition.ts)
    * is what distinguishes "no type was given" from "the decorator explicitly set
-   * a type" — including explicit constructor overrides like `type: BigInt`, which
+   * a type" - including explicit constructor overrides like `type: BigInt`, which
    * a value-based check (e.g. `typeof field.type === 'string'`) would miss since
    * reflection also produces constructor values like `String`/`Number`.
    * `columnType` remains the unambiguous, always-respected explicit override.

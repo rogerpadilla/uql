@@ -3,9 +3,16 @@ import type { BooleanLike, ExpandScalar, PrimaryKey, Scalar, Type, Unpacked } fr
 
 export type QueryOptions = {
   /**
-   * use or omit `softDelete` attribute.
+   * Toggle named entity filters for this query. `false` disables all filters;
+   * `{ softDelete: false }` disables one; `{ myFilter: true }` force-enables a `default: false` filter.
+   * Security filters cannot be disabled here.
    */
-  softDelete?: boolean;
+  filters?: false | Record<string, boolean>;
+  /**
+   * Delete only: physically remove rows instead of soft-deleting, ignoring the soft-delete filter so
+   * already-deleted rows are removed too. No effect on entities without a soft-delete field.
+   */
+  hardDelete?: boolean;
   /**
    * prefix the query with this.
    */
@@ -28,14 +35,14 @@ export type QuerySelectOptions = {
 };
 
 /**
- * Query field selection — `{ name: true }` whitelists specific fields.
+ * Query field selection - `{ name: true }` whitelists specific fields.
  */
 export type QuerySelect<E> = {
   [K in FieldKey<E>]?: BooleanLike;
 };
 
 /**
- * Fields to exclude from the query result — `{ name: true }` blacklists fields.
+ * Fields to exclude from the query result - `{ name: true }` blacklists fields.
  * Mutually exclusive with positive field selections in `$select`.
  */
 export type QueryExclude<E> = {
@@ -50,7 +57,7 @@ export type QueryPopulate<E> = {
 };
 
 /**
- * query conflict paths — subset of field keys used to detect upsert conflicts.
+ * query conflict paths - subset of field keys used to detect upsert conflicts.
  */
 export type QueryConflictPaths<E> = {
   [K in FieldKey<E>]?: true;
@@ -83,7 +90,7 @@ export type QueryTextSearchOptions<E> = {
 export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
 
 /**
- * Field comparison, JSONB dot-path access, and relation filtering — all fully typed.
+ * Field comparison, JSONB dot-path access, and relation filtering - all fully typed.
  * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
  * for dot-paths because TypeScript's excess property checking cannot resolve recursive
  * conditional types in mapped type key positions.
@@ -250,7 +257,7 @@ export type QueryWhereFieldOperatorMap<T> = {
 export type QueryWhereFieldValue<T> = T | T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
 
 /**
- * query filter array — used for `$and`, `$or`, `$not`, `$nor` operators.
+ * query filter array - used for `$and`, `$or`, `$not`, `$nor` operators.
  */
 export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
 
@@ -260,22 +267,70 @@ export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
 export type QueryWhere<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | QueryWhereArray<E> | QueryRaw;
 
 /**
+ * Ambient per-request context (e.g. `{ tenantId, userId, roles }`) resolved by parameterized
+ * filters. Set with `withContext(ctx, cb)`. It's an `interface` (not a type alias) so you can type
+ * your keys once via declaration merging and get them typed wherever context is read:
+ *
+ * ```ts
+ * declare module 'uql-orm' {
+ *   interface UqlContext { tenantId: number; userId: string }
+ * }
+ * ```
+ */
+export interface UqlContext {
+  [key: string]: unknown;
+}
+
+/**
+ * A filter's `$where` fragment: a plain fragment, or a function of the ambient {@link UqlContext}.
+ * Return `undefined` when the condition can't resolve (see {@link FilterOptions.onMissing}).
+ */
+export type FilterCondition<E> = QueryWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
+
+/**
+ * What to do when a filter's condition returns `undefined`. `skip` omits it (convenience filters);
+ * `throw` fails closed (the default for `security` filters).
+ */
+export type FilterOnMissing = 'skip' | 'throw';
+
+/**
+ * Authoring shape for `@Entity({ filters })` / `@Filter` / `defineFilter`.
+ */
+export type FilterOptions<E = unknown> = {
+  readonly condition: FilterCondition<E>;
+  /** Applied to every query unless bypassed via `QueryOptions.filters`. Defaults to `true`. */
+  readonly default?: boolean;
+  /**
+   * Row-level-security filter: always applied (ignores `QueryOptions.filters` bypass) and
+   * AND-merged so a client `$where` on the same field can't override it.
+   */
+  readonly security?: boolean;
+  /** What to do when the condition returns `undefined`. Defaults to `skip`, or `throw` for `security`. */
+  readonly onMissing?: FilterOnMissing;
+};
+
+/**
+ * Resolved filter metadata stored on `EntityMeta.filters`.
+ */
+export type FilterMeta<E = unknown> = FilterOptions<E>;
+
+/**
  * direction for the sort.
  */
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 
 /**
  * Distance metrics supported by vector similarity search.
- * - `cosine` — best for text/LLM embeddings (default)
- * - `l2` — Euclidean distance
- * - `inner` — inner (dot) product
- * - `l1` — Manhattan distance
- * - `hamming` — for binary vectors
+ * - `cosine` - best for text/LLM embeddings (default)
+ * - `l2` - Euclidean distance
+ * - `inner` - inner (dot) product
+ * - `l1` - Manhattan distance
+ * - `hamming` - for binary vectors
  */
 export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1' | 'hamming';
 
 /**
- * Vector similarity search options — used inside `$sort` on vector fields.
+ * Vector similarity search options - used inside `$sort` on vector fields.
  *
  * @example
  * ```ts
@@ -295,7 +350,7 @@ export interface QueryVectorSearch {
 }
 
 /**
- * Accepted value for a field in `$sort` — either a direction or a vector similarity search.
+ * Accepted value for a field in `$sort` - either a direction or a vector similarity search.
  */
 export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 
@@ -313,7 +368,7 @@ export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
 
 /**
- * sort by map — supports field keys, JSON dot-notation paths, relation sort,
+ * sort by map - supports field keys, JSON dot-notation paths, relation sort,
  * and vector similarity search.
  * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
  * for dot-paths, matching the same approach used in `QueryWhereMap`.
@@ -367,7 +422,7 @@ export type QuerySearch<E> = {
  */
 export type Query<E> = {
   /**
-   * field selection — `{ name: true }` whitelists fields. Mutually exclusive with `$exclude`.
+   * field selection - `{ name: true }` whitelists fields. Mutually exclusive with `$exclude`.
    */
   $select?: QuerySelect<E>;
 
@@ -377,7 +432,7 @@ export type Query<E> = {
   $populate?: QueryPopulate<E>;
 
   /**
-   * field exclusion — `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
+   * field exclusion - `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
    */
   $exclude?: QueryExclude<E>;
 
@@ -733,7 +788,7 @@ export type QueryAggregateResult<E, G> = {
 };
 
 /**
- * HAVING clause — filters on aggregate results by alias name.
+ * HAVING clause - filters on aggregate results by alias name.
  *
  * @example { count: { $gt: 5 } }   → HAVING COUNT(*) > 5
  */
@@ -742,7 +797,7 @@ export type QueryHavingMap = {
 };
 
 /**
- * Aggregate query — separate from `Query<E>` to keep return types honest.
+ * Aggregate query - separate from `Query<E>` to keep return types honest.
  * Used exclusively with `querier.aggregate()`.
  *
  * @example
@@ -762,12 +817,12 @@ export type QueryAggregate<E> = {
   readonly $group: QueryGroupMap<E>;
 
   /**
-   * Row-level filtering (applied before grouping — SQL WHERE).
+   * Row-level filtering (applied before grouping - SQL WHERE).
    */
   readonly $where?: QueryWhere<E>;
 
   /**
-   * Post-aggregation filtering (applied after grouping — SQL HAVING).
+   * Post-aggregation filtering (applied after grouping - SQL HAVING).
    */
   readonly $having?: QueryHavingMap;
 

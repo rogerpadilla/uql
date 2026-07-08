@@ -176,7 +176,7 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
 
   // 2. Creation Status
   // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
-  // MySQL/MariaDB: `affectedRows` convention — 1 = insert, 2 = update, 0 = no-op.
+  // MySQL/MariaDB: `affectedRows` convention - 1 = insert, 2 = update, 0 = no-op.
   const created =
     (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
     (typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2 ? upsertStatus === 1 : undefined);

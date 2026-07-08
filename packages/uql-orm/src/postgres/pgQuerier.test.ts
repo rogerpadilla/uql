@@ -68,7 +68,7 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
       { name: 'northeast', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
     ]);
 
-    // Query vector is [0,1,0] (north) — cosine distance: north=0, northeast≈0.29, east=1
+    // Query vector is [0,1,0] (north) - cosine distance: north=0, northeast≈0.29, east=1
     const results = await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [0, 1, 0] } },

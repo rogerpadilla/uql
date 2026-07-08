@@ -60,7 +60,7 @@ export function entityPath<E>(entity: Type<E>): string {
 export type RouteMatch = {
   readonly op: CrudOperation;
   /**
-   * the resolved transport method — differs from the op's canonical route method for QUERY.
+   * the resolved transport method - differs from the op's canonical route method for QUERY.
    */
   readonly method: HttpMethod;
   readonly id?: string;

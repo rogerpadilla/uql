@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { getContext } from '../context/context.js';
 import * as options from '../options.js';
 import { createMockQuerier, type MockedQuerier, User } from '../test/index.js';
 import { createRequestHandler, type HandlerRequest } from './handler.js';
@@ -39,10 +40,30 @@ describe('createRequestHandler', () => {
   it('findOne', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
     const handle = createRequestHandler({ include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'one', query: { name: 'John' } }));
+    const resp = await handle(
+      req({ method: 'GET', entityPath: 'user', subPath: 'one', query: { $where: JSON.stringify({ name: 'John' }) } }),
+    );
     expect(resp).toEqual({ status: 200, body: { data: { id: 1, name: 'John' }, count: 1 } });
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ name: 'John' }));
+    expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
     expect(mockQuerier.release).toHaveBeenCalled();
+  });
+
+  it('wires getContext into the ambient context for the whole request', async () => {
+    let seen: unknown;
+    mockQuerier.findOne.mockImplementation(async () => {
+      seen = getContext();
+      return { id: 1 };
+    });
+    const handle = createRequestHandler<{ tid: number }>({
+      include: [User],
+      getContext: (ctx) => ({ tenantId: ctx?.tid }),
+    });
+    await handle(
+      req({ method: 'GET', entityPath: 'user', subPath: 'one', context: { tid: 7 } }) as HandlerRequest<{
+        tid: number;
+      }>,
+    );
+    expect(seen).toEqual({ tenantId: 7 });
   });
 
   it('findOne returns null', async () => {
@@ -196,36 +217,36 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('deleteOneById with softDelete', async () => {
+  it('deleteOneById with ?hardDelete', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const handle = createRequestHandler({ include: [User] });
     const resp = await handle(
-      req({ method: 'DELETE', entityPath: 'user', subPath: '1', query: { softDelete: 'true' } }),
+      req({ method: 'DELETE', entityPath: 'user', subPath: '1', query: { hardDelete: 'true' } }),
     );
     expect(resp).toEqual({ status: 200, body: { data: '1', count: 1 } });
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
-      softDelete: true,
+      hardDelete: true,
     });
   });
 
-  it('deleteOneById preserves an array $where via $and', async () => {
+  it('deleteOneById preserves an array $where via $and (soft by default)', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const handle = createRequestHandler({ include: [User] });
     await handle(req({ method: 'DELETE', entityPath: 'user', subPath: '9', query: { $where: '[1, 9]' } }));
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(
       User,
       expect.objectContaining({ $where: { $and: [{ id: { $in: [1, 9] } }, { id: '9' }] } }),
-      { softDelete: false },
+      { hardDelete: false },
     );
   });
 
-  it('deleteMany deletes by found ids', async () => {
+  it('deleteMany deletes by found ids (soft by default)', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
     mockQuerier.deleteMany.mockResolvedValue(2);
     const handle = createRequestHandler({ include: [User] });
     const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
     expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: [1, 2] }, { softDelete: false });
+    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: [1, 2] }, { hardDelete: false });
   });
 
   it('deleteMany when nothing found', async () => {
@@ -349,16 +370,16 @@ describe('createRequestHandler', () => {
       expect(mockQuerier.commitTransaction).toHaveBeenCalled();
     });
 
-    it('hooks can enforce softDelete (flags are resolved after hooks run)', async () => {
+    it('hooks can enforce hardDelete (flags are resolved after hooks run)', async () => {
       mockQuerier.deleteMany.mockResolvedValue(1);
       const handle = createRequestHandler({
         include: [User],
         preFilter: ({ query }) => {
-          Object.assign(query, { softDelete: true });
+          Object.assign(query, { hardDelete: true });
         },
       });
       await handle(req({ method: 'DELETE', entityPath: 'user', subPath: '1' }));
-      expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.anything(), { softDelete: true });
+      expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.anything(), { hardDelete: true });
     });
 
     it('an async hook that throws aborts before touching the pool', async () => {

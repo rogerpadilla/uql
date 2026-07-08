@@ -1105,7 +1105,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.transaction(async () => {
       expect(this.querier.hasOpenTransaction).toBe(true);
 
-      // Nested transaction should reuse — no additional beginTransaction
+      // Nested transaction should reuse - no additional beginTransaction
       const innerResult = await this.querier.transaction(async () => {
         expect(this.querier.hasOpenTransaction).toBe(true);
         await this.querier.updateOneById(User, 5, { name: 'nested' });
@@ -1146,7 +1146,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.transaction(
       async () => {
-        // Inner call specifies a different isolation level — should be ignored
+        // Inner call specifies a different isolation level - should be ignored
         await this.querier.transaction(
           async () => {
             await this.querier.updateOneById(User, 5, { name: 'nested' });

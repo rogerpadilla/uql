@@ -3,7 +3,7 @@
  * and every "exports" entry) actually exists and is non-empty in `dist/`.
  *
  * Run as part of `prepack` so a partial build (e.g. from a stale
- * `tsc -b` incremental cache) can never be packed and published — see
+ * `tsc -b` incremental cache) can never be packed and published - see
  * CHANGELOG.md's "uql-orm@0.10.0 shipped only the browser bundle" entry for
  * the incident this guards against.
  */
@@ -43,7 +43,7 @@ for (const relPath of paths) {
 }
 
 if (missing.length || empty.length) {
-  console.error(`verify-dist: refusing to pack — ${paths.size} paths declared in package.json, but:`);
+  console.error(`verify-dist: refusing to pack - ${paths.size} paths declared in package.json, but:`);
   for (const p of missing) console.error(`  MISSING: ${p}`);
   for (const p of empty) console.error(`  EMPTY:   ${p}`);
   console.error('\nRun `bun run build` (not just `tsc`) and retry.');
