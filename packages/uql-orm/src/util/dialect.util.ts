@@ -21,7 +21,7 @@ import {
   type RelationKey,
   type UqlContext,
 } from '../type/index.js';
-import { getFieldKeys, getKeys } from './object.util.js';
+import { getFieldKeys, getKeys, hasKeys } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -159,7 +159,9 @@ export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): Query
  *
  * `security` filters are always active (bypass is ignored) and AND-merged, so a client `$where` on the
  * same field can't override them. A security condition that returns `undefined` fails the query closed
- * (throws {@link UqlSecurityError}) unless its `onMissing` is `skip`.
+ * (throws {@link UqlSecurityError}) unless its `onMissing` is `skip`; one that returns an empty object
+ * (`{}`) resolved to "no restriction" and adds nothing - the escape hatch for trusted cross-tenant
+ * work (e.g. a maintenance job running under a `system` context).
  */
 export function applyFilters<E>(
   meta: EntityMeta<E>,
@@ -200,6 +202,9 @@ export function applyFilters<E>(
     }
 
     const conditionMap = buildQueryWhereAsMap(meta, condition) as Record<string, unknown>;
+    if (!hasKeys(conditionMap)) {
+      continue; // resolved to "no restriction" (e.g. a trusted system context) - nothing to merge
+    }
     if (filter.security) {
       securityConditions.push(conditionMap);
     } else {

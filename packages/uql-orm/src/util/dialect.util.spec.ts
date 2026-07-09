@@ -93,6 +93,28 @@ it('security filter fails closed when context is missing', () => {
   expect(() => tenantApplied({})).toThrow(UqlSecurityError);
 });
 
+it('a condition resolving to {} means "no restriction" and merges nothing (trusted system context)', () => {
+  @Filter('workspace', {
+    condition: (ctx) =>
+      ctx?.['system'] ? {} : ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined,
+    security: true,
+  })
+  @Entity()
+  class SystemScoped {
+    @Field({ isId: true })
+    id?: number;
+    @Field()
+    companyId?: number;
+  }
+  const meta = getMeta(SystemScoped);
+  // system context: security filter resolves to {} -> no $and appended, no broken predicate
+  expect(withContext({ system: true }, () => applyFilters(meta, {}))).toEqual({});
+  // tenant context still scopes
+  expect(withContext({ tenantId: 3 }, () => applyFilters(meta, {}))).toEqual({ $and: [{ companyId: 3 }] });
+  // missing context still fails closed
+  expect(() => applyFilters(meta, {})).toThrow(UqlSecurityError);
+});
+
 it('applyFilters never mutates the input where map (returns a new object)', () => {
   const input: QueryWhereMap<Filtered> = { status: 'x' };
   const out = applied(input);
