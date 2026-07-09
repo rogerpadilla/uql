@@ -29,3 +29,9 @@ export function withContext<T>(context: UqlContext, callback: () => T): T {
 export function getContext(): UqlContext | undefined {
   return current;
 }
+
+/** Captures the current context and returns a runner that re-establishes it later. See `context.ts`. */
+export function captureContext(): <T>(callback: () => T) => T {
+  const context = getContext();
+  return (callback) => (context ? withContext(context, callback) : callback());
+}

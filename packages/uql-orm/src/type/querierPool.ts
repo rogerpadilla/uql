@@ -1,5 +1,17 @@
 import type { AbstractDialect } from '../dialect/index.js';
 import type { ExtraOptions, Querier, TransactionOptions } from './querier.js';
+import type { UqlContext } from './query.js';
+
+/** Options for a pool-level unit of work ({@link QuerierPool.withQuerier} / {@link QuerierPool.transaction}). */
+export interface PoolRunOptions {
+  /**
+   * {@link UqlContext} to run the callback under, so parameterized/`security` filters scope every
+   * query inside it. Same mechanism as `withContext`, scoped to this unit of work - ideal where no
+   * ambient request context exists (background pipelines, queue consumers, webhooks) and the tenant
+   * is known locally: `pool.withQuerier((q) => q.findMany(Invoice, {}), { context: { tenantId } })`.
+   */
+  readonly context?: UqlContext;
+}
 
 /**
  * Querier pool. Read the dialect id via `pool.dialect.dialectName` (see {@link AbstractDialect.dialectName}); queriers expose the same on `querier.dialect`.
@@ -34,12 +46,12 @@ export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDial
   /**
    * get a querier from the pool and run the given callback inside a transaction.
    */
-  transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions): Promise<T>;
+  transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions & PoolRunOptions): Promise<T>;
 
   /**
    * get a querier from the pool, run the given callback, and release the querier.
    */
-  withQuerier<T>(callback: (querier: Q) => Promise<T>): Promise<T>;
+  withQuerier<T>(callback: (querier: Q) => Promise<T>, opts?: PoolRunOptions): Promise<T>;
 
   /**
    * end the pool.
