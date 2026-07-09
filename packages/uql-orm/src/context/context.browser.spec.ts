@@ -32,3 +32,12 @@ it('restores the context even when the callback throws', () => {
   ).toThrow('boom');
   expect(browserContext.getContext()).toBeUndefined();
 });
+
+it('captureContext replays the captured context later (sync semantics)', () => {
+  const scoped = browserContext.withContext({ tenantId: 9 }, () => browserContext.captureContext());
+  expect(browserContext.getContext()).toBeUndefined();
+  expect(scoped(() => browserContext.getContext())).toEqual({ tenantId: 9 });
+  expect(browserContext.getContext()).toBeUndefined();
+  // no active context at capture time: the runner just invokes the callback
+  expect(browserContext.captureContext()(() => browserContext.getContext())).toBeUndefined();
+});

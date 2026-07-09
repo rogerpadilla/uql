@@ -4,9 +4,24 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.14.1] - 2026-07-08
+## [0.14.1] - 2026-07-09
+
+Context ergonomics for event-driven apps (background pipelines, queue consumers, webhooks) - shaped by adopting the multi-tenancy filters in a real multimedia app.
 
 ### Features
+
+- **`captureContext()`** - carry the ambient context across event boundaries. `AsyncLocalStorage` does not propagate into emitter callbacks, timers, or queued work, so capture it once and replay it where the callback fires:
+
+  ```ts
+  const scoped = captureContext(); // e.g. when a session/queue item is created inside a scoped request
+  emitter.on('chunk', (chunk) => scoped(() => saveChunk(chunk))); // runs with the captured context
+  ```
+
+- **Context per unit of work** - `pool.withQuerier(callback, { context })` and `pool.transaction(callback, { context })` run one unit of work under the given context. Same mechanism as `withContext`, picked by scope: `withContext` scopes a span (a request, a whole job); `{ context }` scopes a single pool call - flat and explicit for pipeline code that knows its tenant locally:
+
+  ```ts
+  await pool.withQuerier((q) => q.findMany(Invoice, {}), { context: { tenantId } });
+  ```
 
 - **Trusted cross-tenant work with security filters** - a filter condition may now return `{}` to mean "resolved: no restriction", so maintenance jobs that must span all tenants (startup recovery, cleanup sweeps) can run under an explicit system context. A missing context still fails closed, and previously a `{}` condition generated broken SQL:
 
@@ -15,6 +30,8 @@ date format is [yyyy-mm-dd]
 
   await withContext({ system: true }, () => recoverStaleJobs()); // spans every tenant, deliberately
   ```
+
+- **Auto-fill the tenant column on insert** (documented pattern, works out of the box): `@Field({ onInsert: () => getContext()?.tenantId })` fills the field from the ambient context when the payload does not provide it - explicit values still win.
 
 ## [0.14.0] - 2026-07-08
 

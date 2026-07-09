@@ -23,3 +23,21 @@ export function withContext<T>(context: UqlContext, callback: () => T): T {
 export function getContext(): UqlContext | undefined {
   return contextStorage.getStore();
 }
+
+/**
+ * Captures the current ambient context and returns a runner that re-establishes it later. Use it to
+ * carry the context across event boundaries where `AsyncLocalStorage` does not propagate - emitter
+ * callbacks, timers, and queued work run on their own async ticks, so a context set by
+ * {@link withContext} is not visible inside them unless replayed:
+ *
+ * ```ts
+ * const scoped = captureContext(); // e.g. inside a scoped request or job
+ * emitter.on('chunk', (chunk) => scoped(() => saveChunk(chunk))); // runs with that context
+ * ```
+ *
+ * When no context is active at capture time, the runner just invokes the callback.
+ */
+export function captureContext(): <T>(callback: () => T) => T {
+  const context = getContext();
+  return (callback) => (context ? withContext(context, callback) : callback());
+}
