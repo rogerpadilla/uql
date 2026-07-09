@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.0] - 2026-07-09
+
+Pool-level query methods: each call acquires its own querier, runs the single operation, and releases it, so `Promise.all` fans out across connections without ceremony - the same default as Sequelize/TypeORM/Prisma. (Single-connection backends - better-sqlite3, Bun sqlite, D1 - stay correct but serialize on their one connection.)
+
+### Breaking
+
+- **Pool base-class generics are now querier-first**, matching the `QuerierPool<Q, D>` interface they implement: `AbstractQuerierPool<Q, D>` (was `<D, Q>`), `AbstractSqlQuerierPool<Q, D>`, and `AbstractPgQuerierPool<C, Q, D>` (was `<C, D, Q>`). Only custom pool subclasses and explicit type annotations are affected - swap the two arguments; runtime behavior is unchanged.
+
+### Features
+
+- **Read helpers on the pool** - `pool.findMany` / `pool.findOne` / `pool.findOneById` / `pool.findManyAndCount` / `pool.count` / `pool.aggregate`:
+
+  ```ts
+  // Two connections, in parallel:
+  const [invoices, total] = await Promise.all([pool.findMany(Invoice, { $where: { paid: false } }), pool.count(Invoice, {})]);
+
+  // vs. one pinned connection (queries queue) - still the right tool for a unit of work:
+  await pool.withQuerier((q) => Promise.all([q.findMany(Invoice, {}), q.count(Invoice, {})]));
+  ```
+
+  The ambient `withContext` still scopes these (so `security` filters apply). They take the entity-as-argument form; for the `{ $entity }` form, multi-statement work, or streaming, use `withQuerier` / `transaction`.
+
+- **Raw SQL on SQL pools** - `pool.all(sql, values)` / `pool.run(sql, values)`, with the same connection-per-call semantics. Raw SQL bypasses query generation, so it is not scoped by `security` filters.
+
+- **Types** - the pool surfaces are *derived* from the querier contracts (`QuerierPool extends Pick<UniversalQuerier, ...reads>`, `SqlQuerierPool extends Pick<SqlQuerier, 'all' | 'run'>`), so they cannot drift. To support this, `UniversalQuerier`'s read and update signatures gained the trailing `opts?: QueryOptions` that `Querier` already declared - a non-breaking widening.
+
+### Fixes
+
+- **`Sqlite3QuerierPool` hands out a querier per acquisition** (sharing the single database handle) instead of one memoized querier, so transaction state is per unit of work like every other pool. Previously, a pool-level unit of work started while a transaction was open (e.g. a pool read inside `pool.transaction(...)`) received the *same* querier, and its `release()` threw `pending transaction`, rolling back the outer transaction. Covered by new pool integration tests across all backends.
+
 ## [0.14.1] - 2026-07-09
 
 Context ergonomics for event-driven apps (background pipelines, queue consumers, webhooks) - shaped by adopting the multi-tenancy filters in a real multimedia app.

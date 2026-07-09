@@ -7,7 +7,7 @@ import { CrdbQuerier } from './crdbQuerier.js';
 /**
  * QuerierPool for CockroachDB using the `pg` driver Pool.
  */
-export class CrdbQuerierPool extends AbstractPgQuerierPool<PoolClient, CockroachDialect, CrdbQuerier> {
+export class CrdbQuerierPool extends AbstractPgQuerierPool<PoolClient, CrdbQuerier, CockroachDialect> {
   declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {

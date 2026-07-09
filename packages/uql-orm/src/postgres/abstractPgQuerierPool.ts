@@ -1,5 +1,5 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { AbstractQuerierPool } from '../querier/index.js';
+import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { attachPoolErrorHandler, type ErrorEmittingPool } from '../util/index.js';
 import type { AbstractPgQuerier, PgAnyClient } from './abstractPgQuerier.js';
@@ -18,9 +18,9 @@ export interface PgAnyPool<C extends PgAnyClient> extends ErrorEmittingPool {
  */
 export abstract class AbstractPgQuerierPool<
   C extends PgAnyClient,
-  D extends AbstractSqlDialect,
   Q extends AbstractPgQuerier<C, D>,
-> extends AbstractQuerierPool<D, Q> {
+  D extends AbstractSqlDialect,
+> extends AbstractSqlQuerierPool<Q, D> {
   constructor(
     dialect: D,
     readonly pool: PgAnyPool<C>,

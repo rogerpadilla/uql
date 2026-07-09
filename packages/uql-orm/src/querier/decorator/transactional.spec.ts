@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../dialect/index.js';
 import { getQuerier, setQuerierPool } from '../../options.js';
+import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { Querier, QuerierPool, Writable } from '../../type/index.js';
 import { InjectQuerier } from './injectQuerier.js';
 import { Transactional } from './transactional.js';
@@ -12,21 +13,9 @@ describe('transactional', () => {
     const querierSingleton = buildQuerierMock();
     const anotherQuerierSingleton = buildQuerierMock();
 
-    setQuerierPool({
-      getQuerier: async () => querierSingleton,
-      end: async () => undefined,
-      dialect: new PostgresDialect(),
-      transaction: async (cb) => cb(querierSingleton),
-      withQuerier: async (cb) => cb(querierSingleton),
-    });
+    setQuerierPool(createMockQuerierPool(new PostgresDialect(), async () => querierSingleton));
 
-    anotherQuerierPool = {
-      getQuerier: async () => anotherQuerierSingleton,
-      end: async () => undefined,
-      dialect: new PostgresDialect(),
-      transaction: async (cb) => cb(anotherQuerierSingleton),
-      withQuerier: async (cb) => cb(anotherQuerierSingleton),
-    };
+    anotherQuerierPool = createMockQuerierPool(new PostgresDialect(), async () => anotherQuerierSingleton);
   });
 
   it('injectQuerier', async () => {

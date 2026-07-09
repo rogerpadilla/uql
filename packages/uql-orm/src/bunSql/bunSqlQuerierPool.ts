@@ -4,7 +4,7 @@ import type { DialectOptions } from '../dialect/abstractDialect.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
-import { AbstractQuerierPool } from '../querier/index.js';
+import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions, SqlDialectName, SqlPoolCompat } from '../type/index.js';
 import {
   type BunSqlResult,
@@ -28,7 +28,7 @@ const DialectMap: Readonly<Record<SqlDialectName, DialectConstructor>> = {
   cockroachdb: CockroachDialect,
 };
 
-export class BunSqlQuerierPool extends AbstractQuerierPool<AbstractSqlDialect, BunSqlQuerier> {
+export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, AbstractSqlDialect> {
   readonly sql: SQL;
   readonly sqlDialectName: SqlDialectName;
 

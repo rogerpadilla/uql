@@ -1,5 +1,5 @@
 import { createPool, type Pool } from 'mariadb';
-import { AbstractQuerierPool } from '../querier/index.js';
+import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { attachPoolErrorHandler, type ErrorEmittingPool } from '../util/index.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -7,7 +7,7 @@ import { MariadbQuerier } from './mariadbQuerier.js';
 
 type PoolConfig = Exclude<Parameters<typeof createPool>[0], string>;
 
-export class MariadbQuerierPool extends AbstractQuerierPool<MariaDialect, MariadbQuerier> {
+export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, MariaDialect> {
   readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
