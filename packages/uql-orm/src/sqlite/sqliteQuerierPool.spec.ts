@@ -61,12 +61,14 @@ describe('Sqlite3QuerierPool', () => {
     expect(mocks.betterDatabasePragma).toHaveBeenCalledWith('journal_mode = WAL');
   });
 
-  it('should reuse the same querier', async () => {
+  it('should share one database but hand out a distinct querier per acquisition', async () => {
     vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier1 = await pool.getQuerier();
     const querier2 = await pool.getQuerier();
-    expect(querier1).toBe(querier2);
+    // Distinct queriers keep transaction state per unit of work; the db handle stays shared.
+    expect(querier1).not.toBe(querier2);
+    expect(querier1.db).toBe(querier2.db);
   });
 
   it('should close the database on end', async () => {

@@ -23,7 +23,12 @@ export interface UniversalQuerier {
    * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E extends object>(entity: Type<E>, id: IdValue<E>, q?: QueryOne<E>): Promise<E | undefined>;
+  findOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    q?: QueryOne<E>,
+    opts?: QueryOptions,
+  ): Promise<E | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -31,7 +36,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the record
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>): Promise<E | undefined>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -39,7 +44,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>): Promise<E[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
   /**
    * streams the records matching the given search parameters as an async iterable.
@@ -49,7 +54,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return an async iterable of records
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>): AsyncIterable<E>;
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
 
   /**
    * obtains the records matching the given search parameters,
@@ -58,7 +63,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -66,7 +71,7 @@ export interface UniversalQuerier {
    * @param q the search options
    * @return the count
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
+  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * inserts a record.
@@ -91,7 +96,12 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>): Promise<number>;
+  updateOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): Promise<number>;
 
   /**
    * updates many records partially.
@@ -100,7 +110,12 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateMany?<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>): Promise<number>;
+  updateMany?<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ): Promise<number>;
 
   /**
    * Insert or update a record given a search criteria.
@@ -169,5 +184,6 @@ export interface UniversalQuerier {
   aggregate<E extends object, const Q extends QueryAggregate<E>>(
     entity: Type<E>,
     q: Q,
+    opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 }

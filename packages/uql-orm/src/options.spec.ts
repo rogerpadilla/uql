@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from './dialect/index.js';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
+import { createMockQuerierPool } from './test/mockQuerierPool.js';
 import type { Querier } from './type/index.js';
 
 describe('options', () => {
@@ -15,13 +16,7 @@ describe('options', () => {
   it('getQuerier', async () => {
     const querierMock = {} as Querier;
 
-    setQuerierPool({
-      getQuerier: async () => querierMock,
-      end: async () => {},
-      dialect: new PostgresDialect(),
-      transaction: async (cb: (q: Querier) => any) => cb(querierMock),
-      withQuerier: async (cb: (q: Querier) => any) => cb(querierMock),
-    });
+    setQuerierPool(createMockQuerierPool(new PostgresDialect(), async () => querierMock));
 
     const querier1 = await getQuerierPool().getQuerier();
     expect(querier1).toBe(querierMock);

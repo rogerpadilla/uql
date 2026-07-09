@@ -1,9 +1,9 @@
-import { AbstractQuerierPool } from '../querier/index.js';
+import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { type D1Database, D1Querier } from './d1Querier.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
 
-export class D1QuerierPool extends AbstractQuerierPool<D1SqliteDialect, D1Querier> {
+export class D1QuerierPool extends AbstractSqlQuerierPool<D1Querier, D1SqliteDialect> {
   readonly db: D1Database;
 
   constructor(db: D1Database, extra?: ExtraOptions) {

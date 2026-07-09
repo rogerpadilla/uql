@@ -1,5 +1,5 @@
 import { type Client, type Config, createClient } from '@libsql/client';
-import { AbstractQuerierPool } from '../querier/index.js';
+import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { LibsqlDialect } from './libsqlDialect.js';
 import { LibsqlQuerier } from './libsqlQuerier.js';
@@ -15,7 +15,7 @@ function remoteMigrationClientConfig(config: Config): Config {
   return { ...rest, url: syncUrl! };
 }
 
-export class LibsqlQuerierPool extends AbstractQuerierPool<LibsqlDialect, LibsqlQuerier> {
+export class LibsqlQuerierPool extends AbstractSqlQuerierPool<LibsqlQuerier, LibsqlDialect> {
   readonly client: Client;
   private readonly libsqlConfig: Config;
 

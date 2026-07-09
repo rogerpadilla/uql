@@ -4,7 +4,7 @@ import type { ExtraOptions } from '../type/index.js';
 import { MongodbNativeDialect } from './mongodbNativeDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
-export class MongodbQuerierPool extends AbstractQuerierPool<MongodbNativeDialect, MongodbQuerier> {
+export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, MongodbNativeDialect> {
   private readonly client: MongoClient;
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {

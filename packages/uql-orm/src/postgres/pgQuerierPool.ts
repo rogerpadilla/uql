@@ -4,7 +4,7 @@ import { AbstractPgQuerierPool } from './abstractPgQuerierPool.js';
 import { PgDialect } from './pgDialect.js';
 import { PgQuerier } from './pgQuerier.js';
 
-export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PgDialect, PgQuerier> {
+export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PgQuerier, PgDialect> {
   declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {

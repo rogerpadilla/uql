@@ -4,7 +4,7 @@ import type { ExtraOptions } from '../type/index.js';
 import { NeonDialect } from './neonDialect.js';
 import { NeonQuerier } from './neonQuerier.js';
 
-export class NeonQuerierPool extends AbstractPgQuerierPool<PoolClient, NeonDialect, NeonQuerier> {
+export class NeonQuerierPool extends AbstractPgQuerierPool<PoolClient, NeonQuerier, NeonDialect> {
   declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {

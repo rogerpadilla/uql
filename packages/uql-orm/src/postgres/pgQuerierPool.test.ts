@@ -1,5 +1,5 @@
 import { types } from 'pg';
-import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-test.js';
+import { AbstractSqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { createSpec } from '../test/index.js';
 import type { PgQuerier } from './pgQuerier.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
@@ -11,7 +11,7 @@ types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(valu
 types.setTypeParser(types.builtins.FLOAT8, (value: string) => Number.parseFloat(value));
 types.setTypeParser(types.builtins.NUMERIC, (value: string) => Number.parseFloat(value));
 
-export class PostgresQuerierPoolIt extends AbstractQuerierPoolIt<PgQuerier> {
+export class PostgresQuerierPoolIt extends AbstractSqlQuerierPoolIt<PgQuerier> {
   constructor() {
     super(
       new PgQuerierPool({

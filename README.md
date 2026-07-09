@@ -41,7 +41,8 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 | Query filters, multi-tenancy & row-level security | [Filters](https://uql-orm.dev/querying/filters) · [Multi-tenancy](https://uql-orm.dev/multi-tenancy) |
 | Aggregate queries, grouping, HAVING | [Aggregate](https://uql-orm.dev/querying/aggregate) |
 | Semantic search & vector similarity | [Semantic Search](https://uql-orm.dev/ai-semantic-search) |
-| Streaming, transactions, raw SQL | [Querying](https://uql-orm.dev/querying/querier) |
+| Parallel reads & raw SQL on the pool | [Parallel reads](https://uql-orm.dev/querying/querier#parallel-reads-on-the-pool) · [Raw SQL](https://uql-orm.dev/querying/raw-sql) |
+| Streaming, transactions | [Streaming](https://uql-orm.dev/querying/streaming) · [Transactions](https://uql-orm.dev/querying/transactions) |
 | REST API from your entities (any framework) | [HTTP](https://uql-orm.dev/extensions-http) |
 | Typed browser client, NestJS module | [Browser](https://uql-orm.dev/extensions-browser) · [NestJS](https://uql-orm.dev/nestjs) |
 
@@ -91,7 +92,16 @@ await querier.findMany(User, {
 
 25+ comparison operators (`$eq`, `$in`, `$between`, `$like`, `$elemMatch`), logical operators (`$and`, `$or`, `$not`, `$nor`), and type-safe JSON/JSONB dot-notation queries.
 
-> [Querying](https://uql-orm.dev/querying/querier) · [Operators](https://uql-orm.dev/querying/comparison-operators) · [JSON](https://uql-orm.dev/querying/json)
+Independent reads run directly on the pool - each call gets its own connection, so `Promise.all` fans out in parallel:
+
+```ts
+const [users, total] = await Promise.all([
+  pool.findMany(User, { $where: { status: 'active' } }),
+  pool.count(User, {}),
+]);
+```
+
+> [Querying](https://uql-orm.dev/querying/querier) · [Parallel reads](https://uql-orm.dev/querying/querier#parallel-reads-on-the-pool) · [Operators](https://uql-orm.dev/querying/comparison-operators) · [JSON](https://uql-orm.dev/querying/json)
 
 ## Transactions
 

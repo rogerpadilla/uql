@@ -6,7 +6,7 @@ import type { Querier } from '../type/index.js';
 import type { AbstractQuerierPool } from './abstractQuerierPool.js';
 
 export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
-  constructor(protected pool: AbstractQuerierPool<AbstractDialect, Q>) {}
+  constructor(protected pool: AbstractQuerierPool<Q, AbstractDialect>) {}
 
   async afterAll() {
     await this.pool.end();
@@ -49,5 +49,27 @@ export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
     const querier = await this.pool.getQuerier();
     expect(querier).toBeInstanceOf(AbstractQuerier);
     await querier.release();
+  }
+
+  async shouldAcquireDistinctQueriersPerCall() {
+    // A shared instance would leak transaction state across concurrent units of work.
+    const querier1 = await this.pool.getQuerier();
+    const querier2 = await this.pool.getQuerier();
+    expect(querier2).not.toBe(querier1);
+    await querier1.release();
+    await querier2.release();
+  }
+
+  async shouldRunNestedUnitOfWorkInsideTransaction() {
+    // A unit of work started while a pool transaction is open (e.g. a pool read helper) must get
+    // its own querier - releasing the transaction's querier would throw and roll it back.
+    const result = await this.pool.transaction(async (outer) => {
+      expect(outer.hasOpenTransaction).toBe(true);
+      return this.pool.withQuerier(async (inner) => {
+        expect(inner).not.toBe(outer);
+        return 42;
+      });
+    });
+    expect(result).toBe(42);
   }
 }

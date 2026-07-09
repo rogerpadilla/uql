@@ -1,9 +1,9 @@
-import { AbstractQuerierPoolIt } from '../querier/abstractQuerierPool-test.js';
+import { AbstractSqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { createSpec } from '../test/index.js';
 import type { MariadbQuerier } from './mariadbQuerier.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
-export class MariadbQuerierPoolIt extends AbstractQuerierPoolIt<MariadbQuerier> {
+export class MariadbQuerierPoolIt extends AbstractSqlQuerierPoolIt<MariadbQuerier> {
   constructor() {
     super(
       new MariadbQuerierPool({
