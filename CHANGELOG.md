@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.14.1] - 2026-07-08
+
+### Features
+
+- **Trusted cross-tenant work with security filters** - a filter condition may now return `{}` to mean "resolved: no restriction", so maintenance jobs that must span all tenants (startup recovery, cleanup sweeps) can run under an explicit system context. A missing context still fails closed, and previously a `{}` condition generated broken SQL:
+
+  ```ts
+  condition: (ctx) => (ctx?.system ? {} : ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined),
+
+  await withContext({ system: true }, () => recoverStaleJobs()); // spans every tenant, deliberately
+  ```
+
 ## [0.14.0] - 2026-07-08
 
 Query filters, multi-tenancy / row-level security, and soft-delete restore. Upgrade straight from 0.12.0 - 0.13.0 was pulled before anyone could install it (its root import dragged `node:async_hooks` into browser bundles), so 0.14.0 is the first published build of these features and bundles cleanly on the client again.
