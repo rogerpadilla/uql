@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { metaCore } from '../test-helpers.js';
-import { defineEntity, defineField, defineId, defineRelation, getMeta } from './definition.js';
+import { defineEntity, defineField, defineFilter, defineId, defineRelation, getMeta } from './definition.js';
 
 it('defineEntity bulk fields match incremental defineField + defineEntity', () => {
   class Incremental {}
@@ -139,4 +139,32 @@ it('defineId path via bulk isId matches defineId helper', () => {
   expect(getMeta(A).id).toBe('pk');
   expect(getMeta(B).id).toBe('pk');
   expect(getMeta(A).fields).toEqual(getMeta(B).fields);
+});
+
+it('defineEntity bulk filters match incremental defineFilter', () => {
+  class Incremental {
+    id?: number;
+    status?: string;
+  }
+  defineId(Incremental, 'id', { type: Number });
+  defineField(Incremental, 'status', { type: String });
+  defineFilter(Incremental, 'active', { condition: { status: 'active' }, default: false });
+  defineEntity(Incremental, { name: 'TaskIncr' });
+
+  class Bulk {
+    id?: number;
+    status?: string;
+  }
+  defineEntity(Bulk, {
+    name: 'TaskBulk',
+    fields: {
+      id: { type: Number, isId: true },
+      status: { type: String },
+    },
+    filters: {
+      active: { condition: { status: 'active' }, default: false },
+    },
+  });
+
+  expect(metaCore(Incremental).filters).toEqual(metaCore(Bulk).filters);
 });
