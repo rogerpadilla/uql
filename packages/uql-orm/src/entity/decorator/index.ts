@@ -4,6 +4,7 @@ export {
   defineFilter,
   defineHook,
   defineId,
+  defineIndex,
   defineRelation,
   getEntities,
   getMeta,
