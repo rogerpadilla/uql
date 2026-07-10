@@ -47,21 +47,48 @@ it('defineEntity bulk relations and FK fields match incremental registration', (
 
   const a = metaCore(Incremental);
   const b = metaCore(Bulk);
-  for (const key of ['id', 'targetId'] as const) {
-    expect(a.fields[key]?.type).toBe(b.fields[key]?.type);
-    expect(a.fields[key]?.isId).toBe(b.fields[key]?.isId);
-    const ar = a.fields[key]?.references;
-    const br = b.fields[key]?.references;
-    if (ar && br) {
-      expect(ar()).toBe(br());
-    } else {
-      expect(ar).toBe(br);
-    }
-  }
+
+  expect(a.fields['id']?.type).toBe(b.fields['id']?.type);
+  expect(a.fields['id']?.isId).toBe(b.fields['id']?.isId);
+  expect(a.fields['id']?.references).toBeUndefined();
+  expect(b.fields['id']?.references).toBeUndefined();
+
+  expect(a.fields['targetId']?.type).toBe(b.fields['targetId']?.type);
+  expect(a.fields['targetId']?.isId).toBe(b.fields['targetId']?.isId);
+  expect(a.fields['targetId']?.references?.()).toBe(Target);
+  expect(b.fields['targetId']?.references?.()).toBe(Target);
+
   expect(a.relations?.['target']?.cardinality).toBe(b.relations?.['target']?.cardinality);
   expect(a.relations?.['target']?.references).toEqual(b.relations?.['target']?.references);
   expect(a.relations?.['target']?.entity?.()).toBe(Target);
   expect(b.relations?.['target']?.entity?.()).toBe(Target);
+});
+
+it('defineEntity bulk relations allow a related entity shaped differently than the owner', () => {
+  // Regression guard: EntityOptions<E>.relations used to be typed as Record<string, RelationOptions<E>>,
+  // which forced every relation's `entity` getter to return Type<E> (the owner), not the related entity.
+  // A related entity whose fields differ from the owner's (like `id: string` vs `id: number` here)
+  // would then fail to type-check.
+  class Author {
+    id?: string;
+  }
+  defineEntity(Author, { fields: { id: { type: String, isId: true } } });
+
+  class Book {
+    id?: number;
+    authorId?: string;
+  }
+  defineEntity(Book, {
+    fields: {
+      id: { type: Number, isId: true },
+      authorId: { references: () => Author },
+    },
+    relations: {
+      author: { cardinality: 'm1', entity: () => Author },
+    },
+  });
+
+  expect(getMeta(Book).relations['author']?.entity?.()).toBe(Author);
 });
 
 it('defineEntity bulk indexes and hooks', () => {
