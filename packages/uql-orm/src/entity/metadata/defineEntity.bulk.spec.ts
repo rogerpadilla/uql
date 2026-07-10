@@ -48,20 +48,20 @@ it('defineEntity bulk relations and FK fields match incremental registration', (
   const a = metaCore(Incremental);
   const b = metaCore(Bulk);
 
-  expect(a.fields['id']?.type).toBe(b.fields['id']?.type);
-  expect(a.fields['id']?.isId).toBe(b.fields['id']?.isId);
-  expect(a.fields['id']?.references).toBeUndefined();
-  expect(b.fields['id']?.references).toBeUndefined();
+  expect(a.fields['id']!.type).toBe(b.fields['id']!.type);
+  expect(a.fields['id']!.isId).toBe(b.fields['id']!.isId);
+  expect(a.fields['id']!.references).toBeUndefined();
+  expect(b.fields['id']!.references).toBeUndefined();
 
-  expect(a.fields['targetId']?.type).toBe(b.fields['targetId']?.type);
-  expect(a.fields['targetId']?.isId).toBe(b.fields['targetId']?.isId);
-  expect(a.fields['targetId']?.references?.()).toBe(Target);
-  expect(b.fields['targetId']?.references?.()).toBe(Target);
+  expect(a.fields['targetId']!.type).toBe(b.fields['targetId']!.type);
+  expect(a.fields['targetId']!.isId).toBe(b.fields['targetId']!.isId);
+  expect(a.fields['targetId']!.references!()).toBe(Target);
+  expect(b.fields['targetId']!.references!()).toBe(Target);
 
-  expect(a.relations?.['target']?.cardinality).toBe(b.relations?.['target']?.cardinality);
-  expect(a.relations?.['target']?.references).toEqual(b.relations?.['target']?.references);
-  expect(a.relations?.['target']?.entity?.()).toBe(Target);
-  expect(b.relations?.['target']?.entity?.()).toBe(Target);
+  expect(a.relations['target']!.cardinality).toBe(b.relations['target']!.cardinality);
+  expect(a.relations['target']!.references).toEqual(b.relations['target']!.references);
+  expect(a.relations['target']!.entity!()).toBe(Target);
+  expect(b.relations['target']!.entity!()).toBe(Target);
 });
 
 it('defineEntity bulk relations allow a related entity shaped differently than the owner', () => {
@@ -88,7 +88,7 @@ it('defineEntity bulk relations allow a related entity shaped differently than t
     },
   });
 
-  expect(getMeta(Book).relations['author']?.entity?.()).toBe(Author);
+  expect(getMeta(Book).relations['author']!.entity!()).toBe(Author);
 });
 
 it('defineEntity bulk indexes and hooks', () => {
@@ -117,8 +117,8 @@ it('defineEntity bulk indexes and hooks', () => {
     unique: false,
   });
   expect(m.indexes![1]).toMatchObject({ columns: ['email'], unique: true });
-  expect(m.hooks?.beforeInsert).toEqual([{ methodName: 'stampCreatedAt' }]);
-  expect(m.hooks?.afterLoad).toEqual([{ methodName: 'hydrate' }]);
+  expect(m.hooks!.beforeInsert).toEqual([{ methodName: 'stampCreatedAt' }]);
+  expect(m.hooks!.afterLoad).toEqual([{ methodName: 'hydrate' }]);
 });
 
 it('child class inherits parent fields when parent finalized first', () => {
@@ -138,9 +138,9 @@ it('child class inherits parent fields when parent finalized first', () => {
   });
 
   const m = getMeta(ChildEntity);
-  expect(m.fields['id']?.isId).toBe(true);
-  expect(m.fields['baseCol']?.type).toBe(String);
-  expect(m.fields['childCol']?.type).toBe(Boolean);
+  expect(m.fields['id']!.isId).toBe(true);
+  expect(m.fields['baseCol']!.type).toBe(String);
+  expect(m.fields['childCol']!.type).toBe(Boolean);
   expect(m.id).toBe('id');
 });
 
