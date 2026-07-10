@@ -4,13 +4,6 @@ This file provides behavioral guidelines and project-specific instructions for t
 
 ## UQL-Specific Rules
 
-### AI Ingestion (MCP & llms.txt)
-Full technical context is available at:
-- `https://uql-orm.dev/llms-full.txt` (Consolidated documentation for RAG)
-- `https://uql-orm.dev/llms.txt` (Navigation index for AI agents)
-
-If you need deeper API details, suggest to the user to fetch the `llms-full.txt` context.
-
 ### Principles
 - Reusability first: Always gain full context of what you will do before changing anything so can have max reusability; unless it is a thruly direct trivial tasks that don't imply knowing any context.
 - Functional programming (Pure Functions) over OOP whenever appropriate.
