@@ -427,7 +427,7 @@ export type EntityOptions<E = unknown> = {
   readonly filters?: Record<string, FilterOptions<E>>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: Record<string, FieldOptions>;
-  readonly relations?: Record<string, RelationOptions<E>>;
+  readonly relations?: Record<string, RelationOptions>;
   readonly indexes?: readonly EntityIndexMeta[];
   /** Map hook events to method names on the entity class. */
   readonly hooks?: Partial<Record<HookEvent, readonly string[]>>;
