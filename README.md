@@ -40,6 +40,7 @@ Full docs: **[uql-orm.dev](https://uql-orm.dev)**
 | Soft-delete, lifecycle hooks, relations | [Entities](https://uql-orm.dev/entities/basic) |
 | Query filters, multi-tenancy & row-level security | [Filters](https://uql-orm.dev/querying/filters) · [Multi-tenancy](https://uql-orm.dev/multi-tenancy) |
 | Aggregate queries, grouping, HAVING | [Aggregate](https://uql-orm.dev/querying/aggregate) |
+| Batch inserts with reliable IDs on every database | [Insert IDs](https://uql-orm.dev/querying/querier#insert-ids) |
 | Semantic search & vector similarity | [Semantic Search](https://uql-orm.dev/ai-semantic-search) |
 | Parallel reads & raw SQL on the pool | [Parallel reads](https://uql-orm.dev/querying/querier#parallel-reads-on-the-pool) · [Raw SQL](https://uql-orm.dev/querying/raw-sql) |
 | Streaming, transactions | [Streaming](https://uql-orm.dev/querying/streaming) · [Transactions](https://uql-orm.dev/querying/transactions) |

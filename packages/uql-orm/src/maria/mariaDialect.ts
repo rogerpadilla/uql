@@ -8,6 +8,9 @@ export class MariaDialect extends MysqlLikeSqlDialect {
 
   override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
 
+  // MariaDB 10.5+ supports `INSERT ... RETURNING` (see `insert` below), so IDs are exact per row.
+  override readonly insertIdSource = 'returning';
+
   constructor(options: DialectOptions = {}) {
     super({
       ...options,

@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.2] - 2026-07-10
+
+`insertOne` / `insertMany` now return the right IDs on every database (and `undefined` instead of a made-up one when the driver reports none), a batch may mix records with different columns, and oversized batches are split automatically to stay under the driver's bind-parameter limit.
+
+### Improvements / unifications
+
+- **Heterogeneous batch inserts** - records may carry different columns; UQL inserts the union and fills each gap with the column default (`DEFAULT`, or `NULL` on SQLite). An explicit id is kept; an omitted one takes the default:
+
+  ```ts
+  await querier.insertMany(User, [{ name: 'Ada', email: 'ada@uql-orm.dev' }, { name: 'Alan' }]);
+  // one INSERT; Alan's missing email uses its default → ids [1, 2]
+  ```
+
+- **Automatic chunking** - batches past the driver's bind limit (PostgreSQL/MySQL 65535, SQLite 32766, D1 100) split into several `INSERT`s, IDs still in input order. Wrap in a transaction for all-or-nothing across splits.
+
+- **MariaDB native `INSERT ... RETURNING`** - an exact id per row, not the first-id-plus-offset guess other tools use on MariaDB.
+
+- **Clustered MySQL `auto_increment_increment` detected automatically** - a stride > 1 stays correct (`[10, 12, 14]`, not `[10, 11, 12]`); probed once per connection, only when inferring batch IDs.
+
+### Fixes
+
+- **No fabricated IDs** - a DB-generated key with no `onInsert` (e.g. a `@Id()` string/UUID column) now returns `undefined` instead of invented `0, 1, 2…` / SQLite rowids. Supplied IDs and `@Id({ onInsert })` values are unchanged.
+- **Mixed batches** - explicit and auto-increment IDs in one batch: provided IDs return as-is, generated ones exact on `RETURNING` dialects, `undefined` (never misaligned) elsewhere:
+
+  ```ts
+  await querier.insertMany(User, [{ name: 'a' }, { id: 5000, name: 'b' }, { name: 'c' }]);
+  // PostgreSQL/MariaDB → [1, 5000, 2]   ·   MySQL/SQLite → [undefined, 5000, undefined]
+  ```
+
 ## [0.15.1] - 2026-07-09
 
 Semantic-search reads no longer need a cast: the read methods now infer the distance field you project with `$sort` and hand it back on the result type.

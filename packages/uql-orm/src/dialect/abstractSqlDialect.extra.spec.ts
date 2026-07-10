@@ -1,17 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, User } from '../test/index.js';
-import type { SqlDialectName } from '../type/index.js';
+import type { DialectFeatures, SqlDialectName } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { MysqlLikeSqlDialect } from './mysqlLikeSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
   override readonly dialectName: SqlDialectName = 'mysql';
 
-  constructor() {
-    super(MysqlLikeSqlDialect.defaultDialectFeatures, {});
-  }
+  protected override readonly featureDefaults: DialectFeatures = {
+    explicitJsonCast: false,
+    nativeArrays: false,
+    supportsJsonb: false,
+    ifNotExists: true,
+    indexIfNotExists: false,
+    dropTableCascade: false,
+    renameColumn: true,
+    foreignKeyAlter: true,
+    columnComment: true,
+    vectorIndexStyle: 'inline',
+    vectorSupportsLength: false,
+    supportsTimestamptz: false,
+    defaultStringAsText: false,
+  };
 
   get quoteChar() {
     return '`' as const;
@@ -37,8 +48,8 @@ class TestSqlDialect extends AbstractSqlDialect {
     return 'ROLLBACK';
   }
 
-  override get insertIdStrategy(): 'last' {
-    return 'last';
+  override get insertIdSource(): 'lastId' {
+    return 'lastId';
   }
 
   escape(value: unknown): string {

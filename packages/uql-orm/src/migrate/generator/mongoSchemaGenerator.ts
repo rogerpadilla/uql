@@ -1,11 +1,12 @@
 import { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { getMeta } from '../../entity/index.js';
-import { MongoDialect } from '../../mongo/mongoDialect.js';
+import { mongoDialectFeatures } from '../../mongo/mongoDialect.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
 import type {
   DialectName,
   FieldOptions,
   IndexSchema,
+  InsertIdSource,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -17,14 +18,16 @@ import type { TableDefinition } from '../builder/types.js';
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
   readonly dialectName = 'mongodb' satisfies DialectName;
 
+  protected override readonly featureDefaults = mongoDialectFeatures;
+
+  override readonly insertIdSource: InsertIdSource = 'returning';
+
   constructor(
     namingStrategy?: NamingStrategy,
     protected readonly defaultForeignKeyAction?: ForeignKeyAction,
   ) {
-    super(MongoDialect.defaultDialectFeatures, { namingStrategy });
+    super({ namingStrategy });
   }
-
-  override readonly insertIdStrategy: 'first' | 'last' = 'last';
 
   generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
     const meta = getMeta(entity);

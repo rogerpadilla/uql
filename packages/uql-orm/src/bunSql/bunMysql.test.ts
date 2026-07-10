@@ -1,8 +1,8 @@
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
+import { MySqlLikeQuerierIt } from '../querier/abstractSqlQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
-class BunMysqlIt extends AbstractSqlQuerierIt {
+class BunMysqlIt extends MySqlLikeQuerierIt {
   constructor() {
     super(
       new BunSqlQuerierPool({

@@ -95,6 +95,24 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ]);
   }
 
+  /**
+   * A mixed batch: columns are the union across records (first-seen order), an explicit id is kept,
+   * and any column a record omits (the missing id in row 2, the missing email in row 1) inserts its
+   * database default.
+   */
+  shouldInsertManyWithHeterogeneousColumns() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
+        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
+      ]),
+    );
+    expect(sql).toBe(
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?)',
+    );
+    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+  }
+
   shouldInsertOne() {
     let res = this.exec((ctx) =>
       this.dialect.insert(ctx, User, {

@@ -19,7 +19,9 @@ import type {
 import {
   buildUpdateResult,
   clone,
+  getInsertFieldKeys,
   getRelationRequestSummary,
+  isAutoIncrement,
   obtainAttrsPaths,
   throwNoPendingTransaction,
   throwPendingTransaction,
@@ -33,6 +35,8 @@ import { Log, Serialized } from './decorator/index.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
+  /** Cached `auto_increment_increment` stride; see {@link loadInsertIdIncrement}. */
+  #insertIdIncrement?: number;
 
   constructor(
     readonly dialect: AbstractSqlDialect,
@@ -56,9 +60,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    */
   protected buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
     return buildUpdateResult({
-      insertIdStrategy: this.dialect.insertIdStrategy,
+      insertIdSource: this.dialect.insertIdSource,
+      insertIdIncrement: this.#insertIdIncrement,
       ...payload,
     });
+  }
+
+  /**
+   * The `auto_increment_increment` stride used to infer the ids of a multi-row insert from the
+   * single id the driver reports (MySQL, which has no `RETURNING`). It is 1 on a standalone server
+   * but can be higher on a cluster (e.g. Galera). Only called for `firstId` dialects.
+   */
+  protected async loadInsertIdIncrement(): Promise<number> {
+    const rows = await this.all<{ v: number | string }>('SELECT @@auto_increment_increment AS v');
+    const value = Number(rows[0]?.v);
+    return Number.isInteger(value) && value > 0 ? value : 1;
   }
 
   /**
@@ -206,18 +222,39 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       return [];
     }
     payload = clone(payload);
-    const ctx = this.dialect.createContext();
-    this.dialect.insert(ctx, entity, payload);
-    const { ids = [] } = await this.run(ctx.sql, ctx.values);
     const meta = getMeta(entity);
     const idKey = meta.id!;
-    const payloadIds = payload.map((it, index) => {
-      const id = ids[index] as E[typeof idKey];
-      it[idKey] ??= id;
-      return it[idKey];
-    });
+    const idField = meta.fields[idKey];
+    // RETURNING-based IDs are exact per row. Header-derived IDs (LAST_INSERT_ID /
+    // lastInsertRowid arithmetic) are only sound when the primary key is database-generated
+    // and no record supplies an explicit ID (a mixed batch shifts the positional mapping and
+    // MySQL stops guaranteeing consecutive values); otherwise generated IDs stay `undefined`.
+    const idsReliable =
+      this.dialect.insertIdSource === 'returning' ||
+      (!!idField && isAutoIncrement(idField, true) && payload.every((it) => it[idKey] === undefined));
+    // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
+    // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
+    if (idsReliable && payload.length > 1 && this.dialect.insertIdSource === 'firstId') {
+      this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
+    }
+    // `DEFAULT` cells bind no parameter, so fields-per-record is a safe upper bound per row.
+    const fieldsPerRecord = getInsertFieldKeys(meta, payload).length || 1;
+    const chunkSize = Math.max(1, Math.floor(this.dialect.maxBindValues / fieldsPerRecord));
+    const payloadIds: IdValue<E>[] = [];
+    for (let start = 0; start < payload.length; start += chunkSize) {
+      const chunk = payload.slice(start, start + chunkSize);
+      const ctx = this.dialect.createContext();
+      this.dialect.insert(ctx, entity, chunk);
+      const { ids = [] } = await this.run(ctx.sql, ctx.values);
+      chunk.forEach((it, index) => {
+        if (idsReliable) {
+          it[idKey] ??= ids[index] as E[typeof idKey];
+        }
+        payloadIds.push(it[idKey]);
+      });
+    }
     await this.insertRelations(entity, payload);
-    return payloadIds as IdValue<E>[];
+    return payloadIds;
   }
 
   override async internalUpdateMany<E extends object>(
