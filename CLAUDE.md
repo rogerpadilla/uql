@@ -1,19 +1,17 @@
-# CLAUDE.md
-
-This file provides behavioral guidelines and project-specific instructions for the UQL project.
-
-## UQL-Specific Rules
-
-### Principles
-- Reusability first: Always gain full context of what you will do before changing anything so can have max reusability; unless it is a thruly direct trivial tasks that don't imply knowing any context.
+## Principles
+- Reusability first: Always gain full context of your tasks before changing anything for max reusability and quality (unless it is a thruly direct trivial tasks that don't imply knowing any context).
 - Functional programming (Pure Functions) over OOP whenever appropriate.
 - Follow KISS principle.
 
-### Type Safety
+## Type Safety
 - Always use proper types, import existing ones for reusability, or define new ones only when necessary.
 - Avoid `any`, `as any`, `as unknown as T`, etc; instead reuse, import or create new types if necessary (but prefer reusing existing ones whenever appropriate).
 
-### Testing
+## Code documenting style
+
+- Only document what is really necessary (but most code should be self-explanatory), and be concrete whenever appropriate.
+
+## Testing
 - Avoid conditionals, if, ternary, etc.
 
 ### Confirm Changes Work
