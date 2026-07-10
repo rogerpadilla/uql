@@ -81,6 +81,12 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
   return meta;
 }
 
+export function defineIndex<E>(entity: Type<E>, index: EntityIndexMeta): EntityMeta<E> {
+  const meta = ensureMeta(entity);
+  appendEntityIndex(meta, index);
+  return meta;
+}
+
 export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptions<E>): EntityMeta<E> {
   const meta = ensureMeta(entity);
   if (name === 'softDelete') {
