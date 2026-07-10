@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.1] - 2026-07-09
+
+Semantic-search reads no longer need a cast: the read methods now infer the distance field you project with `$sort` and hand it back on the result type.
+
+### Features
+
+- **`$project` distance is inferred into the result** - a vector `$sort` with `$project: 'similarity'` now types the rows as `(Article & { similarity: number })[]` straight from the call, so the old `as WithDistance<...>` cast is gone:
+
+  ```ts
+  const results = await pool.findMany(Article, {
+    $sort: { embedding: { $vector: queryEmbedding, $project: 'similarity' } },
+  });
+  results[0].similarity; // number, inferred - no cast
+  ```
+
+  This works on `findMany`, `findOne`, `findManyStream`, and `findManyAndCount`, on both the querier and the pool. It reads the `$project` string literal off the query with a `const` type parameter - the same trick `aggregate` already uses - so queries that don't project are untouched and still return plain `E[]`. Only top-level `$sort` projections are inferred, which is exactly what the SQL and Atlas builders emit. `WithDistance<E, K>` is still exported for the rare query whose `$project` key is computed at runtime instead of written as a literal.
+
 ## [0.15.0] - 2026-07-09
 
 Pool-level query methods: each call acquires its own querier, runs the single operation, and releases it, so `Promise.all` fans out across connections without ceremony - the same default as Sequelize/TypeORM/Prisma. (Single-connection backends - better-sqlite3, Bun sqlite, D1 - stay correct but serialize on their one connection.)

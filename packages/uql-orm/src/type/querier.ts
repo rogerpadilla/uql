@@ -8,6 +8,7 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFindResult,
   QueryOne,
   QueryOptions,
   QuerySearch,
@@ -45,27 +46,55 @@ export interface Querier extends UniversalQuerier {
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
-  findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E | undefined>;
+  findOne<E extends object, const Q extends QueryOne<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q> | undefined>;
+  findOne<E extends object, const Q extends QueryOne<E> & { $entity: Type<E> }>(
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q> | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
-  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E[]>;
+  findMany<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q>[]>;
+  findMany<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q>[]>;
 
   /**
    * Stream records as an async iterable. Supports both patterns.
    * Does not fill relations or fire lifecycle hooks.
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
-  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): AsyncIterable<QueryFindResult<E, Q>>;
+  findManyStream<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Q,
+    opts?: QueryOptions,
+  ): AsyncIterable<QueryFindResult<E, Q>>;
 
   /**
    * Find many records and count. Supports both patterns.
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, Q>[], number]>;
+  findManyAndCount<E extends object, const Q extends Query<E> & { $entity: Type<E> }>(
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, Q>[], number]>;
 
   /**
    * Count records. Supports both patterns.
