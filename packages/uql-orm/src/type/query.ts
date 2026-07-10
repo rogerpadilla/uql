@@ -356,16 +356,36 @@ export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 
 /**
  * Utility type to augment an entity with a projected distance field.
- * Use with `$project` in vector similarity queries.
  *
- * @example
+ * `findMany` / `findOne` already infer this from a `$project` literal, so a cast is not needed:
  * ```ts
  * const results = await querier.findMany(Article, {
  *   $sort: { embedding: { $vector: queryVec, $project: 'similarity' } },
- * }) as WithDistance<Article, 'similarity'>[];
+ * }); // results: (Article & { similarity: number })[]
  * ```
+ * Reach for `WithDistance` only to annotate a value whose `$project` key is not a literal.
  */
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
+
+/**
+ * Names of the distance fields a `$sort` map projects via vector-search `$project`.
+ * Non-vector sort values (directions, dot-paths) contribute no keys.
+ * @internal
+ */
+type ProjectedDistanceKeys<S> = {
+  [K in keyof S]: S[K] extends { $project: infer P extends string } ? P : never;
+}[keyof S];
+
+/**
+ * Result row of a find query: the entity augmented with any distance fields projected by its
+ * `$sort` vector search. Falls back to `E` when the query projects nothing, so it is transparent
+ * for the common case. Mirrors the runtime, which projects only top-level `$sort` distances.
+ */
+export type QueryFindResult<E, Q> = Q extends { $sort?: infer S }
+  ? [ProjectedDistanceKeys<S>] extends [never]
+    ? E
+    : WithDistance<E, ProjectedDistanceKeys<S>>
+  : E;
 
 /**
  * sort by map - supports field keys, JSON dot-notation paths, relation sort,

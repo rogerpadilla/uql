@@ -9,6 +9,7 @@ import type {
   Query,
   QueryAggregate,
   QueryAggregateResult,
+  QueryFindResult,
   QueryOne,
   QueryOptions,
   QuerySearch,
@@ -65,15 +66,27 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
   }
 
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined> {
+  findOne<E extends object, const Q extends QueryOne<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q> | undefined> {
     return this.withQuerier((querier) => querier.findOne(entity, q, opts));
   }
 
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]> {
+  findMany<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q>[]> {
     return this.withQuerier((querier) => querier.findMany(entity, q, opts));
   }
 
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]> {
+  findManyAndCount<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, Q>[], number]> {
     return this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
   }
 

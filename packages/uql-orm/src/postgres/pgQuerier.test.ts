@@ -2,7 +2,6 @@ import { types } from 'pg';
 import { expect } from 'vitest';
 import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
 import { Company, createSpec, TaxCategory, VectorItem } from '../test/index.js';
-import type { WithDistance } from '../type/query.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
 types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(value, 10));
@@ -83,10 +82,10 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
       { name: 'far', vec: [0, 0, 1] },
     ]);
 
-    const results = (await this.querier.findMany(VectorItem, {
+    const results = await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $project: 'distance' } },
-    })) as WithDistance<VectorItem, 'distance'>[];
+    });
 
     expect(results).toHaveLength(2);
     expect(results[0].name).toBe('close');
@@ -145,10 +144,10 @@ export class PostgresQuerierIt extends AbstractSqlQuerierIt {
       { name: 'far', vec: [0, 1, 0] },
     ]);
 
-    const results = (await this.querier.findMany(VectorItem, {
+    const results = await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $distance: 'l2', $project: 'distance' } },
-    })) as WithDistance<VectorItem, 'distance'>[];
+    });
 
     expect(results[0].name).toBe('near');
     expect(results[0].distance).toBeCloseTo(0, 5);
