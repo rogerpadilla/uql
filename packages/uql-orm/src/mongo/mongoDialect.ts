@@ -1,5 +1,4 @@
 import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
@@ -34,32 +33,30 @@ import {
   type RelationRequestSummary,
 } from '../util/index.js';
 
+/** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoDialect} and its schema generator. */
+export const mongoDialectFeatures: DialectFeatures = {
+  explicitJsonCast: false,
+  nativeArrays: false,
+  supportsJsonb: false,
+  ifNotExists: false,
+  indexIfNotExists: false,
+  dropTableCascade: false,
+  renameColumn: false,
+  foreignKeyAlter: false,
+  columnComment: false,
+  vectorIndexStyle: 'create',
+  vectorSupportsLength: false,
+  supportsTimestamptz: false,
+  defaultStringAsText: false,
+};
+
 export class MongoDialect extends AbstractDialect {
-  /** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoSchemaGenerator}. */
-  static readonly defaultDialectFeatures: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: false,
-    supportsJsonb: false,
-    returning: false,
-    ifNotExists: false,
-    indexIfNotExists: false,
-    dropTableCascade: false,
-    renameColumn: false,
-    foreignKeyAlter: false,
-    columnComment: false,
-    vectorIndexStyle: 'create',
-    vectorSupportsLength: false,
-    supportsTimestamptz: false,
-    defaultStringAsText: false,
-  };
+  protected override readonly featureDefaults = mongoDialectFeatures;
 
   readonly dialectName = 'mongodb';
 
-  override readonly insertIdStrategy = 'last';
-
-  constructor(options: DialectOptions = {}) {
-    super(MongoDialect.defaultDialectFeatures, options);
-  }
+  // The MongoDB driver reports the exact `_id` of every inserted document (`insertedIds`).
+  override readonly insertIdSource = 'returning';
 
   private static readonly ID_KEY = '_id';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
@@ -360,9 +357,9 @@ export class MongoDialect extends AbstractDialect {
     callbackKey: CallbackKey,
   ): Partial<E>[] {
     const payloads = fillOnFields(meta, payload, callbackKey);
-    const persistableKeys = filterFieldKeys(meta, payloads[0], callbackKey);
+    // Keys are resolved per document so heterogeneous payloads keep every provided field.
     return payloads.map((it) =>
-      persistableKeys.reduce<Partial<E>>(
+      filterFieldKeys(meta, it, callbackKey).reduce<Partial<E>>(
         (acc, key) => {
           const field = meta.fields[key];
           (acc as Record<string, unknown>)[this.resolveColumnName(key, field!)] = it[key];

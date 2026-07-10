@@ -24,7 +24,7 @@ function createQuerier(sql: any, dialect: AbstractSqlDialect) {
 
 describe('BunSqlQuerier', () => {
   describe('run', () => {
-    it('should use "last" insertIdStrategy for sqlite', async () => {
+    it('should use the "lastId" source for sqlite', async () => {
       // lastInsertRowid=42, changes=1 → firstId = 42 - (1-1) = 42
       const querier = createQuerier(makeSql({ count: 1, lastInsertRowid: 42 }), new SqliteDialect());
       const res = await querier.run('INSERT...');
@@ -32,14 +32,16 @@ describe('BunSqlQuerier', () => {
       expect(res.changes).toBe(1);
     });
 
-    it('should use "last" insertIdStrategy for postgres', async () => {
+    it('should ignore header ids for postgres ("returning" source: rows are the truth)', async () => {
       const querier = createQuerier(makeSql({ count: 1, lastInsertRowid: 7 }), new PostgresDialect());
       const res = await querier.run('INSERT...');
-      expect(res.firstId).toBe(7);
+      expect(res.firstId).toBeUndefined();
+      expect(res.ids).toEqual([]);
+      expect(res.changes).toBe(1);
     });
 
-    it('should use "first" insertIdStrategy for mysql', async () => {
-      // 'first': firstId = Number(lastInsertRowid) directly (no offset)
+    it('should use the "firstId" source for mysql', async () => {
+      // 'firstId': firstId = Number(lastInsertRowid) directly (no offset)
       const querier = createQuerier(makeSql({ affectedRows: 3, lastInsertRowid: 10 }), new MySqlDialect());
       const res = await querier.run('INSERT...');
       expect(res.firstId).toBe(10);

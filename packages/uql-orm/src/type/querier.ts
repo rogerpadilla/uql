@@ -102,8 +102,22 @@ export interface Querier extends UniversalQuerier {
   count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
 
+  /**
+   * Insert a single record and return its ID (provided, `onInsert`-generated, or
+   * database-generated - see {@link Querier.insertMany} for the exact semantics).
+   */
   insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
 
+  /**
+   * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
+   * dialect's bind-parameter limit) and return their IDs in payload order.
+   *
+   * Provided IDs and client-generated ones (`@Id({ onInsert })`) are always returned as-is.
+   * Database-generated IDs are exact on `'returning'` dialects (Postgres, MariaDB, MongoDB);
+   * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
+   * auto-increment keys in batches without explicit IDs - otherwise those entries are
+   * `undefined` rather than potentially wrong values.
+   */
   insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   updateOneById<E extends object>(

@@ -32,6 +32,33 @@ export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey:
   }) as FieldKey<E>[];
 }
 
+/**
+ * Resolves the columns of an INSERT statement: the union of the persistable fields provided by
+ * any record (in first-seen order), plus every `onInsert` field. Records missing one of these
+ * columns insert its database default.
+ *
+ * `onInsert` fields are always included so the column set is stable whether or not the caller
+ * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
+ * chunk-size estimate inspects the raw payload).
+ */
+export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: E[]): FieldKey<E>[] {
+  const keys = new Set<FieldKey<E>>();
+  for (const it of payloads) {
+    for (const key of getKeys(it as object) as FieldKey<E>[]) {
+      const field = meta.fields[key];
+      if (field && !field.virtual && it[key] !== undefined) {
+        keys.add(key);
+      }
+    }
+  }
+  for (const key of getKeys(meta.fields) as FieldKey<E>[]) {
+    if (meta.fields[key]!.onInsert !== undefined) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+}
+
 export function getFieldCallbackValue(val: OnFieldCallback) {
   return typeof val === 'function' ? val() : val;
 }

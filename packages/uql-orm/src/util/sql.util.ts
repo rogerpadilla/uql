@@ -1,4 +1,4 @@
-import type { Key, QueryUpdateResult, RawRow } from '../type/index.js';
+import type { InsertIdSource, Key, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
 import { getKeys, hasKeys } from './object.util.js';
 
@@ -121,8 +121,13 @@ export interface BuildUpdateResultPayload {
   rows?: RawRow[];
   /** The first (MySQL) or last (SQLite) auto-generated ID from the driver header. */
   id?: PrimaryKey;
-  /** The ID strategy: 'first' (MySQL/MariaDB) or 'last' (SQLite/LibSQL/D1). */
-  insertIdStrategy?: 'first' | 'last';
+  /** How the dialect surfaces inserted IDs (see {@link InsertIdSource}). */
+  insertIdSource?: InsertIdSource;
+  /**
+   * Auto-increment stride for header-derived id inference. Defaults to 1; a clustered MySQL
+   * server (e.g. Galera, group replication) may set `auto_increment_increment` higher.
+   */
+  insertIdIncrement?: number;
   /**
    * Driver-specific upsert detection from the result header.
    * MySQL/MariaDB `ON DUPLICATE KEY UPDATE` convention: 1 = insert, 2 = update, 0 = no-op.
@@ -135,42 +140,31 @@ export interface BuildUpdateResultPayload {
  *
  * UQL's SQL dialects always alias the entity's ID column to `id` in RETURNING clauses,
  * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
+ *
+ * The header-derived ID path assumes the database allocated consecutive values for the
+ * statement, which holds for a single multi-row `INSERT ... VALUES` on auto-increment keys
+ * (with the standard `auto_increment_increment = 1`); the querier only maps these IDs onto
+ * payloads when that assumption is safe.
  */
 export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
-  const { rows, id, insertIdStrategy, upsertStatus } = payload;
+  const { rows, id, insertIdSource, upsertStatus } = payload;
   const changes = payload.changes ?? rows?.length ?? 0;
+  const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
 
-  // 1. ID Mapping
-  let firstId: PrimaryKey | undefined;
-  const rowId = rows?.[0]?.['id'] as PrimaryKey | undefined;
-  if (isPrimaryKey(rowId)) {
-    firstId = rowId;
-  } else if (isPrimaryKey(id)) {
-    const offset = changes - 1;
-    if (insertIdStrategy === 'last') {
-      if (typeof id === 'bigint') {
-        firstId = id - BigInt(offset);
-      } else if (typeof id === 'number') {
-        firstId = id - offset;
-      } else {
-        firstId = id;
-      }
-    } else {
-      firstId = id;
-    }
-  }
-
+  // ID mapping. RETURNING rows are exact. Otherwise the sequence is derived from the single id in
+  // the driver header: `firstId` dialects (MySQL) report the FIRST generated id, `lastId` dialects
+  // (SQLite) the LAST - so for the latter we step back over the other rows to reach the first. A
+  // header id of `0`/`0n` means no id was generated (e.g. a non-auto-increment key), so we infer none.
   let ids: PrimaryKey[] = [];
-
   if (rows?.length) {
     ids = rows.map((r) => r['id'] as PrimaryKey);
-  } else if (isPrimaryKey(firstId)) {
-    if (typeof firstId === 'bigint' || typeof firstId === 'number') {
-      ids = Array.from({ length: changes }, (_, i) =>
-        typeof firstId === 'bigint' ? firstId + BigInt(i) : firstId + i,
-      );
-    } else if (changes === 1) {
-      ids = [firstId];
+  } else if (insertIdSource !== 'returning' && isPrimaryKey(id) && id) {
+    if (typeof id === 'string') {
+      if (changes === 1) ids = [id];
+    } else {
+      const backSteps = insertIdSource === 'lastId' ? changes - 1 : 0;
+      const first = typeof id === 'bigint' ? id - BigInt(backSteps * stride) : id - backSteps * stride;
+      ids = sequentialIds(first, changes, stride);
     }
   }
 
@@ -182,6 +176,13 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
     (typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
 
   return { changes, ids, firstId: ids?.[0], created };
+}
+
+/** Build `count` ids starting at `first`, incrementing by `step` (bigint- and number-safe). */
+function sequentialIds(first: number | bigint, count: number, step: number): PrimaryKey[] {
+  return typeof first === 'bigint'
+    ? Array.from({ length: count }, (_, i) => first + BigInt(i) * BigInt(step))
+    : Array.from({ length: count }, (_, i) => first + i * step);
 }
 
 /**

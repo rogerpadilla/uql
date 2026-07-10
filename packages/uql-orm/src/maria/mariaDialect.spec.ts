@@ -350,6 +350,19 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     ]);
   }
 
+  override shouldInsertManyWithHeterogeneousColumns() {
+    const { sql, values } = this.exec((ctx) =>
+      this.mariaDialect.insert(ctx, User, [
+        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
+      ]),
+    );
+    expect(sql).toBe(
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?) RETURNING `id` `id`',
+    );
+    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+  }
+
   override shouldBeSecure() {
     let res = this.exec((ctx) =>
       this.mariaDialect.find(ctx, User, {

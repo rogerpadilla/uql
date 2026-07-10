@@ -1,10 +1,10 @@
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   FieldKey,
+  FieldOptions,
   JsonUpdateOp,
   QueryComparisonOptions,
   QueryConflictPaths,
@@ -20,11 +20,10 @@ import { hasKeys } from '../util/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
-  static readonly defaultDialectFeatures: DialectFeatures = {
+  protected override readonly featureDefaults: DialectFeatures = {
     explicitJsonCast: false,
     nativeArrays: false,
     supportsJsonb: false,
-    returning: true,
     ifNotExists: true,
     indexIfNotExists: true,
     dropTableCascade: false,
@@ -57,17 +56,25 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  override readonly insertIdStrategy = 'last';
-
-  constructor(options: DialectOptions = {}) {
-    super(SqliteDialect.defaultDialectFeatures, options);
-  }
+  override readonly insertIdSource = 'lastId';
 
   protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
     cosine: 'vec_distance_cosine',
     l2: 'vec_distance_L2',
     hamming: 'vec_distance_hamming',
   };
+
+  /**
+   * SQLite does not support the `DEFAULT` keyword inside `VALUES`. Inline the metadata default
+   * when declared, else `NULL` (which is also how SQLite auto-generates INTEGER PRIMARY KEYs).
+   */
+  protected override appendDefaultInsertValue(ctx: QueryContext, field: FieldOptions | undefined): void {
+    if (field?.defaultValue !== undefined) {
+      this.formatPersistableValue(ctx, field, field.defaultValue);
+    } else {
+      ctx.append('NULL');
+    }
+  }
 
   protected override ilikeExpr(f: string, ph: string): string {
     return `${f} LIKE ${ph}`;

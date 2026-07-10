@@ -147,6 +147,28 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(founds.map(({ id }) => id)).toEqual(ids);
   }
 
+  async shouldInsertManyWithHeterogeneousFieldSets() {
+    const ids = await this.querier.insertMany(User, [
+      { name: 'Het A', email: 'heta@example.com', password: '123456789a!' },
+      { name: 'Het B' },
+    ]);
+    expect(ids).toHaveLength(2);
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
+    const founds = await this.querier.findMany(User, {
+      $select: { id: true, name: true, email: true },
+      $where: { name: ['Het A', 'Het B'] },
+      $sort: { name: 1 },
+    });
+    expect(founds).toHaveLength(2);
+    expect(founds[0]).toMatchObject({ name: 'Het A', email: 'heta@example.com' });
+    expect(founds[1].name).toBe('Het B');
+    // The missing column falls back to its database default: SQL surfaces it as null, Mongo omits
+    // the field (undefined). Either way it is nullish, never a value bleed from the sibling record.
+    expect(founds[1].email == null).toBe(true);
+  }
+
   async shouldInsertOneAndCascadeOneToOne() {
     const payload = {
       name: 'Some Name D',

@@ -1,4 +1,3 @@
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 /**
@@ -8,8 +7,4 @@ import { PostgresDialect } from './postgresDialect.js';
  * (`nativeArrays: true`) and `$n::jsonb` without a text re-cast. Bun SQL Postgres needs
  * `BunSqlPostgresDialect` from `uql-orm/bunSql` instead (wire array literals + text json cast).
  */
-export class PgDialect extends PostgresDialect {
-  constructor(options: DialectOptions = {}) {
-    super(options);
-  }
-}
+export class PgDialect extends PostgresDialect {}

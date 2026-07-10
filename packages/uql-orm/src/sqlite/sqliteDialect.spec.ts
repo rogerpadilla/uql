@@ -129,6 +129,21 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values[1]).toBe(123);
   }
 
+  /**
+   * SQLite has no `DEFAULT` keyword inside `VALUES`, so omitted columns insert `NULL` (which is
+   * also how it auto-generates an INTEGER PRIMARY KEY for the record without an id).
+   */
+  override shouldInsertManyWithHeterogeneousColumns() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
+        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
+      ]),
+    );
+    expect(sql).toBe('INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (NULL, ?, ?, ?)');
+    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+  }
+
   shouldUpsertWithDoNothing() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(

@@ -1,7 +1,6 @@
 import { getMeta } from '../entity/index.js';
 import { resolveVectorCast, type VectorCast } from '../schema/canonicalType.js';
 import {
-  type DialectFeatures,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -55,6 +54,7 @@ import {
   filterFieldKeys,
   flatObject,
   getFieldKeys,
+  getInsertFieldKeys,
   getKeys,
   getRelationRequestSummary,
   getSoftDeleteValue,
@@ -70,7 +70,7 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 
-import { AbstractDialect, type DialectOptions } from './abstractDialect.js';
+import { AbstractDialect } from './abstractDialect.js';
 import { SqlQueryContext } from './queryContext.js';
 
 export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
@@ -83,10 +83,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   abstract readonly beginTransactionCommand: string;
   abstract readonly commitTransactionCommand: string;
   abstract readonly rollbackTransactionCommand: string;
-
-  constructor(engineDefaults: DialectFeatures, options: DialectOptions = {}) {
-    super(engineDefaults, options);
-  }
 
   readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
 
@@ -101,6 +97,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   readonly renameTableSyntax: 'rename-table' | 'alter-table' = 'alter-table';
 
   readonly booleanLiteral: 'native' | 'integer' = 'native';
+
+  /**
+   * Maximum number of bind parameters the driver accepts in a single statement.
+   * `insertMany` splits larger batches into multiple statements based on this limit.
+   */
+  readonly maxBindValues: number = 32766;
 
   readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = undefined;
 
@@ -1113,7 +1115,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
     const meta = getMeta(entity);
     const payloads = fillOnFields(meta, payload, 'onInsert');
-    const keys = filterFieldKeys(meta, payloads[0], 'onInsert');
+    const keys = getInsertFieldKeys(meta, payloads);
 
     const columns = keys.map((key) => {
       const field = meta.fields[key];
@@ -1131,10 +1133,23 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           ctx.append(', ');
         }
         const field = meta.fields[key];
-        this.formatPersistableValue(ctx, field, it[key]);
+        if (it[key] === undefined) {
+          this.appendDefaultInsertValue(ctx, field);
+        } else {
+          this.formatPersistableValue(ctx, field, it[key]);
+        }
       });
     });
     ctx.append(')');
+  }
+
+  /**
+   * Emit the value for a column a payload record does not provide (the column list is the union
+   * across all records). `DEFAULT` delegates to the database default; SQLite overrides this since
+   * it does not support the `DEFAULT` keyword inside `VALUES`.
+   */
+  protected appendDefaultInsertValue(ctx: QueryContext, _field: FieldOptions | undefined): void {
+    ctx.append('DEFAULT');
   }
 
   update<E>(

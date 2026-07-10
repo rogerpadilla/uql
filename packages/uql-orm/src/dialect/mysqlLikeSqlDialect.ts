@@ -1,6 +1,5 @@
 import SqlString from 'sqlstring';
-import type { DialectFeatures, QueryContext, QuerySizeComparisonOps } from '../type/index.js';
-import type { DialectOptions } from './abstractDialect.js';
+import type { DialectFeatures, InsertIdSource, QueryContext, QuerySizeComparisonOps } from '../type/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 
@@ -14,11 +13,10 @@ import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
-  static readonly defaultDialectFeatures: DialectFeatures = {
+  protected override readonly featureDefaults: DialectFeatures = {
     explicitJsonCast: false,
     nativeArrays: false,
     supportsJsonb: false,
-    returning: false,
     ifNotExists: true,
     indexIfNotExists: false,
     dropTableCascade: false,
@@ -53,11 +51,9 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  override readonly insertIdStrategy = 'first';
+  override readonly insertIdSource: InsertIdSource = 'firstId';
 
-  constructor(options: DialectOptions = {}) {
-    super(MysqlLikeSqlDialect.defaultDialectFeatures, options);
-  }
+  override readonly maxBindValues: number = 65535;
 
   override escape(value: unknown): string {
     return SqlString.escape(value);

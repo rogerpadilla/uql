@@ -307,11 +307,11 @@ it('unflatObject - produces same result as unflatObjects for single row', () => 
 });
 
 describe('buildUpdateResult', () => {
-  it('should handle MySQL "first" strategy', () => {
+  it('should handle MySQL "firstId" source', () => {
     const res = buildUpdateResult({
       changes: 3,
       id: 10,
-      insertIdStrategy: 'first',
+      insertIdSource: 'firstId',
     });
     expect(res).toEqual({
       changes: 3,
@@ -321,12 +321,12 @@ describe('buildUpdateResult', () => {
     });
   });
 
-  it('should handle SQLite "last" strategy with BigInt', () => {
+  it('should handle SQLite "lastId" source with BigInt', () => {
     // lastInsertRowid=100n, changes=3 → ids=[98n, 99n, 100n], firstId=98n
     const res = buildUpdateResult({
       changes: 3,
       id: 100n,
-      insertIdStrategy: 'last',
+      insertIdSource: 'lastId',
     });
     expect(res).toEqual({
       changes: 3,
@@ -334,6 +334,49 @@ describe('buildUpdateResult', () => {
       firstId: 98n,
       created: undefined,
     });
+  });
+
+  it('should apply an auto-increment stride > 1 (clustered MySQL)', () => {
+    const res = buildUpdateResult({ changes: 3, id: 10, insertIdSource: 'firstId', insertIdIncrement: 2 });
+    expect(res.ids).toEqual([10, 12, 14]);
+    expect(res.firstId).toBe(10);
+    const big = buildUpdateResult({ changes: 3, id: 10n, insertIdSource: 'firstId', insertIdIncrement: 3 });
+    expect(big.ids).toEqual([10n, 13n, 16n]);
+  });
+
+  it('should ignore a zero header id (no auto-generated key, e.g. mysql2 insertId=0)', () => {
+    const res = buildUpdateResult({
+      changes: 3,
+      id: 0,
+      insertIdSource: 'firstId',
+    });
+    expect(res).toEqual({
+      changes: 3,
+      ids: [],
+      firstId: undefined,
+      created: undefined,
+    });
+    expect(buildUpdateResult({ changes: 2, id: 0n, insertIdSource: 'lastId' }).ids).toEqual([]);
+  });
+
+  it('should ignore the header id on "returning" dialects (rows are the source of truth)', () => {
+    const res = buildUpdateResult({
+      changes: 2,
+      id: 7,
+      insertIdSource: 'returning',
+    });
+    expect(res).toEqual({
+      changes: 2,
+      ids: [],
+      firstId: undefined,
+      created: undefined,
+    });
+    const withRows = buildUpdateResult({
+      rows: [{ id: 5 }, { id: 9 }],
+      insertIdSource: 'returning',
+    });
+    expect(withRows.ids).toEqual([5, 9]);
+    expect(withRows.firstId).toBe(5);
   });
 
   it('should detect created status from upsertStatus', () => {

@@ -1,4 +1,3 @@
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
 import { getMeta } from '../entity/index.js';
@@ -29,11 +28,10 @@ import { hasKeys, isJsonType } from '../util/index.js';
  */
 export class PostgresDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} before wire/driver-specific patches (e.g. {@link PgDialect}). */
-  static readonly defaultDialectFeatures: DialectFeatures = {
+  protected override readonly featureDefaults: DialectFeatures = {
     explicitJsonCast: false,
     nativeArrays: true,
     supportsJsonb: true,
-    returning: true,
     ifNotExists: true,
     indexIfNotExists: true,
     dropTableCascade: true,
@@ -55,11 +53,8 @@ export class PostgresDialect extends AbstractSqlDialect {
   override readonly commitTransactionCommand = 'COMMIT';
   override readonly rollbackTransactionCommand = 'ROLLBACK';
   override readonly alterColumnStrategy = 'separate-clauses';
-  override readonly insertIdStrategy = 'last';
-
-  constructor(options: DialectOptions = {}) {
-    super(PostgresDialect.defaultDialectFeatures, options);
-  }
+  override readonly insertIdSource = 'returning';
+  override readonly maxBindValues: number = 65535;
 
   override readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = {
     cosine: 'vector_cosine_ops',
