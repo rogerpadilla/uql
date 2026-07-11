@@ -367,6 +367,21 @@ class MongoDialectSpec implements Spec {
     });
   }
 
+  shouldNotResolveStringOperatorViaThePrototypeChain() {
+    // 'toString' only exists via Object.prototype, not REGEX_OP_MAP's own keys - alongside a real
+    // operator ($gt) so the object still qualifies as an operator map (hasOperatorKeys) and reaches
+    // transformOperators. Before the fix this crashed with "regexEntry.wrap is not a function".
+    expect(this.dialect.where(Item, { name: { $gt: 'a', toString: 'x' } } as any)).toEqual({
+      name: { $gt: 'a', toString: 'x' },
+    });
+  }
+
+  shouldNotResolveAggregateOperatorViaThePrototypeChain() {
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, { $group: { total: { toString: 'salePrice' } } } as any),
+    ).toThrow('unsupported aggregate operator: toString');
+  }
+
   shouldTransformTextOperator() {
     expect(this.dialect.where(Item, { name: { $text: 'search' } } as any)).toEqual({
       name: { $text: { $search: 'search' } },

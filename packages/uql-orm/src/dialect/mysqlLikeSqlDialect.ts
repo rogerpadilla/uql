@@ -1,5 +1,6 @@
 import SqlString from 'sqlstring';
 import type { DialectFeatures, InsertIdSource, QueryContext, QuerySizeComparisonOps } from '../type/index.js';
+import { someKey } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 
@@ -84,7 +85,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
-    const isPrimitiveElement = Object.keys(match).some((k) => k.startsWith('$'));
+    const isPrimitiveElement = someKey(match, (k) => k.startsWith('$'));
 
     if (isPrimitiveElement) {
       const ops = Object.entries(match);
@@ -97,7 +98,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     }
 
     const hasOperators = Object.values(match).some(
-      (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith('$')),
+      (v) => v && typeof v === 'object' && !Array.isArray(v) && someKey(v, (k) => k.startsWith('$')),
     );
 
     if (!hasOperators) {

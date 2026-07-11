@@ -53,8 +53,34 @@ describe('CockroachDialect', () => {
   });
 
   it('should have pgvector-compatible index operator classes but no extension requirement (native type)', () => {
-    expect(dialect.vectorOpsClass).toMatchObject({ cosine: 'vector_cosine_ops', l2: 'vector_l2_ops' });
+    expect(dialect.vectorOpsClass).toEqual(
+      new Map([
+        ['cosine', 'vector_cosine_ops'],
+        ['l2', 'vector_l2_ops'],
+        ['inner', 'vector_ip_ops'],
+      ]),
+    );
     expect(dialect.vectorExtension).toBeUndefined();
+  });
+
+  it('should not support l1/hamming distance (CockroachDB has no vector_l1_ops/bit_hamming_ops)', () => {
+    expect(dialect.vectorOpsClass!.has('l1')).toBe(false);
+    expect(dialect.vectorOpsClass!.has('hamming')).toBe(false);
+
+    const ctx = dialect.createContext();
+    expect(() => dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'l1' } } })).toThrow(
+      'cockroachdb does not support vector distance metric: l1',
+    );
+  });
+
+  it('should not resolve a distance operator via the prototype chain for an unvalidated value', () => {
+    const ctx = dialect.createContext();
+    // 'toString' is an own property of neither the operator-symbol map nor `vectorOpsClass`, but
+    // `Object.prototype.toString` exists on both - a naive `in`/bracket-access check would resolve
+    // it as if it were a supported metric instead of rejecting it.
+    expect(() =>
+      dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } } }),
+    ).toThrow('cockroachdb does not support vector distance metric: toString');
   });
 
   it('should support $text full-text search via to_tsvector/to_tsquery (verified to work on CockroachDB)', () => {

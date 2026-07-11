@@ -10,12 +10,17 @@ import {
   type Key,
   type Query,
   type QueryAggregate,
+  type QueryAggregateOp,
+  type QueryCompareOp,
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
   type QueryDialect,
   type QueryExclude,
   type QueryHavingMap,
+  type QueryHavingOp,
+  type QueryLikeOp,
+  type QueryNegateOp,
   type QueryOptions,
   type QueryPager,
   type QueryPopulate,
@@ -104,7 +109,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    */
   readonly maxBindValues: number = 32766;
 
-  readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = undefined;
+  /** Vector index operator classes, keyed by distance metric. Partial: not every dialect supports every metric. */
+  readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = undefined;
 
   readonly vectorExtension: string | undefined = undefined;
 
@@ -547,8 +553,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     val: QueryWhereArray<E>,
     opts: QueryComparisonOptions,
   ): void {
-    const op = (AbstractSqlDialect.NEGATE_OP_MAP as Record<string, '$and' | '$or'>)[key] ?? (key as '$and' | '$or');
-    const negate = key in AbstractSqlDialect.NEGATE_OP_MAP ? 'NOT' : '';
+    const op = AbstractSqlDialect.NEGATE_OP_MAP.get(key as QueryNegateOp) ?? (key as '$and' | '$or');
+    const negate = AbstractSqlDialect.NEGATE_OP_MAP.has(key as QueryNegateOp) ? 'NOT' : '';
 
     const valArr = val ?? [];
     const hasManyItems = valArr.length > 1;
@@ -582,25 +588,28 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /** Simple comparison operators: `getComparisonKey → op → addValue`. */
-  private static readonly NEGATE_OP_MAP = { $not: '$and', $nor: '$or' } as const;
+  private static readonly NEGATE_OP_MAP = new Map<QueryNegateOp, '$and' | '$or'>([
+    ['$not', '$and'],
+    ['$nor', '$or'],
+  ]);
 
-  private static readonly COMPARE_OP_MAP: Record<string, string> = {
-    $gt: ' > ',
-    $gte: ' >= ',
-    $lt: ' < ',
-    $lte: ' <= ',
-  };
+  private static readonly COMPARE_OP_MAP = new Map<QueryCompareOp, string>([
+    ['$gt', ' > '],
+    ['$gte', ' >= '],
+    ['$lt', ' < '],
+    ['$lte', ' <= '],
+  ]);
 
-  private static readonly LIKE_OP_MAP: Record<string, (v: string) => string> = {
-    $startsWith: (v) => `${v}%`,
-    $istartsWith: (v) => `${v.toLowerCase()}%`,
-    $endsWith: (v) => `%${v}`,
-    $iendsWith: (v) => `%${v.toLowerCase()}`,
-    $includes: (v) => `%${v}%`,
-    $iincludes: (v) => `%${v.toLowerCase()}%`,
-    $like: (v) => v,
-    $ilike: (v) => v.toLowerCase(),
-  };
+  private static readonly LIKE_OP_MAP = new Map<QueryLikeOp, (v: string) => string>([
+    ['$startsWith', (v) => `${v}%`],
+    ['$istartsWith', (v) => `${v.toLowerCase()}%`],
+    ['$endsWith', (v) => `%${v}`],
+    ['$iendsWith', (v) => `%${v.toLowerCase()}`],
+    ['$includes', (v) => `%${v}%`],
+    ['$iincludes', (v) => `%${v.toLowerCase()}%`],
+    ['$like', (v) => v],
+    ['$ilike', (v) => v.toLowerCase()],
+  ]);
 
   protected resolveColumnWithPrefix(entity: Type<unknown>, key: string, { prefix }: QueryOptions = {}): string {
     const meta = getMeta(entity);
@@ -645,13 +654,13 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   ): void {
     const field = this.resolveOperandField(ctx, entity, key as string, opts);
 
-    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP[op as string];
+    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
     if (simpleOp) {
       this.appendFieldSql(ctx, field, `${simpleOp}${this.addValue(ctx.values, val)}`);
       return;
     }
 
-    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP[op as string];
+    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP.get(op as QueryLikeOp);
     if (likeWrap) {
       this.appendLikeOp(ctx, field, op as string, likeWrap(val as string));
       return;
@@ -880,7 +889,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         return;
       }
 
-      const direction = AbstractSqlDialect.SORT_DIRECTION_MAP[sort as QuerySortDirection];
+      const direction = this.resolveSortDirection(sort);
 
       // Detect JSONB dot-notation: 'column.path'
       const jsonDot = this.resolveJsonDotPath(meta, key);
@@ -916,7 +925,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * Override in dialects that use function-call syntax (e.g. SQLite, MariaDB).
    * Dialects with operator-based syntax (e.g. Postgres) leave this empty and override `appendVectorSort` directly.
    */
-  protected readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {};
+  protected readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map();
 
   /**
    * Append a vector similarity function call: `fn(col, ?)`.
@@ -930,7 +939,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     dialectName: string,
   ): void {
     const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
-    const fn = this.vectorDistanceFns[distance];
+    const fn = this.vectorDistanceFns.get(distance);
 
     if (!fn) {
       throw Error(`${dialectName} does not support vector distance metric: ${distance}`);
@@ -963,7 +972,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * Override for operator-based syntax (e.g. PostgreSQL `<=>`, `<->` operators).
    */
   protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
-    if (hasKeys(this.vectorDistanceFns)) {
+    if (this.vectorDistanceFns.size > 0) {
       this.appendFunctionVectorSort(ctx, meta, key, search, this.dialectName);
       return;
     }
@@ -986,6 +995,17 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     this.search(ctx, entity, search, opts);
   }
 
+  /** `$group` aggregate operator → SQL function name. An allowlist, not a formatter: the op key
+   * comes from query data, so anything outside this map must be rejected rather than passed
+   * through as a raw SQL function name. */
+  private static readonly AGGREGATE_FN_MAP = new Map<QueryAggregateOp, string>([
+    ['$count', 'COUNT'],
+    ['$sum', 'SUM'],
+    ['$avg', 'AVG'],
+    ['$min', 'MIN'],
+    ['$max', 'MAX'],
+  ]);
+
   aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
@@ -1001,7 +1021,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         groupKeys.push(escaped);
         selectParts.push(columnName !== entry.alias ? `${escaped} ${this.escapeId(entry.alias)}` : escaped);
       } else {
-        const sqlFn = entry.op.slice(1).toUpperCase();
+        const sqlFn = AbstractSqlDialect.AGGREGATE_FN_MAP.get(entry.op);
+        if (!sqlFn) {
+          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
+        }
         const sqlArg =
           entry.fieldRef === '*'
             ? '*'
@@ -1041,7 +1064,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ctx.append(' ORDER BY ');
     Object.entries(sortMap).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
-      const direction = AbstractSqlDialect.SORT_DIRECTION_MAP[dir as QuerySortDirection];
+      const direction = this.resolveSortDirection(dir);
       const ref = aggregateExpressions[key] ?? this.escapeId(key);
       ctx.append(ref + direction);
     });
@@ -1059,19 +1082,29 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     });
   }
 
-  private static readonly SORT_DIRECTION_MAP: Record<string | number, string> = Object.assign(
-    { 1: '', asc: '', desc: ' DESC', '-1': ' DESC' },
-    { [-1]: ' DESC' },
-  );
+  private static readonly SORT_DIRECTION_MAP = new Map<QuerySortDirection, string>([
+    [1, ''],
+    ['asc', ''],
+    ['desc', ' DESC'],
+    [-1, ' DESC'],
+  ]);
 
-  private static readonly havingOpMap: Record<string, string> = {
-    $eq: '=',
-    $ne: '<>',
-    $gt: '>',
-    $gte: '>=',
-    $lt: '<',
-    $lte: '<=',
-  };
+  private resolveSortDirection(sort: unknown): string {
+    const direction = AbstractSqlDialect.SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
+    if (direction === undefined) {
+      throw TypeError(`unknown sort direction: ${sort}`);
+    }
+    return direction;
+  }
+
+  private static readonly havingOpMap = new Map<QueryHavingOp, string>([
+    ['$eq', '='],
+    ['$ne', '<>'],
+    ['$gt', '>'],
+    ['$gte', '>='],
+    ['$lt', '<'],
+    ['$lte', '<='],
+  ]);
 
   protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
     if (typeof condition !== 'object' || condition === null) {
@@ -1099,7 +1132,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       } else if (op === '$ne') {
         ctx.append(this.neExpr(expr, this.addValue(ctx.values, val)));
       } else {
-        const sqlOp = AbstractSqlDialect.havingOpMap[op];
+        const sqlOp = AbstractSqlDialect.havingOpMap.get(op as QueryHavingOp);
         if (!sqlOp) throw TypeError(`unsupported HAVING operator: ${op}`);
         ctx.append(`${expr} ${sqlOp} `);
         ctx.addValue(val);

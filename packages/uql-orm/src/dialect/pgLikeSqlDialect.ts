@@ -17,7 +17,7 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { escapeAnsiSqlLiteral } from '../util/ansiSqlLiteral.js';
-import { hasKeys, isJsonType } from '../util/index.js';
+import { hasKeys, isJsonType, someKey } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 
@@ -62,13 +62,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly insertIdSource = 'returning';
   override readonly maxBindValues: number = 65535;
 
-  override readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = {
-    cosine: 'vector_cosine_ops',
-    l2: 'vector_l2_ops',
-    inner: 'vector_ip_ops',
-    l1: 'vector_l1_ops',
-    hamming: 'bit_hamming_ops',
-  };
+  override readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = new Map([
+    ['cosine', 'vector_cosine_ops'],
+    ['l2', 'vector_l2_ops'],
+    ['inner', 'vector_ip_ops'],
+    ['l1', 'vector_l1_ops'],
+    ['hamming', 'bit_hamming_ops'],
+  ]);
 
   override normalizeValue(value: unknown): unknown {
     if (value != null && typeof value === 'object' && Array.isArray(value)) {
@@ -151,7 +151,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   protected override jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
     // Primitive element match: keys are operators (e.g. { $startsWith: 'ad' } on a string[])
-    const isPrimitiveElement = Object.keys(match).some((k) => k.startsWith('$'));
+    const isPrimitiveElement = someKey(match, (k) => k.startsWith('$'));
     if (isPrimitiveElement) {
       const conditions = Object.entries(match).map(([op, opVal]) =>
         this.buildJsonFieldCondition(ctx, () => 'elem', '', op, opVal),
@@ -160,7 +160,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     }
 
     const hasOperators = Object.values(match).some(
-      (v) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some((k) => k.startsWith('$')),
+      (v) => v && typeof v === 'object' && !Array.isArray(v) && someKey(v, (k) => k.startsWith('$')),
     );
 
     if (!hasOperators) {
@@ -255,7 +255,12 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return escapeAnsiSqlLiteral(value);
   }
 
-  /** pgvector distance operators (also implemented natively by CockroachDB). */
+  /**
+   * pgvector distance operators. Not every dialect supports every metric - see
+   * {@link CockroachDialect.vectorOpsClass} for which ones each dialect actually has; the
+   * `vectorOpsClass` key set (checked in `appendVectorSort` below via `vectorOpsClass.get`)
+   * is the single source of truth for that, not this map.
+   */
   private static readonly VECTOR_OPS: Record<VectorDistance, string> = {
     cosine: '<=>',
     l2: '<->',
@@ -272,6 +277,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     search: QueryVectorSearch,
   ): void {
     const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
+    if (!this.vectorOpsClass!.get(distance)) {
+      throw new TypeError(`${this.dialectName} does not support vector distance metric: ${distance}`);
+    }
     const op = PgLikeSqlDialect.VECTOR_OPS[distance];
     ctx.append(`${this.escapeId(colName)} ${op} `);
     ctx.addValue(`[${search.$vector.join(',')}]`);

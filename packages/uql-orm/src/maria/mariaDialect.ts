@@ -67,8 +67,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /** MariaDB 11.7+ vector distance functions. */
-  protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
-    cosine: 'VEC_DISTANCE_COSINE',
-    l2: 'VEC_DISTANCE_EUCLIDEAN',
-  };
+  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
+    ['cosine', 'VEC_DISTANCE_COSINE'],
+    ['l2', 'VEC_DISTANCE_EUCLIDEAN'],
+  ]);
 }

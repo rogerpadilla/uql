@@ -4,13 +4,20 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.4] - 2026-07-11
+
+### Fixes
+
+- **Stricter operator/sort/aggregate validation** - an unrecognized `$where`/`$having` operator or `$group` aggregate function now always throws a clear error instead of silently being ignored (or, for `$group`, ending up in the generated SQL). Affects all SQL dialects and MongoDB. Breaking: `$sort` direction must be the number `-1`/`1` or the string `'asc'`/`'desc'` - a numeric string like `'-1'` happened to work before and now throws.
+- **MariaDB vector index distance** - creating a vector index with a distance metric MariaDB doesn't support silently built the index with `euclidean` instead of erroring. Now throws a clear error instead.
+
 ## [0.15.3] - 2026-07-11
 
 CockroachDB integration tests added, fixing upsert, ID generation, and `$text` search, and adding full vector search support. Two related Bun SQL driver bugs (CockroachDB JSON updates, MariaDB upsert `created`) are also fixed.
 
 ### Features
 
-- **CockroachDB vector search** - `$sort`/`$vector` uses the same pgvector-compatible distance operators as Postgres (`<=>`/`<->`/`<#>`), and schema generation emits CockroachDB's native `CREATE VECTOR INDEX` syntax.
+- **CockroachDB vector search** - `$sort`/`$vector` uses the same pgvector-compatible distance operators as Postgres for `cosine`/`l2`/`inner` (`<=>`/`<->`/`<#>`), and schema generation emits CockroachDB's native `CREATE VECTOR INDEX` syntax. `l1`/`hamming` and the `halfvec`/`sparsevec` types aren't implemented by CockroachDB itself, so those now throw a clear error instead of failing at the database.
 
 ### Fixes
 

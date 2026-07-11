@@ -177,6 +177,32 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     });
     expect(sql).toBe('CREATE INDEX IF NOT EXISTS "idx_articles_name" ON "articles" USING btree ("name");');
   });
+
+  it('should throw for a CockroachDB vector index with an unsupported distance metric, not silently drop the opclass', () => {
+    const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
+    expect(() =>
+      crdbGenerator.generateCreateIndex('articles', {
+        name: 'idx_articles_embedding',
+        columns: ['embedding'],
+        unique: false,
+        type: 'vector',
+        distance: 'l1',
+      }),
+    ).toThrow('cockroachdb does not support vector distance metric: l1');
+  });
+
+  it('should not resolve an operator class via the prototype chain for an unvalidated distance value', () => {
+    const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
+    expect(() =>
+      crdbGenerator.generateCreateIndex('articles', {
+        name: 'idx_articles_embedding',
+        columns: ['embedding'],
+        unique: false,
+        type: 'vector',
+        distance: 'toString' as any, // deliberately unvalidated input, mirroring dynamic/JSON query data
+      }),
+    ).toThrow('cockroachdb does not support vector distance metric: toString');
+  });
   /** Build a minimal TableNode mock with an id + embedding column and the given vector indexes. */
   function buildVectorTableNode(indexes: Partial<IndexNode>[]): TableNode {
     const table = {
@@ -246,6 +272,20 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     const sql = mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'l2' }])).join('\n');
     expect(sql).toContain('VECTOR INDEX (`embedding`) DISTANCE=euclidean');
+  });
+
+  it('should throw for a MariaDB inline vector index with an unsupported distance metric, not silently default to euclidean', () => {
+    const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
+    expect(() => mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'inner' }]))).toThrow(
+      'mariadb does not support vector distance metric: inner',
+    );
+  });
+
+  it('should not resolve an inline vector distance keyword via the prototype chain for an unvalidated distance value', () => {
+    const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
+    expect(() =>
+      mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' as any }])),
+    ).toThrow('mariadb does not support vector distance metric: toString');
   });
 
   it('should prepend CREATE EXTENSION for Postgres tables with vector columns', () => {

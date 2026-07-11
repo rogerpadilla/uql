@@ -34,7 +34,10 @@ import { formatDefaultValue } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 
 /** Maps UQL distance metric names to inline DDL keywords (e.g. MariaDB `DISTANCE=euclidean`). */
-const INLINE_VECTOR_DISTANCE_MAP: Partial<Record<VectorDistance, string>> = { cosine: 'cosine', l2: 'euclidean' };
+const INLINE_VECTOR_DISTANCE_MAP = new Map<VectorDistance, string>([
+  ['cosine', 'cosine'],
+  ['l2', 'euclidean'],
+]);
 
 /**
  * Unified SQL schema generator.
@@ -204,15 +207,23 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const isNativeVectorIndex = this.features.vectorIndexStyle === 'native' && index.type === 'vector';
     const hasOpsClass = opsClassMap && (isNativeVectorIndex || index.type === 'hnsw' || index.type === 'ivfflat');
 
-    // For pgvector/CockroachDB vector indexes: append operator class to the column
+    // For pgvector/CockroachDB vector indexes: append operator class to the column. Throws rather
+    // than silently omitting the operator class for an unsupported distance - e.g. a bare
+    // `CREATE VECTOR INDEX ... (col)` on CockroachDB would build using its default distance
+    // metric instead of the one actually requested, with no error to signal the mismatch.
     const columns = index.columns
       .map((c) => {
         const escaped = this.escapeId(c);
-        if (hasOpsClass && index.distance) {
-          const opsClass = opsClassMap[index.distance];
-          return opsClass ? `${escaped} ${opsClass}` : escaped;
+        if (!opsClassMap || !hasOpsClass || !index.distance) {
+          return escaped;
         }
-        return escaped;
+        const opsClass = opsClassMap.get(index.distance);
+        if (!opsClass) {
+          throw new TypeError(
+            `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
+          );
+        }
+        return `${escaped} ${opsClass}`;
       })
       .join(', ');
 
@@ -647,7 +658,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     if (index.distance) {
-      const metric = INLINE_VECTOR_DISTANCE_MAP[index.distance] ?? 'euclidean';
+      const metric = INLINE_VECTOR_DISTANCE_MAP.get(index.distance);
+      if (!metric) {
+        throw new TypeError(
+          `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
+        );
+      }
       clause += ` DISTANCE=${metric}`;
     }
 

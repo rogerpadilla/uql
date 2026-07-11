@@ -133,13 +133,17 @@ export type QueryWhereRootOperator<E> = {
 };
 
 /**
- * Comparison operators accepted by `$size` for range queries.
+ * Per-field negation operators. `Pick`'s constraint ties this back to
+ * {@link QueryWhereRootOperator} so a rename there breaks this union at compile time.
+ */
+export type QueryNegateOp = keyof Pick<QueryWhereRootOperator<unknown>, '$not' | '$nor'>;
+
+/**
+ * Comparison operators accepted by `$size` for range queries: {@link QueryHavingOp} plus `$between`.
  * Strips `null` from picked operators since array size is always numeric.
  */
 export type QuerySizeComparisonOps = {
-  [K in '$eq' | '$ne' | '$gt' | '$gte' | '$lt' | '$lte' | '$between']?: NonNullable<
-    QueryWhereFieldOperatorMap<number>[K]
-  >;
+  [K in QueryHavingOp | '$between']?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
 };
 
 export type QueryWhereFieldOperatorMap<T> = {
@@ -250,6 +254,27 @@ export type QueryWhereFieldOperatorMap<T> = {
    */
   $elemMatch?: T extends (infer U)[] ? Partial<U> : Record<string, QueryWhereFieldValue<unknown>>;
 };
+
+/**
+ * Simple relational comparison operators. `Pick`'s constraint ties this back to
+ * {@link QueryWhereFieldOperatorMap} so a rename there breaks this union at compile time.
+ */
+export type QueryCompareOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$gt' | '$gte' | '$lt' | '$lte'>;
+
+/**
+ * String pattern-matching operators. `Pick`'s constraint ties this back to
+ * {@link QueryWhereFieldOperatorMap} so a rename there breaks this union at compile time.
+ */
+export type QueryLikeOp = keyof Pick<
+  QueryWhereFieldOperatorMap<unknown>,
+  '$startsWith' | '$istartsWith' | '$endsWith' | '$iendsWith' | '$includes' | '$iincludes' | '$like' | '$ilike'
+>;
+
+/**
+ * `HAVING` clause operators: {@link QueryCompareOp} plus `$eq`/`$ne`. `Pick`'s constraint ties the
+ * latter back to {@link QueryWhereFieldOperatorMap} so a rename there breaks this union at compile time.
+ */
+export type QueryHavingOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<number>, '$eq' | '$ne'>;
 
 /**
  * Value for a field comparison.
@@ -764,10 +789,20 @@ export interface SqlQueryDialect extends QueryDialect {
 // Aggregation Types
 // ============================================================================
 
+const QUERY_AGGREGATE_OPS = ['$count', '$sum', '$avg', '$min', '$max'] as const;
+
 /**
  * Supported aggregate operations.
  */
-export type QueryAggregateOp = '$count' | '$sum' | '$avg' | '$min' | '$max';
+export type QueryAggregateOp = (typeof QUERY_AGGREGATE_OPS)[number];
+
+/**
+ * Whether `op` is one of {@link QueryAggregateOp}'s known aggregate operators - validates operator
+ * keys parsed from query data before trusting them as `QueryAggregateOp`.
+ */
+export function isQueryAggregateOp(op: string): op is QueryAggregateOp {
+  return (QUERY_AGGREGATE_OPS as readonly string[]).includes(op);
+}
 
 /**
  * An aggregate function applied to a field.
@@ -777,12 +812,21 @@ export type QueryAggregateOp = '$count' | '$sum' | '$avg' | '$min' | '$max';
  * @example { $sum: 'amount' }      → SUM("amount")
  * @example { $avg: 'age' }         → AVG("age")
  */
-export type QueryAggregateFn<E> =
-  | { readonly $count: FieldKey<E> | '*' | 1 }
-  | { readonly $sum: FieldKey<E> | '*' | 1 }
-  | { readonly $avg: FieldKey<E> | '*' | 1 }
-  | { readonly $min: FieldKey<E> | '*' | 1 }
-  | { readonly $max: FieldKey<E> | '*' | 1 };
+export type QueryAggregateFn<E> = {
+  [K in QueryAggregateOp]: { readonly [P in K]: FieldKey<E> | '*' | 1 };
+}[QueryAggregateOp];
+
+/**
+ * Aggregate ops whose grouped column always resolves to `number`, regardless of the aggregated
+ * field's own type. `Pick`'s constraint (via the throwaway `Record<QueryAggregateOp, true>`) ties
+ * this back to {@link QueryAggregateOp} so a rename there breaks this union at compile time.
+ */
+type QueryAggregateNumericOp = keyof Pick<Record<QueryAggregateOp, true>, '$count' | '$sum' | '$avg'>;
+
+/** The `{ readonly $count: unknown } | { readonly $sum: unknown } | { readonly $avg: unknown }` shape, generated from {@link QueryAggregateNumericOp}. */
+type QueryAggregateNumericFn = {
+  [K in QueryAggregateNumericOp]: { readonly [P in K]: unknown };
+}[QueryAggregateNumericOp];
 
 /**
  * Group-by map: keys set to `true` become GROUP BY columns;
@@ -808,7 +852,7 @@ export type QueryAggregateResult<E, G> = {
     ? K extends keyof E
       ? E[K]
       : unknown
-    : G[K] extends { readonly $count: unknown } | { readonly $sum: unknown } | { readonly $avg: unknown }
+    : G[K] extends QueryAggregateNumericFn
       ? number
       : G[K] extends { readonly $min: infer F }
         ? F extends keyof E
