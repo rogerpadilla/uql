@@ -29,7 +29,7 @@
       "header-max-length": [
         2,
         "always",
-        300
+        500
       ],
       "subject-case": [
         0
