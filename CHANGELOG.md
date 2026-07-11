@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.3] - 2026-07-11
+
+CockroachDB integration tests added, fixing upsert, ID generation, and `$text` search, and adding full vector search support. Two related Bun SQL driver bugs (CockroachDB JSON updates, MariaDB upsert `created`) are also fixed.
+
+### Features
+
+- **CockroachDB vector search** - `$sort`/`$vector` uses the same pgvector-compatible distance operators as Postgres (`<=>`/`<->`/`<#>`), and schema generation emits CockroachDB's native `CREATE VECTOR INDEX` syntax.
+
+### Fixes
+
+- **CockroachDB `upsertOne` / `upsertMany`** - previously errored with `column "xmax" does not exist`; now works, with `created` always `undefined` (CockroachDB has no insert-vs-update signal).
+- **CockroachDB auto-generated IDs** - the default primary key used `SERIAL` (CockroachDB's `unique_rowid()`), producing values beyond `Number.MAX_SAFE_INTEGER` that get corrupted as JS numbers. Now uses a sequential `IDENTITY` column instead.
+- **CockroachDB `$text` search** - now generates `to_tsvector`/`to_tsquery`, which CockroachDB supports.
+- **CockroachDB via Bun SQL** - `$merge`/`$push` on a JSONB column could silently corrupt the value or throw, since it didn't get the same wire-encoding fix Postgres has on the Bun driver. Fixed.
+- **MariaDB via Bun SQL** - upsert's `created` could report `false` on a fresh insert; now correctly `undefined`.
+
 ## [0.15.2] - 2026-07-10
 
 `insertOne` / `insertMany` now return the right IDs on every database (and `undefined` instead of a made-up one when the driver reports none), a batch may mix records with different columns, and oversized batches are split automatically to stay under the driver's bind-parameter limit.

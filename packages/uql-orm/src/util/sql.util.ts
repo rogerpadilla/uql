@@ -170,10 +170,16 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
 
   // 2. Creation Status
   // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
-  // MySQL/MariaDB: `affectedRows` convention - 1 = insert, 2 = update, 0 = no-op.
+  // MySQL: `affectedRows` convention - 1 = insert, 2 = update, 0 = no-op. Gated on `!== 'returning'`
+  // since that convention is unreliable once RETURNING is in play (verified: MariaDB's affectedRows
+  // for an `ON DUPLICATE KEY UPDATE ... RETURNING` statement differs by driver and doesn't follow
+  // the 1/2/0 convention at all) - `insertIdSource === 'returning'` dialects without a `_created`
+  // column (MariaDB, SQLite, CockroachDB) correctly get `undefined` instead of a misleading guess.
   const created =
     (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
-    (typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2 ? upsertStatus === 1 : undefined);
+    (insertIdSource !== 'returning' && typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2
+      ? upsertStatus === 1
+      : undefined);
 
   return { changes, ids, firstId: ids?.[0], created };
 }

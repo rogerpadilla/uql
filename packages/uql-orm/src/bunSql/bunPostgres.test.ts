@@ -1,8 +1,9 @@
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
+import { expect } from 'vitest';
+import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
-class BunPostgresIt extends AbstractSqlQuerierIt {
+class BunPostgresIt extends PgLikeQuerierIt {
   constructor() {
     super(
       new BunSqlQuerierPool({
@@ -21,6 +22,15 @@ class BunPostgresIt extends AbstractSqlQuerierIt {
       await querier.release();
     }
     await super.beforeAll();
+  }
+
+  /** Postgres's `xmax` system column exposes the `created` flag on upsert. */
+  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
+    expect(created).toBe(true);
+  }
+
+  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
+    expect(created).toBe(false);
   }
 }
 

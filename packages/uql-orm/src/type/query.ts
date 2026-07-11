@@ -613,8 +613,12 @@ export interface EngineFeatures {
   readonly foreignKeyAlter: boolean;
   /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
   readonly columnComment: boolean;
-  /** How vector indexes are emitted: inline in CREATE TABLE or as standalone CREATE INDEX. */
-  readonly vectorIndexStyle: 'inline' | 'create';
+  /**
+   * How vector indexes are emitted: inline in CREATE TABLE (MySQL/MariaDB), a standalone
+   * `CREATE INDEX ... USING <type> (col opclass)` (Postgres/SQLite), or a standalone
+   * `CREATE VECTOR INDEX (col opclass)` with no access-method keyword (CockroachDB's native type).
+   */
+  readonly vectorIndexStyle: 'inline' | 'create' | 'native';
   /** Whether the dialect requires/allows (n) length constraints on vector types. */
   readonly vectorSupportsLength: boolean;
   /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */

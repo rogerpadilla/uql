@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
-import type { IdValue, QuerierPool } from '../type/index.js';
+import type { IdValue, PrimaryKey, QuerierPool } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
@@ -30,6 +30,49 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     return persistedIds;
   }
 
+  /**
+   * `firstId` is asserted defined by default (every `'returning'`-ish dialect reports one).
+   * {@link MySqlLikeQuerierIt} overrides to a no-op: MySQL has no `RETURNING`, so a manually
+   * specified (non-auto-increment) PK reports no `firstId` on upsert.
+   */
+  protected assertUpsertFirstId(firstId: PrimaryKey | undefined): void {
+    expect(firstId).toBeDefined();
+  }
+
+  /**
+   * `created` is asserted `undefined` by default: most dialects (SQLite, MariaDB, CockroachDB)
+   * have no reliable insert-vs-update signal for a `RETURNING`-based upsert. Dialects that DO have
+   * one (Postgres's `xmax`, MySQL's `affectedRows` convention) override both of these to assert
+   * `true`/`false` instead.
+   */
+  protected assertUpsertCreatedOnInsert(created: boolean | undefined): void {
+    expect(created).toBeUndefined();
+  }
+
+  protected assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
+    expect(created).toBeUndefined();
+  }
+
+  override async shouldUpsertOne() {
+    const pk = '507f1f77bcf86cd799439011';
+
+    const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
+    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
+    this.assertUpsertFirstId(insertResult.firstId);
+    this.assertUpsertCreatedOnInsert(insertResult.created);
+
+    const record2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
+    expect(record2).toMatchObject({ name: 'Some Name C' });
+
+    const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
+    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
+    this.assertUpsertFirstId(updateResult.firstId);
+    this.assertUpsertCreatedOnUpdate(updateResult.created);
+
+    const record3 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
+    expect(record3).toMatchObject({ name: 'Some Name D' });
+  }
+
   async shouldInsertManyWithProvidedAndGeneratedIds() {
     const ids = await this.querier.insertMany(LedgerAccount, [
       { name: 'Mixed A' },
@@ -51,37 +94,5 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     }
     expect(Number(persistedIds[1])).toBe(5000);
     expect(ids).toEqual(this.expectedMixedBatchIds([persistedIds[0], 5000, persistedIds[2]]));
-  }
-}
-
-/**
- * Shared expectations for MySQL-protocol drivers (mysql2, Bun MySQL), which have no `RETURNING`
- * support and only report header-derived IDs.
- */
-export abstract class MySqlLikeQuerierIt extends AbstractSqlQuerierIt {
-  protected override expectedMixedBatchIds([, providedId]: IdValue<LedgerAccount>[]): IdValue<LedgerAccount>[] {
-    return [undefined, providedId, undefined];
-  }
-
-  /**
-   * MySQL reports no `firstId` for upserts on non-auto-increment PKs (no `RETURNING`), but its
-   * `affectedRows` convention exposes the `created` flag, which the base test does not cover.
-   */
-  override async shouldUpsertOne() {
-    const pk = '507f1f77bcf86cd799439011';
-
-    const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
-    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.created).toBe(true);
-
-    const record2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
-    expect(record2).toMatchObject({ name: 'Some Name C' });
-
-    const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
-    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.created).toBe(false);
-
-    const record3 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
-    expect(record3).toMatchObject({ name: 'Some Name D' });
   }
 }

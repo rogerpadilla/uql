@@ -1,18 +1,27 @@
-import { PostgresDialect } from '../postgres/postgresDialect.js';
-import type { VectorDistance } from '../type/index.js';
+import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 
 /**
  * CockroachDB Dialect.
- * Completely leverages PostgresDialect directly since they share wire compatibility.
- * CockroachDB natively supports `(xmax = 0)` to allow Postgres-compatible ORMs
- * to perform `upsert` queries without custom overrides.
+ * Shares AST/quoting/JSONB/full-text-search/vector-search/upsert logic with Postgres via
+ * {@link PgLikeSqlDialect} (wire- and SQL-compatible for all of that, including pgvector's
+ * `<=>`/`<->`/`<#>` operators, which CockroachDB implements natively). Unlike Postgres, CockroachDB
+ * has no `xmax`/`ctid` system columns, so it uses `PgLikeSqlDialect.upsert`'s default as-is (no
+ * `created` detection) rather than Postgres's `xmax`-based override; no `vectorExtension` either,
+ * since the vector type is native (no `CREATE EXTENSION` needed); and vector indexes use
+ * CockroachDB's own `CREATE VECTOR INDEX` syntax (no access-method keyword) rather than pgvector's
+ * `CREATE INDEX ... USING ivfflat/hnsw`.
  */
-export class CockroachDialect extends PostgresDialect {
+export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
-  override readonly serialPrimaryKey = 'SERIAL PRIMARY KEY';
-
-  override readonly vectorOpsClass: Readonly<Record<VectorDistance, string>> | undefined = undefined;
-
-  override readonly vectorExtension: string | undefined = undefined;
+  constructor(options: DialectOptions = {}) {
+    super({
+      ...options,
+      driverCapabilities: {
+        vectorIndexStyle: 'native',
+        ...options.driverCapabilities,
+      },
+    });
+  }
 }
