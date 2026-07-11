@@ -257,6 +257,25 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     ).toThrow('mariadb does not support vector distance metric: inner');
   }
 
+  shouldNotResolveVectorDistanceFnViaThePrototypeChain() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    // 'toString' is not an own property of `vectorDistanceFns`, but `Object.prototype.toString`
+    // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
+    expect(() =>
+      this.exec((ctx) =>
+        this.mariaDialect.find(ctx, VectorItem, {
+          $select: { id: true },
+          $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
+          $limit: 10,
+        }),
+      ),
+    ).toThrow('mariadb does not support vector distance metric: toString');
+  }
+
   shouldSortByVectorSimilarityCombinedWithRegularSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {

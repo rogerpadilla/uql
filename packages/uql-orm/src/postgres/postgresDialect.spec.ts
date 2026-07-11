@@ -577,6 +577,25 @@ class PostgresDialectSpec {
     expect(values).toEqual(['[1,2,3]']);
   }
 
+  shouldNotResolveVectorDistanceOperatorViaThePrototypeChain() {
+    @Entity({ name: 'VectorItem' })
+    class VectorItem {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    // 'toString' is not an own property of `vectorOpsClass`, but `Object.prototype.toString`
+    // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, VectorItem, {
+          $select: { id: true },
+          $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
+          $limit: 10,
+        }),
+      ),
+    ).toThrow('postgres does not support vector distance metric: toString');
+  }
+
   shouldSortByVectorSimilarityExplicitL2() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {

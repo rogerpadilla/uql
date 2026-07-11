@@ -24,6 +24,17 @@ export function hasKeys(obj: unknown): boolean {
   return false;
 }
 
+/**
+ * Whether any enumerable key of `obj` satisfies `pred`, short-circuiting on the first match
+ * without materializing a key array (unlike `Object.keys(obj).some(pred)`).
+ */
+export function someKey(obj: object, pred: (key: string) => boolean): boolean {
+  for (const key in obj) {
+    if (pred(key)) return true;
+  }
+  return false;
+}
+
 export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }

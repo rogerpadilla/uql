@@ -516,6 +516,59 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
   });
 
+  // ─── Unsafe map lookups: an unvalidated query-provided key (queries are plain data) must
+  // never resolve via the Object.prototype chain, nor be spliced into SQL unchecked ─────────
+  describe('unsafe map lookups', () => {
+    it('compareFieldOperator rejects an operator key that only exists on Object.prototype', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.where(ctx, User, { name: { toString: 'x' } } as any)).toThrow('unknown operator: toString');
+    });
+
+    it('having rejects an operator key that only exists on Object.prototype', () => {
+      const ctx = dialect.createContext();
+      expect(() =>
+        dialect.aggregate(ctx, User, {
+          $group: { total: { $sum: 'id' } },
+          $having: { total: { toString: 5 } },
+        } as any),
+      ).toThrow('unsupported HAVING operator: toString');
+    });
+
+    it('sort rejects a direction that only exists on Object.prototype', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.find(ctx, User, { $sort: { name: 'toString' } } as any)).toThrow(
+        'unknown sort direction: toString',
+      );
+    });
+
+    it('aggregateSort rejects a direction that only exists on Object.prototype', () => {
+      const ctx = dialect.createContext();
+      expect(() =>
+        dialect.aggregate(ctx, User, {
+          $group: { total: { $sum: 'id' } },
+          $sort: { total: 'toString' },
+        } as any),
+      ).toThrow('unknown sort direction: toString');
+    });
+
+    it('aggregate rejects a $group operator key that only exists on Object.prototype', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.aggregate(ctx, User, { $group: { total: { toString: 'id' } } } as any)).toThrow(
+        'unsupported aggregate operator: toString',
+      );
+    });
+
+    it('aggregate rejects an arbitrary $group operator key instead of splicing it as a SQL function name', () => {
+      const ctx = dialect.createContext();
+      expect(() =>
+        dialect.aggregate(ctx, User, {
+          $group: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
+        } as any),
+      ).toThrow('unsupported aggregate operator');
+      expect(ctx.sql).not.toContain('DROP TABLE');
+    });
+  });
+
   // ─── Relation $size (count) filtering ─────────────────────────────
   describe('relation $size', () => {
     it('OneToMany with exact match', () => {

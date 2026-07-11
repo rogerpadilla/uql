@@ -6,6 +6,7 @@ import {
   type FieldOptions,
   type FilterOnMissing,
   type IdValue,
+  isQueryAggregateOp,
   type MongoId,
   type OnFieldCallback,
   type QueryAggregateOp,
@@ -32,31 +33,44 @@ export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey:
   }) as FieldKey<E>[];
 }
 
+/** Appends `record`'s not-yet-`seen` insertable keys (real, non-virtual, defined value) to `keys`. */
+function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKey<E>>, keys: FieldKey<E>[]): void {
+  for (const key of getKeys(record as object) as FieldKey<E>[]) {
+    if (seen.has(key)) {
+      continue;
+    }
+    const field = meta.fields[key];
+    if (field && !field.virtual && record[key] !== undefined) {
+      seen.add(key);
+      keys.push(key);
+    }
+  }
+}
+
 /**
  * Resolves the columns of an INSERT statement: the union of the persistable fields provided by
  * any record (in first-seen order), plus every `onInsert` field. Records missing one of these
  * columns insert its database default.
+ *
+ * Skipping already-seen keys keeps a homogeneous batch (every record the same shape, the common
+ * case) at a membership check per cell past the first record, rather than re-checking each field.
  *
  * `onInsert` fields are always included so the column set is stable whether or not the caller
  * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
  * chunk-size estimate inspects the raw payload).
  */
 export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: E[]): FieldKey<E>[] {
-  const keys = new Set<FieldKey<E>>();
-  for (const it of payloads) {
-    for (const key of getKeys(it as object) as FieldKey<E>[]) {
-      const field = meta.fields[key];
-      if (field && !field.virtual && it[key] !== undefined) {
-        keys.add(key);
-      }
-    }
+  const seen = new Set<FieldKey<E>>();
+  const keys: FieldKey<E>[] = [];
+  for (const record of payloads) {
+    addInsertFieldKeys(meta, record, seen, keys);
   }
   for (const key of getKeys(meta.fields) as FieldKey<E>[]) {
-    if (meta.fields[key]!.onInsert !== undefined) {
-      keys.add(key);
+    if (meta.fields[key]!.onInsert !== undefined && !seen.has(key)) {
+      keys.push(key);
     }
   }
-  return [...keys];
+  return keys;
 }
 
 export function getFieldCallbackValue(val: OnFieldCallback) {
@@ -281,8 +295,11 @@ export function parseGroupMap<E>(group: QueryGroupMap<E>): ParsedGroupEntry[] {
       entries.push({ kind: 'key', alias });
     } else if (value && typeof value === 'object') {
       const fnEntry = value as Record<string, string>;
-      const op = getKeys(fnEntry)[0] as QueryAggregateOp;
-      entries.push({ kind: 'fn', alias, op, fieldRef: fnEntry[op] });
+      const key = getKeys(fnEntry)[0];
+      if (!isQueryAggregateOp(key)) {
+        throw TypeError(`unsupported aggregate operator: ${key}`);
+      }
+      entries.push({ kind: 'fn', alias, op: key, fieldRef: fnEntry[key] });
     }
   }
   return entries;

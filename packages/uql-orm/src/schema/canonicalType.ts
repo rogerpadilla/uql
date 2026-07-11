@@ -136,9 +136,18 @@ const PG_TYPE_MAP: Record<TypeCategory, string> = {
   sparsevec: 'SPARSEVEC',
 };
 
+// CockroachDB's VECTOR type is native (no extension), but it has no HALFVEC/SPARSEVEC types at
+// all - verified live: `CREATE TABLE t (v HALFVEC(3))` is a syntax error, not just unsupported at
+// runtime. Falls back to VECTOR, same as MariaDB (see its own halfvec/sparsevec below).
+const CRDB_TYPE_MAP: Record<TypeCategory, string> = {
+  ...PG_TYPE_MAP,
+  halfvec: 'VECTOR',
+  sparsevec: 'VECTOR',
+};
+
 const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
   postgres: PG_TYPE_MAP,
-  cockroachdb: PG_TYPE_MAP,
+  cockroachdb: CRDB_TYPE_MAP,
   mysql: {
     integer: 'INT',
     float: 'FLOAT',

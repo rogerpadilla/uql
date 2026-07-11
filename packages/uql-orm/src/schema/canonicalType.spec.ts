@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -16,6 +17,7 @@ import {
 import type { CanonicalType } from './types.js';
 
 const pg = new PostgresDialect();
+const cockroach = new CockroachDialect();
 const mysql = new MySqlDialect();
 const maria = new MariaDialect();
 const sqlite = new BetterSqlite3Dialect();
@@ -130,6 +132,13 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'vector', length: 768 }, maria)).toBe('VECTOR(768)');
       expect(canonicalToSql({ category: 'halfvec', length: 1536 }, maria)).toBe('VECTOR(1536)');
       expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, maria)).toBe('VECTOR(4000)');
+    });
+
+    it('should fall back halfvec/sparsevec to VECTOR for cockroachdb (no native HALFVEC/SPARSEVEC)', () => {
+      // Verified live: `CREATE TABLE t (v HALFVEC(3))` is a syntax error on CockroachDB.
+      expect(canonicalToSql({ category: 'vector', length: 768 }, cockroach)).toBe('VECTOR(768)');
+      expect(canonicalToSql({ category: 'halfvec', length: 1536 }, cockroach)).toBe('VECTOR(1536)');
+      expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, cockroach)).toBe('VECTOR(4000)');
     });
   });
 

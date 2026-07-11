@@ -8,12 +8,15 @@ import type {
   FieldValue,
   Query,
   QueryAggregate,
+  QueryAggregateOp,
   QueryExclude,
+  QueryLikeOp,
   QueryOptions,
   QuerySelect,
   QuerySortMap,
   QueryVectorSearch,
   QueryWhere,
+  QueryWhereFieldOperatorMap,
   RelationKey,
   Type,
 } from '../type/index.js';
@@ -31,7 +34,17 @@ import {
   normalizeScalarFieldSelection,
   parseGroupMap,
   type RelationRequestSummary,
+  someKey,
 } from '../util/index.js';
+
+/**
+ * Operators MongoDB already expresses natively. `Pick`'s constraint ties this back to
+ * {@link QueryWhereFieldOperatorMap} so a rename there breaks this union at compile time.
+ */
+type MongoNativeOp = keyof Pick<
+  QueryWhereFieldOperatorMap<unknown>,
+  '$all' | '$size' | '$elemMatch' | '$eq' | '$ne' | '$lt' | '$lte' | '$gt' | '$gte' | '$in' | '$nin' | '$regex' | '$not'
+>;
 
 /** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoDialect} and its schema generator. */
 export const mongoDialectFeatures: DialectFeatures = {
@@ -61,13 +74,13 @@ export class MongoDialect extends AbstractDialect {
   private static readonly ID_KEY = '_id';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
-  private static readonly AGGREGATE_OP_MAP: Record<string, string> = {
-    $count: '$sum',
-    $sum: '$sum',
-    $avg: '$avg',
-    $min: '$min',
-    $max: '$max',
-  };
+  private static readonly AGGREGATE_OP_MAP = new Map<QueryAggregateOp, string>([
+    ['$count', '$sum'],
+    ['$sum', '$sum'],
+    ['$avg', '$avg'],
+    ['$min', '$min'],
+    ['$max', '$max'],
+  ]);
 
   public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
@@ -115,7 +128,7 @@ export class MongoDialect extends AbstractDialect {
    * Check if an object has operator keys (keys starting with $).
    */
   private hasOperatorKeys(obj: Record<string, unknown>): boolean {
-    return Object.keys(obj).some((key) => key.startsWith('$'));
+    return someKey(obj, (key) => key.startsWith('$'));
   }
 
   protected mapTableNameRow(row: { table_name: string }): string {
@@ -123,19 +136,19 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** String operators → { pattern: (v) => regex, caseInsensitive } */
-  private static readonly REGEX_OP_MAP: Record<string, { wrap: (v: unknown) => string; ci: boolean }> = {
-    $startsWith: { wrap: (v) => `^${v}`, ci: false },
-    $istartsWith: { wrap: (v) => `^${v}`, ci: true },
-    $endsWith: { wrap: (v) => `${v}$`, ci: false },
-    $iendsWith: { wrap: (v) => `${v}$`, ci: true },
-    $includes: { wrap: (v) => String(v), ci: false },
-    $iincludes: { wrap: (v) => String(v), ci: true },
-    $like: { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false },
-    $ilike: { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true },
-  };
+  private static readonly REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: boolean }>([
+    ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
+    ['$istartsWith', { wrap: (v) => `^${v}`, ci: true }],
+    ['$endsWith', { wrap: (v) => `${v}$`, ci: false }],
+    ['$iendsWith', { wrap: (v) => `${v}$`, ci: true }],
+    ['$includes', { wrap: (v) => String(v), ci: false }],
+    ['$iincludes', { wrap: (v) => String(v), ci: true }],
+    ['$like', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false }],
+    ['$ilike', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true }],
+  ]);
 
   /** MongoDB native operators - pass through as-is. */
-  private static readonly NATIVE_OPS = new Set([
+  private static readonly NATIVE_OPS = new Set<MongoNativeOp>([
     '$all',
     '$size',
     '$elemMatch',
@@ -158,12 +171,12 @@ export class MongoDialect extends AbstractDialect {
     const result: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(ops)) {
       // Native MongoDB operators - pass through directly
-      if (MongoDialect.NATIVE_OPS.has(op)) {
+      if (MongoDialect.NATIVE_OPS.has(op as MongoNativeOp)) {
         result[op] = val;
         continue;
       }
       // String/pattern → regex operators (8 variants including $like/$ilike)
-      const regexEntry = MongoDialect.REGEX_OP_MAP[op];
+      const regexEntry = MongoDialect.REGEX_OP_MAP.get(op as QueryLikeOp);
       if (regexEntry) {
         result['$regex'] = regexEntry.wrap(val);
         if (regexEntry.ci) result['$options'] = 'i';
@@ -396,7 +409,10 @@ export class MongoDialect extends AbstractDialect {
       if (entry.kind === 'key') {
         groupId[entry.alias] = `$${entry.alias}`;
       } else {
-        const mongoOp = MongoDialect.AGGREGATE_OP_MAP[entry.op];
+        const mongoOp = MongoDialect.AGGREGATE_OP_MAP.get(entry.op);
+        if (!mongoOp) {
+          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
+        }
         groupAccumulators[entry.alias] = entry.op === '$count' ? { [mongoOp]: 1 } : { [mongoOp]: `$${entry.fieldRef}` };
       }
     }

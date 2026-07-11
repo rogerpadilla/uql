@@ -58,11 +58,11 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly insertIdSource = 'lastId';
 
-  protected override readonly vectorDistanceFns: Partial<Record<VectorDistance, string>> = {
-    cosine: 'vec_distance_cosine',
-    l2: 'vec_distance_L2',
-    hamming: 'vec_distance_hamming',
-  };
+  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
+    ['cosine', 'vec_distance_cosine'],
+    ['l2', 'vec_distance_L2'],
+    ['hamming', 'vec_distance_hamming'],
+  ]);
 
   /**
    * SQLite does not support the `DEFAULT` keyword inside `VALUES`. Inline the metadata default
