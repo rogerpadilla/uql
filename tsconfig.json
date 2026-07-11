@@ -12,7 +12,6 @@
     "noPropertyAccessFromIndexSignature": true,
     "verbatimModuleSyntax": true,
     "incremental": true,
-    "forceConsistentCasingInFileNames": true,
     "allowUnreachableCode": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
