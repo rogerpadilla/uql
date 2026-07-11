@@ -386,6 +386,15 @@ describe('buildUpdateResult', () => {
     expect(buildUpdateResult({ upsertStatus: undefined }).created).toBe(undefined);
   });
 
+  it('should ignore upsertStatus for RETURNING dialects without a `_created` column', () => {
+    // MariaDB's `ON DUPLICATE KEY UPDATE ... RETURNING` doesn't follow the MySQL 1/2/0
+    // affectedRows convention (driver-dependent, sometimes non-numeric, sometimes a stale/wrong
+    // value); treating it as a `created` signal produced a real false positive/negative on insert.
+    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 1 }).created).toBeUndefined();
+    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 2 }).created).toBeUndefined();
+    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 0 }).created).toBeUndefined();
+  });
+
   it('should return empty ids when no id or rows provided', () => {
     const res = buildUpdateResult({ changes: 5 });
     expect(res.ids).toEqual([]);

@@ -1,5 +1,4 @@
 import { type ReservedSQL, SQL } from 'bun';
-import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import type { DialectOptions } from '../dialect/abstractDialect.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
@@ -14,6 +13,7 @@ import {
   normalizeBunOpts,
   normalizeRows,
 } from './bunSql.util.js';
+import { BunSqlCockroachDialect } from './bunSqlCockroachDialect.js';
 import { BunSqliteDialect } from './bunSqliteDialect.js';
 import { BunSqlPostgresDialect } from './bunSqlPostgresDialect.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
@@ -25,7 +25,7 @@ const DialectMap: Readonly<Record<SqlDialectName, DialectConstructor>> = {
   mysql: MySqlDialect,
   mariadb: MariaDialect,
   sqlite: BunSqliteDialect,
-  cockroachdb: CockroachDialect,
+  cockroachdb: BunSqlCockroachDialect,
 };
 
 export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, AbstractSqlDialect> {

@@ -199,9 +199,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (options.ifNotExists ?? this.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
     const opsClassMap = this.dialect.vectorOpsClass;
-    const hasOpsClass = opsClassMap && (index.type === 'hnsw' || index.type === 'ivfflat');
+    // CockroachDB's native vector index has one algorithm (no hnsw/ivfflat choice), so `type: 'vector'`
+    // is its trigger - same generic value MariaDB's inline style already uses (see `isInlineVectorIdx`).
+    const isNativeVectorIndex = this.features.vectorIndexStyle === 'native' && index.type === 'vector';
+    const hasOpsClass = opsClassMap && (isNativeVectorIndex || index.type === 'hnsw' || index.type === 'ivfflat');
 
-    // For pgvector indexes: append operator class to the column
+    // For pgvector/CockroachDB vector indexes: append operator class to the column
     const columns = index.columns
       .map((c) => {
         const escaped = this.escapeId(c);
@@ -213,11 +216,15 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       })
       .join(', ');
 
-    const using = index.type ? ` USING ${index.type}` : '';
+    // CockroachDB has no access-method keyword: `CREATE VECTOR INDEX ... (col)`, not
+    // `CREATE INDEX ... USING vector (col)`.
+    const indexKeyword = isNativeVectorIndex ? 'VECTOR INDEX' : 'INDEX';
+    const using = !isNativeVectorIndex && index.type ? ` USING ${index.type}` : '';
 
-    // Build WITH params for vector indexes with operator class support
+    // Build WITH params for pgvector indexes with operator class support. CockroachDB's native
+    // vector index has its own, differently-named tuning knobs - not generated here.
     let withClause = '';
-    if (hasOpsClass) {
+    if (hasOpsClass && !isNativeVectorIndex) {
       const withParams: string[] = [];
       if (index.m !== undefined) withParams.push(`m = ${index.m}`);
       if (index.efConstruction !== undefined) withParams.push(`ef_construction = ${index.efConstruction}`);
@@ -225,7 +232,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       withClause = withParams.length > 0 ? ` WITH (${withParams.join(', ')})` : '';
     }
 
-    return `CREATE ${unique}INDEX ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)}${using} (${columns})${withClause};`;
+    return `CREATE ${unique}${indexKeyword} ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)}${using} (${columns})${withClause};`;
   }
 
   generateDropIndex(tableName: string, indexName: string): string {

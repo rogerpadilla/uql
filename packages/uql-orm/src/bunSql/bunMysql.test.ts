@@ -1,4 +1,4 @@
-import { MySqlLikeQuerierIt } from '../querier/abstractSqlQuerier-test.js';
+import { MySqlLikeQuerierIt } from '../querier/mysqlLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 

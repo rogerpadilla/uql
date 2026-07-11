@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
@@ -147,6 +148,34 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     });
     // MySQL: no operator class, no WITH params - just USING
     expect(sql).toBe('CREATE INDEX `idx_embedding` ON `articles` USING hnsw (`embedding`);');
+  });
+
+  it('should generate CREATE VECTOR INDEX for CockroachDB (native syntax, no USING/WITH)', () => {
+    const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
+    const sql = crdbGenerator.generateCreateIndex('articles', {
+      name: 'idx_articles_embedding',
+      columns: ['embedding'],
+      unique: false,
+      type: 'vector',
+      distance: 'cosine',
+      // CockroachDB has its own tuning knobs, not m/efConstruction/lists - must not appear.
+      m: 16,
+      efConstruction: 64,
+    });
+    expect(sql).toBe(
+      'CREATE VECTOR INDEX IF NOT EXISTS "idx_articles_embedding" ON "articles" ("embedding" vector_cosine_ops);',
+    );
+  });
+
+  it('should not add an operator class to a CockroachDB index with a non-vector type', () => {
+    const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
+    const sql = crdbGenerator.generateCreateIndex('articles', {
+      name: 'idx_articles_name',
+      columns: ['name'],
+      unique: false,
+      type: 'btree',
+    });
+    expect(sql).toBe('CREATE INDEX IF NOT EXISTS "idx_articles_name" ON "articles" USING btree ("name");');
   });
   /** Build a minimal TableNode mock with an id + embedding column and the given vector indexes. */
   function buildVectorTableNode(indexes: Partial<IndexNode>[]): TableNode {
