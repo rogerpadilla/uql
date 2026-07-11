@@ -96,7 +96,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the ID
    */
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
+  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined>;
 
   /**
    * Inserts many records.
