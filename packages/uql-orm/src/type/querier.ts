@@ -105,8 +105,10 @@ export interface Querier extends UniversalQuerier {
   /**
    * Insert a single record and return its ID (provided, `onInsert`-generated, or
    * database-generated - see {@link Querier.insertMany} for the exact semantics).
+   * Returns `undefined` when the ID cannot be determined (e.g. MySQL/SQLite non-auto-increment
+   * keys in batches without explicit IDs).
    */
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
+  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined>;
 
   /**
    * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
