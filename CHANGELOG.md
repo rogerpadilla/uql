@@ -8,7 +8,7 @@ date format is [yyyy-mm-dd]
 
 ### Performance
 
-Query building is leaner on the paths that run for every query. Same SQL out, no behavior change, just pure optimizations while keeping code lean and mainteneable.
+Query building is leaner on the paths that run for every query. Same SQL out, no behavior change, just pure optimizations while keeping code lean and maintainable.
 
 ## [0.15.4] - 2026-07-11
 
