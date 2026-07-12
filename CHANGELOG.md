@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.5] - 2026-07-12
+
+### Performance
+
+Query building is leaner on the paths that run for every query. Same SQL out, no behavior change, just pure optimizations while keeping code lean and mainteneable.
+
 ## [0.15.4] - 2026-07-11
 
 ### Fixes

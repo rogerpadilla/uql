@@ -22,7 +22,7 @@ import {
   type RelationKey,
   type UqlContext,
 } from '../type/index.js';
-import { getFieldKeys, getKeys, hasKeys } from './object.util.js';
+import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -33,14 +33,16 @@ export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey:
   }) as FieldKey<E>[];
 }
 
+/** Whether `key` is a real, non-virtual field that `record` provides a defined value for. */
+function isInsertableField<E>(meta: EntityMeta<E>, record: E, key: FieldKey<E>): boolean {
+  const field = meta.fields[key];
+  return !!field && !field.virtual && record[key] !== undefined;
+}
+
 /** Appends `record`'s not-yet-`seen` insertable keys (real, non-virtual, defined value) to `keys`. */
 function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKey<E>>, keys: FieldKey<E>[]): void {
   for (const key of getKeys(record as object) as FieldKey<E>[]) {
-    if (seen.has(key)) {
-      continue;
-    }
-    const field = meta.fields[key];
-    if (field && !field.virtual && record[key] !== undefined) {
+    if (!seen.has(key) && isInsertableField(meta, record, key)) {
       seen.add(key);
       keys.push(key);
     }
@@ -52,8 +54,10 @@ function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKe
  * any record (in first-seen order), plus every `onInsert` field. Records missing one of these
  * columns insert its database default.
  *
- * Skipping already-seen keys keeps a homogeneous batch (every record the same shape, the common
- * case) at a membership check per cell past the first record, rather than re-checking each field.
+ * The column list is seeded from the first record, then extended only by records that introduce a
+ * new column. A homogeneous batch (every record the same shape, the common case) is detected with
+ * {@link someKey}, which walks a record without allocating a key array, so only the rare record that
+ * actually adds a column pays for a full rescan.
  *
  * `onInsert` fields are always included so the column set is stable whether or not the caller
  * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
@@ -62,8 +66,17 @@ function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKe
 export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: E[]): FieldKey<E>[] {
   const seen = new Set<FieldKey<E>>();
   const keys: FieldKey<E>[] = [];
-  for (const record of payloads) {
-    addInsertFieldKeys(meta, record, seen, keys);
+  addInsertFieldKeys(meta, payloads[0], seen, keys);
+  for (let i = 1; i < payloads.length; i++) {
+    const record = payloads[i]!;
+    if (
+      someKey(
+        record as object,
+        (key) => !seen.has(key as FieldKey<E>) && isInsertableField(meta, record, key as FieldKey<E>),
+      )
+    ) {
+      addInsertFieldKeys(meta, record, seen, keys);
+    }
   }
   for (const key of getKeys(meta.fields) as FieldKey<E>[]) {
     if (meta.fields[key]!.onInsert !== undefined && !seen.has(key)) {
@@ -88,14 +101,17 @@ export function getSoftDeleteValue(field: FieldOptions) {
 export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];
-  return payloads.map((it) => {
+  if (keys.length === 0) {
+    return payloads;
+  }
+  for (const it of payloads) {
     for (const key of keys) {
       if (it[key] === undefined) {
         it[key] = getFieldCallbackValue(meta.fields[key]![callbackKey]!) as E[typeof key];
       }
     }
-    return it;
-  });
+  }
+  return payloads;
 }
 
 export function filterPersistableRelationKeys<E>(
@@ -122,29 +138,42 @@ export function normalizeScalarFieldSelection<E>(
   select?: QuerySelect<E>,
   exclude?: QueryExclude<E>,
 ): FieldKey<E>[] {
+  // A positive `$select` (the common case) wins outright and returns
+  // before `$exclude` is ever scanned.
   const positiveFields: FieldKey<E>[] = [];
-  const excludedFields = new Set<FieldKey<E>>();
-
-  for (const [key, value] of Object.entries(select ?? {})) {
-    if (!(key in meta.fields)) continue;
-    if (value) {
-      positiveFields.push(key as FieldKey<E>);
-    } else {
-      excludedFields.add(key as FieldKey<E>);
+  let excludedFields: Set<FieldKey<E>> | undefined;
+  if (select) {
+    for (const key of getKeys(select)) {
+      if (!(key in meta.fields)) continue;
+      if (select[key]) {
+        positiveFields.push(key as FieldKey<E>);
+      } else {
+        excludedFields ??= new Set<FieldKey<E>>();
+        excludedFields.add(key);
+      }
+    }
+    if (positiveFields.length) {
+      return positiveFields;
     }
   }
 
-  for (const [key, value] of Object.entries(exclude ?? {})) {
-    if (value && key in meta.fields) {
-      excludedFields.add(key as FieldKey<E>);
+  // No positive selection: every field minus the ones excluded by a falsy `$select` entry or a
+  // truthy `$exclude` entry.
+  if (exclude) {
+    for (const key of getKeys(exclude)) {
+      if (exclude[key] && key in meta.fields) {
+        excludedFields ??= new Set<FieldKey<E>>();
+        excludedFields.add(key);
+      }
     }
   }
 
-  if (positiveFields.length) {
-    return positiveFields;
+  const allFields = getFieldKeys(meta.fields);
+  if (!excludedFields) {
+    return allFields;
   }
-
-  return getFieldKeys(meta.fields).filter((it) => !excludedFields.has(it)) as FieldKey<E>[];
+  const excluded = excludedFields;
+  return allFields.filter((it) => !excluded.has(it));
 }
 
 export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap<E> {
