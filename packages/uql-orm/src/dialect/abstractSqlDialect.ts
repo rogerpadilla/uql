@@ -64,6 +64,7 @@ import {
   getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
+  hasMultipleKeys,
   isJsonType,
   isPopulatingRelations,
   isVectorSearch,
@@ -181,7 +182,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$select, q.$populate);
-    opts = { ...opts, prefix };
+    if (opts.prefix !== prefix) {
+      opts = { ...opts, prefix };
+    }
     this.where<E>(ctx, entity, q.$where, opts);
     this.sort<E>(ctx, entity, q.$sort, opts);
     this.pager(ctx, q);
@@ -415,9 +418,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     where = buildQueryWhereAsMap(meta, where);
 
-    const entries = Object.entries(where);
+    const whereKeys = getKeys(where);
 
-    if (!entries.length) {
+    if (!whereKeys.length) {
       return;
     }
 
@@ -429,8 +432,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       ctx.append('(');
     }
 
-    const whereKeys = getKeys(where) as (keyof QueryWhereMap<E>)[];
-    const hasMultipleKeys = whereKeys.length > 1;
+    const multipleKeys = whereKeys.length > 1;
+    // `usePrecedence` is the only field that changes for the children and it is constant across
+    // them, so resolve the child options once instead of spreading `opts` per key.
+    const childOpts = opts.usePrecedence === multipleKeys ? opts : { ...opts, usePrecedence: multipleKeys };
     let appended = false;
     whereKeys.forEach((key) => {
       const val = (where as Record<string, unknown>)[key];
@@ -438,10 +443,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       if (appended) {
         ctx.append(' AND ');
       }
-      this.compare(ctx, entity, key, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], {
-        ...opts,
-        usePrecedence: hasMultipleKeys,
-      });
+      this.compare(ctx, entity, key, val, childOpts);
       appended = true;
     });
 
@@ -576,7 +578,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       } else if (whereEntry) {
         this.renderWhere(ctx, entity, whereEntry, {
           prefix: opts.prefix,
-          usePrecedence: hasManyItems && !Array.isArray(whereEntry) && Object.keys(whereEntry as object).length > 1,
+          usePrecedence: hasManyItems && !Array.isArray(whereEntry) && hasMultipleKeys(whereEntry as object),
           clause: false,
         });
       }
@@ -611,9 +613,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ['$ilike', (v) => v.toLowerCase()],
   ]);
 
-  protected resolveColumnWithPrefix(entity: Type<unknown>, key: string, { prefix }: QueryOptions = {}): string {
-    const meta = getMeta(entity);
-    const field = meta.fields[key];
+  /** Builds `prefix.column` from an already-resolved field. */
+  private columnWithPrefix(key: string, field: FieldOptions | undefined, prefix: string | undefined): string {
     const columnName = this.resolveColumnName(key, field);
     const escapedPrefix = this.escapeId(prefix as string, true, true);
     return escapedPrefix + this.escapeId(columnName);
@@ -637,7 +638,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       }
       return `(${col.virtual})`;
     }
-    return this.resolveColumnWithPrefix(entity, key, opts);
+    return this.columnWithPrefix(key, col, opts.prefix);
   }
 
   private appendFieldSql(ctx: QueryContext, field: string | undefined, sql: string): void {
@@ -684,9 +685,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         this.appendInNin(ctx, field, op as string, val);
         break;
       case '$between': {
-        const col = this.resolveColumnWithPrefix(entity, key, opts);
         const [min, max] = val as [unknown, unknown];
-        ctx.append(`${col} BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`);
+        this.appendFieldSql(
+          ctx,
+          field,
+          ` BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`,
+        );
         break;
       }
       case '$isNull':
@@ -738,15 +742,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
   private appendInNin(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
     this.appendFieldSql(ctx, field, this.formatIn(ctx, Array.isArray(val) ? val : [], op === '$nin'));
-  }
-
-  protected addValues(ctx: QueryContext, vals: unknown[]): void {
-    vals.forEach((val, index) => {
-      if (index > 0) {
-        ctx.append(', ');
-      }
-      ctx.addValue(val);
-    });
   }
 
   /**
@@ -847,10 +842,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, { prefix }: QueryOptions): void {
-    const sortMap = buildSortMap(sort);
-    if (!hasKeys(sortMap)) {
+    if (!hasKeys(sort)) {
       return;
     }
+    const sortMap = buildSortMap(sort);
     const meta = getMeta(entity);
 
     // Separate vector search entries from direction entries before flattening,
@@ -1324,8 +1319,9 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
 
     // Hard delete removes matching rows regardless of soft-delete state (keeps other filters, e.g. tenant).
+    // Only rewrite the filters when there is a soft-delete filter to disable.
     ctx.append(`DELETE FROM ${this.escapeId(tableName)}`);
-    this.search(ctx, entity, q, { ...opts, filters: withoutSoftDeleteFilter(opts.filters) });
+    this.search(ctx, entity, q, meta.softDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts);
   }
 
   escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {

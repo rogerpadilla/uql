@@ -24,6 +24,15 @@ export function hasKeys(obj: unknown): boolean {
   return false;
 }
 
+/** Whether `obj` has at least two enumerable keys. */
+export function hasMultipleKeys(obj: object): boolean {
+  let count = 0;
+  for (const _ in obj) {
+    if (++count > 1) return true;
+  }
+  return false;
+}
+
 /**
  * Whether any enumerable key of `obj` satisfies `pred`, short-circuiting on the first match
  * without materializing a key array (unlike `Object.keys(obj).some(pred)`).
