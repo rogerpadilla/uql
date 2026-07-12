@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { stringifyQuery } from '../../http/query.js';
-import { User } from '../../test/index.js';
+import { User, VectorItem } from '../../test/index.js';
 import * as http from '../http/index.js';
 import { HttpQuerier } from './httpQuerier.js';
 
@@ -9,11 +9,11 @@ describe('HttpQuerier', () => {
 
   beforeEach(() => {
     querier = new HttpQuerier('/api');
-    vi.spyOn(http, 'get').mockResolvedValue({ data: {} });
+    vi.spyOn(http, 'get').mockResolvedValue({ data: {}, count: 0 });
     vi.spyOn(http, 'post').mockResolvedValue({ data: {} });
     vi.spyOn(http, 'patch').mockResolvedValue({ data: {} });
     vi.spyOn(http, 'put').mockResolvedValue({ data: {} });
-    vi.spyOn(http, 'query').mockResolvedValue({ data: {} });
+    vi.spyOn(http, 'query').mockResolvedValue({ data: {}, count: 0 });
     vi.spyOn(http, 'remove').mockResolvedValue({ data: {} });
   });
 
@@ -40,10 +40,31 @@ describe('HttpQuerier', () => {
   });
 
   it('findManyAndCount', async () => {
-    await querier.findManyAndCount(User, { $where: { name: 'Mario' } });
+    const response = await querier.findManyAndCount(User, { $where: { name: 'Mario' } });
     expect(http.get).toHaveBeenCalledWith(`/api/user${stringifyQuery({ $where: { name: 'Mario' }, count: true })}`, {
       count: true,
     });
+    expectTypeOf(response.data).toEqualTypeOf<User[]>();
+    expectTypeOf(response.count).toEqualTypeOf<number>();
+  });
+
+  it('findManyAndCount rejects a response without count metadata', async () => {
+    vi.mocked(http.get).mockResolvedValueOnce({ data: [] });
+    await expect(querier.findManyAndCount(User, {})).rejects.toThrow('findManyAndCount response has an invalid count');
+  });
+
+  it('infers projected distance fields for browser reads', async () => {
+    const query = { $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } } } as const;
+
+    const byId = await querier.findOneById(VectorItem, 1, query);
+    const one = await querier.findOne(VectorItem, query);
+    const many = await querier.findMany(VectorItem, query);
+    const manyAndCount = await querier.findManyAndCount(VectorItem, query);
+
+    expectTypeOf(byId.data).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
+    expectTypeOf(one.data).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
+    expectTypeOf(many.data).toEqualTypeOf<(VectorItem & { distance: number })[]>();
+    expectTypeOf(manyAndCount.data).toEqualTypeOf<(VectorItem & { distance: number })[]>();
   });
 
   it('count', async () => {

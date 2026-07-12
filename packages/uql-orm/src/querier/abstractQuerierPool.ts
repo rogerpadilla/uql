@@ -57,12 +57,12 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return context ? withContext(context, fn) : fn();
   }
 
-  findOneById<E extends object>(
+  findOneById<E extends object, const Q extends QueryOne<E>>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: Q,
     opts?: QueryOptions,
-  ): Promise<E | undefined> {
+  ): Promise<QueryFindResult<E, Q> | undefined> {
     return this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
   }
 

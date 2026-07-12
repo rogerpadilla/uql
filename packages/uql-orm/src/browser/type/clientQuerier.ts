@@ -1,5 +1,14 @@
-import type { CrudOperation, RequestSuccessResponse } from '../../http/contract.js';
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
+import type { CrudOperation, RequestCountedSuccessResponse, RequestSuccessResponse } from '../../http/contract.js';
+import type {
+  IdValue,
+  Query,
+  QueryFindResult,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  Type,
+  UpdatePayload,
+} from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -12,18 +21,30 @@ import type { RequestOptions } from './request.js';
  * @see UniversalQuerier for the server-side contract with direct return types.
  */
 export interface ClientQuerier {
-  findOneById<E>(
+  findOneById<E extends object, const Q extends QueryOne<E>>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: Q,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E | undefined>>;
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>>;
 
-  findOne<E>(entity: Type<E>, q: QueryOne<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E | undefined>>;
+  findOne<E extends object, const Q extends QueryOne<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>>;
 
-  findMany<E>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+  findMany<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q>[]>>;
 
-  findManyAndCount<E>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
+  findManyAndCount<E extends object, const Q extends Query<E>>(
+    entity: Type<E>,
+    q: Q,
+    opts?: RequestOptions,
+  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, Q>[]>>;
 
   count<E>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 

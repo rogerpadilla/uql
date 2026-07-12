@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MeasureUnitCategory, User } from '../test/index.js';
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
 import type { Query, QueryAggregate, QuerySearch, Type } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
@@ -66,6 +66,23 @@ describe('Dual API Pattern: $entity field support', () => {
 
   beforeEach(() => {
     querier = new MockQuerier();
+  });
+
+  describe('findOneById', () => {
+    it('infers projected distance fields without mutating the query', async () => {
+      const query = {
+        $where: { name: 'north' },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
+      } as const;
+
+      const result = await querier.findOneById(VectorItem, 1, query);
+
+      expectTypeOf(result).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
+      expect(query).toEqual({
+        $where: { name: 'north' },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
+      });
+    });
   });
 
   describe('findOne', () => {

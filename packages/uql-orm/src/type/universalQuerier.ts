@@ -24,12 +24,12 @@ export interface UniversalQuerier {
    * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E extends object>(
+  findOneById<E extends object, const Q extends QueryOne<E>>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: Q,
     opts?: QueryOptions,
-  ): Promise<E | undefined>;
+  ): Promise<QueryFindResult<E, Q> | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -135,11 +135,11 @@ export interface UniversalQuerier {
   ): Promise<number>;
 
   /**
-   * Insert or update a record given a search criteria.
+   * Insert or update a record based on the conflict paths.
    * @param entity the entity to persist on
-   * @param conflictPaths  the keys to use for the unique search
+   * @param conflictPaths the keys to use for the unique search
    * @param payload the data to be persisted
-   * @return void
+   * @return operation metadata; see {@link QueryUpdateResult}
    */
   upsertOne?<E extends object>(
     entity: Type<E>,
@@ -148,11 +148,11 @@ export interface UniversalQuerier {
   ): Promise<QueryUpdateResult>;
 
   /**
-   * Insert or update many records given a search criteria.
+   * Insert or update many records based on the conflict paths.
    * @param entity the entity to persist on
    * @param conflictPaths the keys to use for the unique search
    * @param payload the data to be persisted
-   * @return void
+   * @return operation metadata; see {@link QueryUpdateResult}
    */
   upsertMany?<E extends object>(
     entity: Type<E>,

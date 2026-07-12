@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.15.6] - 2026-07-12
+
+### Improvements in type-safety
+
+- **`findOneById` result inference** - now infers projected vector-distance fields from `$sort`/`$project`, matching `findOne`/`findMany` (e.g. `$project: 'distance'` → `Entity & { distance: number }`).
+
+### Fixes in types
+
+- **`findOneById` no longer mutates the passed query object.**
+- **Browser client `findManyAndCount`** - the response now guarantees a numeric `count`.
+
 ## [0.15.5] - 2026-07-12
 
 ### Performance
