@@ -36,13 +36,6 @@ export type { SqlDialectName };
 export type DialectName = SqlDialectName | 'mongodb';
 
 export interface Querier extends UniversalQuerier {
-  findOneById<E extends object>(
-    entity: Type<E>,
-    id: IdValue<E>,
-    q?: QueryOne<E>,
-    opts?: QueryOptions,
-  ): Promise<E | undefined>;
-
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
    */

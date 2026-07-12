@@ -99,6 +99,10 @@ export type RequestSuccessResponse<E> = {
   count?: number;
 };
 
+export type RequestCountedSuccessResponse<E> = RequestSuccessResponse<E> & {
+  count: number;
+};
+
 export type RequestErrorResponse = {
   readonly error: {
     readonly message: string;

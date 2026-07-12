@@ -117,15 +117,19 @@ export abstract class AbstractQuerier implements Querier {
     return [$entity, query as QuerySearch<E>, maybeQueryOrOpts as QueryOptions | undefined];
   }
 
-  findOneById<E extends object>(
+  findOneById<E extends object, const Q extends QueryOne<E>>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    q?: Q,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, Q> | undefined>;
+  async findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
     q: QueryOne<E> = {},
     opts?: QueryOptions,
   ): Promise<E | undefined> {
-    const meta = getMeta(entity);
-    q.$where = augmentWhere(meta, q.$where, id);
-    return this.findOne(entity, q, opts);
+    return this.findOne(entity, { ...q, $where: augmentWhere(getMeta(entity), q.$where, id) }, opts);
   }
 
   /**
@@ -286,7 +290,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
 
-  async insertOne<E extends object>(entity: Type<E>, payload: E) {
+  async insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);
     return id;
   }
