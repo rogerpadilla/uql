@@ -9,10 +9,12 @@ import type {
   LoggingOptions,
   Querier,
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
   QueryFindResult,
+  QueryGroupMap,
   QueryOne,
   QueryOptions,
   QueryPopulate,
@@ -276,11 +278,11 @@ export abstract class AbstractQuerier implements Querier {
   /**
    * Run an aggregate query.
    */
-  aggregate<E extends object, const Q extends QueryAggregate<E>>(
+  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
+  ): Promise<QueryAggregateResult<E, G, A>[]> {
     return this.internalAggregate(entity, q, opts);
   }
 
@@ -288,7 +290,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     q: Q,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
+  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);

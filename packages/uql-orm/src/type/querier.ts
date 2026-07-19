@@ -5,10 +5,12 @@ import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
 import type {
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
   QueryFindResult,
+  QueryGroupMap,
   QueryOne,
   QueryOptions,
   QuerySearch,
@@ -164,11 +166,11 @@ export interface Querier extends UniversalQuerier {
   /**
    * Run an aggregate query (GROUP BY with aggregate functions).
    */
-  aggregate<E extends object, const Q extends QueryAggregate<E>>(
+  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
+  ): Promise<QueryAggregateResult<E, G, A>[]>;
 
   /**
    * whether this querier is in a transaction or not.

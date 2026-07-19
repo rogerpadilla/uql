@@ -829,43 +829,66 @@ type QueryAggregateNumericFn = {
 }[QueryAggregateNumericOp];
 
 /**
- * Group-by map: keys set to `true` become GROUP BY columns;
- * keys with an aggregate function become computed columns.
+ * Group-by columns: an object mapping entity field keys to `true`, exactly like {@link QuerySelect}.
+ * Typed against the entity, so a typo'd column is a compile error. Compute aggregate columns with
+ * {@link QueryAggMap} (the `$agg` key), not here.
  *
  * @example
  * ```ts
- * { status: true, count: { $count: '*' }, avgAge: { $avg: 'age' } }
- * // → SELECT "status", COUNT(*) AS "count", AVG("age") AS "avgAge" … GROUP BY "status"
+ * { status: true } // → GROUP BY "status"
  * ```
  */
 export type QueryGroupMap<E> = {
-  readonly [K in FieldKey<E>]?: true | QueryAggregateFn<E>;
-} & {
-  readonly [alias: string]: true | null | QueryAggregateFn<E> | undefined;
+  readonly [K in FieldKey<E>]?: true;
 };
 
 /**
- * Infers the aggregated result type based on a QueryGroupMap.
+ * Computed aggregate columns: an object mapping your chosen output alias to an aggregate function.
+ * Alias names are free (you are naming new columns); the aggregated field reference inside each
+ * function is typed against the entity.
+ *
+ * @example
+ * ```ts
+ * { count: { $count: '*' }, avgAge: { $avg: 'age' } }
+ * // → COUNT(*) AS "count", AVG("age") AS "avgAge"
+ * ```
  */
-export type QueryAggregateResult<E, G> = {
-  -readonly [K in keyof G as G[K] extends undefined ? never : K]: G[K] extends true
-    ? K extends keyof E
-      ? E[K]
-      : unknown
-    : G[K] extends QueryAggregateNumericFn
-      ? number
-      : G[K] extends { readonly $min: infer F }
-        ? F extends keyof E
-          ? E[F]
-          : unknown
-        : G[K] extends { readonly $max: infer F }
-          ? F extends keyof E
-            ? E[F]
-            : unknown
-          : G[K] extends null
-            ? null
-            : unknown;
+export type QueryAggMap<E> = {
+  readonly [alias: string]: QueryAggregateFn<E>;
 };
+
+/**
+ * Resolves a single computed column's type from its aggregate function: `$count`/`$sum`/`$avg` are
+ * always `number`; `$min`/`$max` keep the aggregated field's own type.
+ * @internal
+ */
+type QueryAggregateFnResult<E, Fn> = Fn extends QueryAggregateNumericFn
+  ? number
+  : Fn extends { readonly $min: infer F }
+    ? F extends keyof E
+      ? E[F]
+      : unknown
+    : Fn extends { readonly $max: infer F }
+      ? F extends keyof E
+        ? E[F]
+        : unknown
+      : unknown;
+
+/**
+ * Flattens an intersection into a single object literal for readable editor hovers.
+ * @internal
+ */
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+/**
+ * Infers the aggregated result row: grouped columns (`G`) keep their entity type; computed columns
+ * (`A`) resolve from their aggregate function via {@link QueryAggregateFnResult}.
+ */
+export type QueryAggregateResult<E, G, A> = Simplify<
+  { -readonly [K in keyof G & FieldKey<E>]: E[K] } & {
+    -readonly [K in keyof A]: QueryAggregateFnResult<E, A[K]>;
+  }
+>;
 
 /**
  * HAVING clause - filters on aggregate results by alias name.
@@ -883,18 +906,28 @@ export type QueryHavingMap = {
  * @example
  * ```ts
  * querier.aggregate(User, {
- *   $group: { status: true, count: { $count: '*' }, avgAge: { $avg: 'age' } },
+ *   $group: { status: true },
+ *   $agg: { count: { $count: '*' }, avgAge: { $avg: 'age' } },
  *   $where: { deletedAt: { $isNull: true } },
  *   $having: { count: { $gt: 5 } },
  *   $sort: { count: -1 },
  * });
  * ```
  */
-export type QueryAggregate<E> = {
+export type QueryAggregate<
+  E,
+  G extends QueryGroupMap<E> = QueryGroupMap<E>,
+  A extends QueryAggMap<E> = QueryAggMap<E>,
+> = {
   /**
-   * Grouping and aggregate function definitions.
+   * Columns to group by - `{ status: true }`, typed against the entity like `$select`.
    */
-  readonly $group: QueryGroupMap<E>;
+  readonly $group?: G;
+
+  /**
+   * Computed aggregate columns - `{ count: { $count: '*' }, avgAge: { $avg: 'age' } }`.
+   */
+  readonly $agg?: A;
 
   /**
    * Row-level filtering (applied before grouping - SQL WHERE).
@@ -902,13 +935,15 @@ export type QueryAggregate<E> = {
   readonly $where?: QueryWhere<E>;
 
   /**
-   * Post-aggregation filtering (applied after grouping - SQL HAVING).
+   * Post-aggregation filtering (applied after grouping - SQL HAVING). Keys are the grouped columns
+   * (`keyof G`) and computed aliases (`keyof A`), so a name that is neither is a compile error.
    */
-  readonly $having?: QueryHavingMap;
+  readonly $having?: { readonly [K in (keyof G & string) | (keyof A & string)]?: QueryWhereFieldValue<number> };
 
   /**
-   * Sort the aggregated results.
-   * Accepts entity field keys plus arbitrary alias names used in `$group`.
+   * Sort the aggregated results by a grouped column, a computed alias, or an entity field.
    */
-  readonly $sort?: QuerySortMap<E> & { readonly [alias: string]: QuerySortDirection | undefined };
+  readonly $sort?: QuerySortMap<E> & {
+    readonly [K in (keyof G & string) | (keyof A & string)]?: QuerySortDirection;
+  };
 } & QueryPager;

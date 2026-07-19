@@ -1,10 +1,12 @@
 import type { IdValue, UpdatePayload } from './entity.js';
 import type {
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
   QueryFindResult,
+  QueryGroupMap,
   QueryOne,
   QueryOptions,
   QuerySearch,
@@ -198,9 +200,9 @@ export interface UniversalQuerier {
    * @param q the aggregate query options
    * @return the aggregate results
    */
-  aggregate<E extends object, const Q extends QueryAggregate<E>>(
+  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]>;
+  ): Promise<QueryAggregateResult<E, G, A>[]>;
 }

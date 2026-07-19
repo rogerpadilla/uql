@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.16.0] - 2026-07-19
+
+### Type-safe aggregate API: `$group` + `$agg` (breaking)
+
+`aggregate()` now separates grouping from computed columns. `$group` lists the columns to group by (typed against the entity, like `$select`); `$agg` holds the aggregate functions. This makes the whole query typo-proof - a bad group-by column, aggregated field, or `$having`/`$sort` alias is a compile error instead of a runtime SQL failure.
+
+```ts
+// before
+$group: { status: true, count: { $count: '*' } }
+// after
+$group: { status: true },
+$agg: { count: { $count: '*' } }
+```
+
+`$having` and `$sort` keys are now restricted to the grouped columns and computed aliases. An aggregate with neither `$group` nor `$agg` throws a clear error instead of emitting invalid SQL.
+
 ## [0.15.6] - 2026-07-12
 
 ### Improvements in type-safety

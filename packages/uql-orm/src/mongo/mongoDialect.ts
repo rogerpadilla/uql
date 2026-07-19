@@ -405,7 +405,12 @@ export class MongoDialect extends AbstractDialect {
     const groupId: Record<string, string> = {};
     const groupAccumulators: Record<string, Record<string, unknown>> = {};
 
-    for (const entry of parseGroupMap(q.$group)) {
+    const groupEntries = parseGroupMap(q.$group, q.$agg);
+    if (!groupEntries.length) {
+      throw new TypeError('aggregate requires at least one $group column or $agg function');
+    }
+
+    for (const entry of groupEntries) {
       if (entry.kind === 'key') {
         groupId[entry.alias] = `$${entry.alias}`;
       } else {

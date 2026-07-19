@@ -528,7 +528,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $group: { total: { $sum: 'id' } },
+          $agg: { total: { $sum: 'id' } },
           $having: { total: { toString: 5 } },
         } as any),
       ).toThrow('unsupported HAVING operator: toString');
@@ -545,7 +545,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $group: { total: { $sum: 'id' } },
+          $agg: { total: { $sum: 'id' } },
           $sort: { total: 'toString' },
         } as any),
       ).toThrow('unknown sort direction: toString');
@@ -553,7 +553,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('aggregate rejects a $group operator key that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.aggregate(ctx, User, { $group: { total: { toString: 'id' } } } as any)).toThrow(
+      expect(() => dialect.aggregate(ctx, User, { $agg: { total: { toString: 'id' } } } as any)).toThrow(
         'unsupported aggregate operator: toString',
       );
     });
@@ -562,7 +562,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $group: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
+          $agg: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
         } as any),
       ).toThrow('unsupported aggregate operator');
       expect(ctx.sql).not.toContain('DROP TABLE');
