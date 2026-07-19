@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta } from '../entity/decorator/index.js';
 import { type Item, User } from '../test/entityMock.js';
-import type { QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
+import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
 import {
   applyFilters,
   augmentWhere,
@@ -203,12 +203,12 @@ it('buildSortMap', () => {
 });
 
 it('parseGroupMap keys and fns', () => {
-  const group = {
-    code: true,
+  const group: QueryGroupMap<Item> = { code: true };
+  const agg: QueryAggMap<Item> = {
     count: { $count: '*' },
     total: { $sum: 'salePrice' },
-  } satisfies QueryGroupMap<Item>;
-  const entries = parseGroupMap(group);
+  };
+  const entries = parseGroupMap(group, agg);
   expect(entries).toEqual([
     { kind: 'key', alias: 'code' },
     { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*' },

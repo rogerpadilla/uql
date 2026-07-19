@@ -1492,13 +1492,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
       }),
     );
-    expect(sql).toBe(`SELECT ${e}status${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}status${e}`);
+    expect(sql).toBe(`SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e}`);
     expect(values).toEqual([]);
   }
 
@@ -1506,8 +1504,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
+        $group: { name: true },
+        $agg: {
           count: { $count: '*' },
           avgCreated: { $avg: 'createdAt' },
           maxCreated: { $max: 'createdAt' },
@@ -1516,7 +1514,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}status${e}, COUNT(*) ${e}count${e}, AVG(${e}createdAt${e}) ${e}avgCreated${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e}, MIN(${e}createdAt${e}) ${e}minCreated${e} FROM ${e}User${e} GROUP BY ${e}status${e}`,
+      `SELECT ${e}name${e}, COUNT(*) ${e}count${e}, AVG(${e}createdAt${e}) ${e}avgCreated${e}, MAX(${e}createdAt${e}) ${e}maxCreated${e}, MIN(${e}createdAt${e}) ${e}minCreated${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
     );
     expect(values).toEqual([]);
   }
@@ -1525,25 +1523,20 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: { $gt: 5 } },
       }),
     );
-    expect(sql).toContain(`GROUP BY ${e}status${e} HAVING COUNT(*) > `);
+    expect(sql).toContain(`GROUP BY ${e}name${e} HAVING COUNT(*) > `);
     expect(values).toEqual([5]);
   }
 
   shouldAggregateWithHavingMultipleConditions() {
     const { values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-          total: { $sum: 'createdAt' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' }, total: { $sum: 'createdAt' } },
         $having: {
           count: { $gte: 2 },
           total: { $lt: 1000 },
@@ -1557,10 +1550,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $where: { name: { $ne: null } },
         $sort: { count: -1 },
         $limit: 10,
@@ -1575,7 +1566,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
+        $agg: {
           total: { $count: '*' },
           maxCreated: { $max: 'createdAt' },
         },
@@ -1588,10 +1579,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingBetween() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: { $between: [2, 10] } },
       }),
     );
@@ -1602,10 +1591,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingExactValue() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: 5 },
       }),
     );
@@ -1616,12 +1603,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateSortByAliasInsteadOfField() {
     const { sql } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-          total: { $sum: 'createdAt' },
-        },
-        $sort: { count: -1, status: 1 },
+        $group: { name: true },
+        $agg: { count: { $count: '*' }, total: { $sum: 'createdAt' } },
+        $sort: { count: -1, name: 1 },
       }),
     );
     // `count` should resolve to the aggregate expression COUNT(*), not a column name
@@ -1661,10 +1645,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingIn() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: { $in: [1, 5, 10] } },
       }),
     );
@@ -1675,10 +1657,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingNin() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: { $nin: [0, 999] } },
       }),
     );
@@ -1689,10 +1669,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingInEmpty() {
     const { sql } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $having: { count: { $in: [] } },
       }),
     );
@@ -1702,10 +1680,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingIsNull() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          maxVal: { $max: 'createdAt' },
-        },
+        $group: { name: true },
+        $agg: { maxVal: { $max: 'createdAt' } },
         $having: { maxVal: { $isNull: true } },
       }),
     );
@@ -1717,10 +1693,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateWithHavingIsNotNull() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          maxVal: { $max: 'createdAt' },
-        },
+        $group: { name: true },
+        $agg: { maxVal: { $max: 'createdAt' } },
         $having: { maxVal: { $isNotNull: true } },
       }),
     );
@@ -1732,10 +1706,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateSortWithNumericNegativeOne() {
     const { sql } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $sort: { count: -1 },
       }),
     );
@@ -1745,12 +1717,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldAggregateSortWithMixedDirections() {
     const { sql } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-          total: { $sum: 'createdAt' },
-        },
-        $sort: { count: 'desc', status: 'asc', total: 1 },
+        $group: { name: true },
+        $agg: { count: { $count: '*' }, total: { $sum: 'createdAt' } },
+        $sort: { count: 'desc', name: 'asc', total: 1 },
       }),
     );
     expect(sql).toContain('ORDER BY COUNT(*) DESC');
@@ -1762,19 +1731,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
-        $group: {
-          status: true,
-          count: { $count: '*' },
-        },
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
         $sort: { count: -1 },
         $skip: 20,
         $limit: 10,
       }),
     );
-    expect(sql).toContain(`GROUP BY ${e}status${e}`);
+    expect(sql).toContain(`GROUP BY ${e}name${e}`);
     expect(sql).toContain('ORDER BY COUNT(*) DESC');
     expect(sql).toContain('LIMIT 10');
     expect(sql).toContain('OFFSET 20');
     expect(values).toEqual([]);
+  }
+
+  shouldThrowOnEmptyAggregate() {
+    expect(() => this.exec((ctx) => this.dialect.aggregate(ctx, User, {}))).toThrow(
+      'aggregate requires at least one $group column or $agg function',
+    );
   }
 }

@@ -9,6 +9,7 @@ import {
   isQueryAggregateOp,
   type MongoId,
   type OnFieldCallback,
+  type QueryAggMap,
   type QueryAggregateOp,
   type QueryExclude,
   type QueryGroupMap,
@@ -313,23 +314,27 @@ export type ParsedGroupEntry =
   | { readonly kind: 'fn'; readonly alias: string; readonly op: QueryAggregateOp; readonly fieldRef: string };
 
 /**
- * Parse a `QueryGroupMap` into structured entries consumable by any dialect.
- * Eliminates the duplicated `value === true` / `typeof value === 'object'` pattern.
+ * Parse the `$group` (grouped columns) and `$agg` (computed aggregates) maps into structured
+ * entries consumable by any dialect. Grouped columns come first, then computed columns.
  */
-export function parseGroupMap<E>(group: QueryGroupMap<E>): ParsedGroupEntry[] {
+export function parseGroupMap<E>(group?: QueryGroupMap<E>, agg?: QueryAggMap<E>): ParsedGroupEntry[] {
   const entries: ParsedGroupEntry[] = [];
-  for (const alias of getKeys(group)) {
-    const value = group[alias];
-    if (value === true) {
+  const groupMap = group ?? {};
+  for (const alias of getKeys(groupMap)) {
+    if (groupMap[alias]) {
       entries.push({ kind: 'key', alias });
-    } else if (value && typeof value === 'object') {
-      const fnEntry = value as Record<string, string>;
-      const key = getKeys(fnEntry)[0];
-      if (!isQueryAggregateOp(key)) {
-        throw TypeError(`unsupported aggregate operator: ${key}`);
-      }
-      entries.push({ kind: 'fn', alias, op: key, fieldRef: fnEntry[key] });
     }
+  }
+  if (!agg) {
+    return entries;
+  }
+  for (const alias of getKeys(agg)) {
+    const fnEntry = agg[alias];
+    const key = getKeys(fnEntry)[0];
+    if (!isQueryAggregateOp(key)) {
+      throw TypeError(`unsupported aggregate operator: ${key}`);
+    }
+    entries.push({ kind: 'fn', alias, op: key, fieldRef: fnEntry[key] });
   }
   return entries;
 }

@@ -7,9 +7,11 @@ import type {
   Querier,
   QuerierPool,
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryFindResult,
+  QueryGroupMap,
   QueryOne,
   QueryOptions,
   QuerySearch,
@@ -94,11 +96,11 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.count(entity, q, opts));
   }
 
-  aggregate<E extends object, const A extends QueryAggregate<E>>(
+  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: A,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, A['$group']>[]> {
+  ): Promise<QueryAggregateResult<E, G, A>[]> {
     return this.withQuerier((querier) => querier.aggregate(entity, q, opts));
   }
 

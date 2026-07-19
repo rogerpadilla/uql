@@ -210,7 +210,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     entity: Type<E>,
     q: Q,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
+  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]> {
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify

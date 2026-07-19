@@ -1008,7 +1008,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const selectParts: string[] = [];
     const aggregateExpressions: Record<string, string> = {};
 
-    for (const entry of parseGroupMap(q.$group)) {
+    for (const entry of parseGroupMap(q.$group, q.$agg)) {
       if (entry.kind === 'key') {
         const field = meta.fields[entry.alias as FieldKey<E>];
         const columnName = this.resolveColumnName(entry.alias, field);
@@ -1028,6 +1028,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         aggregateExpressions[entry.alias] = expr;
         selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
       }
+    }
+
+    if (!selectParts.length) {
+      throw new TypeError('aggregate requires at least one $group column or $agg function');
     }
 
     ctx.append(`SELECT ${selectParts.join(', ')} FROM ${this.escapeId(tableName)}`);

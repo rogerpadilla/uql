@@ -189,7 +189,7 @@ export class MongodbQuerier extends AbstractQuerier {
     entity: Type<E>,
     q: Q,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, Q['$group']>[]> {
+  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: aggregate result type matches QueryAggregateResult at runtime but TS can't verify
     return this.execute((session) => this.collection(entity).aggregate<any>(pipeline, { session }).toArray());
