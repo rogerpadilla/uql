@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { Entity, Field, Filter, getMeta } from '../entity/decorator/index.js';
+import { Entity, Field, Filter, getMeta, Id } from '../entity/decorator/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
 import {
@@ -191,6 +191,24 @@ it('normalizeScalarFieldSelection', () => {
     'name',
   );
   expect(normalizeScalarFieldSelection(meta, { name: false } satisfies QuerySelect<User>)).not.toContain('name');
+});
+
+@Entity()
+class LazyId {
+  @Id({ eager: false })
+  id?: number;
+  @Field()
+  name?: string;
+}
+
+it('normalizeScalarFieldSelection drops an eager:false id field from the default set (no isId carve-out)', () => {
+  const meta = getMeta(LazyId);
+  expect(normalizeScalarFieldSelection(meta)).not.toContain('id');
+});
+
+it('normalizeScalarFieldSelection drops id when excluded via $exclude on a plain top-level query', () => {
+  const meta = getMeta(User);
+  expect(normalizeScalarFieldSelection(meta, undefined, { id: true } satisfies QuerySelect<User>)).not.toContain('id');
 });
 
 it('isCascadable', () => {
