@@ -64,7 +64,10 @@ export abstract class AbstractQuerier implements Querier {
   protected readonly logger: LoggerWrapper;
 
   constructor(readonly extra?: ExtraOptions) {
-    this.logger = new LoggerWrapper(extra?.logger as LoggingOptions, extra?.slowQuery);
+    this.logger = new LoggerWrapper(extra?.logger as LoggingOptions, {
+      logValues: extra?.logValues,
+      slowQuery: extra?.slowQuery,
+    });
   }
 
   protected validateProjectionQuery<E extends object>(entity: Type<E>, q: Query<E>): void {

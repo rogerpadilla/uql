@@ -215,16 +215,6 @@ export interface MongoQuerier extends Querier {
 }
 
 /**
- * Configuration for slow query detection and logging.
- */
-export type SlowQueryOptions = {
-  /** Threshold in milliseconds - queries exceeding this are logged as slow. */
-  readonly threshold: number;
-  /** Whether to include query parameters in slow-query logs. Defaults to `true`. */
-  readonly logParams?: boolean;
-};
-
-/**
  * Context passed to global querier listeners.
  */
 export type ListenerContext<E extends object = object> = {
@@ -244,7 +234,14 @@ export type QuerierListener = {
 
 export type ExtraOptions = {
   readonly logger?: LoggingOptions;
-  readonly slowQuery?: SlowQueryOptions;
+  /**
+   * Whether logged queries include bound values (`logQuery` and slow-query logging alike).
+   * Defaults to `false` - logs carry SQL text only, never parameter values, since those may
+   * contain PII or other sensitive data. Set to `true` to opt in to logging bound values too.
+   */
+  readonly logValues?: boolean;
+  /** Threshold in milliseconds - queries exceeding this are logged as slow. */
+  readonly slowQuery?: number;
   readonly namingStrategy?: NamingStrategy;
   readonly listeners?: readonly QuerierListener[];
 };

@@ -77,7 +77,7 @@ export class Migrator {
         tableName: options.tableName,
       });
     this.migrationsPath = options.migrationsPath ?? './migrations';
-    this._logger = new LoggerWrapper(options.logger!, options.slowQuery);
+    this._logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
     this.schemaGenerator =

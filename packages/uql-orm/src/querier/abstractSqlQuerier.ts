@@ -31,7 +31,7 @@ import {
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
-import { Log, Serialized } from './decorator/index.js';
+import { enrichError, Log, Serialized } from './decorator/index.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -130,9 +130,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     this.dialect.find(ctx, entity, q, opts);
     const normalizedParams = this.dialect.normalizeValues(ctx.values);
     let attrsPaths: Record<string, string[]> | undefined;
-    for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
-      attrsPaths ??= obtainAttrsPaths(row);
-      yield this.hydrateJsonFields(entity, unflatObject<E>(row, attrsPaths));
+    try {
+      for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
+        attrsPaths ??= obtainAttrsPaths(row);
+        yield this.hydrateJsonFields(entity, unflatObject<E>(row, attrsPaths));
+      }
+    } catch (err) {
+      enrichError(err, this.logger, ctx.sql, normalizedParams);
     }
   }
 
@@ -328,7 +332,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     await this.lazyConnect();
     const statements = this.dialect.getBeginTransactionStatements(opts?.isolationLevel);
     for (const sql of statements) {
-      await this.internalRun(sql);
+      try {
+        await this.internalRun(sql);
+      } catch (err) {
+        enrichError(err, this.logger, sql);
+      }
     }
     this.hasPendingTransaction = true;
   }
@@ -338,7 +346,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (!this.hasPendingTransaction) {
       throwNoPendingTransaction();
     }
-    await this.internalRun(this.dialect.commitTransactionCommand);
+    try {
+      await this.internalRun(this.dialect.commitTransactionCommand);
+    } catch (err) {
+      enrichError(err, this.logger, this.dialect.commitTransactionCommand);
+    }
     this.hasPendingTransaction = false;
   }
 
@@ -347,7 +359,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (!this.hasPendingTransaction) {
       throwNoPendingTransaction();
     }
-    await this.internalRun(this.dialect.rollbackTransactionCommand);
+    try {
+      await this.internalRun(this.dialect.rollbackTransactionCommand);
+    } catch (err) {
+      enrichError(err, this.logger, this.dialect.rollbackTransactionCommand);
+    }
     this.hasPendingTransaction = false;
   }
 }
