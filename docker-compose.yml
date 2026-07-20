@@ -79,7 +79,7 @@ services:
     ports:
       - "26257:26257"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/26257; exit $?"]
+      test: ["CMD-SHELL", "cockroach sql --insecure -e 'SELECT 1'"]
       interval: 5s
       timeout: 5s
       retries: 30
