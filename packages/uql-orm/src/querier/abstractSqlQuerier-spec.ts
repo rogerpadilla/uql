@@ -155,7 +155,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`',
       [1, 'something a', 1],
     );
 
@@ -310,7 +310,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`id`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [123, 1, 456, 1],
     );
 
@@ -364,17 +364,17 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       ['something a', 1, 'something b', 1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?)',
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [1, 1, 1, 1, 1, 1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?)',
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?) RETURNING `id` `id`',
       [1, 1, 2],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -412,7 +412,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [123, 'something a', 1, 456, 'something b', 1],
     );
 
@@ -443,7 +443,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       [123, 1],
     );
 
@@ -474,7 +474,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `Item` (`id`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       [123, 1],
     );
 
@@ -538,7 +538,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.insertOne(User, { companyId: 123, createdAt: 1 });
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `User` (`companyId`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `User` (`companyId`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       [123, 1],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(0);
@@ -551,13 +551,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       createdAt: 1,
       profile: { picture: 'abc', createdAt: 1 },
     });
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?)', [
-      'some name',
+    expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-    ]);
+      'INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
+      ['some name', 1],
+    );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES (?, ?, ?)',
+      'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES (?, ?, ?) RETURNING `pk` `id`',
       ['abc', 1, 1],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(0);
@@ -573,12 +574,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `MeasureUnit` (`name`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `MeasureUnit` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       ['Centimeter', 123],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `MeasureUnitCategory` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       ['Metric', 123],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -603,12 +604,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`description`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       ['some description', 1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?)',
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [50, 1, 1, 300, 1, 1],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(0);
@@ -640,7 +641,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUpdateOneByIdAndCascadeOneToOne() {
     await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `User` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [1],
+    );
 
     await this.querier.updateOneById(User, 1, {
       name: 'something',
@@ -655,7 +660,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES (?, ?, ?)',
+      'INSERT INTO `user_profile` (`image`, `createdAt`, `creatorId`) VALUES (?, ?, ?) RETURNING `pk` `id`',
       ['xyz', 1, 1],
     );
 
@@ -668,7 +673,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUpdateOneByIdAndCascadeOneToOneNull() {
     await this.querier.insertOne(User, { createdAt: 1 });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `User` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [1],
+    );
 
     await this.querier.updateOneById(User, 1, {
       name: 'something',
@@ -693,7 +702,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (?)',
+      'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (?) RETURNING `id` `id`',
       [1],
     );
 
@@ -719,7 +728,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?)',
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [50, 1, 1, 300, 1, 1],
     );
 
@@ -732,7 +741,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (?)',
+      'INSERT INTO `InventoryAdjustment` (`createdAt`) VALUES (?) RETURNING `id` `id`',
       [1],
     );
 
@@ -763,7 +772,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`companyId`, `createdAt`) VALUES (?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`companyId`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
       [1, 1],
     );
 
@@ -812,18 +821,19 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         },
       ],
     });
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `Item` (`name`, `createdAt`) VALUES (?, ?)', [
-      'item one',
+    expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-    ]);
+      'INSERT INTO `Item` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`',
+      ['item one', 1],
+    );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       ['tag one', 1, 'tag two', 1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [1, 1, 1, 2],
     );
 
@@ -834,7 +844,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUpdateAndCascadeManyToManyInserts() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `Item` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [1],
+    );
 
     await this.querier.updateOneById(Item, id, {
       name: 'item one',
@@ -859,14 +873,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       ['tag one', 1, 'tag two', 1],
     );
 
     expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       4,
-      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [1, 1, 1, 2],
     );
 
@@ -877,7 +891,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldUpdateAndCascadeManyToManyLinks() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `Item` (`createdAt`) VALUES (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `Item` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [1],
+    );
 
     await this.querier.updateOneById(Item, id, {
       name: 'item one',
@@ -894,7 +912,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?)',
+      'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [1, 22, 1, 33],
     );
 
@@ -935,10 +953,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldDeleteOneById() {
     const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `User` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [1],
+    );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO `user_profile` (`createdAt`, `creatorId`) VALUES (?, ?)',
+      'INSERT INTO `user_profile` (`createdAt`, `creatorId`) VALUES (?, ?) RETURNING `pk` `id`',
       [1, 1],
     );
 
@@ -960,7 +982,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   async shouldDeleteMany() {
     await this.querier.insertOne(User, { createdAt: 123 });
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'INSERT INTO `User` (`createdAt`) VALUES (?)', [123]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO `User` (`createdAt`) VALUES (?) RETURNING `id` `id`',
+      [123],
+    );
 
     await this.querier.deleteMany(User, { $where: { createdAt: 123 } });
 
@@ -1264,7 +1290,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?)',
+      'INSERT INTO `InventoryAdjustment` (`id`, `description`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`',
       [999, 'test adjustment', 1],
     );
 

@@ -119,7 +119,7 @@ export interface BuildUpdateResultPayload {
   changes?: number;
   /** The raw rows returned by the query (for RETURNING clauses). */
   rows?: RawRow[];
-  /** The first (MySQL) or last (SQLite) auto-generated ID from the driver header. */
+  /** The first auto-generated ID from the driver header (MySQL `insertId`; no `RETURNING`). */
   id?: PrimaryKey;
   /** How the dialect surfaces inserted IDs (see {@link InsertIdSource}). */
   insertIdSource?: InsertIdSource;
@@ -145,6 +145,15 @@ export interface BuildUpdateResultPayload {
  * statement, which holds for a single multi-row `INSERT ... VALUES` on auto-increment keys
  * (with the standard `auto_increment_increment = 1`); the querier only maps these IDs onto
  * payloads when that assumption is safe.
+ *
+ * Caveat (MySQL/MariaDB-compatible engines with no `RETURNING`, i.e. `insertIdSource: 'firstId'`):
+ * contiguous allocation across a statement's rows is only guaranteed under
+ * `innodb_autoinc_lock_mode` 0 (`traditional`) or 1 (`consecutive`). Under mode 2 (`interleaved`,
+ * MySQL 8.0's default), other connections inserting into the same table concurrently with this
+ * statement can interleave with its auto-increment allocation, so the inferred IDs may not be
+ * contiguous. There is no code-level fix for this (MySQL has no `RETURNING`); avoid relying on
+ * inferred multi-row IDs for a table under heavy concurrent insert load, or set
+ * `innodb_autoinc_lock_mode` to 0 or 1.
  */
 export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
   const { rows, id, insertIdSource, upsertStatus } = payload;
@@ -152,9 +161,17 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
   const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
 
   // ID mapping. RETURNING rows are exact. Otherwise the sequence is derived from the single id in
-  // the driver header: `firstId` dialects (MySQL) report the FIRST generated id, `lastId` dialects
-  // (SQLite) the LAST - so for the latter we step back over the other rows to reach the first. A
-  // header id of `0`/`0n` means no id was generated (e.g. a non-auto-increment key), so we infer none.
+  // the driver header: `firstId` dialects (MySQL) report the FIRST generated id, and the rest are
+  // inferred by incrementing it. A header id of `0`/`0n` means no id was generated (e.g. a
+  // non-auto-increment key), so we infer none.
+  //
+  // This arithmetic assumes `changes` equals the batch's row count, which always holds for a plain
+  // `insertMany` - but not for `upsertMany` on a `firstId` dialect (MySQL): its `ON DUPLICATE KEY
+  // UPDATE` convention makes `changes` a per-row weighted sum (1=insert, 2=update, 0=no-op), so a
+  // batch mixing an insert and an update would fabricate ids for rows that were never touched. This
+  // function has no way to tell the two call sites apart (`internalRun` reports the same header
+  // shape either way), so `AbstractSqlQuerier.upsertMany` strips `ids`/`firstId`/`created` back down
+  // to just `changes` for a multi-row `firstId`-dialect upsert after calling this.
   let ids: PrimaryKey[] = [];
   if (rows?.length) {
     ids = rows.map((r) => r['id'] as PrimaryKey);
@@ -162,9 +179,7 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
     if (typeof id === 'string') {
       if (changes === 1) ids = [id];
     } else {
-      const backSteps = insertIdSource === 'lastId' ? changes - 1 : 0;
-      const first = typeof id === 'bigint' ? id - BigInt(backSteps * stride) : id - backSteps * stride;
-      ids = sequentialIds(first, changes, stride);
+      ids = sequentialIds(id, changes, stride);
     }
   }
 

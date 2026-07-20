@@ -24,11 +24,20 @@ function createQuerier(sql: any, dialect: AbstractSqlDialect) {
 
 describe('BunSqlQuerier', () => {
   describe('run', () => {
-    it('should use the "lastId" source for sqlite', async () => {
-      // lastInsertRowid=42, changes=1 → firstId = 42 - (1-1) = 42
+    it('should ignore header ids for sqlite ("returning" source: rows are the truth)', async () => {
+      // SQLite's dialect appends RETURNING, so a header-only result (no rows) means no id is known.
       const querier = createQuerier(makeSql({ count: 1, lastInsertRowid: 42 }), new SqliteDialect());
       const res = await querier.run('INSERT...');
+      expect(res.firstId).toBeUndefined();
+      expect(res.ids).toEqual([]);
+      expect(res.changes).toBe(1);
+    });
+
+    it('should use RETURNING rows for sqlite ids', async () => {
+      const querier = createQuerier(makeSql([{ id: 42 }]), new SqliteDialect());
+      const res = await querier.run('INSERT... RETURNING `id` `id`');
       expect(res.firstId).toBe(42);
+      expect(res.ids).toEqual([42]);
       expect(res.changes).toBe(1);
     });
 
@@ -48,9 +57,9 @@ describe('BunSqlQuerier', () => {
       expect(res.changes).toBe(3);
     });
 
-    it('should support bigint IDs', async () => {
-      const querier = createQuerier(makeSql({ count: 1, lastInsertRowid: 9007199254740991n }), new SqliteDialect());
-      const res = await querier.run('INSERT...');
+    it('should support bigint IDs in RETURNING rows', async () => {
+      const querier = createQuerier(makeSql([{ id: 9007199254740991n }]), new SqliteDialect());
+      const res = await querier.run('INSERT... RETURNING `id` `id`');
       expect(res.firstId).toBe(9007199254740991);
     });
 

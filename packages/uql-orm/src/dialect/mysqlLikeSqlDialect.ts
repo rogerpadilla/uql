@@ -52,6 +52,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
+  // No `RETURNING` support, so multi-row insert IDs are inferred from the header - see the
+  // `innodb_autoinc_lock_mode` caveat on `buildUpdateResult` in `util/sql.util.ts`.
   override readonly insertIdSource: InsertIdSource = 'firstId';
 
   override readonly maxBindValues: number = 65535;

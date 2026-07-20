@@ -53,6 +53,9 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
     } else {
       propSql += defaultType;
     }
+    if (field.unique) {
+      propSql += ' UNIQUE';
+    }
     return propSql;
   });
 

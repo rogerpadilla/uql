@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SqliteDialect } from '../sqlite/index.js';
-import { type D1Database, type D1ExecResult, D1Querier, type D1Result } from './d1Querier.js';
+import { type D1Database, D1Querier, type D1Result } from './d1Querier.js';
 
 describe('D1Querier', () => {
   let mockDb: {
@@ -40,32 +40,29 @@ describe('D1Querier', () => {
     expect(res).toEqual([{ id: 1 }]);
   });
 
-  it('should execute INSERT and extract IDs from meta', async () => {
+  it('should execute INSERT and extract IDs from a RETURNING clause', async () => {
+    // SQLite's dialect appends RETURNING, so `run()` reports the exact row(s) via `results`.
     mockStmt.run.mockResolvedValue({
-      count: 0,
-      duration: 1,
-      meta: {
-        last_row_id: 50,
-        changes: 3,
-      },
-    } satisfies D1ExecResult);
+      results: [{ id: 48 }, { id: 49 }, { id: 50 }],
+      success: true,
+      meta: {},
+    } satisfies D1Result<any>);
 
-    const res = await querier.internalRun('INSERT INTO ...');
+    const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
 
     expect(res).toEqual({
       changes: 3,
-      // firstID = 50 - (3 - 1) = 48
-      // [48, 49, 50]
       ids: [48, 49, 50],
       firstId: 48,
     });
   });
 
-  it('should handle missing meta safely', async () => {
+  it('should fall back to meta.changes for a plain statement with no RETURNING rows', async () => {
     mockStmt.run.mockResolvedValue({
-      count: 5,
-      duration: 1,
-    } satisfies D1ExecResult);
+      results: [],
+      success: true,
+      meta: { changes: 5 },
+    } satisfies D1Result<any>);
 
     const res = await querier.internalRun('UPDATE ...');
 
@@ -92,9 +89,10 @@ describe('D1Querier', () => {
 
   it('should execute internalRun without values', async () => {
     mockStmt.run.mockResolvedValue({
-      count: 1,
-      duration: 1,
-    });
+      results: [],
+      success: true,
+      meta: { changes: 1 },
+    } satisfies D1Result<any>);
 
     await querier.internalRun('UPDATE ...');
 

@@ -6,16 +6,7 @@ import {
   type RequestSuccessResponse,
 } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
-import type {
-  IdValue,
-  Query,
-  QueryFindResult,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  Type,
-  UpdatePayload,
-} from '../../type/index.js';
+import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
 import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
 
@@ -39,46 +30,42 @@ export class HttpQuerier implements ClientQuerier {
     readonly defaults: HttpQuerierDefaults = {},
   ) {}
 
-  findOneById<E extends object, const Q extends QueryOne<E>>(
+  findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: Q,
+    q?: QueryOne<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>> {
+  ): Promise<RequestSuccessResponse<E | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<QueryFindResult<E, Q> | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
+    return get<E | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
   }
 
-  findOne<E extends object, const Q extends QueryOne<E>>(
+  findOne<E extends object>(
     entity: Type<E>,
-    q: Q,
+    q: QueryOne<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>> {
-    return this.read<QueryFindResult<E, Q> | undefined>(
-      `${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`,
-      q,
-      opts,
-    );
+  ): Promise<RequestSuccessResponse<E | undefined>> {
+    return this.read<E | undefined>(`${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`, q, opts);
   }
 
-  findMany<E extends object, const Q extends Query<E>>(
+  findMany<E extends object>(
     entity: Type<E>,
-    q: Q,
+    q: Query<E>,
     opts?: RequestFindOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q>[]>> {
+  ): Promise<RequestSuccessResponse<E[]>> {
     const data: Query<E> & { count?: boolean } = { ...q };
     if (opts?.count) {
       data.count = true;
     }
-    return this.read<QueryFindResult<E, Q>[]>(this.getBasePath(entity), data, opts);
+    return this.read<E[]>(this.getBasePath(entity), data, opts);
   }
 
-  async findManyAndCount<E extends object, const Q extends Query<E>>(
+  async findManyAndCount<E extends object>(
     entity: Type<E>,
-    q: Q,
+    q: Query<E>,
     opts?: RequestFindOptions,
-  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, Q>[]>> {
+  ): Promise<RequestCountedSuccessResponse<E[]>> {
     const response = await this.findMany(entity, q, { ...opts, count: true });
     if (typeof response.count !== 'number') {
       throw new TypeError('findManyAndCount response has an invalid count');

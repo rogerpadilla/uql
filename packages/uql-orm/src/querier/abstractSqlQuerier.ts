@@ -282,7 +282,16 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     payload = clone(payload);
     const ctx = this.dialect.createContext();
     this.dialect.upsert(ctx, entity, conflictPaths, payload);
-    return this.run(ctx.sql, ctx.values);
+    const result = await this.run(ctx.sql, ctx.values);
+    // On a `firstId` dialect (MySQL: no `RETURNING`), a multi-row upsert's `affectedRows` is a
+    // per-row weighted sum (1=insert, 2=update, 0=no-op), not a row count, so `buildUpdateResult`'s
+    // header-derived `ids`/`firstId`/`created` can't be trusted the moment more than one row is
+    // involved (verified: a 1-insert-1-update batch reports `changes: 3`, which would otherwise
+    // infer 3 sequential ids for only 2 real rows). A single-row batch (`upsertOne`) is unambiguous.
+    if (this.dialect.insertIdSource !== 'returning' && payload.length > 1) {
+      return { changes: result.changes };
+    }
+    return result;
   }
 
   protected override async internalDeleteMany<E extends object>(

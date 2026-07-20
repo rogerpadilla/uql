@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.17.0] - 2026-07-19
+
+### Stricter, simpler query types (breaking)
+
+- **Typo'd query keys are now compile errors.** Find methods take a concrete query type, so an unknown key in `$select`/`$where`/`$populate`/`$sort` fails to compile - previously a typo sitting next to a valid field slipped through.
+- **Find results are the plain entity.** `findMany`/`findOne`/etc. no longer auto-type the vector-search distance field; annotate the result with the exported `WithDistance<Article, 'distance'>` when you `$project` a score.
+- **`$having` values are typed per column.** A `$min`/`$max` over a non-numeric column now compares against that column's own type instead of `number`, and a computed aggregate wrongly placed in `$group` (it belongs in `$agg`) is a compile error.
+
+SQLite (and LibSQL/Turso, Cloudflare D1, Bun's native SQLite) now use `RETURNING` too, so `insertMany`/`upsertOne`/`upsertMany` return exact IDs there instead of guessed rowids or nothing at all. Also fixes a MySQL bug where `upsertMany` could return IDs that don't exist.
+
+### Improvements
+
+- **SQLite family native `RETURNING`** - better-sqlite3, LibSQL/Turso, Cloudflare D1, and Bun SQL's SQLite mode all get exact per-row IDs on `insertOne`/`insertMany`, and `upsertOne`/`upsertMany` now return real IDs where they previously returned nothing.
+- **MongoDB `upsertMany` returns IDs** - `ids`/`firstId` now cover newly-inserted documents, matching `insertOne`/`insertMany`/`upsertOne`.
+
+### Fixes
+
+- **MySQL `upsertMany` could return IDs that don't exist.** A batch mixing an insert and an update reports `changes` as a weighted sum (1 for the insert, 2 for the update), which the old code mistook for a row count and used to guess sequential IDs - some of which were never real rows. `upsertMany` now reports only `changes` for a multi-row batch on MySQL; a single-row `upsertOne` is unaffected.
+- **LibSQL: releasing with an open transaction now throws** instead of silently discarding it, matching every other SQL adapter.
+- **Query errors now carry the failing SQL.** A thrown error from `all()`/`run()`/`findMany()`/etc. now has `.query` attached (the SQL text, or method name for non-SQL calls), even without a logger configured. Bound values are intentionally never attached, to avoid leaking sensitive parameters into error trackers.
+
 ## [0.16.0] - 2026-07-19
 
 ### Type-safe aggregate API: `$group` + `$agg` (breaking)
@@ -95,13 +116,13 @@ Semantic-search reads no longer need a cast: the read methods now infer the dist
 
 ### Features
 
-- **`$project` distance is inferred into the result** - a vector `$sort` with `$project: 'similarity'` now types the rows as `(Article & { similarity: number })[]` straight from the call, so the old `as WithDistance<...>` cast is gone:
+- **`$project` distance is inferred into the result** - a vector `$sort` with `$project: 'distance'` now types the rows as `(Article & { distance: number })[]` straight from the call, so the old `as WithDistance<...>` cast is gone:
 
   ```ts
   const results = await pool.findMany(Article, {
-    $sort: { embedding: { $vector: queryEmbedding, $project: 'similarity' } },
+    $sort: { embedding: { $vector: queryEmbedding, $project: 'distance' } },
   });
-  results[0].similarity; // number, inferred - no cast
+  results[0].distance; // number, inferred - no cast
   ```
 
   This works on `findMany`, `findOne`, `findManyStream`, and `findManyAndCount`, on both the querier and the pool. It reads the `$project` string literal off the query with a `const` type parameter - the same trick `aggregate` already uses - so queries that don't project are untouched and still return plain `E[]`. Only top-level `$sort` projections are inferred, which is exactly what the SQL and Atlas builders emit. `WithDistance<E, K>` is still exported for the rare query whose `$project` key is computed at runtime instead of written as a literal.

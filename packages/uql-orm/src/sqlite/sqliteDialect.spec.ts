@@ -45,7 +45,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.*$/,
+      /^INSERT INTO `TaxCategory` \(.*`pk`.*`name`.*`createdAt`.*`updatedAt`.*\) VALUES \(\?, \?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`name` = EXCLUDED.`name`.*`createdAt` = EXCLUDED.`createdAt`.*`updatedAt` = EXCLUDED.`updatedAt`.* RETURNING `pk` `id`$/,
     );
     expect(values).toEqual(['a', 'Some Name D', 1, 1]);
   }
@@ -66,7 +66,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET/,
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET.* RETURNING `id` `id`$/,
     );
     expect(values).toHaveLength(7);
   }
@@ -115,7 +115,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)');
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`');
     expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
     res = this.exec((ctx) =>
@@ -124,7 +124,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)');
+    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
     expect(res.values[0]).toBe(1640995199999);
     expect(res.values[1]).toBe(123);
   }
@@ -140,7 +140,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
     );
-    expect(sql).toBe('INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (NULL, ?, ?, ?)');
+    expect(sql).toBe(
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (NULL, ?, ?, ?) RETURNING `id` `id`',
+    );
     expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
   }
 
@@ -155,8 +157,140 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
       ),
     );
-    expect(sql).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING');
+    expect(sql).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING RETURNING `id` `id`');
     expect(values).toEqual([1]);
+  }
+
+  override shouldInsertMany() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, [
+        {
+          name: 'Some name 1',
+          email: 'someemail1@example.com',
+          createdAt: 123,
+        },
+        {
+          name: 'Some name 2',
+          email: 'someemail2@example.com',
+          createdAt: 456,
+        },
+        {
+          name: 'Some name 3',
+          email: 'someemail3@example.com',
+          createdAt: 789,
+        },
+      ]),
+    );
+    expect(sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
+    );
+    expect(values).toEqual([
+      'Some name 1',
+      'someemail1@example.com',
+      123,
+      'Some name 2',
+      'someemail2@example.com',
+      456,
+      'Some name 3',
+      'someemail3@example.com',
+      789,
+    ]);
+  }
+
+  override shouldInsertWithOnInsertId() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, {
+        name: 'Some Name',
+        createdAt: 123,
+      }),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\) RETURNING `pk` `id`$/,
+    );
+    expect(values[0]).toBe('Some Name');
+    expect(values[1]).toBe(123);
+    expect(values[2]).toMatch(/.+/);
+  }
+
+  override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, [
+        {
+          name: 'Some Name A',
+        },
+        {
+          pk: '50',
+          name: 'Some Name B',
+        },
+        {
+          name: 'Some Name C',
+        },
+        {
+          pk: '70',
+          name: 'Some Name D',
+        },
+      ]),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\) RETURNING `pk` `id`$/,
+    );
+    expect(values[0]).toBe('Some Name A');
+    expect(values[2]).toMatch(/.+/);
+    expect(values[3]).toBe('Some Name B');
+    expect(values[5]).toBe('50');
+  }
+
+  override shouldBeSecure() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true, something: true } as any,
+        $where: {
+          id: 1,
+          something: 1,
+        } as any,
+        $sort: {
+          id: 1,
+          something: 1,
+        } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
+    expect(res.values).toEqual([1, 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
+        name: 'Some Name',
+        something: 'anything',
+        createdAt: 1,
+      } as any),
+    );
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
+    expect(res.values).toEqual(['Some Name', 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        User,
+        {
+          $where: { something: 'anything' } as any,
+        },
+        {
+          name: 'Some Name',
+          something: 'anything',
+          updatedAt: 1,
+        } as any,
+      ),
+    );
+    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
+    expect(res.values).toEqual(['Some Name', 1, 'anything']);
+
+    res = this.exec((ctx) =>
+      this.dialect.delete(ctx, User, {
+        $where: { something: 'anything' } as any,
+      }),
+    );
+    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
+    expect(res.values).toEqual(['anything']);
   }
 
   override shouldFind$text() {

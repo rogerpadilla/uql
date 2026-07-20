@@ -53,7 +53,7 @@ describe('HttpQuerier', () => {
     await expect(querier.findManyAndCount(User, {})).rejects.toThrow('findManyAndCount response has an invalid count');
   });
 
-  it('infers projected distance fields for browser reads', async () => {
+  it('returns plain entities for browser reads with a vector sort', async () => {
     const query = { $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } } } as const;
 
     const byId = await querier.findOneById(VectorItem, 1, query);
@@ -61,10 +61,10 @@ describe('HttpQuerier', () => {
     const many = await querier.findMany(VectorItem, query);
     const manyAndCount = await querier.findManyAndCount(VectorItem, query);
 
-    expectTypeOf(byId.data).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
-    expectTypeOf(one.data).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
-    expectTypeOf(many.data).toEqualTypeOf<(VectorItem & { distance: number })[]>();
-    expectTypeOf(manyAndCount.data).toEqualTypeOf<(VectorItem & { distance: number })[]>();
+    expectTypeOf(byId.data).toEqualTypeOf<VectorItem | undefined>();
+    expectTypeOf(one.data).toEqualTypeOf<VectorItem | undefined>();
+    expectTypeOf(many.data).toEqualTypeOf<VectorItem[]>();
+    expectTypeOf(manyAndCount.data).toEqualTypeOf<VectorItem[]>();
   });
 
   it('count', async () => {

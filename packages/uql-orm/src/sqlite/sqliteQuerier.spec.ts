@@ -145,15 +145,15 @@ describe('insertMany id semantics', () => {
     await querier.release();
   });
 
-  it('should not infer ids when the primary key is not database-generated', async () => {
+  it('should return the real persisted value (not the internal rowid) when the primary key is not database-generated', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new BetterSqlite3Dialect());
     await querier.run('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)');
-    // No id provided and none inferable: the internal rowid must never leak as the id.
+    // No id provided: RETURNING reports the real persisted NULL, never the internal rowid.
     const generated = await querier.insertMany(TextPkNote, [{ title: 'no pk' }]);
-    expect(generated).toEqual([undefined]);
+    expect(generated).toEqual([null]);
     // Provided ids are returned as-is.
     const provided = await querier.insertMany(TextPkNote, [{ code: 'abc', title: 'has pk' }, { title: 'still no pk' }]);
-    expect(provided).toEqual(['abc', undefined]);
+    expect(provided).toEqual(['abc', null]);
     const founds = await querier.findMany(TextPkNote, { $select: { code: true, title: true }, $sort: { title: 1 } });
     expect(founds).toEqual([
       { code: 'abc', title: 'has pk' },

@@ -1,14 +1,5 @@
 import type { CrudOperation, RequestCountedSuccessResponse, RequestSuccessResponse } from '../../http/contract.js';
-import type {
-  IdValue,
-  Query,
-  QueryFindResult,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  Type,
-  UpdatePayload,
-} from '../../type/index.js';
+import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -21,30 +12,26 @@ import type { RequestOptions } from './request.js';
  * @see UniversalQuerier for the server-side contract with direct return types.
  */
 export interface ClientQuerier {
-  findOneById<E extends object, const Q extends QueryOne<E>>(
+  findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: Q,
+    q?: QueryOne<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>>;
+  ): Promise<RequestSuccessResponse<E | undefined>>;
 
-  findOne<E extends object, const Q extends QueryOne<E>>(
+  findOne<E extends object>(
     entity: Type<E>,
-    q: Q,
+    q: QueryOne<E>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q> | undefined>>;
+  ): Promise<RequestSuccessResponse<E | undefined>>;
 
-  findMany<E extends object, const Q extends Query<E>>(
-    entity: Type<E>,
-    q: Q,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, Q>[]>>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
 
-  findManyAndCount<E extends object, const Q extends Query<E>>(
+  findManyAndCount<E extends object>(
     entity: Type<E>,
-    q: Q,
+    q: Query<E>,
     opts?: RequestOptions,
-  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, Q>[]>>;
+  ): Promise<RequestCountedSuccessResponse<E[]>>;
 
   count<E>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
 
