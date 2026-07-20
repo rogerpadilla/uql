@@ -321,21 +321,6 @@ describe('buildUpdateResult', () => {
     });
   });
 
-  it('should handle SQLite "lastId" source with BigInt', () => {
-    // lastInsertRowid=100n, changes=3 → ids=[98n, 99n, 100n], firstId=98n
-    const res = buildUpdateResult({
-      changes: 3,
-      id: 100n,
-      insertIdSource: 'lastId',
-    });
-    expect(res).toEqual({
-      changes: 3,
-      ids: [98n, 99n, 100n],
-      firstId: 98n,
-      created: undefined,
-    });
-  });
-
   it('should apply an auto-increment stride > 1 (clustered MySQL)', () => {
     const res = buildUpdateResult({ changes: 3, id: 10, insertIdSource: 'firstId', insertIdIncrement: 2 });
     expect(res.ids).toEqual([10, 12, 14]);
@@ -356,7 +341,7 @@ describe('buildUpdateResult', () => {
       firstId: undefined,
       created: undefined,
     });
-    expect(buildUpdateResult({ changes: 2, id: 0n, insertIdSource: 'lastId' }).ids).toEqual([]);
+    expect(buildUpdateResult({ changes: 2, id: 0n, insertIdSource: 'firstId' }).ids).toEqual([]);
   });
 
   it('should ignore the header id on "returning" dialects (rows are the source of truth)', () => {

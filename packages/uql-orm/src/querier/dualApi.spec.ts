@@ -69,7 +69,7 @@ describe('Dual API Pattern: $entity field support', () => {
   });
 
   describe('findOneById', () => {
-    it('infers projected distance fields without mutating the query', async () => {
+    it('does not mutate the query when reading with a vector sort', async () => {
       const query = {
         $where: { name: 'north' },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
@@ -77,7 +77,7 @@ describe('Dual API Pattern: $entity field support', () => {
 
       const result = await querier.findOneById(VectorItem, 1, query);
 
-      expectTypeOf(result).toEqualTypeOf<(VectorItem & { distance: number }) | undefined>();
+      expectTypeOf(result).toEqualTypeOf<VectorItem | undefined>();
       expect(query).toEqual({
         $where: { name: 'north' },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },

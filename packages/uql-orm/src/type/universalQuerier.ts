@@ -5,7 +5,6 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
-  QueryFindResult,
   QueryGroupMap,
   QueryOne,
   QueryOptions,
@@ -26,12 +25,12 @@ export interface UniversalQuerier {
    * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E extends object, const Q extends QueryOne<E>>(
+  findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: Q,
+    q?: QueryOne<E>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, Q> | undefined>;
+  ): Promise<E | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -39,11 +38,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the record
    */
-  findOne<E extends object, const Q extends QueryOne<E>>(
-    entity: Type<E>,
-    q: Q,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, Q> | undefined>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -51,11 +46,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records
    */
-  findMany<E extends object, const Q extends Query<E>>(
-    entity: Type<E>,
-    q: Q,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, Q>[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
   /**
    * streams the records matching the given search parameters as an async iterable.
@@ -65,11 +56,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return an async iterable of records
    */
-  findManyStream<E extends object, const Q extends Query<E>>(
-    entity: Type<E>,
-    q: Q,
-    opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, Q>>;
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
 
   /**
    * obtains the records matching the given search parameters,
@@ -78,11 +65,7 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E extends object, const Q extends Query<E>>(
-    entity: Type<E>,
-    q: Q,
-    opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, Q>[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
 
   /**
    * counts the number of records matching the given search parameters.

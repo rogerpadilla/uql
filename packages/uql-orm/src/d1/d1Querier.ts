@@ -1,6 +1,6 @@
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { ExtraOptions } from '../type/index.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
 
 export interface D1Meta {
   duration?: number;
@@ -29,7 +29,9 @@ export interface D1ExecResult {
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(colName?: string): Promise<T | null>;
-  run(): Promise<D1ExecResult>;
+  // `run()` and `all()` share the same `D1Result` shape (both carry `results`), which matters
+  // for statements with a RETURNING clause.
+  run<T = unknown>(): Promise<D1Result<T>>;
   all<T = unknown>(): Promise<D1Result<T>>;
   raw<T = unknown>(): Promise<T[]>;
 }
@@ -60,12 +62,10 @@ export class D1Querier extends AbstractSqliteQuerier {
   override async internalRun(query: string, values?: unknown[]) {
     const stmt = this.db.prepare(query);
     const bound = values?.length ? stmt.bind(...values) : stmt;
-    const res = await bound.run();
-    // D1ExecResult doesn't reliably return lastRowId in the type definition,
-    // though the runtime meta often has it.
-    const changes = res.meta?.changes ?? res.count ?? 0;
-    const lastInsertRowid = res.meta?.last_row_id;
-    return this.buildUpdateResult({ changes, id: lastInsertRowid });
+    const res = await bound.run<RawRow>();
+    const rows = res.results;
+    const changes = rows.length || res.meta?.changes || 0;
+    return this.buildUpdateResult({ rows, changes, id: res.meta?.last_row_id });
   }
 
   override async internalRelease() {

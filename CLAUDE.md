@@ -12,7 +12,7 @@
 - Only document what is really necessary (but most code should be self-explanatory), and be concrete whenever appropriate.
 
 ## Testing
-- Avoid conditionals, if, ternary, etc.
+- Avoid conditionals, if, ternary, elvis, etc. Tests should be fully predictable.
 
 ### Confirm Changes Work
 - Run tests to confirm they pass: `bun run test`

@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import type { LedgerAccount } from '../test/index.js';
-import type { IdValue } from '../type/index.js';
+import type { IdValue, PrimaryKey } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
 /**
@@ -24,5 +24,14 @@ export abstract class MySqlLikeQuerierIt extends AbstractSqlQuerierIt {
 
   protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
     expect(created).toBe(false);
+  }
+
+  /**
+   * No `RETURNING`: once a batch touches more than one row, `affectedRows` is a weighted sum
+   * (1=insert, 2=update) that can't be apportioned back to individual rows, so `ids` stays empty
+   * rather than fabricating values.
+   */
+  protected override assertUpsertManyIds(ids: PrimaryKey[] | undefined): void {
+    expect(ids).toBeUndefined();
   }
 }

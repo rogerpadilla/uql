@@ -36,10 +36,31 @@ export async function aggregateTyping() {
   // Aggregate-only query (no grouping) is valid.
   await querier.aggregate(User, { $agg: { total: { $count: '*' } } });
 
+  // Positive: each $having value is typed to that column's result type ($avg -> number,
+  // $min over a string column -> string).
+  await querier.aggregate(User, {
+    $agg: { avgAge: { $avg: 'age' }, firstStatus: { $min: 'status' } },
+    $having: { avgAge: { $gt: 30 }, firstStatus: { $startsWith: 'a' } },
+  });
+
+  // Negative: a numeric comparison on a string-typed $min result is rejected.
+  await querier.aggregate(User, {
+    $agg: { firstStatus: { $min: 'status' } },
+    // @ts-expect-error firstStatus is a string ($min of a string column), not a number
+    $having: { firstStatus: { $gt: 5 } },
+  });
+
   // Negative: a typo'd group-by column is rejected (typed like $select).
   await querier.aggregate(User, {
     // @ts-expect-error 'statuses' is not a field of User
     $group: { statuses: true },
+  });
+
+  // Negative: a computed aggregate wrongly placed in $group (it belongs in $agg) is rejected even
+  // when a valid group-by column is present alongside it.
+  await querier.aggregate(User, {
+    // @ts-expect-error 'count' is not a field of User; computed columns go in $agg
+    $group: { status: true, count: { $count: '*' } },
   });
 
   // Negative: a typo'd aggregated field reference is rejected.

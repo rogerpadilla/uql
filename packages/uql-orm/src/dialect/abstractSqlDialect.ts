@@ -1268,8 +1268,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * Shared ON CONFLICT ... DO UPDATE / DO NOTHING logic for positional-placeholder dialects (SQLite).
-   * Uses a deferred context for update params so they follow INSERT params.
+   * Shared ON CONFLICT ... DO UPDATE / DO NOTHING ... RETURNING logic for positional-placeholder
+   * dialects (SQLite). Uses a deferred context for update params so they follow INSERT params.
    * PG uses its own implementation since `$N` numbered placeholders handle param ordering natively.
    */
   protected onConflictUpsert<E>(
@@ -1291,7 +1291,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     insertFn(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict}`);
+    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
     ctx.pushValue(...updateCtx.values);
   }
 

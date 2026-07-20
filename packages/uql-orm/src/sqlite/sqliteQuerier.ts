@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3';
-import type { ExtraOptions } from '../type/index.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
 import { throwPendingTransaction } from '../util/index.js';
 import { AbstractSqliteQuerier } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
@@ -24,7 +24,14 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const { changes, lastInsertRowid } = this.db.prepare(query).run(values || []);
+    const stmt = this.db.prepare(query);
+    // `reader` is true for any statement with a RETURNING clause; `.run()` silently discards
+    // returned rows, so those statements must go through `.all()` instead.
+    if (stmt.reader) {
+      const rows = stmt.all(values || []) as RawRow[];
+      return this.buildUpdateResult({ rows });
+    }
+    const { changes, lastInsertRowid } = stmt.run(values || []);
     return this.buildUpdateResult({ changes, id: lastInsertRowid });
   }
 

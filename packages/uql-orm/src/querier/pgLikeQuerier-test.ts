@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { Company, VectorItem } from '../test/index.js';
+import type { WithDistance } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
 /**
@@ -40,10 +41,10 @@ export abstract class PgLikeQuerierIt extends AbstractSqlQuerierIt {
       { name: 'far', vec: [0, 0, 1] },
     ]);
 
-    const results = await this.querier.findMany(VectorItem, {
+    const results = (await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $project: 'distance' } },
-    });
+    })) as WithDistance<VectorItem, 'distance'>[];
 
     expect(results).toHaveLength(2);
     expect(results[0].name).toBe('close');
@@ -102,10 +103,10 @@ export abstract class PgLikeQuerierIt extends AbstractSqlQuerierIt {
       { name: 'far', vec: [0, 1, 0] },
     ]);
 
-    const results = await this.querier.findMany(VectorItem, {
+    const results = (await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $distance: 'l2', $project: 'distance' } },
-    });
+    })) as WithDistance<VectorItem, 'distance'>[];
 
     expect(results[0].name).toBe('near');
     expect(results[0].distance).toBeCloseTo(0, 5);

@@ -47,21 +47,23 @@ describe('LibsqlQuerier', () => {
     expect(res).toEqual([{ id: 1 }]);
   });
 
-  it('should execute INSERT and return IDs', async () => {
+  it('should execute INSERT and return IDs from a RETURNING clause', async () => {
+    // SQLite's dialect appends RETURNING, so the driver reports the exact row(s), not a header id.
+    // `rowsAffected` is unreliably 0 whenever RETURNING is present, so `rows.length` must be trusted.
     mockClient.execute.mockResolvedValue({
-      rows: [],
-      columns: [],
-      columnTypes: [],
-      rowsAffected: 1,
-      lastInsertRowid: 100n, // LibSQL uses bigint for rowid
+      rows: [{ id: 100 }],
+      columns: ['id'],
+      columnTypes: ['INTEGER'],
+      rowsAffected: 0,
+      lastInsertRowid: undefined,
     } as unknown as ResultSet);
 
-    const res = await querier.internalRun('INSERT INTO ...');
+    const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
 
     expect(res).toEqual({
       changes: 1,
-      ids: [100n],
-      firstId: 100n,
+      ids: [100],
+      firstId: 100,
     });
   });
 
@@ -93,10 +95,10 @@ describe('LibsqlQuerier', () => {
     expect(querier.hasOpenTransaction).toBe(false);
   });
 
-  it('should close client on internalRelease', async () => {
+  it('should reject internalRelease when a transaction is still open', async () => {
     await querier.beginTransaction();
-    await querier.internalRelease();
-    expect(mockTx.close).toHaveBeenCalled();
+    await expect(querier.internalRelease()).rejects.toThrow('pending transaction');
+    expect(mockTx.close).not.toHaveBeenCalled();
   });
 
   it('should close client on internalRelease when closeClientOnRelease', async () => {

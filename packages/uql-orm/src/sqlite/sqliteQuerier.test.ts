@@ -1,16 +1,10 @@
 import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
-import { createSpec, type LedgerAccount } from '../test/index.js';
-import type { IdValue } from '../type/index.js';
+import { createSpec } from '../test/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 export class Sqlite3QuerierIt extends AbstractSqlQuerierIt {
   constructor() {
     super(new Sqlite3QuerierPool(':memory:'), 'INTEGER PRIMARY KEY');
-  }
-
-  /** SQLite reports header-derived IDs only, which are unsafe for mixed batches. */
-  protected override expectedMixedBatchIds([, providedId]: IdValue<LedgerAccount>[]): IdValue<LedgerAccount>[] {
-    return [undefined, providedId, undefined];
   }
 
   override async beforeEach() {

@@ -9,6 +9,7 @@ import type {
   QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
+  QueryOptions,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
   QueryWhereFieldOperatorMap,
@@ -56,7 +57,8 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  override readonly insertIdSource = 'lastId';
+  // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.
+  override readonly insertIdSource = 'returning';
 
   protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
     ['cosine', 'vec_distance_cosine'],
@@ -192,8 +194,15 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `CAST(${expr} AS REAL)`;
   }
 
+  override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+    super.insert(ctx, entity, payload, opts);
+    ctx.append(' ' + this.returningId(entity));
+  }
+
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    this.onConflictUpsert(ctx, entity, conflictPaths, payload, this.insert.bind(this));
+    // Use the base (non-RETURNING) insert here: `onConflictUpsert` appends its own RETURNING
+    // after the ON CONFLICT clause, so calling `this.insert` would append it twice.
+    this.onConflictUpsert(ctx, entity, conflictPaths, payload, (c, e, p) => super.insert(c, e, p));
   }
 
   protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {

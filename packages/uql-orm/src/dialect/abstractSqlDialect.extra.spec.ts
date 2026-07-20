@@ -48,8 +48,8 @@ class TestSqlDialect extends AbstractSqlDialect {
     return 'ROLLBACK';
   }
 
-  override get insertIdSource(): 'lastId' {
-    return 'lastId';
+  override get insertIdSource(): 'firstId' {
+    return 'firstId';
   }
 
   escape(value: unknown): string {

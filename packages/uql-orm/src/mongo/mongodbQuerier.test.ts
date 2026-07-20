@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { expect } from 'vitest';
 import { getEntities, getMeta } from '../entity/index.js';
@@ -99,6 +100,30 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async shouldMergeJsonBooleanField() {
     // Same as shouldUpdateWithJsonOperators - $merge is SQL-only.
+  }
+
+  async shouldUpsertManyReturnGeneratedIdsOnlyForInsertedDocs() {
+    // Conflict path is `email`, not `_id` - so a newly-inserted document's `_id` is
+    // MongoDB-generated and unknown to the caller ahead of time.
+    const existingEmail = `existing-${randomUUID()}@example.com`;
+    const newEmail = `new-${randomUUID()}@example.com`;
+
+    await this.querier.insertOne(User, { name: 'Existing', email: existingEmail, createdAt: 1 });
+
+    const result = await this.querier.upsertMany(User, { email: true }, [
+      { name: 'New', email: newEmail, createdAt: 2 },
+      { name: 'Existing Updated', email: existingEmail, createdAt: 3 },
+    ]);
+
+    expect(result.changes).toBeGreaterThanOrEqual(2);
+    // Only the inserted document's id is knowable from `bulkWrite`'s response - the updated
+    // document's `_id` isn't returned, so it must not appear here.
+    expect(result.ids).toHaveLength(1);
+    expect(result.firstId).toBe(result.ids?.[0]);
+
+    const inserted = await this.querier.findOne(User, { $select: { id: true }, $where: { email: newEmail } });
+    expect(inserted).toBeDefined();
+    expect(String(result.firstId)).toBe(String(inserted!.id));
   }
 
   async shouldFindManyWithSortAndLimit() {

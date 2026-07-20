@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
+import { Coupon, createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
 import type { IdValue, PrimaryKey, QuerierPool } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -23,8 +23,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /**
    * Expected `insertMany` IDs for a mixed batch (explicit ID in the middle), given the IDs the
    * database actually assigned. `'returning'` dialects report every ID exactly;
-   * {@link MySqlLikeQuerierIt} and SQLite override since header-derived IDs are unsafe for
-   * mixed batches (only the provided ID is reported, never inferred values).
+   * {@link MySqlLikeQuerierIt} overrides since header-derived IDs are unsafe for mixed batches
+   * (only the provided ID is reported, never inferred values).
    */
   protected expectedMixedBatchIds(persistedIds: IdValue<LedgerAccount>[]): IdValue<LedgerAccount>[] {
     return persistedIds;
@@ -51,6 +51,34 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   protected assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
     expect(created).toBeUndefined();
+  }
+
+  /**
+   * `upsertMany` on a batch mixing one insert and one update, keyed on a non-PK unique column (an
+   * auto-increment PK, unknown ahead of time). `'returning'` dialects report an exact ID for every
+   * row regardless of insert/update - but not necessarily in input order (CockroachDB's distributed
+   * execution doesn't preserve it the way Postgres/MariaDB happen to), so this compares the set of
+   * IDs, not position. {@link MySqlLikeQuerierIt} overrides: MySQL's `affectedRows` convention is a
+   * weighted sum across rows once more than one is touched, so `ids` stays `undefined` (see
+   * `AbstractSqlQuerier.upsertMany`) rather than fabricating per-row values.
+   */
+  protected assertUpsertManyIds(ids: PrimaryKey[] | undefined, expectedIds: PrimaryKey[]): void {
+    expect(ids!.map(String).sort()).toEqual(expectedIds.map(String).sort());
+  }
+
+  async shouldUpsertManyReturnIdsForNonPkConflictPath() {
+    const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
+
+    const result = await this.querier.upsertMany(Coupon, { code: true }, [
+      { code: 'BRAND-NEW', label: 'New' },
+      { code: 'EXISTING', label: 'Updated' },
+    ]);
+    expect(result.changes).toBeGreaterThanOrEqual(2);
+
+    const inserted = await this.querier.findOne(Coupon, { $select: { id: true }, $where: { code: 'BRAND-NEW' } });
+    expect(inserted).toBeDefined();
+
+    this.assertUpsertManyIds(result.ids, [inserted!.id!, existingId!]);
   }
 
   override async shouldUpsertOne() {

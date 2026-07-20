@@ -2,7 +2,7 @@ import type { Client, InValue, Transaction } from '@libsql/client';
 import { Serialized } from '../querier/decorator/index.js';
 import { AbstractSqliteQuerier } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { ExtraOptions, TransactionOptions } from '../type/index.js';
+import type { ExtraOptions, RawRow, TransactionOptions } from '../type/index.js';
 import { throwNoPendingTransaction, throwPendingTransaction } from '../util/index.js';
 
 /** Connection lifecycle for a {@link LibsqlQuerier} (separate from {@link ExtraOptions}). */
@@ -34,7 +34,10 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
   override async internalRun(query: string, values?: unknown[]) {
     const target = this.tx || this.client;
     const res = await target.execute({ sql: query, args: values as InValue[] });
-    return this.buildUpdateResult({ changes: res.rowsAffected, id: res.lastInsertRowid });
+    const rows = res.rows as RawRow[];
+    // `rowsAffected` is unreliably 0 whenever the statement has a RETURNING clause, so prefer
+    // the actual row count when rows were returned.
+    return this.buildUpdateResult({ rows, changes: rows.length || res.rowsAffected, id: res.lastInsertRowid });
   }
 
   override get hasOpenTransaction() {
@@ -69,7 +72,7 @@ export class LibsqlQuerier extends AbstractSqliteQuerier {
 
   override async internalRelease() {
     if (this.tx) {
-      this.tx.close();
+      throwPendingTransaction();
     }
     if (this.closeClientOnRelease) {
       this.client.close();

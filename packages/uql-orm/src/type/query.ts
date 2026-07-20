@@ -380,37 +380,15 @@ export interface QueryVectorSearch {
 export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 
 /**
- * Utility type to augment an entity with a projected distance field.
- *
- * `findMany` / `findOne` already infer this from a `$project` literal, so a cast is not needed:
+ * Augments an entity with the distance field projected by a vector-search `$sort.$project`. The
+ * find methods return the plain entity, so annotate the result with this when you project a score:
  * ```ts
- * const results = await querier.findMany(Article, {
+ * const results = (await querier.findMany(Article, {
  *   $sort: { embedding: { $vector: queryVec, $project: 'similarity' } },
- * }); // results: (Article & { similarity: number })[]
+ * })) as WithDistance<Article, 'similarity'>[];
  * ```
- * Reach for `WithDistance` only to annotate a value whose `$project` key is not a literal.
  */
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
-
-/**
- * Names of the distance fields a `$sort` map projects via vector-search `$project`.
- * Non-vector sort values (directions, dot-paths) contribute no keys.
- * @internal
- */
-type ProjectedDistanceKeys<S> = {
-  [K in keyof S]: S[K] extends { $project: infer P extends string } ? P : never;
-}[keyof S];
-
-/**
- * Result row of a find query: the entity augmented with any distance fields projected by its
- * `$sort` vector search. Falls back to `E` when the query projects nothing, so it is transparent
- * for the common case. Mirrors the runtime, which projects only top-level `$sort` distances.
- */
-export type QueryFindResult<E, Q> = Q extends { $sort?: infer S }
-  ? [ProjectedDistanceKeys<S>] extends [never]
-    ? E
-    : WithDistance<E, ProjectedDistanceKeys<S>>
-  : E;
 
 /**
  * sort by map - supports field keys, JSON dot-notation paths, relation sort,
@@ -496,6 +474,16 @@ export type QueryOne<E> = Omit<Query<E>, '$limit'>;
  * options to get an unique record.
  */
 export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$populate' | '$where'>;
+
+/**
+ * Maps the offending keys to `never`, turning an excess key into a compile error; resolves to
+ * `unknown` (an inert intersection member) when there are none. Used by `aggregate`'s `$group`,
+ * which is captured as a generic (a bare generic skips excess-property checking). The find methods
+ * don't need this: they take concrete `Query<E>` params, so TypeScript's native excess-property
+ * checking rejects stray keys directly.
+ * @internal
+ */
+type Reject<K> = [K] extends [never] ? unknown : Record<K & string, never>;
 
 /**
  * stringified query.
@@ -891,12 +879,14 @@ export type QueryAggregateResult<E, G, A> = Simplify<
 >;
 
 /**
- * HAVING clause - filters on aggregate results by alias name.
+ * Erased runtime shape of a HAVING clause (alias → comparison), consumed by the dialect builders.
+ * Values are `unknown` because the SQL is built generically; the typed, per-column value checking
+ * lives in {@link QueryAggregate.$having}.
  *
  * @example { count: { $gt: 5 } }   → HAVING COUNT(*) > 5
  */
 export type QueryHavingMap = {
-  readonly [alias: string]: QueryWhereFieldValue<number> | undefined;
+  readonly [alias: string]: QueryWhereFieldValue<unknown> | undefined;
 };
 
 /**
@@ -920,9 +910,11 @@ export type QueryAggregate<
   A extends QueryAggMap<E> = QueryAggMap<E>,
 > = {
   /**
-   * Columns to group by - `{ status: true }`, typed against the entity like `$select`.
+   * Columns to group by - `{ status: true }`, typed against the entity like `$select`. A computed
+   * aggregate wrongly placed here (it belongs in `$agg`) is rejected via {@link Reject}, since
+   * `$group` is captured as a generic and a bare generic skips excess-property checking.
    */
-  readonly $group?: G;
+  readonly $group?: G & Reject<Exclude<keyof G, FieldKey<E>>>;
 
   /**
    * Computed aggregate columns - `{ count: { $count: '*' }, avgAge: { $avg: 'age' } }`.
@@ -935,10 +927,14 @@ export type QueryAggregate<
   readonly $where?: QueryWhere<E>;
 
   /**
-   * Post-aggregation filtering (applied after grouping - SQL HAVING). Keys are the grouped columns
-   * (`keyof G`) and computed aliases (`keyof A`), so a name that is neither is a compile error.
+   * Post-aggregation filtering (applied after grouping - SQL HAVING). Keyed by the result columns
+   * (grouped columns + computed aliases), and each value is typed to that column's result type - a
+   * `$min`/`$max` over a `Date` field compares against a `Date`, a grouped column against its own
+   * type - reusing {@link QueryAggregateResult}. A name that is neither is a compile error.
    */
-  readonly $having?: { readonly [K in (keyof G & string) | (keyof A & string)]?: QueryWhereFieldValue<number> };
+  readonly $having?: {
+    readonly [K in keyof QueryAggregateResult<E, G, A>]?: QueryWhereFieldValue<QueryAggregateResult<E, G, A>[K]>;
+  };
 
   /**
    * Sort the aggregated results by a grouped column, a computed alias, or an entity field.

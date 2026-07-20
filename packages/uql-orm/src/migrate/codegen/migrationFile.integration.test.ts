@@ -39,42 +39,44 @@ const backends: {
 ];
 
 describe('generated SQL migration module (integration)', () => {
-  it.each(
-    backends,
-  )('$name: jiti-loaded migration with backticks runs; split run() calls apply table + index (#86, #87)', async ({
-    createPool,
-  }) => {
-    const upInner = emitSqlRunCalls([createTableSql, createIndexSql]);
-    const downInner = emitSqlRunCalls(['DROP INDEX IF EXISTS `idx_Article_title`;', 'DROP TABLE IF EXISTS `Article`;']);
+  it.each(backends)(
+    '$name: jiti-loaded migration with backticks runs; split run() calls apply table + index (#86, #87)',
+    async ({ createPool }) => {
+      const upInner = emitSqlRunCalls([createTableSql, createIndexSql]);
+      const downInner = emitSqlRunCalls([
+        'DROP INDEX IF EXISTS `idx_Article_title`;',
+        'DROP TABLE IF EXISTS `Article`;',
+      ]);
 
-    const source = buildSqlQuerierMigrationModule({
-      migrationName: 'integration_article',
-      createdAt: new Date('2026-04-04T00:00:00.000Z'),
-      docExtraLines: ['integration: backtick SQL + one run() per statement'],
-      upInner,
-      downInner,
-    });
+      const source = buildSqlQuerierMigrationModule({
+        migrationName: 'integration_article',
+        createdAt: new Date('2026-04-04T00:00:00.000Z'),
+        docExtraLines: ['integration: backtick SQL + one run() per statement'],
+        upInner,
+        downInner,
+      });
 
-    const migration = await loadTsDefaultExportWithJiti<MigrationDefinition>(source, uqlOrmPackageRoot);
-    const pool = createPool();
-    const querier = await pool.getQuerier();
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      await pool.end();
-      expect.fail('expected SqlQuerier');
-    }
-    try {
-      await migration.up(querier);
-      await assertArticleTableAndIndex(querier);
+      const migration = await loadTsDefaultExportWithJiti<MigrationDefinition>(source, uqlOrmPackageRoot);
+      const pool = createPool();
+      const querier = await pool.getQuerier();
+      if (!isSqlQuerier(querier)) {
+        await querier.release();
+        await pool.end();
+        expect.fail('expected SqlQuerier');
+      }
+      try {
+        await migration.up(querier);
+        await assertArticleTableAndIndex(querier);
 
-      await migration.down(querier);
-      const afterDown = await querier.all<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='Article'",
-      );
-      expect(afterDown).toHaveLength(0);
-    } finally {
-      await querier.release();
-      await pool.end();
-    }
-  });
+        await migration.down(querier);
+        const afterDown = await querier.all<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='Article'",
+        );
+        expect(afterDown).toHaveLength(0);
+      } finally {
+        await querier.release();
+        await pool.end();
+      }
+    },
+  );
 });

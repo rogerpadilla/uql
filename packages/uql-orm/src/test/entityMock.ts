@@ -378,6 +378,18 @@ export class ItemAdjustment extends BaseEntity {
   inventoryAdjustment?: InventoryAdjustment;
 }
 
+/**
+ * Auto-increment PK + a separately-unique conflict column, dedicated to `upsertMany` id-return
+ * tests: `code` (not the PK) is the conflict path, so a newly-inserted row's id is only knowable
+ * from the database's response, never from the payload itself.
+ */
+@Entity()
+export class Coupon {
+  @Id() id?: number;
+  @Field({ unique: true }) code?: string;
+  @Field() label?: string;
+}
+
 @Entity()
 export class VectorItem {
   @Id() id?: number;

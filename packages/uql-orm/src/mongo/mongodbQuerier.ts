@@ -5,6 +5,7 @@ import type {
   EntityMeta,
   ExtraOptions,
   IdValue,
+  PrimaryKey,
   Query,
   QueryAggregate,
   QueryAggregateResult,
@@ -315,8 +316,13 @@ export class MongodbQuerier extends AbstractQuerier {
     const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
 
     const changes = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
+    // `upsertedIds` only covers newly-inserted documents (keyed by operation index); a matched and
+    // updated document's `_id` isn't in the response, so it's simply not represented here - same
+    // "exact where knowable, absent otherwise" convention `RETURNING`-based SQL dialects use for
+    // rows that hit `DO NOTHING`.
+    const ids = Object.values(res.upsertedIds) as PrimaryKey[];
 
-    return { changes };
+    return { changes, ids, firstId: ids[0] };
   }
 
   @Log()
