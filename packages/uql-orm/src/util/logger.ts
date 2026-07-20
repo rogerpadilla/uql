@@ -1,5 +1,4 @@
 import type { Logger, LoggerFunction, LoggingOptions, LogLevel } from '../type/logger.js';
-import type { SlowQueryOptions } from '../type/querier.js';
 
 const DEFAULT_LOG_LEVELS = [
   'query',
@@ -21,9 +20,9 @@ export class DefaultLogger implements Logger {
     console.log(`\x1b[36mquery:\x1b[0m ${query}${params}\x1b[32m${time}\x1b[0m`);
   }
 
-  logSlowQuery(query: string, values?: unknown[], duration?: number, logParams = true): void {
+  logSlowQuery(query: string, values?: unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
-    const params = logParams && values?.length ? ` -- ${JSON.stringify(values)}` : '';
+    const params = values?.length ? ` -- ${JSON.stringify(values)}` : '';
     console.warn(`\x1b[33mslow query:\x1b[0m ${query}${params}\x1b[31m${time}\x1b[0m`);
   }
 
@@ -55,15 +54,30 @@ export class DefaultLogger implements Logger {
 /**
  * A wrapper class that implements the Logger interface and handles different logging options.
  */
+/**
+ * Secondary {@link LoggerWrapper} settings, alongside the primary `options: LoggingOptions`
+ * constructor argument.
+ */
+export interface LoggerWrapperConfig {
+  /**
+   * Whether logged queries include bound values (`logQuery` and slow-query logging alike).
+   * Defaults to `false`.
+   */
+  logValues?: boolean;
+  /** Threshold in milliseconds - queries exceeding this are logged as slow. */
+  slowQuery?: number;
+}
+
 export class LoggerWrapper implements Logger {
   private readonly levels: Set<LogLevel>;
   private readonly logger?: Logger;
   private readonly loggerFunction?: LoggerFunction;
+  private readonly logValues: boolean;
+  private readonly slowQuery?: number;
 
-  constructor(
-    options: LoggingOptions,
-    private readonly slowQuery?: SlowQueryOptions,
-  ) {
+  constructor(options: LoggingOptions, config: LoggerWrapperConfig = {}) {
+    this.logValues = config.logValues ?? false;
+    this.slowQuery = config.slowQuery;
     this.levels = new Set();
 
     if (options === true) {
@@ -80,20 +94,26 @@ export class LoggerWrapper implements Logger {
       this.logger = options;
     }
 
-    if (slowQuery !== undefined && !this.logger && !this.loggerFunction) {
+    if (this.slowQuery !== undefined && !this.logger && !this.loggerFunction) {
       this.logger = new DefaultLogger();
     }
   }
 
+  /** Whether `logQuery` would ever actually surface bound values, given the configured levels/slowQuery/logValues. */
+  willLogValues(): boolean {
+    return this.logValues && (this.levels.has('query') || this.slowQuery !== undefined);
+  }
+
   logQuery(query: string, values?: unknown[], duration?: number): void {
-    if (this.slowQuery !== undefined && duration !== undefined && duration >= this.slowQuery.threshold) {
-      const logParams = this.slowQuery.logParams !== false;
+    const loggedValues = this.logValues ? values : undefined;
+
+    if (this.slowQuery !== undefined && duration !== undefined && duration >= this.slowQuery) {
       if (this.logger?.logSlowQuery) {
-        this.logger.logSlowQuery(query, values, duration, logParams);
+        this.logger.logSlowQuery(query, loggedValues, duration);
         return;
       }
       if (this.loggerFunction) {
-        this.loggerFunction(query, logParams ? values : undefined, duration);
+        this.loggerFunction(query, loggedValues, duration);
         return;
       }
       // If slowQuery threshold is met but no specific slowQuery logger exists,
@@ -102,9 +122,9 @@ export class LoggerWrapper implements Logger {
 
     if (this.levels.has('query')) {
       if (this.logger?.logQuery) {
-        this.logger.logQuery(query, values, duration);
+        this.logger.logQuery(query, loggedValues, duration);
       } else if (this.loggerFunction) {
-        this.loggerFunction(query, values, duration);
+        this.loggerFunction(query, loggedValues, duration);
       }
     }
   }

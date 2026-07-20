@@ -6,7 +6,6 @@ import type {
   FieldOptions,
   LoggingOptions,
   NamingStrategy,
-  SlowQueryOptions,
   SqlQuerier,
   Type,
   VectorIndexOptions,
@@ -81,9 +80,14 @@ export interface MigratorOptions {
   readonly logger?: LoggingOptions;
 
   /**
-   * Configuration for slow query detection and logging during migrations
+   * Whether logged queries include bound values during migrations. Defaults to `false`.
    */
-  readonly slowQuery?: SlowQueryOptions;
+  readonly logValues?: boolean;
+
+  /**
+   * Threshold in milliseconds for slow-query detection and logging during migrations.
+   */
+  readonly slowQuery?: number;
 
   /**
    * Entities to use for schema generation

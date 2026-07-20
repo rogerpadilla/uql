@@ -55,6 +55,22 @@ services:
     volumes:
       - ./docker/init-pg.sql:/docker-entrypoint-initdb.d/init-pg.sql
 
+  # Local stand-in for Neon's edge proxy: forwards a websocket connection to a plain
+  # Postgres backend, so `@neondatabase/serverless` can be tested without a hosted Neon
+  # project. ALLOW_ADDR_REGEX must match the `address` query param the client sends
+  # (see neon/neonQuerier.test.ts's `wsProxy` config) - it defaults to `*.neon.tech:5432`.
+  neon-wsproxy:
+    image: ghcr.io/neondatabase/wsproxy:latest
+    restart: always
+    container_name: uql-neon-wsproxy
+    environment:
+      ALLOW_ADDR_REGEX: '^postgres:5432$'
+    ports:
+      - 5433:80
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   cockroachdb:
     image: cockroachdb/cockroach:latest-v26.2
     restart: always

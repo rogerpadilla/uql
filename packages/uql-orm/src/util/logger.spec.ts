@@ -131,7 +131,7 @@ describe('LoggerWrapper', () => {
   });
 
   it('should handle slow query threshold', () => {
-    const wrapper = new LoggerWrapper(true, { threshold: 100 });
+    const wrapper = new LoggerWrapper(true, { slowQuery: 100 });
 
     wrapper.logQuery('SELECT 1', [], 50);
     expect(spyWarn).not.toHaveBeenCalled();
@@ -143,7 +143,7 @@ describe('LoggerWrapper', () => {
   });
 
   it('should handle slow query threshold even if logger is false', () => {
-    const wrapper = new LoggerWrapper(false, { threshold: 100 });
+    const wrapper = new LoggerWrapper(false, { slowQuery: 100 });
 
     wrapper.logQuery('SELECT 1', [], 50);
     expect(spyLog).not.toHaveBeenCalled();
@@ -157,9 +157,16 @@ describe('LoggerWrapper', () => {
 
   it('should use custom function if provided', () => {
     const customFunc = vi.fn();
-    const wrapper = new LoggerWrapper(customFunc);
+    const wrapper = new LoggerWrapper(customFunc, { logValues: true });
     wrapper.logQuery('SELECT 1', [1], 10);
     expect(customFunc).toHaveBeenCalledWith('SELECT 1', [1], 10);
+  });
+
+  it('should default logValues to false, omitting bound values from a regular query log', () => {
+    const customFunc = vi.fn();
+    const wrapper = new LoggerWrapper(customFunc);
+    wrapper.logQuery('SELECT 1', [1], 10);
+    expect(customFunc).toHaveBeenCalledWith('SELECT 1', undefined, 10);
   });
 
   it('should use custom logger object if provided', () => {
@@ -177,24 +184,39 @@ describe('LoggerWrapper', () => {
 
   it('should use custom function for slow queries', () => {
     const customFunc = vi.fn();
-    const wrapper = new LoggerWrapper(customFunc, { threshold: 100 });
+    const wrapper = new LoggerWrapper(customFunc, { logValues: true, slowQuery: 100 });
     wrapper.logQuery('SELECT 1', [], 150);
     expect(customFunc).toHaveBeenCalledWith('SELECT 1', [], 150);
   });
 
-  it('should omit params from slow query log when logParams is false', () => {
-    const wrapper = new LoggerWrapper(true, { threshold: 100, logParams: false });
+  it('should omit params from slow query log when logValues is false', () => {
+    const wrapper = new LoggerWrapper(true, { logValues: false, slowQuery: 100 });
     wrapper.logQuery('SELECT 1', [42], 150);
     const call = stripAnsi(spyWarn.mock.calls[0][0]);
     expect(call).toContain('slow query: SELECT 1');
     expect(call).not.toContain('42');
   });
 
-  it('should omit params via custom function when logParams is false', () => {
+  it('should omit params via custom function when logValues is false', () => {
     const customFunc = vi.fn();
-    const wrapper = new LoggerWrapper(customFunc, { threshold: 100, logParams: false });
+    const wrapper = new LoggerWrapper(customFunc, { logValues: false, slowQuery: 100 });
     wrapper.logQuery('SELECT 1', [42], 150);
     expect(customFunc).toHaveBeenCalledWith('SELECT 1', undefined, 150);
+  });
+
+  it('should omit params from a regular (non-slow) query log when logValues is false', () => {
+    const wrapper = new LoggerWrapper(true, { logValues: false });
+    wrapper.logQuery('SELECT 1', [42], 5);
+    const call = stripAnsi(spyLog.mock.calls[0][0]);
+    expect(call).toContain('query: SELECT 1');
+    expect(call).not.toContain('42');
+  });
+
+  it('should omit params via custom function for a regular query when logValues is false', () => {
+    const customFunc = vi.fn();
+    const wrapper = new LoggerWrapper(customFunc, { logValues: false });
+    wrapper.logQuery('SELECT 1', [42], 5);
+    expect(customFunc).toHaveBeenCalledWith('SELECT 1', undefined, 5);
   });
 
   it('DefaultLogger should log slow queries with values and duration', () => {
@@ -206,7 +228,7 @@ describe('LoggerWrapper', () => {
 
   it('LoggerWrapper should fall back to logQuery if logSlowQuery is missing', () => {
     const customLogger = { logQuery: vi.fn() } as any;
-    const wrapper = new LoggerWrapper(customLogger, { threshold: 100 });
+    const wrapper = new LoggerWrapper(customLogger, { slowQuery: 100 });
     wrapper.logQuery('SELECT 1', [], 150);
     expect(customLogger.logQuery).toHaveBeenCalled();
   });
@@ -233,6 +255,36 @@ describe('LoggerWrapper', () => {
     wrapper.logQuery('SELECT 1');
     expect(spyInfo).not.toHaveBeenCalled();
     expect(spyLog).not.toHaveBeenCalled();
+  });
+
+  it('willLogValues should be false with no options and no slowQuery', () => {
+    const wrapper = new LoggerWrapper(false);
+    expect(wrapper.willLogValues()).toBe(false);
+  });
+
+  it('willLogValues should be true when query level is enabled', () => {
+    const wrapper = new LoggerWrapper(true, { logValues: true });
+    expect(wrapper.willLogValues()).toBe(true);
+  });
+
+  it('willLogValues should be false when only non-query levels are enabled', () => {
+    const wrapper = new LoggerWrapper(['warn'], { logValues: true });
+    expect(wrapper.willLogValues()).toBe(false);
+  });
+
+  it('willLogValues should be true when slowQuery is configured, even without query level', () => {
+    const wrapper = new LoggerWrapper(false, { logValues: true, slowQuery: 100 });
+    expect(wrapper.willLogValues()).toBe(true);
+  });
+
+  it('willLogValues should be false when logValues explicitly disables params', () => {
+    const wrapper = new LoggerWrapper(false, { logValues: false, slowQuery: 100 });
+    expect(wrapper.willLogValues()).toBe(false);
+  });
+
+  it('willLogValues should be false when logValues is false, even with the query level enabled', () => {
+    const wrapper = new LoggerWrapper(true, { logValues: false });
+    expect(wrapper.willLogValues()).toBe(false);
   });
 });
 

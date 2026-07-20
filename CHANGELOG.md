@@ -1,8 +1,29 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. Please add new changes to the top.
+All notable changes to this project will be documented in this file. Please add new changes to the top, be clear and concise.
 
 date format is [yyyy-mm-dd]
+
+## [0.17.1] - 2026-07-20
+
+### Simpler, more consistent logging options (breaking)
+
+- **`slowQuery` is now a plain number**, not a wrapper object: `slowQuery: { threshold: 200 }` becomes `slowQuery: 200`.
+- **`logParams` is renamed `logValues` and moved out of `slowQuery`.** It's a top-level option (`ExtraOptions`/`MigratorOptions`) that now applies to regular query logging too, not just slow-query alerts - previously there was no way to redact bound values from regular `query`-level logs at all.
+- **`logValues` now defaults to `false`.** Bound values may hold PII, so they're no longer logged unless you opt in with `logValues: true`.
+- **`QueryError.values` can now be attached too.** With `logValues: true`, a failing query's error carries its bound values, not just `.query` - 0.17.0 attached `.query` only, unconditionally never `.values`.
+
+```ts
+// before
+{ logger: true, slowQuery: { threshold: 200, logParams: false } }
+// after (values already omitted by default; only needed if you want them back)
+{ logger: true, slowQuery: 200 }
+```
+
+### Fixes
+
+- **`findManyStream` errors now carry the failing SQL too.** The `.query` enrichment added in 0.17.0 covered `all()`/`run()`/`findMany()`/etc., but streamed queries slipped through since they don't go through the same code path - a bad column or missing table in `findManyStream` now surfaces `.query` on the error just like every other method.
+- **Transaction statements (`BEGIN`/`COMMIT`/`ROLLBACK`) also carry `.query` now.** Same gap as `findManyStream` - they call the driver directly rather than through `all()`/`run()`, so a failed isolation level or commit previously threw with no query context at all.
 
 ## [0.17.0] - 2026-07-19
 

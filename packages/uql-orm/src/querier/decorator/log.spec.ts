@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { LoggerWrapper } from '../../util/logger.js';
 import { Log } from './log.js';
 
 describe('Log decorator', () => {
   it('should log query execution', async () => {
     const logQuery = vi.fn();
     class MockQuerier {
-      logger = { logQuery } as any;
+      logger = new LoggerWrapper({ logQuery }, { logValues: true });
       @Log()
       async all(query: string, values?: any[]) {
         return [{ id: 1 }];
@@ -22,7 +23,7 @@ describe('Log decorator', () => {
   it('should log query execution even on error', async () => {
     const logQuery = vi.fn();
     class MockQuerier {
-      logger = { logQuery } as any;
+      logger = new LoggerWrapper({ logQuery });
       @Log()
       async run(query: string, values?: any[]) {
         throw new Error('fail');
@@ -38,7 +39,7 @@ describe('Log decorator', () => {
   it('should log method name for non-standard methods', async () => {
     const logQuery = vi.fn();
     class MockQuerier {
-      logger = { logQuery } as any;
+      logger = new LoggerWrapper({ logQuery }, { logValues: true });
       @Log()
       async findMany(entity: object, query: any): Promise<any[]> {
         return [];
@@ -76,6 +77,35 @@ describe('Log decorator', () => {
     const err = await querier.all('SELECT 1', [123]).catch((e) => e);
     expect(err).toMatchObject({ message: 'syntax error', query: 'SELECT 1' });
     expect(err.values).toBeUndefined();
+  });
+
+  it('should not attach values when the logger would not surface them', async () => {
+    class MockQuerier {
+      logger = new LoggerWrapper([]); // no 'query' level, no slowQuery
+      @Log()
+      async all(query: string, values?: any[]) {
+        throw new Error('syntax error');
+      }
+    }
+
+    const querier = new MockQuerier();
+    const err = await querier.all('SELECT 1', [123]).catch((e) => e);
+    expect(err).toMatchObject({ query: 'SELECT 1' });
+    expect(err.values).toBeUndefined();
+  });
+
+  it('should attach values when the logger is configured to surface them', async () => {
+    class MockQuerier {
+      logger = new LoggerWrapper(true, { logValues: true });
+      @Log()
+      async all(query: string, values?: any[]) {
+        throw new Error('syntax error');
+      }
+    }
+
+    const querier = new MockQuerier();
+    const err = await querier.all('SELECT 1', [123]).catch((e) => e);
+    expect(err).toMatchObject({ query: 'SELECT 1', values: [123] });
   });
 
   it('should not overwrite a query already present on the error', async () => {

@@ -1,6 +1,6 @@
 import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { getMeta } from '../entity/index.js';
-import { AbstractQuerier, Log, Serialized } from '../querier/index.js';
+import { AbstractQuerier, enrichError, Log, Serialized } from '../querier/index.js';
 import type {
   EntityMeta,
   ExtraOptions,
@@ -90,9 +90,13 @@ export class MongodbQuerier extends AbstractQuerier {
     }
     const cursor = this.buildFindCursor(entity, q, opts);
 
-    for await (const doc of cursor) {
-      const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
-      yield normalized;
+    try {
+      for await (const doc of cursor) {
+        const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
+        yield normalized;
+      }
+    } catch (err) {
+      enrichError(err, this.logger, 'internalFindManyStream');
     }
   }
 

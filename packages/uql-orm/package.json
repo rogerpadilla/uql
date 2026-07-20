@@ -126,6 +126,7 @@
     "@types/express": "^5.0.6",
     "@types/pg": "^8.20.0",
     "@types/sqlstring": "^2.3.2",
+    "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.11.1",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
@@ -133,7 +134,8 @@
     "mysql2": "^3.23.1",
     "pg": "^8.22.0",
     "pg-query-stream": "^4.16.0",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "ws": "^8.21.1"
   },
   "author": "Roger Padilla",
   "repository": {

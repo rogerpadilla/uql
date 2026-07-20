@@ -17,11 +17,11 @@ export interface Logger {
   /**
    * Logs a slow query.
    * @param query - The SQL query string.
-   * @param values - The parameters passed to the query.
+   * @param values - The parameters passed to the query (already redacted to `undefined`
+   * upstream, per `ExtraOptions.logValues`, when values shouldn't be logged).
    * @param duration - The time it took to execute the query in milliseconds.
-   * @param logParams - Whether to include parameters in the log output.
    */
-  logSlowQuery?(query: string, values?: unknown[], duration?: number, logParams?: boolean): void;
+  logSlowQuery?(query: string, values?: unknown[], duration?: number): void;
   /**
    * Logs a warning.
    */
