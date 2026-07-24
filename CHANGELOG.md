@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.18.0] - 2026-07-23
+
+### DISTINCT aggregates
+
+- **New `$countDistinct` / `$sumDistinct` / `$avgDistinct` aggregate ops**, e.g. `$agg: { uniques: { $countDistinct: 'email' } }` → `COUNT(DISTINCT "email")`. Identical across all SQL dialects and MongoDB (compiled to `$addToSet` + a `$project` reducer).
+
+### Fixes
+
+- **`$count: 'field'` now counts non-null values on MongoDB**, matching SQL `COUNT("field")`. Previously MongoDB counted every row regardless of the field.
+
+### Stricter aggregate types
+
+- `'*'` is accepted only by `$count` (not `$sum`/`$avg`/etc.), and each `$agg` entry must hold exactly one operation - both are now compile errors.
+
 ## [0.17.1] - 2026-07-20
 
 ### Simpler, more consistent logging options (breaking)

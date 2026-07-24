@@ -229,9 +229,15 @@ it('parseGroupMap keys and fns', () => {
   const entries = parseGroupMap(group, agg);
   expect(entries).toEqual([
     { kind: 'key', alias: 'code' },
-    { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*' },
-    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice' },
+    { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*', distinct: false },
+    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice', distinct: false },
   ]);
+});
+
+it('parseGroupMap normalizes a flat distinct op to its base op', () => {
+  const agg: QueryAggMap<Item> = { codes: { $countDistinct: 'code' } };
+  const entries = parseGroupMap(undefined, agg);
+  expect(entries).toEqual([{ kind: 'fn', alias: 'codes', op: '$count', fieldRef: 'code', distinct: true }]);
 });
 
 it('parseGroupMap skips falsy and non-object values', () => {

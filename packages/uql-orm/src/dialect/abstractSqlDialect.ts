@@ -1024,7 +1024,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
           entry.fieldRef === '*'
             ? '*'
             : this.escapeId(this.resolveColumnName(entry.fieldRef, meta.fields[entry.fieldRef as FieldKey<E>]));
-        const expr = `${sqlFn}(${sqlArg})`;
+        const expr = `${sqlFn}(${entry.distinct ? 'DISTINCT ' : ''}${sqlArg})`;
         aggregateExpressions[entry.alias] = expr;
         selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
       }

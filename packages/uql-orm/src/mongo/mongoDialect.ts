@@ -32,6 +32,7 @@ import {
   hasKeys,
   isVectorSearch,
   normalizeScalarFieldSelection,
+  type ParsedGroupEntry,
   parseGroupMap,
   type RelationRequestSummary,
   someKey,
@@ -74,8 +75,9 @@ export class MongoDialect extends AbstractDialect {
   private static readonly ID_KEY = '_id';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
+  // Direct field aggregates → MongoDB accumulator. `$count` is handled separately (COUNT(*) vs
+  // COUNT(field) differ), so it is not listed here.
   private static readonly AGGREGATE_OP_MAP = new Map<QueryAggregateOp, string>([
-    ['$count', '$sum'],
     ['$sum', '$sum'],
     ['$avg', '$avg'],
     ['$min', '$min'],
@@ -402,36 +404,20 @@ export class MongoDialect extends AbstractDialect {
     }
 
     // $group stage
-    const groupId: Record<string, string> = {};
-    const groupAccumulators: Record<string, Record<string, unknown>> = {};
-
-    const groupEntries = parseGroupMap(q.$group, q.$agg);
-    if (!groupEntries.length) {
-      throw new TypeError('aggregate requires at least one $group column or $agg function');
-    }
-
-    for (const entry of groupEntries) {
-      if (entry.kind === 'key') {
-        groupId[entry.alias] = `$${entry.alias}`;
-      } else {
-        const mongoOp = MongoDialect.AGGREGATE_OP_MAP.get(entry.op);
-        if (!mongoOp) {
-          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
-        }
-        groupAccumulators[entry.alias] = entry.op === '$count' ? { [mongoOp]: 1 } : { [mongoOp]: `$${entry.fieldRef}` };
-      }
-    }
+    const { groupId, groupAccumulators, distinctReducers } = this.buildGroupSpec(parseGroupMap(q.$group, q.$agg));
 
     pipeline.push({ $group: { _id: hasKeys(groupId) ? groupId : null, ...groupAccumulators } });
 
-    // Project stage - rename _id fields back to their original names
-    if (hasKeys(groupId)) {
+    // Project stage - rename _id fields back to their original names, and reduce collected distinct
+    // sets. Needed whenever there are group keys OR any distinct alias.
+    if (hasKeys(groupId) || distinctReducers.size) {
       const project: Record<string, unknown> = { _id: 0 };
       for (const alias of Object.keys(groupId)) {
         project[alias] = `$_id.${alias}`;
       }
       for (const alias of Object.keys(groupAccumulators)) {
-        project[alias] = 1;
+        const reduceOp = distinctReducers.get(alias);
+        project[alias] = reduceOp ? { [reduceOp]: `$${alias}` } : 1;
       }
       pipeline.push({ $project: project });
     }
@@ -461,6 +447,46 @@ export class MongoDialect extends AbstractDialect {
     }
 
     return pipeline;
+  }
+
+  /**
+   * Resolve parsed group entries into the `_id` keys and accumulators of a `$group` stage.
+   * `distinctReducers` maps each DISTINCT alias (collected via `$addToSet`) to the `$project`
+   * operator that reduces its set: `$size` for `$count`, `$sum`/`$avg` for the numeric ops.
+   */
+  private buildGroupSpec(groupEntries: ParsedGroupEntry[]): {
+    groupId: Record<string, string>;
+    groupAccumulators: Record<string, Record<string, unknown>>;
+    distinctReducers: Map<string, string>;
+  } {
+    if (!groupEntries.length) {
+      throw new TypeError('aggregate requires at least one $group column or $agg function');
+    }
+    const groupId: Record<string, string> = {};
+    const groupAccumulators: Record<string, Record<string, unknown>> = {};
+    const distinctReducers = new Map<string, string>();
+
+    for (const entry of groupEntries) {
+      if (entry.kind === 'key') {
+        groupId[entry.alias] = `$${entry.alias}`;
+      } else if (entry.distinct) {
+        // Collect the set now; reduce it in $project: `$size` counts it, `$sum`/`$avg` reduce the array.
+        groupAccumulators[entry.alias] = { $addToSet: `$${entry.fieldRef}` };
+        distinctReducers.set(entry.alias, entry.op === '$count' ? '$size' : entry.op);
+      } else if (entry.op === '$count') {
+        // COUNT(*) counts every row; COUNT(field) counts non-null values, matching SQL.
+        groupAccumulators[entry.alias] =
+          entry.fieldRef === '*' ? { $sum: 1 } : { $sum: { $cond: [{ $ne: [`$${entry.fieldRef}`, null] }, 1, 0] } };
+      } else {
+        const mongoOp = MongoDialect.AGGREGATE_OP_MAP.get(entry.op);
+        if (!mongoOp) {
+          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
+        }
+        groupAccumulators[entry.alias] = { [mongoOp]: `$${entry.fieldRef}` };
+      }
+    }
+
+    return { groupId, groupAccumulators, distinctReducers };
   }
 
   private buildHavingFilter(having: Record<string, unknown>): Record<string, unknown> {

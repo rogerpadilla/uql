@@ -84,4 +84,56 @@ export async function aggregateTyping() {
     // @ts-expect-error 'conut' is not sortable here
     $sort: { conut: -1 },
   });
+
+  // Positive: flat DISTINCT ops accept a field and resolve to number.
+  const distinctRows = await querier.aggregate(User, {
+    $group: { status: true },
+    $agg: {
+      uniqueAges: { $countDistinct: 'age' },
+      distinctAgeSum: { $sumDistinct: 'age' },
+      distinctAgeAvg: { $avgDistinct: 'age' },
+    },
+  });
+  const uniqueAges: number = distinctRows[0].uniqueAges;
+  const distinctAgeSum: number = distinctRows[0].distinctAgeSum;
+  const distinctAgeAvg: number = distinctRows[0].distinctAgeAvg;
+  void uniqueAges;
+  void distinctAgeSum;
+  void distinctAgeAvg;
+
+  // Negative: only $count accepts '*'; every other aggregate requires a real field.
+  await querier.aggregate(User, {
+    // @ts-expect-error $sum requires a field, not '*'
+    $agg: { total: { $sum: '*' } },
+  });
+
+  // Negative: $count takes a field or '*', not a numeric literal.
+  await querier.aggregate(User, {
+    // @ts-expect-error $count no longer accepts 1
+    $agg: { total: { $count: 1 } },
+  });
+
+  // Negative: a DISTINCT op requires a field ('*' is not allowed).
+  await querier.aggregate(User, {
+    // @ts-expect-error $countDistinct requires a field, not '*'
+    $agg: { uniques: { $countDistinct: '*' } },
+  });
+
+  // Negative: $min/$max have no DISTINCT variant.
+  await querier.aggregate(User, {
+    // @ts-expect-error $minDistinct is not a valid aggregate op
+    $agg: { earliest: { $minDistinct: 'age' } },
+  });
+
+  // Negative: a typo'd DISTINCT field reference is rejected.
+  await querier.aggregate(User, {
+    // @ts-expect-error 'agee' is not a field of User
+    $agg: { uniques: { $countDistinct: 'agee' } },
+  });
+
+  // Negative: exactly one operation per entry - a second op in the same entry is rejected.
+  await querier.aggregate(User, {
+    // @ts-expect-error 'total' has two aggregate ops; exactly one is allowed
+    $agg: { total: { $count: '*', $sum: 'age' } },
+  });
 }
