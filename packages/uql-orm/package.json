@@ -127,7 +127,7 @@
     "@types/pg": "^8.20.0",
     "@types/sqlstring": "^2.3.2",
     "@types/ws": "^8.18.1",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.1",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
     "mongodb": "^7.5.0",
