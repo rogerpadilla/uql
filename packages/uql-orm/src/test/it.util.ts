@@ -22,11 +22,13 @@ export async function dropTables(querier: AbstractSqlQuerier) {
 
 export async function clearTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
-  for (const entity of entities) {
-    const ctx = querier.dialect.createContext();
-    querier.dialect.delete(ctx, entity, {});
-    await querier.run(ctx.sql, ctx.values);
-  }
+  await querier.transaction(async () => {
+    for (const entity of entities) {
+      const ctx = querier.dialect.createContext();
+      querier.dialect.delete(ctx, entity, {});
+      await querier.run(ctx.sql, ctx.values);
+    }
+  });
 }
 
 function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primaryKeyType: string) {
