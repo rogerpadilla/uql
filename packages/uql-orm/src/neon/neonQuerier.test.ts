@@ -11,7 +11,7 @@ import { NeonQuerierPool } from './neonQuerierPool.js';
 // defaults to `true` already, which is correct here (the local Postgres doesn't speak TLS).
 neonConfig.webSocketConstructor = ws;
 neonConfig.useSecureWebSocket = false;
-neonConfig.wsProxy = (host, port) => `localhost:5433/v1?address=${host}:${port}`;
+neonConfig.wsProxy = (host, port) => `localhost:5443/v1?address=${host}:${port}`;
 // Required for SCRAM auth to succeed against a plain (non-Neon) Postgres through a local proxy -
 // without it the client offers a SASL mechanism the server rejects.
 neonConfig.pipelineConnect = false;

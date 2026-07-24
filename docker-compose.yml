@@ -66,7 +66,9 @@ services:
     environment:
       ALLOW_ADDR_REGEX: '^postgres:5432$'
     ports:
-      - 5433:80
+      # Offset host port (like postgres:5442) to avoid clashing with a common local :5433 (e.g. an
+      # `ssh -L 5433:...` tunnel to another Postgres); the neon test connects to this same port.
+      - 5443:80
     depends_on:
       postgres:
         condition: service_healthy
