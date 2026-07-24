@@ -5,30 +5,50 @@ import { getKeys } from '../util/index.js';
 
 export async function createTables(querier: AbstractSqlQuerier, primaryKeyType: string) {
   const entities = getEntities();
-  for (const entity of entities) {
-    const sql = getDdlForTable(entity, querier, primaryKeyType);
-    await querier.run(sql);
-  }
+  await runInTransaction(querier, async () => {
+    for (const entity of entities) {
+      const sql = getDdlForTable(entity, querier, primaryKeyType);
+      await querier.run(sql);
+    }
+  });
 }
 
 export async function dropTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
-  for (const entity of entities) {
-    const meta = getMeta(entity);
-    const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name!)}`;
-    await querier.run(sql);
-  }
+  await runInTransaction(querier, async () => {
+    for (const entity of entities) {
+      const meta = getMeta(entity);
+      const sql = `DROP TABLE IF EXISTS ${querier.dialect.escapeId(meta.name!)}`;
+      await querier.run(sql);
+    }
+  });
 }
 
 export async function clearTables(querier: AbstractSqlQuerier) {
   const entities = getEntities();
-  await querier.transaction(async () => {
+  await runInTransaction(querier, async () => {
     for (const entity of entities) {
       const ctx = querier.dialect.createContext();
       querier.dialect.delete(ctx, entity, {});
       await querier.run(ctx.sql, ctx.values);
     }
   });
+}
+
+/**
+ * Runs `callback` inside a transaction on the querier's already-open connection, unlike
+ * `querier.transaction()` which releases the connection back to the pool when done - unwanted
+ * here since these helpers run mid-hook, before the querier is used again for the test body.
+ */
+async function runInTransaction(querier: AbstractSqlQuerier, callback: () => Promise<void>) {
+  await querier.beginTransaction();
+  try {
+    await callback();
+    await querier.commitTransaction();
+  } catch (err) {
+    await querier.rollbackTransaction();
+    throw err;
+  }
 }
 
 function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primaryKeyType: string) {
