@@ -91,14 +91,14 @@ await querier.findMany(User, {
 });
 ```
 
-25+ comparison operators (`$eq`, `$in`, `$between`, `$like`, `$elemMatch`), logical operators (`$and`, `$or`, `$not`, `$nor`), and type-safe JSON/JSONB dot-notation queries.
+25+ comparison operators (`$eq`, `$in`, `$between`, `$like`, `$elemMatch`), logical operators (`$and`, `$or`, `$not`, `$nor`), and type-safe JSON/JSONB dot-notation queries. Operators are gated per field type - string operators require string fields, ordering operators comparable fields, array operators array fields - and JSON dot-paths on typed `Json<T>` fields resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error, not a runtime surprise.
 
 Independent reads run directly on the pool - each call gets its own connection, so `Promise.all` fans out in parallel:
 
 ```ts
 const [users, total] = await Promise.all([
   pool.findMany(User, { $where: { status: 'active' } }),
-  pool.count(User, {}),
+  pool.count(User),
 ]);
 ```
 

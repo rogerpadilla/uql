@@ -1,15 +1,10 @@
-import type { AbstractSqlDialect } from '../../dialect/index.js';
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, QuerierPool, RawRow, SqlQuerier } from '../../type/index.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, RawRow, SqlQuerier } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  constructor(protected readonly pool: QuerierPool) {
-    super(pool.dialect as AbstractSqlDialect);
-  }
-
   // ============================================================================
   // SQL Queries (dialect-specific)
   // ============================================================================

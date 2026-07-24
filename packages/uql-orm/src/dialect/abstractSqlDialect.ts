@@ -9,6 +9,7 @@ import {
   type JsonUpdateOp,
   type Key,
   type Query,
+  type QueryAggMap,
   type QueryAggregate,
   type QueryAggregateOp,
   type QueryCompareOp,
@@ -17,6 +18,7 @@ import {
   type QueryContext,
   type QueryDialect,
   type QueryExclude,
+  type QueryGroupMap,
   type QueryHavingMap,
   type QueryHavingOp,
   type QueryLikeOp,
@@ -29,6 +31,7 @@ import {
   type QuerySearch,
   type QuerySelect,
   type QuerySelectOptions,
+  type QuerySelectValue,
   type QuerySizeComparisonOps,
   type QuerySortDirection,
   type QuerySortMap,
@@ -51,6 +54,7 @@ import {
 
 import {
   applyFilters,
+  asSelectMap,
   buildQueryWhereAsMap,
   buildSortMap,
   type CallbackKey,
@@ -83,7 +87,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 
-  abstract readonly quoteChar: '"' | '`';
+  abstract readonly escapeIdChar: '"' | '`';
   abstract readonly serialPrimaryKey: string;
   abstract readonly tableOptions: string;
   abstract readonly beginTransactionCommand: string;
@@ -114,10 +118,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = undefined;
 
   readonly vectorExtension: string | undefined = undefined;
-
-  get escapeIdChar() {
-    return this.quoteChar;
-  }
 
   getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
     const level = isolationLevel?.toUpperCase();
@@ -181,7 +181,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$select, q.$populate);
+    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, asSelectMap(q.$select), q.$populate);
     if (opts.prefix !== prefix) {
       opts = { ...opts, prefix };
     }
@@ -193,7 +193,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   selectFields<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E> | QueryRaw[] | undefined,
+    select: QuerySelectValue<E> | undefined,
     opts: QuerySelectOptions = {},
     exclude?: QueryExclude<E>,
   ): void {
@@ -205,10 +205,10 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     if (select) {
       if (Array.isArray(select)) {
-        // Internal-only path: raw SQL expressions passed as QueryRaw[]
+        // Raw SQL projections passed as QueryRaw[]
         selectArr = select;
       } else {
-        selectArr = normalizeScalarFieldSelection(meta, select, exclude);
+        selectArr = normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
       }
 
       const id = meta.id;
@@ -258,7 +258,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   select<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    select: QuerySelect<E> | QueryRaw[] | undefined,
+    select: QuerySelectValue<E> | undefined,
     exclude?: QueryExclude<E>,
     populate?: QueryPopulate<E>,
     opts: QueryOptions = {},
@@ -267,7 +267,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   ): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const mapSelect = Array.isArray(select) ? undefined : select;
+    const mapSelect = asSelectMap(select);
     const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, mapSelect, populate);
 
     ctx.append(distinct ? 'SELECT DISTINCT ' : 'SELECT ');
@@ -1001,7 +1001,12 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ['$max', 'MAX'],
   ]);
 
-  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts: QueryOptions = {}): void {
+  aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: QueryAggregate<E, G, A>,
+    opts: QueryOptions = {},
+  ): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
     const groupKeys: string[] = [];

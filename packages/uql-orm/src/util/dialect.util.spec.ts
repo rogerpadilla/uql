@@ -211,6 +211,19 @@ it('normalizeScalarFieldSelection drops id when excluded via $exclude on a plain
   expect(normalizeScalarFieldSelection(meta, undefined, { id: true } satisfies QuerySelect<User>)).not.toContain('id');
 });
 
+it('normalizeScalarFieldSelection allows a falsy $select map alongside $exclude', () => {
+  const meta = getMeta(User);
+  const fields = normalizeScalarFieldSelection(
+    meta,
+    { name: false } satisfies QuerySelect<User>,
+    {
+      id: true,
+    } satisfies QuerySelect<User>,
+  );
+  expect(fields).not.toContain('name');
+  expect(fields).not.toContain('id');
+});
+
 it('isCascadable', () => {
   expect(isCascadable('persist', 'delete')).toBe(false);
 });

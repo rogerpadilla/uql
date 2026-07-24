@@ -48,7 +48,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     defaultStringAsText: true,
   };
 
-  override readonly quoteChar = '"';
+  override readonly escapeIdChar = '"';
   // Shared default for both dialects. CockroachDB docs flag sequential PKs as a hotspotting risk
   // under heavy concurrent insert load (writes concentrate on one range); this default still beats
   // `SERIAL` (CockroachDB's `unique_rowid()`, a ~64-bit value that overflows JS's safe-integer

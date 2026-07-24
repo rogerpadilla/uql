@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.19.0] - 2026-07-24
+
+### Operators typed per field (breaking)
+
+`$where` operators are now gated by field type: string ops (`$like`, `$regex`, `$startsWith`, ...) on strings, ordering ops (`$lt`, `$gt`, `$between`) on comparable types, array ops (`$all`, `$size`, `$elemMatch`) on arrays. Mismatches are compile errors:
+
+```ts
+{ age: { $like: '3%' } }         // string op on a number
+{ active: { $between: [0, 1] } } // ordering op on a boolean
+{ name: { $size: 3 } }           // array op on a string
+```
+
+### Typed JSON dot-paths (breaking)
+
+`$where`/`$sort` dot-paths are restricted to real `Json<T>` fields and resolve each path's value type, so a typo'd path (`'settings.thme'`) or a mismatched value/operator is a compile error. `Json<unknown>` fields stay permissive. Previously any dotted key compiled with an `unknown` value.
+
+### New
+
+- **Raw `$select` projections** for computed columns (SQL dialects only): `$select: [raw('*'), raw('LOG10("votes" + 1)', 'hotness')]`.
+
 ## [0.18.0] - 2026-07-23
 
 ### DISTINCT aggregates

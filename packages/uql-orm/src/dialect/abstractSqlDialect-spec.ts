@@ -1069,7 +1069,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')] as any,
+        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -1104,7 +1104,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldFind$selectRaw() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw(() => 'createdAt', 'hotness')] as any,
+        $select: [raw(() => 'createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -1113,7 +1113,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')] as any,
+        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
         $where: { name: 'something' },
       }),
     );

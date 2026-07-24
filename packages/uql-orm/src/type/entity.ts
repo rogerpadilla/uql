@@ -15,30 +15,56 @@ export type Key<E> = keyof E & string;
 /**
  * Infers the field names of an entity.
  * Includes scalar fields, JSON fields, and scalar arrays (e.g. vector `number[]`).
+ * The `-?` modifier strips optionality so the indexed access yields clean key unions
+ * (without it, optional properties leak `undefined` into the union).
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? K : never;
+  readonly [K in keyof E]-?: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? K : never;
 }[Key<E>];
 
 /**
  * Infers the relation names of an entity
  */
 export type RelationKey<E> = {
-  readonly [K in keyof E]: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? never : K;
+  readonly [K in keyof E]-?: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? never : K;
 }[Key<E>];
 
 /**
- * Recursively derives dot-notation key paths from an object type, up to 5 levels deep.
- * Uses `Scalar` exclusion instead of `Record<string, unknown>` guard because TS object
- * types without an index signature (e.g. `{ public?: 0 | 1 }`) don't extend `Record`.
+ * Whether `T` carries the `Json` brand. Checks for the `__json` marker key explicitly:
+ * a bare `extends Json<infer T>` is not discriminating in check position (primitives match it,
+ * inferring junk like `T = string`), while the marker key only exists on branded types.
  */
-type DeepJsonKeys<T, D extends unknown[] = []> = D['length'] extends 5
-  ? never
-  : {
-      [K in keyof T & string]:
-        | K
-        | (NonNullable<T[K]> extends Scalar ? never : `${K}.${DeepJsonKeys<NonNullable<T[K]>, [...D, unknown]>}`);
-    }[keyof T & string];
+type IsJson<T> = '__json' extends keyof T ? true : false;
+
+/** The payload `P` of a branded `Json<P>`, or `never` for any non-JSON type. */
+type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
+
+/**
+ * The `Json` payload of a field value `V`: both `Json<T>` and `Json<T>[]` yield `T`;
+ * `never` when `V` is not a JSON field. Exactly one arm is ever non-`never`.
+ */
+type JsonPayload<V> =
+  | UnwrapJson<NonNullable<V>>
+  | (NonNullable<V> extends readonly (infer U)[] ? UnwrapJson<NonNullable<U>> : never);
+
+/**
+ * Recursively derives dot-notation key paths from a JSON payload type. Handles every shape at
+ * entry: an untyped (`unknown`) payload accepts any suffix via a `string` pattern, scalars are
+ * leaves (they contribute no deeper path and self-prune through `` `${K}.${never}` ``), arrays
+ * contribute their element type's paths, and objects recurse per key up to 5 levels deep
+ * (deeper suffixes stay accepted via the `string` pattern at the cutoff).
+ */
+type DeepJsonKeys<T, D extends unknown[] = []> = unknown extends T
+  ? string
+  : NonNullable<T> extends Scalar
+    ? never
+    : NonNullable<T> extends readonly (infer U)[]
+      ? DeepJsonKeys<U, D>
+      : D['length'] extends 5
+        ? string
+        : {
+            [K in keyof NonNullable<T> & string]: K | `${K}.${DeepJsonKeys<NonNullable<T>[K], [...D, unknown]>}`;
+          }[keyof NonNullable<T> & string];
 
 /**
  * Extracts dot-notation paths from `Json<T>` values, handling both scalar JSON
@@ -46,23 +72,51 @@ type DeepJsonKeys<T, D extends unknown[] = []> = D['length'] extends 5
  * For `kind?: Json<{ public: number; theme: { color: string } }>`,
  * produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
  * For `items?: Json<{id: string}>[]`, produces `'items.id'`.
+ * An untyped `Json<unknown>` field yields the scoped pattern `` `${K}.${string}` ``.
  */
 export type JsonFieldPaths<E> = {
-  readonly [K in FieldKey<E>]: NonNullable<E[K]> extends Json<infer T>
-    ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<T>>, '__json'>}`
-    : NonNullable<E[K]> extends readonly (infer U)[]
-      ? U extends Json<infer T>
-        ? `${K & string}.${Exclude<DeepJsonKeys<NonNullable<T>>, '__json'>}`
-        : never
-      : never;
+  readonly [K in FieldKey<E>]: [JsonPayload<E[K]>] extends [never]
+    ? never
+    : `${K & string}.${Exclude<DeepJsonKeys<JsonPayload<E[K]>>, '__json'>}`;
 }[FieldKey<E>];
 
 /**
+ * The value type inside `T` at dot-path `P`; `unknown` when unresolvable (e.g. through a
+ * `Record<string, unknown>` leaf). Arrays are stepped into via their element type.
+ */
+type PathValue<T, P extends string> = unknown extends T
+  ? unknown
+  : NonNullable<T> extends readonly (infer U)[]
+    ? PathValue<NonNullable<U>, P>
+    : P extends `${infer K}.${infer Rest}`
+      ? K extends keyof NonNullable<T>
+        ? PathValue<NonNullable<T>[K], Rest>
+        : unknown
+      : P extends keyof NonNullable<T>
+        ? NonNullable<T>[P]
+        : unknown;
+
+/**
+ * The value type at a JSON dot-path `P` of entity `E`; `unknown` when unresolvable, which keeps
+ * untyped paths fully permissive in `$where`.
+ */
+export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${infer Rest}`
+  ? F extends FieldKey<E>
+    ? [JsonPayload<E[F]>] extends [never]
+      ? unknown
+      : PathValue<JsonPayload<E[F]>, Rest>
+    : unknown
+  : unknown;
+
+/**
  * Extracts only the array-typed keys from `T`, mapping each to its element type.
- * Used by `$push` to provide type-safe append targets.
+ * Used by `$push` to provide type-safe append targets. Uses `readonly (infer U)[]` to match the
+ * rest of the JSON machinery, so a `readonly` array payload keeps its `$push` target.
  */
 export type JsonPushFields<T> = {
-  [K in keyof T as NonNullable<T[K]> extends unknown[] ? K & string : never]?: NonNullable<T[K]> extends (infer U)[]
+  [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K & string : never]?: NonNullable<
+    T[K]
+  > extends readonly (infer U)[]
     ? U
     : never;
 };
@@ -91,10 +145,14 @@ export type JsonUpdateOp<T = unknown> = {
 
 /**
  * Accepted value for a single field in an update payload.
- * - JSON/JSONB fields additionally accept `JsonUpdateOp<T>` for `$merge`/`$unset`/`$push` operations.
+ * - JSON/JSONB fields (detected via {@link UnwrapJson}, whose {@link IsJson} guard avoids the
+ *   non-discriminating bare `Json<infer T>` match that would offer `$merge`/`$unset` on plain
+ *   scalar fields) additionally accept `JsonUpdateOp<T>` for `$merge`/`$unset`/`$push` operations.
  * - All fields accept `QueryRaw` for raw SQL expressions (e.g. `raw('NOW()')`).
  */
-type UpdateFieldValue<V> = NonNullable<V> extends Json<infer T> ? V | JsonUpdateOp<T> | QueryRaw : V | QueryRaw;
+type UpdateFieldValue<V> = [UnwrapJson<NonNullable<V>>] extends [never]
+  ? V | QueryRaw
+  : V | JsonUpdateOp<UnwrapJson<NonNullable<V>>> | QueryRaw;
 
 /**
  * Payload type for update operations.

@@ -29,6 +29,7 @@ import type {
   UpdatePayload,
 } from '../type/index.js';
 import {
+  asSelectMap,
   augmentWhere,
   clone,
   filterPersistableRelationKeys,
@@ -232,7 +233,7 @@ export abstract class AbstractQuerier implements Querier {
    * Count records matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   count<E extends object>(
     entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
@@ -260,11 +261,11 @@ export abstract class AbstractQuerier implements Querier {
     return this.internalAggregate(entity, q, opts);
   }
 
-  protected abstract internalAggregate<E extends object, Q extends QueryAggregate<E>>(
+  protected abstract internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]>;
+  ): Promise<QueryAggregateResult<E, G, A>[]>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);
@@ -468,10 +469,11 @@ export abstract class AbstractQuerier implements Querier {
     relEntity: Type<object>,
   ): Promise<void> {
     const foreignField = relOpts.references![0].foreign;
-    if (relationQuery.$select) {
-      if (!(relationQuery.$select as Record<string, unknown>)[foreignField]) {
-        (relationQuery.$select as Record<string, unknown>)[foreignField] = true;
-      }
+    // Ensure the FK column is selected so putChildrenInParents can group by it; skips the raw-array
+    // `$select` form (nothing to augment). Mutates the same object asSelectMap returns.
+    const select = asSelectMap(relationQuery.$select) as Record<string, unknown> | undefined;
+    if (select && !select[foreignField]) {
+      select[foreignField] = true;
     }
     const ids = payload.map((it) => it[meta.id!]);
     relationQuery.$where = { ...relationQuery.$where, [foreignField!]: ids };
@@ -517,7 +519,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ) {
     const meta = getMeta(entity);
-    const relKeys = filterPersistableRelationKeys(meta, payload as E, 'persist');
+    const relKeys = filterPersistableRelationKeys(meta, payload, 'persist');
 
     if (!relKeys.length) {
       return;
@@ -537,7 +539,7 @@ export abstract class AbstractQuerier implements Querier {
 
   protected async deleteRelations<E extends object>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const relKeys = filterPersistableRelationKeys(meta, meta.relations as unknown as E, 'delete');
+    const relKeys = filterPersistableRelationKeys(meta, meta.relations, 'delete');
     // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
@@ -632,7 +634,7 @@ export abstract class AbstractQuerier implements Querier {
   ) {
     const localField = relOpts.references![0].local;
     const referenceId = await this.insertOne(relEntity, relPayload);
-    await this.updateOneById(entity, id, { [localField]: referenceId } as E);
+    await this.updateOneById(entity, id, { [localField]: referenceId } as UpdatePayload<E>);
   }
 
   abstract readonly hasOpenTransaction: boolean;

@@ -30,7 +30,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     defaultStringAsText: false,
   };
 
-  override readonly quoteChar = '`';
+  override readonly escapeIdChar = '`';
 
   override readonly tableOptions = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
 

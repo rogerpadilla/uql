@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { getRelationRequestSummary } from '../util/index.js';
+import { getRelationRequestSummary, raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
 class MongoDialectSpec implements Spec {
@@ -63,6 +63,10 @@ class MongoDialectSpec implements Spec {
   shouldSelect() {
     expect(this.dialect.select(Tax, { name: true })).toEqual({ name: 1 });
     expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ id: 1, name: 1 });
+  }
+
+  shouldThrowOnRawSelectArray() {
+    expect(() => this.dialect.select(Tax, [raw('*')])).toThrow('raw $select is not supported on MongoDB');
   }
 
   shouldBuildSort() {

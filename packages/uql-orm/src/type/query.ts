@@ -1,5 +1,13 @@
-import type { FieldKey, IdValue, JsonFieldPaths, RelationKey, UpdatePayload } from './entity.js';
-import type { BooleanLike, ExpandScalar, PrimaryKey, Scalar, Type, Unpacked } from './utility.js';
+import type { FieldKey, IdValue, JsonFieldPaths, JsonFieldPathValue, RelationKey, UpdatePayload } from './entity.js';
+import type {
+  BooleanLike,
+  ExpandScalar,
+  PrimaryKey,
+  QueryComparableScalar,
+  Scalar,
+  Type,
+  Unpacked,
+} from './utility.js';
 
 export type QueryOptions = {
   /**
@@ -42,12 +50,16 @@ export type QuerySelect<E> = {
 };
 
 /**
+ * Accepted `$select` value: a field map, or raw SQL projections built with `raw()`
+ * (e.g. `[raw('*'), raw('LOG10(points)', 'score')]`). The raw form is SQL-only.
+ */
+export type QuerySelectValue<E> = QuerySelect<E> | readonly QueryRaw[];
+
+/**
  * Fields to exclude from the query result - `{ name: true }` blacklists fields.
  * Mutually exclusive with positive field selections in `$select`.
  */
-export type QueryExclude<E> = {
-  [K in FieldKey<E>]?: BooleanLike;
-};
+export type QueryExclude<E> = QuerySelect<E>;
 
 /**
  * relation population map.
@@ -90,15 +102,25 @@ export type QueryTextSearchOptions<E> = {
 export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
 
 /**
- * Field comparison, JSONB dot-path access, and relation filtering - all fully typed.
- * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
- * for dot-paths because TypeScript's excess property checking cannot resolve recursive
- * conditional types in mapped type key positions.
+ * Field comparison, JSON dot-path access, and relation filtering - all fully typed.
+ * JSON dot-paths are restricted to real JSON fields, and typed payloads type each path's value
+ * (untyped `Json` payloads accept any `field.suffix` path with a permissive value). Relations are
+ * filtered via nested typed objects; dotted relation paths are not supported (the dialects throw
+ * for non-JSON dotted keys).
  */
 export type QueryWhereMap<E> = QueryWhereFieldMap<E> &
-  QueryWhereRootOperator<E> & { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<unknown> } & {
-    [key: `${string}.${string}`]: QueryWhereFieldValue<unknown> | undefined;
-  } & { [K in RelationKey<E>]?: QueryWhereMap<Unpacked<NonNullable<E[K]>>> };
+  QueryWhereRootOperator<E> & {
+    [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>>;
+  } & { [K in RelationKey<E>]?: QueryWhereMap<Unpacked<NonNullable<E[K]>>> | QueryRelationSizeFilter };
+
+/**
+ * Filter a to-many relation by its row count.
+ * @example { users: { $size: 2 } }
+ * @example { users: { $size: { $gte: 2 } } }
+ */
+export type QueryRelationSizeFilter = {
+  readonly $size: number | QuerySizeComparisonOps;
+};
 
 export type QueryWhereRootOperator<E> = {
   /**
@@ -239,7 +261,7 @@ export type QueryWhereFieldOperatorMap<T> = {
    * whether an array contains all the specified values.
    * @example { tags: { $all: ['typescript', 'orm'] } }
    */
-  $all?: T extends (infer U)[] ? ExpandScalar<U>[] : unknown[];
+  $all?: unknown extends T ? unknown[] : NonNullable<T> extends readonly (infer U)[] ? ExpandScalar<U>[] : never;
   /**
    * whether an array has the specified length.
    * Accepts a number for exact match, or a comparison operator object for range queries.
@@ -250,10 +272,28 @@ export type QueryWhereFieldOperatorMap<T> = {
   $size?: number | QuerySizeComparisonOps;
   /**
    * whether an array contains at least one element matching all specified conditions.
+   * Each key of the element type maps to a value or an operator map for that key.
    * @example { addresses: { $elemMatch: { city: 'NYC', zip: '10001' } } }
+   * @example { addresses: { $elemMatch: { city: { $like: 'New%' } } } }
    */
-  $elemMatch?: T extends (infer U)[] ? Partial<U> : Record<string, QueryWhereFieldValue<unknown>>;
+  $elemMatch?: unknown extends T
+    ? QueryWhereElemMatch<unknown>
+    : NonNullable<T> extends readonly (infer U)[]
+      ? QueryWhereElemMatch<U>
+      : never;
 };
+
+/**
+ * Element-level conditions for `$elemMatch`. Scalar elements take an operator map for the element
+ * itself (`{ tags: { $elemMatch: { $startsWith: 'ad' } } }`); object elements map each key to a
+ * field comparison. An untyped element (`unknown`) accepts any keys but still requires the
+ * object-of-conditions shape (a bare scalar is rejected).
+ */
+export type QueryWhereElemMatch<U> = unknown extends U
+  ? { [key: string]: QueryWhereFieldValue<unknown> | undefined }
+  : NonNullable<U> extends Scalar
+    ? QueryWhereFieldOperators<NonNullable<U>>
+    : { [K in keyof NonNullable<U>]?: QueryWhereFieldValue<NonNullable<U>[K]> };
 
 /**
  * Simple relational comparison operators. `Pick`'s constraint ties this back to
@@ -277,9 +317,56 @@ export type QueryLikeOp = keyof Pick<
 export type QueryHavingOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<number>, '$eq' | '$ne'>;
 
 /**
- * Value for a field comparison.
+ * String pattern-matching operators: {@link QueryLikeOp} plus `$regex`. `Pick`'s constraint ties
+ * the latter back to {@link QueryWhereFieldOperatorMap} so a rename there breaks this union.
  */
-export type QueryWhereFieldValue<T> = T | T[] | QueryWhereFieldOperatorMap<T> | QueryRaw;
+type QueryStringOp = QueryLikeOp | keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$regex'>;
+
+/**
+ * Array-only operators. `Pick`'s constraint ties this back to {@link QueryWhereFieldOperatorMap}
+ * so a rename there breaks this union at compile time.
+ */
+type QueryArrayOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$all' | '$size' | '$elemMatch'>;
+
+/**
+ * Ordering operators: {@link QueryCompareOp} plus `$between`.
+ */
+type QueryOrderedOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$between'>;
+
+/**
+ * Operators applicable to every field type: equality, membership, negation, and null checks.
+ */
+type QueryCommonOp = Exclude<keyof QueryWhereFieldOperatorMap<unknown>, QueryStringOp | QueryArrayOp | QueryOrderedOp>;
+
+/**
+ * Operator keys applicable to a field of type `T`. Brackets prevent union distribution so an
+ * optional field (`string | undefined`) or a literal union (`'a' | 'b'`) gates as one type.
+ */
+type QueryAllowedOp<T> =
+  | QueryCommonOp
+  | ([NonNullable<T>] extends [QueryComparableScalar] ? QueryOrderedOp : never)
+  | ([NonNullable<T>] extends [string] ? QueryStringOp : never)
+  | ([NonNullable<T>] extends [readonly unknown[]] ? QueryArrayOp : never);
+
+/**
+ * Operators applicable to a field of type `T`: string operators require string fields, ordering
+ * operators comparable fields, array operators array fields. `unknown` stays fully permissive
+ * (untyped JSON dot-paths, erased dialect shapes).
+ */
+export type QueryWhereFieldOperators<T> = unknown extends T
+  ? QueryWhereFieldOperatorMap<T>
+  : Pick<QueryWhereFieldOperatorMap<T>, QueryAllowedOp<T>>;
+
+/**
+ * Value for a field comparison. A bare array is an implicit `$in` for scalar fields only:
+ * on array-typed fields (e.g. a vector `number[]`) an array of arrays is ambiguous, so
+ * membership there requires an explicit operator.
+ */
+export type QueryWhereFieldValue<T> =
+  | T
+  | ([NonNullable<T>] extends [readonly unknown[]] ? never : T[])
+  | QueryWhereFieldOperators<T>
+  | QueryRaw;
 
 /**
  * query filter array - used for `$and`, `$or`, `$not`, `$nor` operators.
@@ -391,17 +478,14 @@ export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
 
 /**
- * sort by map - supports field keys, JSON dot-notation paths, relation sort,
- * and vector similarity search.
- * Uses both a mapped type (IDE autocompletion) and a pattern index signature (EPC acceptance)
- * for dot-paths, matching the same approach used in `QueryWhereMap`.
+ * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
+ * like `QueryWhereMap`), relation sort via nested objects, and vector similarity search on
+ * `number[]` fields.
  */
 export type QuerySortMap<E> = {
-  [K in FieldKey<E>]?: QuerySortValue;
+  [K in FieldKey<E>]?: NonNullable<E[K]> extends readonly number[] ? QuerySortValue : QuerySortDirection;
 } & {
   [P in JsonFieldPaths<E>]?: QuerySortDirection;
-} & {
-  [key: `${string}.${string}`]: QuerySortDirection | undefined;
 } & {
   [K in RelationKey<E>]?: QuerySortMap<NonNullable<Unpacked<E[K]>>>;
 };
@@ -445,9 +529,11 @@ export type QuerySearch<E> = {
  */
 export type Query<E> = {
   /**
-   * field selection - `{ name: true }` whitelists fields. Mutually exclusive with `$exclude`.
+   * field selection - `{ name: true }` whitelists fields, or raw SQL projections
+   * (`[raw('LOG10(points)', 'score')]`, SQL dialects only - MongoDB rejects the raw-array form).
+   * Mutually exclusive with `$exclude`.
    */
-  $select?: QuerySelect<E>;
+  $select?: QuerySelectValue<E>;
 
   /**
    * relation population options.
@@ -764,7 +850,12 @@ export interface SqlQueryDialect extends QueryDialect {
   /**
    * Build an aggregate query.
    */
-  aggregate<E>(ctx: QueryContext, entity: Type<E>, q: QueryAggregate<E>, opts?: QueryOptions): void;
+  aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: QueryAggregate<E, G, A>,
+    opts?: QueryOptions,
+  ): void;
 
   /**
    * Get the placeholder for a parameter at the given index (1-based).

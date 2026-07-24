@@ -17,6 +17,7 @@ import {
   type QueryOptions,
   QueryRaw,
   type QuerySelect,
+  type QuerySelectValue,
   type QuerySortMap,
   type QueryVectorSearch,
   type QueryWhere,
@@ -117,12 +118,17 @@ export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackK
   return payloads;
 }
 
+/**
+ * The relation keys present in `payload` whose cascade configuration allows `action`. Only
+ * `payload`'s keys are read, so any keys-bearing object works (an entity, an update payload,
+ * or `meta.relations` itself to enumerate every cascadable relation).
+ */
 export function filterPersistableRelationKeys<E>(
   meta: EntityMeta<E>,
-  payload: E,
+  payload: object,
   action: CascadeType,
 ): RelationKey<E>[] {
-  const keys = getKeys(payload as object);
+  const keys = getKeys(payload);
   return keys.filter((key) => {
     const relOpts = meta.relations[key];
     return relOpts && isCascadable(action, relOpts.cascade);
@@ -134,6 +140,14 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
     return configuration;
   }
   return configuration === action;
+}
+
+/**
+ * The map form of a `$select` value, or `undefined` for the raw-array form. Centralizes the one
+ * narrowing cast: `Array.isArray` does not narrow `readonly` arrays out of a union.
+ */
+export function asSelectMap<E>(select: QuerySelectValue<E> | undefined): QuerySelect<E> | undefined {
+  return Array.isArray(select) ? undefined : (select as QuerySelect<E> | undefined);
 }
 
 export function normalizeScalarFieldSelection<E>(

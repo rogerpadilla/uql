@@ -69,7 +69,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * Escape an identifier (table name, column name, etc.)
    */
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.dialect.quoteChar);
+    return escapeSqlId(identifier, this.dialect.escapeIdChar);
   }
 
   /**

@@ -1,3 +1,4 @@
+import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type {
   ColumnSchema,
   ForeignKeySchema,
@@ -36,7 +37,9 @@ export type ReferentialAction = 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION
  * - `mapPrimaryKeyRow()` - Extract column name from a PK row
  */
 export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
-  protected abstract readonly pool: QuerierPool;
+  constructor(protected readonly pool: QuerierPool) {
+    super(pool.dialect as AbstractSqlDialect);
+  }
 
   // ============================================================================
   // Template Methods (shared control flow)

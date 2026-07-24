@@ -73,7 +73,7 @@ export interface UniversalQuerier {
    * @param q the search options
    * @return the count
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * inserts a record.

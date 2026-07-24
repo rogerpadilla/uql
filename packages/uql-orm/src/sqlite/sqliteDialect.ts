@@ -39,7 +39,7 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly dialectName = 'sqlite';
 
-  override readonly quoteChar = '`';
+  override readonly escapeIdChar = '`';
 
   override readonly serialPrimaryKey = 'INTEGER PRIMARY KEY AUTOINCREMENT';
 

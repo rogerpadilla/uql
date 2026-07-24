@@ -54,6 +54,7 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
   tags?: string[];
   description?: string;
   country?: string;
+  theme?: { color?: string };
   meta?: Record<string, unknown>;
   isArchived?: boolean;
 };
@@ -395,4 +396,15 @@ export class VectorItem {
   @Id() id?: number;
   @Field() name?: string;
   @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+}
+
+/**
+ * A JSON array column, dedicated to the dialect specs for the JSON array operators
+ * (`$all`/`$size`/`$elemMatch`). The `unknown[]` element type keeps keys and values unchecked so
+ * the specs can exercise arbitrary shapes against the generated SQL.
+ */
+@Entity()
+export class JsonRecord {
+  @Id() id?: number;
+  @Field({ type: 'json' }) entries?: Json<unknown[]>;
 }

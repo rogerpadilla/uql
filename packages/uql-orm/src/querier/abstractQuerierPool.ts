@@ -79,7 +79,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
   }
 
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
+  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
     return this.withQuerier((querier) => querier.count(entity, q, opts));
   }
 
