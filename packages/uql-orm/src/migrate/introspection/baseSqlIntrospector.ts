@@ -12,7 +12,7 @@ export abstract class BaseSqlIntrospector {
   constructor(protected readonly dialect: AbstractSqlDialect) {}
 
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.dialect.quoteChar);
+    return escapeSqlId(identifier, this.dialect.escapeIdChar);
   }
   /**
    * Introspect entire database schema and return SchemaAST.

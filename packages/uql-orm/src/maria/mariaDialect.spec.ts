@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
+import { Company, InventoryAdjustment, ItemTag, JsonRecord, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
@@ -17,33 +17,33 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   // JSON operator tests
   shouldFind$elemMatch() {
     const ctx = this.mariaDialect.createContext();
-    this.mariaDialect.find(ctx, User, {
+    this.mariaDialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $elemMatch: { city: 'NYC' } } },
+      $where: { entries: { $elemMatch: { city: 'NYC' } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
+    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
     expect(ctx.values).toEqual(['[{"city":"NYC"}]']);
   }
 
   shouldFind$all() {
     const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $all: ['admin', 'user'] } },
+      $where: { entries: { $all: ['admin', 'user'] } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_CONTAINS(`name`, ?)');
+    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
     expect(ctx.values).toEqual(['["admin","user"]']);
   }
 
   shouldFind$size() {
     const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $size: 3 } },
+      $where: { entries: { $size: 3 } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) = ?');
+    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) = ?');
     expect(ctx.values).toEqual([3]);
   }
 
@@ -52,29 +52,31 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
     // Single comparison operator
     let ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $size: { $gte: 2 } } },
+      $where: { entries: { $size: { $gte: 2 } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) >= ?');
+    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) >= ?');
     expect(ctx.values).toEqual([2]);
 
     // Multiple comparison operators
     ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $size: { $gt: 0, $lte: 5 } } },
+      $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE (JSON_LENGTH(`name`) > ? AND JSON_LENGTH(`name`) <= ?)');
+    expect(ctx.sql).toBe(
+      'SELECT `id` FROM `JsonRecord` WHERE (JSON_LENGTH(`entries`) > ? AND JSON_LENGTH(`entries`) <= ?)',
+    );
     expect(ctx.values).toEqual([0, 5]);
 
     // $between
     ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $size: { $between: [1, 10] } } },
+      $where: { entries: { $size: { $between: [1, 10] } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `User` WHERE JSON_LENGTH(`name`) BETWEEN ? AND ?');
+    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) BETWEEN ? AND ?');
     expect(ctx.values).toEqual([1, 10]);
   }
 
@@ -82,12 +84,12 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithOperators() {
     const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $elemMatch: { city: { $like: 'New%' } } } },
+      $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`name`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -95,9 +97,9 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithMultipleOperators() {
     const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
-      $where: { name: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
+      $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
     expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
@@ -107,10 +109,10 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithAllOperators() {
     const dialect = new MariaDialect({});
     const ctx = dialect.createContext();
-    dialect.find(ctx, User, {
+    dialect.find(ctx, JsonRecord, {
       $select: { id: true },
       $where: {
-        name: {
+        entries: {
           $elemMatch: {
             a: { $eq: 'x' },
             b: { $gt: 5 },

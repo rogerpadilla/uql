@@ -73,48 +73,48 @@ export class HttpQuerier implements ClientQuerier {
     return { ...response, count: response.count };
   }
 
-  count<E>(entity: Type<E>, q: QuerySearch<E>, opts?: RequestOptions) {
+  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions) {
     return this.read<number>(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
   }
 
-  insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
+  insertOne<E extends object>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return post<IdValue<E>>(basePath, payload, this.buildOptions(opts));
+    return post<IdValue<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  insertMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
+  insertMany<E extends object>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.insertMany.path}`, payload, this.buildOptions(opts));
   }
 
-  updateOneById<E>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
+  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${id}`, payload, this.buildOptions(opts));
   }
 
-  updateMany<E>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
+  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
     return patch<number>(`${basePath}${qs}`, payload, this.buildOptions(opts));
   }
 
-  saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions) {
+  saveOne<E extends object>(entity: Type<E>, payload: E, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<IdValue<E>>(basePath, payload, this.buildOptions(opts));
   }
 
-  saveMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
+  saveMany<E extends object>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.saveMany.path}`, payload, this.buildOptions(opts));
   }
 
-  deleteOneById<E>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
+  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = opts.hardDelete ? stringifyQuery({ hardDelete: opts.hardDelete }) : '';
     return remove<number>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
   }
 
-  deleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(opts.hardDelete ? { ...q, hardDelete: opts.hardDelete } : q);
     return remove<number>(`${basePath}${qs}`, this.buildOptions(opts));
@@ -131,10 +131,10 @@ export class HttpQuerier implements ClientQuerier {
     return get<T>(`${path}${stringifyQuery(q)}`, this.buildOptions(opts));
   }
 
-  protected buildOptions<O extends RequestOptions>(opts?: O): O | undefined {
+  protected buildOptions(opts?: RequestOptions): RequestOptions | undefined {
     if (!this.defaults.headers && !opts?.headers) {
       return opts;
     }
-    return { ...(opts as O), headers: { ...this.defaults.headers, ...opts?.headers } };
+    return { ...opts, headers: { ...this.defaults.headers, ...opts?.headers } };
   }
 }

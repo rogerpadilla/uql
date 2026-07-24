@@ -4,9 +4,11 @@ import type {
   ExtraOptions,
   IdValue,
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryGroupMap,
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
@@ -210,11 +212,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return Number(res[0].count);
   }
 
-  protected override async internalAggregate<E extends object, Q extends QueryAggregate<E>>(
+  protected override async internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]> {
+  ): Promise<QueryAggregateResult<E, G, A>[]> {
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify

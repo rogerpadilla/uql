@@ -1,10 +1,10 @@
-import type { Key, Primitive, Type } from '../../type/index.js';
+import type { Key, Type } from '../../type/index.js';
 
 const metadataKey = Symbol('InjectQuerier');
 
 export function InjectQuerier() {
   // biome-ignore lint/suspicious/noExplicitAny: `any` is required - class prototypes don't satisfy Record<K, unknown>
-  return (proto: Record<Primitive, any>, key: string, index: number) => {
+  return (proto: Record<PropertyKey, any>, key: string, index: number) => {
     if (!proto[metadataKey]) {
       proto[metadataKey] = new WeakMap();
     }

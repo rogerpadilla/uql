@@ -7,12 +7,14 @@ import type {
   EntityMeta,
   FieldValue,
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateOp,
   QueryExclude,
+  QueryGroupMap,
   QueryLikeOp,
   QueryOptions,
-  QuerySelect,
+  QuerySelectValue,
   QuerySortMap,
   QueryVectorSearch,
   QueryWhere,
@@ -22,6 +24,7 @@ import type {
 } from '../type/index.js';
 import {
   applyFilters,
+  asSelectMap,
   buildQueryWhereAsMap,
   buildSortMap,
   type CallbackKey,
@@ -211,14 +214,17 @@ export class MongoDialect extends AbstractDialect {
 
   public select<E extends Document>(
     entity: Type<E>,
-    select?: QuerySelect<E>,
+    select?: QuerySelectValue<E>,
     exclude?: QueryExclude<E>,
   ): Record<string, 1> {
     const meta = getMeta(entity);
     if (!select && !exclude) {
       return {};
     }
-    const selectedFields = normalizeScalarFieldSelection(meta, select, exclude);
+    if (Array.isArray(select)) {
+      throw new TypeError('raw $select is not supported on MongoDB');
+    }
+    const selectedFields = normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
     return selectedFields.reduce<Record<string, 1>>((acc, key) => {
       acc[key] = 1;
       return acc;
@@ -388,9 +394,9 @@ export class MongoDialect extends AbstractDialect {
   /**
    * Build MongoDB aggregation pipeline stages from a QueryAggregate.
    */
-  public buildAggregateStages<E extends Document>(
+  public buildAggregateStages<E extends Document, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: QueryAggregate<E>,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
   ): Record<string, unknown>[] {
     const pipeline: Record<string, unknown>[] = [];

@@ -33,37 +33,57 @@ export interface ClientQuerier {
     opts?: RequestOptions,
   ): Promise<RequestCountedSuccessResponse<E[]>>;
 
-  count<E>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<number>>;
+  count<E extends object>(
+    entity: Type<E>,
+    q?: QuerySearch<E>,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<number>>;
 
-  insertOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
+  insertOne<E extends object>(
+    entity: Type<E>,
+    payload: E,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<IdValue<E> | undefined>>;
 
-  insertMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+  insertMany<E extends object>(
+    entity: Type<E>,
+    payload: E[],
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
-  updateOneById<E>(
+  updateOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
     payload: UpdatePayload<E>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 
-  updateMany<E>(
+  updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 
-  saveOne<E>(entity: Type<E>, payload: E, opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>>>;
+  saveOne<E extends object>(
+    entity: Type<E>,
+    payload: E,
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<IdValue<E>>>;
 
-  saveMany<E>(entity: Type<E>, payload: E[], opts?: RequestOptions): Promise<RequestSuccessResponse<IdValue<E>[]>>;
+  saveMany<E extends object>(
+    entity: Type<E>,
+    payload: E[],
+    opts?: RequestOptions,
+  ): Promise<RequestSuccessResponse<IdValue<E>[]>>;
 
-  deleteOneById<E>(
+  deleteOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
     opts?: QueryOptions & RequestOptions,
   ): Promise<RequestSuccessResponse<number>>;
 
-  deleteMany<E>(
+  deleteMany<E extends object>(
     entity: Type<E>,
     qm: QuerySearch<E>,
     opts?: QueryOptions & RequestOptions,

@@ -65,7 +65,7 @@ export interface Querier extends UniversalQuerier {
   /**
    * Count records. Supports both patterns.
    */
-  count<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
 
   /**
@@ -200,7 +200,7 @@ export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
     typeof q.all === 'function' &&
     typeof q.run === 'function' &&
     q.dialect !== undefined &&
-    typeof q.dialect.quoteChar === 'string'
+    typeof q.dialect.escapeIdChar === 'string'
   );
 }
 

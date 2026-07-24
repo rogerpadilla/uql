@@ -7,9 +7,11 @@ import type {
   IdValue,
   PrimaryKey,
   Query,
+  QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryGroupMap,
   QueryOptions,
   QuerySearch,
   QueryWhere,
@@ -190,11 +192,11 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  protected override async internalAggregate<E extends Document, Q extends QueryAggregate<E>>(
+  protected override async internalAggregate<E extends Document, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     entity: Type<E>,
-    q: Q,
+    q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, NonNullable<Q['$group']>, NonNullable<Q['$agg']>>[]> {
+  ): Promise<QueryAggregateResult<E, G, A>[]> {
     const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: aggregate result type matches QueryAggregateResult at runtime but TS can't verify
     return this.execute((session) => this.collection(entity).aggregate<any>(pipeline, { session }).toArray());

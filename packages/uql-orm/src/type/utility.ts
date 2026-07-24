@@ -6,9 +6,16 @@ export type MongoId = {
   toHexString: () => string;
 };
 
+/**
+ * Every value type storable in an entity column. Superset of {@link QueryComparableScalar}
+ * and {@link PrimaryKey}.
+ */
 export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer | MongoId;
 
-export type Primitive = string | number | symbol;
+/**
+ * Scalar types with a meaningful ordering, accepted by `$lt`/`$lte`/`$gt`/`$gte`/`$between`.
+ */
+export type QueryComparableScalar = string | number | bigint | Date;
 
 /**
  * Represents a database primary key value.
