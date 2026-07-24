@@ -6,10 +6,11 @@ import {
   type FieldOptions,
   type FilterOnMissing,
   type IdValue,
-  isQueryAggregateOp,
   type MongoId,
   type OnFieldCallback,
   type QueryAggMap,
+  type QueryAggregateArg,
+  type QueryAggregateDistinctOp,
   type QueryAggregateOp,
   type QueryExclude,
   type QueryGroupMap,
@@ -21,6 +22,7 @@ import {
   type QueryWhere,
   type QueryWhereMap,
   type RelationKey,
+  resolveAggregateOp,
   type UqlContext,
 } from '../type/index.js';
 import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
@@ -311,7 +313,14 @@ function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[
  */
 export type ParsedGroupEntry =
   | { readonly kind: 'key'; readonly alias: string }
-  | { readonly kind: 'fn'; readonly alias: string; readonly op: QueryAggregateOp; readonly fieldRef: string };
+  | {
+      readonly kind: 'fn';
+      readonly alias: string;
+      readonly op: QueryAggregateOp;
+      readonly fieldRef: string;
+      /** `true` for a flat distinct op (`$countDistinct`, ...) → `COUNT(DISTINCT field)`. */
+      readonly distinct: boolean;
+    };
 
 /**
  * Parse the `$group` (grouped columns) and `$agg` (computed aggregates) maps into structured
@@ -329,12 +338,15 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, agg?: QueryAggMap<E>)
     return entries;
   }
   for (const alias of getKeys(agg)) {
-    const fnEntry = agg[alias];
+    const fnEntry: Partial<Record<QueryAggregateOp | QueryAggregateDistinctOp, QueryAggregateArg<E>>> = agg[alias];
     const key = getKeys(fnEntry)[0];
-    if (!isQueryAggregateOp(key)) {
-      throw TypeError(`unsupported aggregate operator: ${key}`);
+    // Flat DISTINCT ops (`$countDistinct`, ...) normalize to their base op + a `distinct` flag.
+    const { op, distinct } = resolveAggregateOp(key);
+    const fieldRef = fnEntry[key];
+    if (fieldRef === undefined) {
+      throw TypeError(`empty aggregate function for: ${alias}`);
     }
-    entries.push({ kind: 'fn', alias, op: key, fieldRef: fnEntry[key] });
+    entries.push({ kind: 'fn', alias, op, fieldRef, distinct });
   }
   return entries;
 }

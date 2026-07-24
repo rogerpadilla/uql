@@ -434,6 +434,75 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
+  shouldBuildAggregateStagesCountDistinct() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { total: { $count: '*' }, distinctNames: { $countDistinct: 'name' } },
+    });
+    expect(stages).toEqual([
+      {
+        $group: {
+          _id: { code: '$code' },
+          total: { $sum: 1 },
+          distinctNames: { $addToSet: '$name' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          code: '$_id.code',
+          total: 1,
+          distinctNames: { $size: '$distinctNames' },
+        },
+      },
+    ]);
+  }
+
+  shouldBuildAggregateStagesCountDistinctWithoutGroupKey() {
+    // A grand-total distinct count still needs the $project to reduce the set to its size.
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $agg: { distinctNames: { $countDistinct: 'name' } },
+    });
+    expect(stages).toEqual([
+      { $group: { _id: null, distinctNames: { $addToSet: '$name' } } },
+      { $project: { _id: 0, distinctNames: { $size: '$distinctNames' } } },
+    ]);
+  }
+
+  shouldBuildAggregateStagesSumDistinct() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { distinctTotal: { $sumDistinct: 'salePrice' } },
+    });
+    expect(stages).toEqual([
+      { $group: { _id: { code: '$code' }, distinctTotal: { $addToSet: '$salePrice' } } },
+      { $project: { _id: 0, code: '$_id.code', distinctTotal: { $sum: '$distinctTotal' } } },
+    ]);
+  }
+
+  shouldBuildAggregateStagesAvgDistinct() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { distinctAverage: { $avgDistinct: 'salePrice' } },
+    });
+    expect(stages).toEqual([
+      { $group: { _id: { code: '$code' }, distinctAverage: { $addToSet: '$salePrice' } } },
+      { $project: { _id: 0, code: '$_id.code', distinctAverage: { $avg: '$distinctAverage' } } },
+    ]);
+  }
+
+  shouldBuildAggregateStagesCountField() {
+    // COUNT(field) counts non-null values (matching SQL), unlike COUNT(*) which counts every row.
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { named: { $count: 'name' } },
+    });
+    expect(stages).toEqual([
+      { $group: { _id: { code: '$code' }, named: { $sum: { $cond: [{ $ne: ['$name', null] }, 1, 0] } } } },
+      { $project: { _id: 0, code: '$_id.code', named: 1 } },
+    ]);
+  }
+
   shouldBuildAggregateStagesWithWhere() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $agg: { count: { $count: '*' } },

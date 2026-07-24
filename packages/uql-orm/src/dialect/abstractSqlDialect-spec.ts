@@ -1500,6 +1500,62 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([]);
   }
 
+  shouldAggregateCountDistinct() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { emails: { $countDistinct: 'email' } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}name${e}, COUNT(DISTINCT ${e}email${e}) ${e}emails${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
+    );
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateCountField() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { emails: { $count: 'email' } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}name${e}, COUNT(${e}email${e}) ${e}emails${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
+    );
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateSumDistinct() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { total: { $sumDistinct: 'createdAt' } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}name${e}, SUM(DISTINCT ${e}createdAt${e}) ${e}total${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
+    );
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateAvgDistinct() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { average: { $avgDistinct: 'createdAt' } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}name${e}, AVG(DISTINCT ${e}createdAt${e}) ${e}average${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
+    );
+    expect(values).toEqual([]);
+  }
+
   shouldAggregateGroupByWithMultipleFunctions() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
