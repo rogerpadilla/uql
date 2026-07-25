@@ -1,9 +1,8 @@
 {
-  "typescript.tsdk": "./node_modules/typescript/lib",
   "editor.defaultFormatter": "biomejs.biome",
   "editor.formatOnSave": true,
-  "javascript.preferences.quoteStyle": "single",
-  "typescript.preferences.quoteStyle": "single",
+  "js.preferences.quoteStyle": "single",
+  "ts.preferences.quoteStyle": "single",
   "editor.codeActionsOnSave": {
     "source.organizeImports.biome": "explicit",
     "source.fixAll.biome": "explicit"
