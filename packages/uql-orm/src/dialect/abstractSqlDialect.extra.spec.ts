@@ -59,6 +59,44 @@ class TestSqlDialect extends AbstractSqlDialect {
   protected override numericCast(expr: string): string {
     return `CAST(${expr} AS NUMERIC)`;
   }
+
+  // The JSON fragments are dialect-specific (see `MysqlLikeSqlDialect`, `PgLikeSqlDialect` and
+  // `SqliteDialect`); this base-only stand-in never exercises them.
+  protected override jsonPullKey(): string {
+    return this.unsupported();
+  }
+
+  protected jsonAll(): string {
+    return this.unsupported();
+  }
+
+  protected jsonSize(): string {
+    return this.unsupported();
+  }
+
+  protected jsonElemFrom(): string {
+    return this.unsupported();
+  }
+
+  protected jsonElemRef(): string {
+    return this.unsupported();
+  }
+
+  protected jsonSet(): string {
+    return this.unsupported();
+  }
+
+  protected jsonPush(): string {
+    return this.unsupported();
+  }
+
+  protected jsonUnset(): string {
+    return this.unsupported();
+  }
+
+  private unsupported(): never {
+    throw TypeError('JSON update operators are not supported by the base SQL dialect');
+  }
 }
 
 describe('AbstractSqlDialect (extra coverage)', () => {
@@ -161,28 +199,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe('`email` IS NULL');
     });
 
-    it('compareFieldOperator $all throws for base SQL', () => {
-      const ctx = dialect.createContext();
-      expect(() => {
-        dialect.compareFieldOperator(ctx, User, 'name', '$all', ['admin', 'user'] as any);
-      }).toThrow('$all is not supported in the base SQL dialect');
-    });
-
-    it('compareFieldOperator $size throws for base SQL', () => {
-      const ctx = dialect.createContext();
-      expect(() => {
-        dialect.compareFieldOperator(ctx, User, 'name', '$size', 3);
-      }).toThrow('$size is not supported in the base SQL dialect');
-    });
-
-    it('compareFieldOperator $elemMatch throws for SQL', () => {
-      const ctx = dialect.createContext();
-      expect(() => {
-        // Use 'as any' on dialect since $elemMatch type is 'never' for non-array fields
-        (dialect as any).compareFieldOperator(ctx, User, 'name', '$elemMatch', { foo: 'bar' });
-      }).toThrow('$elemMatch is not supported in the base SQL dialect');
-    });
-
     it('where clause with $between', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, User, { createdAt: { $between: [1000, 2000] } });
@@ -245,7 +261,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('simple equality', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': 1 });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) = ?");
       expect(ctx.values).toEqual([1]);
     });
 
@@ -259,7 +275,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('with $ne operator', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $ne: 1 } });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') <> ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) <> ?");
       expect(ctx.values).toEqual([1]);
     });
 
@@ -352,7 +368,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('combined with regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { name: 'Acme', 'kind.public': 1 });
-      expect(ctx.sql).toBe(" WHERE `name` = ? AND (`kind`->>'public') = ?");
+      expect(ctx.sql).toBe(" WHERE `name` = ? AND CAST((`kind`->>'public') AS NUMERIC) = ?");
       expect(ctx.values).toEqual(['Acme', 1]);
     });
 
@@ -361,7 +377,9 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       dialect.where(ctx, Company, {
         $and: [{ 'kind.public': { $eq: 1 } }, { 'kind.private': { $ne: 0 } }],
       });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ? AND (`kind`->>'private') <> ?");
+      expect(ctx.sql).toBe(
+        " WHERE CAST((`kind`->>'public') AS NUMERIC) = ? AND CAST((`kind`->>'private') AS NUMERIC) <> ?",
+      );
       expect(ctx.values).toEqual([1, 0]);
     });
 
@@ -371,7 +389,9 @@ describe('AbstractSqlDialect (extra coverage)', () => {
         'kind.public': 1,
         'kind.private': { $ne: 0 },
       });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'public') = ? AND (`kind`->>'private') <> ?");
+      expect(ctx.sql).toBe(
+        " WHERE CAST((`kind`->>'public') AS NUMERIC) = ? AND CAST((`kind`->>'private') AS NUMERIC) <> ?",
+      );
       expect(ctx.values).toEqual([1, 0]);
     });
 
@@ -668,145 +688,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       } finally {
         tagRelation.references = originalRefs;
       }
-    });
-  });
-
-  // ─── $merge/$unset/$push update tests ────────────────────────────
-  describe('$merge/$unset/$push in update', () => {
-    it('merge only', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 } },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['1', 123, 1]);
-    });
-
-    it('unset only', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $unset: ['public', 'private'] },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_REMOVE(`kind`, '$.public'), '$.private'), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual([123, 1]);
-    });
-
-    it('merge + unset combined', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['1', 123, 1]);
-    });
-
-    it('push only', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(`kind`, '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['"new-tag"', 123, 1]);
-    });
-
-    it('merge + push combined', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['1', '"new-tag"', 123, 1]);
-    });
-
-    it('merge + push same key preserves merged array before append', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { tags: ['a'] } as any, $push: { tags: 'b' } as any },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_ARRAY_APPEND(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', CAST(? AS JSON)), '$.tags', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['["a"]', '"b"', 123, 1]);
-    });
-
-    it('push + unset combined', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_ARRAY_APPEND(`kind`, '$.tags', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual(['"new-tag"', 123, 1]);
-    });
-
-    it('$unset escapes keys with single quotes', () => {
-      const ctx = dialect.createContext();
-      dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $unset: ["it's"] } as any,
-          updatedAt: 123,
-        },
-      );
-      expect(ctx.sql).toBe(
-        "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.it''s'), `updatedAt` = ? WHERE `id` = ?",
-      );
-      expect(ctx.values).toEqual([123, 1]);
     });
   });
 

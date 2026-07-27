@@ -10,7 +10,7 @@ import type { DialectFeatures } from '../type/index.js';
  * `BunSqlPostgresDialect` and `BunSqlCockroachDialect` both spread this and set
  * `explicitJsonCast: true` - `bun:sql` routes CockroachDB through its own Postgres wire-protocol
  * implementation (see `bunSql.util.ts#normalizeBunOpts`), so it needs the identical fix: verified
- * directly that without it, `$merge`/`$push` on a JSONB column silently produce the wrong value
+ * directly that without it, `$set`/`$push` on a JSONB column silently produce the wrong value
  * or throw on a live CockroachDB instance.
  *
  * @remarks Optional import for custom pools. Neon uses its own serverless driver (not `bun:sql`),

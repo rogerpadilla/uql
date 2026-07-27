@@ -824,6 +824,70 @@ class MongoDialectSpec implements Spec {
   shouldReturnUndefinedForUndefinedSort() {
     expect(this.dialect.extractVectorSort(undefined)).toBeUndefined();
   }
+
+  // ─── JSON update operators mapped onto native MongoDB operators ───────────
+
+  shouldMapJsonOperatorsToNativeOperators() {
+    expect(
+      this.dialect.getUpdateFilter({
+        name: 'plain',
+        kind: { $set: { private: 1 }, $unset: ['public'], $push: { tags: 'x' }, $pull: { labels: 'y' } },
+      }),
+    ).toEqual({
+      $set: { name: 'plain', 'kind.private': 1 },
+      $push: { 'kind.tags': 'x' },
+      $pull: { 'kind.labels': 'y' },
+      $unset: { 'kind.public': '' },
+    });
+  }
+
+  /** Disjoint paths stay on the cheaper single-document form. */
+  shouldKeepUpdateDocumentWhenPathsAreDisjoint() {
+    expect(this.dialect.getUpdateFilter({ kind: { $push: { tags: 'x' }, $pull: { labels: 'y' } } })).toEqual({
+      $push: { 'kind.tags': 'x' },
+      $pull: { 'kind.labels': 'y' },
+    });
+  }
+
+  /** `$pull` filters the stored array, then `$push` appends to that result. */
+  shouldUsePipelineForPullAndPushOnSamePath() {
+    expect(this.dialect.getUpdateFilter({ kind: { $pull: { tags: 'old' }, $push: { tags: 'new' } } })).toEqual([
+      {
+        $set: {
+          'kind.tags': {
+            $concatArrays: [
+              {
+                $filter: {
+                  input: { $ifNull: ['$kind.tags', []] },
+                  cond: { $ne: ['$$this', { $literal: 'old' }] },
+                },
+              },
+              [{ $literal: 'new' }],
+            ],
+          },
+        },
+      },
+    ]);
+  }
+
+  /** `$set` replaces the array outright, so the `$push` appends to the set value, not the stored one. */
+  shouldUsePipelineForSetAndPushOnSamePath() {
+    expect(this.dialect.getUpdateFilter({ kind: { $set: { tags: ['kept'] }, $push: { tags: 'appended' } } })).toEqual([
+      {
+        $set: {
+          'kind.tags': { $concatArrays: [{ $literal: ['kept'] }, [{ $literal: 'appended' }]] },
+        },
+      },
+    ]);
+  }
+
+  /** `$unset` is a later stage than `$set`, so it wins on a shared path - as it does in SQL. */
+  shouldUsePipelineForSetAndUnsetOnSamePath() {
+    expect(this.dialect.getUpdateFilter({ kind: { $set: { public: 1 }, $unset: ['public'] } })).toEqual([
+      { $set: { 'kind.public': { $literal: 1 } } },
+      { $unset: ['kind.public'] },
+    ]);
+  }
 }
 
 createSpec(new MongoDialectSpec());

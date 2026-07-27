@@ -16,8 +16,13 @@
 
 const SINGLE_QUOTE = /'/g;
 
+/** Doubles every single quote in `val`, the ANSI escaping shared by string literals and JSON path keys. */
+export function escapeSingleQuotes(val: string): string {
+  return val.replace(SINGLE_QUOTE, "''");
+}
+
 function escapeStringLiteral(val: string): string {
-  return `'${val.replace(SINGLE_QUOTE, "''")}'`;
+  return `'${escapeSingleQuotes(val)}'`;
 }
 
 function zeroPad(n: number, len: number): string {

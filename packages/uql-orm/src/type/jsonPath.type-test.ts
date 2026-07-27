@@ -53,9 +53,32 @@ export async function jsonDotPathSafety() {
   await querier.findMany(Post, { $where: { attachments: { $elemMatch: 5 } } });
 
   // JSON update operators are exclusive to Json fields.
-  await querier.updateOneById(Post, 1, { kind: { $merge: { public: 1 } } });
+  await querier.updateOneById(Post, 1, { kind: { $set: { public: 1 } } });
   // @ts-expect-error a plain string field does not accept JSON update operators
   await querier.updateOneById(Post, 1, { title: {} });
+
+  // `$push`/`$pull` target array keys only, with the value typed as the element.
+  await querier.updateOneById(Post, 1, { kind: { $push: { labels: 'new' }, $pull: { labels: 'stale' } } });
+  await querier.updateOneById(Post, 1, {
+    kind: { $pull: { labels: 'a' }, $push: { labels: 'b' }, $unset: ['public'] },
+  });
+  // @ts-expect-error 'public' is not an array key, so it is not a $pull target
+  await querier.updateOneById(Post, 1, { kind: { $pull: { public: 1 } } });
+  // @ts-expect-error labels holds strings, not numbers
+  await querier.updateOneById(Post, 1, { kind: { $pull: { labels: 7 } } });
+  // @ts-expect-error $pull takes one element value per key, not an array of them
+  await querier.updateOneById(Post, 1, { kind: { $pull: { labels: ['a', 'b'] } } });
+
+  // A payload that is itself an array takes no operators - they all address object keys, and no
+  // dialect gives them a meaningful result on such a column. Replace the whole value instead.
+  await querier.updateOneById(Post, 1, { attachments: ['a', 'b'] });
+  // @ts-expect-error $set on an array payload would concatenate on PostgreSQL and no-op elsewhere
+  await querier.updateOneById(Post, 1, { attachments: { $set: { 0: 'x' } } });
+  // @ts-expect-error $unset on an array payload would target array method names
+  await querier.updateOneById(Post, 1, { attachments: { $unset: ['length'] } });
+
+  // An untyped payload is not an array, so it keeps the full operator set.
+  await querier.updateOneById(Post, 1, { data: { $set: { anything: 1 }, $unset: ['other'] } });
 
   // Unknown path on a typed JSON payload is a compile error.
   // @ts-expect-error 'nope' is not a key of Post.kind

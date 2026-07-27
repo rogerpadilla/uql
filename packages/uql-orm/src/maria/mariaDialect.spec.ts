@@ -1,167 +1,35 @@
 import { expect } from 'vitest';
-import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
+import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, InventoryAdjustment, ItemTag, JsonRecord, TaxCategory, User } from '../test/index.js';
+import { Company, InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
 
-export class MariaDialectSpec extends AbstractSqlDialectSpec {
-  private mariaDialect: MariaDialect;
-
+export class MariaDialectSpec extends MySqlFamilySpec {
   constructor() {
-    const dialect = new MariaDialect({});
-    super(dialect);
-    this.mariaDialect = dialect;
+    super(new MariaDialect({}));
   }
 
-  // JSON operator tests
-  shouldFind$elemMatch() {
-    const ctx = this.mariaDialect.createContext();
-    this.mariaDialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { city: 'NYC' } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
-    expect(ctx.values).toEqual(['[{"city":"NYC"}]']);
-  }
-
-  shouldFind$all() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $all: ['admin', 'user'] } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
-    expect(ctx.values).toEqual(['["admin","user"]']);
-  }
-
-  shouldFind$size() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: 3 } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) = ?');
-    expect(ctx.values).toEqual([3]);
-  }
-
-  shouldFind$sizeWithComparison() {
-    const dialect = new MariaDialect({});
-
-    // Single comparison operator
-    let ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $gte: 2 } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) >= ?');
-    expect(ctx.values).toEqual([2]);
-
-    // Multiple comparison operators
-    ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
-    });
-    expect(ctx.sql).toBe(
-      'SELECT `id` FROM `JsonRecord` WHERE (JSON_LENGTH(`entries`) > ? AND JSON_LENGTH(`entries`) <= ?)',
-    );
-    expect(ctx.values).toEqual([0, 5]);
-
-    // $between
-    ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $between: [1, 10] } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) BETWEEN ? AND ?');
-    expect(ctx.values).toEqual([1, 10]);
-  }
-
-  // Tests for $elemMatch with nested operators
-  shouldFind$elemMatchWithOperators() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
-    });
-    expect(ctx.sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
-    );
-    expect(ctx.values).toEqual(['New%']);
-  }
-
-  shouldFind$elemMatchWithMultipleOperators() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
-    });
-    expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain('NOT (jt.`active` <=> ?)');
-  }
-
-  shouldFind$elemMatchWithAllOperators() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: {
-        entries: {
-          $elemMatch: {
-            a: { $eq: 'x' },
-            b: { $gt: 5 },
-            c: { $lt: 10 },
-            d: { $lte: 20 },
-            e: { $like: '%test%' },
-            f: { $ilike: 'HI' },
-            g: { $startsWith: 'abc' },
-            h: { $istartsWith: 'ABC' },
-            i: { $endsWith: 'xyz' },
-            j: { $iendsWith: 'XYZ' },
-            k: { $includes: 'mid' },
-            l: { $iincludes: 'MID' },
-            m: { $regex: '^A' },
-            n: { $in: [1, 2] },
-            o: { $nin: [3, 4] },
-          },
-        },
-      },
-    });
-
-    expect(ctx.sql).toContain('jt.`a` = ?');
-    expect(ctx.sql).toContain('CAST(jt.`b` AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(jt.`c` AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(jt.`d` AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('jt.`e` LIKE ?');
-    expect(ctx.sql).toContain('jt.`f` LIKE ?');
-    expect(ctx.sql).toContain('jt.`m` REGEXP ?');
-    expect(ctx.sql).toContain('jt.`n` IN (');
-    expect(ctx.sql).toContain('jt.`o` NOT IN (');
+  protected override jsonCastText(operand: string): string {
+    return `JSON_EXTRACT(${operand}, '$')`;
   }
 
   shouldFilterByJsonDotNotation() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, Company, {
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, Company, {
       $select: { id: true },
       $where: {
         'kind.public': 1,
       },
     });
-    expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_VALUE(`kind`, '$.public') = ?");
+    expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_VALUE(`kind`, '$.public') AS DECIMAL) = ?");
     expect(ctx.values).toEqual([1]);
   }
 
   shouldSortByJsonDotNotation() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, Company, {
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, Company, {
       $select: { id: true },
       $sort: {
         'kind.theme.color': -1,
@@ -171,9 +39,8 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldFilterByJsonDotNotationDeep() {
-    const dialect = new MariaDialect({});
-    const ctx = dialect.createContext();
-    dialect.find(ctx, Company, {
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, Company, {
       $select: { id: true },
       $where: {
         'kind.theme.color': 'red',
@@ -183,28 +50,68 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(ctx.values).toEqual(['red']);
   }
 
+  /**
+   * MariaDB needs `JSON_COMPACT` (bare `JSON_ARRAYAGG` re-quotes elements into strings) and
+   * `JSON_EQUALS` (its JSON is text, so `<>` would compare textually).
+   */
+  protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
+    set: {
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON_EXTRACT(?, '$')), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    unsetOnly: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
+      values: [123, 1],
+    },
+    setUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON_EXTRACT(?, '$')), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    push: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+    pull: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE NOT JSON_EQUALS(uql_pull.v, JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', 123, 1],
+    },
+    pullPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE NOT JSON_EQUALS(uql_pull.v, JSON_EXTRACT(?, '$')))), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', '"b"', 123, 1],
+    },
+    setPushCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON_EXTRACT(?, '$')), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', '"new-tag"', 123, 1],
+    },
+    setPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', JSON_EXTRACT(?, '$')), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['["a"]', '"b"', 123, 1],
+    },
+    pushUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+  };
+
   shouldHandleDate() {
-    const dialect = new MariaDialect({});
     const values: unknown[] = [];
-    expect(dialect.addValue(values, new Date())).toBe('?');
+    expect(this.dialect.addValue(values, new Date())).toBe('?');
     expect(values).toHaveLength(1);
     expect(values[0]).toBeInstanceOf(Date);
   }
 
   shouldEscape() {
-    const dialect = new MariaDialect({});
-    expect(dialect.escape("va'lue")).toBe("'va\\'lue'");
+    expect(this.dialect.escape("va'lue")).toBe("'va\\'lue'");
   }
 
   shouldHandleOtherValues() {
-    const dialect = new MariaDialect({});
     const values: unknown[] = [];
-    expect(dialect.addValue(values, 123)).toBe('?');
+    expect(this.dialect.addValue(values, 123)).toBe('?');
     expect(values[0]).toBe(123);
   }
 
   shouldUpsertWithNoUpdateFields() {
-    const { sql } = this.exec((ctx) => this.mariaDialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
+    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
     expect(sql).toContain('INSERT IGNORE');
   }
 
@@ -215,7 +122,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, VectorItem, {
+      this.dialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3] } },
         $limit: 10,
@@ -232,7 +139,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, VectorItem, {
+      this.dialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
         $limit: 5,
@@ -250,7 +157,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     }
     expect(() =>
       this.exec((ctx) =>
-        this.mariaDialect.find(ctx, VectorItem, {
+        this.dialect.find(ctx, VectorItem, {
           $select: { id: true },
           $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
           $limit: 10,
@@ -269,7 +176,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
     expect(() =>
       this.exec((ctx) =>
-        this.mariaDialect.find(ctx, VectorItem, {
+        this.dialect.find(ctx, VectorItem, {
           $select: { id: true },
           $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
           $limit: 10,
@@ -286,7 +193,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field() name!: string;
     }
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, VectorItem, {
+      this.dialect.find(ctx, VectorItem, {
         $select: { id: true },
         $where: { name: 'test' },
         $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
@@ -306,7 +213,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, VectorItem, {
+      this.dialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3] } },
         $limit: 10,
@@ -323,7 +230,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, VectorItem, {
+      this.dialect.find(ctx, VectorItem, {
         $select: { id: true },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
         $limit: 10,
@@ -337,7 +244,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertMany() {
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, User, [
+      this.dialect.insert(ctx, User, [
         {
           name: 'Some name 1',
           email: 'someemail1@example.com',
@@ -373,7 +280,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertManyWithHeterogeneousColumns() {
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, User, [
+      this.dialect.insert(ctx, User, [
         { id: 5, name: 'Some name 1', createdAt: 123 },
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
@@ -386,7 +293,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldBeSecure() {
     let res = this.exec((ctx) =>
-      this.mariaDialect.find(ctx, User, {
+      this.dialect.find(ctx, User, {
         $select: { id: true, something: true } as any,
         $where: {
           id: 1,
@@ -402,7 +309,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual([1, 1]);
 
     res = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, User, {
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         something: 'anything',
         createdAt: 1,
@@ -412,7 +319,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 1]);
 
     res = this.exec((ctx) =>
-      this.mariaDialect.update(
+      this.dialect.update(
         ctx,
         User,
         {
@@ -429,7 +336,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
     res = this.exec((ctx) =>
-      this.mariaDialect.delete(ctx, User, {
+      this.dialect.delete(ctx, User, {
         $where: { something: 'anything' } as any,
       }),
     );
@@ -439,7 +346,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.upsert(
+      this.dialect.upsert(
         ctx,
         User,
         { email: true },
@@ -458,7 +365,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, TaxCategory, [
+      this.dialect.insert(ctx, TaxCategory, [
         {
           name: 'Some Name A',
         },
@@ -496,7 +403,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertOne() {
     let res = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, User, {
+      this.dialect.insert(ctx, User, {
         name: 'Some Name',
         email: 'someemail@example.com',
         createdAt: 123,
@@ -506,7 +413,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
     res = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, InventoryAdjustment, {
+      this.dialect.insert(ctx, InventoryAdjustment, {
         date: new Date(2021, 11, 31, 23, 59, 59, 999),
         createdAt: 123,
       }),
@@ -517,7 +424,7 @@ export class MariaDialectSpec extends AbstractSqlDialectSpec {
 
   override shouldInsertWithOnInsertId() {
     const { sql, values } = this.exec((ctx) =>
-      this.mariaDialect.insert(ctx, TaxCategory, {
+      this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
         createdAt: 123,
       }),

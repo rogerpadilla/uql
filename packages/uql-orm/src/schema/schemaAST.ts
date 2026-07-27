@@ -447,23 +447,13 @@ export class SchemaAST implements ISchemaAST {
   clone(): SchemaAST {
     const clone = new SchemaAST();
 
-    // First pass: clone tables and columns (without links)
+    // First pass: tables and columns. The table is built before its columns so each clone can link
+    // back to it on creation - `columns` and `primaryKey` are readonly properties holding mutable
+    // containers, so they are filled in afterwards without reassigning anything.
     for (const [name, table] of this.tables) {
-      const clonedColumns = new Map<string, ColumnNode>();
-
-      for (const [colName, col] of table.columns) {
-        const clonedCol: ColumnNode = {
-          ...col,
-          table: undefined as unknown as TableNode, // Will be set below
-          referencedBy: [],
-          references: undefined,
-        };
-        clonedColumns.set(colName, clonedCol);
-      }
-
       const clonedTable: TableNode = {
         name,
-        columns: clonedColumns,
+        columns: new Map<string, ColumnNode>(),
         primaryKey: [],
         indexes: [],
         comment: table.comment,
@@ -472,15 +462,10 @@ export class SchemaAST implements ISchemaAST {
         outgoingRelations: [],
       };
 
-      // Link columns to table
-      for (const col of clonedColumns.values()) {
-        (col as { table: TableNode }).table = clonedTable;
+      for (const [colName, col] of table.columns) {
+        clonedTable.columns.set(colName, { ...col, table: clonedTable, referencedBy: [], references: undefined });
       }
-
-      // Set primary key
-      (clonedTable as { primaryKey: ColumnNode[] }).primaryKey = table.primaryKey
-        .map((pk) => clonedColumns.get(pk.name))
-        .filter(Boolean) as ColumnNode[];
+      clonedTable.primaryKey.push(...table.primaryKey.flatMap((pk) => clonedTable.columns.get(pk.name) ?? []));
 
       clone.tables.set(name, clonedTable);
     }

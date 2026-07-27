@@ -1,4 +1,5 @@
 export * from './config.js';
+export * from './dialect.js';
 export * from './entity.js';
 export * from './logger.js';
 export * from './migration.js';
@@ -7,5 +8,9 @@ export * from './namingStrategy.js';
 export * from './querier.js';
 export * from './querierPool.js';
 export * from './query.js';
+export * from './queryAggregate.js';
+export * from './queryRaw.js';
+export * from './queryWhere.js';
 export * from './universalQuerier.js';
 export * from './utility.js';
+export * from './vector.js';

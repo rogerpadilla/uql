@@ -5,7 +5,7 @@
  * Enables reliable diffing, smart relation detection, and dialect-agnostic schema operations.
  */
 
-import type { VectorIndexOptions } from '../type/entity.js';
+import type { VectorIndexOptions } from '../type/vector.js';
 
 // ============================================================================
 // Canonical Type System

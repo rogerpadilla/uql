@@ -1,4 +1,4 @@
-import { type Document, type Filter, ObjectId, type Sort } from 'mongodb';
+import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
@@ -6,6 +6,7 @@ import type {
   DialectFeatures,
   EntityMeta,
   FieldValue,
+  JsonUpdateOp,
   Query,
   QueryAggMap,
   QueryAggregate,
@@ -33,12 +34,13 @@ import {
   getKeys,
   getRelationRequestSummary,
   hasKeys,
+  isJsonUpdateOp,
+  isOperatorObject,
   isVectorSearch,
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
   parseGroupMap,
   type RelationRequestSummary,
-  someKey,
 } from '../util/index.js';
 
 /**
@@ -113,13 +115,8 @@ export class MongoDialect extends AbstractDialect {
         } else if (field) {
           key = this.resolveColumnName(key, field);
         }
-        if (
-          val &&
-          typeof val === 'object' &&
-          !Array.isArray(val) &&
-          this.hasOperatorKeys(val as Record<string, unknown>)
-        ) {
-          val = this.transformOperators(val as Record<string, unknown>);
+        if (isOperatorObject(val)) {
+          val = this.transformOperators(val);
         } else if (Array.isArray(val)) {
           val = { $in: val };
         }
@@ -127,13 +124,6 @@ export class MongoDialect extends AbstractDialect {
       }
     }
     return filter as Filter<E>;
-  }
-
-  /**
-   * Check if an object has operator keys (keys starting with $).
-   */
-  private hasOperatorKeys(obj: Record<string, unknown>): boolean {
-    return someKey(obj, (key) => key.startsWith('$'));
   }
 
   protected mapTableNameRow(row: { table_name: string }): string {
@@ -175,6 +165,13 @@ export class MongoDialect extends AbstractDialect {
   private transformOperators(ops: Record<string, unknown>): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(ops)) {
+      // `$elemMatch`'s value is itself a condition, so the operators inside it need the same
+      // mapping - passing it through raw sends UQL-only operators (`$startsWith`, `$between`, ...)
+      // straight to the server, which rejects them as unknown.
+      if (op === '$elemMatch') {
+        result[op] = this.transformElemMatch(val as Record<string, unknown>);
+        continue;
+      }
       // Native MongoDB operators - pass through directly
       if (MongoDialect.NATIVE_OPS.has(op as MongoNativeOp)) {
         result[op] = val;
@@ -210,6 +207,19 @@ export class MongoDialect extends AbstractDialect {
       }
     }
     return result;
+  }
+
+  /**
+   * Maps the conditions inside `$elemMatch`: an operator map applies to the element itself, anything
+   * else is a per-field map whose operator objects each need mapping.
+   */
+  private transformElemMatch(match: Record<string, unknown>): Record<string, unknown> {
+    if (isOperatorObject(match)) {
+      return this.transformOperators(match);
+    }
+    return Object.fromEntries(
+      Object.entries(match).map(([field, val]) => [field, isOperatorObject(val) ? this.transformOperators(val) : val]),
+    );
   }
 
   public select<E extends Document>(
@@ -370,6 +380,93 @@ export class MongoDialect extends AbstractDialect {
 
   public getPersistable<E extends Document>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): Partial<E> {
     return this.getPersistables(meta, payload, callbackKey)[0];
+  }
+
+  /** One MongoDB update document's operators, grouped by kind and keyed by dotted path. */
+  private groupUpdateOperators<E extends Document>(
+    persistable: Partial<E>,
+  ): { set: Document; push: Document; pull: Document; unset: Set<string> } {
+    const set: Document = {};
+    const push: Document = {};
+    const pull: Document = {};
+    const unset = new Set<string>();
+    for (const [key, value] of Object.entries(persistable)) {
+      if (!isJsonUpdateOp(value)) {
+        set[key] = value;
+        continue;
+      }
+      for (const [path, v] of Object.entries(value.$set ?? {})) {
+        set[`${key}.${path}`] = v;
+      }
+      for (const path of value.$unset ?? []) {
+        unset.add(`${key}.${path}`);
+      }
+      for (const [path, v] of Object.entries(value.$push ?? {})) {
+        push[`${key}.${path}`] = v;
+      }
+      for (const [path, v] of Object.entries(value.$pull ?? {})) {
+        pull[`${key}.${path}`] = v;
+      }
+    }
+    return { set, push, pull, unset };
+  }
+
+  /**
+   * Turn a persistable payload into a MongoDB update, mapping UQL's JSON operators onto their native
+   * equivalents: `$set` becomes dotted-path assignments, `$unset`/`$push`/`$pull` map one-to-one.
+   * Plain field values are assigned with `$set`.
+   */
+  public getUpdateFilter<E extends Document>(persistable: Partial<E>): UpdateFilter<E> | Document[] {
+    const groups = this.groupUpdateOperators(persistable);
+    const { set, push, pull, unset } = groups;
+    const exprKeys = [...Object.keys(pull), ...Object.keys(set), ...Object.keys(push)];
+
+    // MongoDB rejects two operators targeting one path in a single update document, so any path
+    // reached by more than one operator group forces the pipeline form.
+    const allPaths = [...exprKeys, ...unset];
+    if (new Set(allPaths).size < allPaths.length) {
+      return this.getUpdatePipeline(groups, new Set(exprKeys));
+    }
+    return {
+      ...(hasKeys(set) && { $set: set }),
+      ...(hasKeys(push) && { $push: push }),
+      ...(hasKeys(pull) && { $pull: pull }),
+      ...(unset.size > 0 && { $unset: Object.fromEntries([...unset].map((path) => [path, ''])) }),
+    } as UpdateFilter<E>;
+  }
+
+  /**
+   * MongoDB rejects two operators targeting one path in a single update document, so any path shared
+   * across operator groups is expressed as one aggregation-pipeline update instead.
+   *
+   * Each path's expression is composed in the same order stated on {@link JsonUpdateOp} (`$pull` ->
+   * `$set` -> `$push` -> `$unset`), so every combination yields the identical result: a `$pull`
+   * filters the stored array, a `$set` on the same path then replaces it outright, and a `$push`
+   * appends to whatever those produced. `$unset` is a later stage, so it wins over a `$set` on the
+   * same path - again matching SQL, where it is the outermost wrapper. Values are wrapped in
+   * `$literal` so a string starting with `$` stays data rather than becoming a field reference.
+   */
+  private getUpdatePipeline(
+    { set, push, pull, unset }: { set: Document; push: Document; pull: Document; unset: ReadonlySet<string> },
+    exprPaths: ReadonlySet<string>,
+  ): Document[] {
+    const assignments: Document = {};
+    for (const path of exprPaths) {
+      let expr: Document = { $ifNull: [`$${path}`, []] };
+      if (path in pull) {
+        expr = { $filter: { input: expr, cond: { $ne: ['$$this', { $literal: pull[path] }] } } };
+      }
+      if (path in set) {
+        expr = { $literal: set[path] };
+      }
+      if (path in push) {
+        expr = { $concatArrays: [expr, [{ $literal: push[path] }]] };
+      }
+      // Only `$set` and `$push` create a key. A `$pull` alone has to leave an absent one absent, and
+      // `$$REMOVE` is how a pipeline `$set` skips a field - without it the filter would store `[]`.
+      assignments[path] = path in set || path in push ? expr : { $cond: [{ $isArray: `$${path}` }, expr, '$$REMOVE'] };
+    }
+    return [{ $set: assignments }, ...(unset.size > 0 ? [{ $unset: [...unset] }] : [])];
   }
 
   public getPersistables<E extends Document>(

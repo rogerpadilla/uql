@@ -1,5 +1,4 @@
 import { getMeta } from '../entity/index.js';
-import { resolveVectorCast, type VectorCast } from '../schema/canonicalType.js';
 import {
   type EntityMeta,
   type FieldKey,
@@ -49,9 +48,8 @@ import {
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
-  type VectorDistance,
 } from '../type/index.js';
-
+import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import {
   applyFilters,
   asSelectMap,
@@ -70,6 +68,9 @@ import {
   hasKeys,
   hasMultipleKeys,
   isJsonType,
+  isJsonUpdateOp,
+  isOperatorObject,
+  isOperatorOnlyObject,
   isPopulatingRelations,
   isVectorSearch,
   normalizeScalarFieldSelection,
@@ -77,13 +78,24 @@ import {
   parseRelationAtKey,
   type RelationQuery,
   raw,
+  someValue,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 
-import { AbstractDialect } from './abstractDialect.js';
+import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
+import { jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
+import { VectorSqlDialect } from './vectorSqlDialect.js';
 
-export abstract class AbstractSqlDialect extends AbstractDialect implements QueryDialect, SqlQueryDialect {
+/** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
+type JsonUpdateOperators = {
+  readonly $set?: Record<string, unknown>;
+  readonly $unset?: readonly string[];
+  readonly $push?: Record<string, unknown>;
+  readonly $pull?: Record<string, unknown>;
+};
+
+export abstract class AbstractSqlDialect extends VectorSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 
@@ -113,11 +125,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
    * `insertMany` splits larger batches into multiple statements based on this limit.
    */
   readonly maxBindValues: number = 32766;
-
-  /** Vector index operator classes, keyed by distance metric. Partial: not every dialect supports every metric. */
-  readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = undefined;
-
-  readonly vectorExtension: string | undefined = undefined;
 
   getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
     const level = isolationLevel?.toUpperCase();
@@ -613,6 +620,18 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     ['$ilike', (v) => v.toLowerCase()],
   ]);
 
+  /**
+   * The case-insensitive `LIKE_OP_MAP` keys - the value is lowercased, so the comparison must use
+   * `ilikeExpr` (Postgres's `ILIKE`) rather than `LIKE`. `$includes` is deliberately excluded even
+   * though it starts with the substring `$i`: it is case-sensitive, unlike `$iincludes`.
+   */
+  private static readonly LIKE_CASE_INSENSITIVE_OPS = new Set<string>([
+    '$istartsWith',
+    '$iendsWith',
+    '$iincludes',
+    '$ilike',
+  ] satisfies QueryLikeOp[]);
+
   /** Builds `prefix.column` from an already-resolved field. */
   private columnWithPrefix(key: string, field: FieldOptions | undefined, prefix: string | undefined): string {
     const columnName = this.resolveColumnName(key, field);
@@ -714,7 +733,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   private appendLikeOp(ctx: QueryContext, field: string | undefined, op: string, wrappedVal: string): void {
-    const isIlike = op.startsWith('$i') || op === '$ilike';
+    const isIlike = AbstractSqlDialect.LIKE_CASE_INSENSITIVE_OPS.has(op);
     const ph = this.addValue(ctx.values, wrappedVal);
     if (isIlike && field) {
       ctx.append(this.ilikeExpr(field, ph));
@@ -755,14 +774,16 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     jsonPath: string,
     op: string,
     value: unknown,
+    asJson = false,
   ): string {
     const jsonField = fieldAccessor(jsonPath);
     switch (op) {
       case '$eq':
-        return value === null ? `${jsonField} IS NULL` : `${jsonField} = ${this.addValue(ctx.values, value)}`;
+        if (value === null) return `${jsonField} IS NULL`;
+        return `${this.jsonComparand(jsonField, value)} = ${this.jsonOperand(ctx, value, asJson)}`;
       case '$ne':
         if (value === null) return `${jsonField} IS NOT NULL`;
-        return this.neExpr(jsonField, this.addValue(ctx.values, value));
+        return this.neExpr(this.jsonComparand(jsonField, value), this.jsonOperand(ctx, value, asJson));
       case '$gt':
         return `${this.numericCast(jsonField)} > ${this.addValue(ctx.values, value)}`;
       case '$gte':
@@ -791,7 +812,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
         return `${jsonField} ${this.regexpOp} ${this.addValue(ctx.values, value)}`;
       case '$in':
       case '$nin':
-        return this.jsonInNin(ctx, jsonField, op, value);
+        return this.jsonInNin(ctx, jsonField, op, value, asJson);
       case '$all':
         return this.jsonAll(ctx, jsonField, value);
       case '$size':
@@ -803,24 +824,149 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     }
   }
 
-  private jsonInNin(ctx: QueryContext, jsonField: string, op: string, value: unknown): string {
-    return `${jsonField}${this.formatIn(ctx, Array.isArray(value) ? value : [], op === '$nin')}`;
+  private jsonInNin(ctx: QueryContext, jsonField: string, op: string, value: unknown, asJson: boolean): string {
+    const values = Array.isArray(value) ? value : [];
+    const negate = op === '$nin';
+    if (!asJson) {
+      return `${this.jsonComparand(jsonField, values)}${this.formatIn(ctx, values, negate)}`;
+    }
+    // JSON values have no portable array literal, so the set expands into explicit comparisons.
+    const comparisons = values.map((val) => `${jsonField} ${negate ? '<>' : '='} ${this.jsonScalarParam(ctx, val)}`);
+    return `(${comparisons.join(negate ? ' AND ' : ' OR ')})`;
   }
 
-  protected jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    throw TypeError(`$all is not supported in the base SQL dialect - override in dialect subclass`);
+  /** The bound operand of a JSON comparison: JSON-encoded when comparing against the JSON value. */
+  protected jsonOperand(ctx: QueryContext, value: unknown, asJson: boolean): string {
+    return asJson ? this.jsonScalarParam(ctx, value) : this.addValue(ctx.values, value);
   }
 
-  protected jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    throw TypeError(`$size is not supported in the base SQL dialect - override in dialect subclass`);
+  /**
+   * The left side of a comparison against a JSON scalar, cast when the operand is numeric - see
+   * {@link jsonCompareMode} for why each mode exists.
+   */
+  protected jsonComparand(jsonField: string, value: unknown): string {
+    return this.jsonCompareMode(value) === 'numeric' ? this.numericCast(jsonField) : jsonField;
   }
 
-  protected jsonElemMatch(ctx: QueryContext, jsonField: string, value: Record<string, unknown>): string {
-    throw TypeError(`$elemMatch is not supported in the base SQL dialect - override in dialect subclass`);
+  /**
+   * How a JSON scalar has to be compared against `value` (or, for `$in`/`$nin`, against every element
+   * of it). Extracting a JSON value yields *text*, which loses the type, so each operand type is
+   * compared in the representation every engine agrees on:
+   * - `numeric` - cast the accessor. Keeps `1` equal to a stored `1.0`, which strict JSON equality
+   *   would not, and satisfies drivers that send typed parameters (`text = integer` otherwise).
+   * - `json` - compare the JSON value against a JSON-encoded parameter. No cast recovers a boolean
+   *   portably: PostgreSQL raises `text = boolean` and MySQL matches `'true'` against `1`.
+   * - `text` - compare as extracted, which is also what the string operators need.
+   *
+   * Mixed operand types fall back to `text`, since one comparison cannot be two shapes at once.
+   */
+  protected jsonCompareMode(value: unknown): 'json' | 'numeric' | 'text' {
+    const operands = Array.isArray(value) ? value : [value];
+    if (operands.length === 0) {
+      return 'text';
+    }
+    if (operands.every((operand) => typeof operand === 'boolean')) {
+      return 'json';
+    }
+    return operands.every((operand) => typeof operand === 'number') ? 'numeric' : 'text';
   }
 
-  protected isJsonbOp(op: string): boolean {
-    return op === '$all' || op === '$size' || op === '$elemMatch';
+  /** `$all`: the JSON array at `jsonField` contains every value (also serves element containment). */
+  protected abstract jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string;
+
+  /** `$size`: the length of the JSON array at `jsonField`, compared against `value`. */
+  protected abstract jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string;
+
+  /**
+   * Explodes the JSON array at `jsonField` into rows, as the `FROM` of an `EXISTS` subquery. An
+   * empty `fields` means the elements are scalars, in which case `asJson` says whether they are read
+   * as JSON or as text; otherwise they are objects and `fields` are the keys the conditions will read
+   * (MySQL needs them upfront for its `JSON_TABLE` column list).
+   */
+  protected abstract jsonElemFrom(jsonField: string, fields: readonly string[], asJson?: boolean): string;
+
+  /**
+   * References an exploded element: the element itself, or one `field` of it. `asJson` asks for the
+   * JSON-valued form instead of the text one - see {@link isJsonbOp} for when that matters.
+   */
+  protected abstract jsonElemRef(field?: string, asJson?: boolean): string;
+
+  /**
+   * Whether the dialect's array containment ({@link jsonAll}) matches an object element that merely
+   * *includes* the given keys, as PostgreSQL's `@>` and MySQL's `JSON_CONTAINS` do. SQLite compares
+   * elements as whole JSON text, so it cannot express a partial match and always expands the
+   * per-field form below.
+   */
+  protected readonly jsonContainmentIsPartial: boolean = true;
+
+  /**
+   * Whether an exploded *scalar* element keeps its SQL type. SQLite's `json_each` yields JSON
+   * booleans as `0`/`1` integers and numbers as numbers, so such an element compares directly to a
+   * bound value; PostgreSQL and MySQL explode scalars to text, losing the type, so a non-string
+   * operand there has to compare as JSON (see {@link isJsonbOp}).
+   */
+  protected readonly jsonScalarElemKeepsType: boolean = false;
+
+  /**
+   * `$elemMatch`: at least one element of the JSON array satisfies `match`. Three shapes, decided
+   * here so every dialect only supplies {@link jsonElemFrom} / {@link jsonElemRef}:
+   * - keys are operators (`{ $startsWith: 'ad' }`) - scalar elements, conditions on the element;
+   * - a plain object with no nested operators - containment, which is the only form an index serves;
+   * - otherwise - per-field conditions over the exploded objects.
+   */
+  protected jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
+    // Conditions on the element itself. One `FROM` serves them all, so the element is read as JSON
+    // only when *every* operand needs it - the same all-operands rule the comparison classifier uses.
+    if (isOperatorOnlyObject(match)) {
+      const entries = Object.entries(match);
+      const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => this.isJsonbOp(op, val));
+      const conditions = entries.map(([op, val]) =>
+        this.buildJsonFieldCondition(ctx, () => this.jsonElemRef(undefined, asJson), '', op, val, asJson),
+      );
+      return jsonElemExists(this.jsonElemFrom(jsonField, [], asJson), conditions);
+    }
+    if (isOperatorObject(match)) {
+      throw TypeError(`$elemMatch cannot mix operators with field names: ${Object.keys(match).join(', ')}`);
+    }
+
+    // A plain object with no nested operators is containment, which is also the only form an index
+    // can serve. SQLite compares elements exactly, so it always expands the per-field form below.
+    if (this.jsonContainmentIsPartial && !someValue(match, isOperatorObject)) {
+      return this.jsonAll(ctx, jsonField, [match]);
+    }
+
+    const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
+      const asJson = this.isJsonbOp(op, opVal);
+      return this.buildJsonFieldCondition(ctx, (f) => this.jsonElemRef(f, asJson), field, op, opVal, asJson);
+    });
+    return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match)), conditions);
+  }
+
+  /**
+   * Whether the operator reads the JSON *value* instead of its text form. The array operators always
+   * do. Equality joins them for boolean operands, because extracting JSON as text loses the type in
+   * a way no cast recovers portably: PostgreSQL raises `operator does not exist: text = boolean`,
+   * MySQL compares `'true'` to `1` and silently matches nothing, and SQLite's `json_extract` yields
+   * `1`. Comparing the JSON value against a JSON-encoded parameter is exact on every dialect.
+   *
+   * Numbers stay on the text accessor with a numeric cast ({@link jsonComparand}), which keeps
+   * `1` equal to `1.0` - JSON equality would not.
+   */
+  protected isJsonbOp(op: string, value?: unknown): boolean {
+    if (op === '$all' || op === '$size' || op === '$elemMatch') {
+      return true;
+    }
+    const comparesValue = op === '$eq' || op === '$ne' || op === '$in' || op === '$nin';
+    return comparesValue && this.jsonCompareMode(value) === 'json';
+  }
+
+  /** A JSON-encoded bound parameter, cast to the dialect's JSON type. */
+  protected jsonScalarParam(ctx: QueryContext, value: unknown): string {
+    if (value instanceof QueryRaw) {
+      return this.addValue(ctx.values, value);
+    }
+    ctx.pushValue(JSON.stringify(value));
+    return this.getJsonCastExpr();
   }
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
@@ -897,81 +1043,6 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const name = this.resolveColumnName(key, field);
       ctx.append(this.escapeId(name) + direction);
     });
-  }
-
-  /**
-   * Resolve common parameters for a vector similarity ORDER BY expression.
-   * Shared by all dialect overrides of `appendVectorSort`.
-   */
-  protected resolveVectorSortParams<E>(
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-  ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined; vectorCast: VectorCast } {
-    const field = meta.fields[key as FieldKey<E>];
-    const colName = this.resolveColumnName(key, field);
-    const distance = search.$distance ?? field?.distance ?? 'cosine';
-    const vectorCast = resolveVectorCast(field);
-    return { colName, distance, field, vectorCast };
-  }
-
-  /**
-   * Mapping of UQL vector distance metrics to native SQL functions.
-   * Override in dialects that use function-call syntax (e.g. SQLite, MariaDB).
-   * Dialects with operator-based syntax (e.g. Postgres) leave this empty and override `appendVectorSort` directly.
-   */
-  protected readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map();
-
-  /**
-   * Append a vector similarity function call: `fn(col, ?)`.
-   * Used by dialects that express vector distance via SQL functions (SQLite, MariaDB).
-   */
-  protected appendFunctionVectorSort<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-    dialectName: string,
-  ): void {
-    const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
-    const fn = this.vectorDistanceFns.get(distance);
-
-    if (!fn) {
-      throw Error(`${dialectName} does not support vector distance metric: ${distance}`);
-    }
-
-    ctx.append(`${fn}(${this.escapeId(colName)}, `);
-    ctx.addValue(`[${search.$vector.join(',')}]`);
-    if (vectorCast && dialectName === 'PostgreSQL') {
-      ctx.append(`::${vectorCast}`);
-    }
-    ctx.append(')');
-  }
-
-  /**
-   * Append a vector distance projection.
-   */
-  protected appendVectorProjection<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-  ): void {
-    this.appendVectorSort(ctx, meta, key, search);
-    ctx.append(` AS ${this.escapeId(search.$project as string)}`);
-  }
-
-  /**
-   * Append a vector similarity ORDER BY expression.
-   * Default: auto-delegates to `appendFunctionVectorSort` when `vectorDistanceFns` has entries.
-   * Override for operator-based syntax (e.g. PostgreSQL `<=>`, `<->` operators).
-   */
-  protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
-    if (this.vectorDistanceFns.size > 0) {
-      this.appendFunctionVectorSort(ctx, meta, key, search, this.dialectName);
-      return;
-    }
-    throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {
@@ -1211,8 +1282,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
       const escapedCol = this.escapeId(columnName);
       const value = filledPayload[key];
 
-      if (this.isJsonUpdateOp(value)) {
-        this.formatJsonUpdate<E>(ctx, escapedCol, value);
+      if (isJsonUpdateOp(value)) {
+        this.formatJsonUpdate(ctx, escapedCol, value, field);
       } else {
         ctx.append(`${escapedCol} = `);
         this.formatPersistableValue(ctx, field, value);
@@ -1385,54 +1456,86 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
   }
 
   /**
-   * Generate SQL for a JSONB merge and/or unset operation.
-   * Called from `update()` when a field value has `$merge`, `$unset`, and/or `$push` operators.
-   * Generates the full `"col" = <expression>` assignment.
-   *
-   * Base implementation uses MySQL-compatible syntax with *shallow* merge semantics
-   * (RHS top-level keys replace LHS top-level keys, matching PostgreSQL's `jsonb || jsonb`).
-   * Override in dialect subclasses when a dialect needs different JSON function semantics.
+   * Reads `operand` as a JSON value. Passing the `?` placeholder yields the cast for a bound
+   * parameter, and passing an expression re-reads text as JSON - the same SQL either way, which is
+   * why this is one hook rather than a placeholder variant plus an expression variant.
    */
-  protected getJsonCastExpr(): string {
-    return 'CAST(? AS JSON)';
+  protected jsonCast(operand: string): string {
+    return `CAST(${operand} AS JSON)`;
   }
 
-  protected formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
+  /**
+   * The JSON cast applied to a bound placeholder. Only the positional-placeholder dialects use it -
+   * PostgreSQL binds JSON through {@link PgLikeSqlDialect.jsonScalarParam} instead.
+   */
+  protected getJsonCastExpr(): string {
+    return this.jsonCast('?');
+  }
+
+  /**
+   * Generate the full `"col" = <expression>` assignment for a JSON update operator payload.
+   * Called from `update()` when a field value is a {@link JsonUpdateOp}.
+   *
+   * Each operator wraps the expression built so far, innermost-first in the order stated on
+   * {@link JsonUpdateOp} (`$pull` -> `$set` -> `$push` -> `$unset`), so dialects only supply the
+   * four SQL fragments below. Two invariants keep every dialect consistent and keep bound values in
+   * step with their placeholders:
+   * - `$pull` is innermost and its subquery reads `escapedCol`, so its value binds exactly once.
+   * - Later fragments reference `expr` at most once, so a `$pull` subquery is never duplicated
+   *   (which would bind its value twice on positional-placeholder dialects). PostgreSQL's `$push`
+   *   is the one exception, and is safe there because its placeholders are numbered.
+   */
+  protected formatJsonUpdate(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp, field?: FieldOptions): void {
+    // Centralizes the one narrowing cast: the payload's keys are typed against the entity's JSON
+    // payload, which the dialects do not need - they only build SQL from keys and values.
+    const { $pull, $set, $push, $unset } = value as JsonUpdateOperators;
     let expr = escapedCol;
-    if (hasKeys(value.$merge)) {
-      const merge = value.$merge as Record<string, unknown>;
-      expr = `JSON_SET(COALESCE(${escapedCol}, '{}')`;
-      for (const [key, v] of Object.entries(merge)) {
-        expr += `, '$.${this.escapeJsonKey(key)}', ${this.getJsonCastExpr()}`;
-        ctx.pushValue(JSON.stringify(v));
-      }
-      expr += ')';
+    if (hasKeys($pull)) {
+      expr = this.jsonPull(ctx, expr, escapedCol, $pull);
     }
-    if (hasKeys(value.$push)) {
-      const push = value.$push as Record<string, unknown>;
-      expr = `JSON_ARRAY_APPEND(${expr}`;
-      for (const [key, v] of Object.entries(push)) {
-        expr += `, '$.${this.escapeJsonKey(key)}', ${this.getJsonCastExpr()}`;
-        ctx.pushValue(JSON.stringify(v));
-      }
-      expr += ')';
+    if (hasKeys($set)) {
+      expr = this.jsonSet(ctx, expr, $set, field);
     }
-    if (value.$unset?.length) {
-      for (const key of value.$unset) {
-        expr = `JSON_REMOVE(${expr}, '$.${this.escapeJsonKey(key)}')`;
-      }
+    if (hasKeys($push)) {
+      expr = this.jsonPush(ctx, expr, $push);
+    }
+    if ($unset?.length) {
+      expr = this.jsonUnset(ctx, expr, $unset);
     }
     ctx.append(`${escapedCol} = ${expr}`);
   }
 
-  protected isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
-    return typeof value === 'object' && value !== null && ('$merge' in value || '$unset' in value || '$push' in value);
+  /**
+   * Remove every element equal to the given value, per array key. Each key wraps the expression
+   * built so far, so dialects only supply {@link jsonPullKey} - and because every key reads
+   * `escapedCol` rather than the accumulated expression, values bind once, in key order.
+   */
+  protected jsonPull(ctx: QueryContext, expr: string, escapedCol: string, pull: Record<string, unknown>): string {
+    return Object.entries(pull).reduce((acc, [key, value]) => this.jsonPullKey(ctx, acc, escapedCol, key, value), expr);
   }
 
-  /** Escapes a JSON key for safe interpolation into SQL string literals. */
-  protected escapeJsonKey(key: string): string {
-    return key.replace(/'/g, "''");
-  }
+  /** Wrap `expr` so the array at `key` no longer contains `value`. */
+  protected abstract jsonPullKey(
+    ctx: QueryContext,
+    expr: string,
+    escapedCol: string,
+    key: string,
+    value: unknown,
+  ): string;
+
+  /** Shallow assignment of top-level keys, matching PostgreSQL's `jsonb || jsonb`. */
+  protected abstract jsonSet(
+    ctx: QueryContext,
+    expr: string,
+    set: Record<string, unknown>,
+    field?: FieldOptions,
+  ): string;
+
+  /** Append one value per array key, creating the array when the key is absent. */
+  protected abstract jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string;
+
+  /** Remove object keys. */
+  protected abstract jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string;
 
   getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
     const { value, prefix = '', escapedPrefix, autoPrefixAlias } = opts;
@@ -1517,7 +1620,8 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
 
     operators.forEach((op, index) => {
       if (index > 0) ctx.append(' AND ');
-      const sql = this.buildJsonFieldCondition(ctx, (f) => accessor(this.isJsonbOp(op)), jsonPath, op, value[op]);
+      const asJson = this.isJsonbOp(op, value[op]);
+      const sql = this.buildJsonFieldCondition(ctx, () => accessor(asJson), jsonPath, op, value[op], asJson);
       if (sql) {
         ctx.append(sql);
       }
@@ -1538,7 +1642,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     let expr = escapedColumn;
     for (let i = 0; i < segments.length; i++) {
       const op = i === segments.length - 1 ? '->>' : '->';
-      expr = `(${expr}${op}'${this.escapeJsonKey(segments[i])}')`;
+      expr = `(${expr}${op}'${escapeSingleQuotes(segments[i])}')`;
     }
     return expr;
   }
@@ -1547,7 +1651,7 @@ export abstract class AbstractSqlDialect extends AbstractDialect implements Quer
     const segments = jsonPath.split('.');
     let expr = escapedColumn;
     for (const segment of segments) {
-      expr = `(${expr}->'${this.escapeJsonKey(segment)}')`;
+      expr = `(${expr}->'${escapeSingleQuotes(segment)}')`;
     }
     return expr;
   }

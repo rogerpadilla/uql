@@ -90,7 +90,7 @@ describe('CockroachDialect', () => {
       $where: { $text: { $fields: ['name', 'description'], $value: 'some text' } },
     });
     expect(ctx.sql).toBe(
-      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ to_tsquery($1)',
+      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ websearch_to_tsquery($1)',
     );
     expect(ctx.values).toEqual(['some text']);
   });

@@ -1,6 +1,8 @@
 import type { IndexType } from '../schema/types.js';
-import type { FilterMeta, FilterOptions, QueryRaw, VectorDistance } from './query.js';
-import type { Json, Scalar, Type } from './utility.js';
+import type { FilterMeta, FilterOptions } from './query.js';
+import type { QueryRaw } from './queryRaw.js';
+import type { Json, Scalar, Type, Unpacked } from './utility.js';
+import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /**
  * Allow to customize the name of the property that identifies an entity
@@ -40,12 +42,10 @@ type IsJson<T> = '__json' extends keyof T ? true : false;
 type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
 
 /**
- * The `Json` payload of a field value `V`: both `Json<T>` and `Json<T>[]` yield `T`;
- * `never` when `V` is not a JSON field. Exactly one arm is ever non-`never`.
+ * The `Json` payload of a field value `V`: both `Json<T>` and `Json<T>[]` yield `T` (via
+ * `Unpacked`, a no-op for the non-array case); `never` when `V` is not a JSON field.
  */
-type JsonPayload<V> =
-  | UnwrapJson<NonNullable<V>>
-  | (NonNullable<V> extends readonly (infer U)[] ? UnwrapJson<NonNullable<U>> : never);
+type JsonPayload<V> = UnwrapJson<NonNullable<Unpacked<NonNullable<V>>>>;
 
 /**
  * Recursively derives dot-notation key paths from a JSON payload type. Handles every shape at
@@ -109,55 +109,68 @@ export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${in
   : unknown;
 
 /**
- * Extracts only the array-typed keys from `T`, mapping each to its element type.
- * Used by `$push` to provide type-safe append targets. Uses `readonly (infer U)[]` to match the
- * rest of the JSON machinery, so a `readonly` array payload keeps its `$push` target.
+ * Extracts only the array-typed keys from `T`, mapping each to its element type via `Unpacked`.
+ * Used by `$push` and `$pull` to provide type-safe element targets.
  */
-export type JsonPushFields<T> = {
-  [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K & string : never]?: NonNullable<
-    T[K]
-  > extends readonly (infer U)[]
-    ? U
-    : never;
+export type JsonArrayFields<T> = {
+  [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
 };
 
 /**
- * Operator shape accepted by JSON/JSONB fields in update payloads.
- * Provides type-safe `$merge`, `$unset`, and `$push` operations with IDE autocomplete.
+ * Operator shape accepted by JSON/JSONB fields in update payloads: `$set`/`$unset` target object
+ * keys, `$push`/`$pull` target array elements. All four are type-safe with IDE autocomplete.
+ *
+ * `$set` is shallow: it assigns the given top-level keys and leaves the rest untouched (it is not
+ * an RFC 7396 recursive merge). `$pull` removes *every* element equal to the given value.
+ *
+ * Operators are applied `$pull` -> `$set` -> `$push` -> `$unset`, so any combination - including
+ * `$pull` and `$push` on the same key - yields the same result on every dialect.
  *
  * @example
  * ```ts
- * // merge only - autocompletes keys from the JSON field's inner type
- * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } });
+ * // set only - autocompletes keys from the JSON field's inner type
+ * querier.updateOneById(Company, id, { kind: { $set: { public: 1 } } });
  * // unset only - autocompletes keys from the JSON field's inner type
  * querier.updateOneById(Company, id, { kind: { $unset: ['private'] } });
- * // push to array - autocompletes array keys, value matches element type
- * querier.updateOneById(Company, id, { data: { $push: { tags: 'new-tag' } } });
- * // combine all three
- * querier.updateOneById(Company, id, { kind: { $merge: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } });
+ * // append to / remove from an array - autocompletes array keys, value matches element type
+ * querier.updateOneById(Company, id, { kind: { $push: { tags: 'new-tag' } } });
+ * querier.updateOneById(Company, id, { kind: { $pull: { tags: 'stale-tag' } } });
+ * // combine
+ * querier.updateOneById(Company, id, { kind: { $set: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } });
  * ```
  */
 export type JsonUpdateOp<T = unknown> = {
-  readonly $merge?: Partial<T>;
-  readonly $unset?: (keyof T & string)[];
-  readonly $push?: JsonPushFields<T>;
+  readonly $set?: Partial<T>;
+  readonly $unset?: unknown extends T ? string[] : (keyof T & string)[];
+  readonly $push?: JsonArrayFields<T>;
+  readonly $pull?: JsonArrayFields<T>;
 };
 
 /**
- * Accepted value for a single field in an update payload.
- * - JSON/JSONB fields (detected via {@link UnwrapJson}, whose {@link IsJson} guard avoids the
- *   non-discriminating bare `Json<infer T>` match that would offer `$merge`/`$unset` on plain
- *   scalar fields) additionally accept `JsonUpdateOp<T>` for `$merge`/`$unset`/`$push` operations.
- * - All fields accept `QueryRaw` for raw SQL expressions (e.g. `raw('NOW()')`).
+ * The {@link JsonUpdateOp} a field accepts, or `never` where the operators do not apply:
+ * - Non-JSON fields. {@link UnwrapJson}'s {@link IsJson} guard avoids the non-discriminating bare
+ *   `Json<infer T>` match that would otherwise offer `$set`/`$unset` on plain scalar fields.
+ * - `Json<T[]>` payloads. All four operators address object keys of the JSON document, so on an
+ *   array column none is meaningful: PostgreSQL's `||` would concatenate arrays while
+ *   `JSON_SET(arr, '$.k', v)` is a no-op on MySQL and SQLite. Replace the whole value instead.
+ *   `Json<unknown>` stays permissive, since `unknown` is not an array.
  */
-type UpdateFieldValue<V> = [UnwrapJson<NonNullable<V>>] extends [never]
-  ? V | QueryRaw
-  : V | JsonUpdateOp<UnwrapJson<NonNullable<V>>> | QueryRaw;
+type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
+  ? never
+  : T extends readonly unknown[]
+    ? never
+    : JsonUpdateOp<T>;
+
+/**
+ * Accepted value for a single field in an update payload: the value itself, `QueryRaw` for a raw SQL
+ * expression (e.g. `raw('NOW()')`), and - for JSON object fields - the JSON operators.
+ */
+type UpdateFieldValue<V> = V | QueryRaw | JsonUpdateOpFor<V>;
 
 /**
  * Payload type for update operations.
  * Widens each field to additionally accept `QueryRaw` or `JsonUpdateOp` (for JSON fields),
- * providing IDE autocomplete for `$merge`/`$push` keys via `Json<infer T>`.
+ * providing IDE autocomplete for `$set`/`$push`/`$pull` keys via `Json<infer T>`.
  */
 export type UpdatePayload<E> = {
   [K in FieldKey<E>]?: UpdateFieldValue<E[K]>;
@@ -424,18 +437,21 @@ export type HookRegistration = {
 };
 
 /**
- * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
+ * Index type paired with the metric it needs. `distance` is required for {@link VectorIndexType}
+ * because omitting it changes the DDL semantics silently: MariaDB's `DISTANCE=` defaults to
+ * euclidean (so a cosine query full-scans instead of using the index) and pgvector has no default
+ * operator class. MongoDB's `vectorSearch` is excluded - its generator emits no metric at all, so
+ * requiring one would demand a value that is dropped.
+ *
+ * The non-vector arm forbids `distance` (rather than just omitting it) because `VectorIndexOptions`
+ * - intersected in below by {@link EntityIndexMeta} - already declares `distance` as optional, for
+ * the sake of the migration/introspection schema types that reuse it without this discriminated
+ * `type`/`distance` pairing. Without the explicit `never` here, that optional `distance` would
+ * survive the intersection and silently typecheck `{ type: 'btree', distance: 'cosine' }`.
  */
-export type VectorIndexOptions = {
-  /** Distance metric for vector indexes - maps to operator class. */
-  distance?: VectorDistance;
-  /** HNSW: max connections per node. */
-  m?: number;
-  /** HNSW: construction search depth. */
-  efConstruction?: number;
-  /** IVFFlat: number of inverted lists. */
-  lists?: number;
-};
+export type IndexTypeOptions =
+  | { type: VectorIndexType; distance: VectorDistance }
+  | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
 
 /**
  * Index metadata from @Index decorator.
@@ -447,11 +463,10 @@ export type EntityIndexMeta = {
   name?: string;
   /** Whether index is unique; omit or `false` for a non-unique index (default). */
   unique?: boolean;
-  /** Index type */
-  type?: IndexType;
   /** Partial index condition (WHERE clause) */
   where?: string;
-} & VectorIndexOptions;
+} & VectorIndexOptions &
+  IndexTypeOptions;
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;

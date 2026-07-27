@@ -1,21 +1,11 @@
 import type { Db } from 'mongodb';
 import type { AbstractSqlDialect } from '../dialect/index.js';
+import type { SqlDialectName } from './dialect.js';
 import type { HookEvent, IdValue, UpdatePayload } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type {
-  Query,
-  QueryAggMap,
-  QueryAggregate,
-  QueryAggregateResult,
-  QueryConflictPaths,
-  QueryGroupMap,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  QueryUpdateResult,
-  SqlDialectName,
-} from './query.js';
+import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -30,9 +20,6 @@ export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable
 export type TransactionOptions = {
   readonly isolationLevel?: IsolationLevel;
 };
-
-// Re-export SqlDialect for backwards compatibility
-export type { SqlDialectName };
 
 export type DialectName = SqlDialectName | 'mongodb';
 

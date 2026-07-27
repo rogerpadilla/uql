@@ -18,7 +18,8 @@ export function clone<T>(value: T): T {
   return { ...value };
 }
 
-export function hasKeys(obj: unknown): boolean {
+/** Whether `obj` has at least one enumerable key. Narrows away `undefined`/`null` for callers. */
+export function hasKeys<T>(obj: T): obj is NonNullable<T> {
   if (typeof obj !== 'object' || obj === null) return false;
   for (const _ in obj) return true;
   return false;
@@ -42,6 +43,27 @@ export function someKey(obj: object, pred: (key: string) => boolean): boolean {
     if (pred(key)) return true;
   }
   return false;
+}
+
+/** Whether any enumerable value of `obj` satisfies `pred`, short-circuiting like {@link someKey}. */
+export function someValue(obj: object, pred: (value: unknown) => boolean): boolean {
+  return someKey(obj, (key) => pred((obj as Record<string, unknown>)[key]));
+}
+
+const isOperatorKey = (key: string) => key.startsWith('$');
+
+/**
+ * Whether `value` is a non-empty object whose keys are query/update operators (`$eq`, `$push`, ...).
+ * The single source of this test: the SQL dialects, the MongoDB dialect and the `$elemMatch` walker
+ * all classify operator objects with it, and they used to disagree about `{}`.
+ */
+export function isOperatorObject(value: unknown): value is Record<string, unknown> {
+  return hasKeys(value) && !Array.isArray(value) && someKey(value, isOperatorKey);
+}
+
+/** Whether every key of the non-empty object `value` is an operator (no plain field names mixed in). */
+export function isOperatorOnlyObject(value: unknown): value is Record<string, unknown> {
+  return hasKeys(value) && !Array.isArray(value) && !someKey(value, (key) => !isOperatorKey(key));
 }
 
 export function getKeys<T extends object>(obj: T): (keyof T & string)[] {

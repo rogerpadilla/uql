@@ -4,7 +4,6 @@ import {
   type EntityMeta,
   type FieldOptions,
   type JsonColumnType,
-  type JsonUpdateOp,
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
@@ -16,10 +15,10 @@ import {
   type Type,
   type VectorDistance,
 } from '../type/index.js';
-import { escapeAnsiSqlLiteral } from '../util/ansiSqlLiteral.js';
-import { hasKeys, isJsonType, someKey } from '../util/index.js';
+import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
+import { isJsonType } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
+import { jsonSetTarget } from './jsonSql.js';
 
 /**
  * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
@@ -112,7 +111,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
   }
 
-  /** Full-text search: both dialects support `to_tsvector(...) @@ to_tsquery(...)`. */
+  /**
+   * Full-text search: `to_tsvector(...) @@ websearch_to_tsquery(...)`. `websearch_to_tsquery` takes
+   * free-form user input (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike
+   * `to_tsquery`, which rejects anything unparseable - including a plain two-word search.
+   */
   override compare<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -130,7 +133,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
           return this.escapeId(columnName);
         })
         .join(` || ' ' || `);
-      ctx.append(`to_tsvector(${fields}) @@ to_tsquery(`);
+      // The config is bound once and its numbered placeholder reused by both calls.
+      const config = search.$config ? `${this.addValue(ctx.values, search.$config)}::regconfig, ` : '';
+      ctx.append(`to_tsvector(${config}${fields}) @@ websearch_to_tsquery(${config}`);
       ctx.addValue(search.$value);
       ctx.append(')');
       return;
@@ -149,32 +154,20 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return tmpCtx.sql;
   }
 
-  protected override jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
-    // Primitive element match: keys are operators (e.g. { $startsWith: 'ad' } on a string[])
-    const isPrimitiveElement = someKey(match, (k) => k.startsWith('$'));
-    if (isPrimitiveElement) {
-      const conditions = Object.entries(match).map(([op, opVal]) =>
-        this.buildJsonFieldCondition(ctx, () => 'elem', '', op, opVal),
-      );
-      return `EXISTS (SELECT 1 FROM jsonb_array_elements_text(${jsonField}) AS elem WHERE ${conditions.join(' AND ')})`;
+  /**
+   * Object elements stay `jsonb` so each field can pick `->` or `->>`. Scalar elements are exploded
+   * as text unless they are compared as JSON, where `_text` would yield `text = jsonb`.
+   */
+  protected override jsonElemFrom(jsonField: string, fields: readonly string[], asJson = false): string {
+    const fn = fields.length || asJson ? 'jsonb_array_elements' : 'jsonb_array_elements_text';
+    return `${fn}(${jsonField}) AS elem`;
+  }
+
+  protected override jsonElemRef(field?: string, asJson = false): string {
+    if (field === undefined) {
+      return 'elem';
     }
-
-    const hasOperators = Object.values(match).some(
-      (v) => v && typeof v === 'object' && !Array.isArray(v) && someKey(v, (k) => k.startsWith('$')),
-    );
-
-    if (!hasOperators) {
-      return `${jsonField} @> ${this.jsonVal(ctx, [match])}`;
-    }
-
-    const conditions = buildElemMatchConditions(
-      match,
-      (field, op, opVal) =>
-        this.buildJsonFieldCondition(ctx, (f) => `elem->>'${this.escapeJsonKey(f)}'`, field, op, opVal),
-      (field, val) => `elem->>'${this.escapeJsonKey(field)}' = ${this.addValue(ctx.values, val)}`,
-    );
-
-    return `EXISTS (SELECT 1 FROM jsonb_array_elements(${jsonField}) AS elem WHERE ${conditions.join(' AND ')})`;
+    return asJson ? `elem->'${escapeSingleQuotes(field)}'` : `elem->>'${escapeSingleQuotes(field)}'`;
   }
 
   protected override get regexpOp(): string {
@@ -216,27 +209,47 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     super.formatPersistableValue(ctx, field, value);
   }
 
-  protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
-    let expr = escapedCol;
-    if (hasKeys(value.$merge)) {
-      expr = `COALESCE(${escapedCol}, '{}'::jsonb) || ${this.jsonVal(ctx, value.$merge)}`;
-    }
-    if (hasKeys(value.$push)) {
-      const push = value.$push as Record<string, unknown>;
-      for (const [key, v] of Object.entries(push)) {
-        const currentExpr = expr;
-        const ph = this.jsonVal(ctx, v);
-        expr = `jsonb_set(${currentExpr}, '{${this.escapeJsonKey(key)}}', COALESCE((${currentExpr})->'${this.escapeJsonKey(
-          key,
-        )}', '[]'::jsonb) || jsonb_build_array(${ph}))`;
-      }
-    }
-    if (value.$unset?.length) {
-      for (const key of value.$unset) {
-        expr = `(${expr}) - '${this.escapeJsonKey(key)}'`;
-      }
-    }
-    ctx.append(`${escapedCol} = ${expr}`);
+  /**
+   * `create_if_missing => false` keeps an absent key (and a NULL column) untouched; `WITH
+   * ORDINALITY` keeps the surviving elements in their original order.
+   */
+  protected override jsonPullKey(
+    ctx: QueryContext,
+    expr: string,
+    escapedCol: string,
+    key: string,
+    value: unknown,
+  ): string {
+    const escapedKey = escapeSingleQuotes(key);
+    const kept = `SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> ${this.jsonVal(ctx, value)}`;
+    return `jsonb_set(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
+  }
+
+  protected override jsonSet(
+    ctx: QueryContext,
+    expr: string,
+    set: Record<string, unknown>,
+    field?: FieldOptions,
+  ): string {
+    return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${this.jsonVal(ctx, set)}`;
+  }
+
+  /** The only fragment that references `expr` twice - safe here because placeholders are numbered. */
+  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
+    return Object.entries(push).reduce((acc, [key, value]) => {
+      const escapedKey = escapeSingleQuotes(key);
+      const ph = this.jsonVal(ctx, value);
+      return `jsonb_set(${acc}, '{${escapedKey}}', COALESCE((${acc})->'${escapedKey}', '[]'::jsonb) || jsonb_build_array(${ph}))`;
+    }, expr);
+  }
+
+  protected override jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string {
+    return `(${expr}) - ${this.addValue(ctx.values, [...unset])}::text[]`;
+  }
+
+  /** Postgres binds JSON with a numbered placeholder and an explicit cast, per driver capability. */
+  protected override jsonScalarParam(ctx: QueryContext, value: unknown): string {
+    return this.jsonVal(ctx, value);
   }
 
   /**

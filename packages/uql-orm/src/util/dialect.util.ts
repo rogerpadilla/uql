@@ -6,6 +6,7 @@ import {
   type FieldOptions,
   type FilterOnMissing,
   type IdValue,
+  type JsonUpdateOp,
   type MongoId,
   type OnFieldCallback,
   type QueryAggMap,
@@ -200,6 +201,19 @@ export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap
 /** Type guard: checks whether a sort value is a vector similarity search. */
 export function isVectorSearch(value: unknown): value is QueryVectorSearch {
   return value !== null && typeof value === 'object' && '$vector' in (value as Record<string, unknown>);
+}
+
+/** `satisfies` ties this to {@link JsonUpdateOp}, so renaming an operator breaks it at compile time. */
+const JSON_UPDATE_OPS: readonly string[] = [
+  '$set',
+  '$unset',
+  '$push',
+  '$pull',
+] as const satisfies readonly (keyof JsonUpdateOp)[];
+
+/** Type guard: checks whether an update payload value is a JSON operator object. */
+export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
+  return value !== null && typeof value === 'object' && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
 }
 
 export function augmentWhere<E>(

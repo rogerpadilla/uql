@@ -249,7 +249,8 @@ export class MongodbQuerier extends AbstractQuerier {
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
     const where = this.dialect.where(entity, qm.$where, opts);
-    const update: UpdateFilter<E> = { $set: persistable };
+    // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
+    const update = this.dialect.getUpdateFilter<E>(persistable);
 
     const { matchedCount } = await this.execute((session) =>
       this.collection(entity).updateMany(where, update, {
