@@ -10,6 +10,23 @@ import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   protected abstract jsonCastText(operand: string): string;
 
+  shouldHandleDate() {
+    const values: unknown[] = [];
+    expect(this.dialect.addValue(values, new Date())).toBe('?');
+    expect(values).toHaveLength(1);
+    expect(values[0]).toBeInstanceOf(Date);
+  }
+
+  shouldEscape() {
+    expect(this.dialect.escape("va'lue")).toBe("'va\\'lue'");
+  }
+
+  shouldHandleOtherValues() {
+    const values: unknown[] = [];
+    expect(this.dialect.addValue(values, 123)).toBe('?');
+    expect(values[0]).toBe(123);
+  }
+
   shouldFind$elemMatch() {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, JsonRecord, {
@@ -79,7 +96,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS _uql_elem_1 WHERE _uql_elem_1.`city` LIKE ?)",
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -91,8 +108,8 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain(`NOT (${this.jsonCastText('jt.`active`')} <=> ${this.jsonCastText('?')})`);
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`price` AS DECIMAL) >= ?');
+    expect(ctx.sql).toContain(`NOT (${this.jsonCastText('_uql_elem_1.`active`')} <=> ${this.jsonCastText('?')})`);
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -121,14 +138,14 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
         },
       },
     });
-    expect(ctx.sql).toContain('jt.`a` = ?');
-    expect(ctx.sql).toContain('CAST(jt.`b` AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(jt.`c` AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(jt.`d` AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('jt.`e` LIKE ?');
-    expect(ctx.sql).toContain('jt.`f` LIKE ?');
-    expect(ctx.sql).toContain('jt.`m` REGEXP ?');
-    expect(ctx.sql).toContain('CAST(jt.`n` AS DECIMAL) IN (');
-    expect(ctx.sql).toContain('CAST(jt.`o` AS DECIMAL) NOT IN (');
+    expect(ctx.sql).toContain('_uql_elem_1.`a` = ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`b` AS DECIMAL) > ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`c` AS DECIMAL) < ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`d` AS DECIMAL) <= ?');
+    expect(ctx.sql).toContain('_uql_elem_1.`e` LIKE ?');
+    expect(ctx.sql).toContain('_uql_elem_1.`f` LIKE ?');
+    expect(ctx.sql).toContain('_uql_elem_1.`m` REGEXP ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`n` AS DECIMAL) IN (');
+    expect(ctx.sql).toContain('CAST(_uql_elem_1.`o` AS DECIMAL) NOT IN (');
   }
 }

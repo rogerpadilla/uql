@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { UqlSecurityError, withContext } from '../context/context.js';
+import { Entity, Field, Filter, Id, ManyToOne } from '../entity/index.js';
 import {
   Company,
   InventoryAdjustment,
@@ -12,7 +13,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { QueryContext, UpdatePayload } from '../type/index.js';
+import type { QueryContext, Type, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -23,6 +24,37 @@ class SoftDeleteRaw {
   id?: number;
   @Field({ softDelete: () => raw(() => 'NOW()') })
   deletedAt?: Date;
+}
+
+declare module '../type/index.js' {
+  interface UqlContext {
+    secureTenantId?: number;
+  }
+}
+
+/** The joined (m1) side of a `security: true` filter - the regression case for the JOIN/populate gap. */
+@Filter('tenant', {
+  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  security: true,
+})
+@Entity()
+class SecureRelated {
+  @Id()
+  id?: number;
+  @Field()
+  tenantId?: number;
+  @Field()
+  name?: string;
+}
+
+@Entity()
+class SecureParent {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureRelated })
+  relatedId?: number;
+  @ManyToOne()
+  related?: SecureRelated;
 }
 
 export type JsonUpdateCaseName =
@@ -82,6 +114,25 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     }
   }
 
+  /** The case-insensitive LIKE operator - Postgres has a native `ILIKE`; everyone else's `LIKE` is already case-insensitive by default collation. */
+  protected likeOp(): string {
+    switch (this.dialect.dialectName) {
+      case 'postgres':
+      case 'cockroachdb':
+        return 'ILIKE';
+      default:
+        return 'LIKE';
+    }
+  }
+
+  /**
+   * Suffix appended after INSERT/UPSERT statements that fetch the generated id via `RETURNING`
+   * (MariaDB, SQLite). Empty for dialects that read the id off the driver's own insert-id header instead.
+   */
+  protected returningClause<E>(_entity: Type<E>): string {
+    return '';
+  }
+
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('`');
   }
@@ -114,7 +165,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)');
+    expect(sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)' +
+        this.returningClause(User),
+    );
     expect(values).toEqual([
       'Some name 1',
       'someemail1@example.com',
@@ -141,7 +195,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?)',
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?)' +
+        this.returningClause(User),
     );
     expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
   }
@@ -154,7 +209,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)');
+    expect(res.sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)' + this.returningClause(User),
+    );
     expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
 
     res = this.exec((ctx) =>
@@ -163,7 +220,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)');
+    expect(res.sql).toBe(
+      'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)' +
+        this.returningClause(InventoryAdjustment),
+    );
     expect(res.values[0]).toBeInstanceOf(Date);
     expect(res.values[1]).toBe(123);
   }
@@ -175,7 +235,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         createdAt: 123,
       }),
     );
-    expect(sql).toMatch(/^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\)$/);
+    expect(sql).toBe(
+      'INSERT INTO `TaxCategory` (`name`, `createdAt`, `pk`) VALUES (?, ?, ?)' + this.returningClause(TaxCategory),
+    );
     expect(values[0]).toBe('Some Name');
     expect(values[1]).toBe(123);
     expect(values[2]).toMatch(/.+/);
@@ -290,8 +352,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\)$/,
+    expect(sql).toBe(
+      'INSERT INTO `TaxCategory` (`name`, `createdAt`, `pk`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?), (?, ?, ?)' +
+        this.returningClause(TaxCategory),
     );
     expect(values[0]).toBe('Some Name A');
     expect(values[2]).toMatch(/.+/);
@@ -460,6 +523,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFindWithPopulateOnly() {
+    const e = this.dialect.escapeIdChar;
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $populate: {
@@ -470,8 +534,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { id: 123 },
       }),
     );
-    expect(res.sql).toContain('LEFT JOIN `user_profile` `profile` ON `profile`.`creatorId` = `User`.`id`');
-    expect(res.sql).toContain('`profile`.`image` `profile.picture`');
+    expect(res.sql).toContain(
+      `LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`,
+    );
+    expect(res.sql).toContain(`${e}profile${e}.${e}image${e} ${e}profile.picture${e}`);
     expect(res.values).toEqual([123]);
   }
 
@@ -499,7 +565,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         createdAt: 1,
       } as any),
     );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?)');
+    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?)' + this.returningClause(User));
     expect(res.values).toEqual(['Some Name', 1]);
 
     res = this.exec((ctx) =>
@@ -955,8 +1021,39 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
+  }
+
+  /**
+   * Regression for the JOIN/populate gap: a `security: true` filter on a joined (m1) relation
+   * must apply even to a bare `$populate: { related: true }` with no explicit `$where` on it.
+   */
+  shouldApplySecurityFilterToJoinedPopulateWithoutExplicitWhere() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = withContext({ secureTenantId: 5 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureParent, {
+          $select: { id: true },
+          $populate: { related: { $select: { id: true, name: true } } },
+        }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}SecureParent${e}.${e}id${e}, ${e}related${e}.${e}id${e} ${e}related.id${e}, ${e}related${e}.${e}name${e} ${e}related.name${e} FROM ${e}SecureParent${e} LEFT JOIN ${e}SecureRelated${e} ${e}related${e} ON ${e}related${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}related${e}.${e}tenantId${e} = ${this.ph(1)}`,
+    );
+  }
+
+  /** Same shape as above, but with no ambient context: the security filter must fail closed. */
+  shouldFailClosedForJoinedPopulateWhenSecurityContextIsMissing() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureParent, {
+          $select: { id: true },
+          $populate: { related: { $select: { id: true, name: true } } },
+        }),
+      ),
+    ).toThrow(UqlSecurityError);
   }
 
   shouldFind$selectWithAllFieldsAndSpecificFieldsAndWhere() {
@@ -1024,7 +1121,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
   }
 
@@ -1047,7 +1144,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
 
     res = this.exec((ctx) =>
@@ -1067,7 +1164,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
 
     res = this.exec((ctx) =>
@@ -1096,7 +1193,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}ItemAdjustment${e}.${e}id${e}, ${e}ItemAdjustment${e}.${e}buyPrice${e}, ${e}ItemAdjustment${e}.${e}number${e}, ${e}item${e}.${e}id${e} ${e}item.id${e}, ${e}item${e}.${e}name${e} ${e}item.name${e}, ${e}item.measureUnit${e}.${e}id${e} ${e}item.measureUnit.id${e}, ${e}item.measureUnit${e}.${e}name${e} ${e}item.measureUnit.name${e}, ${e}item.measureUnit.category${e}.${e}id${e} ${e}item.measureUnit.category.id${e}, ${e}item.measureUnit.category${e}.${e}name${e} ${e}item.measureUnit.category.name${e} FROM ${e}ItemAdjustment${e} INNER JOIN ${e}Item${e} ${e}item${e} ON ${e}item${e}.${e}id${e} = ${e}ItemAdjustment${e}.${e}itemId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}item.measureUnit${e} ON ${e}item.measureUnit${e}.${e}id${e} = ${e}item${e}.${e}measureUnitId${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}item.measureUnit.category${e} ON ${e}item.measureUnit.category${e}.${e}id${e} = ${e}item.measureUnit${e}.${e}categoryId${e} LIMIT 100`,
+      `SELECT ${e}ItemAdjustment${e}.${e}id${e}, ${e}ItemAdjustment${e}.${e}buyPrice${e}, ${e}ItemAdjustment${e}.${e}number${e}, ${e}item${e}.${e}id${e} ${e}item.id${e}, ${e}item${e}.${e}name${e} ${e}item.name${e}, ${e}item.measureUnit${e}.${e}id${e} ${e}item.measureUnit.id${e}, ${e}item.measureUnit${e}.${e}name${e} ${e}item.measureUnit.name${e}, ${e}item.measureUnit.category${e}.${e}id${e} ${e}item.measureUnit.category.id${e}, ${e}item.measureUnit.category${e}.${e}name${e} ${e}item.measureUnit.category.name${e} FROM ${e}ItemAdjustment${e} INNER JOIN ${e}Item${e} ${e}item${e} ON ${e}item${e}.${e}id${e} = ${e}ItemAdjustment${e}.${e}itemId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}item.measureUnit${e} ON ${e}item.measureUnit${e}.${e}id${e} = ${e}item${e}.${e}measureUnitId${e} AND ${e}item.measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}item.measureUnit.category${e} ON ${e}item.measureUnit.category${e}.${e}id${e} = ${e}item.measureUnit${e}.${e}categoryId${e} AND ${e}item.measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
   }
 
@@ -1329,6 +1426,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$istartsWith() {
+    const e = this.dialect.escapeIdChar;
+    const like = this.likeOp();
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1338,7 +1437,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 50,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+    );
     expect(res.values).toEqual(['some%']);
 
     res = this.exec((ctx) =>
@@ -1351,7 +1452,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`', 2)}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['some%', 'Something']);
   }
@@ -1388,6 +1489,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$iendsWith() {
+    const e = this.dialect.escapeIdChar;
+    const like = this.likeOp();
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1397,7 +1500,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 50,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+    );
     expect(res.values).toEqual(['%some']);
 
     res = this.exec((ctx) =>
@@ -1410,7 +1515,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`', 2)}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%some', 'Something']);
   }
@@ -1447,6 +1552,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$iincludes() {
+    const e = this.dialect.escapeIdChar;
+    const like = this.likeOp();
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1456,7 +1563,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 50,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+    );
     expect(res.values).toEqual(['%some%']);
 
     res = this.exec((ctx) =>
@@ -1469,7 +1578,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`', 2)}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['%some%', 'Something']);
   }
@@ -1506,6 +1615,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$ilike() {
+    const e = this.dialect.escapeIdChar;
+    const like = this.likeOp();
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1515,7 +1626,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 50,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` LIKE ? ORDER BY `name`, `id` DESC LIMIT 50 OFFSET 0');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+    );
     expect(res.values).toEqual(['some']);
 
     res = this.exec((ctx) =>
@@ -1528,7 +1641,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT \`id\` FROM \`User\` WHERE (\`name\` LIKE ? AND ${this.neSql('`name`', 2)}) ORDER BY \`name\`, \`id\` DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
     expect(res.values).toEqual(['some', 'Something']);
   }
@@ -1927,5 +2040,26 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(() => this.exec((ctx) => this.dialect.aggregate(ctx, User, {}))).toThrow(
       'aggregate requires at least one $group column or $agg function',
     );
+  }
+
+  /**
+   * Regression: `jsonElemFrom`/`jsonElemRef` used to hardcode one fixed alias for the derived table
+   * a JSON array explodes into. A nested `$elemMatch` (matching an array-of-arrays, reachable today
+   * only by bypassing the type system) recurses into the same hook a second time within one query -
+   * confirmed live against SQLite and MySQL that reusing one literal alias at both nesting depths
+   * let the inner occurrence shadow the outer one it needed to correlate against, silently returning
+   * zero rows instead of the matching ones. Each nesting level must get its own alias, generated
+   * from `ctx.nextAlias`, so this only asserts they're distinct - not full result correctness, which
+   * is a per-dialect SQL-generation concern already covered where reachable via the typed API.
+   */
+  shouldGenerateDistinctAliasesForNestedElemMatch() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { kind: { $elemMatch: { $elemMatch: { $eq: 5 } } } } as any,
+      }),
+    );
+    const aliases = new Set(sql.match(/_uql_elem_\d+/g));
+    expect(aliases.size).toBe(2);
   }
 }

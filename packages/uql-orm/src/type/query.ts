@@ -121,11 +121,6 @@ export type FilterOptions<E = unknown> = {
 };
 
 /**
- * Resolved filter metadata stored on `EntityMeta.filters`.
- */
-export type FilterMeta<E = unknown> = FilterOptions<E>;
-
-/**
  * direction for the sort.
  */
 export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';

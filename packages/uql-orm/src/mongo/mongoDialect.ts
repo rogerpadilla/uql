@@ -287,6 +287,10 @@ export class MongoDialect extends AbstractDialect {
 
       const relEntity = relOpts.entity!();
       const relMeta = getMeta(relEntity);
+      // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
+      // filters (in particular `security: true` ones) must apply even to a bare
+      // `$populate: { rel: true }`, exactly like the SQL dialects' JOIN ON-clause filters.
+      const relationFilter = this.where(relEntity, {}, opts);
 
       if (relOpts.cardinality === 'm1') {
         const localField = meta.fields[relOpts.references![0].local];
@@ -295,17 +299,19 @@ export class MongoDialect extends AbstractDialect {
             from: this.resolveTableName(relEntity, relMeta),
             localField: this.resolveColumnName(relOpts.references![0].local, localField!),
             foreignField: '_id',
+            // MongoDB runs `pipeline` after its own localField/foreignField match, so the related
+            // entity's filters layer on top of the join condition without a `let`/`$expr` rewrite.
+            ...(hasKeys(relationFilter) ? { pipeline: [{ $match: relationFilter }] } : {}),
             as: relKey,
           },
         });
       } else {
         const foreignField = relMeta.fields[relOpts.references![0].foreign];
         const foreignFieldName = this.resolveColumnName(relOpts.references![0].foreign, foreignField!);
-        const referenceWhere = this.where(relEntity, where);
         const referenceSort = this.sort(relEntity, q.$sort);
         const _id = MongoDialect.ID_KEY;
         const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
-          $match: { [foreignFieldName]: referenceWhere[_id] },
+          $match: { [foreignFieldName]: where[_id], ...relationFilter },
         };
         if (hasKeys(referenceSort)) {
           referencePipelineEntry.$sort = referenceSort;
@@ -636,13 +642,13 @@ export class MongoDialect extends AbstractDialect {
    */
   buildVectorSearchStage<E extends Document>(
     entity: Type<E>,
-    meta: EntityMeta<E>,
     key: string,
     search: QueryVectorSearch,
     where: QueryWhere<E> | undefined,
     limit: number,
     opts?: QueryOptions,
   ): Record<string, unknown> {
+    const meta = getMeta(entity);
     const field = meta.fields[key];
     if (!field) {
       throw new TypeError(`Field '${key}' not found in entity '${meta.name}'`);

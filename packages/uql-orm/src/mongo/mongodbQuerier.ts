@@ -56,7 +56,7 @@ export class MongodbQuerier extends AbstractQuerier {
     let documents: E[];
 
     if (vectorSort) {
-      const pipeline = this.buildVectorPipeline(entity, meta, q, vectorSort, opts);
+      const pipeline = this.buildVectorPipeline(entity, q, vectorSort, opts);
       documents = await this.runPipeline(entity, meta, pipeline);
     } else {
       const relationSummary = getRelationRequestSummary(meta, q.$populate);
@@ -150,7 +150,6 @@ export class MongodbQuerier extends AbstractQuerier {
    */
   private buildVectorPipeline<E extends Document>(
     entity: Type<E>,
-    meta: EntityMeta<E>,
     q: Query<E>,
     vectorSort: ExtractedVectorSort<E>,
     opts?: QueryOptions,
@@ -160,7 +159,6 @@ export class MongodbQuerier extends AbstractQuerier {
     pipeline.push(
       this.dialect.buildVectorSearchStage(
         entity,
-        meta,
         vectorSort.vectorKey,
         vectorSort.vectorSearch,
         q.$where,

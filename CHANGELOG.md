@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.20.1] - 2026-07-27
+
+### Fixes
+
+- **A `security: true` filter on a joined (m1/11) relation was skipped by `$populate` with no explicit `$where` on it, on every driver. ** Now we enforced unconditionally, same as an explicit `$where` already was.
+- **PostgreSQL/CockroachDB: `$size` misbound its value when it wasn't the first condition in `$where`.** `{ name: 'Acme', tags: { $size: 3 } }` reused placeholder `$1` for both conditions.
+- **PostgreSQL/CockroachDB: `upsertOne`/`upsertMany` bound the wrong value to the 2nd+ auto-filled `onUpdate` column omitted from the payload.**
+- **SQLite/MySQL/MariaDB: a nested `$elemMatch` on an array-of-arrays field could return zero rows instead of the matching ones** (only reachable by bypassing the type system - no typed query is affected).
+
 ## [0.20.0] - 2026-07-26
 
 ### `$merge` renamed to `$set` (breaking)

@@ -75,13 +75,6 @@ export interface Querier extends UniversalQuerier {
    */
   insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(
-    entity: Type<E>,
-    id: IdValue<E>,
-    payload: UpdatePayload<E>,
-    opts?: QueryOptions,
-  ): Promise<number>;
-
   updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
@@ -108,11 +101,7 @@ export interface Querier extends UniversalQuerier {
     payload: E[],
   ): Promise<QueryUpdateResult>;
 
-  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
-
   saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
-
-  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).

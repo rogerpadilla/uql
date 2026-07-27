@@ -15,10 +15,10 @@ import {
   type Type,
   type VectorDistance,
 } from '../type/index.js';
-import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
+import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import { isJsonType } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { jsonSetTarget } from './jsonSql.js';
+import { JSON_PULL_ALIAS, jsonSetTarget } from './jsonSql.js';
 
 /**
  * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
@@ -90,11 +90,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * Shared `INSERT ... ON CONFLICT (...) DO UPDATE/NOTHING RETURNING ...` builder, mirroring
-   * {@link AbstractSqlDialect.onConflictUpsert}'s "assemble everything, don't hand back fragments"
-   * shape for the `$N`-placeholder Postgres-wire dialects. `extraReturning` lets {@link PostgresDialect}
-   * append `(xmax = 0) AS "_created"` to detect insert-vs-update; CockroachDB has no `xmax`/`ctid`
-   * system columns, so it uses the default (empty) and `created` stays `undefined` in the result.
+   * Shared `INSERT ... ON CONFLICT (...) DO UPDATE/NOTHING RETURNING ...` builder, assembling
+   * everything upfront rather than handing back fragments, for the `$N`-placeholder Postgres-wire
+   * dialects. `extraReturning` lets {@link PostgresDialect} append `(xmax = 0) AS "_created"` to
+   * detect insert-vs-update; CockroachDB has no `xmax`/`ctid` system columns, so it uses the default
+   * (empty) and `created` stays `undefined` in the result.
    */
   protected buildUpsertOnConflict<E>(
     ctx: QueryContext,
@@ -148,26 +148,25 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    const tmpCtx = this.createContext();
-    this.buildSizeComparison(tmpCtx, () => tmpCtx.append(`jsonb_array_length(${jsonField})`), value);
-    ctx.pushValue(...tmpCtx.values);
-    return tmpCtx.sql;
+    return this.buildFragment(ctx, (fragmentCtx) =>
+      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`jsonb_array_length(${jsonField})`), value),
+    );
   }
 
   /**
    * Object elements stay `jsonb` so each field can pick `->` or `->>`. Scalar elements are exploded
    * as text unless they are compared as JSON, where `_text` would yield `text = jsonb`.
    */
-  protected override jsonElemFrom(jsonField: string, fields: readonly string[], asJson = false): string {
+  protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
     const fn = fields.length || asJson ? 'jsonb_array_elements' : 'jsonb_array_elements_text';
-    return `${fn}(${jsonField}) AS elem`;
+    return `${fn}(${jsonField}) AS ${alias}`;
   }
 
-  protected override jsonElemRef(field?: string, asJson = false): string {
+  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
     if (field === undefined) {
-      return 'elem';
+      return alias;
     }
-    return asJson ? `elem->'${escapeSingleQuotes(field)}'` : `elem->>'${escapeSingleQuotes(field)}'`;
+    return asJson ? `${alias}->'${escapeSingleQuotes(field)}'` : `${alias}->>'${escapeSingleQuotes(field)}'`;
   }
 
   protected override get regexpOp(): string {
@@ -221,7 +220,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     value: unknown,
   ): string {
     const escapedKey = escapeSingleQuotes(key);
-    const kept = `SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> ${this.jsonVal(ctx, value)}`;
+    const kept = `SELECT jsonb_agg(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM jsonb_array_elements(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
     return `jsonb_set(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
   }
 
@@ -262,10 +261,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const json = JSON.stringify(value);
     const ph = this.addValue(ctx.values, json);
     return this.features.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
-  }
-
-  override escape(value: unknown): string {
-    return escapeAnsiSqlLiteral(value);
   }
 
   /**

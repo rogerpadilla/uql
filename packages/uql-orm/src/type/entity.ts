@@ -1,5 +1,5 @@
 import type { IndexType } from '../schema/types.js';
-import type { FilterMeta, FilterOptions } from './query.js';
+import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
@@ -474,7 +474,7 @@ export type EntityMeta<E> = {
   id: IdKey<E>;
   softDelete?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
-  filters?: Record<string, FilterMeta<E>>;
+  filters?: Record<string, FilterOptions<E>>;
   fields: {
     [K in FieldKey<E>]?: FieldOptions;
   } & { [key: string]: FieldOptions | undefined };

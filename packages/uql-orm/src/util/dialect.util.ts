@@ -59,10 +59,8 @@ function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKe
  * any record (in first-seen order), plus every `onInsert` field. Records missing one of these
  * columns insert its database default.
  *
- * The column list is seeded from the first record, then extended only by records that introduce a
- * new column. A homogeneous batch (every record the same shape, the common case) is detected with
- * {@link someKey}, which walks a record without allocating a key array, so only the rare record that
- * actually adds a column pays for a full rescan.
+ * The column list is seeded from the first record, then extended by every other record's
+ * not-yet-seen columns - a no-op scan for a homogeneous batch (every record the same shape).
  *
  * `onInsert` fields are always included so the column set is stable whether or not the caller
  * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
@@ -71,17 +69,8 @@ function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKe
 export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: E[]): FieldKey<E>[] {
   const seen = new Set<FieldKey<E>>();
   const keys: FieldKey<E>[] = [];
-  addInsertFieldKeys(meta, payloads[0], seen, keys);
-  for (let i = 1; i < payloads.length; i++) {
-    const record = payloads[i]!;
-    if (
-      someKey(
-        record as object,
-        (key) => !seen.has(key as FieldKey<E>) && isInsertableField(meta, record, key as FieldKey<E>),
-      )
-    ) {
-      addInsertFieldKeys(meta, record, seen, keys);
-    }
+  for (const record of payloads) {
+    addInsertFieldKeys(meta, record, seen, keys);
   }
   for (const key of getKeys(meta.fields) as FieldKey<E>[]) {
     if (meta.fields[key]!.onInsert !== undefined && !seen.has(key)) {

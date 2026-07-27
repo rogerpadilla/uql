@@ -2,8 +2,9 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, InventoryAdjustment, ItemTag, TaxCategory, User } from '../test/index.js';
+import { Company, ItemTag } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
+import type { Type } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends MySqlFamilySpec {
@@ -13,6 +14,10 @@ export class MariaDialectSpec extends MySqlFamilySpec {
 
   protected override jsonCastText(operand: string): string {
     return `JSON_EXTRACT(${operand}, '$')`;
+  }
+
+  protected override returningClause<E>(entity: Type<E>): string {
+    return ' ' + this.dialect.returningId(entity);
   }
 
   shouldFilterByJsonDotNotation() {
@@ -72,11 +77,11 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, 1],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE NOT JSON_EQUALS(uql_pull.v, JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, 1],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE NOT JSON_EQUALS(uql_pull.v, JSON_EXTRACT(?, '$')))), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$')))), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, 1],
     },
     setPushCombined: {
@@ -92,23 +97,6 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, 1],
     },
   };
-
-  shouldHandleDate() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, new Date())).toBe('?');
-    expect(values).toHaveLength(1);
-    expect(values[0]).toBeInstanceOf(Date);
-  }
-
-  shouldEscape() {
-    expect(this.dialect.escape("va'lue")).toBe("'va\\'lue'");
-  }
-
-  shouldHandleOtherValues() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, 123)).toBe('?');
-    expect(values[0]).toBe(123);
-  }
 
   shouldUpsertWithNoUpdateFields() {
     const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, ItemTag, { id: true }, { id: 123 }));
@@ -240,199 +228,6 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       'SELECT `id`, VEC_DISTANCE_COSINE(`vec`, ?) AS `distance` FROM `VectorItem` ORDER BY `distance` LIMIT 10',
     );
     expect(values).toEqual(['[1,2,3]']);
-  }
-
-  override shouldInsertMany() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, [
-        {
-          name: 'Some name 1',
-          email: 'someemail1@example.com',
-          createdAt: 123,
-        },
-        {
-          name: 'Some name 2',
-          email: 'someemail2@example.com',
-          createdAt: 456,
-        },
-        {
-          name: 'Some name 3',
-          email: 'someemail3@example.com',
-          createdAt: 789,
-        },
-      ]),
-    );
-    expect(sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
-    );
-    expect(values).toEqual([
-      'Some name 1',
-      'someemail1@example.com',
-      123,
-      'Some name 2',
-      'someemail2@example.com',
-      456,
-      'Some name 3',
-      'someemail3@example.com',
-      789,
-    ]);
-  }
-
-  override shouldInsertManyWithHeterogeneousColumns() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, [
-        { id: 5, name: 'Some name 1', createdAt: 123 },
-        { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
-      ]),
-    );
-    expect(sql).toBe(
-      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?) RETURNING `id` `id`',
-    );
-    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
-  }
-
-  override shouldBeSecure() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true, something: true } as any,
-        $where: {
-          id: 1,
-          something: 1,
-        } as any,
-        $sort: {
-          id: 1,
-          something: 1,
-        } as any,
-      }),
-    );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
-    expect(res.values).toEqual([1, 1]);
-
-    res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        something: 'anything',
-        createdAt: 1,
-      } as any),
-    );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
-    expect(res.values).toEqual(['Some Name', 1]);
-
-    res = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        User,
-        {
-          $where: { something: 'anything' } as any,
-        },
-        {
-          name: 'Some Name',
-          something: 'anything',
-          updatedAt: 1,
-        } as any,
-      ),
-    );
-    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
-    expect(res.values).toEqual(['Some Name', 1, 'anything']);
-
-    res = this.exec((ctx) =>
-      this.dialect.delete(ctx, User, {
-        $where: { something: 'anything' } as any,
-      }),
-    );
-    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
-    expect(res.values).toEqual(['anything']);
-  }
-
-  override shouldUpsert() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.upsert(
-        ctx,
-        User,
-        { email: true },
-        {
-          name: 'Some Name',
-          email: 'someemail@example.com',
-          createdAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `createdAt` = VALUES(`createdAt`), `updatedAt` = ? RETURNING `id` `id`',
-    );
-    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
-  }
-
-  override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, [
-        {
-          name: 'Some Name A',
-        },
-        {
-          pk: '50',
-          name: 'Some Name B',
-        },
-        {
-          name: 'Some Name C',
-        },
-        {
-          pk: '70',
-          name: 'Some Name D',
-        },
-      ]),
-    );
-    expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\) RETURNING `pk` `id`$/,
-    );
-    expect(values).toEqual([
-      'Some Name A',
-      expect.any(Number),
-      expect.any(String),
-      'Some Name B',
-      expect.any(Number),
-      '50',
-      'Some Name C',
-      expect.any(Number),
-      expect.any(String),
-      'Some Name D',
-      expect.any(Number),
-      '70',
-    ]);
-  }
-
-  override shouldInsertOne() {
-    let res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        email: 'someemail@example.com',
-        createdAt: 123,
-      }),
-    );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`');
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
-
-    res = this.exec((ctx) =>
-      this.dialect.insert(ctx, InventoryAdjustment, {
-        date: new Date(2021, 11, 31, 23, 59, 59, 999),
-        createdAt: 123,
-      }),
-    );
-    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
-    expect(res.values).toEqual([new Date(2021, 11, 31, 23, 59, 59, 999), 123]);
-  }
-
-  override shouldInsertWithOnInsertId() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, {
-        name: 'Some Name',
-        createdAt: 123,
-      }),
-    );
-    expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\) RETURNING `pk` `id`$/,
-    );
-    expect(values).toEqual(['Some Name', 123, expect.any(String)]);
   }
 }
 

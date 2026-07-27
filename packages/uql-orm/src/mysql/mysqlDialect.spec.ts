@@ -44,23 +44,6 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     ]);
   }
 
-  shouldHandleDate() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, new Date())).toBe('?');
-    expect(values).toHaveLength(1);
-    expect(values[0]).toBeInstanceOf(Date);
-  }
-
-  shouldEscape() {
-    expect(this.dialect.escape("va'lue")).toBe("'va\\'lue'");
-  }
-
-  shouldHandleOtherValues() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, 123)).toBe('?');
-    expect(values[0]).toBe(123);
-  }
-
   /**
    * MySQL's `->`/`->>` require a full JSON path, so the whole dotted path goes into one accessor.
    * A bare key (`` `kind`->>'public' ``) is rejected at runtime with "Invalid JSON path expression".
@@ -129,12 +112,12 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, 1],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE uql_pull.v <> CAST(? AS JSON))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, 1],
     },
     /** Regression: `$push` must append to the pulled array, not to the stored one. */
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE uql_pull.v <> CAST(? AS JSON))), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, 1],
     },
     setPushCombined: {

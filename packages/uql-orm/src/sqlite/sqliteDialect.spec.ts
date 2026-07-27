@@ -12,12 +12,17 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
+import type { Type } from '../type/index.js';
 
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
   constructor() {
     super(new SqliteDialect({}));
+  }
+
+  protected override returningClause<E>(entity: Type<E>): string {
+    return ' ' + this.dialect.returningId(entity);
   }
 
   override shouldBeginTransaction() {
@@ -159,138 +164,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(sql).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING RETURNING `id` `id`');
     expect(values).toEqual([1]);
-  }
-
-  override shouldInsertMany() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, [
-        {
-          name: 'Some name 1',
-          email: 'someemail1@example.com',
-          createdAt: 123,
-        },
-        {
-          name: 'Some name 2',
-          email: 'someemail2@example.com',
-          createdAt: 456,
-        },
-        {
-          name: 'Some name 3',
-          email: 'someemail3@example.com',
-          createdAt: 789,
-        },
-      ]),
-    );
-    expect(sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
-    );
-    expect(values).toEqual([
-      'Some name 1',
-      'someemail1@example.com',
-      123,
-      'Some name 2',
-      'someemail2@example.com',
-      456,
-      'Some name 3',
-      'someemail3@example.com',
-      789,
-    ]);
-  }
-
-  override shouldInsertWithOnInsertId() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, {
-        name: 'Some Name',
-        createdAt: 123,
-      }),
-    );
-    expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\) RETURNING `pk` `id`$/,
-    );
-    expect(values[0]).toBe('Some Name');
-    expect(values[1]).toBe(123);
-    expect(values[2]).toMatch(/.+/);
-  }
-
-  override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.insert(ctx, TaxCategory, [
-        {
-          name: 'Some Name A',
-        },
-        {
-          pk: '50',
-          name: 'Some Name B',
-        },
-        {
-          name: 'Some Name C',
-        },
-        {
-          pk: '70',
-          name: 'Some Name D',
-        },
-      ]),
-    );
-    expect(sql).toMatch(
-      /^INSERT INTO `TaxCategory` \(`name`, `createdAt`, `pk`\) VALUES \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\), \(\?, \?, \?\) RETURNING `pk` `id`$/,
-    );
-    expect(values[0]).toBe('Some Name A');
-    expect(values[2]).toMatch(/.+/);
-    expect(values[3]).toBe('Some Name B');
-    expect(values[5]).toBe('50');
-  }
-
-  override shouldBeSecure() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true, something: true } as any,
-        $where: {
-          id: 1,
-          something: 1,
-        } as any,
-        $sort: {
-          id: 1,
-          something: 1,
-        } as any,
-      }),
-    );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
-    expect(res.values).toEqual([1, 1]);
-
-    res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        something: 'anything',
-        createdAt: 1,
-      } as any),
-    );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
-    expect(res.values).toEqual(['Some Name', 1]);
-
-    res = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        User,
-        {
-          $where: { something: 'anything' } as any,
-        },
-        {
-          name: 'Some Name',
-          something: 'anything',
-          updatedAt: 1,
-        } as any,
-      ),
-    );
-    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
-    expect(res.values).toEqual(['Some Name', 1, 'anything']);
-
-    res = this.exec((ctx) =>
-      this.dialect.delete(ctx, User, {
-        $where: { something: 'anything' } as any,
-      }),
-    );
-    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
-    expect(res.values).toEqual(['anything']);
   }
 
   override shouldFind$text() {
@@ -479,7 +352,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE json_extract(value, '$.city') = ? AND json_extract(value, '$.zip') = ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE json_extract(_uql_elem_1.value, '$.city') = ? AND json_extract(_uql_elem_1.value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
@@ -492,7 +365,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE `name` -> uql_elem.fullkey = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE `name` -> uql_elem.fullkey = json(?)))',
+      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = json(?)))',
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
@@ -551,7 +424,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE json_extract(value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE json_extract(_uql_elem_1.value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -564,8 +437,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toContain('EXISTS (SELECT 1 FROM json_each');
-    expect(sql).toContain("CAST(json_extract(value, '$.price') AS REAL) < ?");
-    expect(sql).toContain("value -> '$.active' = json(?)");
+    expect(sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.price') AS REAL) < ?");
+    expect(sql).toContain("_uql_elem_1.value -> '$.active' = json(?)");
     // The boolean binds as JSON text, not as SQLite's 0/1 integer.
     expect(values).toEqual([100, 'true']);
   }
@@ -587,10 +460,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(value, '$.a') IS NOT ?");
-    expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
-    expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("value -> '$.active' = json(?)");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.a') IS NOT ?");
+    expect(res.sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.b') AS REAL) > ?");
+    expect(res.sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.c') AS REAL) >= ?");
+    expect(res.sql).toContain("_uql_elem_1.value -> '$.active' = json(?)");
     expect(res.values).toContain('true');
 
     // Test $like, $startsWith, $endsWith
@@ -612,10 +485,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(value, '$.a') LIKE ?");
-    expect(res.sql).toContain("json_extract(value, '$.d') LIKE ?");
-    expect(res.sql).toContain("json_extract(value, '$.e') LIKE ?");
-    expect(res.sql).toContain("json_extract(value, '$.g') LIKE ?");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.a') LIKE ?");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.d') LIKE ?");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.e') LIKE ?");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.g') LIKE ?");
 
     // Test $regex
     res = this.exec((ctx) =>
@@ -624,7 +497,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(value, '$.code') REGEXP ?");
+    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.code') REGEXP ?");
   }
 
   // ─── JSONB dot-notation (SQLite-specific json_extract syntax) ──────
@@ -734,11 +607,11 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
      * type; `json_each`'s `value` column would flatten booleans to 0/1 and stringify objects.
      */
     pull: {
-      sql: "UPDATE `Company` SET `kind` = json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') uql_pull WHERE `kind` -> uql_pull.fullkey <> json(?))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, 1],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = json_insert(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') uql_pull WHERE `kind` -> uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_insert(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, 1],
     },
     setPushCombined: {

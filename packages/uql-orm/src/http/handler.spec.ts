@@ -308,7 +308,16 @@ describe('createRequestHandler', () => {
       expect(preFilter).not.toHaveBeenCalled();
     });
 
-    it('hook mutations of the query reach the querier (tenant scoping)', async () => {
+    /**
+     * This shows `preFilter` CAN mutate the outgoing query - it is not a tenant-scoping mechanism
+     * in its own right. Unlike `@Filter(..., { security: true })`, a hook mutation is not
+     * AND-merged (a client `$where` on the same key can simply be overwritten either way, with no
+     * guarantee which value wins), does not fail closed when its own context is missing, and does
+     * not reach joined (m1/11) relations populated without an explicit `$where`. Use
+     * `@Filter(name, { condition, security: true })` for real tenant scoping; reach for a hook
+     * only for non-security query shaping.
+     */
+    it('hook mutations of the query reach the querier', async () => {
       mockQuerier.findMany.mockResolvedValue([]);
       const handle = createRequestHandler<{ companyId: number }>({
         include: [User],

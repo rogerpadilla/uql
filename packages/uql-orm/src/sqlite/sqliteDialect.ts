@@ -1,5 +1,13 @@
 import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { jsonAssignCall, jsonElemExists, jsonPath, jsonRemoveCall, jsonSetTarget } from '../dialect/jsonSql.js';
+import {
+  JSON_ELEM_ALIAS_PREFIX,
+  JSON_PULL_ALIAS,
+  jsonAssignCall,
+  jsonElemExists,
+  jsonPath,
+  jsonRemoveCall,
+  jsonSetTarget,
+} from '../dialect/jsonSql.js';
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
@@ -13,7 +21,6 @@ import type {
   Type,
   VectorDistance,
 } from '../type/index.js';
-import { escapeAnsiSqlLiteral } from '../util/ansiSqlLiteral.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
@@ -125,31 +132,30 @@ export class SqliteDialect extends AbstractSqlDialect {
    * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
    */
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
+    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const from = this.jsonElemFrom(jsonField, [], alias);
     const conditions = (value as unknown[]).map((val) =>
-      jsonElemExists(this.jsonElemFrom(jsonField), [
-        `${jsonField} -> uql_elem.fullkey = ${this.jsonScalarParam(ctx, val)}`,
-      ]),
+      jsonElemExists(from, [`${jsonField} -> ${alias}.fullkey = ${this.jsonScalarParam(ctx, val)}`]),
     );
     return `(${conditions.join(' AND ')})`;
   }
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    const tmpCtx = this.createContext();
-    this.buildSizeComparison(tmpCtx, () => tmpCtx.append(`json_array_length(${jsonField})`), value);
-    ctx.pushValue(...tmpCtx.values);
-    return tmpCtx.sql;
+    return this.buildFragment(ctx, (fragmentCtx) =>
+      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`json_array_length(${jsonField})`), value),
+    );
   }
 
   /** `json_each` yields both scalar and object elements, so one form covers each case. */
-  protected override jsonElemFrom(jsonField: string): string {
-    return `json_each(${jsonField}) uql_elem`;
+  protected override jsonElemFrom(jsonField: string, _fields: readonly string[], alias: string): string {
+    return `json_each(${jsonField}) ${alias}`;
   }
 
-  protected override jsonElemRef(field?: string, asJson = false): string {
+  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
     if (field === undefined) {
-      return 'value';
+      return `${alias}.value`;
     }
-    return asJson ? `value -> ${jsonPath(field)}` : `json_extract(value, ${jsonPath(field)})`;
+    return asJson ? `${alias}.value -> ${jsonPath(field)}` : `json_extract(${alias}.value, ${jsonPath(field)})`;
   }
 
   protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
@@ -166,9 +172,22 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    // Use the base (non-RETURNING) insert here: `onConflictUpsert` appends its own RETURNING
-    // after the ON CONFLICT clause, so calling `this.insert` would append it twice.
-    this.onConflictUpsert(ctx, entity, conflictPaths, payload, (c, e, p) => super.insert(c, e, p));
+    const meta = getMeta(entity);
+    const updateCtx = this.createContext();
+    const update = this.getUpsertUpdateAssignments(
+      updateCtx,
+      meta,
+      conflictPaths,
+      payload,
+      (name) => `EXCLUDED.${name}`,
+    );
+    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    // Use the base (non-RETURNING) insert here: the appended RETURNING below would otherwise
+    // be doubled by `this.insert`'s own.
+    super.insert(ctx, entity, payload);
+    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
+    ctx.pushValue(...updateCtx.values);
   }
 
   protected override jsonCast(operand: string): string {
@@ -188,8 +207,8 @@ export class SqliteDialect extends AbstractSqlDialect {
     value: unknown,
   ): string {
     const path = jsonPath(key);
-    const elem = `${escapedCol} -> uql_pull.fullkey`;
-    const kept = `SELECT json_group_array(json(${elem})) FROM json_each(${escapedCol}, ${path}) uql_pull WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
+    const elem = `${escapedCol} -> ${JSON_PULL_ALIAS}.fullkey`;
+    const kept = `SELECT json_group_array(json(${elem})) FROM json_each(${escapedCol}, ${path}) ${JSON_PULL_ALIAS} WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
     return `json_replace(${expr}, ${path}, (${kept}))`;
   }
 
@@ -214,9 +233,5 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
     return jsonRemoveCall('json_remove', expr, unset);
-  }
-
-  override escape(value: unknown): string {
-    return escapeAnsiSqlLiteral(value);
   }
 }
