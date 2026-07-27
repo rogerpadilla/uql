@@ -1,12 +1,18 @@
 import { expect } from 'vitest';
-import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
+import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { createSpec, JsonRecord } from '../test/index.js';
+import { Company, createSpec } from '../test/index.js';
+import type { UpdatePayload } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
-export class MySqlDialectSpec extends AbstractSqlDialectSpec {
+export class MySqlDialectSpec extends MySqlFamilySpec {
   constructor() {
     super(new MySqlDialect());
+  }
+
+  protected override jsonCastText(operand: string): string {
+    return `CAST(${operand} AS JSON)`;
   }
 
   shouldThrowForVectorSort() {
@@ -39,154 +45,151 @@ export class MySqlDialectSpec extends AbstractSqlDialectSpec {
   }
 
   shouldHandleDate() {
-    const dialect = new MySqlDialect();
     const values: unknown[] = [];
-    expect(dialect.addValue(values, new Date())).toBe('?');
+    expect(this.dialect.addValue(values, new Date())).toBe('?');
     expect(values).toHaveLength(1);
     expect(values[0]).toBeInstanceOf(Date);
   }
 
   shouldEscape() {
-    const dialect = new MySqlDialect();
-    expect(dialect.escape("va'lue")).toBe("'va\\'lue'");
+    expect(this.dialect.escape("va'lue")).toBe("'va\\'lue'");
   }
 
   shouldHandleOtherValues() {
-    const dialect = new MySqlDialect();
     const values: unknown[] = [];
-    expect(dialect.addValue(values, 123)).toBe('?');
+    expect(this.dialect.addValue(values, 123)).toBe('?');
     expect(values[0]).toBe(123);
   }
 
-  // JSON operator tests
-  shouldFind$elemMatch() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { city: 'NYC' } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
-    expect(ctx.values).toEqual(['[{"city":"NYC"}]']);
-  }
-
-  shouldFind$all() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $all: ['admin', 'user'] } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_CONTAINS(`entries`, ?)');
-    expect(ctx.values).toEqual(['["admin","user"]']);
-  }
-
-  shouldFind$size() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: 3 } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) = ?');
-    expect(ctx.values).toEqual([3]);
-  }
-
-  shouldFind$sizeWithComparison() {
-    const dialect = new MySqlDialect();
-
-    // Single comparison operator
-    let ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $gte: 2 } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) >= ?');
-    expect(ctx.values).toEqual([2]);
-
-    // Multiple comparison operators
-    ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
-    });
-    expect(ctx.sql).toBe(
-      'SELECT `id` FROM `JsonRecord` WHERE (JSON_LENGTH(`entries`) > ? AND JSON_LENGTH(`entries`) <= ?)',
+  /**
+   * MySQL's `->`/`->>` require a full JSON path, so the whole dotted path goes into one accessor.
+   * A bare key (`` `kind`->>'public' ``) is rejected at runtime with "Invalid JSON path expression".
+   */
+  shouldFilterAndSortByJsonDotNotation() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.public': 1 } }),
     );
-    expect(ctx.values).toEqual([0, 5]);
+    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE CAST((`kind`->>'$.public') AS DECIMAL) = ?");
+    expect(res.values).toEqual([1]);
 
-    // $between
-    ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $size: { $between: [1, 10] } } },
-    });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) BETWEEN ? AND ?');
-    expect(ctx.values).toEqual([1, 10]);
-  }
-
-  // Tests for $elemMatch with nested operators
-  shouldFind$elemMatchWithOperators() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
-    });
-    expect(ctx.sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS jt WHERE jt.`city` LIKE ?)",
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.theme.color': 'red' } }),
     );
-    expect(ctx.values).toEqual(['New%']);
+    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE (`kind`->>'$.theme.color') = ?");
+
+    res = this.exec((ctx) => this.dialect.find(ctx, Company, { $select: { id: true }, $sort: { 'kind.public': -1 } }));
+    expect(res.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'$.public') DESC");
   }
 
-  shouldFind$elemMatchWithMultipleOperators() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
-    });
-    expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(jt.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain('NOT (jt.`active` <=> ?)');
+  /**
+   * The comparison mode is decided from *all* operands, so a mixed `$in` cannot depend on element
+   * order - it used to read `values[0]`, making `[1, 'a']` and `['a', 1]` emit different SQL.
+   */
+  shouldNotLetJsonInOperandOrderChangeTheSql() {
+    const sqlOf = (values: unknown[]) =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Company, {
+          $select: { id: true },
+          $where: { 'kind.meta.mixed': { $in: values } },
+        }),
+      ).sql;
+    expect(sqlOf([1, 'a'])).toBe(sqlOf(['a', 1]));
+    // All-numeric operands still get the numeric cast.
+    expect(sqlOf([1, 2])).toContain('CAST(');
+    expect(sqlOf([1, 'a'])).not.toContain('CAST(');
   }
 
-  shouldFind$elemMatchWithAllOperators() {
-    const dialect = new MySqlDialect();
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonRecord, {
-      $select: { id: true },
-      $where: {
-        entries: {
-          $elemMatch: {
-            a: { $eq: 'x' },
-            b: { $gt: 5 },
-            c: { $lt: 10 },
-            d: { $lte: 20 },
-            e: { $like: '%test%' },
-            f: { $ilike: 'HI' },
-            g: { $startsWith: 'abc' },
-            h: { $istartsWith: 'ABC' },
-            i: { $endsWith: 'xyz' },
-            j: { $iendsWith: 'XYZ' },
-            k: { $includes: 'mid' },
-            l: { $iincludes: 'MID' },
-            m: { $regex: '^A' },
-            n: { $in: [1, 2] },
-            o: { $nin: [3, 4] },
-          },
+  /** The array operators read the subtree, so they use `->` with the same full path. */
+  shouldFilterByJsonDotNotationArrayOperators() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $size: 2 } } }),
+    );
+    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_LENGTH(`kind`->'$.tags') = ?");
+    expect(res.values).toEqual([2]);
+  }
+
+  // ─── JSON update operators ($set / $unset / $push / $pull) ───────────────
+  // The MySQL-family SQL for these lives in `MysqlLikeSqlDialect`, so it is asserted here.
+
+  protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
+    set: {
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    unsetOnly: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
+      values: [123, 1],
+    },
+    setUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    push: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+    pull: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE uql_pull.v <> CAST(? AS JSON))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', 123, 1],
+    },
+    /** Regression: `$push` must append to the pulled array, not to the stored one. */
+    pullPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) uql_pull WHERE uql_pull.v <> CAST(? AS JSON))), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', '"b"', 123, 1],
+    },
+    setPushCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', CAST(? AS JSON)), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', '"new-tag"', 123, 1],
+    },
+    setPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', CAST(? AS JSON)), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['["a"]', '"b"', 123, 1],
+    },
+    pushUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_MERGE_PRESERVE(`kind`, JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+  };
+
+  shouldEscapeSingleQuotesInJsonKeys() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, {
+        kind: { $unset: ["it's"] },
+        updatedAt: 123,
+      } as UpdatePayload<Company>),
+    );
+    expect(sql).toBe("UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.it''s'), `updatedAt` = ? WHERE `id` = ?");
+  }
+
+  /** Each pull subquery reads the column, so its value binds exactly once, in SQL order. */
+  shouldBindTwoJsonPullKeysInOrder() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        { kind: { $pull: { tags: 'a', labels: 'b' } }, updatedAt: 123 },
+      ),
+    );
+    expect(sql).toContain("JSON_REPLACE(JSON_REPLACE(`kind`, '$.tags'");
+    expect(values).toEqual(['"a"', '"b"', 123, 1]);
+  }
+
+  shouldCombineAllJsonOperators() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: { $pull: { tags: 'a' }, $set: { private: 1 }, $push: { tags: 'b' }, $unset: ['public'] },
+          updatedAt: 123,
         },
-      },
-    });
-    expect(ctx.sql).toContain('jt.`a` = ?');
-    expect(ctx.sql).toContain('CAST(jt.`b` AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(jt.`c` AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(jt.`d` AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('jt.`e` LIKE ?');
-    expect(ctx.sql).toContain('jt.`f` LIKE ?');
-    expect(ctx.sql).toContain('jt.`m` REGEXP ?');
-    expect(ctx.sql).toContain('jt.`n` IN (');
-    expect(ctx.sql).toContain('jt.`o` NOT IN (');
+      ),
+    );
+    // Applied innermost-first: $pull -> $set -> $push -> $unset.
+    expect(sql).toContain("JSON_REMOVE(JSON_MERGE_PRESERVE(JSON_SET(COALESCE(JSON_REPLACE(`kind`, '$.tags'");
+    expect(values).toEqual(['"a"', '1', '"b"', 123, 1]);
   }
 }
 

@@ -1,23 +1,19 @@
 import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { buildElemMatchConditions } from '../dialect/jsonArrayElemMatchUtils.js';
+import { jsonAssignCall, jsonElemExists, jsonPath, jsonRemoveCall, jsonSetTarget } from '../dialect/jsonSql.js';
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
-  FieldKey,
   FieldOptions,
-  JsonUpdateOp,
   QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
   QueryOptions,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
-  QueryWhereFieldOperatorMap,
   Type,
   VectorDistance,
 } from '../type/index.js';
 import { escapeAnsiSqlLiteral } from '../util/ansiSqlLiteral.js';
-import { hasKeys } from '../util/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
@@ -114,80 +110,50 @@ export class SqliteDialect extends AbstractSqlDialect {
     super.compare(ctx, entity, key, val, opts);
   }
 
-  override compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    key: FieldKey<E>,
-    op: K,
-    val: QueryWhereFieldOperatorMap<E>[K],
-    opts: QueryComparisonOptions = {},
-  ): void {
-    switch (op) {
-      case '$elemMatch':
-        this.buildElemMatchCondition(ctx, entity, key, val as Record<string, unknown>, opts);
-        break;
-      case '$all': {
-        // SQLite: Check JSON array contains all values using multiple json_each subqueries
-        const values = val as unknown[];
-        const conditions = values
-          .map((v) => {
-            ctx.pushValue(JSON.stringify(v));
-            return `EXISTS (SELECT 1 FROM json_each(${this.escapeId(key)}) WHERE value = json(?))`;
-          })
-          .join(' AND ');
-        ctx.append(`(${conditions})`);
-        break;
-      }
-      case '$size':
-        // SQLite: Check JSON array length
-        // e.g., json_array_length(roles) = 3, or json_array_length(roles) >= 2
-        this.buildSizeComparison(
-          ctx,
-          () => {
-            ctx.append('json_array_length(');
-            this.getComparisonKey(ctx, entity, key, opts);
-            ctx.append(')');
-          },
-          val as number | QuerySizeComparisonOps,
-        );
-        break;
-      default:
-        super.compareFieldOperator(ctx, entity, key, op, val, opts);
-    }
-  }
+  /**
+   * SQLite compares an exploded element as whole JSON text, so containment cannot express "this
+   * element includes these keys" - `$elemMatch` always expands to per-field conditions.
+   */
+  protected override readonly jsonContainmentIsPartial = false;
+
+  /** `json_each` exposes a JSON boolean as `0`/`1` and a number as a number - already comparable. */
+  protected override readonly jsonScalarElemKeepsType = true;
 
   /**
-   * Build $elemMatch condition for SQLite JSON arrays.
-   * Uses EXISTS with json_each and supports nested operators.
+   * Each element is read back as JSON text through `->` at its own `fullkey`, so it compares
+   * correctly whatever its type. `json_each`'s `value` column would not: it unquotes strings (`a`
+   * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
    */
-  private buildElemMatchCondition<E>(
-    ctx: QueryContext,
-    _entity: Type<E>,
-    key: FieldKey<E>,
-    match: Record<string, unknown>,
-    opts: QueryComparisonOptions,
-  ): void {
-    ctx.append('EXISTS (SELECT 1 FROM json_each(');
-    this.getComparisonKey(ctx, _entity, key, opts);
-    ctx.append(') WHERE ');
-
-    const conditions = buildElemMatchConditions(
-      match,
-      (field, op, opVal) =>
-        this.buildJsonFieldCondition(ctx, (f) => `json_extract(value, '$.${this.escapeJsonKey(f)}')`, field, op, opVal),
-      (field, value) => {
-        // Keep SQLite's placeholder behavior consistent with prior implementation.
-        ctx.pushValue(value);
-        return `json_extract(value, '$.${this.escapeJsonKey(field)}') = ?`;
-      },
+  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
+    const conditions = (value as unknown[]).map((val) =>
+      jsonElemExists(this.jsonElemFrom(jsonField), [
+        `${jsonField} -> uql_elem.fullkey = ${this.jsonScalarParam(ctx, val)}`,
+      ]),
     );
-
-    ctx.append(conditions.join(' AND '));
-    ctx.append(')');
+    return `(${conditions.join(' AND ')})`;
   }
 
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
-    return `json_extract(${escapedColumn}, '$.${this.escapeJsonKey(jsonPath)}')`;
+  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
+    const tmpCtx = this.createContext();
+    this.buildSizeComparison(tmpCtx, () => tmpCtx.append(`json_array_length(${jsonField})`), value);
+    ctx.pushValue(...tmpCtx.values);
+    return tmpCtx.sql;
+  }
+
+  /** `json_each` yields both scalar and object elements, so one form covers each case. */
+  protected override jsonElemFrom(jsonField: string): string {
+    return `json_each(${jsonField}) uql_elem`;
+  }
+
+  protected override jsonElemRef(field?: string, asJson = false): string {
+    if (field === undefined) {
+      return 'value';
+    }
+    return asJson ? `value -> ${jsonPath(field)}` : `json_extract(value, ${jsonPath(field)})`;
+  }
+
+  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
+    return `json_extract(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
   }
 
   protected override numericCast(expr: string): string {
@@ -205,31 +171,49 @@ export class SqliteDialect extends AbstractSqlDialect {
     this.onConflictUpsert(ctx, entity, conflictPaths, payload, (c, e, p) => super.insert(c, e, p));
   }
 
-  protected override formatJsonUpdate<E>(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp<E>): void {
-    let expr = escapedCol;
-    if (hasKeys(value.$merge)) {
-      const merge = value.$merge as Record<string, unknown>;
-      expr = `json_set(COALESCE(${escapedCol}, '{}')`;
-      for (const [key, v] of Object.entries(merge)) {
-        expr += `, '$.${this.escapeJsonKey(key)}', json(?)`;
-        ctx.pushValue(JSON.stringify(v));
-      }
-      expr += ')';
-    }
-    if (hasKeys(value.$push)) {
-      const push = value.$push as Record<string, unknown>;
-      expr = `json_insert(${expr}`;
-      for (const [key, v] of Object.entries(push)) {
-        expr += `, '$.${this.escapeJsonKey(key)}[#]', json(?)`;
-        ctx.pushValue(JSON.stringify(v));
-      }
-      expr += ')';
-    }
-    if (value.$unset?.length) {
-      const paths = value.$unset.map((k) => `'$.${this.escapeJsonKey(k)}'`).join(', ');
-      expr = `json_remove(${expr}, ${paths})`;
-    }
-    ctx.append(`${escapedCol} = ${expr}`);
+  protected override jsonCast(operand: string): string {
+    return `json(${operand})`;
+  }
+
+  /**
+   * `json_replace` leaves an absent key (and a NULL column) untouched. Elements are read back
+   * through `->` at their own `fullkey` so each keeps its JSON type - `json_each`'s `value` would
+   * flatten booleans to 0/1 and stringify objects.
+   */
+  protected override jsonPullKey(
+    ctx: QueryContext,
+    expr: string,
+    escapedCol: string,
+    key: string,
+    value: unknown,
+  ): string {
+    const path = jsonPath(key);
+    const elem = `${escapedCol} -> uql_pull.fullkey`;
+    const kept = `SELECT json_group_array(json(${elem})) FROM json_each(${escapedCol}, ${path}) uql_pull WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
+    return `json_replace(${expr}, ${path}, (${kept}))`;
+  }
+
+  protected override jsonSet(
+    ctx: QueryContext,
+    expr: string,
+    set: Record<string, unknown>,
+    field?: FieldOptions,
+  ): string {
+    return jsonAssignCall(
+      (value) => this.jsonScalarParam(ctx, value),
+      'json_set',
+      jsonSetTarget(expr, field, `'{}'`),
+      set,
+    );
+  }
+
+  /** `[#]` appends, creating the array when the key is absent. */
+  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
+    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'json_insert', expr, push, '[#]');
+  }
+
+  protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
+    return jsonRemoveCall('json_remove', expr, unset);
   }
 
   override escape(value: unknown): string {

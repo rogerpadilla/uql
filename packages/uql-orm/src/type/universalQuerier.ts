@@ -1,16 +1,6 @@
 import type { IdValue, UpdatePayload } from './entity.js';
-import type {
-  Query,
-  QueryAggMap,
-  QueryAggregate,
-  QueryAggregateResult,
-  QueryConflictPaths,
-  QueryGroupMap,
-  QueryOne,
-  QueryOptions,
-  QuerySearch,
-  QueryUpdateResult,
-} from './query.js';
+import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 
 import type { Type } from './utility.js';
 

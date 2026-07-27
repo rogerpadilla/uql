@@ -402,11 +402,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldUpdateWithJsonOperators() {
     const id = await this.querier.insertOne(Company, {
       name: 'JSON Company Merge',
-      kind: { public: 1, tags: ['a', 'b'] } as any,
+      kind: { public: 1, tags: ['a', 'b'] },
     });
 
     const mergeResult = await this.querier.updateOneById(Company, id, {
-      kind: { $merge: { private: 1 } },
+      kind: { $set: { private: 1 } },
     });
     expect(mergeResult).toBe(1);
 
@@ -432,22 +432,275 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found?.kind).not.toHaveProperty('public');
   }
 
-  /** Regression: JSONB $merge must persist boolean true and false (not only numeric/string values). */
-  async shouldMergeJsonBooleanField() {
+  /** `$pull` removes every matching element, and is a no-op when there is nothing to remove. */
+  async shouldPullFromJsonArray() {
     const id = await this.querier.insertOne(Company, {
-      name: 'Bool JSON merge',
-      kind: { label: 'x' } as any,
+      name: 'JSON Company Pull',
+      kind: { public: 1, tags: ['a', 'b', 'a', 'c'] },
+    });
+
+    const pullResult = await this.querier.updateOneById(Company, id, {
+      kind: { $pull: { tags: 'a' } },
+    });
+    expect(pullResult).toBe(1);
+
+    let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toMatchObject({ public: 1, tags: ['b', 'c'] });
+
+    // No matching element leaves the array untouched.
+    await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'absent' } } });
+    found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toMatchObject({ public: 1, tags: ['b', 'c'] });
+
+    // Pulling the last element leaves an empty array, not a missing key.
+    await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'b' } } });
+    await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'c' } } });
+    found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toMatchObject({ public: 1, tags: [] });
+  }
+
+  /**
+   * `$pull` and `$push` on the same key in one payload: the pull is applied to the stored array and
+   * the push appends to the pulled result. Regression guard for the expression-composition rules -
+   * a `$push` sourcing its array from the raw column would silently discard the `$pull`.
+   */
+  async shouldCombineJsonOperatorsOnSameKey() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Combined',
+      kind: { public: 1, tags: ['a', 'b', 'a'] },
+    });
+
+    const result = await this.querier.updateOneById(Company, id, {
+      kind: { $pull: { tags: 'a' }, $push: { tags: 'fresh' }, $set: { private: 1 }, $unset: ['public'] },
+    });
+    expect(result).toBe(1);
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toMatchObject({ private: 1, tags: ['b', 'fresh'] });
+    expect(found?.kind).not.toHaveProperty('public');
+  }
+
+  /**
+   * `$set` and `$push` on the same key: the set replaces the array, the push appends to that result.
+   * MongoDB rejects two operators on one path in a single update document, so this is what forces the
+   * aggregation-pipeline form there while the SQL dialects compose expressions.
+   */
+  async shouldCombineJsonSetAndPushOnSameKey() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Set Push',
+      kind: { public: 1, tags: ['stale'] },
+    });
+
+    const result = await this.querier.updateOneById(Company, id, {
+      kind: { $set: { tags: ['kept'] }, $push: { tags: 'appended' } },
+    });
+    expect(result).toBe(1);
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found!.kind).toMatchObject({ public: 1, tags: ['kept', 'appended'] });
+  }
+
+  /** `$set` and `$unset` on the same key: `$unset` is applied last, so the key ends up removed. */
+  async shouldApplyJsonUnsetAfterSetOnSameKey() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Set Unset',
+      kind: { public: 1 },
     });
 
     await this.querier.updateOneById(Company, id, {
-      kind: { $merge: { isArchived: true } },
+      kind: { $set: { private: 1, country: 'US' }, $unset: ['private'] },
+    });
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found!.kind).toMatchObject({ public: 1, country: 'US' });
+    expect(found!.kind).not.toHaveProperty('private');
+  }
+
+  /** A `$pull` on an absent key is a no-op: it must not create the key or null the document. */
+  async shouldPullFromMissingJsonKeyAsNoop() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Pull Missing',
+      kind: { public: 1 },
+    });
+
+    await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'a' } } });
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toEqual({ public: 1 });
+  }
+
+  /**
+   * The `$pull` on the absent `labels` stays a no-op even when another key in the same payload has
+   * to be composed differently (on MongoDB that combination switches the whole update to an
+   * aggregation pipeline, where an unguarded filter would create `labels` as an empty array).
+   */
+  async shouldPullFromMissingJsonKeyWhileCombining() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Pull Missing Combined',
+      kind: { public: 1, tags: ['a', 'b'] },
+    });
+
+    await this.querier.updateOneById(Company, id, {
+      kind: { $pull: { tags: 'a', labels: 'x' }, $push: { tags: 'z' } },
+    });
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toEqual({ public: 1, tags: ['b', 'z'] });
+  }
+
+  /**
+   * Filtering and sorting by a JSON dot-path. Regression: MySQL's `->>` needs a full JSON path
+   * (`'$.public'`), so the base's `col->>'public'` failed at runtime with "Invalid JSON path
+   * expression" - covered only by unit specs asserting that same invalid text until now.
+   */
+  async shouldFindAndSortByJsonDotPath() {
+    await this.querier.insertOne(Company, { name: 'JSON Scalar One', kind: { public: 1 } });
+    await this.querier.insertOne(Company, { name: 'JSON Scalar Zero', kind: { public: 0 } });
+
+    const founds = await this.querier.findMany(Company, { $where: { 'kind.public': 1 } });
+    expect(founds.map(({ name }) => name)).toEqual(['JSON Scalar One']);
+
+    const sorted = await this.querier.findMany(Company, { $sort: { 'kind.public': -1 } });
+    expect(sorted.map(({ name }) => name)).toEqual(['JSON Scalar One', 'JSON Scalar Zero']);
+  }
+
+  /**
+   * Boolean and numeric operands against a JSON dot-path. Regression: comparing a JSON *text*
+   * extraction to a boolean raises `operator does not exist: text = boolean` on drivers that send
+   * typed parameters, and on MySQL silently matched nothing (`'true'` vs `1`); `$in` had the same
+   * problem for numbers.
+   */
+  async shouldFindByJsonDotPathTypedOperands() {
+    await this.querier.insertOne(Company, { name: 'JSON Typed On', kind: { isArchived: true, public: 1 } });
+    await this.querier.insertOne(Company, { name: 'JSON Typed Off', kind: { isArchived: false, public: 0 } });
+
+    const byTrue = await this.querier.findMany(Company, { $where: { 'kind.isArchived': true } });
+    expect(byTrue.map(({ name }) => name)).toEqual(['JSON Typed On']);
+
+    const byFalse = await this.querier.findMany(Company, { $where: { 'kind.isArchived': { $ne: true } } });
+    expect(byFalse.map(({ name }) => name)).toEqual(['JSON Typed Off']);
+
+    const byIn = await this.querier.findMany(Company, { $where: { 'kind.public': { $in: [1] } } });
+    expect(byIn.map(({ name }) => name)).toEqual(['JSON Typed On']);
+
+    const byInBoth = await this.querier.findMany(Company, { $where: { 'kind.public': { $in: [0, 1] } } });
+    expect(byInBoth).toHaveLength(2);
+  }
+
+  /**
+   * `$elemMatch` over object elements, both as containment and with per-field operators. Regression:
+   * the per-field form read every element field as text, so a boolean condition compared `'true'`
+   * against `1` and silently matched nothing on MySQL (and raised `text = boolean` on strict drivers).
+   */
+  async shouldFindByJsonElemMatch() {
+    await this.querier.insertOne(Company, {
+      name: 'JSON Elem Active',
+      kind: { items: [{ name: 'first', active: true }] },
+    });
+    await this.querier.insertOne(Company, {
+      name: 'JSON Elem Idle',
+      kind: { items: [{ name: 'second', active: false }] },
+    });
+
+    const byContainment = await this.querier.findMany(Company, {
+      $where: { 'kind.items': { $elemMatch: { name: 'first' } } },
+    });
+    expect(byContainment.map(({ name }) => name)).toEqual(['JSON Elem Active']);
+
+    const byBoolean = await this.querier.findMany(Company, {
+      $where: { 'kind.items': { $elemMatch: { active: { $eq: true } } } },
+    });
+    expect(byBoolean.map(({ name }) => name)).toEqual(['JSON Elem Active']);
+
+    const byMixed = await this.querier.findMany(Company, {
+      $where: { 'kind.items': { $elemMatch: { active: { $eq: false }, name: { $startsWith: 'sec' } } } },
+    });
+    expect(byMixed.map(({ name }) => name)).toEqual(['JSON Elem Idle']);
+  }
+
+  /**
+   * `$elemMatch` shapes that used to be handled inconsistently: plain equality bypassed the
+   * condition builder (so a number lost its cast and `null` became `= NULL`), an empty match
+   * produced invalid SQL on SQLite, and an operator applied to a scalar element took an
+   * accessor no test reached.
+   */
+  async shouldFindByJsonElemMatchEdgeShapes() {
+    await this.querier.insertOne(Company, {
+      name: 'JSON Edge Counted',
+      kind: { items: [{ name: 'a', count: 5, note: null }], flags: [true] },
+    });
+    await this.querier.insertOne(Company, {
+      name: 'JSON Edge Other',
+      kind: { items: [{ name: 'b', count: 9, note: 'set' }], flags: [false] },
+    });
+
+    // Plain equality and its explicit `$eq` spelling must agree.
+    const byPlain = await this.querier.findMany(Company, { $where: { 'kind.items': { $elemMatch: { count: 5 } } } });
+    expect(byPlain.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
+    const byEq = await this.querier.findMany(Company, {
+      $where: { 'kind.items': { $elemMatch: { count: { $eq: 5 } } } },
+    });
+    expect(byEq.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
+
+    // A null element field is a null check, not `= NULL`.
+    const byNull = await this.querier.findMany(Company, { $where: { 'kind.items': { $elemMatch: { note: null } } } });
+    expect(byNull.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
+
+    // An operator applied to the element itself, on an array of scalars.
+    const byFlag = await this.querier.findMany(Company, {
+      $where: { 'kind.flags': { $elemMatch: { $eq: true } } },
+    });
+    expect(byFlag.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
+  }
+
+  /**
+   * Array operators applied to a JSON dot-path. Regression: `$size`/`$all`/`$elemMatch` on a path
+   * used to throw on SQLite (the base dialect had no implementation) and emit invalid SQL on MariaDB
+   * (`col->'key'` is a syntax error there), while SQLite's `$all` never matched a string element.
+   */
+  async shouldFindByJsonDotPathArrayOperators() {
+    await this.querier.insertOne(Company, { name: 'JSON Path Two', kind: { tags: ['a', 'b'] } });
+    await this.querier.insertOne(Company, { name: 'JSON Path One', kind: { tags: ['c'] } });
+
+    const bySize = await this.querier.findMany(Company, { $where: { 'kind.tags': { $size: 2 } } });
+    expect(bySize.map(({ name }) => name)).toEqual(['JSON Path Two']);
+
+    const byAll = await this.querier.findMany(Company, { $where: { 'kind.tags': { $all: ['b', 'a'] } } });
+    expect(byAll.map(({ name }) => name)).toEqual(['JSON Path Two']);
+
+    const byMissing = await this.querier.findMany(Company, { $where: { 'kind.tags': { $all: ['absent'] } } });
+    expect(byMissing).toEqual([]);
+  }
+
+  /** `$push` onto an absent key creates the array, consistently across every dialect. */
+  async shouldPushOntoMissingJsonKey() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'JSON Company Push Missing',
+      kind: { public: 1 },
+    });
+
+    await this.querier.updateOneById(Company, id, { kind: { $push: { tags: 'first' } } });
+
+    const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
+    expect(found?.kind).toEqual({ public: 1, tags: ['first'] });
+  }
+
+  /** Regression: JSONB $set must persist boolean true and false (not only numeric/string values). */
+  async shouldSetJsonBooleanField() {
+    const id = await this.querier.insertOne(Company, {
+      name: 'Bool JSON merge',
+      kind: { description: 'x' },
+    });
+
+    await this.querier.updateOneById(Company, id, {
+      kind: { $set: { isArchived: true } },
     });
     let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
     expect(found!.kind).toBeInstanceOf(Object);
     expect(found!.kind!.isArchived).toBe(true);
 
     await this.querier.updateOneById(Company, id, {
-      kind: { $merge: { isArchived: false } },
+      kind: { $set: { isArchived: false } },
     });
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
     expect(found!.kind!.isArchived).toBe(false);

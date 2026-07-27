@@ -1,5 +1,10 @@
 import { expect } from 'vitest';
 import { BunSqlPostgresDialect } from '../bunSql/bunSqlPostgresDialect.js';
+import {
+  AbstractSqlDialectSpec,
+  JSON_UPDATE_PAYLOADS,
+  type JsonUpdateCaseName,
+} from '../dialect/abstractSqlDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
@@ -8,39 +13,37 @@ import {
   ItemTag,
   MeasureUnitCategory,
   Profile,
+  Tax,
   TaxCategory,
   User,
   UserWithNonUpdatableId,
 } from '../test/index.js';
-import type { QueryContext, UpdatePayload } from '../type/index.js';
+import type { UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { PgDialect } from './pgDialect.js';
 import { PostgresDialect } from './postgresDialect.js';
 import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilities.js';
 
-class PostgresDialectSpec {
-  readonly dialect = new PostgresDialect({});
+class PostgresDialectSpec extends AbstractSqlDialectSpec {
   readonly pgDialect = new PgDialect();
   readonly wireArrayPostgresDialect = new PostgresDialect({
     driverCapabilities: { ...POSTGRES_WIRE_DRIVER_CAPABILITIES },
   });
   readonly bunSqlPostgresDialect = new BunSqlPostgresDialect();
 
-  protected exec(fn: (ctx: QueryContext) => void, dialect = this.dialect): { sql: string; values: unknown[] } {
-    const ctx = dialect.createContext();
-    fn(ctx);
-    return { sql: ctx.sql, values: ctx.values };
+  constructor() {
+    super(new PostgresDialect({}));
   }
 
-  shouldBeValidEscapeCharacter() {
+  override shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
   }
 
-  shouldBeginTransaction() {
+  override shouldBeginTransaction() {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN');
   }
 
-  shouldGetBeginTransactionStatementsWithoutIsolationLevel() {
+  override shouldGetBeginTransactionStatementsWithoutIsolationLevel() {
     expect(this.dialect.getBeginTransactionStatements()).toEqual(['BEGIN']);
   }
 
@@ -57,7 +60,7 @@ class PostgresDialectSpec {
     ]);
   }
 
-  shouldInsertMany() {
+  override shouldInsertMany() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
         {
@@ -100,7 +103,7 @@ class PostgresDialectSpec {
    * and any column a record omits (the missing id in row 2, the missing email in row 1) inserts its
    * database default.
    */
-  shouldInsertManyWithHeterogeneousColumns() {
+  override shouldInsertManyWithHeterogeneousColumns() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
         { id: 5, name: 'Some name 1', createdAt: 123 },
@@ -113,7 +116,7 @@ class PostgresDialectSpec {
     expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
   }
 
-  shouldInsertOne() {
+  override shouldInsertOne() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, {
         name: 'Some Name',
@@ -125,7 +128,7 @@ class PostgresDialectSpec {
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123]);
   }
 
-  shouldInsertWithOnInsertId() {
+  override shouldInsertWithOnInsertId() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, TaxCategory, {
         name: 'Some Name',
@@ -140,7 +143,7 @@ class PostgresDialectSpec {
     expect(values[2]).toMatch(/.+/);
   }
 
-  shouldUpsert() {
+  override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
         ctx,
@@ -159,7 +162,7 @@ class PostgresDialectSpec {
     expect(values).toEqual([expect.any(Number), 1, 'Some Name', 123]);
   }
 
-  shouldUpsertMany() {
+  override shouldUpsertMany() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(ctx, User, { id: true }, [
         {
@@ -178,6 +181,361 @@ class PostgresDialectSpec {
       /^INSERT INTO "User" .*VALUES \(\$2, \$3, \$4\), \(\$5, \$6, \$7\) ON CONFLICT \("id"\) DO UPDATE SET.*RETURNING/,
     );
     expect(values).toHaveLength(7);
+  }
+
+  /** A RETURNING clause on every insert, unlike the base's `firstId` (MySQL) expectation. */
+  override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.insert(ctx, TaxCategory, [
+        { name: 'Some Name A' },
+        { pk: '50', name: 'Some Name B' },
+        { name: 'Some Name C' },
+        { pk: '70', name: 'Some Name D' },
+      ]),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO "TaxCategory" \("name", "createdAt", "pk"\) VALUES \(\$1, \$2, \$3\), \(\$4, \$5, \$6\), \(\$7, \$8, \$9\), \(\$10, \$11, \$12\) RETURNING "pk" "id"$/,
+    );
+    expect(values[0]).toBe('Some Name A');
+    expect(values[2]).toMatch(/.+/);
+    expect(values[3]).toBe('Some Name B');
+    expect(values[5]).toBe('50');
+  }
+
+  /** Postgres/CockroachDB's numbered placeholders, unlike MySQL's positionless `?`. */
+  override shouldBeSecure() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true, something: true } as any,
+        $where: {
+          id: 1,
+          something: 1,
+        } as any,
+        $sort: {
+          id: 1,
+          something: 1,
+        } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" = $1 AND "something" = $2 ORDER BY "id", "something"');
+    expect(res.values).toEqual([1, 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.insert(ctx, User, {
+        name: 'Some Name',
+        something: 'anything',
+        createdAt: 1,
+      } as any),
+    );
+    expect(res.sql).toBe('INSERT INTO "User" ("name", "createdAt") VALUES ($1, $2) RETURNING "id" "id"');
+    expect(res.values).toEqual(['Some Name', 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        User,
+        {
+          $where: { something: 'anything' } as any,
+        },
+        {
+          name: 'Some Name',
+          something: 'anything',
+          updatedAt: 1,
+        } as any,
+      ),
+    );
+    expect(res.sql).toBe('UPDATE "User" SET "name" = $1, "updatedAt" = $2 WHERE "something" = $3');
+    expect(res.values).toEqual(['Some Name', 1, 'anything']);
+
+    res = this.exec((ctx) =>
+      this.dialect.delete(ctx, User, {
+        $where: { something: 'anything' } as any,
+      }),
+    );
+    expect(res.sql).toBe('DELETE FROM "User" WHERE "something" = $1');
+    expect(res.values).toEqual(['anything']);
+  }
+
+  /** `$in`/array-membership binds as a single native array via `= ANY(...)`, not `IN (?, ?, ...)`. */
+  override shouldFind$in() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { name: 'some', companyId: [1, 2, 3] },
+        $limit: 10,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
+    expect(res.values).toEqual(['some', [1, 2, 3]]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { name: 'some', companyId: { $in: [1, 2, 3] } },
+        $limit: 10,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
+    expect(res.values).toEqual(['some', [1, 2, 3]]);
+  }
+
+  /** Same `$or`/`$and` composition as the base, but `$in` shorthand binds via `= ANY(...)`. */
+  override shouldFind$orAnd$and() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { creatorId: 1, $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: 1 },
+      }),
+    );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "User" WHERE "creatorId" = $1 AND ("name" = ANY($2) OR "email" = $3) AND "id" = $4',
+    );
+    expect(res.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1]);
+
+    const res2 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: {
+          creatorId: 1,
+          $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
+          id: 1,
+          email: 'e',
+        },
+      }),
+    );
+    expect(res2.sql).toBe(
+      'SELECT "id" FROM "User" WHERE "creatorId" = $1' +
+        ' AND ("name" = ANY($2) OR "email" = $3) AND "id" = $4 AND "email" = $5',
+    );
+    expect(res2.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1, 'e']);
+
+    const res3 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: {
+          creatorId: 1,
+          $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
+          id: 1,
+          email: 'e',
+        },
+        $sort: { name: 1, createdAt: -1 },
+        $skip: 50,
+        $limit: 10,
+      }),
+    );
+    expect(res3.sql).toBe(
+      'SELECT "id" FROM "User" WHERE "creatorId" = $1' +
+        ' AND ("name" = ANY($2) OR "email" = $3)' +
+        ' AND "id" = $4 AND "email" = $5' +
+        ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
+    );
+    expect(res3.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1, 'e']);
+
+    const res4 = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: {
+          $or: [
+            {
+              creatorId: 1,
+              id: 1,
+              email: 'e',
+            },
+            { name: ['a', 'b', 'c'], email: 'abc@example.com' },
+          ],
+        },
+        $sort: { name: 'asc', createdAt: 'desc' },
+        $skip: 50,
+        $limit: 10,
+      }),
+    );
+    expect(res4.sql).toBe(
+      'SELECT "id" FROM "User" WHERE ("creatorId" = $1 AND "id" = $2 AND "email" = $3)' +
+        ' OR ("name" = ANY($4) AND "email" = $5)' +
+        ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
+    );
+    expect(res4.values).toEqual([1, 1, 'e', ['a', 'b', 'c'], 'abc@example.com']);
+  }
+
+  /** The `$in` sub-case binds via `= ANY(...)`, unlike the base's `IN (?, ?)`. */
+  override shouldFind$whereRaw() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { creatorId: true },
+        $where: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "creatorId" FROM "Item" WHERE "companyId" = $1 AND SUM(salePrice) > 500');
+    expect(res.values).toEqual([1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw('SUM(salePrice) > 500')] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "companyId" = $1 OR "id" = $2 OR SUM(salePrice) > 500');
+    expect(res.values).toEqual([1, 5]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $or: [{ id: 1 }, raw('SUM(salePrice) > 500')] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "id" = $1 OR SUM(salePrice) > 500');
+    expect(res.values).toEqual([1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $or: [raw('SUM(salePrice) > 500'), { id: 1 }, { companyId: 1 }] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500 OR "id" = $1 OR "companyId" = $2');
+    expect(res.values).toEqual([1, 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $and: [raw('SUM(salePrice) > 500')] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500');
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: raw('SUM(salePrice) > 500'),
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500');
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { creatorId: true },
+        $where: { $or: [{ id: { $in: [1, 2] } }, { code: 'abc' }] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "creatorId" FROM "Item" WHERE "id" = ANY($1) OR "code" = $2');
+    expect(res.values).toEqual([[1, 2], 'abc']);
+  }
+
+  /** `$not` on an array value goes through the same `= ANY(...)` array binding as `$in`. */
+  override shouldFind$not() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { $not: [{ name: 'Some' }] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT "name" = $1');
+    expect(res.values).toEqual(['Some']);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { id: { $not: 123 } },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT ("id" = $1)');
+    expect(res.values).toEqual([123]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { id: { $not: [123, 456] } },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT ("id" = ANY($1))');
+    expect(res.values).toEqual([[123, 456]]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { id: 123, name: { $not: { $startsWith: 'a' } } },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "id" = $1 AND NOT ("name" LIKE $2)');
+    expect(res.values).toEqual([123, 'a%']);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT (("name" LIKE $1 AND "name" LIKE $2))');
+    expect(res.values).toEqual(['a%', '%z']);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" LIKE $1 AND "name" IS DISTINCT FROM $2)');
+    expect(res.values).toEqual(['Some', 'Something']);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: { $not: [{ name: 'abc' }, { creatorId: 1 }] },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" = $1 AND "creatorId" = $2)');
+    expect(res.values).toEqual(['abc', 1]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Tax, {
+        $select: { id: true },
+        $where: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Tax" WHERE "companyId" = $1 AND NOT ("name" LIKE $2)');
+    expect(res.values).toEqual([1, 'a%']);
+  }
+
+  /** A JSONB column always binds with an explicit cast, even for `null`. */
+  override shouldUpdateWithJsonNull() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: 1 } },
+        {
+          kind: null as any,
+          updatedAt: 123,
+        },
+      ),
+    );
+    expect(sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
+    expect(values).toEqual([null, 123, 1]);
+  }
+
+  /** `$in`/`$nin` inside `$having` also bind as a native array via `= ANY`/`<> ALL`. */
+  override shouldAggregateWithHavingIn() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
+        $having: { count: { $in: [1, 5, 10] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) = ANY(');
+    expect(values).toEqual([[1, 5, 10]]);
+  }
+
+  override shouldAggregateWithHavingNin() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
+        $having: { count: { $nin: [0, 999] } },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) <> ALL(');
+    expect(values).toEqual([[0, 999]]);
   }
 
   shouldUpsertWithDifferentColumnNames() {
@@ -306,7 +664,7 @@ class PostgresDialectSpec {
     expect(values).toEqual([expect.any(Number), 1, 'Some Item', expect.any(Number)]);
   }
 
-  shouldFind$istartsWith() {
+  override shouldFind$istartsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -334,7 +692,7 @@ class PostgresDialectSpec {
     expect(res.values).toEqual(['some%', 'Something']);
   }
 
-  shouldFind$iendsWith() {
+  override shouldFind$iendsWith() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -362,7 +720,7 @@ class PostgresDialectSpec {
     expect(res.values).toEqual(['%some', 'Something']);
   }
 
-  shouldFind$iincludes() {
+  override shouldFind$iincludes() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -390,7 +748,7 @@ class PostgresDialectSpec {
     expect(res.values).toEqual(['%some%', 'Something']);
   }
 
-  shouldFind$ilike() {
+  override shouldFind$ilike() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -418,7 +776,7 @@ class PostgresDialectSpec {
     expect(res.values).toEqual(['some', 'Something']);
   }
 
-  shouldFind$regex() {
+  override shouldFind$regex() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -429,7 +787,7 @@ class PostgresDialectSpec {
     expect(values).toEqual(['^some']);
   }
 
-  shouldFind$text() {
+  override shouldFind$text() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
@@ -438,7 +796,7 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ to_tsquery($1) AND "code" = $2 LIMIT 30',
+      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ websearch_to_tsquery($1) AND "code" = $2 LIMIT 30',
     );
     expect(res.values).toEqual(['some text', '1']);
 
@@ -454,12 +812,12 @@ class PostgresDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
+      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ websearch_to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 
-  shouldFindWithPopulateOnly() {
+  override shouldFindWithPopulateOnly() {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $populate: {
@@ -475,7 +833,7 @@ class PostgresDialectSpec {
     expect(res.values).toEqual([123]);
   }
 
-  shouldUpdateWithRawString() {
+  override shouldUpdateWithRawString() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
@@ -493,32 +851,25 @@ class PostgresDialectSpec {
     expect(values).toEqual([123, 1]);
   }
 
-  shouldUpdateWithJsonbField() {
-    const payload = { private: 1 };
+  override shouldUpdateWithJsonbField() {
+    const payload: UpdatePayload<Company>['kind'] = { private: 1 };
     // Standard
     let res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, {
-        kind: payload as any,
-        updatedAt: 123,
-      } as UpdatePayload<Company>),
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload, updatedAt: 123 }),
     );
     expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
     expect(res.values).toEqual(['{"private":1}', 123, 1]);
 
     // Pg Driver
     res = this.exec(
-      (ctx) =>
-        this.pgDialect.update(ctx, Company, { $where: { id: 1 } }, {
-          kind: payload as any,
-          updatedAt: 123,
-        } as UpdatePayload<Company>),
+      (ctx) => this.pgDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload, updatedAt: 123 }),
       this.pgDialect,
     );
     expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
     expect(res.values).toEqual(['{"private":1}', 123, 1]);
   }
 
-  shouldFind$nin() {
+  override shouldFind$nin() {
     const values = [1, 2];
     // Standard (native arrays)
     let res = this.exec((ctx) =>
@@ -807,9 +1158,10 @@ class PostgresDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->>\'active\' = $2)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->\'active\' = $2::jsonb)',
     );
-    expect(values).toEqual([100, true]);
+    // The boolean compares as JSON: extracting it as text loses the type.
+    expect(values).toEqual([100, 'true']);
   }
 
   shouldFind$elemMatchWithMixedConditions() {
@@ -903,7 +1255,7 @@ class PostgresDialectSpec {
         $where: { 'kind.public': 1 } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'public\') = $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'public\'))::numeric = $1');
     expect(values).toEqual([1]);
   }
 
@@ -914,7 +1266,7 @@ class PostgresDialectSpec {
         $where: { 'kind.private': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'private\') IS DISTINCT FROM $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'private\'))::numeric IS DISTINCT FROM $1');
     expect(values).toEqual([0]);
   }
 
@@ -980,32 +1332,54 @@ class PostgresDialectSpec {
     expect(values).toEqual(['red']);
   }
 
-  shouldUpdateWithJsonMerge() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 } },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(values).toEqual(['{"private":1}', 123, 1]);
-  }
+  protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
+    set: {
+      sql: 'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
+      values: ['{"private":1}', 123, 1],
+    },
+    unsetOnly: {
+      sql: 'UPDATE "Company" SET "kind" = ("kind") - $1::text[], "updatedAt" = $2 WHERE "id" = $3',
+      values: [['public', 'private'], 123, 1],
+    },
+    setUnsetCombined: {
+      sql: 'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || $1::jsonb) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
+      values: ['{"private":1}', ['public'], 123, 1],
+    },
+    push: {
+      sql: 'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      values: ['"new-tag"', 123, 1],
+    },
+    /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
+    pull: {
+      sql: `UPDATE "Company" SET "kind" = jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
+      values: ['"a"', 123, 1],
+    },
+    /**
+     * Postgres is the one dialect whose `$push` references the accumulated expression twice - safe
+     * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
+     */
+    pullPushSameKey: {
+      sql: `UPDATE "Company" SET "kind" = jsonb_set(jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
+      values: ['"a"', '"b"', 123, 1],
+    },
+    setPushCombined: {
+      sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      values: ['{"private":1}', '"new-tag"', 123, 1],
+    },
+    setPushSameKey: {
+      sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      values: ['{"tags":["a"]}', '"b"', 123, 1],
+    },
+    pushUnsetCombined: {
+      sql: 'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
+      values: ['"new-tag"', ['public'], 123, 1],
+    },
+  };
 
-  shouldUpdateWithJsonMergeBooleanFalse() {
+  /** A `$set` value that would be falsy in JS (`false`), to confirm it isn't dropped like a missing key. */
+  shouldUpdateWithJsonSetBooleanFalse() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        { kind: { $merge: { isArchived: false } }, updatedAt: 1 },
-      ),
+      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: { $set: { isArchived: false } }, updatedAt: 1 }),
     );
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
@@ -1013,136 +1387,26 @@ class PostgresDialectSpec {
     expect(values).toEqual(['{"isArchived":false}', 1, 1]);
   }
 
-  shouldUpdateWithJsonMergeUnsetOnly() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $unset: ['public', 'private'] },
-          updatedAt: 123,
-        },
-      ),
+  /**
+   * Bun SQL's `explicitJsonCast` wraps every bound JSON parameter in an extra `(::text)::jsonb`
+   * cast - a driver-capability difference orthogonal to which operators are combined, so `$push`
+   * alone (the simplest case) is enough to pin it without repeating the check per combination.
+   */
+  shouldUpdateWithJsonPushViaBunSql() {
+    const { sql, values } = this.exec(
+      (ctx) =>
+        this.bunSqlPostgresDialect.update(
+          ctx,
+          Company,
+          { $where: { id: 1 } },
+          { kind: JSON_UPDATE_PAYLOADS.push, updatedAt: 123 },
+        ),
+      this.bunSqlPostgresDialect,
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = (("kind") - \'public\') - \'private\', "updatedAt" = $1 WHERE "id" = $2',
-    );
-    expect(values).toEqual([123, 1]);
-  }
-
-  shouldUpdateWithJsonMergeCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || $1::jsonb) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(values).toEqual(['{"private":1}', 123, 1]);
-  }
-
-  shouldUpdateWithJsonMergePushCombined() {
-    const payload = { $merge: { private: 1 }, $push: { tags: 'new-tag' } };
-    const updatedAt = 123;
-    // Standard
-    let res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-    );
-    expect(res.values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
-
-    // Bun SQL Postgres
-    res = this.exec(
-      (ctx) =>
-        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-      this.bunSqlPostgresDialect,
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-    );
-    expect(res.values).toEqual(['{"private":1}', '"new-tag"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonMergePushSameKey() {
-    const payload = { $merge: { tags: ['a'] }, $push: { tags: 'b' } };
-    const updatedAt = 123;
-    // Standard
-    let res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-    );
-    expect(res.values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
-
-    // Bun SQL Postgres
-    res = this.exec(
-      (ctx) =>
-        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-      this.bunSqlPostgresDialect,
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || ($1::text)::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($2::text)::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-    );
-    expect(res.values).toEqual(['{"tags":["a"]}', '"b"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonPush() {
-    const payload = { $push: { tags: 'a' } };
-    const updatedAt = 123;
-    // Standard
-    let res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(res.values).toEqual(['"a"', 123, 1]);
-
-    // Bun SQL Postgres
-    res = this.exec(
-      (ctx) =>
-        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-      this.bunSqlPostgresDialect,
-    );
-    expect(res.sql).toBe(
       'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
-    expect(res.values).toEqual(['"a"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonPushUnsetCombined() {
-    const payload = { $push: { tags: 'a' }, $unset: ['public'] };
-    const updatedAt = 123;
-    // Standard
-    let res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(res.values).toEqual(['"a"', 123, 1]);
-
-    // Bun SQL Postgres
-    res = this.exec(
-      (ctx) =>
-        this.bunSqlPostgresDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload as any, updatedAt }),
-      this.bunSqlPostgresDialect,
-    );
-    expect(res.sql).toBe(
-      'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb))) - \'public\', "updatedAt" = $2 WHERE "id" = $3',
-    );
-    expect(res.values).toEqual(['"a"', 123, 1]);
+    expect(values).toEqual(['"new-tag"', 123, 1]);
   }
 
   shouldSortByJsonDotNotation() {

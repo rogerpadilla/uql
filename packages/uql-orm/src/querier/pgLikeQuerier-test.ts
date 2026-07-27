@@ -147,9 +147,9 @@ export abstract class PgLikeQuerierIt extends AbstractSqlQuerierIt {
     });
     expect(foundSize).toHaveLength(1);
 
-    // Test $merge operator
+    // Test $set operator
     await this.querier.updateOneById(Company, id, {
-      kind: { $merge: { description: 'merged' } },
+      kind: { $set: { description: 'merged' } },
     });
 
     const foundMerge = await this.querier.findOneById(Company, id);

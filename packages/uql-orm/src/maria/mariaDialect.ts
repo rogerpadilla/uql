@@ -1,4 +1,5 @@
 import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { jsonPath } from '../dialect/jsonSql.js';
 import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { QueryConflictPaths, QueryContext, QueryOptions, Type, VectorDistance } from '../type/index.js';
@@ -51,19 +52,34 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     }
   }
 
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
-    const escapedPath = jsonPath
-      .split('.')
-      .map((segment) => this.escapeJsonKey(segment))
-      .join('.');
-    // MariaDB does not support MySQL's -> / ->> JSON shorthand operators.
-    // JSON_VALUE keeps dot-notation access native and portable across MariaDB versions.
-    return `JSON_VALUE(${escapedColumn}, '$.${escapedPath}')`;
+  /**
+   * MariaDB supports neither MySQL's `->`/`->>` shorthand nor the base's chained form. `JSON_VALUE`
+   * reads a scalar and `JSON_EXTRACT` the subtree that the array operators need.
+   */
+  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
+    return `JSON_VALUE(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
   }
 
-  /** MariaDB does not support CAST(val AS JSON). We use JSON_EXTRACT to convert string to JSON. */
-  protected override getJsonCastExpr(): string {
-    return "JSON_EXTRACT(?, '$')";
+  protected override getJsonPathJsonbExpr(escapedColumn: string, jsonPathStr: string): string {
+    return `JSON_EXTRACT(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
+  }
+
+  /** MariaDB has no `CAST(val AS JSON)`; `JSON_EXTRACT` at the root reads a value as JSON. */
+  protected override jsonCast(operand: string): string {
+    return `JSON_EXTRACT(${operand}, '$')`;
+  }
+
+  /**
+   * MariaDB stores JSON as text, so JSON_ARRAYAGG would re-quote each element into a string
+   * (`["\"a\""]`). JSON_COMPACT marks it back as JSON, keeping element types intact.
+   */
+  protected override jsonPullElem(alias: string): string {
+    return `JSON_COMPACT(${alias}.v)`;
+  }
+
+  /** Text-backed JSON compares as text, so use JSON_EQUALS for key-order-independent equality. */
+  protected override jsonPullKeep(alias: string, operand: string): string {
+    return `NOT JSON_EQUALS(${alias}.v, ${operand})`;
   }
 
   /** MariaDB 11.7+ vector distance functions. */

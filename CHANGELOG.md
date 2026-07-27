@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.20.0] - 2026-07-26
+
+### `$merge` renamed to `$set` (breaking)
+
+"Merge" was misleading: the operator is a *shallow*, non-recursive key assignment (`null` stores a null, unlike RFC 7396 merge patch), and UQL already used an actual merge function - `JSON_MERGE_PRESERVE` - for `$push`. `$set` now matches MongoDB's own update `$set` and the `$unset`/`$push`/`$pull` vocabulary around it. `JsonPushFields` is renamed `JsonArrayFields` to match.
+
+```ts
+querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } }); // before
+querier.updateOneById(Company, id, { kind: { $set: { public: 1 } } }); //   after
+```
+
+### `$pull`: remove elements from a JSON array
+
+The counterpart to `$push` - removes every element equal to the given value, on PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite and MongoDB. A `$pull` on an absent key (or `NULL` column) is a no-op: it never creates the key or nulls the document. Operators apply in a fixed order - `$pull` -> `$set` -> `$push` -> `$unset` - so `$pull` and `$push` on the same key atomically replace an element:
+
+```ts
+await querier.updateOneById(Company, id, { kind: { $pull: { tags: 'old' }, $push: { tags: 'new' } } });
+```
+
+### `$push` semantics unified (breaking)
+
+Appending to a missing key now creates the array on every dialect. Previously MariaDB's `JSON_ARRAY_APPEND` returned `NULL` for a missing path and **wrote that `NULL` back, destroying the document**; MySQL silently no-opped. Both now use `JSON_MERGE_PRESERVE`, matching PostgreSQL and SQLite's existing behavior.
+
+### MongoDB JSON operators (breaking)
+
+`$set`/`$unset`/`$push`/`$pull` now map onto MongoDB's own update operators. Previously they were **written into the document as literal data** - `{ kind: { $push: { tags: 'x' } } }` stored the operator object itself. MongoDB rejects two operators on one path in a single update document, so a payload that needs it is emitted as an aggregation-pipeline update instead, composed in the same `$pull -> $set -> $push -> $unset` order the SQL dialects apply.
+
+### Vector indexes must declare their metric (breaking)
+
+`distance` is now required for `hnsw`/`ivfflat`/`vector` index types, and rejected for every other type:
+
+```ts
+@Index(['embedding'], { type: 'hnsw' })                       // compile error: missing distance
+@Index(['embedding'], { type: 'btree', distance: 'cosine' })  // compile error: distance on a non-vector index
+@Index(['embedding'], { type: 'hnsw', distance: 'cosine' })   // ok
+```
+
+Omitting it silently changed the generated DDL: MariaDB's `DISTANCE=` defaults to euclidean (a cosine query full-scans instead of using the index) and pgvector has no default operator class. MongoDB's `vectorSearch` is exempt (its generator emits no metric).
+
+### JSON dot-path and `$elemMatch` querying (fixes)
+
+Filtering/sorting by a JSON dot-path (`{ 'kind.tags': { $size: 2 } }`) and matching array elements (`$elemMatch`) now behave consistently across all 8 drivers:
+
+- **MySQL/MariaDB dot-paths.** MySQL's `->`/`->>` need a full `'$.path'`, not a bare key (`` `kind`->>'public' `` raised "Invalid JSON path expression"). MariaDB's `$all`/`$size`/`$elemMatch` need `JSON_EXTRACT`, not `->` (a syntax error there).
+- **Typed comparisons.** A JSON scalar now compares in the representation every engine agrees on: numbers numerically, booleans as JSON, strings as text - fixes silent MySQL boolean mismatches (`'true'` vs `1`) and `operator does not exist: text = integer` on typed-parameter drivers. Applies to `$eq`/`$ne`/`$in`/`$nin`, both on dot-paths and inside `$elemMatch`.
+- **`$elemMatch: { count: 5 }` and `$elemMatch: { count: { $eq: 5 } }` are now identical.** The plain-value form used to skip the numeric cast and turn `{ field: null }` into `= NULL` (which never matches).
+- **MongoDB's `$elemMatch`** now translates its inner UQL operators (`$startsWith`, `$ilike`, `$between`, ...) instead of passing them straight to the server, which rejected them as unknown.
+
+### Fixes
+
+- **`$includes` was case-insensitive on PostgreSQL and CockroachDB** - it rendered as `ILIKE` instead of `LIKE`, because the operator name happens to start with `$i`. `$iincludes` (the actually-case-insensitive one) is unaffected; MySQL/MariaDB/SQLite were never affected, since their `LIKE`/`ILIKE` render identically there.
+- **PostgreSQL full-text search on multi-word queries**: `$text` now uses `websearch_to_tsquery` instead of `to_tsquery`, which raised `syntax error in tsquery` for input it couldn't parse (including a plain two-word search). `$text` also accepts an optional `$config` (e.g. `'english'`).
+- **JSON operators on a `NOT NULL` column** no longer wrap it in `COALESCE`, keeping MySQL 9's partial in-place JSON update applicable.
+- **`$unset` on PostgreSQL** removes all keys with one `- $N::text[]` (one bound parameter) instead of chaining one `-` per key.
+- **`$unset` on an untyped `Json<unknown>` field** was typed `never[]` (no key could be named); it's now `string[]`.
+- **JSON operators on an array payload** (`Json<T[]>`) are now a compile error - none of the four operators is meaningful on an array column (PostgreSQL's `||` would concatenate arrays, `JSON_SET(arr, '$.k', v)` is a no-op on MySQL/SQLite); replace the whole value instead.
+
 ## [0.19.0] - 2026-07-24
 
 ### Operators typed per field (breaking)

@@ -1,20 +1,13 @@
-import type { IndexType } from '../../schema/types.js';
-import type { Type, VectorIndexOptions } from '../../type/index.js';
+import type { DistributiveOmit, EntityIndexMeta, Type } from '../../type/index.js';
 import { defineIndex } from '../metadata/definition.js';
 
 /**
- * Options for the @Index decorator.
+ * Options for the @Index decorator - {@link EntityIndexMeta} minus `columns`, which the decorator
+ * takes as its own positional argument. `DistributiveOmit` (not plain `Omit`) keeps `type`/`distance`
+ * a discriminated pair - `EntityIndexMeta`'s vector-index invariant, that omitting `distance` on a
+ * vector index type is a compile error.
  */
-export interface IndexDecoratorOptions extends VectorIndexOptions {
-  /** Custom index name */
-  name?: string;
-  /** Whether index is unique */
-  unique?: boolean;
-  /** Index type */
-  type?: IndexType;
-  /** Partial index WHERE clause */
-  where?: string;
-}
+export type IndexDecoratorOptions = DistributiveOmit<EntityIndexMeta, 'columns'>;
 
 /**
  * Define a composite index on an entity class.

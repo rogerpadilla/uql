@@ -43,7 +43,7 @@ export function isPopulatingRelations<E>(meta: EntityMeta<E>, populate?: QueryPo
 
 export type RelationQuery<E extends object = object> = Query<E> & { $required?: boolean };
 
-// Keep in sync with nested keys allowed on `Query` / relation options (see `type/query.ts`).
+// Keep in sync with `Query`'s own keys (`type/query.ts`); `$where`'s value type is `QueryWhere` (`type/queryWhere.ts`).
 const RELATION_QUERY_BOOLEAN_KEYS = new Set(['$distinct', '$required']);
 const RELATION_QUERY_OBJECT_KEYS = new Set(['$select', '$populate', '$exclude', '$sort']);
 const RELATION_QUERY_NUMBER_KEYS = new Set(['$limit', '$skip']);

@@ -93,15 +93,6 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     await this.querier.rollbackTransaction();
   }
 
-  override async shouldUpdateWithJsonOperators() {
-    // MongoDB dialect does not currently map UQL JSON operators ($merge, $push, $unset)
-    // to MongoDB update primitives. These operators are currently SQL-only polyfills.
-  }
-
-  override async shouldMergeJsonBooleanField() {
-    // Same as shouldUpdateWithJsonOperators - $merge is SQL-only.
-  }
-
   async shouldUpsertManyReturnGeneratedIdsOnlyForInsertedDocs() {
     // Conflict path is `email`, not `_id` - so a newly-inserted document's `_id` is
     // MongoDB-generated and unknown to the caller ahead of time.

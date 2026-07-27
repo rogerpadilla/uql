@@ -46,7 +46,15 @@ export interface RawRow {
 
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
-export type Unpacked<T> = T extends (infer U)[]
+/**
+ * `Omit`, but distributed over `T`'s union members before recombining. Plain `Omit<T, K>` computes
+ * `keyof T` up front, which for a union takes the intersection of each member's keys and flattens
+ * their property types together - collapsing a discriminated union (e.g. `EntityIndexMeta`'s
+ * `type`/`distance` pairing) into a single, non-discriminated shape.
+ */
+export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+export type Unpacked<T> = T extends readonly (infer U)[]
   ? U
   : T extends (...args: unknown[]) => infer U
     ? U

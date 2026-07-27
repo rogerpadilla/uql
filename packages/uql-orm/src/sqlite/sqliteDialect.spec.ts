@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { AbstractSqlDialectSpec } from '../dialect/abstractSqlDialect-spec.js';
+import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
@@ -323,22 +323,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
   }
 
-  override shouldUpdateWithJsonbField() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { private: 1 },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
-    expect(values).toEqual(['{"private":1}', 123, 1]);
-  }
-
   shouldHandleBoolean() {
     const { values } = this.exec((ctx) =>
       this.dialect.insert(ctx, Item, {
@@ -495,7 +479,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE json_extract(value, '$.city') = ? AND json_extract(value, '$.zip') = ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE json_extract(value, '$.city') = ? AND json_extract(value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
@@ -508,7 +492,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) WHERE value = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) WHERE value = json(?)))',
+      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE `name` -> uql_elem.fullkey = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE `name` -> uql_elem.fullkey = json(?)))',
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
@@ -567,7 +551,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) WHERE json_extract(value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) uql_elem WHERE json_extract(value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -581,8 +565,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(sql).toContain('EXISTS (SELECT 1 FROM json_each');
     expect(sql).toContain("CAST(json_extract(value, '$.price') AS REAL) < ?");
-    expect(sql).toContain("json_extract(value, '$.active') = ?");
-    expect(values).toEqual([100, 1]);
+    expect(sql).toContain("value -> '$.active' = json(?)");
+    // The boolean binds as JSON text, not as SQLite's 0/1 integer.
+    expect(values).toEqual([100, 'true']);
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -605,8 +590,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.sql).toContain("json_extract(value, '$.a') IS NOT ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.b') AS REAL) > ?");
     expect(res.sql).toContain("CAST(json_extract(value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("json_extract(value, '$.active') = ?");
-    expect(res.values).toContain(1);
+    expect(res.sql).toContain("value -> '$.active' = json(?)");
+    expect(res.values).toContain('true');
 
     // Test $like, $startsWith, $endsWith
     res = this.exec((ctx) =>
@@ -650,7 +635,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': 1 } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') = ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) = ?");
     expect(values).toEqual([1]);
   }
 
@@ -661,7 +646,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') IS NOT ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) IS NOT ?");
     expect(values).toEqual([0]);
   }
 
@@ -727,131 +712,48 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['kg']);
   }
 
-  shouldUpdateWithJsonMerge() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 } },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['1', 123, 1]);
-  }
-
-  shouldUpdateWithJsonMergeUnsetOnly() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $unset: ['public', 'private'] },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_remove(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual([123, 1]);
-  }
-
-  shouldUpdateWithJsonMergeCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_remove(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['1', 123, 1]);
-  }
-
-  shouldUpdateWithJsonPush() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_insert(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['"new-tag"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonMergePushCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { private: 1 }, $push: { tags: 'new-tag' } },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['1', '"new-tag"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonMergePushSameKey() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $merge: { tags: ['a'] }, $push: { tags: 'b' } } as any,
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['["a"]', '"b"', 123, 1]);
-  }
-
-  shouldUpdateWithJsonPushUnsetCombined() {
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: 1 } },
-        {
-          kind: { $push: { tags: 'new-tag' }, $unset: ['public'] },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe(
-      "UPDATE `Company` SET `kind` = json_remove(json_insert(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-    );
-    expect(values).toEqual(['"new-tag"', 123, 1]);
-  }
+  protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
+    set: {
+      sql: "UPDATE `Company` SET `kind` = json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    unsetOnly: {
+      sql: "UPDATE `Company` SET `kind` = json_remove(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
+      values: [123, 1],
+    },
+    setUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = json_remove(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', 123, 1],
+    },
+    push: {
+      sql: "UPDATE `Company` SET `kind` = json_insert(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+    /**
+     * Elements are read back via `->` at their own `fullkey`, which preserves each element's JSON
+     * type; `json_each`'s `value` column would flatten booleans to 0/1 and stringify objects.
+     */
+    pull: {
+      sql: "UPDATE `Company` SET `kind` = json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') uql_pull WHERE `kind` -> uql_pull.fullkey <> json(?))), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', 123, 1],
+    },
+    pullPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = json_insert(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') uql_pull WHERE `kind` -> uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"a"', '"b"', 123, 1],
+    },
+    setPushCombined: {
+      sql: "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['1', '"new-tag"', 123, 1],
+    },
+    setPushSameKey: {
+      sql: "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      values: ['["a"]', '"b"', 123, 1],
+    },
+    pushUnsetCombined: {
+      sql: "UPDATE `Company` SET `kind` = json_remove(json_insert(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      values: ['"new-tag"', 123, 1],
+    },
+  };
 
   shouldSortByJsonDotNotation() {
     const { sql } = this.exec((ctx) =>

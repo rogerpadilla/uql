@@ -65,7 +65,7 @@ import { Entity, Id, Field, OneToOne, OneToMany, type Relation } from 'uql-orm';
 
 @Entity()
 export class User {
-  @Id({ type: 'uuid', onInsert: () => uuidv7() })
+  @Id({ type: 'uuid', onInsert: uuidv7 })
   id?: string;
 
   @Field({ index: true, unique: true })

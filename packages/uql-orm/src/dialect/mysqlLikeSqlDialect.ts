@@ -1,8 +1,14 @@
 import SqlString from 'sqlstring';
-import type { DialectFeatures, InsertIdSource, QueryContext, QuerySizeComparisonOps } from '../type/index.js';
-import { someKey } from '../util/index.js';
+import type {
+  DialectFeatures,
+  FieldOptions,
+  InsertIdSource,
+  QueryContext,
+  QuerySizeComparisonOps,
+} from '../type/index.js';
+import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
+import { jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
 
 /**
  * Shared JSON-array / JSON-object operator implementation between MySQL and MariaDB.
@@ -11,6 +17,8 @@ import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
  * - `$size` (JSON_LENGTH)
  * - `$all` (JSON_CONTAINS)
  * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
+ * - the update operators `$set` (JSON_SET), `$unset` (JSON_REMOVE), `$push` (JSON_MERGE_PRESERVE)
+ *   and `$pull` (JSON_REPLACE over JSON_TABLE)
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
@@ -75,6 +83,79 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `NOT (${field} <=> ${ph})`;
   }
 
+  /** How a surviving element is fed back into the array a `$pull` rebuilds. */
+  protected jsonPullElem(alias: string): string {
+    return `${alias}.v`;
+  }
+
+  /** Condition keeping the elements a `$pull` does *not* remove, given the bound pulled value. */
+  protected jsonPullKeep(alias: string, operand: string): string {
+    return `${alias}.v <> ${operand}`;
+  }
+
+  /**
+   * `JSON_REPLACE` leaves an absent key (and a NULL column) untouched, which is what makes `$pull`
+   * a no-op there. The subquery reads the column, so its value binds exactly once.
+   */
+  protected override jsonPullKey(
+    ctx: QueryContext,
+    expr: string,
+    escapedCol: string,
+    key: string,
+    value: unknown,
+  ): string {
+    const elements = `JSON_TABLE(${escapedCol}, ${jsonPath(key, '[*]')} COLUMNS (v JSON PATH '$')) uql_pull`;
+    const kept = `SELECT COALESCE(JSON_ARRAYAGG(${this.jsonPullElem('uql_pull')}), JSON_ARRAY()) FROM ${elements} WHERE ${this.jsonPullKeep('uql_pull', this.jsonScalarParam(ctx, value))}`;
+    return `JSON_REPLACE(${expr}, ${jsonPath(key)}, (${kept}))`;
+  }
+
+  /**
+   * Omitting the `COALESCE` on a NOT NULL column keeps MySQL's partial in-place JSON update
+   * applicable: it requires the target column as the direct `JSON_SET` input.
+   */
+  protected override jsonSet(
+    ctx: QueryContext,
+    expr: string,
+    set: Record<string, unknown>,
+    field?: FieldOptions,
+  ): string {
+    return jsonAssignCall(
+      (value) => this.jsonScalarParam(ctx, value),
+      'JSON_SET',
+      jsonSetTarget(expr, field, `'{}'`),
+      set,
+    );
+  }
+
+  /**
+   * `JSON_MERGE_PRESERVE` concatenates arrays and creates absent keys, so every pushed key is
+   * handled in one call that references `expr` once - unlike `JSON_ARRAY_APPEND`, which needs a
+   * second reference for the array source and returns NULL on MariaDB for an absent key.
+   */
+  protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
+    const entries = Object.entries(push).map(
+      ([key, value]) => `'${escapeSingleQuotes(key)}', JSON_ARRAY(${this.jsonScalarParam(ctx, value)})`,
+    );
+    return `JSON_MERGE_PRESERVE(${expr}, JSON_OBJECT(${entries.join(', ')}))`;
+  }
+
+  protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
+    return jsonRemoveCall('JSON_REMOVE', expr, unset);
+  }
+
+  /**
+   * MySQL's `->`/`->>` take a full JSON path (`'$.a.b'`, never a bare key) and only apply to a
+   * column reference, so the whole dotted path goes into a single accessor instead of the base's
+   * chained `col->'a'->>'b'`, which the server rejects with "Invalid JSON path expression".
+   */
+  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
+    return `(${escapedColumn}->>${jsonPath(jsonPathStr)})`;
+  }
+
+  protected override getJsonPathJsonbExpr(escapedColumn: string, jsonPathStr: string): string {
+    return `${escapedColumn}->${jsonPath(jsonPathStr)}`;
+  }
+
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
     return `JSON_CONTAINS(${jsonField}, ${this.addValue(ctx.values, JSON.stringify(value))})`;
   }
@@ -86,38 +167,18 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return tmpCtx.sql;
   }
 
-  protected override jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
-    const isPrimitiveElement = someKey(match, (k) => k.startsWith('$'));
+  /** `JSON_TABLE` needs its columns declared upfront, so the object form maps `fields` to columns. */
+  protected override jsonElemFrom(jsonField: string, fields: readonly string[]): string {
+    const columns = fields.length
+      ? fields.map((field) => `${this.escapeId(field, true)} TEXT PATH ${jsonPath(field)}`).join(', ')
+      : `elem_text TEXT PATH '$'`;
+    return `JSON_TABLE(${jsonField}, '$[*]' COLUMNS (${columns})) AS jt`;
+  }
 
-    if (isPrimitiveElement) {
-      const ops = Object.entries(match);
-      const conditions = ops.map(([op, opVal]) =>
-        this.buildJsonFieldCondition(ctx, () => 'jt.elem_text', '', op, opVal),
-      );
-      return `EXISTS (SELECT 1 FROM JSON_TABLE(${jsonField}, '$[*]' COLUMNS (elem_text TEXT PATH '$')) AS jt WHERE ${conditions.join(
-        ' AND ',
-      )})`;
-    }
-
-    const hasOperators = Object.values(match).some(
-      (v) => v && typeof v === 'object' && !Array.isArray(v) && someKey(v, (k) => k.startsWith('$')),
-    );
-
-    if (!hasOperators) {
-      return `JSON_CONTAINS(${jsonField}, ${this.addValue(ctx.values, JSON.stringify([match]))})`;
-    }
-
-    const fields = Object.keys(match);
-    const columns = fields.map((f) => `${this.escapeId(f, true)} TEXT PATH '$.${this.escapeJsonKey(f)}'`).join(', ');
-
-    const conditions = buildElemMatchConditions(
-      match,
-      (field, op, opVal) => this.buildJsonFieldCondition(ctx, (f) => `jt.${this.escapeId(f, true)}`, field, op, opVal),
-      (field, val) => `jt.${this.escapeId(field, true)} = ${this.addValue(ctx.values, val)}`,
-    );
-
-    return `EXISTS (SELECT 1 FROM JSON_TABLE(${jsonField}, '$[*]' COLUMNS (${columns})) AS jt WHERE ${conditions.join(
-      ' AND ',
-    )})`;
+  protected override jsonElemRef(field?: string, asJson = false): string {
+    const ref = field === undefined ? 'jt.elem_text' : `jt.${this.escapeId(field, true)}`;
+    // `JSON_TABLE` columns stay `TEXT` so the string operators keep working; the JSON form reads
+    // that text back as JSON.
+    return asJson ? this.jsonCast(ref) : ref;
   }
 }

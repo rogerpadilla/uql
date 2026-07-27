@@ -52,6 +52,15 @@ export type CompanyKindKey = 'public' | 'private';
 
 export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
   tags?: string[];
+  /** Second array key, so `$push`/`$pull` on two keys at once stays typed in the specs. */
+  labels?: string[];
+  /**
+   * Array of objects, so `$elemMatch` on a JSON dot-path is covered with typed element fields:
+   * a string, a boolean, a number (plain-equality vs `$eq` must agree) and a nullable field.
+   */
+  items?: { name?: string; active?: boolean; count?: number; note?: string | null }[];
+  /** Array of scalars, for `$elemMatch` conditions applied to the element itself. */
+  flags?: boolean[];
   description?: string;
   country?: string;
   theme?: { color?: string };

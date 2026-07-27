@@ -32,7 +32,7 @@ describe('BunSqlQuerierPool', () => {
     expect(pool.dialect.dialectName).toBe('cockroachdb');
     // bun:sql routes CockroachDB through its own Postgres wire-protocol implementation, so it
     // needs the identical wire-driver-capability fix as postgres (verified live: without it,
-    // $merge/$push on a JSONB column silently produce the wrong value or throw).
+    // $set/$push on a JSONB column silently produce the wrong value or throw).
     expect(pool.dialect.features.explicitJsonCast).toBe(true);
     expect(pool.dialect.features.nativeArrays).toBe(false);
   });
