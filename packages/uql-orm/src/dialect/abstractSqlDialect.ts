@@ -49,13 +49,12 @@ import {
   type Type,
   type UpdatePayload,
 } from '../type/index.js';
-import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
+import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import {
   applyFilters,
   asSelectMap,
   buildQueryWhereAsMap,
   buildSortMap,
-  type CallbackKey,
   escapeSqlId,
   fillOnFields,
   filterFieldKeys,
@@ -83,7 +82,7 @@ import {
 } from '../util/index.js';
 
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
-import { jsonElemExists } from './jsonSql.js';
+import { JSON_ELEM_ALIAS_PREFIX, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import { VectorSqlDialect } from './vectorSqlDialect.js';
 
@@ -141,6 +140,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   createContext(): QueryContext {
     return new SqlQueryContext(this);
+  }
+
+  /**
+   * Builds SQL text in isolation via `build`, so the caller can embed it inline (e.g.
+   * `"col" = <text>`) instead of appending it at the end of `ctx`. The fragment binds any value
+   * straight into `ctx`'s own values array - shared by reference, not copied - so `addValue` numbers
+   * its placeholder correctly against the real query from the start; a fresh, empty array would
+   * instead number from `1` regardless of how many values `ctx` already has, misnumbering every
+   * bound value on `$n`-placeholder dialects once `ctx` isn't otherwise empty.
+   */
+  protected buildFragment(ctx: QueryContext, build: (fragmentCtx: QueryContext) => void): string {
+    const fragmentCtx = new SqlQueryContext(this, ctx.values);
+    build(fragmentCtx);
+    return fragmentCtx.sql;
   }
 
   addValue(values: unknown[], value: unknown): string {
@@ -358,10 +371,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
           refAppended = true;
         }
 
-        if (relQuery.$where) {
-          ctx.append(' AND ');
-          this.where(ctx, relEntity, relQuery.$where, { prefix: joinRelAlias, clause: false });
-        }
+        // Unconditional, not gated by `relQuery.$where`: a joined relation's own filters (in
+        // particular `security: true` ones) must apply even to a bare `$populate: { rel: true }`
+        // with no explicit `$where`. `where()` -> `renderWhere()` no-ops cleanly (appends nothing)
+        // when there is truly nothing to add, so this is a pure superset of the old behavior.
+        this.where(ctx, relEntity, relQuery.$where ?? {}, { prefix: joinRelAlias, clause: 'AND' });
 
         this.selectRelationJoins(ctx, relEntity, relQuery.$select, relQuery.$populate, { prefix: joinRelAlias });
       },
@@ -651,11 +665,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   ): string | undefined {
     const col = getMeta(entity).fields[key];
     if (col?.virtual) {
-      if (col.virtual instanceof QueryRaw) {
-        this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
-        return undefined;
-      }
-      return `(${col.virtual})`;
+      this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
+      return undefined;
     }
     return this.columnWithPrefix(key, col, opts.prefix);
   }
@@ -878,18 +889,27 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected abstract jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string;
 
   /**
-   * Explodes the JSON array at `jsonField` into rows, as the `FROM` of an `EXISTS` subquery. An
-   * empty `fields` means the elements are scalars, in which case `asJson` says whether they are read
-   * as JSON or as text; otherwise they are objects and `fields` are the keys the conditions will read
-   * (MySQL needs them upfront for its `JSON_TABLE` column list).
+   * Explodes the JSON array at `jsonField` into rows, as the `FROM` of an `EXISTS` subquery, under
+   * `alias` (from {@link QueryContext.nextAlias} - a fresh name per call, since `$elemMatch`/`$all`
+   * can recurse into this on a nested array and a fixed, reused alias would let the inner occurrence
+   * shadow the outer one it needs to correlate against). An empty `fields` means the elements are
+   * scalars, in which case `asJson` says whether they are read as JSON or as text; otherwise they
+   * are objects and `fields` are the keys the conditions will read (MySQL needs them upfront for its
+   * `JSON_TABLE` column list).
    */
-  protected abstract jsonElemFrom(jsonField: string, fields: readonly string[], asJson?: boolean): string;
+  protected abstract jsonElemFrom(
+    jsonField: string,
+    fields: readonly string[],
+    alias: string,
+    asJson?: boolean,
+  ): string;
 
   /**
-   * References an exploded element: the element itself, or one `field` of it. `asJson` asks for the
-   * JSON-valued form instead of the text one - see {@link isJsonbOp} for when that matters.
+   * References an exploded element under `alias` (the same one passed to the {@link jsonElemFrom}
+   * call it explodes): the element itself, or one `field` of it. `asJson` asks for the JSON-valued
+   * form instead of the text one - see {@link isJsonbOp} for when that matters.
    */
-  protected abstract jsonElemRef(field?: string, asJson?: boolean): string;
+  protected abstract jsonElemRef(alias: string, field?: string, asJson?: boolean): string;
 
   /**
    * Whether the dialect's array containment ({@link jsonAll}) matches an object element that merely
@@ -920,10 +940,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (isOperatorOnlyObject(match)) {
       const entries = Object.entries(match);
       const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => this.isJsonbOp(op, val));
+      const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
       const conditions = entries.map(([op, val]) =>
-        this.buildJsonFieldCondition(ctx, () => this.jsonElemRef(undefined, asJson), '', op, val, asJson),
+        this.buildJsonFieldCondition(ctx, () => this.jsonElemRef(alias, undefined, asJson), '', op, val, asJson),
       );
-      return jsonElemExists(this.jsonElemFrom(jsonField, [], asJson), conditions);
+      return jsonElemExists(this.jsonElemFrom(jsonField, [], alias, asJson), conditions);
     }
     if (isOperatorObject(match)) {
       throw TypeError(`$elemMatch cannot mix operators with field names: ${Object.keys(match).join(', ')}`);
@@ -935,11 +956,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       return this.jsonAll(ctx, jsonField, [match]);
     }
 
+    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
     const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
       const asJson = this.isJsonbOp(op, opVal);
-      return this.buildJsonFieldCondition(ctx, (f) => this.jsonElemRef(f, asJson), field, op, opVal, asJson);
+      return this.buildJsonFieldCondition(ctx, (f) => this.jsonElemRef(alias, f, asJson), field, op, opVal, asJson);
     });
-    return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match)), conditions);
+    return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match), alias), conditions);
   }
 
   /**
@@ -960,13 +982,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return comparesValue && this.jsonCompareMode(value) === 'json';
   }
 
-  /** A JSON-encoded bound parameter, cast to the dialect's JSON type. */
+  /**
+   * A JSON-encoded bound parameter, cast to the dialect's JSON type. Only the positional-placeholder
+   * dialects use this - PostgreSQL binds JSON through {@link PgLikeSqlDialect.jsonScalarParam} instead.
+   */
   protected jsonScalarParam(ctx: QueryContext, value: unknown): string {
     if (value instanceof QueryRaw) {
       return this.addValue(ctx.values, value);
     }
     ctx.pushValue(JSON.stringify(value));
-    return this.getJsonCastExpr();
+    return this.jsonCast('?');
   }
 
   getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
@@ -1335,40 +1360,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         if (callback && Object.hasOwn(sample as object, col)) {
           return `${this.escapeId(columnName)} = ${callback(this.escapeId(columnName))}`;
         }
-        const valCtx = this.createContext();
-        this.formatPersistableValue(valCtx, field, filledPayload[col]);
-        ctx.pushValue(...valCtx.values);
-        return `${this.escapeId(columnName)} = ${valCtx.sql}`;
+        const text = this.buildFragment(ctx, (fragmentCtx) =>
+          this.formatPersistableValue(fragmentCtx, field, filledPayload[col]),
+        );
+        return `${this.escapeId(columnName)} = ${text}`;
       })
       .join(', ');
-  }
-
-  /**
-   * Shared ON CONFLICT ... DO UPDATE / DO NOTHING ... RETURNING logic for positional-placeholder
-   * dialects (SQLite). Uses a deferred context for update params so they follow INSERT params.
-   * PG uses its own implementation since `$N` numbered placeholders handle param ordering natively.
-   */
-  protected onConflictUpsert<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E | E[],
-    insertFn: (ctx: QueryContext, entity: Type<E>, payload: E | E[]) => void,
-  ): void {
-    const meta = getMeta(entity);
-    const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(
-      updateCtx,
-      meta,
-      conflictPaths,
-      payload,
-      (name) => `EXCLUDED.${name}`,
-    );
-    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    insertFn(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
-    ctx.pushValue(...updateCtx.values);
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
@@ -1408,37 +1405,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return escapeSqlId(val, this.escapeIdChar, forbidQualified, addDot);
   }
 
-  protected getPersistables<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    payload: E | E[],
-    callbackKey: CallbackKey,
-  ): Record<string, unknown>[] {
-    const payloads = fillOnFields(meta, payload, callbackKey);
-    return payloads.map((it) => this.getPersistable(ctx, meta, it, callbackKey));
-  }
-
-  protected getPersistable<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    payload: E,
-    callbackKey: CallbackKey,
-  ): Record<string, unknown> {
-    const filledPayload = fillOnFields(meta, payload, callbackKey)[0];
-    const keys = filterFieldKeys(meta, filledPayload, callbackKey);
-    return keys.reduce(
-      (acc, key) => {
-        const field = meta.fields[key];
-        const valCtx = this.createContext();
-        this.formatPersistableValue(valCtx, field, filledPayload[key]);
-        ctx.pushValue(...valCtx.values);
-        acc[key] = valCtx.sql;
-        return acc;
-      },
-      {} as Record<string, unknown>,
-    );
-  }
-
   protected formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions | undefined, value: unknown): void {
     if (value instanceof QueryRaw) {
       this.getRawValue(ctx, { value });
@@ -1462,14 +1428,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    */
   protected jsonCast(operand: string): string {
     return `CAST(${operand} AS JSON)`;
-  }
-
-  /**
-   * The JSON cast applied to a bound placeholder. Only the positional-placeholder dialects use it -
-   * PostgreSQL binds JSON through {@link PgLikeSqlDialect.jsonScalarParam} instead.
-   */
-  protected getJsonCastExpr(): string {
-    return this.jsonCast('?');
   }
 
   /**
@@ -1571,13 +1529,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     meta: EntityMeta<E>,
     key: string,
     prefix?: string,
-  ):
-    | {
-        root: string;
-        jsonPath: string;
-        accessor: (asJsonb?: boolean) => string;
-      }
-    | undefined {
+  ): { jsonPath: string; accessor: (asJsonb?: boolean) => string } | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -1591,7 +1543,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const colName = this.resolveColumnName(root, field);
     const escapedCol = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
     return {
-      root,
       jsonPath,
       accessor: (asJsonb?: boolean) =>
         asJsonb ? this.getJsonPathJsonbExpr(escapedCol, jsonPath) : this.getJsonPathScalarExpr(escapedCol, jsonPath),
@@ -1670,6 +1621,29 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * Filter by relation using an EXISTS subquery.
    * Supports all cardinalities: mm (via junction), 1m, m1, and 11.
    */
+  /**
+   * The parent side of a relation-filtering subquery: its table name, escaped id reference, and a
+   * guard against a relation with no configured references. Shared by
+   * `compareRelation`/`compareRelationSize`. `rel.references` is asserted non-null at call sites
+   * relying on this guard, since the check lives here instead of in the caller's own scope.
+   */
+  private resolveRelationParent<E>(
+    entity: Type<E>,
+    key: string,
+    rel: RelationOptions,
+    opts: QueryComparisonOptions,
+  ): { parentTable: string; escapedParentId: string } {
+    const meta = getMeta(entity);
+    const parentTable = this.resolveTableName(entity, meta);
+    if (!rel.references?.length) {
+      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
+    }
+    const escapedParentId =
+      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
+      this.escapeId(meta.id);
+    return { parentTable, escapedParentId };
+  }
+
   protected compareRelation<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -1678,17 +1652,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationOptions,
     opts: QueryComparisonOptions,
   ): void {
-    const meta = getMeta(entity);
-    const parentTable = this.resolveTableName(entity, meta);
-    const parentId = meta.id;
-    const escapedParentId =
-      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
-      this.escapeId(parentId);
-
-    if (!rel.references?.length) {
-      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
-    }
-
+    const { parentTable, escapedParentId } = this.resolveRelationParent(entity, key, rel, opts);
+    const references = rel.references!;
     const relatedEntity = rel.entity!();
     const relatedMeta = getMeta(relatedEntity);
     const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
@@ -1700,8 +1665,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       const throughEntity = rel.through();
       const throughMeta = getMeta(throughEntity);
       const throughTable = this.resolveTableName(throughEntity, throughMeta);
-      const localFk = rel.references[0].local;
-      const foreignFk = rel.references[1].local;
+      const localFk = references[0].local;
+      const foreignFk = references[1].local;
       const relatedId = relatedMeta.id;
 
       ctx.append(this.escapeId(throughTable));
@@ -1720,12 +1685,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       // 1m / m1 / 11: EXISTS (SELECT 1 FROM Related WHERE related.fk_or_pk = parent.pk_or_fk AND ...)
       // Left side is always relatedTable.references[0].foreign
       // Right side is the parent's PK (1m) or the parent's FK (m1/11)
-      const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(rel.references[0].foreign)}`;
+      const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(references[0].foreign)}`;
       const joinRight =
         rel.cardinality === '1m'
           ? escapedParentId
           : (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
-            this.escapeId(rel.references[0].local);
+            this.escapeId(references[0].local);
 
       ctx.append(this.escapeId(relatedTable));
       ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
@@ -1751,16 +1716,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationOptions,
     opts: QueryComparisonOptions,
   ): void {
-    const meta = getMeta(entity);
-    const parentTable = this.resolveTableName(entity, meta);
-    const parentId = meta.id;
-    const escapedParentId =
-      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
-      this.escapeId(parentId);
-
-    if (!rel.references?.length) {
-      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
-    }
+    const { escapedParentId } = this.resolveRelationParent(entity, key, rel, opts);
 
     const appendSubquery = () => {
       ctx.append('(SELECT COUNT(*) FROM ');
@@ -1867,7 +1823,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
   }
 
-  abstract escape(value: unknown): string;
+  /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */
+  escape(value: unknown): string {
+    return escapeAnsiSqlLiteral(value);
+  }
 
   protected get regexpOp(): string {
     return 'REGEXP';

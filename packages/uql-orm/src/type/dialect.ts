@@ -27,6 +27,13 @@ export interface QueryContext {
   append(sql: string): this;
   addValue(value: unknown): this;
   pushValue(...values: unknown[]): this;
+  /**
+   * A fresh derived-table/subquery alias, unique within this query: `nextAlias('_uql_elem')` returns
+   * `'_uql_elem_1'`, then `'_uql_elem_2'`, etc. Needed wherever a hook (e.g. exploding a JSON array)
+   * might recurse into itself at a deeper nesting level within the same query - a fixed, reused
+   * alias would let the inner occurrence shadow the outer one it needs to correlate against.
+   */
+  nextAlias(prefix: string): string;
   readonly sql: string;
   readonly values: unknown[];
 }

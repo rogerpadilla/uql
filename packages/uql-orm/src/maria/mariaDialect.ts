@@ -7,8 +7,6 @@ import type { QueryConflictPaths, QueryContext, QueryOptions, Type, VectorDistan
 export class MariaDialect extends MysqlLikeSqlDialect {
   override readonly dialectName = 'mariadb';
 
-  override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
-
   // MariaDB 10.5+ supports `INSERT ... RETURNING` (see `insert` below), so IDs are exact per row.
   override readonly insertIdSource = 'returning';
 

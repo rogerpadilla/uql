@@ -8,7 +8,7 @@ import type {
 } from '../type/index.js';
 import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
+import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
 
 /**
  * Shared JSON-array / JSON-object operator implementation between MySQL and MariaDB.
@@ -37,6 +37,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     defaultStringAsText: false,
   };
+
+  override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
 
   override readonly escapeIdChar = '`';
 
@@ -104,8 +106,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     key: string,
     value: unknown,
   ): string {
-    const elements = `JSON_TABLE(${escapedCol}, ${jsonPath(key, '[*]')} COLUMNS (v JSON PATH '$')) uql_pull`;
-    const kept = `SELECT COALESCE(JSON_ARRAYAGG(${this.jsonPullElem('uql_pull')}), JSON_ARRAY()) FROM ${elements} WHERE ${this.jsonPullKeep('uql_pull', this.jsonScalarParam(ctx, value))}`;
+    const elements = `JSON_TABLE(${escapedCol}, ${jsonPath(key, '[*]')} COLUMNS (v JSON PATH '$')) ${JSON_PULL_ALIAS}`;
+    const kept = `SELECT COALESCE(JSON_ARRAYAGG(${this.jsonPullElem(JSON_PULL_ALIAS)}), JSON_ARRAY()) FROM ${elements} WHERE ${this.jsonPullKeep(JSON_PULL_ALIAS, this.jsonScalarParam(ctx, value))}`;
     return `JSON_REPLACE(${expr}, ${jsonPath(key)}, (${kept}))`;
   }
 
@@ -161,22 +163,28 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    const tmpCtx = this.createContext();
-    this.buildSizeComparison(tmpCtx, () => tmpCtx.append(`JSON_LENGTH(${jsonField})`), value);
-    ctx.pushValue(...tmpCtx.values);
-    return tmpCtx.sql;
+    return this.buildFragment(ctx, (fragmentCtx) =>
+      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSON_LENGTH(${jsonField})`), value),
+    );
   }
 
-  /** `JSON_TABLE` needs its columns declared upfront, so the object form maps `fields` to columns. */
-  protected override jsonElemFrom(jsonField: string, fields: readonly string[]): string {
+  /**
+   * `JSON_TABLE` needs its columns declared upfront, so the object form maps `fields` to columns.
+   * The scalar form's column is `JSON`, not `TEXT`, when `asJson` - `TEXT PATH '$'` silently reads
+   * a compound (array/object) element as `NULL`, since MySQL doesn't coerce those to text; only a
+   * true scalar element survives that coercion. A nested `$elemMatch` (each element being an array
+   * that itself gets exploded) always requests `asJson`, so this is what makes that case reach the
+   * inner elements at all rather than finding nothing.
+   */
+  protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
     const columns = fields.length
       ? fields.map((field) => `${this.escapeId(field, true)} TEXT PATH ${jsonPath(field)}`).join(', ')
-      : `elem_text TEXT PATH '$'`;
-    return `JSON_TABLE(${jsonField}, '$[*]' COLUMNS (${columns})) AS jt`;
+      : `elem_text ${asJson ? 'JSON' : 'TEXT'} PATH '$'`;
+    return `JSON_TABLE(${jsonField}, '$[*]' COLUMNS (${columns})) AS ${alias}`;
   }
 
-  protected override jsonElemRef(field?: string, asJson = false): string {
-    const ref = field === undefined ? 'jt.elem_text' : `jt.${this.escapeId(field, true)}`;
+  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
+    const ref = field === undefined ? `${alias}.elem_text` : `${alias}.${this.escapeId(field, true)}`;
     // `JSON_TABLE` columns stay `TEXT` so the string operators keep working; the JSON form reads
     // that text back as JSON.
     return asJson ? this.jsonCast(ref) : ref;

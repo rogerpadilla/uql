@@ -62,7 +62,11 @@ export type HookContext<E extends object, Ctx = unknown> = {
   readonly op: CrudOperation;
   readonly method: HttpMethod;
   /**
-   * parsed query - mutate in place or reassign to enforce filters (tenant scoping, row-level rules).
+   * parsed query - mutate in place or reassign to shape it (e.g. force a `$select`, inject a
+   * `$sort`). For actual tenant/row-level scoping, prefer `@Filter(..., { security: true })` on
+   * the entity instead: unlike a hook mutation, it is AND-merged (a client `$where` on the same
+   * key cannot silently win), fails closed when its context is missing, and applies uniformly
+   * across every query path including joined relations.
    */
   query: Query<E>;
   /**

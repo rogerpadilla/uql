@@ -9,12 +9,22 @@ import type { QueryContext, QueryDialect } from '../type/index.js';
  */
 export class SqlQueryContext implements QueryContext {
   private readonly sqlChunks: string[] = [];
-  private readonly params: unknown[] = [];
+  private readonly params: unknown[];
+  private aliasCounter = 0;
 
   /**
    * @param dialect The SQL dialect used to determine how values should be formatted as placeholders.
+   * @param params An existing values array to bind into instead of a fresh one - shared by a
+   * fragment context built via {@link AbstractSqlDialect.buildFragment}, so a bound value's
+   * placeholder is numbered correctly against the real query from the moment it's added, rather
+   * than needing to be reconciled after the fact.
    */
-  constructor(readonly dialect: QueryDialect) {}
+  constructor(
+    readonly dialect: QueryDialect,
+    params: unknown[] = [],
+  ) {
+    this.params = params;
+  }
 
   /**
    * Appends raw SQL string fragments to the query.
@@ -51,6 +61,16 @@ export class SqlQueryContext implements QueryContext {
   pushValue(...values: unknown[]): this {
     this.params.push(...values.map((v) => this.dialect.normalizeValue(v)));
     return this;
+  }
+
+  /**
+   * A fresh alias unique within this context, e.g. `nextAlias('_uql_elem')` -> `'_uql_elem_1'`,
+   * `'_uql_elem_2'`, ... A fragment context (see the constructor) counts independently of the `ctx`
+   * it shares values with - fine today since no fragment-building hook also generates aliases, but
+   * worth widening (share this counter too, the same way `params` is shared) if one ever does.
+   */
+  nextAlias(prefix: string): string {
+    return `${prefix}_${++this.aliasCounter}`;
   }
 
   /**

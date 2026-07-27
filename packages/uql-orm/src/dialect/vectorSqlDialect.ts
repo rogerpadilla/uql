@@ -62,18 +62,14 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     meta: EntityMeta<E>,
     key: string,
     search: QueryVectorSearch,
-    dialectName: string,
   ): void {
-    const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
+    const { colName, distance } = this.resolveVectorSortParams(meta, key, search);
     const fn = this.vectorDistanceFns.get(distance);
     if (!fn) {
-      throw Error(`${dialectName} does not support vector distance metric: ${distance}`);
+      throw Error(`${this.dialectName} does not support vector distance metric: ${distance}`);
     }
     ctx.append(`${fn}(${this.escapeId(colName)}, `);
     ctx.addValue(`[${search.$vector.join(',')}]`);
-    if (vectorCast && dialectName === 'PostgreSQL') {
-      ctx.append(`::${vectorCast}`);
-    }
     ctx.append(')');
   }
 
@@ -97,7 +93,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
    */
   protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
     if (this.vectorDistanceFns.size > 0) {
-      this.appendFunctionVectorSort(ctx, meta, key, search, this.dialectName);
+      this.appendFunctionVectorSort(ctx, meta, key, search);
       return;
     }
     throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');

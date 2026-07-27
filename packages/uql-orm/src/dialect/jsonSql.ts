@@ -2,6 +2,28 @@ import type { FieldOptions } from '../type/index.js';
 import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 
 /**
+ * Alias prefix for the derived table a dialect explodes a JSON array into to test `$all`/
+ * `$elemMatch` (e.g. SQLite's `json_each(col) AS _uql_elem_1`). Passed to
+ * {@link QueryContext.nextAlias} for a fresh, uniquely-numbered name per call - `$elemMatch`/`$all`
+ * can recurse into this on a nested array, so a single fixed alias would let the inner occurrence
+ * shadow the outer one it needs to correlate against (confirmed on SQLite and MySQL: reusing one
+ * literal alias at two nesting depths silently returned zero rows instead of the matching ones).
+ * Leading underscore keeps it a valid unquoted identifier on every dialect (unlike a leading `$`,
+ * which Postgres/SQLite only allow after the first character) while staying an unlikely real
+ * column/relation/`$select` alias name.
+ */
+export const JSON_ELEM_ALIAS_PREFIX = '_uql_elem';
+
+/**
+ * Alias for the derived table a dialect explodes a JSON array into to evaluate `$pull` (e.g.
+ * SQLite's `json_each(col) AS _uql_pull`). Kept distinct from {@link JSON_ELEM_ALIAS_PREFIX} since
+ * the two subqueries have different shapes (an `EXISTS` boolean vs. a `json_group_array` rebuild)
+ * and could in principle both be in scope if this ever supports nesting one inside the other's
+ * condition.
+ */
+export const JSON_PULL_ALIAS = '_uql_pull';
+
+/**
  * A `'$.a.b'` JSON path literal, each dot-separated segment escaped. `suffix` appends an accessor
  * such as `[#]` or `[*]`. Shared across dialects unchanged: no dialect escapes a JSON path key
  * differently from an ANSI string literal.

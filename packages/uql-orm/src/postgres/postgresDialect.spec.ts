@@ -183,6 +183,30 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toHaveLength(7);
   }
 
+  /**
+   * Regression: each fallback (non-`EXCLUDED`) update column formats its value in an isolated
+   * context that always numbered its own placeholder from `$1` - correct only by coincidence when a
+   * single such column existed. With two, both rendered `$1` while the values landed at different
+   * positions, so the second column silently bound the wrong value.
+   */
+  shouldUpsertWithTwoFallbackUpdateColumns() {
+    @Entity({ name: 'UpsertFallbackWidget' })
+    class UpsertFallbackWidget {
+      @Id() id?: number;
+      @Field() email!: string;
+      @Field({ onUpdate: () => 111 }) updatedAt?: number;
+      @Field({ onUpdate: () => 'v2' }) version?: string;
+    }
+
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(ctx, UpsertFallbackWidget, { email: true }, { email: 'a@b.com' }),
+    );
+    expect(sql).toBe(
+      'INSERT INTO "UpsertFallbackWidget" ("email") VALUES ($3) ON CONFLICT ("email") DO UPDATE SET "updatedAt" = $1, "version" = $2 RETURNING "id" "id", (xmax = 0) AS "_created"',
+    );
+    expect(values).toEqual([111, 'v2', 'a@b.com']);
+  }
+
   /** A RETURNING clause on every insert, unlike the base's `firstId` (MySQL) expectation. */
   override shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
     const { sql, values } = this.exec((ctx) =>
@@ -664,118 +688,6 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual([expect.any(Number), 1, 'Some Item', expect.any(Number)]);
   }
 
-  override shouldFind$istartsWith() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $istartsWith: 'Some' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['some%']);
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $istartsWith: 'Some', $ne: 'Something' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
-    );
-    expect(res.values).toEqual(['some%', 'Something']);
-  }
-
-  override shouldFind$iendsWith() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $iendsWith: 'Some' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['%some']);
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $iendsWith: 'Some', $ne: 'Something' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
-    );
-    expect(res.values).toEqual(['%some', 'Something']);
-  }
-
-  override shouldFind$iincludes() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $iincludes: 'Some' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['%some%']);
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $iincludes: 'Some', $ne: 'Something' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
-    );
-    expect(res.values).toEqual(['%some%', 'Something']);
-  }
-
-  override shouldFind$ilike() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $ilike: 'Some' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" ILIKE $1 ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0');
-    expect(res.values).toEqual(['some']);
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true },
-        $where: { name: { $ilike: 'Some', $ne: 'Something' } },
-        $sort: { name: 1, id: -1 },
-        $skip: 0,
-        $limit: 50,
-      }),
-    );
-    expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE ("name" ILIKE $1 AND "name" IS DISTINCT FROM $2) ORDER BY "name", "id" DESC LIMIT 50 OFFSET 0',
-    );
-    expect(res.values).toEqual(['some', 'Something']);
-  }
-
   override shouldFind$regex() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -815,22 +727,6 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ websearch_to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', 1]);
-  }
-
-  override shouldFindWithPopulateOnly() {
-    const res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $populate: {
-          profile: {
-            $select: { picture: true },
-          },
-        },
-        $where: { id: 123 },
-      }),
-    );
-    expect(res.sql).toContain('LEFT JOIN "user_profile" "profile" ON "profile"."creatorId" = "User"."id"');
-    expect(res.sql).toContain('"profile"."image" "profile.picture"');
-    expect(res.values).toEqual([123]);
   }
 
   override shouldUpdateWithRawString() {
@@ -1136,6 +1032,33 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual([1, 10]);
   }
 
+  /**
+   * Regression: `jsonSize` builds its comparison in an isolated context, which always numbers its
+   * own placeholders from `$1` - only correct by coincidence when `$size` is the sole bound value.
+   * With a preceding condition, the placeholder must shift to account for it.
+   */
+  shouldFind$sizeAfterAnotherBoundValue() {
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { name: 'Acme', kind: { $size: 3 } } as any,
+      }),
+    );
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "name" = $1 AND jsonb_array_length("kind") = $2');
+    expect(res.values).toEqual(['Acme', 3]);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { name: 'Acme', kind: { $size: { $gt: 0, $lte: 5 } } } as any,
+      }),
+    );
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "Company" WHERE "name" = $1 AND (jsonb_array_length("kind") > $2 AND jsonb_array_length("kind") <= $3)',
+    );
+    expect(res.values).toEqual(['Acme', 0, 5]);
+  }
+
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
@@ -1145,7 +1068,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'city\' ILIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'city\' ILIKE $1)',
     );
     expect(values).toEqual(['new%']);
   }
@@ -1158,7 +1081,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE (elem->>\'price\')::numeric > $1 AND elem->\'active\' = $2::jsonb)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE (_uql_elem_1->>\'price\')::numeric > $1 AND _uql_elem_1->\'active\' = $2::jsonb)',
     );
     // The boolean compares as JSON: extracting it as text loses the type.
     expect(values).toEqual([100, 'true']);
@@ -1172,7 +1095,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' = $1 AND elem->>\'status\' = ANY($2))',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' = $1 AND _uql_elem_1->>\'status\' = ANY($2))',
     );
     expect(values).toEqual(['exact', ['active', 'pending']]);
   }
@@ -1185,7 +1108,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS elem WHERE elem->>\'name\' LIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' LIKE $1)',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -1198,7 +1121,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("elem->>'status' IS DISTINCT FROM $1");
+    expect(res.sql).toContain("_uql_elem_1->>'status' IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -1207,9 +1130,9 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } } as any,
       }),
     );
-    expect(res.sql).toContain("(elem->>'qty')::numeric >= $1");
-    expect(res.sql).toContain("(elem->>'price')::numeric < $2");
-    expect(res.sql).toContain("(elem->>'discount')::numeric <= $3");
+    expect(res.sql).toContain("(_uql_elem_1->>'qty')::numeric >= $1");
+    expect(res.sql).toContain("(_uql_elem_1->>'price')::numeric < $2");
+    expect(res.sql).toContain("(_uql_elem_1->>'discount')::numeric <= $3");
 
     // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
     res = this.exec((ctx) =>
@@ -1229,12 +1152,12 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("elem->>'a' LIKE");
-    expect(res.sql).toContain("elem->>'b' LIKE");
-    expect(res.sql).toContain("elem->>'c' ILIKE");
-    expect(res.sql).toContain("elem->>'d' ILIKE");
-    expect(res.sql).toContain("elem->>'e' LIKE");
-    expect(res.sql).toContain("elem->>'f' ILIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'a' LIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'b' LIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'c' ILIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'d' ILIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'e' LIKE");
+    expect(res.sql).toContain("_uql_elem_1->>'f' ILIKE");
 
     // Test $regex, $nin
     res = this.exec((ctx) =>
@@ -1243,8 +1166,8 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } } as any,
       }),
     );
-    expect(res.sql).toContain("elem->>'code' ~ $1");
-    expect(res.sql).toContain("elem->>'tag' <> ALL($2)");
+    expect(res.sql).toContain("_uql_elem_1->>'code' ~ $1");
+    expect(res.sql).toContain("_uql_elem_1->>'tag' <> ALL($2)");
   }
 
   // JSONB dot-notation tests (Postgres-specific)
@@ -1351,7 +1274,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, 1],
     },
     /**
@@ -1359,7 +1282,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
      * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
      */
     pullPushSameKey: {
-      sql: `UPDATE "Company" SET "kind" = jsonb_set(jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(uql_pull.val ORDER BY uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS uql_pull(val, ord) WHERE uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
+      sql: `UPDATE "Company" SET "kind" = jsonb_set(jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
       values: ['"a"', '"b"', 123, 1],
     },
     setPushCombined: {

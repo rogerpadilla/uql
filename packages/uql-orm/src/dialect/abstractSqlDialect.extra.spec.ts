@@ -52,7 +52,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return 'firstId';
   }
 
-  escape(value: unknown): string {
+  override escape(value: unknown): string {
     return String(value);
   }
 
@@ -148,14 +148,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     const meta = getMeta(User);
     const assignments = (dialect as any).getUpsertUpdateAssignments(ctx, meta, { id: true }, { name: 'John' });
     expect(assignments).toContain('`name` = ?');
-    expect(ctx.values).toContain('John');
-  });
-
-  it('getPersistables and getPersistable', () => {
-    const ctx = dialect.createContext();
-    const meta = getMeta(User);
-    const persistables = (dialect as any).getPersistables(ctx, meta, { name: 'John' }, 'onInsert');
-    expect(persistables[0].name).toBe('?');
     expect(ctx.values).toContain('John');
   });
 

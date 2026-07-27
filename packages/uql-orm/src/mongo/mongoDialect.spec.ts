@@ -1,9 +1,41 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
-import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
+import { UqlSecurityError, withContext } from '../context/context.js';
+import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
 import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
 import { getRelationRequestSummary, raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
+
+declare module '../type/index.js' {
+  interface UqlContext {
+    secureTenantId?: number;
+  }
+}
+
+/** The joined (m1) side of a `security: true` filter - the regression case for the $lookup/populate gap. */
+@Filter('tenant', {
+  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  security: true,
+})
+@Entity()
+class SecureRelated {
+  @Id()
+  id?: number;
+  @Field()
+  tenantId?: number;
+  @Field()
+  name?: string;
+}
+
+@Entity()
+class SecureParent {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureRelated })
+  relatedId?: number;
+  @ManyToOne()
+  related?: SecureRelated;
+}
 
 class MongoDialectSpec implements Spec {
   dialect!: MongoDialect;
@@ -153,10 +185,11 @@ class MongoDialectSpec implements Spec {
       },
       {
         $lookup: {
-          as: 'measureUnit',
-          foreignField: '_id',
           from: 'MeasureUnit',
           localField: 'measureUnitId',
+          foreignField: '_id',
+          pipeline: [{ $match: { deletedAt: null } }],
+          as: 'measureUnit',
         },
       },
       {
@@ -164,10 +197,10 @@ class MongoDialectSpec implements Spec {
       },
       {
         $lookup: {
-          as: 'tax',
-          foreignField: '_id',
           from: 'Tax',
           localField: 'taxId',
+          foreignField: '_id',
+          as: 'tax',
         },
       },
       {
@@ -288,6 +321,44 @@ class MongoDialectSpec implements Spec {
     const summary = getRelationRequestSummary(meta, { profile: true });
     const baseline = this.dialect.aggregationPipeline(User, { $populate: { profile: true } });
     expect(this.dialect.aggregationPipeline(User, { $populate: { profile: true } }, summary)).toEqual(baseline);
+  }
+
+  /**
+   * Regression for the $lookup/populate gap: a `security: true` filter on a joined (m1) relation
+   * must apply even to a bare `$populate: { related: true }` with no explicit `$where` on it -
+   * matching the SQL dialects' equivalent JOIN-ON-clause fix.
+   */
+  shouldApplySecurityFilterToLookupPopulateWithoutExplicitWhere() {
+    const pipeline = withContext({ secureTenantId: 5 }, () =>
+      this.dialect.aggregationPipeline(SecureParent, {
+        $select: { id: true },
+        $populate: { related: { $select: { id: true, name: true } } },
+      }),
+    );
+    expect(pipeline).toEqual([
+      {
+        $lookup: {
+          from: 'SecureRelated',
+          localField: 'relatedId',
+          foreignField: '_id',
+          pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }],
+          as: 'related',
+        },
+      },
+      {
+        $unwind: { path: '$related', preserveNullAndEmptyArrays: true },
+      },
+    ]);
+  }
+
+  /** Same shape as above, but with no ambient context: the security filter must fail closed. */
+  shouldFailClosedForLookupPopulateWhenSecurityContextIsMissing() {
+    expect(() =>
+      this.dialect.aggregationPipeline(SecureParent, {
+        $select: { id: true },
+        $populate: { related: { $select: { id: true, name: true } } },
+      }),
+    ).toThrow(UqlSecurityError);
   }
 
   // New operator tests
@@ -627,8 +698,7 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorItem);
-    const result = this.dialect.buildVectorSearchStage(VectorItem, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
+    const result = this.dialect.buildVectorSearchStage(VectorItem, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -646,10 +716,9 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorNum);
-    const r5 = this.dialect.buildVectorSearchStage(VectorNum, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
+    const r5 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
     expect((r5['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(50);
-    const r20 = this.dialect.buildVectorSearchStage(VectorNum, meta, 'vec', { $vector: [1, 2, 3] }, undefined, 20);
+    const r20 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 20);
     expect((r20['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(200);
   }
 
@@ -660,10 +729,8 @@ class MongoDialectSpec implements Spec {
       @Field() category!: string;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorItem2);
     const result = this.dialect.buildVectorSearchStage(
       VectorItem2,
-      meta,
       'vec',
       { $vector: [1, 2, 3] },
       { category: 'science' },
@@ -689,10 +756,8 @@ class MongoDialectSpec implements Spec {
       @Field() status!: string;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorComplex);
     const result = this.dialect.buildVectorSearchStage(
       VectorComplex,
-      meta,
       'vec',
       { $vector: [1, 2, 3] },
       { $or: [{ category: 'science' }, { status: 'published' }] },
@@ -716,8 +781,7 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorItem3);
-    const result = this.dialect.buildVectorSearchStage(VectorItem3, meta, 'vec', { $vector: [1, 2, 3] }, {}, 10);
+    const result = this.dialect.buildVectorSearchStage(VectorItem3, 'vec', { $vector: [1, 2, 3] }, {}, 10);
     expect(result).toEqual({
       $vectorSearch: {
         index: 'vec_index',
@@ -735,10 +799,8 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorProj);
     const result = this.dialect.buildVectorSearchStage(
       VectorProj,
-      meta,
       'vec',
       { $vector: [1, 2, 3], $project: 'similarity' },
       undefined,
@@ -762,10 +824,8 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorDist);
     const result = this.dialect.buildVectorSearchStage(
       VectorDist,
-      meta,
       'vec',
       { $vector: [1, 2, 3], $distance: 'l2' },
       undefined,
@@ -783,15 +843,7 @@ class MongoDialectSpec implements Spec {
       @Id() id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
-    const meta = getMeta(VectorCustomIdx);
-    const result = this.dialect.buildVectorSearchStage(
-      VectorCustomIdx,
-      meta,
-      'vec',
-      { $vector: [1, 2, 3] },
-      undefined,
-      10,
-    );
+    const result = this.dialect.buildVectorSearchStage(VectorCustomIdx, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
     expect((result['$vectorSearch'] as Record<string, unknown>)['index']).toBe('my_custom_idx');
   }
 
