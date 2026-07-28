@@ -11,7 +11,7 @@ import {
   Tag,
   User,
 } from '../test/index.js';
-import type { QuerierPool } from '../type/index.js';
+import type { QuerierPool, QueryRawFnOptions } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
@@ -251,11 +251,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
         id: 1,
       },
       $where: {
-        $exists: raw(({ ctx, dialect, escapedPrefix }: any) => {
+        $exists: raw((rawOpts) => {
+          const { ctx, dialect, escapedPrefix } = rawOpts as Required<QueryRawFnOptions>;
           dialect.find(ctx, User, {
             $select: { id: true },
             $where: {
-              companyId: raw(({ ctx: innerCtx }: any) => {
+              companyId: raw((innerOpts) => {
+                const { ctx: innerCtx } = innerOpts as Required<QueryRawFnOptions>;
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),
             },
@@ -277,11 +279,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.findMany(Item, {
       $select: { id: 1 },
       $where: {
-        $nexists: raw(({ ctx, dialect, escapedPrefix }: any) => {
+        $nexists: raw((rawOpts) => {
+          const { ctx, dialect, escapedPrefix } = rawOpts as Required<QueryRawFnOptions>;
           dialect.find(ctx, User, {
             $select: { id: true },
             $where: {
-              companyId: raw(({ ctx: innerCtx }: any) => {
+              companyId: raw((innerOpts) => {
+                const { ctx: innerCtx } = innerOpts as Required<QueryRawFnOptions>;
                 innerCtx.append(escapedPrefix + dialect.escapeId('companyId'));
               }),
             },

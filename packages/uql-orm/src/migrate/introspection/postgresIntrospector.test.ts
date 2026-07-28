@@ -5,17 +5,6 @@ import type { SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
-/**
- * PostgreSQL Schema Introspector Integration Tests
- *
- * Runs against a real PostgreSQL database (docker-compose service).
- * Tests all aspects of schema introspection including:
- * - Table discovery, columns, types
- * - Primary keys, foreign keys with referential actions
- * - Indexes (single, composite, unique)
- * - Default values, nullability
- * - PostgreSQL-specific features (arrays, generated columns)
- */
 class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   constructor() {
     const pool = new PgQuerierPool({
@@ -28,20 +17,9 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     super(pool, new PostgresSchemaIntrospector(pool));
   }
 
-  // ============================================================================
-  // PostgreSQL-Specific Hooks
-  // ============================================================================
-
-  /**
-   * Add PostgreSQL-specific columns (arrays) to table A.
-   */
   override async addDialectSpecificColumnsA(querier: SqlQuerier): Promise<void> {
     await querier.run(`ALTER TABLE ${INTROSPECT_TABLES.A} ADD COLUMN tags TEXT[]`);
   }
-
-  // ============================================================================
-  // PostgreSQL-Specific Tests
-  // ============================================================================
 
   async shouldIntrospectArrayColumn() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);

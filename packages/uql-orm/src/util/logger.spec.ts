@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.js';
 
 // Helper to strip ANSI escape codes
@@ -6,10 +6,10 @@ import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.j
 const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('DefaultLogger', () => {
-  let spyLog: any;
-  let spyWarn: any;
-  let spyInfo: any;
-  let spyError: any;
+  let spyLog: MockInstance<typeof console.log>;
+  let spyWarn: MockInstance<typeof console.warn>;
+  let spyInfo: MockInstance<typeof console.info>;
+  let spyError: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     spyLog = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -84,10 +84,10 @@ describe('DefaultLogger', () => {
 });
 
 describe('LoggerWrapper', () => {
-  let spyLog: any;
-  let spyWarn: any;
-  let spyInfo: any;
-  let spyError: any;
+  let spyLog: MockInstance<typeof console.log>;
+  let spyWarn: MockInstance<typeof console.warn>;
+  let spyInfo: MockInstance<typeof console.info>;
+  let spyError: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     spyLog = vi.spyOn(console, 'log').mockImplementation(() => {});

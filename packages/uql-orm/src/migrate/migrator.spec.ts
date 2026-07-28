@@ -10,6 +10,7 @@ import type {
   Migration,
   MigrationStorage,
   QuerierPool,
+  SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,
   SqlQuerier,
@@ -43,7 +44,7 @@ describe('Migrator Core Methods', () => {
   let storage: MigrationStorage;
   let pool: QuerierPool;
   let querier: SqlQuerier;
-  let mockExecuted: Mock<any>;
+  let mockExecuted: Mock<MigrationStorage['executed']>;
 
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -534,7 +535,7 @@ describe('Migrator Core Methods', () => {
     });
 
     it('autoSync should respect safe and drop options in filterDiff', async () => {
-      const diff: any = {
+      const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'User',
         columnsToDrop: ['old_col'],
@@ -659,7 +660,7 @@ describe('Migrator Core Methods', () => {
 
     it('generateFromEntities should handle create and alter diffs', async () => {
       const m = new Migrator(pool, { storage });
-      const diffs: any[] = [
+      const diffs: SchemaDiff[] = [
         { type: 'create', tableName: 'User' },
         { type: 'alter', tableName: 'Profile' },
       ];
