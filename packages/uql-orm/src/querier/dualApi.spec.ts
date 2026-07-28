@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
-import type { Query, QueryAggregate, QuerySearch, Type } from '../type/index.js';
+import type { Query, QueryAggregate, QueryOptions, QuerySearch, Type } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 /**
@@ -45,7 +45,7 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve({ changes: 0 });
   }
 
-  protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: any): Promise<number> {
+  protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
     this.deleteManyMock(entity, q, opts);
     return Promise.resolve(0);
   }

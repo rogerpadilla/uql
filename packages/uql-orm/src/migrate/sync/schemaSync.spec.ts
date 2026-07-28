@@ -382,7 +382,6 @@ describe('SchemaSync', () => {
       });
 
       const result = await sync.sync();
-      // console.log('DEBUG SUMMARY RESULT:', result.summary);
 
       expect(result.summary).toContain('Bidirectional Sync Report');
       expect(result.summary).toContain('Entity → Database:');

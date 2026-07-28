@@ -8,8 +8,8 @@ describe('DatabaseMigrationStorage', () => {
   let storage: DatabaseMigrationStorage;
   let pool: QuerierPool;
   let querier: SqlQuerier;
-  let mockAll: Mock<(sql: any, params?: any[]) => Promise<any[]>>;
-  let mockRun: Mock<(sql: any, params?: any[]) => Promise<any>>;
+  let mockAll: Mock<SqlQuerier['all']>;
+  let mockRun: Mock<SqlQuerier['run']>;
 
   beforeEach(() => {
     mockAll = vi.fn().mockResolvedValue([]);

@@ -3,6 +3,7 @@ import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../d
 import { Entity, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
+import type { QuerierPool } from '../type/index.js';
 import * as cli from './cli.js';
 import * as cliConfig from './cli-config.js';
 import type { Migrator } from './migrator.js';
@@ -39,7 +40,7 @@ vi.mock('./cli-config.js', () => {
 });
 
 describe('CLI', () => {
-  let mockPool: any;
+  let mockPool: QuerierPool;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,7 +50,7 @@ describe('CLI', () => {
       end: vi.fn(),
       transaction: vi.fn(),
       withQuerier: vi.fn(),
-    };
+    } as unknown as QuerierPool;
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: mockPool });
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -316,7 +317,9 @@ describe('CLI', () => {
 
   it('main drift:check with config', async () => {
     // Modify shared mock to include introspector
-    (mockMigrator as any).schemaIntrospector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
+    (mockMigrator as unknown as Migrator).schemaIntrospector = {
+      introspect: vi.fn().mockResolvedValue(new SchemaAST()),
+    } as unknown as Migrator['schemaIntrospector'];
 
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({
       pool: mockPool,
@@ -327,7 +330,7 @@ describe('CLI', () => {
       await cli.main(['drift:check']);
     } finally {
       // Clean up shared mock
-      delete (mockMigrator as any).schemaIntrospector;
+      delete (mockMigrator as unknown as Migrator).schemaIntrospector;
     }
 
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Checking for schema drift'));

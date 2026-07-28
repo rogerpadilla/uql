@@ -8,7 +8,7 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = new LoggerWrapper({ logQuery }, { logValues: true });
       @Log()
-      async all(query: string, values?: any[]) {
+      async all(query: string, values?: unknown[]) {
         return [{ id: 1 }];
       }
     }
@@ -25,7 +25,7 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = new LoggerWrapper({ logQuery });
       @Log()
-      async run(query: string, values?: any[]) {
+      async run(query: string, values?: unknown[]) {
         throw new Error('fail');
       }
     }
@@ -41,7 +41,7 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = new LoggerWrapper({ logQuery }, { logValues: true });
       @Log()
-      async findMany(entity: object, query: any): Promise<any[]> {
+      async findMany(entity: object, query: unknown): Promise<unknown[]> {
         return [];
       }
     }
@@ -55,7 +55,7 @@ describe('Log decorator', () => {
   it('should do nothing if logger is not present', async () => {
     class MockQuerier {
       @Log()
-      async all(query: string): Promise<any[]> {
+      async all(query: string): Promise<unknown[]> {
         return [];
       }
     }
@@ -68,7 +68,7 @@ describe('Log decorator', () => {
   it('should attach the query to a thrown error, even without a logger', async () => {
     class MockQuerier {
       @Log()
-      async all(query: string, values?: any[]) {
+      async all(query: string, values?: unknown[]) {
         throw new Error('syntax error');
       }
     }
@@ -83,7 +83,7 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = new LoggerWrapper([]); // no 'query' level, no slowQuery
       @Log()
-      async all(query: string, values?: any[]) {
+      async all(query: string, values?: unknown[]) {
         throw new Error('syntax error');
       }
     }
@@ -98,7 +98,7 @@ describe('Log decorator', () => {
     class MockQuerier {
       logger = new LoggerWrapper(true, { logValues: true });
       @Log()
-      async all(query: string, values?: any[]) {
+      async all(query: string, values?: unknown[]) {
         throw new Error('syntax error');
       }
     }

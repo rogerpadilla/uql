@@ -4,10 +4,7 @@ import type { ColumnSchema, QuerierPool, SchemaIntrospector, SqlQuerier, TableSc
 import { t } from '../builder/expressions.js';
 import { MigrationBuilder } from '../builder/migrationBuilder.js';
 
-/**
- * Test table names for schema introspection tests.
- * These are used consistently across all dialect implementations.
- */
+/** Test table names shared across every dialect's introspection suite. */
 export const INTROSPECT_TABLES = {
   A: 'test_introspect_a',
   B: 'test_introspect_b',
@@ -20,30 +17,16 @@ export const INTROSPECT_TABLES = {
 } as const;
 
 /**
- * Abstract integration test base class for schema introspectors.
- * Provides comprehensive tests for all aspects of schema introspection:
- * - Table discovery
- * - Column types and attributes (types, length, precision, scale)
- * - Primary keys (single and composite)
- * - Foreign keys with referential actions (CASCADE, SET NULL, RESTRICT, NO ACTION)
- * - Indexes (single, composite, unique)
- * - Default values (strings, numbers, booleans, expressions)
- * - Nullability
- * - Self-referencing relationships
- * - Edge cases (no indexes, no FKs)
- *
- * Uses MigrationBuilder for dialect-agnostic DDL operations.
- * Subclasses can override hooks for dialect-specific customization.
+ * Shared integration suite for schema introspectors, covering table/column/PK/FK/index/default-value
+ * introspection plus self-references and edge cases. Builds its fixture tables with
+ * {@link MigrationBuilder} so the DDL stays dialect-agnostic; subclasses override the hooks below for
+ * dialect-specific setup/teardown and add their own dialect-specific tests.
  */
 export abstract class AbstractIntrospectorIt implements Spec {
   constructor(
     protected readonly pool: QuerierPool<SqlQuerier>,
     protected readonly introspector: SchemaIntrospector,
   ) {}
-
-  // ============================================================================
-  // Lifecycle
-  // ============================================================================
 
   async beforeAll() {
     const querier = await this.pool.getQuerier();
@@ -64,10 +47,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     }
     await this.pool.end();
   }
-
-  // ============================================================================
-  // DDL Operations (using MigrationBuilder)
-  // ============================================================================
 
   /**
    * Create all test tables using MigrationBuilder.
@@ -185,42 +164,20 @@ export abstract class AbstractIntrospectorIt implements Spec {
     await this.afterDropTables(querier);
   }
 
-  // ============================================================================
-  // Dialect-Specific Hooks (override in subclasses)
-  // ============================================================================
-
-  /**
-   * Called before creating tables. Use for dialect-specific setup.
-   * E.g., SQLite: PRAGMA foreign_keys = ON
-   */
+  /** Dialect-specific pre-setup, e.g. SQLite's `PRAGMA foreign_keys = ON`. */
   protected async beforeCreateTables(_querier: SqlQuerier): Promise<void> {}
 
-  /**
-   * Called after creating tables. Use for dialect-specific additions.
-   */
+  /** Dialect-specific post-setup, run once the shared fixture tables exist. */
   protected async afterCreateTables(_querier: SqlQuerier): Promise<void> {}
 
-  /**
-   * Add dialect-specific columns to table A.
-   * E.g., PostgreSQL: array columns
-   */
+  /** Dialect-specific columns added to table A, e.g. Postgres's array columns. */
   protected async addDialectSpecificColumnsA(_querier: SqlQuerier): Promise<void> {}
 
-  /**
-   * Called before dropping tables. Use for dialect-specific setup.
-   * E.g., MySQL: SET FOREIGN_KEY_CHECKS = 0
-   */
+  /** Dialect-specific pre-drop, e.g. MySQL's `SET FOREIGN_KEY_CHECKS = 0`. */
   protected async beforeDropTables(_querier: SqlQuerier): Promise<void> {}
 
-  /**
-   * Called after dropping tables. Use for dialect-specific cleanup.
-   * E.g., MySQL: SET FOREIGN_KEY_CHECKS = 1
-   */
+  /** Dialect-specific post-drop cleanup, e.g. re-enabling MySQL's FK checks. */
   protected async afterDropTables(_querier: SqlQuerier): Promise<void> {}
-
-  // ============================================================================
-  // Table Discovery Tests
-  // ============================================================================
 
   async shouldIntrospectTableNames() {
     const tableNames = await this.introspector.getTableNames();
@@ -242,10 +199,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(existsNone).toBe(false);
   }
 
-  // ============================================================================
-  // Basic Table Schema Tests
-  // ============================================================================
-
   async shouldIntrospectTableSchema() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
@@ -259,10 +212,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(colNames).toContain('unique_code');
   }
 
-  // ============================================================================
-  // Primary Key Tests
-  // ============================================================================
-
   async shouldIntrospectPrimaryKey() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
@@ -272,10 +221,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const idCol = this.getColumn(schema, 'id');
     expect(idCol.isPrimaryKey).toBe(true);
   }
-
-  // ============================================================================
-  // Foreign Key Tests
-  // ============================================================================
 
   async shouldIntrospectForeignKeys() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
@@ -305,10 +250,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(fk.onUpdate).toBe('CASCADE');
   }
 
-  // ============================================================================
-  // Index Tests
-  // ============================================================================
-
   async shouldIntrospectIndexes() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
@@ -324,20 +265,12 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(index.columns).toEqual(['priority']);
   }
 
-  // ============================================================================
-  // Unique Constraint Tests
-  // ============================================================================
-
   async shouldIntrospectUniqueColumn() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
     const uniqueCol = this.getColumn(schema, 'unique_code');
     expect(uniqueCol.isUnique).toBe(true);
   }
-
-  // ============================================================================
-  // Nullability Tests
-  // ============================================================================
 
   async shouldIntrospectNullableColumns() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
@@ -353,10 +286,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(priorityCol.nullable).toBe(false);
   }
 
-  // ============================================================================
-  // Default Value Tests
-  // ============================================================================
-
   async shouldIntrospectStringDefaultValue() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
@@ -371,20 +300,12 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(scoreCol.defaultValue).toBe(0);
   }
 
-  // ============================================================================
-  // Auto-increment Tests
-  // ============================================================================
-
   async shouldIntrospectAutoIncrement() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
     const idCol = this.getColumn(schema, 'id');
     expect(idCol.isAutoIncrement).toBe(true);
   }
-
-  // ============================================================================
-  // Composite Primary Key Tests
-  // ============================================================================
 
   async shouldIntrospectCompositePrimaryKey() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_PK);
@@ -412,10 +333,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(dataCol.isPrimaryKey).toBe(false);
   }
 
-  // ============================================================================
-  // Self-Referencing Foreign Key Tests
-  // ============================================================================
-
   async shouldIntrospectSelfReferencingForeignKey() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.SELF_REF);
 
@@ -431,10 +348,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const parentCol = this.getColumn(schema, 'parent_id');
     expect(parentCol.nullable).toBe(true);
   }
-
-  // ============================================================================
-  // Multiple Foreign Keys to Same Table Tests
-  // ============================================================================
 
   async shouldIntrospectMultipleForeignKeysToSameTable() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.MULTI_FK);
@@ -455,10 +368,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(fk.onDelete).toBe('RESTRICT');
   }
 
-  // ============================================================================
-  // Composite Unique Constraint Tests
-  // ============================================================================
-
   async shouldIntrospectCompositeUniqueConstraint() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_UNIQUE);
 
@@ -471,10 +380,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(uniqueIndex.columns).toHaveLength(2);
     expect(uniqueIndex.unique).toBe(true);
   }
-
-  // ============================================================================
-  // Edge Case Tests
-  // ============================================================================
 
   async shouldIntrospectTableWithNoForeignKeys() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.NO_FK);
@@ -491,10 +396,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(nonPkIndexes.filter((i) => i.name.includes(INTROSPECT_TABLES.NO_FK))).toEqual([]);
   }
 
-  // ============================================================================
-  // Column Ordering Tests
-  // ============================================================================
-
   async shouldPreserveColumnOrder() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
@@ -507,10 +408,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(nameIndex).toBeLessThan(statusIndex);
   }
 
-  // ============================================================================
-  // Column Count Tests
-  // ============================================================================
-
   async shouldIntrospectCorrectColumnCount() {
     const schemaA = await this.getTableSchema(INTROSPECT_TABLES.A);
     const schemaCompositePK = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_PK);
@@ -521,10 +418,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // test_introspect_composite_pk has exactly: tenant_id, entity_id, data
     expect(schemaCompositePK.columns.length).toBe(3);
   }
-
-  // ============================================================================
-  // SchemaAST Integration Tests
-  // ============================================================================
 
   async shouldIntrospectFullSchemaAST() {
     const ast = await this.introspector.introspect();
@@ -567,10 +460,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(idxCPriority).toBeDefined();
     expect(idxCPriority?.columns.length).toBe(1);
   }
-
-  // ============================================================================
-  // Helper methods
-  // ============================================================================
 
   protected async getTableSchema(tableName: string): Promise<TableSchema> {
     const schema = await this.introspector.getTableSchema(tableName);

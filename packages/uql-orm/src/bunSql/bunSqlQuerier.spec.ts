@@ -1,3 +1,4 @@
+import type { SQL } from 'bun';
 import { describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { MySqlDialect } from '../mysql/index.js';
@@ -18,8 +19,13 @@ function makeSql(result: object) {
   };
 }
 
-function createQuerier(sql: any, dialect: AbstractSqlDialect) {
-  return new BunSqlQuerier(sql, dialect, () => sql.reserve());
+function createQuerier(sql: ReturnType<typeof makeSql>, dialect: AbstractSqlDialect) {
+  return new BunSqlQuerier(sql as unknown as SQL, dialect, () => sql.reserve());
+}
+
+/** Reaches into the protected `conn` field to assert connection lifecycle in tests. */
+function getConn(querier: BunSqlQuerier) {
+  return (querier as unknown as { conn?: ReturnType<typeof makeSql>['conn'] }).conn;
 }
 
 describe('BunSqlQuerier', () => {
@@ -97,18 +103,18 @@ describe('BunSqlQuerier', () => {
       const sql = makeSql({});
       const querier = createQuerier(sql, new SqliteDialect());
       await querier.run('INSERT...'); // connect
-      const conn = (querier as any).conn;
+      const conn = getConn(querier);
       expect(conn).toBeDefined();
 
       await querier.release();
-      expect(conn.release).toHaveBeenCalled();
-      expect((querier as any).conn).toBeUndefined();
+      expect(conn?.release).toHaveBeenCalled();
+      expect(getConn(querier)).toBeUndefined();
     });
 
     it('should skip release when connection has no release method', async () => {
       const conn = { unsafe: vi.fn().mockResolvedValue([]) };
       const sql = { reserve: vi.fn().mockResolvedValue(conn) };
-      const querier = new BunSqlQuerier(sql as any, new SqliteDialect(), () => sql.reserve());
+      const querier = new BunSqlQuerier(sql as unknown as SQL, new SqliteDialect(), () => sql.reserve());
       await querier.run('SELECT 1');
       await expect(querier.release()).resolves.toBeUndefined();
     });

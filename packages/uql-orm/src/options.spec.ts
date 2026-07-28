@@ -1,14 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from './dialect/index.js';
 import { getQuerier, getQuerierPool, setQuerierPool } from './options.js';
 import { createMockQuerierPool } from './test/mockQuerierPool.js';
 import type { Querier } from './type/index.js';
 
 describe('options', () => {
-  beforeEach(() => {
-    vi.spyOn(console, 'log');
-  });
-
   it('getQuerierPool unset', () => {
     expect(() => getQuerierPool()).toThrow('A default querier-pool has to be set first');
   });

@@ -84,7 +84,5 @@ function getDdlForTable<E>(entity: Type<E>, querier: AbstractSqlQuerier, primary
   sql += columns.join(',\n\t');
   sql += `\n);`;
 
-  // log('sql', sql);
-
   return sql;
 }

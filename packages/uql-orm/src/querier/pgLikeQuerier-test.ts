@@ -116,64 +116,19 @@ export abstract class PgLikeQuerierIt extends AbstractSqlQuerierIt {
 
   // ── JSONB operators integration tests ───────────────────────────────────
 
-  async shouldWorkWithJsonbOperators() {
-    const id = await this.querier.insertOne(Company, {
+  /**
+   * A JSONB dot-path two levels deep (`kind.meta.count`). The single-level array/elemMatch/set/
+   * push/unset paths are already covered generically for every dialect in {@link AbstractQuerierIt}.
+   */
+  async shouldFindByDeepJsonbDotPath() {
+    await this.querier.insertOne(Company, {
       name: 'Test Company',
-      kind: {
-        tags: ['admin', 'user'],
-        country: 'USA',
-        meta: {
-          created: true,
-          count: 5,
-        },
-      },
+      kind: { meta: { count: 5 } },
     });
 
-    // Test $all on nested JSONB path
-    const foundAll = await this.querier.findMany(Company, {
-      $where: { 'kind.tags': { $all: ['admin', 'user'] } },
-    });
-    expect(foundAll).toHaveLength(1);
-
-    // Test $elemMatch on nested path
-    const foundElemMatch = await this.querier.findMany(Company, {
-      $where: { 'kind.tags': { $elemMatch: { $startsWith: 'ad' } } },
-    });
-    expect(foundElemMatch).toHaveLength(1);
-
-    // Test $size
-    const foundSize = await this.querier.findMany(Company, {
-      $where: { 'kind.tags': { $size: 2 } },
-    });
-    expect(foundSize).toHaveLength(1);
-
-    // Test $set operator
-    await this.querier.updateOneById(Company, id, {
-      kind: { $set: { description: 'merged' } },
-    });
-
-    const foundMerge = await this.querier.findOneById(Company, id);
-    expect(foundMerge?.kind?.description).toBe('merged');
-    expect(foundMerge?.kind?.tags).toEqual(['admin', 'user']);
-
-    // Test $push operator
-    await this.querier.updateOneById(Company, id, {
-      kind: { $push: { tags: 'super-admin' } },
-    });
-    const foundPush = await this.querier.findOneById(Company, id);
-    expect(foundPush?.kind?.tags).toEqual(['admin', 'user', 'super-admin']);
-
-    // Test $unset operator
-    await this.querier.updateOneById(Company, id, {
-      kind: { $unset: ['country'] },
-    });
-    const foundUnset = await this.querier.findOneById(Company, id);
-    expect(foundUnset?.kind?.country).toBeUndefined();
-
-    // Test deep dot-notation path
-    const foundDeep = await this.querier.findMany(Company, {
+    const found = await this.querier.findMany(Company, {
       $where: { 'kind.meta.count': { $gt: 0 } },
     });
-    expect(foundDeep).toHaveLength(1);
+    expect(found).toHaveLength(1);
   }
 }
