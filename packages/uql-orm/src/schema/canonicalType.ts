@@ -21,20 +21,6 @@ export function isVectorCategory(category: TypeCategory): boolean {
   return category === 'vector' || category === 'halfvec' || category === 'sparsevec';
 }
 
-/** Vector cast types supported by pgvector. */
-export type VectorCast = 'vector' | 'halfvec' | 'sparsevec';
-
-/**
- * Resolve the effective vector cast type from field options.
- * Follows the canonical type system priority: `columnType > type`.
- */
-export function resolveVectorCast(field: { type?: unknown; columnType?: unknown } | undefined): VectorCast {
-  const raw = field?.columnType ?? field?.type;
-  if (raw === 'halfvec') return 'halfvec';
-  if (raw === 'sparsevec') return 'sparsevec';
-  return 'vector';
-}
-
 // Type Mapping Tables
 // ============================================================================
 

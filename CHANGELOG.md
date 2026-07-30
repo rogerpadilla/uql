@@ -6,6 +6,17 @@ date format is [yyyy-mm-dd]
 
 ## [0.21.0] - 2026-07-30
 
+### `reflect-metadata` and `jiti` are now optional peer dependencies (breaking)
+
+Both were mandatory for a single use each: `reflect-metadata` (264 KB) for one `Reflect.getMetadata('design:type', ...)` call, `jiti` (1.8 MB) for loading a TypeScript `uql.config.ts`. `npm i uql-orm` installs neither now.
+
+- `@Field()` with no explicit `type` (or `@Relation()` with no `entity`) needs `reflect-metadata` installed and imported once before any entity; without it the field throws, naming both remedies. Entities that always declare types are unaffected.
+- `uql-migrate` with a `uql.config.ts` needs `npm i -D jiti`; passing config inline does not. `uql-orm/migrate` dropped from ~99 KB to 35 KB gzip.
+
+### MySQL/MariaDB inline literals no longer go through `sqlstring` (behavior change)
+
+`Dialect.escape` now shares the Postgres/SQLite value handling: byte-for-byte identical across 29 value shapes, diverging only where `sqlstring` emitted broken SQL. `Uint8Array` rendered `` `0` = 255 `` instead of `X'ff00'`; plain objects, `Set`, `Map` and class instances rendered assignment fragments or `'[object Object]'` and now throw; `NaN`/`Infinity` now render `NULL`; `bigint` is no longer quoted.
+
 ### Fixes
 
 - **Relation subqueries (`$where: { comments: {...} }`, `$size`) applied none of the target's filters, bypassing `security: true` (behavior change).** A `$size` count was built from the join condition alone, so a client could binary-search `{ comments: { $size: { $gte: n } } }` to count rows it cannot read; a relation filter matched parents through soft-deleted children while `$populate` on the same relation excluded them. Both forms are now scoped by the target's filters (and the junction's, for ManyToMany) and fail closed on a missing security context. To match trashed rows, constrain the field: `{ comments: { deletedAt: { $ne: null } } }`.
@@ -16,10 +27,6 @@ date format is [yyyy-mm-dd]
 ### Fixes
 
 - **`uql drift:check` reported column type drift as "in sync".** The report compares each type rendered as the dialect's SQL, but the CLI built it without passing the dialect, so every type formatted as `unknown` and compared equal to every other one. A column that is `VARCHAR(50)` in the entity and `INTEGER` in the database now reports a critical type mismatch and exits `1`, instead of passing silently.
-
-### Internal
-
-- Test coverage raised to 98.5% statements / 93.7% branches (thresholds bumped to match), covering behaviors that previously had none: entity lifecycle hooks (`@BeforeInsert` and friends) executing through a querier, JSON column hydration through populated relations, safe-mode sync never dropping a column or index, `generate:from-db` entity emission, and the introspector's foreign-key/index AST building.
 
 ## [0.20.1] - 2026-07-27
 
@@ -586,7 +593,6 @@ Query filters, multi-tenancy / row-level security, and soft-delete restore. Upgr
 - **Dialect Architecture Hardening**: Replaced brittle runtime dialect-name checks with formal feature flags across the codebase.
 - **Immutability**: Marked all dialect configuration and feature properties as `readonly` for increased runtime stability.
 
-
 ## [0.7.4] - 2026-03-28
 ### Bug Fixes
 - **Module Imports**: Fixed an issue where the `index.js` barrels incorrectly exported driver-specific querier pools (like `mariadbQuerierPool`), which caused the module bundler/runtime to attempt to load optional peer dependencies (like `mariadb`) when importing unrelated modules from `uql-orm`.
@@ -932,7 +938,6 @@ Query filters, multi-tenancy / row-level security, and soft-delete restore. Upgr
   });
   ```
 - **JSON Dot-Notation Sorting**: `$sort` now supports JSONB dot-notation paths (e.g. `{ 'kind.priority': 'desc' }`), sharing the `resolveJsonDotPath` helper with `$where` for DRY consistency.
-
 
 ## [3.12.1] - 2026-03-05
 ### Bug Fixes

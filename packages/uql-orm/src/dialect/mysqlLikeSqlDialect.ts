@@ -1,4 +1,3 @@
-import SqlString from 'sqlstring';
 import type {
   DialectFeatures,
   FieldOptions,
@@ -6,7 +5,7 @@ import type {
   QueryContext,
   QuerySizeComparisonOps,
 } from '../type/index.js';
-import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
+import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
 
@@ -69,7 +68,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   override readonly maxBindValues: number = 65535;
 
   override escape(value: unknown): string {
-    return SqlString.escape(value);
+    return escapeMysqlSqlLiteral(value);
   }
 
   protected override numericCast(expr: string): string {

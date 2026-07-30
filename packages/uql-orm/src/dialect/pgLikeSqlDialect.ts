@@ -15,8 +15,7 @@ import {
   type Type,
   type VectorDistance,
 } from '../type/index.js';
-import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
-import { isJsonType } from '../util/index.js';
+import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonSetTarget } from './jsonSql.js';
 
@@ -191,21 +190,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return `(${expr})::numeric`;
   }
 
-  protected override formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions, value: unknown): void {
-    if (value instanceof QueryRaw) {
-      super.formatPersistableValue(ctx, field, value);
-      return;
-    }
-    if (isJsonType(field.type)) {
-      ctx.append(this.jsonVal(ctx, value, field.type as JsonColumnType));
-      return;
-    }
-    if (field.type === 'vector' && Array.isArray(value)) {
-      ctx.addValue(`[${value.join(',')}]`);
-      ctx.append('::vector');
-      return;
-    }
-    super.formatPersistableValue(ctx, field, value);
+  protected override appendJsonValue(ctx: QueryContext, value: unknown, type: JsonColumnType): void {
+    ctx.append(this.jsonVal(ctx, value, type));
+  }
+
+  protected override appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
+    ctx.addValue(`[${value.join(',')}]`);
+    ctx.append('::vector');
   }
 
   /**

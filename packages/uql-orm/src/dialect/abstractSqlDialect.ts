@@ -5,6 +5,7 @@ import {
   type FieldOptions,
   type IdKey,
   type IsolationLevel,
+  type JsonColumnType,
   type JsonUpdateOp,
   type Key,
   type Query,
@@ -49,7 +50,6 @@ import {
   type Type,
   type UpdatePayload,
 } from '../type/index.js';
-import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
 import {
   applyFilters,
   asSelectMap,
@@ -80,6 +80,7 @@ import {
   someValue,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
+import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { JSON_ELEM_ALIAS_PREFIX, jsonElemExists } from './jsonSql.js';
@@ -611,6 +612,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /** Simple comparison operators: `getComparisonKey → op → addValue`. */
+  /** Memoizes {@link escapedColumnName}; see there for why it is per dialect instance. */
+  private readonly escapedColumns = new WeakMap<FieldOptions, string>();
+
   private static readonly NEGATE_OP_MAP = new Map<QueryNegateOp, '$and' | '$or'>([
     ['$not', '$and'],
     ['$nor', '$or'],
@@ -1251,29 +1255,37 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = getInsertFieldKeys(meta, payloads);
 
-    const columns = keys.map((key) => {
-      const field = meta.fields[key];
-      return this.escapeId(this.resolveColumnName(key, field));
-    });
+    // Resolve each key's field and escaped column once, then index into them: re-reading
+    // `meta.fields[key]` per record cost 40 redundant lookups on a 10-row, 4-column insert.
+    const width = keys.length;
+    const fields: (FieldOptions | undefined)[] = new Array(width);
+    const columns: string[] = new Array(width);
+    for (let i = 0; i < width; i++) {
+      const key = keys[i];
+      fields[i] = meta.fields[key];
+      columns[i] = this.escapedColumnName(meta, key);
+    }
+
     const tableName = this.resolveTableName(entity, meta);
     ctx.append(`INSERT INTO ${this.escapeId(tableName)} (${columns.join(', ')}) VALUES (`);
 
-    payloads.forEach((it, recordIndex) => {
-      if (recordIndex > 0) {
+    for (let r = 0; r < payloads.length; r++) {
+      if (r > 0) {
         ctx.append('), (');
       }
-      keys.forEach((key, keyIndex) => {
-        if (keyIndex > 0) {
+      const record = payloads[r];
+      for (let i = 0; i < width; i++) {
+        if (i > 0) {
           ctx.append(', ');
         }
-        const field = meta.fields[key];
-        if (it[key] === undefined) {
-          this.appendDefaultInsertValue(ctx, field);
+        const value = record[keys[i]];
+        if (value === undefined) {
+          this.appendDefaultInsertValue(ctx, fields[i]);
         } else {
-          this.formatPersistableValue(ctx, field, it[key]);
+          this.formatPersistableValue(ctx, fields[i], value);
         }
-      });
-    });
+      }
+    }
     ctx.append(')');
   }
 
@@ -1299,13 +1311,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
     const tableName = this.resolveTableName(entity, meta);
     ctx.append(`UPDATE ${this.escapeId(tableName)} SET `);
-    keys.forEach((key, index) => {
-      if (index > 0) {
+    for (let i = 0; i < keys.length; i++) {
+      if (i > 0) {
         ctx.append(', ');
       }
+      const key = keys[i];
       const field = meta.fields[key];
-      const columnName = this.resolveColumnName(key, field);
-      const escapedCol = this.escapeId(columnName);
+      const escapedCol = this.escapedColumnName(meta, key);
       const value = filledPayload[key];
 
       if (isJsonUpdateOp(value)) {
@@ -1314,7 +1326,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         ctx.append(`${escapedCol} = `);
         this.formatPersistableValue(ctx, field, value);
       }
-    });
+    }
 
     this.search(ctx, entity, q, opts);
   }
@@ -1406,20 +1418,34 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return escapeSqlId(val, this.escapeIdChar, forbidQualified, addDot);
   }
 
-  protected formatPersistableValue<E>(ctx: QueryContext, field: FieldOptions | undefined, value: unknown): void {
+  /**
+   * The single type dispatch for a persisted value. Dialects override {@link appendJsonValue} and
+   * {@link appendVectorValue} rather than this, so the chain runs once per value - overriding this
+   * and delegating back to `super` ran every check twice, measurably slowing every INSERT/UPDATE.
+   */
+  protected formatPersistableValue(ctx: QueryContext, field: FieldOptions | undefined, value: unknown): void {
     if (value instanceof QueryRaw) {
       this.getRawValue(ctx, { value });
       return;
     }
-    if (isJsonType(field?.type)) {
-      ctx.addValue(value == null ? null : JSON.stringify(value));
+    const type = field?.type;
+    if (isJsonType(type)) {
+      this.appendJsonValue(ctx, value, type as JsonColumnType);
       return;
     }
-    if (field?.type === 'vector' && Array.isArray(value)) {
-      ctx.addValue(`[${value.join(',')}]`);
+    if (type === 'vector' && Array.isArray(value)) {
+      this.appendVectorValue(ctx, value);
       return;
     }
     ctx.addValue(value);
+  }
+
+  protected appendJsonValue(ctx: QueryContext, value: unknown, _type: JsonColumnType): void {
+    ctx.addValue(value == null ? null : JSON.stringify(value));
+  }
+
+  protected appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
+    ctx.addValue(`[${value.join(',')}]`);
   }
 
   /**
@@ -1618,9 +1644,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return { $eq: val };
   }
 
-  /** A field key's mapped column (`@Field({ name })`), escaped. */
+  /**
+   * A field key's mapped column (`@Field({ name })`), escaped, memoized per dialect instance: field
+   * metadata is shared between dialects while this result is not, since `escapeIdChar` and the naming
+   * strategy differ. Weakly keyed so a transient entity's metadata stays collectable.
+   */
   private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
-    return this.escapeId(this.resolveColumnName(key, meta.fields[key]));
+    const field = meta.fields[key];
+    if (!field) {
+      return this.escapeId(this.resolveColumnName(key, field));
+    }
+    let escaped = this.escapedColumns.get(field);
+    if (escaped === undefined) {
+      escaped = this.escapeId(this.resolveColumnName(key, field));
+      this.escapedColumns.set(field, escaped);
+    }
+    return escaped;
   }
 
   private escapedColumn<E>(table: string, meta: EntityMeta<E>, key: string): string {

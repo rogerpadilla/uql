@@ -1,11 +1,18 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createJiti } from 'jiti';
 import type { Config } from '../type/index.js';
 
-export async function loadConfig(customPath?: string): Promise<Config> {
-  const jiti = createJiti(process.cwd());
+/** `jiti` (1.8 MB) makes `uql.config.ts` loadable; imported here so only projects with one pay for it. */
+async function importConfig(path: string): Promise<unknown> {
+  const { createJiti } = await import('jiti').catch(() => {
+    throw new Error(
+      "Loading a uql config file requires 'jiti'. Run `npm i -D jiti`, or pass the config inline instead of via a config file.",
+    );
+  });
+  return createJiti(process.cwd()).import(path, { default: true });
+}
 
+export async function loadConfig(customPath?: string): Promise<Config> {
   if (customPath) {
     const fullPath = resolve(process.cwd(), customPath);
     const exists = await stat(fullPath)
@@ -17,7 +24,7 @@ export async function loadConfig(customPath?: string): Promise<Config> {
     }
 
     try {
-      const config = await jiti.import(fullPath, { default: true });
+      const config = await importConfig(fullPath);
       return config as Config;
     } catch (error) {
       throw new Error(`Could not load configuration file at ${customPath}: ${(error as Error).message}`);
@@ -33,7 +40,7 @@ export async function loadConfig(customPath?: string): Promise<Config> {
       .catch(() => false);
 
     if (exists) {
-      const config = await jiti.import(fullPath, { default: true });
+      const config = await importConfig(fullPath);
       return config as Config;
     }
   }

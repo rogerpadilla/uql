@@ -1,4 +1,3 @@
-import { resolveVectorCast, type VectorCast } from '../schema/canonicalType.js';
 import type {
   EntityMeta,
   FieldKey,
@@ -8,6 +7,7 @@ import type {
   VectorDistance,
 } from '../type/index.js';
 import { AbstractDialect } from './abstractDialect.js';
+import { resolveVectorCast, type VectorCast } from './vectorCast.js';
 
 /**
  * Vector similarity search for SQL dialects: the `ORDER BY <distance>` expression, its projection as

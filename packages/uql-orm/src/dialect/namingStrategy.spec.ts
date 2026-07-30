@@ -49,4 +49,39 @@ describe('Naming Strategy SQL Generation', () => {
       expect(ctx.sql).toContain('INSERT INTO `user_profile_dialect` (`first_name`, `last_name`)');
     });
   });
+
+  // Escaped column names are memoized per dialect instance. Entity metadata is shared between
+  // dialects, so a cache leaking across them would quote or rename columns wrongly.
+  describe('escaped columns are memoized per dialect, not per field', () => {
+    it('quotes the same entity differently for each dialect', () => {
+      const pg = new PostgresDialect();
+      const mysql = new MySqlDialect();
+      const pgCtx = pg.createContext();
+      const mysqlCtx = mysql.createContext();
+      pg.insert(pgCtx, UserProfileDialect, { firstName: 'John' });
+      mysql.insert(mysqlCtx, UserProfileDialect, { firstName: 'John' });
+      expect(pgCtx.sql).toContain('("firstName")');
+      expect(mysqlCtx.sql).toContain('(`firstName`)');
+    });
+
+    it('applies each dialect’s own naming strategy to the same entity', () => {
+      const plain = new PostgresDialect();
+      const snake = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+      const plainCtx = plain.createContext();
+      const snakeCtx = snake.createContext();
+      plain.insert(plainCtx, UserProfileDialect, { firstName: 'John' });
+      snake.insert(snakeCtx, UserProfileDialect, { firstName: 'John' });
+      expect(plainCtx.sql).toContain('"UserProfileDialect" ("firstName")');
+      expect(snakeCtx.sql).toContain('"user_profile_dialect" ("first_name")');
+    });
+
+    it('returns the same column on repeated use (cache hit path)', () => {
+      const dialect = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+      const first = dialect.createContext();
+      const second = dialect.createContext();
+      dialect.insert(first, UserProfileDialect, { firstName: 'a' });
+      dialect.insert(second, UserProfileDialect, { firstName: 'b' });
+      expect(second.sql).toBe(first.sql);
+    });
+  });
 });
