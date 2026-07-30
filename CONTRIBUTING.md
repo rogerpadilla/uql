@@ -6,7 +6,8 @@ First off, thank you for considering contributing to UQL! It's people like you w
 
 1. **Fork the repository** and create your branch from `main`.
 2. **Install dependencies** using `bun install`.
-3. **Run tests** to ensure a clean state: `bun test`.
+3. **Start the databases**: `docker compose up -d --wait`.
+4. **Run tests** to ensure a clean state: `bun run test`.
 
 ## How to Contribute
 

@@ -1,5 +1,5 @@
 import type { FieldOptions } from '../type/index.js';
-import { escapeSingleQuotes } from '../util/ansiSqlLiteral.js';
+import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 
 /**
  * Alias prefix for the derived table a dialect explodes a JSON array into to test `$all`/

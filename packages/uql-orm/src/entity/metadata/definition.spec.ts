@@ -23,7 +23,30 @@ import { Field } from '../decorator/field.js';
 import { Filter } from '../decorator/filter.js';
 import { Id } from '../decorator/id.js';
 import { ManyToOne } from '../decorator/relation.js';
-import { getEntities, getMeta } from './definition.js';
+import { defineField, getEntities, getMeta } from './definition.js';
+
+// `reflect-metadata` is an optional peer (loaded by vitest.setup.ts): a consumer who skipped it must
+// get a message naming the field and both remedies, not `undefined` metadata.
+it('reports a missing reflect-metadata polyfill when a field type must be inferred', () => {
+  class Untyped {
+    name?: string;
+  }
+  const reflect = Reflect as { getMetadata?: unknown };
+  const polyfilled = reflect.getMetadata;
+  delete reflect.getMetadata;
+  try {
+    expect(() => defineField(Untyped, 'name')).toThrow(/'Untyped\.name' has no explicit type/);
+    expect(() => defineField(Untyped, 'name')).toThrow(/install 'reflect-metadata'/);
+    // The documented alternative works with no polyfill at all.
+    expect(defineField(Untyped, 'name', { type: String }).fields.name).toMatchObject({
+      name: 'name',
+      type: String,
+      typeInferred: false,
+    });
+  } finally {
+    reflect.getMetadata = polyfilled;
+  }
+});
 
 it('User', () => {
   const meta = getMeta(User);

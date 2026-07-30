@@ -1,4 +1,3 @@
-import 'reflect-metadata';
 import type {
   EntityIndexMeta,
   EntityMeta,
@@ -396,8 +395,20 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   }
 }
 
+/** Present only once an app loads the optional `reflect-metadata` polyfill. */
+type ReflectWithMetadata = {
+  getMetadata?: (metadataKey: string, target: object, propertyKey: string) => FieldType;
+};
+
+/** Reads the `design:type` emitted by `emitDecoratorMetadata`, if the optional polyfill is loaded. */
 function inferType<E>(entity: Type<E>, key: string): FieldType {
-  return Reflect.getMetadata('design:type', entity.prototype, key);
+  const { getMetadata } = Reflect as ReflectWithMetadata;
+  if (!getMetadata) {
+    throw new TypeError(
+      `'${entity.name}.${key}' has no explicit type and 'design:type' metadata is unavailable. Either declare the type - '@Field({ type: String })' or '@Relation({ entity: () => Other })' - or install 'reflect-metadata' and add 'import "reflect-metadata"' once at your app entry point.`,
+    );
+  }
+  return getMetadata('design:type', entity.prototype, key);
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: reflected type is unknown at compile time

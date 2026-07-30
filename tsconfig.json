@@ -22,7 +22,8 @@
     "declaration": true,
     "declarationMap": true,
 
-    "importHelpers": true,
+    // inlined, not imported: keeps `tslib` out of the published package's dependencies
+    "importHelpers": false,
     "skipLibCheck": true,
     "noImplicitOverride": true,
     "paths": {

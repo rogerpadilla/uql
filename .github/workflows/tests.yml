@@ -44,6 +44,45 @@ jobs:
       - name: Typecheck
         run: bun run ts
 
+  package:
+    runs-on: ubuntu-latest
+    name: Package & Size
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      # The build only ever ran locally at release time, so packaging regressions surfaced at publish.
+      # `build` ends with verify-dist.ts (declared paths, browser-safe graphs, size budgets).
+      - name: Build and verify dist
+        run: bun run build
+      - name: Lint package manifest
+        run: bunx publint --strict
+        working-directory: packages/uql-orm
+      # ESM-only by design, so node10 and require-from-CJS failures are expected.
+      - name: Check type resolution
+        run: bunx --bun @arethetypeswrong/cli --pack --ignore-rules cjs-resolves-to-esm no-resolution
+        working-directory: packages/uql-orm
+      # Proves the tarball resolves and runs from a real node_modules, with no peers installed.
+      - name: Smoke-test the packed tarball
+        run: |
+          set -euo pipefail
+          tgz=$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -1)
+          cd "$RUNNER_TEMP"
+          npm init -y >/dev/null
+          npm i --no-save --no-audit --no-fund "./$tgz"
+          node --input-type=module -e '
+            const root = await import("uql-orm");
+            for (const name of ["Entity", "Field", "Id", "getMeta", "defineEntity", "AbstractSqlDialect"]) {
+              if (!(name in root)) throw new Error(`missing root export: ${name}`);
+            }
+            await Promise.all(["type", "util", "options", "entity", "querier", "dialect"].map((s) => import(`uql-orm/${s}`)));
+            console.log(`tarball ok: ${Object.keys(root).length} root exports, subpaths resolve`);
+          '
+        working-directory: packages/uql-orm
+
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -4,3 +4,5 @@ lockfile = true
 
 [test]
 timeout = 10000
+# `reflect-metadata` is an optional peer dependency, so the app loads it (see vitest.setup.ts).
+preload = ["reflect-metadata"]

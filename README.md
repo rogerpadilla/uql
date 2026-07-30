@@ -9,7 +9,7 @@
 
 <h3>The smartest TypeScript ORM</h3>
 
-<p>Type-safe to the leaf, serializable queries, no codegen, fast, and a unified API across Postgres, CockroachDB, MySQL, SQLite, MongoDB, MariaDB, and the edge.</p>
+<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and a unified API across Postgres, CockroachDB, MySQL, SQLite, MongoDB, MariaDB, and the edge.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
@@ -32,6 +32,9 @@
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/client
 ```
 
+Decorators also need `reflect-metadata` ([setup](https://uql-orm.dev/getting-started)); the
+[imperative API](https://uql-orm.dev/entities/imperative) needs nothing extra.
+
 ```ts
 await querier.findMany(User, {
   $select: { id: true, email: true },
@@ -46,7 +49,8 @@ from the browser to the server. The same object runs on every supported database
 
 ## Why UQL?
 
-- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.1× faster than the runner-up on average, over 3.9M ops/s on SELECTs.
+- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, over 4.1M ops/s on simple SELECTs.
+- **Light.** Zero dependencies, under 1 MB installed, every dialect included.
 - **Queries are data, not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
 - **Type-safe to the leaf.** Operators are gated per field type, and JSON/JSONB dot-paths resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error instead of a runtime surprise.
 - **No codegen.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` file to regenerate, no generated client to keep in sync.
