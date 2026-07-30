@@ -301,6 +301,81 @@ describe('SchemaSync', () => {
       }
     });
 
+    /** The DB has the entity's table plus a column and an index the entity doesn't declare. */
+    const createDriftedIntrospector = () =>
+      createMockIntrospector([
+        {
+          name: 'User',
+          columns: new Map<string, MockColumn>([
+            [
+              'id',
+              {
+                name: 'id',
+                type: { category: 'integer', size: 'big' },
+                isPrimaryKey: true,
+                autoIncrement: true,
+                nullable: false,
+                pos: 1,
+              },
+            ],
+            ['name', { name: 'name', type: { category: 'string' }, nullable: true, pos: 2 }],
+            ['legacyFlag', { name: 'legacyFlag', type: { category: 'boolean' }, nullable: true, pos: 3 }],
+          ]),
+          indexes: [{ name: 'idx_user_name', columns: ['name'], unique: false }],
+          primaryKey: ['id'],
+          incomingRelations: [],
+          outgoingRelations: [],
+          schema: {} as any,
+        },
+      ]);
+
+    /**
+     * Safe mode exists so a stale entity file can't delete live data: a column or index the entities
+     * no longer mention is left in place instead of being dropped.
+     */
+    it('should keep columns and indexes the entities no longer declare in safe mode', async () => {
+      const sync = new SchemaSync({
+        entities: [User],
+        introspector: createDriftedIntrospector(),
+        direction: 'entity-to-db',
+        safe: true,
+      });
+
+      const result = await sync.sync();
+
+      expect(result.dbChanges?.columnDiffs.filter((d) => d.type === 'drop')).toHaveLength(0);
+      expect(result.dbChanges?.indexDiffs.filter((d) => d.type === 'drop')).toHaveLength(0);
+    });
+
+    it('should drop columns and indexes the entities no longer declare outside safe mode', async () => {
+      const sync = new SchemaSync({
+        entities: [User],
+        introspector: createDriftedIntrospector(),
+        direction: 'entity-to-db',
+        safe: false,
+      });
+
+      const result = await sync.sync();
+
+      expect(result.dbChanges?.columnDiffs.filter((d) => d.type === 'drop').map((d) => d.column)).toEqual([
+        'legacyFlag',
+      ]);
+      expect(result.dbChanges?.indexDiffs.filter((d) => d.type === 'drop')).toHaveLength(1);
+      expect(result.summary).toContain('1 column(s) to drop');
+    });
+
+    it('should report an in-sync schema when neither side has anything to change', async () => {
+      const sync = new SchemaSync({
+        entities: [],
+        introspector: createMockIntrospector([]),
+        direction: 'entity-to-db',
+      });
+
+      const result = await sync.sync();
+
+      expect(result.summary).toContain('Schema is already in sync.');
+    });
+
     it('should detect bidirectional conflicts (type mismatch)', async () => {
       // Entity has a field that differs from DB
       @Entity()
