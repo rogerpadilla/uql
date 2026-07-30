@@ -29,6 +29,24 @@ class Post {
   @ManyToOne({ entity: () => Author }) reviewer?: Author;
 }
 
+/** Soft-deletable through a renamed column. */
+@Entity({ name: 'SoftDoc' })
+class SoftDoc {
+  @Id() id?: number;
+  @Field({ name: 'deleted_at', softDelete: true }) deletedAt?: Date;
+}
+
+/** An entity that is both vector-searchable and has a relation, for the combined case. */
+@Entity({ name: 'Chunk' })
+@Index(['embedding'], { type: 'vectorSearch', name: 'chunk_vs' })
+class Chunk {
+  @Id() id?: number;
+  @Field() text?: string;
+  @Field({ references: () => Author }) authorId?: number;
+  @ManyToOne({ entity: () => Author }) author?: Author;
+  @Field({ type: 'vector' }) embedding?: number[];
+}
+
 function createMockedQuerier(aggregateResults: unknown[] = []) {
   const toArray = vi.fn().mockResolvedValue(aggregateResults);
   const aggregate = vi.fn().mockReturnValue({ toArray });
@@ -59,6 +77,26 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline[0].$vectorSearch.numCandidates).toBe(100);
   });
 
+  it('loads relations under a vector sort, capturing the score before the lookups', async () => {
+    const { querier, aggregate } = createMockedQuerier([]);
+
+    await querier.findMany(Chunk, {
+      $sort: { embedding: { $vector: [1, 2, 3], $project: 'score' } },
+      $populate: { author: true },
+      $limit: 5,
+    });
+
+    const pipeline = aggregate.mock.calls[0][0];
+    expect(pipeline[0]).toHaveProperty('$vectorSearch');
+    // `$addFields` rather than `$project`: projecting here would drop the join key and the joined doc
+    expect(pipeline[1]).toEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
+    expect(pipeline[2]).toEqual({
+      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
+    });
+    expect(pipeline[3]).toEqual({ $unwind: { path: '$author', preserveNullAndEmptyArrays: true } });
+    expect(pipeline.some((s: Record<string, unknown>) => '$project' in s)).toBe(false);
+  });
+
   it('should add $project stage with $meta for score projection', async () => {
     const { querier, aggregate } = createMockedQuerier([]);
 
@@ -87,7 +125,7 @@ describe('MongodbQuerier vector search', () => {
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
     expect(projectStage).toBeDefined();
     expect(projectStage.$project.score).toEqual({ $meta: 'vectorSearchScore' });
-    expect(projectStage.$project.id).toBe(1);
+    expect(projectStage.$project._id).toBe(1);
     expect(projectStage.$project.title).toBe(1);
   });
 
@@ -103,7 +141,7 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = aggregate.mock.calls[0][0];
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
     expect(projectStage).toBeDefined();
-    expect(projectStage.$project).toEqual({ id: 1, title: 1 });
+    expect(projectStage.$project).toEqual({ _id: 1, title: 1 });
   });
 
   it('should add $project for $exclude only without score projection in vector pipeline', async () => {
@@ -118,7 +156,7 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = aggregate.mock.calls[0][0];
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
     expect(projectStage).toBeDefined();
-    expect(projectStage.$project).toEqual({ id: 1, title: 1, embedding: 1 });
+    expect(projectStage.$project).toEqual({ _id: 1, title: 1, embedding: 1 });
   });
 
   it('should add secondary $sort for regular sort fields', async () => {
@@ -158,6 +196,66 @@ describe('MongodbQuerier vector search', () => {
     const pipeline = aggregate.mock.calls[0][0];
     expect(pipeline[0].$vectorSearch.limit).toBe(10);
     expect(pipeline[0].$vectorSearch.numCandidates).toBe(100);
+  });
+});
+
+describe('MongodbQuerier relation conditions', () => {
+  /** `countDocuments` takes a plain filter, so a relation condition has to count through a pipeline. */
+  it('counts through an aggregation when the $where constrains a relation', async () => {
+    const toArray = vi.fn().mockResolvedValue([{ n: 3 }]);
+    const aggregate = vi.fn().mockReturnValue({ toArray });
+    const countDocuments = vi.fn();
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, countDocuments } as any);
+
+    expect(await querier.count(Post, { $where: { author: { name: 'ada' } } })).toBe(3);
+    expect(countDocuments).not.toHaveBeenCalled();
+    const [pipeline] = aggregate.mock.calls[0];
+    expect(pipeline[0]).toHaveProperty('$lookup');
+    expect(pipeline.at(-1)).toEqual({ $count: 'n' });
+  });
+
+  it('reports zero when the aggregation matches nothing', async () => {
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({
+      aggregate: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
+    } as any);
+
+    expect(await querier.count(Post, { $where: { author: { name: 'nobody' } } })).toBe(0);
+  });
+
+  /** An `updateMany` filter cannot host a `$lookup`, so the ids are resolved first. */
+  it('resolves ids before updating when the $where constrains a relation', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ matchedCount: 2 });
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({
+      aggregate: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: 1 }, { _id: 2 }]) }),
+      updateMany,
+    } as any);
+
+    expect(await querier.updateMany(Post, { $where: { author: { name: 'ada' } } }, { authorId: 9 })).toBe(2);
+    expect(updateMany.mock.calls[0][0]).toEqual({ _id: { $in: [1, 2] } });
+  });
+});
+
+describe('MongodbQuerier soft delete', () => {
+  /**
+   * Reads filter on the mapped column, so the stamp has to write that same one - stamping the property
+   * key reported a successful delete and left the document visible forever.
+   */
+  it('stamps the mapped soft-delete column', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ matchedCount: 1 });
+    const toArray = vi.fn().mockResolvedValue([{ _id: 7 }]);
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({
+      aggregate: vi.fn().mockReturnValue({ toArray }),
+      updateMany,
+    } as any);
+
+    await querier.deleteOneById(SoftDoc, 7);
+
+    const [, update] = updateMany.mock.calls[0];
+    expect(Object.keys(update.$set)).toEqual(['deleted_at']);
   });
 });
 

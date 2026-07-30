@@ -1,4 +1,4 @@
-import type { ClientSession, Document, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
+import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { getMeta } from '../entity/index.js';
 import { AbstractQuerier, enrichError, Log, Serialized } from '../querier/index.js';
 import type {
@@ -58,10 +58,14 @@ export class MongodbQuerier extends AbstractQuerier {
     if (vectorSort) {
       const pipeline = this.buildVectorPipeline(entity, q, vectorSort, opts);
       documents = await this.runPipeline(entity, meta, pipeline);
+      // to-many relations need their own query, exactly as in the non-vector path
+      await this.fillToManyRelations(entity, documents, q.$populate);
     } else {
       const relationSummary = getRelationRequestSummary(meta, q.$populate);
 
-      if (relationSummary.requestedKeys.length) {
+      // A relation condition needs `$lookup`, so it forces the aggregation path just like populating
+      // one does; a plain `find` cursor cannot express it.
+      if (relationSummary.requestedKeys.length || this.dialect.constrainsRelations(entity, q.$where)) {
         const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary, opts);
         documents = await this.runPipeline(entity, meta, pipeline);
         await this.fillToManyRelations(entity, documents, q.$populate);
@@ -167,13 +171,24 @@ export class MongodbQuerier extends AbstractQuerier {
       ),
     );
 
-    // Score projection via $meta
-    if (vectorSort.vectorSearch.$project) {
+    const meta = getMeta(entity);
+    const relationSummary = getRelationRequestSummary(meta, q.$populate);
+    const scoreAlias = vectorSort.vectorSearch.$project;
+
+    // With relations, the score is captured with `$addFields` before the lookups and no scalar
+    // `$project` is emitted: projecting here would drop both the join keys and the joined documents,
+    // which is why `$populate` used to come back empty under a vector sort.
+    if (relationSummary.requestedKeys.length) {
+      if (scoreAlias) {
+        pipeline.push({ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } });
+      }
+      pipeline.push(...(this.dialect.relationStages(entity, q, relationSummary) as Record<string, unknown>[]));
+    } else if (scoreAlias) {
       const select = q.$select || q.$exclude ? this.buildScalarProjection(entity, q) : {};
       pipeline.push({
         $project: {
           ...select,
-          [vectorSort.vectorSearch.$project]: { $meta: 'vectorSearchScore' },
+          [scoreAlias]: { $meta: 'vectorSearchScore' },
         },
       });
     } else if ((q.$select && hasKeys(q.$select)) || (q.$exclude && hasKeys(q.$exclude))) {
@@ -201,13 +216,41 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   @Log()
-  protected override internalCount<E extends Document>(entity: Type<E>, qm: QuerySearch<E> = {}, opts?: QueryOptions) {
+  protected override async internalCount<E extends Document>(
+    entity: Type<E>,
+    qm: QuerySearch<E> = {},
+    opts?: QueryOptions,
+  ) {
+    if (this.dialect.constrainsRelations(entity, qm.$where)) {
+      const { stages, filter } = this.dialect.whereWithRelations(entity, qm.$where, opts);
+      const [counted] = await this.execute((session) =>
+        this.collection(entity)
+          .aggregate<{ n: number }>([...stages, { $match: filter }, { $count: 'n' }], { session })
+          .toArray(),
+      );
+      return counted?.n ?? 0;
+    }
     const filter = this.dialect.where(entity, qm.$where, opts);
     return this.execute((session) =>
       this.collection(entity).countDocuments(filter, {
         session,
       }),
     );
+  }
+
+  /**
+   * The `_id`s a search matches. Writes need this whenever the `$where` constrains a relation, since a
+   * MongoDB `updateMany`/`deleteMany` filter cannot host a `$lookup` - reads never pay this cost.
+   */
+  private async matchedIds<E extends Document>(entity: Type<E>, where: QueryWhere<E> | undefined, opts?: QueryOptions) {
+    const meta = getMeta(entity);
+    const { stages, filter } = this.dialect.whereWithRelations(entity, where, opts);
+    const founds = await this.execute((session) =>
+      this.collection(entity)
+        .aggregate<Document>([...stages, { $match: filter }, { $project: { _id: true } }], { session })
+        .toArray(),
+    );
+    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id!]);
   }
 
   @Log()
@@ -246,7 +289,10 @@ export class MongodbQuerier extends AbstractQuerier {
     payload = clone(payload);
     const meta = getMeta(entity);
     const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
-    const where = this.dialect.where(entity, qm.$where, opts);
+    // An `updateMany` filter cannot host a `$lookup`, so a relation condition is resolved to ids first.
+    const where = this.dialect.constrainsRelations(entity, qm.$where)
+      ? ({ _id: { $in: await this.matchedIds(entity, qm.$where, opts) } } as Filter<E>)
+      : this.dialect.where(entity, qm.$where, opts);
     // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
     const update = this.dialect.getUpdateFilter<E>(persistable);
 
@@ -341,25 +387,21 @@ export class MongodbQuerier extends AbstractQuerier {
     const field = !opts.hardDelete && meta.softDelete ? meta.fields[meta.softDelete] : undefined;
     // Hard delete targets matching rows regardless of soft-delete state (keeps other filters).
     const findOpts = field ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
-    const where = this.dialect.where(entity, qm.$where, findOpts);
-    const founds = await this.execute((session) =>
-      this.collection(entity)
-        .find(where, {
-          projection: { _id: true },
-          session,
-        })
-        .toArray(),
-    );
-    if (!founds.length) {
+    // Delete has always resolved its ids first (it stamps or removes them by `_id`), so a relation
+    // condition needs nothing extra here.
+    const ids = await this.matchedIds(entity, qm.$where, findOpts);
+    if (!ids.length) {
       return 0;
     }
-    const ids = (this.dialect.normalizeIds(meta, founds as unknown as E[]) || []).map((found) => found[meta.id!]);
     let changes: number;
     if (field) {
+      // Stamp the mapped column: reads filter on it, so a `@Field({ name })` mismatch here would
+      // report a successful delete and leave the row visible.
+      const softDeleteColumn = this.dialect.resolveColumnName(meta.softDelete as string, field);
       const updateResult = await this.execute((session) =>
         this.collection(entity).updateMany(
           { _id: { $in: ids } },
-          { $set: { [meta.softDelete as string]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
+          { $set: { [softDeleteColumn]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
           {
             session,
           },

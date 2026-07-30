@@ -7,6 +7,7 @@ import {
   ItemAdjustment,
   LedgerAccount,
   MeasureUnit,
+  MeasureUnitCategory,
   type Spec,
   Tag,
   TaxCategory,
@@ -1173,4 +1174,37 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   abstract createTables(): Promise<void>;
 
   abstract dropTables(): Promise<void>;
+
+  /**
+   * Against real data: a category whose only matching unit is trashed must not match, and the count
+   * must skip it. Runs on every driver - relation subqueries are emulated with `$lookup` on MongoDB.
+   */
+  async shouldNotMatchOrCountTrashedRowsThroughARelation() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Weight' });
+    const [liveId, trashedId] = await this.querier.insertMany(MeasureUnit, [
+      { name: 'kg', categoryId },
+      { name: 'stone', categoryId },
+    ]);
+    expect(await this.querier.deleteOneById(MeasureUnit, trashedId)).toBe(1);
+
+    const byTrashed = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $where: { measureUnits: { name: 'stone' } },
+    });
+    expect(byTrashed).toEqual([]);
+
+    const byLive = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $where: { measureUnits: { name: 'kg' } },
+    });
+    expect(byLive.map(({ id }) => String(id))).toEqual([String(categoryId)]);
+
+    const bySize = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $where: { measureUnits: { $size: 1 } },
+    });
+    expect(bySize.map(({ id }) => String(id))).toEqual([String(categoryId)]);
+
+    expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ name: 'kg' });
+  }
 }

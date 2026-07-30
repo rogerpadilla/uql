@@ -1,13 +1,5 @@
 import { expect } from 'vitest';
-import {
-  Coupon,
-  createTables,
-  dropTables,
-  LedgerAccount,
-  MeasureUnit,
-  MeasureUnitCategory,
-  TaxCategory,
-} from '../test/index.js';
+import { Coupon, createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
 import type { IdValue, PrimaryKey, QuerierPool } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -130,38 +122,5 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     }
     expect(Number(persistedIds[1])).toBe(5000);
     expect(ids).toEqual(this.expectedMixedBatchIds([persistedIds[0], 5000, persistedIds[2]]));
-  }
-
-  /**
-   * Against real data: a category whose only matching unit is trashed must not match, and the count
-   * must skip it. SQL-only suite - MongoDB has no relation-subquery support.
-   */
-  async shouldNotMatchOrCountTrashedRowsThroughARelation() {
-    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Weight' });
-    const [liveId, trashedId] = await this.querier.insertMany(MeasureUnit, [
-      { name: 'kg', categoryId },
-      { name: 'stone', categoryId },
-    ]);
-    expect(await this.querier.deleteOneById(MeasureUnit, trashedId)).toBe(1);
-
-    const byTrashed = await this.querier.findMany(MeasureUnitCategory, {
-      $select: { id: true },
-      $where: { measureUnits: { name: 'stone' } },
-    });
-    expect(byTrashed).toEqual([]);
-
-    const byLive = await this.querier.findMany(MeasureUnitCategory, {
-      $select: { id: true },
-      $where: { measureUnits: { name: 'kg' } },
-    });
-    expect(byLive.map(({ id }) => String(id))).toEqual([String(categoryId)]);
-
-    const bySize = await this.querier.findMany(MeasureUnitCategory, {
-      $select: { id: true },
-      $where: { measureUnits: { $size: 1 } },
-    });
-    expect(bySize.map(({ id }) => String(id))).toEqual([String(categoryId)]);
-
-    expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ name: 'kg' });
   }
 }

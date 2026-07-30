@@ -9,7 +9,7 @@ type ProjectionCase = {
   readonly query: Query<User>;
   readonly sqlIncludes: string[];
   readonly sqlExcludes: string[];
-  readonly mongoProjection: Record<string, 1>;
+  readonly mongoProjection: Record<string, 0 | 1>;
 };
 
 const cases: ProjectionCase[] = [
@@ -25,21 +25,23 @@ const cases: ProjectionCase[] = [
     query: { $exclude: { name: true } },
     sqlIncludes: ['"id"', '"createdAt"'],
     sqlExcludes: ['"name"'],
-    mongoProjection: { id: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1 },
+    // the primary key is stored as `_id` on MongoDB; `normalizeId` maps it back to `id`
+    mongoProjection: { _id: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1 },
   },
   {
     name: 'exclude id (plain top-level query, no $populate)',
     query: { $exclude: { id: true } },
     sqlIncludes: ['"name"', '"createdAt"'],
     sqlExcludes: ['"id"'],
-    mongoProjection: { name: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1 },
+    // `_id: 0` is required: MongoDB returns `_id` unless it is explicitly excluded
+    mongoProjection: { name: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1, _id: 0 },
   },
   {
     name: 'negative select subtractive',
     query: { $select: { name: false } },
     sqlIncludes: ['"id"', '"createdAt"'],
     sqlExcludes: ['"name"'],
-    mongoProjection: { id: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1 },
+    mongoProjection: { _id: 1, companyId: 1, creatorId: 1, createdAt: 1, updatedAt: 1, email: 1 },
   },
   {
     name: 'populate only keeps default scalars',
