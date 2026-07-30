@@ -49,7 +49,7 @@ from the browser to the server. The same object runs on every supported database
 
 ## Why UQL?
 
-- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, over 4.1M ops/s on simple SELECTs.
+- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.3× faster than the runner-up on average, close to 4M ops/s on simple SELECTs.
 - **Light.** Zero dependencies, under 1 MB installed, every dialect included.
 - **Queries are data, not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
 - **Type-safe to the leaf.** Operators are gated per field type, and JSON/JSONB dot-paths resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error instead of a runtime surprise.
