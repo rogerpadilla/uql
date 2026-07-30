@@ -9,7 +9,7 @@
 
 <h3>The smartest TypeScript ORM</h3>
 
-<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and a unified API across Postgres, CockroachDB, MySQL, SQLite, MongoDB, MariaDB, and the edge.</p>
+<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and unified API across Postgres, CockroachDB, MySQL, SQLite, MongoDB, MariaDB, and the edge.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
