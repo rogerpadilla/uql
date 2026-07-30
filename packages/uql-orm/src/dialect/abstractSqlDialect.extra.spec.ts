@@ -434,19 +434,21 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('OneToMany with simple filter', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } });
-      // MeasureUnitCategory has softDelete, so parent query adds AND `deletedAt` IS NULL
+      // Both entities have softDelete: the parent's condition sits outside the EXISTS, the target's
+      // inside it, so a category never matches through a trashed measure unit.
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ?) AND `deletedAt` IS NULL',
+        ' WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ? AND `MeasureUnit`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual(['kg']);
     });
 
-    it('inner EXISTS subquery should not leak softDelete conditions', () => {
+    it('inner EXISTS subquery scopes softDelete to the target, not the parent', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } });
       const existsPart = ctx.sql.split('EXISTS (')[1].split(')')[0];
-      // softDelete condition should NOT appear inside the EXISTS subquery
-      expect(existsPart).not.toContain('deletedAt');
+      expect(existsPart).toContain('`MeasureUnit`.`deletedAt` IS NULL');
+      // the parent's own (unprefixed) condition stays out of the subquery
+      expect(existsPart).not.toContain(' `deletedAt` IS NULL');
     });
 
     it('combined with regular field', () => {
@@ -587,7 +589,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: 3 } });
       expect(ctx.sql).toBe(
-        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`) = ? AND `deletedAt` IS NULL',
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`deletedAt` IS NULL) = ? AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual([3]);
     });
@@ -596,7 +598,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
       expect(ctx.sql).toBe(
-        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`) >= ? AND `deletedAt` IS NULL',
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`deletedAt` IS NULL) >= ? AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual([2]);
     });

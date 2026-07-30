@@ -580,7 +580,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     );
     // MeasureUnitCategory has softDelete → parent query adds AND `deletedAt` IS NULL
     expect(sql).toBe(
-      'SELECT `id` FROM `MeasureUnitCategory` WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ?) AND `deletedAt` IS NULL',
+      'SELECT `id` FROM `MeasureUnitCategory` WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ? AND `MeasureUnit`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
     );
     expect(values).toEqual(['kg']);
   }
