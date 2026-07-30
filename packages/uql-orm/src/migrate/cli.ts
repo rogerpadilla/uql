@@ -335,8 +335,9 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
     // Build actual schema from database
     const actualAST = await migrator.schemaIntrospector.introspect();
 
-    // Detect drift
-    const report = detectDrift(expectedAST, actualAST);
+    // Detect drift. The dialect renders canonical types as SQL - without it every type formats as
+    // `unknown` and type drift compares equal, silently reporting a mismatched column as in sync.
+    const report = detectDrift(expectedAST, actualAST, { dialect: config.pool?.dialect });
 
     printDriftReport(report);
   }

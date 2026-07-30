@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
-import { Entity, Id } from '../entity/index.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
+import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
 import type { QuerierPool } from '../type/index.js';
 import * as cli from './cli.js';
 import * as cliConfig from './cli-config.js';
@@ -11,6 +12,26 @@ import type { Migrator } from './migrator.js';
 @Entity()
 class TestEntity {
   @Id() id?: number;
+}
+
+/** Present in the database but absent from the configured entities. */
+@Entity()
+class ExtraTableEntity {
+  @Id() id?: number;
+}
+
+/** Same table as {@link DriftedEntity}, with the column type the entities expect. */
+@Entity({ name: 'DriftTable' })
+class ExpectedEntity {
+  @Id() id?: number;
+  @Field({ columnType: 'varchar', length: 50 }) label?: string;
+}
+
+/** Same table as {@link ExpectedEntity}, as the database actually has it. */
+@Entity({ name: 'DriftTable' })
+class DriftedEntity {
+  @Id() id?: number;
+  @Field({ columnType: 'int' }) label?: number;
 }
 
 const mockMigrator = {
@@ -334,6 +355,40 @@ describe('CLI', () => {
     }
 
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Checking for schema drift'));
+  });
+
+  /** A drift report drives the exit code, so each severity has to reach the right branch. */
+  it('runDriftCheck should report a table the entities do not declare as a warning', async () => {
+    const builder = new SchemaASTBuilder();
+    const migrator = {
+      ...mockMigrator,
+      schemaIntrospector: {
+        introspect: vi.fn().mockResolvedValue(builder.fromEntities([TestEntity, ExtraTableEntity])),
+      },
+    } as unknown as Migrator;
+
+    await cli.runDriftCheck(migrator, { entities: [TestEntity] });
+
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Status: DRIFTED'));
+    expect(console.log).toHaveBeenCalledWith('WARNINGS:');
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Create entity or drop table'));
+    expect(process.exit).not.toHaveBeenCalled();
+  });
+
+  /** Type drift is only visible once the report can render each canonical type as this dialect's SQL. */
+  it('runDriftCheck should print the expected and actual type of a mismatched column', async () => {
+    const migrator = {
+      ...mockMigrator,
+      schemaIntrospector: {
+        introspect: vi.fn().mockResolvedValue(new SchemaASTBuilder().fromEntities([DriftedEntity])),
+      },
+    } as unknown as Migrator;
+
+    await cli.runDriftCheck(migrator, { pool: mockPool, entities: [ExpectedEntity] });
+
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Expected: TEXT, Actual: INTEGER'));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Data truncation risk'));
+    expect(process.exit).toHaveBeenCalledWith(1);
   });
 
   it('main should not call pool.end if pool has no end method', async () => {
