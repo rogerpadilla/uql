@@ -62,6 +62,8 @@ from the browser to the server. The same object runs on every supported database
 - [Entities](https://uql-orm.dev/entities/basic) - decorators, relations, hooks, or the decorator-free [imperative API](https://uql-orm.dev/entities/imperative)
 - [Switching to UQL](https://uql-orm.dev/switching-to-uql) - coming from Prisma, Drizzle, TypeORM, or MikroORM
 
+Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md).
+
 ## Made with UQL
 
 **[Variability.ai](https://variability.ai)** - AI meeting recorder and video summarizer for Zoom, Meet, and Teams. Instant summaries with action items in 45+ languages.
