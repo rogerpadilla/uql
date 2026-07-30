@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.20.2] - 2026-07-29
+
+### Fixes
+
+- **`uql drift:check` reported column type drift as "in sync".** The report compares each type rendered as the dialect's SQL, but the CLI built it without passing the dialect, so every type formatted as `unknown` and compared equal to every other one. A column that is `VARCHAR(50)` in the entity and `INTEGER` in the database now reports a critical type mismatch and exits `1`, instead of passing silently.
+
+### Internal
+
+- Test coverage raised to 98.5% statements / 93.7% branches (thresholds bumped to match), covering behaviors that previously had none: entity lifecycle hooks (`@BeforeInsert` and friends) executing through a querier, JSON column hydration through populated relations, safe-mode sync never dropping a column or index, `generate:from-db` entity emission, and the introspector's foreign-key/index AST building.
+
 ## [0.20.1] - 2026-07-27
 
 ### Fixes
