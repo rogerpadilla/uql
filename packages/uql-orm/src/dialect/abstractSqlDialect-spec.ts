@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { Entity, Field, Filter, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import {
   Company,
   InventoryAdjustment,
@@ -13,7 +13,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { QueryContext, Type, UpdatePayload } from '../type/index.js';
+import type { QueryContext, Relation, Type, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -55,6 +55,114 @@ class SecureParent {
   relatedId?: number;
   @ManyToOne()
   related?: SecureRelated;
+}
+
+/** The relation-subquery target: a `security: true` filter and a soft-delete field must both scope it. */
+@Filter('tenant', {
+  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  security: true,
+})
+@Entity()
+class SecureChild {
+  @Id()
+  id?: number;
+  @Field()
+  tenantId?: number;
+  @Field({ references: () => SecureCollection })
+  collectionId?: number;
+  @Field({ softDelete: () => Date.now() })
+  deletedAt?: number;
+  @ManyToOne({ entity: () => SecureCollection })
+  collection?: Relation<SecureCollection>;
+}
+
+/** No filters of its own, so a count over the junction to it stays junction-only. */
+@Entity()
+class PlainChild {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureCollection })
+  collectionId?: number;
+  @ManyToOne({ entity: () => SecureCollection })
+  collection?: Relation<SecureCollection>;
+}
+
+/** Junction FK names follow the derived `lowerFirst(entity) + Id` convention for mm relations. */
+@Entity()
+class SecureCollectionChild {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureCollection })
+  secureCollectionId?: number;
+  @Field({ references: () => SecureChild })
+  secureChildId?: number;
+}
+
+@Entity()
+class SecureCollectionPlain {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureCollection })
+  secureCollectionId?: number;
+  @Field({ references: () => PlainChild })
+  plainChildId?: number;
+}
+
+/** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
+@Entity()
+class RenamedParent {
+  @Id({ name: 'parent_pk' })
+  id?: number;
+  @OneToMany({ entity: () => RenamedChild, mappedBy: (child) => child.parentId! })
+  children?: RenamedChild[];
+}
+
+@Entity()
+class RenamedChild {
+  @Id()
+  id?: number;
+  @Field({ name: 'parent_fk', references: () => RenamedParent })
+  parentId?: number;
+}
+
+/** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
+@Entity()
+class SecureCollectionRenamed {
+  @Id()
+  id?: number;
+  @Field({ name: 'renamed_collection', references: () => SecureCollection })
+  secureCollectionId?: number;
+  @Field({ name: 'renamed_child', references: () => SecureChild })
+  secureChildId?: number;
+}
+
+/** A soft-deletable junction: an unlinked row must not count as a link. */
+@Entity()
+class SecureCollectionLink {
+  @Id()
+  id?: number;
+  @Field({ references: () => SecureCollection })
+  secureCollectionId?: number;
+  @Field({ references: () => PlainChild })
+  plainChildId?: number;
+  @Field({ softDelete: () => Date.now() })
+  deletedAt?: number;
+}
+
+@Entity()
+class SecureCollection {
+  @Id()
+  id?: number;
+  @OneToMany({ entity: () => SecureChild, mappedBy: (child) => child.collectionId! })
+  children?: SecureChild[];
+  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionChild })
+  taggedChildren?: SecureChild[];
+  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionPlain })
+  plainChildren?: PlainChild[];
+  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionLink })
+  linkedChildren?: PlainChild[];
+  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionRenamed })
+  renamedChildren?: SecureChild[];
 }
 
 export type JsonUpdateCaseName =
@@ -1097,6 +1205,159 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     ).toThrow(UqlSecurityError);
+  }
+
+  /** A `$size` count is a client-supplied threshold over rows it never sees: the target's filters must scope it. */
+  shouldApplyTargetFiltersToOneToManySizeCount() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, {
+          $select: { id: true },
+          $where: { children: { $size: { $gte: 2 } } },
+        }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(1)}) >= ${this.ph(2)}`,
+    );
+    expect(values).toEqual([7, 2]);
+  }
+
+  /** A single-valued relation counts on the parent's FK, not its PK - the join side the `EXISTS` form uses. */
+  shouldJoinManyToOneSizeCountOnTheParentForeignKey() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureParent, { $select: { id: true }, $where: { related: { $size: 1 } } }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureParent${e} WHERE (SELECT COUNT(*) FROM ${e}SecureRelated${e} WHERE ${e}SecureRelated${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}SecureRelated${e}.${e}tenantId${e} = ${this.ph(1)}) = ${this.ph(2)}`,
+    );
+    expect(values).toEqual([7, 1]);
+  }
+
+  /** The junction cannot be scoped by a target filter, so the counted rows narrow to the ids satisfying it. */
+  shouldApplyTargetFiltersToManyToManySizeCount() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, {
+          $select: { id: true },
+          $where: { taggedChildren: { $size: { $gte: 2 } } },
+        }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(1)})) >= ${this.ph(2)}`,
+    );
+    expect(values).toEqual([7, 2]);
+  }
+
+  /** A renamed PK/FK correlates on the column, not the field key. One query pins both projections. */
+  shouldCorrelateRelationSubqueryOnMappedColumnNames() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, RenamedParent, {
+        $select: { id: true },
+        $where: { children: { id: 3 }, $and: [{ children: { $size: 1 } }] },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}parent_pk${e} ${e}id${e} FROM ${e}RenamedParent${e} WHERE EXISTS (SELECT 1 FROM ${e}RenamedChild${e} WHERE ${e}RenamedChild${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e} AND ${e}RenamedChild${e}.${e}id${e} = ${this.ph(1)}) AND (SELECT COUNT(*) FROM ${e}RenamedChild${e} WHERE ${e}RenamedChild${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e}) = ${this.ph(2)}`,
+    );
+    expect(values).toEqual([3, 1]);
+  }
+
+  /** The junction's own FK columns are resolved the same way. */
+  shouldCorrelateManyToManySubqueryOnMappedJunctionColumnNames() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { renamedChildren: { id: 5 } } }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionRenamed${e} WHERE ${e}SecureCollectionRenamed${e}.${e}renamed_collection${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionRenamed${e}.${e}renamed_child${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)}))`,
+    );
+    expect(values).toEqual([5, 7]);
+  }
+
+  /** The junction is a row being read too, so its own filters scope the count. */
+  shouldApplyJunctionFiltersToManyToManySizeCount() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { $size: 2 } } }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL) = ${this.ph(1)}`,
+    );
+    expect(values).toEqual([2]);
+  }
+
+  /** Both levels scope the `EXISTS` form: the junction's own filters and the target's. */
+  shouldApplyJunctionAndTargetFiltersToManyToManyRelationFilter() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { id: 5 } } }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL AND ${e}SecureCollectionLink${e}.${e}plainChildId${e} IN (SELECT ${e}PlainChild${e}.${e}id${e} FROM ${e}PlainChild${e} WHERE ${e}PlainChild${e}.${e}id${e} = ${this.ph(1)}))`,
+    );
+    expect(values).toEqual([5]);
+  }
+
+  /** An unfiltered target contributes nothing, so the mm count stays junction-only. */
+  shouldKeepManyToManySizeCountJunctionOnlyForUnfilteredTarget() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { plainChildren: { $size: 3 } } }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionPlain${e} WHERE ${e}SecureCollectionPlain${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e}) = ${this.ph(1)}`,
+    );
+    expect(values).toEqual([3]);
+  }
+
+  /** A `$size` count over a secured target with no ambient context must fail closed. */
+  shouldFailClosedForSizeCountWhenSecurityContextIsMissing() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { children: { $size: 1 } } }),
+      ),
+    ).toThrow(UqlSecurityError);
+  }
+
+  /**
+   * The `EXISTS` counterpart: a relation filter must not match a parent through a trashed or
+   * out-of-scope child, the same rows a joined `$populate` on that relation would see.
+   */
+  shouldApplyTargetFiltersToOneToManyRelationFilter() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { children: { id: 3 } } }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)})`,
+    );
+    expect(values).toEqual([3, 7]);
+  }
+
+  /** Same for mm, where the target is reached through the junction's `IN` sub-select. */
+  shouldApplyTargetFiltersToManyToManyRelationFilter() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = withContext({ secureTenantId: 7 }, () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { taggedChildren: { id: 3 } } }),
+      ),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)}))`,
+    );
+    expect(values).toEqual([3, 7]);
   }
 
   shouldFind$selectWithAllFieldsAndSpecificFieldsAndWhere() {

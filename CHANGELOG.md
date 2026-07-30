@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.21.0] - 2026-07-30
+
+### Fixes
+
+- **Relation subqueries (`$where: { comments: {...} }`, `$size`) applied none of the target's filters, bypassing `security: true` (behavior change).** A `$size` count was built from the join condition alone, so a client could binary-search `{ comments: { $size: { $gte: n } } }` to count rows it cannot read; a relation filter matched parents through soft-deleted children while `$populate` on the same relation excluded them. Both forms are now scoped by the target's filters (and the junction's, for ManyToMany) and fail closed on a missing security context. To match trashed rows, constrain the field: `{ comments: { deletedAt: { $ne: null } } }`.
+- **Relation subqueries correlated on the wrong columns.** Field keys were emitted instead of mapped column names, so a renamed PK/FK (`@Id({ name: 'parent_pk' })`) referenced a column that does not exist; and `$size` on a m1/11 relation used the parent's PK instead of its FK, counting unrelated rows.
+
 ## [0.20.2] - 2026-07-29
 
 ### Fixes

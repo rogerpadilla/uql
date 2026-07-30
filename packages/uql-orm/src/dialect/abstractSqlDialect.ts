@@ -1197,7 +1197,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return direction;
   }
 
-  private static readonly havingOpMap = new Map<QueryHavingOp, string>([
+  /** Scalar comparison operators shared by `HAVING` conditions and `$size` comparisons. */
+  private static readonly comparisonOpMap = new Map<QueryHavingOp, string>([
     ['$eq', '='],
     ['$ne', '<>'],
     ['$gt', '>'],
@@ -1232,7 +1233,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       } else if (op === '$ne') {
         ctx.append(this.neExpr(expr, this.addValue(ctx.values, val)));
       } else {
-        const sqlOp = AbstractSqlDialect.havingOpMap.get(op as QueryHavingOp);
+        const sqlOp = AbstractSqlDialect.comparisonOpMap.get(op as QueryHavingOp);
         if (!sqlOp) throw TypeError(`unsupported HAVING operator: ${op}`);
         ctx.append(`${expr} ${sqlOp} `);
         ctx.addValue(val);
@@ -1617,33 +1618,91 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return { $eq: val };
   }
 
+  /** A field key's mapped column (`@Field({ name })`), escaped. */
+  private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
+    return this.escapeId(this.resolveColumnName(key, meta.fields[key]));
+  }
+
+  private escapedColumn<E>(table: string, meta: EntityMeta<E>, key: string): string {
+    return this.escapeId(table, false, true) + this.escapedColumnName(meta, key);
+  }
+
+  /** As {@link escapedColumn}, but qualified by the query alias when the parent is nested. */
+  private escapedParentColumn<E>(
+    parentTable: string,
+    meta: EntityMeta<E>,
+    opts: QueryComparisonOptions,
+    key: string,
+  ): string {
+    return opts.prefix
+      ? this.escapeId(opts.prefix, true, true) + this.escapedColumnName(meta, key)
+      : this.escapedColumn(parentTable, meta, key);
+  }
+
   /**
-   * Filter by relation using an EXISTS subquery.
-   * Supports all cardinalities: mm (via junction), 1m, m1, and 11.
+   * The single path from a relation operator to its target, so none can emit an unscoped subquery:
+   * the target's `$where` is merged with its active filters, making a trashed or out-of-scope row
+   * invisible here just as it is to a joined `$populate`. The caller's filter bypass is deliberately
+   * not propagated (`withDeleted()` does not reach into relations), matching `selectRelationJoins`.
    */
-  /**
-   * The parent side of a relation-filtering subquery: its table name, escaped id reference, and a
-   * guard against a relation with no configured references. Shared by
-   * `compareRelation`/`compareRelationSize`. `rel.references` is asserted non-null at call sites
-   * relying on this guard, since the check lives here instead of in the caller's own scope.
-   */
-  private resolveRelationParent<E>(
+  private appendRelationSubquery<E>(
+    ctx: QueryContext,
     entity: Type<E>,
     key: string,
     rel: RelationOptions,
     opts: QueryComparisonOptions,
-  ): { parentTable: string; escapedParentId: string } {
+    projection: '1' | 'COUNT(*)',
+    val: QueryWhereMap<unknown>,
+  ): void {
     const meta = getMeta(entity);
     const parentTable = this.resolveTableName(entity, meta);
     if (!rel.references?.length) {
       throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
     }
-    const escapedParentId =
-      (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
-      this.escapeId(meta.id);
-    return { parentTable, escapedParentId };
+    const references = rel.references;
+    const escapedParentId = this.escapedParentColumn(parentTable, meta, opts, meta.id);
+    const relatedEntity = rel.entity!();
+    const relatedMeta = getMeta(relatedEntity);
+    const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
+    // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
+    const targetWhere = applyFilters(relatedMeta, buildQueryWhereAsMap(relatedMeta, val));
+
+    ctx.append(`(SELECT ${projection} FROM `);
+
+    if (rel.cardinality === 'mm' && rel.through) {
+      const throughEntity = rel.through();
+      const throughMeta = getMeta(throughEntity);
+      const throughTable = this.resolveTableName(throughEntity, throughMeta);
+
+      ctx.append(this.escapeId(throughTable));
+      ctx.append(` WHERE ${this.escapedColumn(throughTable, throughMeta, references[0].local)} = ${escapedParentId}`);
+      // The junction is a row being read too: a soft-deleted link is not a link.
+      this.where(ctx, throughEntity, {}, { prefix: throughTable, clause: 'AND' });
+
+      if (hasKeys(targetWhere)) {
+        ctx.append(` AND ${this.escapedColumn(throughTable, throughMeta, references[1].local)} IN (`);
+        ctx.append(
+          `SELECT ${this.escapedColumn(relatedTable, relatedMeta, relatedMeta.id)} FROM ${this.escapeId(relatedTable)}`,
+        );
+        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedTable, clause: 'WHERE' });
+        ctx.append(')');
+      }
+    } else {
+      const joinLeft = this.escapedColumn(relatedTable, relatedMeta, references[0].foreign);
+      const joinRight =
+        rel.cardinality === '1m'
+          ? escapedParentId
+          : this.escapedParentColumn(parentTable, meta, opts, references[0].local);
+
+      ctx.append(this.escapeId(relatedTable));
+      ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
+      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedTable, clause: 'AND' });
+    }
+
+    ctx.append(')');
   }
 
+  /** Filter by relation: a parent matches when {@link appendRelationSubquery} finds one target row. */
   protected compareRelation<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -1652,62 +1711,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationOptions,
     opts: QueryComparisonOptions,
   ): void {
-    const { parentTable, escapedParentId } = this.resolveRelationParent(entity, key, rel, opts);
-    const references = rel.references!;
-    const relatedEntity = rel.entity!();
-    const relatedMeta = getMeta(relatedEntity);
-    const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
-
-    ctx.append('EXISTS (SELECT 1 FROM ');
-
-    if (rel.cardinality === 'mm' && rel.through) {
-      // ManyToMany: EXISTS (SELECT 1 FROM JunctionTable WHERE junction.localFk = parent.id AND junction.foreignFk IN (SELECT related.id FROM Related WHERE ...))
-      const throughEntity = rel.through();
-      const throughMeta = getMeta(throughEntity);
-      const throughTable = this.resolveTableName(throughEntity, throughMeta);
-      const localFk = references[0].local;
-      const foreignFk = references[1].local;
-      const relatedId = relatedMeta.id;
-
-      ctx.append(this.escapeId(throughTable));
-      ctx.append(` WHERE ${this.escapeId(throughTable, false, true)}${this.escapeId(localFk)} = ${escapedParentId}`);
-      ctx.append(` AND ${this.escapeId(throughTable, false, true)}${this.escapeId(foreignFk)} IN (`);
-      ctx.append(
-        `SELECT ${this.escapeId(relatedTable, false, true)}${this.escapeId(relatedId)} FROM ${this.escapeId(relatedTable)}`,
-      );
-      this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
-        prefix: relatedTable,
-        clause: 'WHERE',
-        filters: { softDelete: false },
-      });
-      ctx.append(')');
-    } else {
-      // 1m / m1 / 11: EXISTS (SELECT 1 FROM Related WHERE related.fk_or_pk = parent.pk_or_fk AND ...)
-      // Left side is always relatedTable.references[0].foreign
-      // Right side is the parent's PK (1m) or the parent's FK (m1/11)
-      const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(references[0].foreign)}`;
-      const joinRight =
-        rel.cardinality === '1m'
-          ? escapedParentId
-          : (opts.prefix ? this.escapeId(opts.prefix, true, true) : this.escapeId(parentTable, false, true)) +
-            this.escapeId(references[0].local);
-
-      ctx.append(this.escapeId(relatedTable));
-      ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
-      this.where(ctx, relatedEntity, val as QueryWhere<typeof relatedEntity>, {
-        prefix: relatedTable,
-        clause: 'AND',
-        filters: { softDelete: false },
-      });
-    }
-
-    ctx.append(')');
+    ctx.append('EXISTS ');
+    this.appendRelationSubquery(ctx, entity, key, rel, opts, '1', val);
   }
 
-  /**
-   * Filter by relation size using a `COUNT(*)` subquery.
-   * Supports all cardinalities: mm (via junction), 1m.
-   */
+  /** Filter by relation size: the same subquery, counting instead of testing for existence. */
   protected compareRelationSize<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -1716,33 +1724,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationOptions,
     opts: QueryComparisonOptions,
   ): void {
-    const { escapedParentId } = this.resolveRelationParent(entity, key, rel, opts);
-
-    const appendSubquery = () => {
-      ctx.append('(SELECT COUNT(*) FROM ');
-
-      if (rel.cardinality === 'mm' && rel.through) {
-        const throughEntity = rel.through();
-        const throughMeta = getMeta(throughEntity);
-        const throughTable = this.resolveTableName(throughEntity, throughMeta);
-        const localFk = rel.references![0].local;
-
-        ctx.append(this.escapeId(throughTable));
-        ctx.append(` WHERE ${this.escapeId(throughTable, false, true)}${this.escapeId(localFk)} = ${escapedParentId}`);
-      } else {
-        const relatedEntity = rel.entity!();
-        const relatedMeta = getMeta(relatedEntity);
-        const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
-        const joinLeft = `${this.escapeId(relatedTable, false, true)}${this.escapeId(rel.references![0].foreign)}`;
-
-        ctx.append(this.escapeId(relatedTable));
-        ctx.append(` WHERE ${joinLeft} = ${escapedParentId}`);
-      }
-
-      ctx.append(')');
-    };
-
-    this.buildSizeComparison(ctx, appendSubquery, sizeVal);
+    this.buildSizeComparison(
+      ctx,
+      () => this.appendRelationSubquery(ctx, entity, key, rel, opts, 'COUNT(*)', {}),
+      sizeVal,
+    );
   }
 
   /**
@@ -1785,42 +1771,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * Append a single size comparison operator and value to the context.
    */
   private appendSizeOp(ctx: QueryContext, op: string, val: unknown): void {
-    switch (op) {
-      case '$eq':
-        ctx.append(' = ');
-        ctx.addValue(val);
-        break;
-      case '$ne':
-        ctx.append(' <> ');
-        ctx.addValue(val);
-        break;
-      case '$gt':
-        ctx.append(' > ');
-        ctx.addValue(val);
-        break;
-      case '$gte':
-        ctx.append(' >= ');
-        ctx.addValue(val);
-        break;
-      case '$lt':
-        ctx.append(' < ');
-        ctx.addValue(val);
-        break;
-      case '$lte':
-        ctx.append(' <= ');
-        ctx.addValue(val);
-        break;
-      case '$between': {
-        const [min, max] = val as [number, number];
-        ctx.append(' BETWEEN ');
-        ctx.addValue(min);
-        ctx.append(' AND ');
-        ctx.addValue(max);
-        break;
-      }
-      default:
-        throw TypeError(`unsupported $size comparison operator: ${op}`);
+    if (op === '$between') {
+      const [min, max] = val as [number, number];
+      ctx.append(' BETWEEN ');
+      ctx.addValue(min);
+      ctx.append(' AND ');
+      ctx.addValue(max);
+      return;
     }
+    const sqlOp = AbstractSqlDialect.comparisonOpMap.get(op as QueryHavingOp);
+    if (!sqlOp) {
+      throw TypeError(`unsupported $size comparison operator: ${op}`);
+    }
+    ctx.append(` ${sqlOp} `);
+    ctx.addValue(val);
   }
 
   /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */
