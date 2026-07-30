@@ -431,6 +431,94 @@ describe('MigrationCodeGenerator', () => {
     });
   });
 
+  describe('drops', () => {
+    /**
+     * Dropping an index or a constraint is one-way: the diff says what disappeared, not how it was
+     * defined, so the rollback has to be flagged for a human instead of silently doing nothing.
+     */
+    it('should drop indexes and foreign keys in up and leave TODOs in down', () => {
+      const generator = new MigrationCodeGenerator();
+
+      const diff: SchemaDiff = {
+        tableName: 'posts',
+        type: 'alter',
+        indexesToDrop: ['idx_posts_title'],
+        foreignKeysToDrop: ['fk_posts_author'],
+      };
+
+      const result = generator.generate(diff);
+
+      expect(result.up).toContain("await builder.dropIndex('posts', 'idx_posts_title');");
+      expect(result.up).toContain("await builder.dropForeignKey('posts', 'fk_posts_author');");
+      expect(result.down).toContain('// TODO: Re-add dropped indexes: idx_posts_title');
+      expect(result.down).toContain('// TODO: Re-add dropped foreign keys: fk_posts_author');
+    });
+
+    it('should declare a unique index inside createTable as a unique constraint', () => {
+      const generator = new MigrationCodeGenerator();
+
+      const diff: SchemaDiff = {
+        tableName: 'users',
+        type: 'create',
+        columnsToAdd: [
+          {
+            name: 'email',
+            type: 'string',
+            nullable: false,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        ],
+        indexesToAdd: [{ name: 'uq_users_email', columns: ['email'], unique: true }],
+      };
+
+      const result = generator.generate(diff);
+
+      expect(result.up).toContain("table.unique(['email'], 'uq_users_email')");
+    });
+
+    it('should omit index options that carry no information', () => {
+      const generator = new MigrationCodeGenerator();
+
+      const diff: SchemaDiff = {
+        tableName: 'users',
+        type: 'alter',
+        indexesToAdd: [{ name: '', columns: ['email'], unique: false }],
+      };
+
+      const result = generator.generate(diff);
+
+      expect(result.up).toContain("await builder.createIndex('users', ['email']);");
+    });
+
+    it('should omit foreign key options that match the database defaults', () => {
+      const generator = new MigrationCodeGenerator();
+
+      const diff: SchemaDiff = {
+        tableName: 'posts',
+        type: 'alter',
+        foreignKeysToAdd: [
+          {
+            name: '',
+            columns: ['authorId'],
+            referencedTable: 'users',
+            referencedColumns: ['id'],
+            onDelete: 'NO ACTION',
+            onUpdate: 'NO ACTION',
+          },
+        ],
+      };
+
+      const result = generator.generate(diff);
+
+      expect(result.up).toContain(
+        "await builder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] });",
+      );
+      expect(result.down).toBe('');
+    });
+  });
+
   describe('alter description', () => {
     it('should generate detailed description for alter', () => {
       const generator = new MigrationCodeGenerator();
