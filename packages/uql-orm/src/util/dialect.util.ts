@@ -19,6 +19,7 @@ import {
   QueryRaw,
   type QuerySelect,
   type QuerySelectValue,
+  type QuerySizeComparisonOps,
   type QuerySortMap,
   type QueryVectorSearch,
   type QueryWhere,
@@ -338,6 +339,23 @@ export type ParsedGroupEntry =
       /** `true` for a flat distinct op (`$countDistinct`, ...) → `COUNT(DISTINCT field)`. */
       readonly distinct: boolean;
     };
+
+/**
+ * The `$size` of a relation condition (`{ comments: { $size: { $gte: 2 } } }`), or `undefined` when the
+ * condition constrains the target's fields instead. Shared so every dialect agrees on which of the two
+ * a relation key means, and so the ambiguous mix fails loudly: `{ $size: 2, name: 'x' }` used to fall
+ * through to field filtering and emit a condition on a `$size` *column*.
+ */
+export function parseRelationSize(val: unknown): number | QuerySizeComparisonOps | undefined {
+  if (!val || typeof val !== 'object' || !('$size' in val)) {
+    return undefined;
+  }
+  const siblings = getKeys(val as object).filter((key) => key !== '$size');
+  if (siblings.length) {
+    throw new TypeError(`$size on a relation cannot be combined with other conditions: ${siblings.join(', ')}`);
+  }
+  return (val as { $size: number | QuerySizeComparisonOps }).$size;
+}
 
 /**
  * Parse the `$group` (grouped columns) and `$agg` (computed aggregates) maps into structured

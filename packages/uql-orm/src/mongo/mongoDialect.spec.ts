@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
-import { createSpec, Item, type Spec, Tax, TaxCategory, User } from '../test/index.js';
+import { Company, createSpec, Item, MeasureUnitCategory, type Spec, Tax, TaxCategory, User } from '../test/index.js';
 import { getRelationRequestSummary, raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
@@ -35,6 +35,21 @@ class SecureParent {
   relatedId?: number;
   @ManyToOne()
   related?: SecureRelated;
+}
+
+/**
+ * Every read path has to address the *stored* names: the primary key is `_id` and a `@Field({ name })`
+ * column is not its property key. No other fixture renames anything, which is why projecting, sorting
+ * and grouping by the property name went unnoticed.
+ */
+@Entity({ name: 'renamed_doc' })
+class RenamedDoc {
+  @Id()
+  id?: number;
+  @Field({ name: 'the_label' })
+  label?: string;
+  @Field({ name: 'deleted_at', softDelete: true })
+  deletedAt?: Date;
 }
 
 class MongoDialectSpec implements Spec {
@@ -94,11 +109,218 @@ class MongoDialectSpec implements Spec {
 
   shouldSelect() {
     expect(this.dialect.select(Tax, { name: true })).toEqual({ name: 1 });
-    expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ id: 1, name: 1 });
+    // the primary key is stored as `_id`; `normalizeId` maps it back to `id` on the way out
+    expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ _id: 1, name: 1 });
   }
 
   shouldThrowOnRawSelectArray() {
     expect(() => this.dialect.select(Tax, [raw('*')])).toThrow('raw $select is not supported on MongoDB');
+  }
+
+  /** Reads address the stored column, never the property key. */
+  shouldAddressStoredColumnsForRenamedFields() {
+    expect(this.dialect.select(RenamedDoc, { id: true, label: true })).toEqual({ _id: 1, the_label: 1 });
+    expect(this.dialect.sort(RenamedDoc, { label: -1, id: 1 })).toEqual({ the_label: -1, _id: 1 });
+    expect(this.dialect.where(RenamedDoc, { label: 'x' })).toEqual({ the_label: 'x', deleted_at: null });
+    // group by the column, project back under the caller's key
+    expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $agg: { n: { $count: '*' } } })) //
+      .toEqual([
+        { $group: { _id: { label: '$the_label' }, n: { $sum: 1 } } },
+        { $project: { _id: 0, label: '$_id.label', n: 1 } },
+      ]);
+  }
+
+  /** The built-in soft-delete filter reads the renamed column, so deletes must stamp that same one. */
+  shouldFilterRenamedSoftDeleteColumn() {
+    expect(this.dialect.where(RenamedDoc, {})).toEqual({ deleted_at: null });
+  }
+
+  /**
+   * The inverse (11) side correlates per parent document. It used to build the lookup from the
+   * query's own `_id`, so it only worked for a query filtered by primary key.
+   */
+  shouldCorrelateInverseOneToOnePopulateWithoutAnIdFilter() {
+    expect(
+      this.dialect.aggregationPipeline(User, { $where: { email: 'a@b.c' }, $populate: { profile: true } }),
+    ).toEqual([
+      { $match: { email: 'a@b.c' } },
+      { $lookup: { from: 'user_profile', localField: '_id', foreignField: 'creatorId', as: 'profile' } },
+      { $unwind: { path: '$profile', preserveNullAndEmptyArrays: true } },
+    ]);
+  }
+
+  /** A relation-level `$where` belongs in the lookup, like the SQL dialects' JOIN ON clause. */
+  shouldApplyRelationLevelWhereToLookup() {
+    expect(this.dialect.aggregationPipeline(Item, { $populate: { tax: { $where: { name: 'VAT' } } } })).toEqual([
+      {
+        $lookup: {
+          from: 'Tax',
+          localField: 'taxId',
+          foreignField: '_id',
+          pipeline: [{ $match: { name: 'VAT' } }],
+          as: 'tax',
+        },
+      },
+      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
+    ]);
+  }
+
+  /** `$required` drops parents with no match - the aggregation equivalent of an INNER JOIN. */
+  shouldDropUnmatchedParentsForRequiredPopulate() {
+    const [, unwind] = this.dialect.aggregationPipeline(Item, { $populate: { tax: { $required: true } } });
+    expect(unwind).toEqual({ $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } });
+  }
+
+  /** `$exclude` of the primary key needs `_id: 0`: MongoDB returns `_id` unless told not to. */
+  shouldExcludePrimaryKeyExplicitly() {
+    expect(this.dialect.select(RenamedDoc, undefined, { id: true })).toEqual({ the_label: 1, deleted_at: 1, _id: 0 });
+  }
+
+  shouldThrowOnRawInWhere() {
+    expect(() => this.dialect.where(Item, { $and: [raw('code IS NOT NULL')] })).toThrow(
+      'raw() in $where is not supported on MongoDB',
+    );
+    expect(() => this.dialect.where(Item, { name: raw('lower(code)') as never })).toThrow(
+      'raw() in $where is not supported on MongoDB',
+    );
+  }
+
+  /**
+   * A relation condition becomes one correlated `$lookup` into a temporary field plus a condition on
+   * it. `$limit: 1` is enough for existence, and the target's own filters scope the lookup.
+   */
+  shouldFilterByOneToManyRelation() {
+    expect(this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { name: 'kg' } })).toEqual({
+      stages: [
+        {
+          $lookup: {
+            from: 'MeasureUnit',
+            localField: '_id',
+            foreignField: 'categoryId',
+            pipeline: [{ $match: { name: 'kg', deletedAt: null } }, { $limit: 1 }],
+            as: '__uql_rel_0',
+          },
+        },
+      ],
+      filter: { '__uql_rel_0.0': { $exists: true }, deletedAt: null },
+      unset: ['__uql_rel_0'],
+    });
+  }
+
+  /** ManyToMany reaches the target from inside the junction's lookup, so no ids are materialized. */
+  shouldFilterByManyToManyRelationThroughTheJunction() {
+    const { stages, filter, unset } = this.dialect.whereWithRelations(Item, { tags: { name: 'urgent' } });
+    expect(stages).toEqual([
+      {
+        $lookup: {
+          from: 'ItemTag',
+          localField: '_id',
+          foreignField: 'itemId',
+          pipeline: [
+            {
+              $lookup: {
+                from: 'Tag',
+                localField: 'tagId',
+                foreignField: '_id',
+                pipeline: [{ $match: { name: 'urgent' } }, { $limit: 1 }],
+                as: '__uql_target',
+              },
+            },
+            { $match: { '__uql_target.0': { $exists: true } } },
+            { $limit: 1 },
+          ],
+          as: '__uql_rel_0',
+        },
+      },
+    ]);
+    expect(filter).toEqual({ '__uql_rel_0.0': { $exists: true } });
+    expect(unset).toEqual(['__uql_rel_0']);
+  }
+
+  /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
+  shouldCompareRelationSize() {
+    const count = { $ifNull: [{ $arrayElemAt: ['$__uql_rel_0.n', 0] }, 0] };
+
+    const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
+    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: 'n' }]);
+    expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
+
+    const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
+    expect(single.filter).toEqual({ $expr: { $gte: [count, 2] }, deletedAt: null });
+
+    const between = this.dialect.whereWithRelations(MeasureUnitCategory, {
+      measureUnits: { $size: { $between: [2, 5] } },
+    });
+    expect(between.filter).toEqual({
+      $expr: { $and: [{ $gte: [count, 2] }, { $lte: [count, 5] }] },
+      deletedAt: null,
+    });
+
+    const combined = this.dialect.whereWithRelations(MeasureUnitCategory, {
+      measureUnits: { $size: { $gt: 1, $lt: 9 } },
+    });
+    expect(combined.filter).toEqual({
+      $expr: { $and: [{ $gt: [count, 1] }, { $lt: [count, 9] }] },
+      deletedAt: null,
+    });
+  }
+
+  shouldThrowOnEmptyRelationSizeComparison() {
+    expect(() =>
+      this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: undefined } } }),
+    ).toThrow('$size on a relation needs at least one comparison');
+  }
+
+  /**
+   * The lookups are hoisted as pre-stages while the condition stays where the caller put it, so a
+   * relation inside `$or` still means what it says.
+   */
+  shouldKeepRelationConditionInsideOr() {
+    const { stages, filter } = this.dialect.whereWithRelations(MeasureUnitCategory, {
+      $or: [{ name: 'weight' }, { measureUnits: { name: 'kg' } }],
+    });
+    expect(stages).toHaveLength(1);
+    expect(filter).toEqual({
+      $or: [{ name: 'weight' }, { '__uql_rel_0.0': { $exists: true } }],
+      deletedAt: null,
+    });
+  }
+
+  shouldReportWhetherAWhereConstrainsRelations() {
+    expect(this.dialect.constrainsRelations(Item, undefined)).toBe(false);
+    expect(this.dialect.constrainsRelations(Item, { name: 'x' })).toBe(false);
+    expect(this.dialect.constrainsRelations(Item, { tags: { name: 'x' } } as never)).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $or: [{ tags: { name: 'x' } }] } as never)).toBe(true);
+  }
+
+  /** To-many relations are populated with a second query, so they contribute no `$lookup` stage. */
+  shouldSkipToManyRelationsInLookupStages() {
+    expect(this.dialect.relationStages(MeasureUnitCategory, { $populate: { measureUnits: true } })).toEqual([]);
+  }
+
+  /** A plain filter (`find`, `updateMany`) has nowhere to put the lookups a relation condition needs. */
+  shouldThrowOnRelationInPlainFilter() {
+    expect(() => this.dialect.where(Item, { tax: { name: 'VAT' } } as never)).toThrow(
+      "filtering by relation 'tax' is not supported here on MongoDB",
+    );
+    expect(() => this.dialect.where(Item, { tags: { $size: 2 } } as never)).toThrow(
+      "filtering by relation 'tags' is not supported here on MongoDB",
+    );
+  }
+
+  shouldThrowOnRelationInSort() {
+    expect(() => this.dialect.sort(Item, { tax: { name: 1 } } as never)).toThrow(
+      "sorting by relation 'tax' is not supported on MongoDB",
+    );
+  }
+
+  /** An unknown path root is a typo (or an injected key) that would otherwise match nothing. */
+  shouldThrowOnUnknownPathRoot() {
+    expect(() => this.dialect.where(Company, { 'nope.city': 'NY' } as never)).toThrow(
+      'path nope.city does not exist in',
+    );
+    // a declared JSON field may carry any embedded path
+    expect(this.dialect.where(Company, { 'kind.city': 'NY' } as never)).toEqual({ 'kind.city': 'NY' });
   }
 
   shouldBuildSort() {
@@ -220,16 +442,14 @@ class MongoDialectSpec implements Spec {
           _id: new ObjectId('65496146f8f7899f63768df1'),
         },
       },
+      // `$limit` used to be dropped whenever a relation was populated; nothing here is `$required`,
+      // so paging runs before the lookups
+      { $limit: 1 },
       {
         $lookup: {
           from: 'user_profile',
-          pipeline: [
-            {
-              $match: {
-                creatorId: new ObjectId('65496146f8f7899f63768df1'),
-              },
-            },
-          ],
+          localField: '_id',
+          foreignField: 'creatorId',
           as: 'profile',
         },
       },
@@ -253,16 +473,14 @@ class MongoDialectSpec implements Spec {
           _id: new ObjectId('65496146f8f7899f63768df1'),
         },
       },
+      // `$limit` used to be dropped whenever a relation was populated; nothing here is `$required`,
+      // so paging runs before the lookups
+      { $limit: 1 },
       {
         $lookup: {
           from: 'user_profile',
-          pipeline: [
-            {
-              $match: {
-                creatorId: new ObjectId('65496146f8f7899f63768df1'),
-              },
-            },
-          ],
+          localField: '_id',
+          foreignField: 'creatorId',
           as: 'profile',
         },
       },
@@ -291,19 +509,12 @@ class MongoDialectSpec implements Spec {
           name: 1,
         },
       },
+      { $limit: 1 },
       {
         $lookup: {
           from: 'user_profile',
-          pipeline: [
-            {
-              $match: {
-                creatorId: new ObjectId('65496146f8f7899f63768df1'),
-              },
-              $sort: {
-                name: 1,
-              },
-            },
-          ],
+          localField: '_id',
+          foreignField: 'creatorId',
           as: 'profile',
         },
       },

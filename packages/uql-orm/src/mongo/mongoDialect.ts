@@ -15,16 +15,19 @@ import type {
   QueryGroupMap,
   QueryLikeOp,
   QueryOptions,
+  QuerySelect,
   QuerySelectValue,
+  QuerySizeComparisonOps,
   QuerySortMap,
   QueryVectorSearch,
   QueryWhere,
   QueryWhereFieldOperatorMap,
   RelationKey,
+  RelationOptions,
   Type,
 } from '../type/index.js';
+import { QueryRaw } from '../type/queryRaw.js';
 import {
-  applyFilters,
   asSelectMap,
   buildQueryWhereAsMap,
   buildSortMap,
@@ -40,6 +43,8 @@ import {
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
   parseGroupMap,
+  parseRelationAtKey,
+  parseRelationSize,
   type RelationRequestSummary,
 } from '../util/index.js';
 
@@ -51,6 +56,12 @@ type MongoNativeOp = keyof Pick<
   QueryWhereFieldOperatorMap<unknown>,
   '$all' | '$size' | '$elemMatch' | '$eq' | '$ne' | '$lt' | '$lte' | '$gt' | '$gte' | '$in' | '$nin' | '$regex' | '$not'
 >;
+
+/** Accumulator threaded through `$where` rendering: the relation lookups it needs, and their temp fields. */
+type RelationLookups = {
+  readonly stages: MongoAggregationPipelineEntry<Document>[];
+  readonly temps: string[];
+};
 
 /** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoDialect} and its schema generator. */
 export const mongoDialectFeatures: DialectFeatures = {
@@ -78,6 +89,10 @@ export class MongoDialect extends AbstractDialect {
   override readonly insertIdSource = 'returning';
 
   private static readonly ID_KEY = '_id';
+  /** Temporary lookup fields for relation conditions, dropped with `$unset` after the `$match`. */
+  private static readonly REL_TEMP_PREFIX = '__uql_rel_';
+  private static readonly REL_COUNT_KEY = 'n';
+  private static readonly REL_NESTED_KEY = '__uql_target';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
   // Direct field aggregates → MongoDB accumulator. `$count` is handled separately (COUNT(*) vs
@@ -89,15 +104,72 @@ export class MongoDialect extends AbstractDialect {
     ['$max', '$max'],
   ]);
 
-  public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
-    const meta = getMeta(entity);
-    // Apply this entity's filters once, at the scope entry point; recursion uses `renderFilter`.
-    const whereMap = applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
-    return this.renderFilter(entity, whereMap);
+  /**
+   * MongoDB stores the primary key as `_id`; everything else resolves as usual. Projections, sorts,
+   * `$group` refs and `$where` keys all map through here, so no read path can address a property name
+   * the document does not use.
+   */
+  override columnOf<E>(meta: EntityMeta<E>, key: string): string {
+    if (key === MongoDialect.ID_KEY || key === meta.id) {
+      return MongoDialect.ID_KEY;
+    }
+    return super.columnOf(meta, key);
   }
 
-  /** Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or` recursion). */
-  private renderFilter<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}): Filter<E> {
+  public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
+    const meta = getMeta(entity);
+    // Filters are applied once, here at the scope entry point; recursion uses `renderFilter`.
+    return this.renderFilter(entity, this.scopedWhereMap(meta, where, opts));
+  }
+
+  /**
+   * A `$where` that may constrain relations, split into the `$lookup` stages it needs and the `$match`
+   * filter that consumes them. Each relation condition becomes one correlated lookup into a temporary
+   * field plus an ordinary condition on that field, so the caller's boolean structure survives intact
+   * (a relation inside `$or` still means what it says) and nothing depends on materializing ids.
+   * `unset` names the temporary fields, which the caller drops once the match is done.
+   */
+  public whereWithRelations<E extends Document>(
+    entity: Type<E>,
+    where: QueryWhere<E> = {},
+    opts: QueryOptions = {},
+  ): {
+    // the stages read the *target* collections, so they are not shaped by `E`
+    readonly stages: MongoAggregationPipelineEntry<Document>[];
+    readonly filter: Filter<E>;
+    readonly unset: string[];
+  } {
+    const meta = getMeta(entity);
+    const lookups: RelationLookups = { stages: [], temps: [] };
+    const filter = this.renderFilter(entity, this.scopedWhereMap(meta, where, opts), opts, lookups);
+    return { stages: lookups.stages, filter, unset: lookups.temps };
+  }
+
+  /** Whether a `$where` constrains any relation, and so needs the aggregation path rather than a cursor. */
+  public constrainsRelations<E extends Document>(entity: Type<E>, where: QueryWhere<E> | undefined): boolean {
+    if (!where) {
+      return false;
+    }
+    const meta = getMeta(entity);
+    const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
+    return Object.entries(whereMap).some(([key, val]) =>
+      key === '$and' || key === '$or'
+        ? (val as QueryWhere<E>[]).some((it) => this.constrainsRelations(entity, it))
+        : Boolean(meta.relations[key]),
+    );
+  }
+
+  /**
+   * Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or`
+   * recursion). Relation keys need `$lookup` stages, so they are only accepted when `lookups` is
+   * given - a plain `find`/`updateMany` filter has nowhere to put them.
+   */
+  private renderFilter<E extends Document>(
+    entity: Type<E>,
+    where: QueryWhere<E> = {},
+    opts?: QueryOptions,
+    lookups?: RelationLookups,
+  ): Filter<E> {
     const meta = getMeta(entity);
     const whereMap = buildQueryWhereAsMap(meta, where);
 
@@ -106,14 +178,24 @@ export class MongoDialect extends AbstractDialect {
       let key = rawKey;
       let val: unknown = rawVal;
       if (key === '$and' || key === '$or') {
-        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => this.renderFilter(entity, filterIt));
+        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => {
+          // A `QueryRaw` here would recurse forever: `buildQueryWhereAsMap` re-wraps it as
+          // `{ $and: [raw] }`, which lands back on this branch.
+          this.assertNoRaw(filterIt);
+          return this.renderFilter(entity, filterIt, opts, lookups);
+        });
+      } else if (meta.relations[key]) {
+        this.assertNoRaw(val);
+        if (!lookups) {
+          throw new TypeError(`filtering by relation '${key}' is not supported here on MongoDB`);
+        }
+        Object.assign(filter, this.appendRelationLookup(meta, key, val, opts, lookups));
       } else {
-        const field = meta.fields[key];
-        if (key === MongoDialect.ID_KEY || key === meta.id) {
-          key = MongoDialect.ID_KEY;
+        this.assertNoRaw(val);
+        this.assertKnownPathRoot(meta, key);
+        key = this.pathOf(meta, key);
+        if (key === MongoDialect.ID_KEY) {
           val = this.getIdValue(val as IdValue);
-        } else if (field) {
-          key = this.resolveColumnName(key, field);
         }
         if (isOperatorObject(val)) {
           val = this.transformOperators(val);
@@ -124,6 +206,143 @@ export class MongoDialect extends AbstractDialect {
       }
     }
     return filter as Filter<E>;
+  }
+
+  /**
+   * Emits the correlated `$lookup` for one relation condition and returns the condition that tests its
+   * result: presence of a row for a plain relation filter, a comparison against the row count for
+   * `$size`. The target's (and, for ManyToMany, the junction's) own filters scope the lookup, so a
+   * relation subquery can no more read out-of-scope rows than a direct query on the target can.
+   */
+  private appendRelationLookup<E>(
+    meta: EntityMeta<E>,
+    relKey: string,
+    val: unknown,
+    opts: QueryOptions | undefined,
+    lookups: RelationLookups,
+  ): Record<string, unknown> {
+    const relOpts = meta.relations[relKey]!;
+    const relEntity = relOpts.entity!();
+    const relMeta = getMeta(relEntity);
+    const temp = `${MongoDialect.REL_TEMP_PREFIX}${lookups.temps.length}`;
+    const sizeVal = parseRelationSize(val);
+    // `$count` for a size test, `$limit: 1` for existence: neither returns the matched documents.
+    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: MongoDialect.REL_COUNT_KEY }];
+    // Scope first, render once - merging the target's filters into an already-rendered filter would
+    // leave their own keys unmapped. The caller's filter bypass is deliberately *not* passed down:
+    // `withDeleted()` or `hardDelete` on the parent must not un-hide trashed rows of the target, the
+    // same rule the SQL dialects' relation subqueries follow.
+    const targetCondition = (sizeVal === undefined ? val : {}) as QueryWhere<Document>;
+    const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, targetCondition), opts);
+
+    lookups.temps.push(temp);
+    lookups.stages.push(
+      relOpts.cardinality === 'mm' && relOpts.through
+        ? this.junctionLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
+        : {
+            $lookup: {
+              from: this.resolveTableName(relEntity, relMeta),
+              ...this.joinKeys(meta, relMeta, relOpts),
+              pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), ...tail],
+              as: temp,
+            },
+          },
+    );
+
+    return sizeVal === undefined
+      ? { [`${temp}.0`]: { $exists: true } }
+      : { $expr: this.compareRelationCount(temp, sizeVal) };
+  }
+
+  /**
+   * ManyToMany counts/tests junction rows, so the target is reached from inside the junction's own
+   * lookup - the junction's filters apply too, since a soft-deleted link is not a link.
+   */
+  private junctionLookup<E>(
+    meta: EntityMeta<E>,
+    relOpts: RelationOptions,
+    relMeta: EntityMeta<Document>,
+    relEntity: Type<Document>,
+    targetScope: Filter<Document>,
+    temp: string,
+    tail: Record<string, unknown>[],
+    opts: QueryOptions | undefined,
+  ): MongoAggregationPipelineEntry<Document> {
+    const throughEntity = relOpts.through!();
+    const throughMeta = getMeta(throughEntity);
+    const junctionScope = this.renderFilter(throughEntity, this.scopedWhereMap(throughMeta, {}), opts);
+    const nested = MongoDialect.REL_NESTED_KEY;
+
+    return {
+      $lookup: {
+        from: this.resolveTableName(throughEntity, throughMeta),
+        localField: MongoDialect.ID_KEY,
+        foreignField: this.columnOf(throughMeta, relOpts.references![0].local),
+        pipeline: [
+          ...(hasKeys(junctionScope) ? [{ $match: junctionScope }] : []),
+          {
+            $lookup: {
+              from: this.resolveTableName(relEntity, relMeta),
+              localField: this.columnOf(throughMeta, relOpts.references![1].local),
+              foreignField: MongoDialect.ID_KEY,
+              pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), { $limit: 1 }],
+              as: nested,
+            },
+          },
+          { $match: { [`${nested}.0`]: { $exists: true } } },
+          ...tail,
+        ],
+        as: temp,
+      },
+    } as MongoAggregationPipelineEntry<Document>;
+  }
+
+  /**
+   * Compares the looked-up row count, which is `[{ n: <count> }]` or `[]` when nothing matched - hence
+   * the `$ifNull` fallback to 0, so `{ $size: 0 }` matches parents with no related row at all.
+   */
+  private compareRelationCount(temp: string, sizeVal: number | QuerySizeComparisonOps): Record<string, unknown> {
+    const count = { $ifNull: [{ $arrayElemAt: [`$${temp}.${MongoDialect.REL_COUNT_KEY}`, 0] }, 0] };
+    if (typeof sizeVal === 'number') {
+      return { $eq: [count, sizeVal] };
+    }
+    const comparisons: Record<string, unknown>[] = Object.entries(sizeVal)
+      .filter(([, bound]) => bound !== undefined)
+      .flatMap(([op, bound]): Record<string, unknown>[] =>
+        op === '$between'
+          ? [{ $gte: [count, (bound as [number, number])[0]] }, { $lte: [count, (bound as [number, number])[1]] }]
+          : [{ [op]: [count, bound] }],
+      );
+    if (!comparisons.length) {
+      throw new TypeError('$size on a relation needs at least one comparison');
+    }
+    return comparisons.length === 1 ? comparisons[0]! : { $and: comparisons };
+  }
+
+  /** Whether a query subtracts `key` from the projection, via `$exclude` or a negative `$select`. */
+  private subtractsKey<E>(key: string, select?: QuerySelect<E>, exclude?: QueryExclude<E>): boolean {
+    const at = (map: QuerySelect<E> | QueryExclude<E> | undefined) => (map as Record<string, unknown>)?.[key];
+    return at(exclude) === true || at(select) === false;
+  }
+
+  /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
+  private assertNoRaw(value: unknown): void {
+    if (value instanceof QueryRaw) {
+      throw new TypeError('raw() in $where is not supported on MongoDB');
+    }
+  }
+
+  /**
+   * A dotted key addresses an embedded path, whose root must still be a declared field - otherwise it
+   * is a typo (or an injected key) that would silently match nothing, the same guard the SQL dialects
+   * apply to JSON paths.
+   */
+  private assertKnownPathRoot<E>(meta: EntityMeta<E>, key: string): void {
+    const root = key.includes('.') ? key.slice(0, key.indexOf('.')) : key;
+    if (root === MongoDialect.ID_KEY || root === meta.id || meta.fields[root as keyof typeof meta.fields & string]) {
+      return;
+    }
+    throw new TypeError(`path ${key} does not exist in ${meta.name ?? ''}`);
   }
 
   protected mapTableNameRow(row: { table_name: string }): string {
@@ -226,7 +445,7 @@ export class MongoDialect extends AbstractDialect {
     entity: Type<E>,
     select?: QuerySelectValue<E>,
     exclude?: QueryExclude<E>,
-  ): Record<string, 1> {
+  ): Record<string, 0 | 1> {
     const meta = getMeta(entity);
     if (!select && !exclude) {
       return {};
@@ -234,20 +453,61 @@ export class MongoDialect extends AbstractDialect {
     if (Array.isArray(select)) {
       throw new TypeError('raw $select is not supported on MongoDB');
     }
-    const selectedFields = normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
-    return selectedFields.reduce<Record<string, 1>>((acc, key) => {
-      acc[key] = 1;
-      return acc;
-    }, {});
+    const selectMap = asSelectMap(select);
+    // Projected by column, not by field key; `normalizeId` maps them back on the way out.
+    const projection = normalizeScalarFieldSelection(meta, selectMap, exclude).reduce<Record<string, 0 | 1>>(
+      (acc, key) => {
+        acc[this.columnOf(meta, key)] = 1;
+        return acc;
+      },
+      {},
+    );
+    // MongoDB returns `_id` unless it is explicitly excluded, so subtracting the primary key needs
+    // `_id: 0` - the one inclusion/exclusion mix MongoDB allows - or `$exclude: { id: true }` would
+    // have no effect at all.
+    if (this.subtractsKey(meta.id as string, selectMap, exclude)) {
+      projection[MongoDialect.ID_KEY] = 0;
+    }
+    return projection;
   }
 
   public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>): Sort {
-    const raw = buildSortMap(sort);
+    const meta = getMeta(entity);
+    return this.sortBy(sort, (key) => {
+      if (meta.relations[key]) {
+        throw new TypeError(`sorting by relation '${key}' is not supported on MongoDB`);
+      }
+      return this.pathOf(meta, key);
+    });
+  }
+
+  /**
+   * Aggregate results are keyed by `$group`/`$agg` alias rather than by column, so an aggregate
+   * `$sort` addresses those aliases as-is - the same reason the SQL dialects sort by alias there.
+   */
+  private aliasSort<E extends Document>(sort: QuerySortMap<E> | undefined): Sort {
+    return this.sortBy(sort, (alias) => alias);
+  }
+
+  /** Shared direction normalization; `mapKey` decides whether keys are columns or aggregate aliases. */
+  private sortBy<E extends Document>(sort: QuerySortMap<E> | undefined, mapKey: (key: string) => string): Sort {
     const normalized: Record<string, 1 | -1> = {};
-    for (const [key, dir] of Object.entries(raw)) {
-      normalized[key] = dir === 'desc' || dir === -1 ? -1 : 1;
+    for (const [key, dir] of Object.entries(buildSortMap(sort))) {
+      normalized[mapKey(key)] = dir === 'desc' || dir === -1 ? -1 : 1;
     }
     return normalized as Sort;
+  }
+
+  /**
+   * {@link columnOf} for a possibly dotted key: only the root is a field key, the rest addresses an
+   * embedded path (`kind.city` -> `<kind's column>.city`).
+   */
+  private pathOf<E>(meta: EntityMeta<E>, key: string): string {
+    const dot = key.indexOf('.');
+    if (dot < 0) {
+      return this.columnOf(meta, key);
+    }
+    return this.columnOf(meta, key.slice(0, dot)) + key.slice(dot);
   }
 
   public aggregationPipeline<E extends Document>(
@@ -256,24 +516,52 @@ export class MongoDialect extends AbstractDialect {
     relationSummary?: RelationRequestSummary<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
-    const meta = getMeta(entity);
-    const where = this.where(entity, q.$where, opts);
+    const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
     const sort = this.sort(entity, q.$sort);
-    const firstPipelineEntry: MongoAggregationPipelineEntry<E> = {};
+    const match: MongoAggregationPipelineEntry<E> = {};
 
-    if (hasKeys(where)) {
-      firstPipelineEntry.$match = where;
+    if (hasKeys(filter)) {
+      match.$match = filter;
     }
     if (hasKeys(sort)) {
-      firstPipelineEntry.$sort = sort;
+      match.$sort = sort;
     }
 
+    // Lookups that a relation condition needs come first, then the match that reads them, then the
+    // temporary fields are dropped so they never reach the caller.
+    const pipeline: MongoAggregationPipelineEntry<Document>[] = [...stages];
+    if (hasKeys(match)) {
+      pipeline.push(match);
+    }
+    if (unset.length) {
+      pipeline.push({ $unset: unset });
+    }
+
+    const relStages = this.relationStages(entity, q, relationSummary, opts);
+    const pager: MongoAggregationPipelineEntry<E>[] = [
+      ...(q.$skip === undefined ? [] : [{ $skip: q.$skip }]),
+      ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
+    ];
+    // A `$required` relation drops parents when it unwinds, so paging has to come after it - as it
+    // does after an INNER JOIN. Otherwise paging first is equivalent and spares the lookups.
+    const dropsParents = relStages.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
+    pipeline.push(...(dropsParents ? [...relStages, ...pager] : [...pager, ...relStages]));
+
+    return pipeline;
+  }
+
+  /**
+   * `$lookup`/`$unwind` stages for the joinable relations a query populates. Shared by the plain
+   * aggregation pipeline and the `$vectorSearch` one, so relations load the same way in both.
+   */
+  public relationStages<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    relationSummary?: RelationRequestSummary<E>,
+    opts?: QueryOptions,
+  ): MongoAggregationPipelineEntry<E>[] {
+    const meta = getMeta(entity);
     const pipeline: MongoAggregationPipelineEntry<E>[] = [];
-
-    if (hasKeys(firstPipelineEntry)) {
-      pipeline.push(firstPipelineEntry);
-    }
-
     const relKeys = (relationSummary ?? getRelationRequestSummary(meta, q.$populate)).joinableKeys;
 
     for (const relKey of relKeys) {
@@ -281,55 +569,64 @@ export class MongoDialect extends AbstractDialect {
       if (!relOpts) continue;
 
       if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
-        // '1m' and 'mm' should be resolved in a higher layer because they will need multiple queries
+        // '1m' and 'mm' are resolved in a higher layer: they need a second query each.
         continue;
       }
 
       const relEntity = relOpts.entity!();
       const relMeta = getMeta(relEntity);
+      const { query: relQuery, required } = parseRelationAtKey<E>(relKey, q.$populate);
       // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
       // filters (in particular `security: true` ones) must apply even to a bare
       // `$populate: { rel: true }`, exactly like the SQL dialects' JOIN ON-clause filters.
-      const relationFilter = this.where(relEntity, {}, opts);
+      const relationFilter = this.where(relEntity, relQuery.$where ?? {}, opts);
 
-      if (relOpts.cardinality === 'm1') {
-        const localField = meta.fields[relOpts.references![0].local];
-        pipeline.push({
-          $lookup: {
-            from: this.resolveTableName(relEntity, relMeta),
-            localField: this.resolveColumnName(relOpts.references![0].local, localField!),
-            foreignField: '_id',
-            // MongoDB runs `pipeline` after its own localField/foreignField match, so the related
-            // entity's filters layer on top of the join condition without a `let`/`$expr` rewrite.
-            ...(hasKeys(relationFilter) ? { pipeline: [{ $match: relationFilter }] } : {}),
-            as: relKey,
-          },
-        });
-      } else {
-        const foreignField = relMeta.fields[relOpts.references![0].foreign];
-        const foreignFieldName = this.resolveColumnName(relOpts.references![0].foreign, foreignField!);
-        const referenceSort = this.sort(relEntity, q.$sort);
-        const _id = MongoDialect.ID_KEY;
-        const referencePipelineEntry: MongoAggregationPipelineEntry<FieldValue<E>> = {
-          $match: { [foreignFieldName]: where[_id], ...relationFilter },
-        };
-        if (hasKeys(referenceSort)) {
-          referencePipelineEntry.$sort = referenceSort;
-        }
-        pipeline.push({
-          $lookup: {
-            from: this.resolveTableName(relEntity, relMeta),
-            pipeline: [referencePipelineEntry],
-            as: relKey,
-          },
-        });
-      }
+      pipeline.push({
+        $lookup: {
+          from: this.resolveTableName(relEntity, relMeta),
+          ...this.joinKeys(meta, relMeta, relOpts),
+          ...(hasKeys(relationFilter) ? { pipeline: [{ $match: relationFilter }] } : {}),
+          as: relKey,
+        },
+      });
 
-      pipeline.push({ $unwind: { path: `$${relKey}`, preserveNullAndEmptyArrays: true } });
+      // `$required` drops parents with no match, the aggregation equivalent of an INNER JOIN.
+      pipeline.push({ $unwind: { path: `$${relKey}`, preserveNullAndEmptyArrays: !required } });
     }
 
     return pipeline;
   }
+
+  /**
+   * The correlated join for a single-valued or one-to-many relation. MongoDB runs a lookup's `pipeline`
+   * after its own localField/foreignField match, so the target's filters layer on top of the join
+   * condition with no `let`/`$expr` rewrite: m1 joins the parent's FK to the target's `_id`, every other
+   * direction joins the parent's `_id` to the target's FK.
+   */
+  private joinKeys<E, R extends Document>(
+    meta: EntityMeta<E>,
+    relMeta: EntityMeta<R>,
+    relOpts: RelationOptions,
+  ): { localField: string; foreignField: string } {
+    return relOpts.cardinality === 'm1'
+      ? { localField: this.columnOf(meta, relOpts.references![0].local), foreignField: MongoDialect.ID_KEY }
+      : { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references![0].foreign) };
+  }
+
+  /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */
+  private renamedColumns<E>(meta: EntityMeta<E>): readonly [string, string][] {
+    let renamed = this.#renamedColumns.get(meta);
+    if (!renamed) {
+      renamed = getKeys(meta.fields)
+        .map((key): [string, string] => [this.columnOf(meta, key), key])
+        .filter(([column, key]) => column !== key);
+      this.#renamedColumns.set(meta, renamed);
+    }
+    return renamed;
+  }
+
+  // Keyed by the meta object itself; entity metadata is immutable once defined.
+  readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
 
   public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[] | undefined): E[] | undefined {
     return docs?.map((doc) => this.normalizeId(meta, doc)) as E[] | undefined;
@@ -350,12 +647,12 @@ export class MongoDialect extends AbstractDialect {
       }
     }
 
-    for (const key of getKeys(meta.fields)) {
-      const field = meta.fields[key];
-      const dbName = this.resolveColumnName(key, field!);
-      if (dbName !== key && res[dbName] !== undefined) {
-        res[key] = res[dbName];
-        delete res[dbName];
+    // Only the renamed fields need touching, and which those are is a property of the entity, not of
+    // the document - so it is derived once instead of for every row of a result set.
+    for (const [column, key] of this.renamedColumns(meta)) {
+      if (res[column] !== undefined) {
+        res[key] = res[column];
+        delete res[column];
       }
     }
 
@@ -513,7 +810,10 @@ export class MongoDialect extends AbstractDialect {
     }
 
     // $group stage
-    const { groupId, groupAccumulators, distinctReducers } = this.buildGroupSpec(parseGroupMap(q.$group, q.$agg));
+    const { groupId, groupAccumulators, distinctReducers } = this.buildGroupSpec(
+      getMeta(entity),
+      parseGroupMap(q.$group, q.$agg),
+    );
 
     pipeline.push({ $group: { _id: hasKeys(groupId) ? groupId : null, ...groupAccumulators } });
 
@@ -539,9 +839,9 @@ export class MongoDialect extends AbstractDialect {
       }
     }
 
-    // $sort stage
+    // $sort stage - by alias, since $group/$project already renamed everything
     if (q.$sort) {
-      const sort = this.sort(entity, q.$sort);
+      const sort = this.aliasSort(q.$sort);
       if (hasKeys(sort)) {
         pipeline.push({ $sort: sort });
       }
@@ -563,7 +863,10 @@ export class MongoDialect extends AbstractDialect {
    * `distinctReducers` maps each DISTINCT alias (collected via `$addToSet`) to the `$project`
    * operator that reduces its set: `$size` for `$count`, `$sum`/`$avg` for the numeric ops.
    */
-  private buildGroupSpec(groupEntries: ParsedGroupEntry[]): {
+  private buildGroupSpec<E>(
+    meta: EntityMeta<E>,
+    groupEntries: ParsedGroupEntry[],
+  ): {
     groupId: Record<string, string>;
     groupAccumulators: Record<string, Record<string, unknown>>;
     distinctReducers: Map<string, string>;
@@ -576,22 +879,25 @@ export class MongoDialect extends AbstractDialect {
     const distinctReducers = new Map<string, string>();
 
     for (const entry of groupEntries) {
+      // Aliases stay as the caller wrote them ($project maps them back); the *refs* address columns.
+      const ref =
+        entry.kind === 'key' ? `$${this.columnOf(meta, entry.alias)}` : `$${this.columnOf(meta, entry.fieldRef)}`;
       if (entry.kind === 'key') {
-        groupId[entry.alias] = `$${entry.alias}`;
+        groupId[entry.alias] = ref;
       } else if (entry.distinct) {
         // Collect the set now; reduce it in $project: `$size` counts it, `$sum`/`$avg` reduce the array.
-        groupAccumulators[entry.alias] = { $addToSet: `$${entry.fieldRef}` };
+        groupAccumulators[entry.alias] = { $addToSet: ref };
         distinctReducers.set(entry.alias, entry.op === '$count' ? '$size' : entry.op);
       } else if (entry.op === '$count') {
         // COUNT(*) counts every row; COUNT(field) counts non-null values, matching SQL.
         groupAccumulators[entry.alias] =
-          entry.fieldRef === '*' ? { $sum: 1 } : { $sum: { $cond: [{ $ne: [`$${entry.fieldRef}`, null] }, 1, 0] } };
+          entry.fieldRef === '*' ? { $sum: 1 } : { $sum: { $cond: [{ $ne: [ref, null] }, 1, 0] } };
       } else {
         const mongoOp = MongoDialect.AGGREGATE_OP_MAP.get(entry.op);
         if (!mongoOp) {
           throw TypeError(`unsupported aggregate operator: ${entry.op}`);
         }
-        groupAccumulators[entry.alias] = { [mongoOp]: `$${entry.fieldRef}` };
+        groupAccumulators[entry.alias] = { [mongoOp]: ref };
       }
     }
 
@@ -688,6 +994,10 @@ export type MongoAggregationPipelineEntry<E extends Document> = {
   $unwind?: MongoAggregationUnwind;
   $group?: Record<string, unknown>;
   $project?: Record<string, unknown>;
+  $addFields?: Record<string, unknown>;
+  $vectorSearch?: Record<string, unknown>;
+  $count?: string;
+  $unset?: string | string[];
   $skip?: number;
   $limit?: number;
 };
@@ -697,7 +1007,8 @@ type MongoAggregationLookup<E extends Document> = {
   readonly foreignField?: string;
   readonly localField?: string;
   readonly pipeline?: MongoAggregationPipelineEntry<FieldValue<E>>[];
-  readonly as?: RelationKey<E>;
+  /** A relation key when populating, a temporary field when a relation condition is being tested. */
+  readonly as?: string;
 };
 
 type MongoAggregationUnwind = {

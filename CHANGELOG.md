@@ -17,10 +17,17 @@ Both were mandatory for a single use each: `reflect-metadata` (264 KB) for one `
 
 `Dialect.escape` now shares the Postgres/SQLite value handling: byte-for-byte identical across 29 value shapes, diverging only where `sqlstring` emitted broken SQL. `Uint8Array` rendered `` `0` = 255 `` instead of `X'ff00'`; plain objects, `Set`, `Map` and class instances rendered assignment fragments or `'[object Object]'` and now throw; `NaN`/`Infinity` now render `NULL`; `bigint` is no longer quoted.
 
+### Relation filtering and `$size` on MongoDB
+
+`$where: { comments: { text: 'hi' } }` and `{ comments: { $size: { $gte: 2 } } }` now work on MongoDB, so the same serializable query runs on every driver. Each condition compiles to one correlated `$lookup` scoped by the target's own filters - no id lists are materialized - and composes inside `$or`.
+
 ### Fixes
 
-- **Relation subqueries (`$where: { comments: {...} }`, `$size`) applied none of the target's filters, bypassing `security: true` (behavior change).** A `$size` count was built from the join condition alone, so a client could binary-search `{ comments: { $size: { $gte: n } } }` to count rows it cannot read; a relation filter matched parents through soft-deleted children while `$populate` on the same relation excluded them. Both forms are now scoped by the target's filters (and the junction's, for ManyToMany) and fail closed on a missing security context. To match trashed rows, constrain the field: `{ comments: { deletedAt: { $ne: null } } }`.
-- **Relation subqueries correlated on the wrong columns.** Field keys were emitted instead of mapped column names, so a renamed PK/FK (`@Id({ name: 'parent_pk' })`) referenced a column that does not exist; and `$size` on a m1/11 relation used the parent's PK instead of its FK, counting unrelated rows.
+- **Relation subqueries applied none of the target's filters, bypassing `security: true` (behavior change).** A client-supplied `$size` could count rows it cannot read, and a relation filter matched parents through soft-deleted children that `$populate` excluded. To match trashed rows, constrain the field: `{ comments: { deletedAt: { $ne: null } } }`.
+- **Relation subqueries correlated on field keys instead of mapped column names**, so a renamed PK/FK referenced a column that does not exist; `$size` on a m1/11 relation also used the parent's PK rather than its FK. Combining `$size` with other conditions on one relation now throws instead of emitting a `$size` column.
+- **MongoDB addressed property names where the document stores something else.** `$select` returned a renamed field as `undefined`, `$sort` did not order, `$group` collapsed every row into one bucket, and `deleteOneById` stamped the property name while reads filtered the column - reporting a successful soft delete and leaving the document visible.
+- **MongoDB: `$populate` of an inverse one-to-one relation only worked when the query filtered by primary key**, was dropped entirely under a vector search, ignored its own `$where` and `$required`, and discarded `$limit`/`$skip`.
+- **MongoDB: `raw()` in `$where` crashed with a stack overflow or matched everything.** It throws now, as does a dotted path whose root is not a declared field.
 
 ## [0.20.2] - 2026-07-29
 

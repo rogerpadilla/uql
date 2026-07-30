@@ -2,11 +2,16 @@ import type {
   DialectFeatures,
   DialectName,
   EntityMeta,
+  FieldKey,
   FieldOptions,
   InsertIdSource,
   NamingStrategy,
+  QueryOptions,
+  QueryWhere,
+  QueryWhereMap,
   Type,
 } from '../type/index.js';
+import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
 
 /**
  * Options for initializing a dialect.
@@ -67,5 +72,23 @@ export abstract class AbstractDialect {
       return field?.name ?? key;
     }
     return this.namingStrategy.columnName(field.name);
+  }
+
+  /**
+   * {@link resolveColumnName} for a field key of `meta` - the form query builders need, so reading a
+   * column never depends on looking the field up by hand first. `MongoDialect` overrides it to map the
+   * primary key to `_id`.
+   */
+  columnOf<E>(meta: EntityMeta<E>, key: string): string {
+    return this.resolveColumnName(key, meta.fields[key as FieldKey<E>]);
+  }
+
+  /**
+   * A `$where` normalized to a map with the entity's active filters merged in - the only way any
+   * dialect should enter a new query scope, so a scope cannot be rendered with its `security: true`
+   * filters skipped. Recursion within one scope renders the returned map directly instead.
+   */
+  protected scopedWhereMap<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhereMap<E> {
+    return applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
   }
 }

@@ -51,7 +51,6 @@ import {
   type UpdatePayload,
 } from '../type/index.js';
 import {
-  applyFilters,
   asSelectMap,
   buildQueryWhereAsMap,
   buildSortMap,
@@ -75,6 +74,7 @@ import {
   normalizeScalarFieldSelection,
   parseGroupMap,
   parseRelationAtKey,
+  parseRelationSize,
   type RelationQuery,
   raw,
   someValue,
@@ -195,7 +195,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   returningId<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
     const idKey = (meta.id ?? 'id') as IdKey<E>;
-    const idName = this.resolveColumnName(idKey, meta.fields[idKey]);
+    const idName = this.columnOf(meta, idKey);
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
@@ -423,9 +423,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   where<E>(ctx: QueryContext, entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
     const meta = getMeta(entity);
-    // Apply this entity's filters once, at the scope entry point; recursion uses `renderWhere`.
-    const whereMap = applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
-    this.renderWhere(ctx, entity, whereMap, opts);
+    // Filters are applied once, here at the scope entry point; recursion uses `renderWhere`.
+    this.renderWhere(ctx, entity, this.scopedWhereMap(meta, where, opts), opts);
   }
 
   /** Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or` recursion). */
@@ -531,13 +530,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       throw new TypeError(`path ${key} does not exist in ${meta.name}`);
     }
 
-    // Detect relation filtering
     const rel = meta.relations[key];
     if (rel) {
-      // Check if this is a $size query on a relation (count filtering)
-      const valObj = val as Record<string, unknown> | undefined;
-      if (valObj && typeof valObj === 'object' && '$size' in valObj && Object.keys(valObj).length === 1) {
-        this.compareRelationSize(ctx, entity, key, valObj['$size'] as number | QuerySizeComparisonOps, rel, opts);
+      const sizeVal = parseRelationSize(val);
+      if (sizeVal !== undefined) {
+        this.compareRelationSize(ctx, entity, key, sizeVal, rel, opts);
         return;
       }
       this.compareRelation(ctx, entity, key, val as QueryWhereMap<unknown>, rel, opts);
@@ -1125,10 +1122,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         if (!sqlFn) {
           throw TypeError(`unsupported aggregate operator: ${entry.op}`);
         }
-        const sqlArg =
-          entry.fieldRef === '*'
-            ? '*'
-            : this.escapeId(this.resolveColumnName(entry.fieldRef, meta.fields[entry.fieldRef as FieldKey<E>]));
+        const sqlArg = entry.fieldRef === '*' ? '*' : this.escapeId(this.columnOf(meta, entry.fieldRef));
         const expr = `${sqlFn}(${entry.distinct ? 'DISTINCT ' : ''}${sqlArg})`;
         aggregateExpressions[entry.alias] = expr;
         selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
@@ -1652,11 +1646,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
     const field = meta.fields[key];
     if (!field) {
-      return this.escapeId(this.resolveColumnName(key, field));
+      return this.escapeId(this.columnOf(meta, key));
     }
     let escaped = this.escapedColumns.get(field);
     if (escaped === undefined) {
-      escaped = this.escapeId(this.resolveColumnName(key, field));
+      escaped = this.escapeId(this.columnOf(meta, key));
       this.escapedColumns.set(field, escaped);
     }
     return escaped;
@@ -1704,7 +1698,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const relatedMeta = getMeta(relatedEntity);
     const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
     // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
-    const targetWhere = applyFilters(relatedMeta, buildQueryWhereAsMap(relatedMeta, val));
+    const targetWhere = this.scopedWhereMap(relatedMeta, val);
 
     ctx.append(`(SELECT ${projection} FROM `);
 
