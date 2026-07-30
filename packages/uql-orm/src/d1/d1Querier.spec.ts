@@ -87,6 +87,33 @@ describe('D1Querier', () => {
     expect(mockStmt.all).toHaveBeenCalled();
   });
 
+  it('should bind the values of a write statement', async () => {
+    mockStmt.run.mockResolvedValue({
+      results: [{ id: 7 }],
+      success: true,
+      meta: { last_row_id: 7 },
+    } satisfies D1Result<any>);
+
+    const res = await querier.internalRun('INSERT INTO `User` (`name`) VALUES (?) RETURNING `id` `id`', ['maz']);
+
+    expect(mockStmt.bind).toHaveBeenCalledWith('maz');
+    expect(res).toEqual({ changes: 1, ids: [7], firstId: 7 });
+  });
+
+  /** A statement matching nothing reports no rows and no `changes`, which is zero rows affected. */
+  it('should report no changes when the driver reports neither rows nor a change count', async () => {
+    mockStmt.run.mockResolvedValue({ results: [], success: true, meta: {} } satisfies D1Result<any>);
+
+    const res = await querier.internalRun('DELETE FROM `User` WHERE `id` = 404');
+
+    expect(res).toEqual({ changes: 0, ids: [], firstId: undefined });
+  });
+
+  it('should release without touching the D1 binding', async () => {
+    await expect(querier.release()).resolves.toBeUndefined();
+    expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
+
   it('should execute internalRun without values', async () => {
     mockStmt.run.mockResolvedValue({
       results: [],

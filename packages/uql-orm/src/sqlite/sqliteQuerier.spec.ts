@@ -163,3 +163,85 @@ describe('insertMany id semantics', () => {
     await querier.release();
   });
 });
+
+// ─── Entity lifecycle hooks (@BeforeInsert and friends, run through a real querier) ───
+import { AfterInsert, AfterLoad, BeforeInsert, BeforeUpdate } from '../entity/index.js';
+import type { HookContext } from '../util/index.js';
+
+/** Exercises every hook the querier emits, including one that awaits and one that mutates. */
+@Entity()
+class HookedNote {
+  @Id()
+  id?: number;
+
+  @Field()
+  title?: string;
+
+  @Field()
+  slug?: string;
+
+  static readonly seen: string[] = [];
+
+  @BeforeInsert()
+  async stampSlug(this: HookedNote, ctx: HookContext) {
+    HookedNote.seen.push(`beforeInsert:${ctx.querier.hasOpenTransaction}`);
+    await Promise.resolve();
+    this.slug = this.title?.toLowerCase().replace(/\s+/g, '-');
+  }
+
+  @AfterInsert()
+  recordInsert() {
+    HookedNote.seen.push('afterInsert');
+  }
+
+  @BeforeUpdate()
+  recordUpdate() {
+    HookedNote.seen.push('beforeUpdate');
+  }
+
+  @AfterLoad()
+  recordLoad(this: HookedNote) {
+    HookedNote.seen.push(`afterLoad:${this.id}`);
+  }
+}
+
+describe('entity lifecycle hooks', () => {
+  let querier: SqliteQuerier;
+
+  beforeEach(async () => {
+    HookedNote.seen.length = 0;
+    querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new BetterSqlite3Dialect());
+    await querier.run('CREATE TABLE `HookedNote` (`id` INTEGER PRIMARY KEY, `title` TEXT, `slug` TEXT)');
+  });
+
+  afterEach(async () => {
+    await querier.release();
+  });
+
+  it('should run @BeforeInsert before the row is written and await it', async () => {
+    await querier.insertOne(HookedNote, { title: 'Hello World' });
+
+    const [found] = await querier.findMany(HookedNote, { $select: { id: true, slug: true } });
+    expect(found.slug).toBe('hello-world');
+    expect(HookedNote.seen).toContain('beforeInsert:false');
+    expect(HookedNote.seen).toContain('afterInsert');
+  });
+
+  it('should run @AfterLoad once per loaded row', async () => {
+    await querier.insertMany(HookedNote, [{ title: 'One' }, { title: 'Two' }]);
+    HookedNote.seen.length = 0;
+
+    await querier.findMany(HookedNote, { $select: { id: true } });
+
+    expect(HookedNote.seen).toEqual(['afterLoad:1', 'afterLoad:2']);
+  });
+
+  it('should run @BeforeUpdate on the update payload', async () => {
+    await querier.insertOne(HookedNote, { title: 'One' });
+    HookedNote.seen.length = 0;
+
+    await querier.updateMany(HookedNote, { $where: { id: 1 } }, { title: 'Renamed' });
+
+    expect(HookedNote.seen).toContain('beforeUpdate');
+  });
+});
