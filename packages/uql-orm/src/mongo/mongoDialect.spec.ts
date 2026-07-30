@@ -710,6 +710,18 @@ class MongoDialectSpec implements Spec {
     });
   }
 
+  /** `$sort` keys reach here from dynamic query data, so an unknown one has to be named, not ignored. */
+  shouldRejectVectorSearchOnUnknownField() {
+    @Entity({ name: 'VectorUnknown' })
+    class VectorUnknown {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    expect(() =>
+      this.dialect.buildVectorSearchStage(VectorUnknown, 'nope', { $vector: [1, 2, 3] }, undefined, 10),
+    ).toThrow("Field 'nope' not found in entity 'VectorUnknown'");
+  }
+
   shouldDeriveNumCandidatesFromLimit() {
     @Entity({ name: 'VectorNum' })
     class VectorNum {

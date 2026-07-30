@@ -964,6 +964,18 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(d.normalizeValue([[1, 2], 3])).toBe('{{"1","2"},"3"}');
   }
 
+  /** Booleans go in unquoted: `{"true"}` would bind the *string* "true" to a `boolean[]`. */
+  shouldNormalizeBooleanArrayToUnquotedPostgresLiterals() {
+    const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
+    expect(d.normalizeValue([true, false])).toBe('{true,false}');
+  }
+
+  /** `String(bytes)` would stringify a `bytea` element as comma-separated bytes; it needs hex. */
+  shouldNormalizeBinaryArrayElementsToHexEscapes() {
+    const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
+    expect(d.normalizeValue([new Uint8Array([0x00, 0x0f, 0xff])])).toBe('{"\\\\x000fff"}');
+  }
+
   // JSONB operator tests
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>

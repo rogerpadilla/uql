@@ -3,6 +3,8 @@ import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
+import type { ColumnSchema } from '../type/index.js';
+import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 // Test entities
@@ -513,5 +515,297 @@ describe('SqlSchemaGenerator Integration', () => {
     const table = { name: 'users' } as TableNode;
     const sql = generator.generateDropTableFromNode(table, { ifExists: true });
     expect(sql).toBe('DROP TABLE IF EXISTS "users";');
+  });
+
+  it('should generate DROP TABLE without IF EXISTS by default', () => {
+    const table = { name: 'users' } as TableNode;
+    expect(generator.generateDropTableFromNode(table)).toBe('DROP TABLE "users";');
+  });
+});
+
+/**
+ * `ColumnSchema` is the shape a diff carries, so these are the columns an `ALTER TABLE ... ADD
+ * COLUMN` emits - the qualifiers have to survive the round trip from the diff to the DDL.
+ */
+describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
+
+  /** ADD COLUMN for a single `ColumnSchema`, with only the qualifiers under test overridden. */
+  function addColumn(column: Partial<ColumnSchema>, gen = generator): string {
+    return gen.generateAlterTable({
+      tableName: 'users',
+      type: 'alter',
+      columnsToAdd: [
+        {
+          name: 'col',
+          type: 'INTEGER',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+          ...column,
+        },
+      ],
+    })[0];
+  }
+
+  it('should append precision and scale to a bare type', () => {
+    expect(addColumn({ name: 'amount', type: 'NUMERIC', precision: 12, scale: 4 })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "amount" NUMERIC(12, 4);',
+    );
+  });
+
+  it('should append precision alone when there is no scale', () => {
+    expect(addColumn({ name: 'amount', type: 'NUMERIC', precision: 12 })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "amount" NUMERIC(12);',
+    );
+  });
+
+  it('should append length when there is no precision', () => {
+    expect(addColumn({ name: 'name', type: 'VARCHAR', length: 100 })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "name" VARCHAR(100);',
+    );
+  });
+
+  it('should keep a type that already carries its own parameters', () => {
+    expect(addColumn({ name: 'name', type: 'VARCHAR(50)', length: 100, precision: 12, scale: 4 })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "name" VARCHAR(50);',
+    );
+  });
+
+  it('should emit NOT NULL for a non-nullable column', () => {
+    expect(addColumn({ nullable: false })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER NOT NULL;');
+  });
+
+  it('should emit UNIQUE for a unique column', () => {
+    expect(addColumn({ isUnique: true })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER UNIQUE;');
+  });
+
+  /** A primary key is already NOT NULL and UNIQUE; repeating either is redundant DDL. */
+  it('should emit PRIMARY KEY alone for a non-nullable unique primary key', () => {
+    expect(addColumn({ nullable: false, isUnique: true, isPrimaryKey: true })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "col" INTEGER PRIMARY KEY;',
+    );
+  });
+
+  it('should not duplicate a PRIMARY KEY already present in the type', () => {
+    expect(addColumn({ type: 'SERIAL PRIMARY KEY', isPrimaryKey: true })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "col" SERIAL PRIMARY KEY;',
+    );
+  });
+
+  it('should quote a string default and escape its quotes', () => {
+    expect(addColumn({ type: 'TEXT', defaultValue: "it's" })).toBe(
+      `ALTER TABLE "users" ADD COLUMN "col" TEXT DEFAULT 'it''s';`,
+    );
+  });
+
+  it('should emit a NULL default distinctly from no default', () => {
+    expect(addColumn({ defaultValue: null })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER DEFAULT NULL;');
+  });
+
+  it('should emit a native boolean default on Postgres', () => {
+    expect(addColumn({ type: 'BOOLEAN', defaultValue: false })).toBe(
+      'ALTER TABLE "users" ADD COLUMN "col" BOOLEAN DEFAULT FALSE;',
+    );
+  });
+
+  /** SQLite/MySQL have no boolean literal, so the default has to bind as 0/1. */
+  it('should emit an integer boolean default where booleans are integers', () => {
+    const sqliteGenerator = new SqlSchemaGenerator(new SqliteDialect());
+    expect(addColumn({ type: 'INTEGER', defaultValue: true }, sqliteGenerator)).toBe(
+      'ALTER TABLE `users` ADD COLUMN `col` INTEGER DEFAULT 1;',
+    );
+    expect(addColumn({ type: 'INTEGER', defaultValue: false }, sqliteGenerator)).toBe(
+      'ALTER TABLE `users` ADD COLUMN `col` INTEGER DEFAULT 0;',
+    );
+  });
+
+  it('should emit a column comment where the dialect supports one', () => {
+    const mysqlGenerator = new SqlSchemaGenerator(new MySqlDialect());
+    expect(addColumn({ comment: "the user's age", nullable: false }, mysqlGenerator)).toBe(
+      "ALTER TABLE `users` ADD COLUMN `col` INTEGER NOT NULL COMMENT 'the user''s age';",
+    );
+  });
+
+  it('should drop a column comment where the dialect has none', () => {
+    expect(addColumn({ comment: 'the age' })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER;');
+  });
+
+  /**
+   * The reverse of an alteration restores the previous column, and re-declaring its PRIMARY KEY
+   * there would be rejected as a duplicate constraint.
+   */
+  it('should strip PRIMARY KEY when restoring a column in the down direction', () => {
+    const sql = new SqlSchemaGenerator(new MySqlDialect()).generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      columnsToAlter: [
+        {
+          from: {
+            name: 'id',
+            type: 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+            nullable: false,
+            isPrimaryKey: true,
+            isAutoIncrement: true,
+            isUnique: false,
+          },
+          to: {
+            name: 'id',
+            type: 'BIGINT UNSIGNED',
+            nullable: false,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+          },
+        },
+      ],
+    });
+    expect(sql).toEqual(['ALTER TABLE `users` MODIFY COLUMN `id` BIGINT UNSIGNED AUTO_INCREMENT;']);
+  });
+});
+
+describe('SqlSchemaGenerator table definitions from the migration builder', () => {
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
+
+  /** A `TableDefinition` for two columns, with the parts under test overridden. */
+  function tableDefinition(overrides: Partial<TableDefinition> = {}): TableDefinition {
+    return {
+      name: 'memberships',
+      columns: [
+        column({ name: 'userId' }),
+        column({
+          name: 'groupId',
+          foreignKey: { table: 'groups', columns: ['id'], onDelete: 'CASCADE', onUpdate: 'NO ACTION' },
+        }),
+      ],
+      indexes: [],
+      foreignKeys: [],
+      ...overrides,
+    };
+  }
+
+  function column(overrides: Partial<FullColumnDefinition>): FullColumnDefinition {
+    return {
+      name: 'col',
+      type: { category: 'integer' },
+      nullable: false,
+      primaryKey: false,
+      autoIncrement: false,
+      unique: false,
+      ...overrides,
+    };
+  }
+
+  it('should generate a composite PRIMARY KEY from the declared key columns', () => {
+    const sql = generator
+      .generateCreateTableFromDefinition(tableDefinition({ primaryKey: ['userId', 'groupId'] }))
+      .join('\n');
+    expect(sql).toContain('PRIMARY KEY ("userId", "groupId")');
+  });
+
+  it('should ignore a declared key column that no column definition matches', () => {
+    const sql = generator
+      .generateCreateTableFromDefinition(tableDefinition({ primaryKey: ['userId', 'nope', 'groupId'] }))
+      .join('\n');
+    expect(sql).toContain('PRIMARY KEY ("userId", "groupId")');
+    expect(sql).not.toContain('nope');
+  });
+
+  it('should fall back to the columns flagged as primary when no key is declared', () => {
+    const definition = tableDefinition();
+    definition.columns[0] = column({ name: 'userId', primaryKey: true, autoIncrement: true });
+    const sql = generator.generateCreateTableFromDefinition(definition).join('\n');
+    expect(sql).toContain('"userId" BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY');
+  });
+
+  it('should generate the declared indexes as separate statements', () => {
+    const statements = generator.generateCreateTableFromDefinition(
+      tableDefinition({
+        indexes: [
+          { name: 'idx_memberships_userId', columns: ['userId'], unique: false },
+          { name: 'uq_memberships_pair', columns: ['userId', 'groupId'], unique: true },
+        ],
+      }),
+    );
+    expect(statements).toHaveLength(3);
+    expect(statements[1]).toBe('CREATE INDEX "idx_memberships_userId" ON "memberships" ("userId");');
+    expect(statements[2]).toBe('CREATE UNIQUE INDEX "uq_memberships_pair" ON "memberships" ("userId", "groupId");');
+  });
+
+  it('should generate a table-level FOREIGN KEY with its declared actions', () => {
+    const sql = generator
+      .generateCreateTableFromDefinition(
+        tableDefinition({
+          foreignKeys: [
+            {
+              name: 'fk_memberships_user',
+              columns: ['userId'],
+              referencesTable: 'users',
+              referencesColumns: ['id'],
+              onDelete: 'CASCADE',
+              onUpdate: 'NO ACTION',
+            },
+          ],
+        }),
+      )
+      .join('\n');
+    expect(sql).toContain(
+      'CONSTRAINT "fk_memberships_user" FOREIGN KEY ("userId") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE NO ACTION',
+    );
+  });
+
+  it('should name an unnamed table-level FOREIGN KEY after its table and columns', () => {
+    const sql = generator
+      .generateCreateTableFromDefinition(
+        tableDefinition({
+          foreignKeys: [
+            {
+              columns: ['userId'],
+              referencesTable: 'users',
+              referencesColumns: ['id'],
+              onDelete: 'NO ACTION',
+              onUpdate: 'NO ACTION',
+            },
+          ],
+        }),
+      )
+      .join('\n');
+    expect(sql).toContain('CONSTRAINT "fk_memberships_userId" FOREIGN KEY ("userId")');
+  });
+
+  it('should generate ADD CONSTRAINT for a foreign key added to an existing table', () => {
+    const sql = generator.generateAddForeignKeySql('memberships', {
+      columns: ['groupId'],
+      referencesTable: 'groups',
+      referencesColumns: ['id'],
+      onDelete: 'SET NULL',
+      onUpdate: 'CASCADE',
+    });
+    expect(sql).toBe(
+      'ALTER TABLE "memberships" ADD CONSTRAINT "fk_memberships_groupId" ' +
+        'FOREIGN KEY ("groupId") REFERENCES "groups" ("id") ON DELETE SET NULL ON UPDATE CASCADE;',
+    );
+  });
+
+  /** SQLite cannot add a constraint to an existing table, so this has to fail rather than emit invalid DDL. */
+  it('should reject adding a foreign key where the dialect cannot alter constraints', () => {
+    const sqliteGenerator = new SqlSchemaGenerator(new SqliteDialect());
+    expect(() =>
+      sqliteGenerator.generateAddForeignKeySql('memberships', {
+        columns: ['groupId'],
+        referencesTable: 'groups',
+        referencesColumns: ['id'],
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      }),
+    ).toThrow('does not support adding foreign keys to existing tables');
+  });
+
+  it('should rename a table with the dialect syntax', () => {
+    expect(generator.generateRenameTableSql('old', 'new')).toBe('ALTER TABLE "old" RENAME TO "new";');
+    expect(new SqlSchemaGenerator(new MySqlDialect()).generateRenameTableSql('old', 'new')).toBe(
+      'RENAME TABLE `old` TO `new`;',
+    );
   });
 });

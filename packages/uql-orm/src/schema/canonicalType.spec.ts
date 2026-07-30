@@ -89,6 +89,12 @@ describe('canonicalType', () => {
       expect(result.raw).toBe('CUSTOM_TYPE');
     });
 
+    /** Extension types (citext, hstore, geometry, ...) parse cleanly but map to nothing canonical. */
+    it('should keep an unmapped extension type as raw', () => {
+      expect(sqlToCanonical('citext')).toEqual({ category: 'string', raw: 'citext' });
+      expect(sqlToCanonical('geometry(point)')).toEqual({ category: 'string', raw: 'geometry(point)' });
+    });
+
     it('should detect UNSIGNED modifier', () => {
       const result = sqlToCanonical('INT UNSIGNED');
       expect(result.unsigned).toBe(true);
