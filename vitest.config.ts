@@ -45,10 +45,10 @@ export default defineConfig({
         'packages/*/src/**/types.ts', // Pure type definition files
       ],
       thresholds: {
-        statements: 96.5,
-        branches: 90,
-        functions: 97.5,
-        lines: 97.5,
+        statements: 98,
+        branches: 93,
+        functions: 99,
+        lines: 99,
       },
     },
     css: false,
