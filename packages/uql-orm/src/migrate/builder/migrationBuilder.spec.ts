@@ -368,6 +368,32 @@ describe('MigrationBuilder', () => {
     });
   });
 
+  describe('alterTable execution', () => {
+    /** `alterTable`'s callback is synchronous, so each nested change runs through `recordOperationSync`. */
+    it('should record and run each nested column change', async () => {
+      const mockQuerier = createMockQuerier();
+      const builder = new MigrationBuilder(mockQuerier as any);
+
+      await builder.alterTable('users', (table) => {
+        table.addColumn('nickname', (col) => col.nullable());
+        table.dropColumn('legacy');
+      });
+
+      expect(builder.getOperations().map((op) => op.type)).toEqual(['addColumn', 'dropColumn']);
+      await vi.waitFor(() => expect(mockQuerier.run).toHaveBeenCalledTimes(2));
+      expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
+        'ALTER TABLE "users" ADD COLUMN "nickname" TEXT',
+        'ALTER TABLE "users" DROP COLUMN "legacy"',
+      ]);
+    });
+
+    it('should reject a dialect with no schema generator', () => {
+      expect(() => new MigrationBuilder({ dialect: { dialectName: 'mongodb' } } as any)).toThrow(
+        'Could not find a schema generator for dialect: mongodb',
+      );
+    });
+  });
+
   describe('raw execution', () => {
     it('should run raw SQL', async () => {
       const mockQuerier = createMockQuerier();

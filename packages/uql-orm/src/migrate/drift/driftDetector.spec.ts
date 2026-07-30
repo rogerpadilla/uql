@@ -108,6 +108,61 @@ describe('DriftDetector', () => {
       expect(report.drifts.some((d) => d.type === 'constraint_mismatch')).toBe(true);
     });
 
+    /** Widening a column loses no data, so it needs a migration but not an alarm. */
+    it('should report a non-breaking type change as a warning', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+
+      expected.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'bio', type: { category: 'string', length: 1000 } },
+        ]),
+      );
+      actual.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'bio', type: { category: 'string', length: 100 } },
+        ]),
+      );
+
+      const report = new DriftDetector(expected, actual, { dialect: new MySqlDialect() }).detect();
+      const drift = report.drifts.find((d) => d.type === 'type_mismatch');
+
+      expect(drift).toMatchObject({
+        severity: 'warning',
+        expected: 'VARCHAR(1000)',
+        actual: 'VARCHAR(100)',
+        suggestion: 'Create migration to align types',
+      });
+      expect(report.status).toBe('drifted');
+    });
+
+    it('should spell out both sides of a nullable mismatch', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+
+      expected.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'email', type: { category: 'string' }, nullable: true },
+        ]),
+      );
+      actual.addTable(
+        createTable('users', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'email', type: { category: 'string' }, nullable: false },
+        ]),
+      );
+
+      const report = new DriftDetector(expected, actual, { dialect: new MySqlDialect() }).detect();
+
+      expect(report.drifts.find((d) => d.type === 'constraint_mismatch')).toMatchObject({
+        expected: 'NULLABLE',
+        actual: 'NOT NULL',
+      });
+    });
+
     it('should detect missing indexes', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
