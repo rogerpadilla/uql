@@ -96,6 +96,58 @@ describe('MongoSchemaIntrospector', () => {
     expect(exists).toBe(false);
   });
 
+  /** A compound index has no `name` of its own unless one was given; its keys name it. */
+  it('getTableSchema should name an unnamed index after its keys', async () => {
+    db.listCollections.mockReturnValueOnce({
+      toArray: vi.fn().mockResolvedValue([{ name: 'users' }]),
+    });
+    db.collection.mockReturnValueOnce({
+      indexes: vi.fn().mockResolvedValue([{ key: { lastName: 1, firstName: 1 } }]),
+    });
+
+    const schema = await introspector.getTableSchema('users');
+
+    expect(schema!.indexes![0]).toEqual({
+      name: 'lastName_firstName',
+      columns: ['lastName', 'firstName'],
+      unique: false,
+    });
+  });
+
+  /** Mongo has no columns to read, so the indexed fields are the only ones the AST can know about. */
+  it('introspect should derive columns from indexed fields and share them across indexes', async () => {
+    db.listCollections
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'users' }]) })
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'users' }]) });
+    db.collection.mockReturnValueOnce({
+      indexes: vi.fn().mockResolvedValue([
+        { name: 'idx_email', key: { email: 1 }, unique: true },
+        { name: 'idx_email_status', key: { email: 1, status: 1 } },
+      ]),
+    });
+
+    const ast = await introspector.introspect();
+    const table = ast.getTable('users')!;
+
+    expect([...table.columns.keys()]).toEqual(['email', 'status']);
+    expect(table.indexes.map((idx) => ({ name: idx.name, unique: idx.unique }))).toEqual([
+      { name: 'idx_email', unique: true },
+      { name: 'idx_email_status', unique: false },
+    ]);
+    // The shared column is one node, referenced by both indexes.
+    expect(table.indexes[1].columns[0]).toBe(table.columns.get('email'));
+  });
+
+  it('introspect should skip a collection that disappears before it can be described', async () => {
+    db.listCollections
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'dropped' }]) })
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([]) });
+
+    const ast = await introspector.introspect();
+
+    expect(ast.getTables()).toHaveLength(0);
+  });
+
   it('introspect should return SchemaAST with all collections', async () => {
     // First call for getTableNames
     db.listCollections.mockReturnValueOnce({

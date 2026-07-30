@@ -208,6 +208,9 @@ class HookedNote {
 describe('entity lifecycle hooks', () => {
   let querier: SqliteQuerier;
 
+  /** A `HookedNote` payload: an instance, so its hook methods are part of the value. */
+  const note = (title: string) => Object.assign(new HookedNote(), { title });
+
   beforeEach(async () => {
     HookedNote.seen.length = 0;
     querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new BetterSqlite3Dialect());
@@ -219,7 +222,7 @@ describe('entity lifecycle hooks', () => {
   });
 
   it('should run @BeforeInsert before the row is written and await it', async () => {
-    await querier.insertOne(HookedNote, { title: 'Hello World' });
+    await querier.insertOne(HookedNote, note('Hello World'));
 
     const [found] = await querier.findMany(HookedNote, { $select: { id: true, slug: true } });
     expect(found.slug).toBe('hello-world');
@@ -228,7 +231,7 @@ describe('entity lifecycle hooks', () => {
   });
 
   it('should run @AfterLoad once per loaded row', async () => {
-    await querier.insertMany(HookedNote, [{ title: 'One' }, { title: 'Two' }]);
+    await querier.insertMany(HookedNote, [note('One'), note('Two')]);
     HookedNote.seen.length = 0;
 
     await querier.findMany(HookedNote, { $select: { id: true } });
@@ -237,7 +240,7 @@ describe('entity lifecycle hooks', () => {
   });
 
   it('should run @BeforeUpdate on the update payload', async () => {
-    await querier.insertOne(HookedNote, { title: 'One' });
+    await querier.insertOne(HookedNote, note('One'));
     HookedNote.seen.length = 0;
 
     await querier.updateMany(HookedNote, { $where: { id: 1 } }, { title: 'Renamed' });
