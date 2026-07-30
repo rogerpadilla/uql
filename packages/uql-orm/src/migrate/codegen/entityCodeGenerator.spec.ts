@@ -395,4 +395,186 @@ describe('EntityCodeGenerator', () => {
       expect(generator).toBeInstanceOf(EntityCodeGenerator);
     });
   });
+
+  describe('options', () => {
+    /** `users` + `posts.author_id -> users.id`, plus an index and a comment to switch off. */
+    function createBlogAst() {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = createTable('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_id', type: { category: 'integer' } },
+        { name: 'title', type: { category: 'string', length: 255 }, comment: 'headline', nullable: false },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+      ast.addRelationship({
+        name: 'fk_posts_users',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+      ast.addIndex({ name: 'idx_posts_title', table: posts, columns: [posts.columns.get('title')!], unique: false });
+      return ast;
+    }
+
+    it('should return undefined for a table the schema does not have', () => {
+      expect(new EntityCodeGenerator(new SchemaAST()).generateForTable('ghost')).toBeUndefined();
+    });
+
+    it('should omit relations, their imports and their decorators when disabled', () => {
+      const result = new EntityCodeGenerator(createBlogAst(), { includeRelations: false }).generateForTable('posts');
+
+      expect(result!.code).not.toContain('@ManyToOne');
+      expect(result!.code).not.toContain('Relation');
+      expect(result!.code).not.toContain("from './User.js'");
+      expect(result!.code).toContain('authorId?: number;');
+    });
+
+    it('should omit index decorators and index field options when disabled', () => {
+      const result = new EntityCodeGenerator(createBlogAst(), { includeIndexes: false }).generateForTable('posts');
+
+      expect(result!.code).not.toContain('@Index');
+      expect(result!.code).not.toContain('index:');
+    });
+
+    it('should omit the generated JSDoc when sync comments are disabled', () => {
+      const result = new EntityCodeGenerator(createBlogAst(), { addSyncComments: false }).generateForTable('posts');
+
+      expect(result!.code).not.toContain('@sync-added');
+      expect(result!.code).not.toContain('/**');
+    });
+
+    it('should carry a column comment into the generated JSDoc', () => {
+      const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
+
+      expect(result!.code).toContain('   * headline');
+    });
+
+    it('should declare a non-nullable column as required', () => {
+      const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
+
+      expect(result!.code).toContain("@Field({ columnType: 'varchar', length: 255, index: 'idx_posts_title' })");
+      expect(result!.code).toContain('title: string;');
+    });
+
+    it('should use a custom import path for the uql-orm imports', () => {
+      const result = new EntityCodeGenerator(createBlogAst(), { uqlImportPath: '@acme/orm' }).generateForTable('posts');
+
+      expect(result!.code).toContain("from '@acme/orm'");
+    });
+  });
+
+  describe('generated details', () => {
+    it('should describe the column type in the JSDoc, size and signedness included', () => {
+      const ast = new SchemaAST();
+      const table = createTable('orders', [
+        { name: 'id', type: { category: 'integer', size: 'big', unsigned: true }, isPrimaryKey: true },
+        { name: 'total', type: { category: 'decimal', precision: 10, scale: 2 } },
+        { name: 'ratio', type: { category: 'decimal', precision: 5 } },
+      ]);
+      ast.addTable(table);
+
+      const result = new EntityCodeGenerator(ast).generateForTable('orders');
+
+      expect(result!.code).toContain('Column: id (BIGINTEGER UNSIGNED)');
+      expect(result!.code).toContain('Column: total (DECIMAL(10,2))');
+      expect(result!.code).toContain('Column: ratio (DECIMAL(5))');
+      expect(result!.code).toContain('precision: 10');
+      expect(result!.code).toContain('scale: 2');
+    });
+
+    /** A foreign key not named `<something>id` has no base name to reuse, so the target table names it. */
+    it('should name a relation after its target table when the column name has no id suffix', () => {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = createTable('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'owner', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+      ast.addRelationship({
+        name: 'fk_posts_users',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('owner')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      expect(result!.code).toContain('user?: Relation<User>;');
+    });
+
+    /** Relations recovered by name conventions rather than a real constraint are flagged as a guess. */
+    it('should note the confidence of an inferred relation', () => {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = createTable('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_id', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+      ast.addRelationship({
+        name: 'inferred_posts_users',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        confidence: 0.8,
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      expect(result!.code).toContain('Inferred (80% confidence)');
+    });
+
+    /** The inverse of a OneToOne is a single entity, not a list. */
+    it('should declare the inverse side of a OneToOne as a single relation', () => {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const profiles = createTable('profiles', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'user_id', type: { category: 'integer' }, isUnique: true },
+      ]);
+      ast.addTable(users);
+      ast.addTable(profiles);
+      ast.addRelationship({
+        name: 'fk_profiles_users',
+        type: 'OneToOne',
+        from: { table: profiles, columns: [profiles.columns.get('user_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('users');
+
+      expect(result!.code).toContain("@OneToOne({ entity: () => Profile, references: 'user' })");
+      expect(result!.code).toContain('profiles?: Relation<Profile>;');
+    });
+
+    it('should emit a bare @Index for a composite index with no name and no unique flag', () => {
+      const ast = new SchemaAST();
+      const table = createTable('users', [
+        { name: 'first_name', type: { category: 'string' } },
+        { name: 'last_name', type: { category: 'string' } },
+      ]);
+      ast.addTable(table);
+      ast.addIndex({
+        name: '',
+        table,
+        columns: [table.columns.get('first_name')!, table.columns.get('last_name')!],
+        unique: false,
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('users');
+
+      expect(result!.code).toContain("@Index(['firstName', 'lastName'])");
+    });
+  });
 });
