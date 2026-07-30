@@ -4,6 +4,7 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { sqlToCanonical } from '../schema/canonicalType.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
+import { raw } from '../util/index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
@@ -12,6 +13,19 @@ class DiffUser {
   @Field({ columnType: 'varchar', length: 255 }) name?: string;
   @Field({ columnType: 'varchar', length: 100 }) email?: string;
   @Field({ columnType: 'varchar', length: 255, index: true }) status?: string;
+}
+
+@Entity()
+class DefaultsEntity {
+  @Id() id?: number;
+  @Field({ columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string;
+  @Field({ columnType: 'int', defaultValue: 0 }) attempts?: number;
+}
+
+@Entity()
+class VirtualEntity {
+  @Id() id?: number;
+  @Field({ virtual: raw('1 + 1') }) computed?: number;
 }
 
 describe('SqlSchemaGenerator Advanced', () => {
@@ -66,6 +80,63 @@ describe('SqlSchemaGenerator Advanced', () => {
     expect(diff?.columnsToDrop).toEqual(['old_col']);
   });
 
+  /**
+   * Introspected defaults come back in the engine's own spelling - quoted, cast, upper-cased - so
+   * they are compared normalized against the entity's plain value. Anything else reports a permanent
+   * difference and every `migrate` run would emit the same no-op ALTER.
+   */
+  it('diffSchema should treat engine-spelled defaults as unchanged', () => {
+    const currentSchema = defaultsTableNode("'active'::character varying");
+
+    expect(generator.diffSchema(DefaultsEntity, currentSchema)).toBeUndefined();
+  });
+
+  it('diffSchema should detect a genuinely changed default', () => {
+    const currentSchema = defaultsTableNode("'inactive'::character varying");
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].from.defaultValue).toBe("'inactive'::character varying");
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  it('diffSchema should detect a default replacing an existing NULL default', () => {
+    const currentSchema = defaultsTableNode(null);
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  it('diffSchema should detect a default added to a column that had none', () => {
+    const currentSchema = defaultsTableNode(undefined);
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  /** A virtual field is a query-time expression, never a column, so it must not show up as a diff. */
+  it('diffSchema should skip virtual fields', () => {
+    const currentSchema = createTableNode('VirtualEntity', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+    ]);
+
+    expect(generator.diffSchema(VirtualEntity, currentSchema)).toBeUndefined();
+  });
+
+  /** `DefaultsEntity` as it stands in the database, with `status`'s stored default under test. */
+  function defaultsTableNode(statusDefault: unknown) {
+    return createTableNode('DefaultsEntity', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'status', sql: 'VARCHAR', length: 20, defaultValue: statusDefault },
+      { name: 'attempts', sql: 'INTEGER', defaultValue: '0' },
+    ]);
+  }
+
   it('generateAlterTable should produce correct SQL', () => {
     const sql = generator.generateAlterTable({
       tableName: 'users',
@@ -91,7 +162,14 @@ describe('SqlSchemaGenerator Advanced', () => {
 function createTableNode(
   name: string,
   ast: SchemaAST,
-  cols: { name: string; sql: string; length?: number; isPrimaryKey?: boolean; isAutoIncrement?: boolean }[],
+  cols: {
+    name: string;
+    sql: string;
+    length?: number;
+    isPrimaryKey?: boolean;
+    isAutoIncrement?: boolean;
+    defaultValue?: unknown;
+  }[],
 ): TableNode {
   const columns = new Map<string, ColumnNode>();
   const table: TableNode = {
@@ -113,6 +191,7 @@ function createTableNode(
       name: col.name,
       type,
       nullable: !col.isPrimaryKey,
+      defaultValue: col.defaultValue,
       isPrimaryKey: !!col.isPrimaryKey,
       isAutoIncrement: !!col.isAutoIncrement,
       isUnique: false,

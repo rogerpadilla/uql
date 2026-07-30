@@ -164,6 +164,48 @@ describe('hook decorators', () => {
     expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }, { methodName: 'childHook' }]);
   });
 
+  it('should inherit parent hooks when the child declares none of its own', () => {
+    class BaseEntity {
+      @Id()
+      id?: number;
+
+      @BeforeInsert()
+      baseHook() {}
+    }
+
+    @Entity()
+    class ChildEntity extends BaseEntity {
+      @Field()
+      name?: string;
+    }
+
+    const meta = getMeta(ChildEntity);
+    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }]);
+  });
+
+  it('should merge parent and child hooks registered on different events', () => {
+    class BaseEntity {
+      @Id()
+      id?: number;
+
+      @BeforeInsert()
+      baseHook() {}
+    }
+
+    @Entity()
+    class ChildEntity extends BaseEntity {
+      @Field()
+      name?: string;
+
+      @AfterUpdate()
+      childHook() {}
+    }
+
+    const meta = getMeta(ChildEntity);
+    expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'baseHook' }]);
+    expect(meta.hooks?.afterUpdate).toEqual([{ methodName: 'childHook' }]);
+  });
+
   it('should not have hooks when none are defined', () => {
     @Entity()
     class PlainEntity {

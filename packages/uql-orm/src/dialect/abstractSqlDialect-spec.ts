@@ -900,6 +900,49 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual([123, 999]);
   }
 
+  /**
+   * A dotted key is only a JSON path when its root is a JSON column. Rooted anywhere else it is a
+   * typo (or an injection attempt from dynamic query data) and must fail loudly instead of being
+   * emitted as an identifier that silently matches nothing.
+   */
+  shouldRejectDottedPathOnNonJsonField() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $where: { 'name.first': 'some' } as never,
+        }),
+      ),
+    ).toThrow('path name.first does not exist in User');
+  }
+
+  shouldRejectDottedPathOnUnknownRoot() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $where: { 'nope.first': 'some' } as never,
+        }),
+      ),
+    ).toThrow('path nope.first does not exist in User');
+  }
+
+  /**
+   * `$elemMatch` matches either the elements themselves (operators) or their properties (field
+   * names). One expression cannot be both shapes at once, so a mixed object is rejected rather
+   * than having half of it silently dropped.
+   */
+  shouldRejectElemMatchMixingOperatorsAndFieldNames() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Company, {
+          $select: { id: true },
+          $where: { kind: { $elemMatch: { $eq: 5, name: 'some' } } } as never,
+        }),
+      ),
+    ).toThrow('$elemMatch cannot mix operators with field names: $eq, name');
+  }
+
   shouldFind$ne() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
@@ -1992,6 +2035,84 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(sql).toContain('HAVING MAX(');
     expect(sql).toContain(' IS NOT NULL');
     expect(values).toEqual([]);
+  }
+
+  /** `$isNull: false` is the negation of `$isNull: true`, not a no-op. */
+  shouldAggregateWithHavingIsNullFalse() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { maxVal: { $max: 'createdAt' } },
+        $having: { maxVal: { $isNull: false } },
+      }),
+    );
+    expect(sql).toContain(' IS NOT NULL');
+    expect(values).toEqual([]);
+  }
+
+  shouldAggregateWithHavingIsNotNullFalse() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { maxVal: { $max: 'createdAt' } },
+        $having: { maxVal: { $isNotNull: false } },
+      }),
+    );
+    expect(sql).toContain(' IS NULL');
+    expect(sql).not.toContain(' IS NOT NULL');
+    expect(values).toEqual([]);
+  }
+
+  /** `$ne` in `HAVING` uses the same null-safe inequality the `WHERE` builder does. */
+  shouldAggregateWithHavingNe() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
+        $having: { count: { $ne: 5 } },
+      }),
+    );
+    expect(sql).toContain(`HAVING ${this.neSql('COUNT(*)')}`);
+    expect(values).toEqual([5]);
+  }
+
+  /** Several operators on one alias AND together, each repeating the aggregate expression. */
+  shouldAggregateWithHavingMultipleOperatorsOnSameAlias() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
+        $having: { count: { $gt: 2, $lte: 10 } },
+      }),
+    );
+    expect(sql).toContain(`HAVING COUNT(*) > ${this.ph(1)} AND COUNT(*) <= ${this.ph(2)}`);
+    expect(values).toEqual([2, 10]);
+  }
+
+  /** A `$having` alias that is not an aggregate falls back to the grouped column. */
+  shouldAggregateWithHavingOnGroupedColumn() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { count: { $count: '*' } },
+        $having: { name: 'maz' },
+      }),
+    );
+    expect(sql).toContain(`HAVING ${e}name${e} = ${this.ph(1)}`);
+    expect(values).toEqual(['maz']);
+  }
+
+  shouldRejectUnsupportedHavingOperator() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.aggregate(ctx, User, {
+          $group: { name: true },
+          $agg: { count: { $count: '*' } },
+          $having: { count: { $bogus: 5 } } as never,
+        }),
+      ),
+    ).toThrow('unsupported HAVING operator: $bogus');
   }
 
   shouldAggregateSortWithNumericNegativeOne() {

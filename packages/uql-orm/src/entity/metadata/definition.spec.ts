@@ -17,6 +17,7 @@ import {
   UserWithNonUpdatableId,
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, type Relation } from '../../type/index.js';
+import { getKeys } from '../../util/index.js';
 import { Entity } from '../decorator/entity.js';
 import { Field } from '../decorator/field.js';
 import { Filter } from '../decorator/filter.js';
@@ -786,6 +787,58 @@ it('softDelete is a reserved filter name', () => {
     }
     return ReservedFilter;
   }).toThrow("filter name 'softDelete' is reserved");
+});
+
+/**
+ * A `security` filter is row-level security: `skip` would silently drop it whenever its condition
+ * can't resolve (no context, missing tenant id), returning every row instead of none. It has to
+ * fail closed, so the combination is rejected at registration rather than at query time.
+ */
+it('a security filter cannot opt into skipping when its condition is unresolved', () => {
+  expect(() => {
+    @Filter('tenant', { condition: () => undefined, security: true, onMissing: 'skip' })
+    @Entity()
+    class SkippableSecurityFilter {
+      @Id()
+      id?: number;
+    }
+    return SkippableSecurityFilter;
+  }).toThrow("security filter 'tenant' cannot use onMissing: 'skip' (it must fail closed)");
+});
+
+/** The last `@Id` wins, and the one it replaces stops being a field altogether. */
+it('a second @Id replaces the first one', () => {
+  @Entity()
+  class ReIdentified {
+    @Id()
+    legacyId?: number;
+    @Id()
+    id?: number;
+    @Field()
+    name?: string;
+  }
+
+  const meta = getMeta(ReIdentified);
+  expect(meta.id).toBe('id');
+  expect(meta.fields.legacyId).toBeUndefined();
+  expect(getKeys(meta.fields)).toEqual(['id', 'name']);
+});
+
+it('subclass declaring the only @Id inherits the parent fields', () => {
+  class IdlessBase {
+    @Field()
+    name?: string;
+  }
+
+  @Entity()
+  class IdentifiedChild extends IdlessBase {
+    @Id()
+    id?: number;
+  }
+
+  const meta = getMeta(IdentifiedChild);
+  expect(meta.id).toBe('id');
+  expect(getKeys(meta.fields).sort()).toEqual(['id', 'name']);
 });
 
 it('subclass inherits parent softDelete field key and filters', () => {
