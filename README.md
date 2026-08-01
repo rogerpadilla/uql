@@ -32,8 +32,9 @@
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
 ```
 
-Decorators also need `reflect-metadata` ([setup](https://uql-orm.dev/getting-started)); the
-[imperative API](https://uql-orm.dev/entities/imperative) needs nothing extra.
+That is the whole install. Decorators are the standard TC39 ones, so there is no `reflect-metadata`
+and no compiler flag to turn on ([setup](https://uql-orm.dev/getting-started)), and the
+[imperative API](https://uql-orm.dev/entities/imperative) skips decorators altogether.
 
 ```ts
 await querier.findMany(User, {

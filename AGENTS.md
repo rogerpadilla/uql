@@ -21,8 +21,8 @@ Canonical, tool-neutral instructions for this repo. Claude Code reads them via `
 
 ## Packaging
 
-- ESM-only with **zero runtime dependencies**. `reflect-metadata` is an optional peer; adding a hard dependency is a deliberate decision, not a convenience.
-- Decorator-defined entities need the `reflect-metadata` polyfill; `defineEntity` needs nothing.
+- ESM-only with **zero runtime dependencies**; adding one is a deliberate decision, not a convenience.
+- Decorators need no polyfill from the consumer. `Symbol.metadata` is the one thing missing from the runtimes we support, and `entity/decorator/bag.ts` fills it in with `Symbol.for('Symbol.metadata')`.
 - The CLI bundles **no transpiler**. `uql.config.ts` is loaded with a plain `import()`, so whoever runs the CLI supplies TypeScript support (`bun`, or `node --import tsx`). That is deliberate: the config imports the entity classes, so the loader decides which decorator spec their decorators are called with, and only the runtime knows the project's `tsconfig.json`.
 
 ## Changelog
