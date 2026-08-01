@@ -134,24 +134,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     expect(dialect.normalizeValue(date)).toBe(date);
   });
 
-  it('upsert without update assignments (INSERT IGNORE)', () => {
-    const ctx = dialect.createContext();
-    // User has id, companyId, creatorId, createdAt, updatedAt, name, email, password
-    // If conflictPaths includes all fields except virtual ones, update will be empty
-    const conflictPaths = {
-      id: true,
-      companyId: true,
-      creatorId: true,
-      createdAt: true,
-      updatedAt: true,
-      name: true,
-      email: true,
-      password: true,
-    };
-    dialect.upsert(ctx, User, conflictPaths as any, { name: 'John' });
-    expect(ctx.sql).toContain('INSERT IGNORE');
-  });
-
   it('getUpsertUpdateAssignments without callback', () => {
     const ctx = dialect.createContext();
     const meta = getMeta(User);

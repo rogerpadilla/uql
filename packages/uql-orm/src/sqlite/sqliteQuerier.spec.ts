@@ -104,10 +104,10 @@ class TinyBatchDialect extends SqliteDialect {
 /** A primary key the database does not generate (no auto-increment, no `onInsert`). */
 @Entity()
 class TextPkNote {
-  @Id()
+  @Id({ type: String })
   code?: string;
 
-  @Field()
+  @Field({ type: String })
   title?: string;
 }
 
@@ -154,13 +154,13 @@ import type { HookContext } from '../util/index.js';
 /** Exercises every hook the querier emits, including one that awaits and one that mutates. */
 @Entity()
 class HookedNote {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
-  @Field()
+  @Field({ type: String })
   title?: string;
 
-  @Field()
+  @Field({ type: String })
   slug?: string;
 
   static readonly seen: string[] = [];

@@ -106,7 +106,7 @@ export class SchemaASTBuilder {
    * foreign key column whose type doesn't match the UUID primary key it
    * references, which Postgres (and most databases) reject outright.
    *
-   * `field.typeInferred` (set by `defineField`, see entity/metadata/definition.ts)
+   * `field.typeFromReference` (set by `defineField`, see entity/metadata/definition.ts)
    * is what distinguishes "no type was given" from "the decorator explicitly set
    * a type" - including explicit constructor overrides like `type: BigInt`, which
    * a value-based check (e.g. `typeof field.type === 'string'`) would miss since
@@ -114,7 +114,7 @@ export class SchemaASTBuilder {
    * `columnType` remains the unambiguous, always-respected explicit override.
    */
   private resolveColumnCanonicalType(field: FieldOptions, seen: Set<EntityGetter> = new Set()): CanonicalType {
-    const hasExplicitType = !!field.columnType || !field.typeInferred;
+    const hasExplicitType = !!field.columnType || !field.typeFromReference;
     if (!hasExplicitType && field.references && !seen.has(field.references)) {
       seen.add(field.references);
       const referencedMeta = getMeta(field.references());

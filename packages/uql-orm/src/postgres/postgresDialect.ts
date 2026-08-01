@@ -14,7 +14,7 @@ export class PostgresDialect extends PgLikeSqlDialect {
   override readonly vectorExtension: string | undefined = 'vector';
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    // xmax system column is 0 for newly inserted rows, non-zero for updated rows (MVCC).
-    this.buildUpsertOnConflict(ctx, entity, conflictPaths, payload, `, (xmax = 0) AS ${this.escapeId('_created')}`);
+    // The xmax system column is 0 for a newly inserted row and non-zero for an updated one (MVCC).
+    super.upsert(ctx, entity, conflictPaths, payload, `, (xmax = 0) AS ${this.escapeId('_created')}`);
   }
 }

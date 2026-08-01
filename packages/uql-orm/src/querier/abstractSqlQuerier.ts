@@ -33,7 +33,8 @@ import {
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
-import { enrichError, Log, Serialized } from './decorator/index.js';
+
+import { enrichError } from './queryError.js';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -81,30 +82,22 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   /**
    * Hook for subclasses (e.g. pool queriers) to establish a connection.
-   * Called before every query but outside the `@Log()` timer.
+   * Called before every query but outside the timing window.
    */
   protected async lazyConnect(): Promise<void> {}
 
-  @Serialized()
   async all<T>(query: string, values?: unknown[]): Promise<T[]> {
-    await this.lazyConnect();
-    return this.timedAll<T>(query, values);
+    return this.serialize(async () => {
+      await this.lazyConnect();
+      return this.timed(query, values, () => this.internalAll<T>(query, this.dialect.normalizeValues(values)));
+    });
   }
 
-  @Log()
-  private async timedAll<T>(query: string, values?: unknown[]): Promise<T[]> {
-    return this.internalAll<T>(query, this.dialect.normalizeValues(values));
-  }
-
-  @Serialized()
   async run(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
-    await this.lazyConnect();
-    return this.timedRun(query, values);
-  }
-
-  @Log()
-  private async timedRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
-    return this.internalRun(query, this.dialect.normalizeValues(values));
+    return this.serialize(async () => {
+      await this.lazyConnect();
+      return this.timed(query, values, () => this.internalRun(query, this.dialect.normalizeValues(values)));
+    });
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
@@ -138,7 +131,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
         yield this.hydrateJsonFields(entity, unflatObject<E>(row, attrsPaths));
       }
     } catch (err) {
-      enrichError(err, this.logger, ctx.sql, normalizedParams);
+      throw enrichError(err, this.logger, ctx.sql, normalizedParams);
     }
   }
 
@@ -326,46 +319,48 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return !!this.hasPendingTransaction;
   }
 
-  @Serialized()
   override async beginTransaction(opts?: TransactionOptions) {
-    if (this.hasPendingTransaction) {
-      throwPendingTransaction();
-    }
-    await this.lazyConnect();
-    const statements = this.dialect.getBeginTransactionStatements(opts?.isolationLevel);
-    for (const sql of statements) {
-      try {
-        await this.internalRun(sql);
-      } catch (err) {
-        enrichError(err, this.logger, sql);
+    return this.serialize(async () => {
+      if (this.hasPendingTransaction) {
+        throwPendingTransaction();
       }
-    }
-    this.hasPendingTransaction = true;
+      await this.lazyConnect();
+      for (const sql of this.dialect.getBeginTransactionStatements(opts?.isolationLevel)) {
+        try {
+          await this.internalRun(sql);
+        } catch (err) {
+          throw enrichError(err, this.logger, sql);
+        }
+      }
+      this.hasPendingTransaction = true;
+    });
   }
 
-  @Serialized()
   override async commitTransaction() {
-    if (!this.hasPendingTransaction) {
-      throwNoPendingTransaction();
-    }
-    try {
-      await this.internalRun(this.dialect.commitTransactionCommand);
-    } catch (err) {
-      enrichError(err, this.logger, this.dialect.commitTransactionCommand);
-    }
-    this.hasPendingTransaction = false;
+    return this.serialize(async () => {
+      if (!this.hasPendingTransaction) {
+        throwNoPendingTransaction();
+      }
+      try {
+        await this.internalRun(this.dialect.commitTransactionCommand);
+      } catch (err) {
+        throw enrichError(err, this.logger, this.dialect.commitTransactionCommand);
+      }
+      this.hasPendingTransaction = false;
+    });
   }
 
-  @Serialized()
   override async rollbackTransaction() {
-    if (!this.hasPendingTransaction) {
-      throwNoPendingTransaction();
-    }
-    try {
-      await this.internalRun(this.dialect.rollbackTransactionCommand);
-    } catch (err) {
-      enrichError(err, this.logger, this.dialect.rollbackTransactionCommand);
-    }
-    this.hasPendingTransaction = false;
+    return this.serialize(async () => {
+      if (!this.hasPendingTransaction) {
+        throwNoPendingTransaction();
+      }
+      try {
+        await this.internalRun(this.dialect.rollbackTransactionCommand);
+      } catch (err) {
+        throw enrichError(err, this.logger, this.dialect.rollbackTransactionCommand);
+      }
+      this.hasPendingTransaction = false;
+    });
   }
 }

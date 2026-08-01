@@ -11,27 +11,27 @@ import type { Migrator } from './migrator.js';
 
 @Entity()
 class TestEntity {
-  @Id() id?: number;
+  @Id({ type: Number }) id?: number;
 }
 
 /** Present in the database but absent from the configured entities. */
 @Entity()
 class ExtraTableEntity {
-  @Id() id?: number;
+  @Id({ type: Number }) id?: number;
 }
 
 /** Same table as {@link DriftedEntity}, with the column type the entities expect. */
 @Entity({ name: 'DriftTable' })
 class ExpectedEntity {
-  @Id() id?: number;
-  @Field({ columnType: 'varchar', length: 50 }) label?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 50 }) label?: string;
 }
 
 /** Same table as {@link ExpectedEntity}, as the database actually has it. */
 @Entity({ name: 'DriftTable' })
 class DriftedEntity {
-  @Id() id?: number;
-  @Field({ columnType: 'int' }) label?: number;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number, columnType: 'int' }) label?: number;
 }
 
 const mockMigrator = {

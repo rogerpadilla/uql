@@ -4,7 +4,27 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## UNRELEASED - 2026-08-01
+## [0.23.0] - 2026-08-01
+
+### Decorators are now the standard TC39 ones (breaking)
+
+`experimentalDecorators` and `emitDecoratorMetadata` are gone; no compiler flags, no `reflect-metadata`.
+
+A codemod does most of the migration, including the `@InjectQuerier()` rewrite:
+
+```sh
+npx uql-codemod --project=tsconfig.json --dry-run
+```
+
+See the [upgrade guide](https://uql-orm.dev/upgrade-guide) for the rest. What changes:
+
+- **`type` is required on every `@Field`/`@Id`**, and `entity` on every relation, since nothing reflects any more. In exchange the annotation is now *checked against the property*: `@Field({ type: String })` on a `number` is a compile error instead of a silently wrong column.
+- **`@InjectQuerier()` is gone**; the standard spec has no parameter decorators. A `@Transactional()` method reads its querier with `currentQuerier()`.
+- **`Relation<T>` is gone.** It only existed to work around circular imports that reflection itself caused.
+- **`target` must not be `esnext`**, the one target where TypeScript emits decorator syntax untransformed.
+- **NestJS projects must define entities with `defineEntity`.** Nest's DI needs parameter decorators, so those projects keep `experimentalDecorators` on, and one `tsconfig.json` cannot mix specs.
+- **`uql.config.ts` needs a runtime that transforms TypeScript** (`bun`, or `node --import tsx`) when it imports entity classes. The `jiti` peer dependency is gone.
+- `@Log()` and `@Serialized()` were removed; a standard-spec decorator cannot preserve a generic method's signature.
 
 ### SQLite with no native dependency
 
@@ -30,7 +50,7 @@ await using querier = await pool.getQuerier();
 
 ### Fixes
 
-- `drift:check` reported the migrations table itself as an unexpected table, telling every project to "create entity or drop table" for its own migration log. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.
+- `drift:check` reported the migrations table itself as an unexpected table. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.
 - `DriftDetectorOptions.checkDefaults` was declared and never read, so asking for default mismatches reported nothing.
 
 

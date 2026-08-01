@@ -142,18 +142,12 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return `$${index}`;
   }
 
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    this.buildUpsertOnConflict(ctx, entity, conflictPaths, payload);
-  }
-
   /**
-   * Shared `INSERT ... ON CONFLICT (...) DO UPDATE/NOTHING RETURNING ...` builder, assembling
-   * everything upfront rather than handing back fragments, for the `$N`-placeholder Postgres-wire
-   * dialects. `extraReturning` lets {@link PostgresDialect} append `(xmax = 0) AS "_created"` to
-   * detect insert-vs-update; CockroachDB has no `xmax`/`ctid` system columns, so it uses the default
-   * (empty) and `created` stays `undefined` in the result.
+   * The same statement as the base, binding the assignments into the main context instead of a second
+   * one: `$N` placeholders carry their own index, so the values need not be in statement order, and
+   * computing them first is what keeps `appendInsertValues`' `onInsert` fields out of the update set.
    */
-  protected buildUpsertOnConflict<E>(
+  override upsert<E>(
     ctx: QueryContext,
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
@@ -161,11 +155,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     extraReturning = '',
   ): void {
     const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
-    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, this.upsertExcluded);
+    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
+    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
   }
 
   /**

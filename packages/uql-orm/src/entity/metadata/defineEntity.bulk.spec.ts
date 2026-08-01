@@ -20,12 +20,18 @@ function metaCore<E>(
 }
 
 it('defineEntity bulk fields match incremental defineField + defineEntity', () => {
-  class Incremental {}
+  class Incremental {
+    id?: number;
+    title?: string;
+  }
   defineField(Incremental, 'id', { type: Number, isId: true });
   defineField(Incremental, 'title', { type: String, nullable: false });
   defineEntity(Incremental, { name: 'ArticleIncr' });
 
-  class Bulk {}
+  class Bulk {
+    id?: number;
+    title?: string;
+  }
   defineEntity(Bulk, {
     name: 'ArticleBulk',
     fields: {
@@ -39,18 +45,28 @@ it('defineEntity bulk fields match incremental defineField + defineEntity', () =
 });
 
 it('defineEntity bulk relations and FK fields match incremental registration', () => {
-  class Target {}
+  class Target {
+    id?: number;
+  }
   defineEntity(Target, {
     fields: { id: { type: Number, isId: true } },
   });
 
-  class Incremental {}
+  class Incremental {
+    id?: number;
+    targetId?: number;
+    target?: Target;
+  }
   defineField(Incremental, 'id', { type: Number, isId: true });
   defineField(Incremental, 'targetId', { type: Number, references: () => Target });
   defineRelation(Incremental, 'target', { cardinality: 'm1', entity: () => Target });
   defineEntity(Incremental, { name: 'LinkedRow' });
 
-  class Bulk {}
+  class Bulk {
+    id?: number;
+    targetId?: number;
+    target?: Target;
+  }
   defineEntity(Bulk, {
     name: 'LinkedRow',
     fields: {
@@ -109,7 +125,14 @@ it('defineEntity bulk relations allow a related entity shaped differently than t
 });
 
 it('defineEntity bulk indexes and hooks', () => {
-  class Indexed {}
+  class Indexed {
+    id?: number;
+    email?: string;
+    status?: string;
+
+    stampCreatedAt() {}
+    hydrate() {}
+  }
   defineEntity(Indexed, {
     fields: {
       id: { type: Number, isId: true },
@@ -139,7 +162,10 @@ it('defineEntity bulk indexes and hooks', () => {
 });
 
 it('child class inherits parent fields when parent finalized first', () => {
-  class ParentEntity {}
+  class ParentEntity {
+    id?: number;
+    baseCol?: string;
+  }
   defineEntity(ParentEntity, {
     fields: {
       id: { type: Number, isId: true },
@@ -147,7 +173,9 @@ it('child class inherits parent fields when parent finalized first', () => {
     },
   });
 
-  class ChildEntity extends ParentEntity {}
+  class ChildEntity extends ParentEntity {
+    childCol?: boolean;
+  }
   defineEntity(ChildEntity, {
     fields: {
       childCol: { type: Boolean },
@@ -162,7 +190,9 @@ it('child class inherits parent fields when parent finalized first', () => {
 });
 
 it('defineEntity bulk throws when no id field is declared', () => {
-  class MissingId {}
+  class MissingId {
+    title?: string;
+  }
   expect(() =>
     defineEntity(MissingId, {
       fields: { title: { type: String } },
@@ -171,11 +201,17 @@ it('defineEntity bulk throws when no id field is declared', () => {
 });
 
 it('defineId path via bulk isId matches defineId helper', () => {
-  class A {}
+  class A {
+    pk?: string;
+    x?: number;
+  }
   defineEntity(A, {
     fields: { pk: { type: String, isId: true }, x: { type: Number } },
   });
-  class B {}
+  class B {
+    pk?: string;
+    x?: number;
+  }
   defineId(B, 'pk', { type: String });
   defineField(B, 'x', { type: Number });
   defineEntity(B, {});

@@ -4,9 +4,9 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 
 @Entity()
 class Shaped {
-  @Id() id?: number;
-  @Field() name?: string;
-  @Field() email?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
+  @Field({ type: String }) email?: string;
   @Field({ type: 'json' }) settings?: object;
   @Field({ type: 'vector' }) embedding?: number[];
 }

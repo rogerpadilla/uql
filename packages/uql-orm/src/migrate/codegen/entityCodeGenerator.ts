@@ -133,7 +133,6 @@ export class EntityCodeGenerator {
     if (this.options.includeRelations) {
       for (const rel of [...table.incomingRelations, ...table.outgoingRelations]) {
         uqlImports.add(this.getRelationDecoratorName(rel.type));
-        uqlImports.add('Relation');
 
         const relatedTable = rel.from.table === table ? rel.to.table : rel.from.table;
         const relatedClassName = this.options.classNameTransformer(relatedTable.name);
@@ -318,7 +317,7 @@ export class EntityCodeGenerator {
     lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName} })`);
 
     // Property
-    lines.push(`  ${propertyName}?: Relation<${relatedClassName}>;`);
+    lines.push(`  ${propertyName}?: ${relatedClassName};`);
 
     return lines.join('\n');
   }
@@ -347,9 +346,9 @@ export class EntityCodeGenerator {
 
     // Property
     if (inverseType === 'OneToMany' || inverseType === 'ManyToMany') {
-      lines.push(`  ${propertyName}?: Relation<${relatedClassName}[]>;`);
+      lines.push(`  ${propertyName}?: ${relatedClassName}[];`);
     } else {
-      lines.push(`  ${propertyName}?: Relation<${relatedClassName}>;`);
+      lines.push(`  ${propertyName}?: ${relatedClassName};`);
     }
 
     return lines.join('\n');

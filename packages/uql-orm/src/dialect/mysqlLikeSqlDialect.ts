@@ -1,3 +1,4 @@
+import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   EntityMeta,
@@ -6,6 +7,7 @@ import type {
   IndexFeature,
   IndexSchema,
   InsertIdSource,
+  QueryConflictPaths,
   QueryContext,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
@@ -71,6 +73,38 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   // No `RETURNING` support, so multi-row insert IDs are inferred from the header - see the
   // `innodb_autoinc_lock_mode` caveat on `buildUpdateResult` in `util/sql.util.ts`.
   override readonly insertIdSource: InsertIdSource = 'firstId';
+
+  /**
+   * `INSERT ... ON DUPLICATE KEY UPDATE`, and `INSERT IGNORE` when every non-conflict column is itself a
+   * conflict key so there is nothing to assign. Neither form takes a conflict target: MySQL picks the
+   * unique index for you.
+   *
+   * The update assignments are built into their own context and pushed afterwards, since they read
+   * `VALUES(col)` rather than binding, and any value they *do* bind (an `onUpdate` field absent from the
+   * payload) has to land after the insert's for a `?`-placeholder driver.
+   */
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
+    const meta = getMeta(entity);
+    const updateCtx = this.createContext();
+    const update = this.getUpsertUpdateAssignments(
+      updateCtx,
+      meta,
+      conflictPaths,
+      payload,
+      (name) => `VALUES(${name})`,
+    );
+
+    if (update) {
+      this.appendInsertValues(ctx, entity, payload);
+      ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
+      ctx.pushValue(...updateCtx.values);
+      return;
+    }
+    const insertCtx = this.createContext();
+    this.appendInsertValues(insertCtx, entity, payload);
+    ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
+    ctx.pushValue(...insertCtx.values);
+  }
 
   override readonly maxBindValues: number = 65535;
 

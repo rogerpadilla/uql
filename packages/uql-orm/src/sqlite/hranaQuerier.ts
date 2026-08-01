@@ -1,4 +1,3 @@
-import { Serialized } from '../querier/decorator/index.js';
 import type { ExtraOptions, RawRow, TransactionOptions } from '../type/index.js';
 import { throwNoPendingTransaction, throwPendingTransaction } from '../util/index.js';
 import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
@@ -77,30 +76,33 @@ export class HranaQuerier extends AbstractSqliteQuerier {
     return !!this.tx;
   }
 
-  @Serialized()
   override async beginTransaction(_opts?: TransactionOptions) {
-    if (this.tx) {
-      throwPendingTransaction();
-    }
-    this.tx = await this.client.transaction('write');
+    return this.serialize(async () => {
+      if (this.tx) {
+        throwPendingTransaction();
+      }
+      this.tx = await this.client.transaction('write');
+    });
   }
 
-  @Serialized()
   override async commitTransaction() {
-    if (!this.tx) {
-      throwNoPendingTransaction();
-    }
-    await this.tx.commit();
-    this.tx = undefined;
+    return this.serialize(async () => {
+      if (!this.tx) {
+        throwNoPendingTransaction();
+      }
+      await this.tx.commit();
+      this.tx = undefined;
+    });
   }
 
-  @Serialized()
   override async rollbackTransaction() {
-    if (!this.tx) {
-      throwNoPendingTransaction();
-    }
-    await this.tx.rollback();
-    this.tx = undefined;
+    return this.serialize(async () => {
+      if (!this.tx) {
+        throwNoPendingTransaction();
+      }
+      await this.tx.rollback();
+      this.tx = undefined;
+    });
   }
 
   override async internalRelease() {

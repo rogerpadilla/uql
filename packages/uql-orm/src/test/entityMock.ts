@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import { idKey, type Json, type QueryRawFnOptions, type Relation } from '../type/index.js';
+import { idKey, type Json, type QueryRawFnOptions } from '../type/index.js';
 import { raw } from '../util/index.js';
 
 /**
@@ -11,7 +11,7 @@ export abstract class BaseEntity {
   /**
    * auto-generated primary-key (when the `onInsert` property is omitted).
    */
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
   /**
@@ -20,31 +20,27 @@ export abstract class BaseEntity {
   @Field({ references: () => Company })
   companyId?: number;
 
-  /**
-   * The `Relation` wrapper type can be used in ESM projects for the relations to
-   * avoid circular dependency issues.
-   */
   @ManyToOne({ entity: () => Company })
-  company?: Relation<Company>;
+  company?: Company;
 
   @Field({ references: () => User })
   creatorId?: number;
 
   @ManyToOne({ entity: () => User })
-  creator?: Relation<User>;
+  creator?: User;
 
   /**
    * 'onInsert' property can be used to specify a custom mechanism for
    * obtaining the value of a field when inserting:
    */
-  @Field({ onInsert: Date.now })
+  @Field({ type: Number, onInsert: Date.now })
   createdAt?: number;
 
   /**
    * 'onUpdate' property can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
-  @Field({ onUpdate: Date.now })
+  @Field({ type: Number, onUpdate: Date.now })
   updatedAt?: number;
 }
 
@@ -73,10 +69,10 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
  */
 @Entity()
 export class Company extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 
   @Field({ type: 'jsonb' })
@@ -92,25 +88,28 @@ export class Profile extends BaseEntity {
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
    */
-  @Id()
+  @Id({ type: Number })
   pk?: number;
 
-  @Field({ name: 'image' })
+  @Field({ type: String, name: 'image' })
   picture?: string;
 
+  // Narrows the inherited m1 relation to 1-1. A real field rather than `declare`, because the standard
+  // decorator spec has nothing to decorate on a `declare` member; the initializer marks the shadowing as
+  // deliberate.
   @OneToOne({ entity: () => User })
-  declare creator?: Relation<User>;
+  override creator?: User = undefined;
 }
 
 @Entity()
 export class User extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field({ updatable: false })
+  @Field({ type: String, updatable: false })
   email?: string;
 
-  @Field({ eager: false })
+  @Field({ type: String, eager: false })
   password?: string;
 
   /**
@@ -125,25 +124,25 @@ export class User extends BaseEntity {
 
 @Entity()
 export class UserWithNonUpdatableId {
-  @Id({ updatable: false })
+  @Id({ type: Number, updatable: false })
   id!: number;
 
-  @Field()
+  @Field({ type: String })
   name!: string;
 }
 
 @Entity()
 export class LedgerAccount extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 
   @Field({ references: () => LedgerAccount })
   parentLedgerId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => LedgerAccount })
   parentLedger?: LedgerAccount;
 }
 
@@ -162,31 +161,31 @@ export class TaxCategory extends BaseEntity {
    * 'onInsert' property can be used to specify a custom mechanism for
    * auto-generating the primary-key's value when inserting.
    */
-  @Id({ onInsert: randomUUID })
+  @Id({ type: String, onInsert: randomUUID })
   pk?: string;
 
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 }
 
 @Entity()
 export class Tax extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: Number })
   percentage?: number;
 
   @Field({ references: () => TaxCategory })
   categoryId?: string;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => TaxCategory })
   category?: TaxCategory;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 }
 
@@ -196,82 +195,82 @@ export class Tax extends BaseEntity {
  */
 @Entity()
 export class MeasureUnitCategory extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId! })
   measureUnits?: MeasureUnit[];
 
-  @Field({ softDelete: () => Date.now() })
+  @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
 }
 
 @Entity()
 export class MeasureUnit extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
   @Field({ references: () => MeasureUnitCategory })
   categoryId?: number;
 
-  @ManyToOne({ cascade: 'persist' })
+  @ManyToOne({ entity: () => MeasureUnitCategory, cascade: 'persist' })
   category?: MeasureUnitCategory;
 
-  @Field({ softDelete: () => Date.now() })
+  @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
 }
 
 @Entity()
 export class Storehouse extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: String })
   address?: string;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 }
 
 @Entity()
 export class Item extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 
-  @Field()
+  @Field({ type: String })
   code?: string;
 
   @Field({ references: () => LedgerAccount })
   buyLedgerAccountId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => LedgerAccount })
   buyLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => LedgerAccount })
   saleLedgerAccountId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => LedgerAccount })
   saleLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => Tax })
   taxId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => Tax })
   tax?: Tax;
 
   @Field({ references: () => MeasureUnit })
   measureUnitId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => MeasureUnit })
   measureUnit?: MeasureUnit;
 
-  @Field()
+  @Field({ type: Number })
   salePrice?: number;
 
-  @Field()
+  @Field({ type: Boolean })
   inventoryable?: boolean;
 
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
@@ -284,6 +283,7 @@ export class Item extends BaseEntity {
      * be used in `$select` and `$where` as a common field whose value is
      * replaced is replaced at runtime.
      */
+    type: Number,
     virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
       ctx!.append('(');
       dialect!.count(
@@ -306,13 +306,14 @@ export class Item extends BaseEntity {
 
 @Entity()
 export class Tag extends BaseEntity {
-  @Field()
+  @Field({ type: String })
   name?: string;
 
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags! })
   items?: Item[];
 
   @Field({
+    type: Number,
     virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
       ctx!.append('(');
       dialect!.count(
@@ -335,7 +336,7 @@ export class Tag extends BaseEntity {
 
 @Entity()
 export class ItemTag {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
   @Field({ references: () => Item })
@@ -354,10 +355,10 @@ export class InventoryAdjustment extends BaseEntity {
   })
   itemAdjustments?: ItemAdjustment[];
 
-  @Field()
+  @Field({ type: Date })
   date?: Date;
 
-  @Field()
+  @Field({ type: String })
   description?: string;
 }
 
@@ -366,25 +367,25 @@ export class ItemAdjustment extends BaseEntity {
   @Field({ references: () => Item })
   itemId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => Item })
   item?: Item;
 
-  @Field()
+  @Field({ type: Number })
   number?: number;
 
-  @Field()
+  @Field({ type: Number })
   buyPrice?: number;
 
   @Field({ references: () => Storehouse })
   storehouseId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => Storehouse })
   storehouse?: Storehouse;
 
   @Field({ references: () => InventoryAdjustment })
   inventoryAdjustmentId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => InventoryAdjustment })
   inventoryAdjustment?: InventoryAdjustment;
 }
 
@@ -395,15 +396,15 @@ export class ItemAdjustment extends BaseEntity {
  */
 @Entity()
 export class Coupon {
-  @Id() id?: number;
-  @Field({ unique: true }) code?: string;
-  @Field() label?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, unique: true }) code?: string;
+  @Field({ type: String }) label?: string;
 }
 
 @Entity()
 export class VectorItem {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
   @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
 }
 
@@ -414,8 +415,8 @@ export class VectorItem {
  */
 @Entity()
 export class NarrowVectorItem {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
   @Field({ type: 'halfvec', dimensions: 3 }) half!: number[];
   @Field({ type: 'sparsevec', dimensions: 3 }) sparse!: number[];
 }
@@ -427,6 +428,6 @@ export class NarrowVectorItem {
  */
 @Entity()
 export class JsonRecord {
-  @Id() id?: number;
+  @Id({ type: Number }) id?: number;
   @Field({ type: 'json' }) entries?: Json<unknown[]>;
 }

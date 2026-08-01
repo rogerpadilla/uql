@@ -6,13 +6,13 @@ import { SchemaASTBuilder } from './schemaASTBuilder.js';
 // Test entities
 @Entity()
 class User {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
-  @Field()
+  @Field({ type: String })
   name?: string;
 
-  @Field({ nullable: true })
+  @Field({ type: String, nullable: true })
   email?: string;
 
   @OneToMany({ entity: () => Post, mappedBy: 'author' })
@@ -21,10 +21,10 @@ class User {
 
 @Entity()
 class Post {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
-  @Field()
+  @Field({ type: String })
   title?: string;
 
   @Field({ type: 'text' })
@@ -33,19 +33,19 @@ class Post {
   @ManyToOne({ entity: () => User })
   author?: User;
 
-  @Field({ name: 'author_id' })
+  @Field({ type: Number, name: 'author_id' })
   authorId?: number;
 }
 
 @Entity({ name: 'categories' })
 class Category {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
-  @Field({ unique: true })
+  @Field({ type: String, unique: true })
   slug?: string;
 
-  @Field({ length: 100 })
+  @Field({ type: String, length: 100 })
   name?: string;
 }
 
@@ -117,7 +117,7 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class Holding {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         // Relation only, no explicit `@Field` FK column - the auto-created `ownerId`
         // column must inherit 'uuid' from Owner.id just like an explicit FK column would.
         @ManyToOne({ entity: () => Owner })
@@ -140,7 +140,7 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class Child2 {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @Field({ references: () => Parent2, type: 'text' })
         parentRef?: string;
       }
@@ -162,11 +162,11 @@ describe('SchemaASTBuilder', () => {
       }
       @Entity()
       class Child3 {
-        @Id() id?: number;
-        // Explicit `type: BigInt` overriding the reflected `string` type of this
-        // property - must win over inheriting 'uuid' from Parent3.id.
+        @Id({ type: Number }) id?: number;
+        // An explicit `type` must win over resolving the column from `references`, which would
+        // otherwise inherit 'uuid' from Parent3.id.
         @Field({ references: () => Parent3, type: BigInt })
-        parentRef?: string;
+        parentRef?: bigint;
       }
 
       const builder = new SchemaASTBuilder();
@@ -219,14 +219,14 @@ describe('SchemaASTBuilder', () => {
     it('should handle OneToOne owning side', () => {
       @Entity()
       class Profile11 {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       @Entity()
       class User11 {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => Profile11, references: [{ local: 'profileId', foreign: 'id' }] })
         profile?: Profile11;
-        @Field() profileId?: number;
+        @Field({ type: Number }) profileId?: number;
       }
 
       const builder = new SchemaASTBuilder();
@@ -267,8 +267,8 @@ describe('SchemaASTBuilder', () => {
     it('should skip virtual fields', () => {
       @Entity()
       class VirtualUser {
-        @Id() id?: number;
-        @Field({ virtual: raw('TRUE') }) secret?: string;
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, virtual: raw('TRUE') }) secret?: string;
       }
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([VirtualUser]);
@@ -279,10 +279,10 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       @Index(['firstName', 'lastName'], { name: 'idx_fullname', unique: true, where: 'active = true' })
       class IndexedUser {
-        @Id() id?: number;
-        @Field() firstName?: string;
-        @Field() lastName?: string;
-        @Field() active?: boolean;
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) firstName?: string;
+        @Field({ type: String }) lastName?: string;
+        @Field({ type: Boolean }) active?: boolean;
       }
 
       const builder = new SchemaASTBuilder();
@@ -299,9 +299,11 @@ describe('SchemaASTBuilder', () => {
 
     it('should ignore composite index if columns do not exist', () => {
       @Entity()
+      // @ts-expect-error the column names are checked against the class, so this is the runtime backstop
+      // behind a compile error rather than something a user can reach by writing valid TypeScript.
       @Index(['unknown'])
       class BadComposite {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([BadComposite]);
@@ -313,11 +315,11 @@ describe('SchemaASTBuilder', () => {
     it('should handle OneToOne with missing local field', () => {
       @Entity()
       class Related {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       @Entity()
       class Owner {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => Related, references: [{ local: 'nonExistent', foreign: 'id' }] })
         related?: Related;
       }
@@ -330,7 +332,7 @@ describe('SchemaASTBuilder', () => {
     it('should skip indexing non-existent columns from entity', () => {
       @Entity()
       class BadIndex {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       const meta = getMeta(BadIndex);
       const noCol = 'no_col';
@@ -344,8 +346,8 @@ describe('SchemaASTBuilder', () => {
     it('should use custom index name from entity', () => {
       @Entity()
       class CustomIndex {
-        @Id() id?: number;
-        @Field({ index: 'my_custom_idx' }) name?: string;
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, index: 'my_custom_idx' }) name?: string;
       }
       const builder = new SchemaASTBuilder();
       const ast = builder.fromEntities([CustomIndex]);
@@ -364,14 +366,14 @@ describe('SchemaASTBuilder', () => {
     it('should handle OneToOne relation without explicit references (default inference)', () => {
       @Entity()
       class ProfileDef {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       @Entity()
       class UserDef {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => ProfileDef })
         profile?: ProfileDef;
-        @Field() profileId?: number;
+        @Field({ type: Number }) profileId?: number;
       }
 
       const builder = new SchemaASTBuilder();
@@ -385,14 +387,14 @@ describe('SchemaASTBuilder', () => {
     it('should skip relation if foreign field is missing (broken relation)', () => {
       @Entity()
       class Other {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
       }
       @Entity()
       class Main {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => Other, references: [{ local: 'otherId', foreign: 'nonExistent' }] })
         other?: Other;
-        @Field() otherId?: number;
+        @Field({ type: Number }) otherId?: number;
       }
 
       const builder = new SchemaASTBuilder();
@@ -403,15 +405,15 @@ describe('SchemaASTBuilder', () => {
     it('should skip relation if foreign column is missing (broken relation)', () => {
       @Entity()
       class Other2 {
-        @Id() id?: number;
-        @Field({ virtual: raw('true') }) virtual?: number;
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, virtual: raw('true') }) virtual?: number;
       }
       @Entity()
       class Main2 {
-        @Id() id?: number;
+        @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => Other2, references: [{ local: 'otherId', foreign: 'virtual' }] })
         other?: Other2;
-        @Field() otherId?: number;
+        @Field({ type: Number }) otherId?: number;
       }
 
       const builder = new SchemaASTBuilder();

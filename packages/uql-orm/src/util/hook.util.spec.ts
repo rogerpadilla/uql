@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Entity } from '../entity/decorator/entity.js';
-import { Field } from '../entity/decorator/field.js';
 import {
   AfterDelete,
   AfterInsert,
@@ -8,8 +6,10 @@ import {
   BeforeDelete,
   BeforeInsert,
   BeforeUpdate,
-} from '../entity/decorator/hook.js';
-import { Id } from '../entity/decorator/id.js';
+  Entity,
+  Field,
+  Id,
+} from '../entity/index.js';
 import type { Querier } from '../type/index.js';
 import { type HookContext, runHooks } from './hook.util.js';
 
@@ -23,10 +23,10 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       name?: string;
 
       @BeforeInsert()
@@ -46,13 +46,13 @@ describe('runHooks', () => {
   it('should mutate payload via `this` in Before* hooks', async () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       name?: string;
 
-      @Field()
+      @Field({ type: String })
       slug?: string;
 
       @BeforeInsert()
@@ -72,7 +72,7 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -91,7 +91,7 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @AfterInsert()
@@ -107,10 +107,10 @@ describe('runHooks', () => {
   it('should be a no-op when entity has no hooks registered', async () => {
     @Entity()
     class PlainEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       name?: string;
     }
 
@@ -123,7 +123,7 @@ describe('runHooks', () => {
   it('should be a no-op when event has no hooks', async () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -139,7 +139,7 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -160,10 +160,10 @@ describe('runHooks', () => {
   it('should support @BeforeUpdate mutating payload', async () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
 
       @BeforeUpdate()
@@ -182,10 +182,10 @@ describe('runHooks', () => {
   it('should support @AfterLoad with mutation propagation (transforms loaded data)', async () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       password?: string;
 
       @AfterLoad()
@@ -205,7 +205,7 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeDelete()
@@ -223,7 +223,7 @@ describe('runHooks', () => {
 
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @AfterDelete()
