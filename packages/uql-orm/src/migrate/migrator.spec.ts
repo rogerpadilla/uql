@@ -571,41 +571,6 @@ describe('Migrator Core Methods', () => {
       expect(migrator.syncForce).toHaveBeenCalled();
     });
 
-    it('executeMongoSyncStatements should handle various MongoDB commands', async () => {
-      const mockCollection = {
-        createIndex: vi.fn(),
-        drop: vi.fn(),
-        dropIndex: vi.fn(),
-      };
-      const mockDb = {
-        collection: vi.fn().mockReturnValue(mockCollection),
-        createCollection: vi.fn(),
-      };
-      const mockQuerier = { db: mockDb } as any;
-
-      const stmts = [
-        JSON.stringify({ action: 'createCollection', name: 'User', indexes: [{ columns: ['id'], name: 'id_idx' }] }),
-        JSON.stringify({ action: 'dropCollection', name: 'Old' }),
-        JSON.stringify({ action: 'createIndex', collection: 'User', key: { name: 1 }, options: { unique: true } }),
-        JSON.stringify({ action: 'dropIndex', collection: 'User', name: 'old_idx' }),
-      ];
-
-      await migrator.executeMongoSyncStatements(stmts, { logging: true }, mockQuerier);
-
-      expect(mockDb.createCollection).toHaveBeenCalledWith('User');
-      expect(mockCollection.createIndex).toHaveBeenCalled();
-      expect(mockCollection.drop).toHaveBeenCalled();
-      expect(mockCollection.dropIndex).toHaveBeenCalledWith('old_idx');
-    });
-
-    it('executeMongoSyncStatements should throw if collection name is missing', async () => {
-      const mockQuerier = { db: {} } as any;
-      const stmts = [JSON.stringify({ action: 'createIndex' })];
-      await expect(migrator.executeMongoSyncStatements(stmts, {}, mockQuerier)).rejects.toThrow(
-        'MongoDB command missing collection name',
-      );
-    });
-
     it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
       const unknownPool = {
         ...pool,
@@ -687,20 +652,6 @@ describe('Migrator Core Methods', () => {
       const spy = vi.spyOn(m.logger, 'logSchema');
       await m.autoSync({ logging: true });
       expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
-    });
-
-    it('executeMongoSyncStatements should handle createCollection without indexes and non-matching action', async () => {
-      const mockCollection = { drop: vi.fn() };
-      const mockDb = { collection: vi.fn().mockReturnValue(mockCollection), createCollection: vi.fn() };
-      const mockQuerier = { db: mockDb } as any;
-
-      const stmts = [
-        JSON.stringify({ action: 'createCollection', name: 'User' }),
-        JSON.stringify({ action: 'unknown', name: 'User' }),
-      ];
-
-      await migrator.executeMongoSyncStatements(stmts, {}, mockQuerier);
-      expect(mockDb.createCollection).toHaveBeenCalledWith('User');
     });
 
     it('executeSqlSyncStatements should run statements in transaction', async () => {

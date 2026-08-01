@@ -1,18 +1,28 @@
-import type { Database, Options } from 'better-sqlite3';
+import type { Options } from 'better-sqlite3';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { BetterSqlite3Dialect } from './betterSqlite3Dialect.js';
-import { SqliteQuerier } from './sqliteQuerier.js';
+import { SqliteDialect } from './sqliteDialect.js';
+import { type SqliteDatabase, SqliteQuerier } from './sqliteQuerier.js';
 
-export class Sqlite3QuerierPool extends AbstractSqlQuerierPool<SqliteQuerier, BetterSqlite3Dialect> {
-  private db?: Database;
+/** Driver options, plus the loadable extensions to install on the connection. */
+export type Sqlite3PoolOptions = Options & {
+  /**
+   * Paths of loadable extensions to install when the connection opens - e.g. what `sqlite-vec`'s
+   * `getLoadablePath()` returns, which vector search needs because SQLite itself has no vector
+   * functions.
+   */
+  extensions?: readonly string[];
+};
+
+export class Sqlite3QuerierPool extends AbstractSqlQuerierPool<SqliteQuerier, SqliteDialect> {
+  private db?: SqliteDatabase;
 
   constructor(
     readonly filename: string | Buffer = ':memory:',
-    readonly opts?: Options,
+    readonly opts?: Sqlite3PoolOptions,
     extra?: ExtraOptions,
   ) {
-    super(new BetterSqlite3Dialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new SqliteDialect({ namingStrategy: extra?.namingStrategy }), extra);
   }
 
   /**
@@ -24,15 +34,27 @@ export class Sqlite3QuerierPool extends AbstractSqlQuerierPool<SqliteQuerier, Be
     return new SqliteQuerier(this.db, this.dialect, this.extra);
   }
 
-  private async openDb(): Promise<Database> {
+  private async openDb(): Promise<SqliteDatabase> {
+    // `bun:sqlite` rejects option keys it does not know, and rejects an options object carrying no
+    // open flags, so `extensions` is stripped out and what remains of it collapses back to nothing.
+    const { extensions, ...driverOpts } = this.opts ?? {};
+    const db = await this.openDriverDb(Object.keys(driverOpts).length > 0 ? driverOpts : undefined);
+    for (const extension of extensions ?? []) {
+      db.loadExtension(extension);
+    }
+    return db;
+  }
+
+  private async openDriverDb(opts?: Options): Promise<SqliteDatabase> {
     if (typeof Bun !== 'undefined') {
       const { Database: BunDatabase } = await import('bun:sqlite');
-      const bunDb = new BunDatabase(this.filename as string, this.opts);
+      const { adaptBunSqlite } = await import('./bunSqliteAdapter.bun.js');
+      const bunDb = new BunDatabase(this.filename as string, opts);
       bunDb.run('PRAGMA journal_mode = WAL');
-      return bunDb as unknown as Database;
+      return adaptBunSqlite(bunDb);
     }
     const { default: BetterSqlite3 } = await import('better-sqlite3');
-    const db = new BetterSqlite3(this.filename, this.opts);
+    const db = new BetterSqlite3(this.filename, opts);
     db.pragma('journal_mode = WAL');
     return db;
   }

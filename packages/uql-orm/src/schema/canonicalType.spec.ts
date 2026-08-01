@@ -4,7 +4,7 @@ import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { BetterSqlite3Dialect } from '../sqlite/betterSqlite3Dialect.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import {
   areTypesEqual,
   canonicalToColumnType,
@@ -20,7 +20,7 @@ const pg = new PostgresDialect();
 const cockroach = new CockroachDialect();
 const mysql = new MySqlDialect();
 const maria = new MariaDialect();
-const sqlite = new BetterSqlite3Dialect();
+const sqlite = new SqliteDialect();
 const mongo = new MongodbNativeDialect();
 
 describe('canonicalType', () => {

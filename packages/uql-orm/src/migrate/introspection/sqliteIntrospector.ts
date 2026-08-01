@@ -1,5 +1,5 @@
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, SqlQuerier } from '../../type/index.js';
-import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * SQLite schema introspector
@@ -38,19 +38,19 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   // SQLite uses PRAGMA which doesn't use parameterized queries in the same way
   protected getColumnsQuery(tableName: string): string {
-    return `PRAGMA table_info(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA table_info(${this.escapeId(tableName)})`;
   }
 
   protected getIndexesQuery(tableName: string): string {
-    return `PRAGMA index_list(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA index_list(${this.escapeId(tableName)})`;
   }
 
   protected getForeignKeysQuery(tableName: string): string {
-    return `PRAGMA foreign_key_list(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA foreign_key_list(${this.escapeId(tableName)})`;
   }
 
   protected getPrimaryKeyQuery(tableName: string): string {
-    return `PRAGMA table_info(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA table_info(${this.escapeId(tableName)})`;
   }
 
   protected override getColumnsParams(_tableName: string): unknown[] {
@@ -78,12 +78,12 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapColumnsResult(
-    querier: SqlQuerier,
+    read: TableRowReader,
     tableName: string,
     results: SqliteColumnRow[],
   ): Promise<ColumnSchema[]> {
     // Get unique columns from indexes
-    const uniqueColumns = await this.getUniqueColumns(querier, tableName);
+    const uniqueColumns = await this.getUniqueColumns(read, tableName);
 
     return results.map(
       (row): ColumnSchema => ({
@@ -103,24 +103,29 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapIndexesResult(
-    querier: SqlQuerier,
+    read: TableRowReader,
     _tableName: string,
     results: SqliteIndexRow[],
   ): Promise<IndexSchema[]> {
     const indexSchemas: IndexSchema[] = [];
 
     for (const index of results) {
-      const columns = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
+      const columns = await this.getIndexColumns(read, index.name);
 
       // Include user-created indexes ('c') and multi-column unique constraints ('u')
       // Skip primary key indexes ('pk') and single-column unique constraints
       const isUserCreated = index.origin === 'c';
       const isCompositeUnique = index.origin === 'u' && columns.length > 1;
 
-      if (isUserCreated || isCompositeUnique) {
+      // `PRAGMA index_info` names an expression entry `null` (its `cid` is -2), and the expression text
+      // lives only in `sqlite_master.sql`. Reporting `{ column: null }` put a column literally named
+      // `null` into the diff, so an index UQL cannot describe is left out entirely instead.
+      const named = columns.filter((column): column is { name: string } => column.name !== null);
+
+      if (named.length === columns.length && (isUserCreated || isCompositeUnique)) {
         indexSchemas.push({
           name: index.name,
-          columns: columns.map((c) => c.name),
+          columns: named.map((column) => ({ column: column.name })),
           unique: Boolean(index.unique),
         });
       }
@@ -130,7 +135,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapForeignKeysResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     tableName: string,
     results: SqliteForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
@@ -156,7 +161,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     });
   }
 
-  protected mapPrimaryKeyResult(results: SqliteColumnRow[]): string[] | undefined {
+  protected override mapPrimaryKeyResult(results: SqliteColumnRow[]): string[] | undefined {
     const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
 
     if (pkColumns.length === 0) {
@@ -170,21 +175,26 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // SQLite-specific helpers
   // ============================================================================
 
-  private async getUniqueColumns(querier: SqlQuerier, tableName: string): Promise<Set<string>> {
-    const results = await querier.all<SqliteIndexRow>(`PRAGMA index_list(${this.escapeId(tableName)})`);
+  private async getUniqueColumns(read: TableRowReader, tableName: string): Promise<Set<string>> {
+    const indexes = await read<SqliteIndexRow>(this.getIndexesQuery(tableName));
     const uniqueColumns = new Set<string>();
 
-    for (const index of results) {
+    for (const index of indexes) {
       if (index.unique) {
-        const indexInfo = await querier.all<{ name: string }>(`PRAGMA index_info(${this.escapeId(index.name)})`);
-        // Only single-column unique constraints
-        if (indexInfo.length === 1) {
-          uniqueColumns.add(indexInfo[0].name);
+        const columns = await this.getIndexColumns(read, index.name);
+        // Only single-column unique constraints, and only over a real column (not an expression)
+        const [column] = columns;
+        if (columns.length === 1 && column.name !== null) {
+          uniqueColumns.add(column.name);
         }
       }
     }
 
     return uniqueColumns;
+  }
+
+  private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {
+    return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.escapeId(indexName)})`);
   }
 
   protected normalizeType(type: string): string {

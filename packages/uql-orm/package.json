@@ -44,6 +44,8 @@
       "default": "./dist/browser/uql-browser.min.js"
     },
     "./libsql": "./dist/libsql/index.js",
+    "./turso": "./dist/turso/index.js",
+    "./turso/local": "./dist/turso/local.js",
     "./neon": "./dist/neon/index.js",
     "./d1": "./dist/d1/index.js",
     "./bunSql": "./dist/bunSql/index.js",
@@ -66,6 +68,8 @@
     "@neondatabase/serverless": ">=0.9.0",
     "@nestjs/common": ">=10.0.0",
     "@nestjs/core": ">=10.0.0",
+    "@tursodatabase/database": ">=0.7.0",
+    "@tursodatabase/serverless": ">=1.0.0",
     "better-sqlite3": ">=9.0.0",
     "express": ">=5.0.0",
     "jiti": ">=2.0.0",
@@ -88,6 +92,12 @@
       "optional": true
     },
     "@nestjs/core": {
+      "optional": true
+    },
+    "@tursodatabase/database": {
+      "optional": true
+    },
+    "@tursodatabase/serverless": {
       "optional": true
     },
     "better-sqlite3": {
@@ -127,9 +137,11 @@
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",
     "@nestjs/testing": "^11.1.28",
+    "@tursodatabase/database": "^0.7.2",
+    "@tursodatabase/serverless": "^1.4.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.20.1",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^13.0.2",
     "express": "^5.2.1",
@@ -141,6 +153,7 @@
     "pg-query-stream": "^4.16.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sqlite-vec": "^0.1.9",
     "ws": "^8.21.1"
   },
   "author": "Roger Padilla",

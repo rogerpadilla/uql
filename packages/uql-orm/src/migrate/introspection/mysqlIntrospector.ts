@@ -1,5 +1,5 @@
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, SqlQuerier } from '../../type/index.js';
-import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * MySQL/MariaDB schema introspector.
@@ -114,7 +114,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapColumnsResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: MysqlColumnRow[],
   ): Promise<ColumnSchema[]> {
@@ -134,19 +134,19 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapIndexesResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: { index_name: string; columns: string; is_unique: number }[],
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
-      columns: (row.columns || '').split(','),
+      columns: (row.columns || '').split(',').map((column) => ({ column })),
       unique: Boolean(row.is_unique),
     }));
   }
 
   protected async mapForeignKeysResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: {
       constraint_name: string;
@@ -165,13 +165,6 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));
-  }
-
-  protected mapPrimaryKeyResult(results: { column_name: string }[]): string[] | undefined {
-    if (results.length === 0) {
-      return undefined;
-    }
-    return results.map((r) => r.column_name);
   }
 
   protected parseDefaultValue(defaultValue: string | null): unknown {

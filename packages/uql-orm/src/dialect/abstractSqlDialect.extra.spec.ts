@@ -18,7 +18,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     columnComment: true,
-    vectorIndexStyle: 'inline',
+    inlineVectorIndex: true,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: false,
@@ -118,6 +118,15 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     const ctx = dialect.createContext();
     dialect.compareFieldOperator(ctx, User, 'id', '$nin', []);
     expect(ctx.sql).toBe('`id` NOT IN (NULL)');
+  });
+
+  // Every engine spells full-text search differently, so the base has no form to fall back on: it
+  // used to inherit MySQL's `MATCH ... AGAINST` no matter which engine it was talking to.
+  it('rejects $text on a dialect that declares no full-text search', () => {
+    const ctx = dialect.createContext();
+    expect(() => dialect.where(ctx, User, { $text: { $fields: ['name'], $value: 'x' } })).toThrow(
+      'does not support $text full-text search',
+    );
   });
 
   it('normalizeValue keeps Date for driver-native binding', () => {

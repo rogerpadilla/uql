@@ -17,7 +17,7 @@
     "lint.fix": "biome check . --fix",
     "test": "bun run test:vitest && bun run test:bun",
     "test:vitest": "vitest run --coverage",
-    "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/",
+    "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/ ./packages/uql-orm/src/sqlite/sqliteQuerier.bun.test.ts",
     "test.watch": "vitest",
     "test.focus": "vitest run -t 'shouldSetJsonBooleanField'"
   },

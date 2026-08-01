@@ -7,17 +7,20 @@
  */
 
 import type { ForeignKeyAction } from '../../schema/types.js';
-import type { SchemaGenerator } from '../../type/migration.js';
-import type { NamingStrategy } from '../../type/namingStrategy.js';
+import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
+import type { SqlDdlGenerator } from '../../type/migration.js';
 import type { SqlQuerier } from '../../type/querier.js';
+import { normalizeIndexColumn } from '../../util/index.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
-import { ColumnBuilder } from './columnBuilder.js';
-import { splitSqlStatementsOnSemicolons } from './splitSqlStatements.js';
+import { splitSqlStatements } from './splitSqlStatements.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
+  CreateIndexOperation,
+  FullColumnDefinition,
   IAlterTableBuilder,
   IColumnBuilder,
+  IColumnFactory,
   IMigrationBuilder,
   ITableBuilder,
   RawSqlOperation,
@@ -27,20 +30,50 @@ import type {
  * Builder for altering a table.
  * Delegates to parent builder for operation recording.
  */
+/**
+ * One `createIndex` operation. Shared because the alter-table builder, the recorder and the
+ * executing builder all record the same thing, and an entry left unnormalized reaches the generator
+ * as a column literally named `[object Object]`.
+ */
+function createIndexOperation(
+  tableName: string,
+  columns: readonly IndexColumnInput[],
+  options: IndexOptions = {},
+): CreateIndexOperation {
+  const { name, unique, ...index } = options;
+  const entries = columns.map(normalizeIndexColumn);
+  return {
+    type: 'createIndex',
+    tableName,
+    index: {
+      ...index,
+      name: name ?? `idx_${tableName}_${entries.map((entry) => entry.column).join('_')}`,
+      columns: entries,
+      unique: unique ?? false,
+    },
+  };
+}
+
+/**
+ * Declare one column through the same vocabulary `createTable` uses. A throwaway {@link TableBuilder}
+ * is that vocabulary: `addColumn`/`alterColumn` used to take a bare {@link IColumnBuilder}, which
+ * cannot express a type, so every column they recorded was hard-coded `VARCHAR`.
+ */
+function buildOneColumn(callback: (columns: IColumnFactory) => IColumnBuilder): FullColumnDefinition {
+  return callback(new TableBuilder('')).build();
+}
+
 class AlterTableBuilder implements IAlterTableBuilder {
   constructor(
     private readonly tableName: string,
     private readonly parentBuilder: IMigrationBuilder,
   ) {}
 
-  addColumn(name: string, callback: (column: IColumnBuilder) => void): this {
-    const builder = new ColumnBuilder(name, { category: 'string' });
-    callback(builder);
-
+  addColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this {
     this.parentBuilder.recordOperationSync({
       type: 'addColumn',
       tableName: this.tableName,
-      column: builder.build(),
+      column: buildOneColumn(callback),
     });
     return this;
   }
@@ -64,30 +97,19 @@ class AlterTableBuilder implements IAlterTableBuilder {
     return this;
   }
 
-  alterColumn(name: string, callback: (column: IColumnBuilder) => void): this {
-    const builder = new ColumnBuilder(name, { category: 'string' });
-    callback(builder);
-
+  alterColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this {
+    const column = buildOneColumn(callback);
     this.parentBuilder.recordOperationSync({
       type: 'alterColumn',
       tableName: this.tableName,
-      columnName: name,
-      changes: builder.build(),
+      columnName: column.name,
+      changes: column,
     });
     return this;
   }
 
-  addIndex(columns: string[], options?: { name?: string; unique?: boolean }): this {
-    const indexName = options?.name ?? `idx_${this.tableName}_${columns.join('_')}`;
-    this.parentBuilder.recordOperationSync({
-      type: 'createIndex',
-      tableName: this.tableName,
-      index: {
-        name: indexName,
-        columns,
-        unique: options?.unique ?? false,
-      },
-    });
+  addIndex(columns: readonly IndexColumnInput[], options?: IndexOptions): this {
+    this.parentBuilder.recordOperationSync(createIndexOperation(this.tableName, columns, options));
     return this;
   }
 
@@ -177,14 +199,11 @@ export class OperationRecorder implements IMigrationBuilder {
   // Column Operations
   // ============================================================================
 
-  async addColumn(tableName: string, columnName: string, callback: (column: IColumnBuilder) => void): Promise<void> {
-    const builder = new ColumnBuilder(columnName, { category: 'string' });
-    callback(builder);
-
+  async addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
     this.recordOperationSync({
       type: 'addColumn',
       tableName,
-      column: builder.build(),
+      column: buildOneColumn(callback),
     });
   }
 
@@ -196,15 +215,13 @@ export class OperationRecorder implements IMigrationBuilder {
     });
   }
 
-  async alterColumn(tableName: string, columnName: string, callback: (column: IColumnBuilder) => void): Promise<void> {
-    const builder = new ColumnBuilder(columnName, { category: 'string' });
-    callback(builder);
-
+  async alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
+    const column = buildOneColumn(callback);
     this.recordOperationSync({
       type: 'alterColumn',
       tableName,
-      columnName,
-      changes: builder.build(),
+      columnName: column.name,
+      changes: column,
     });
   }
 
@@ -221,23 +238,8 @@ export class OperationRecorder implements IMigrationBuilder {
   // Index Operations
   // ============================================================================
 
-  async createIndex(
-    tableName: string,
-    columns: string[],
-    options: { name?: string; unique?: boolean; where?: string } = {},
-  ): Promise<void> {
-    const indexName = options.name ?? `idx_${tableName}_${columns.join('_')}`;
-
-    this.recordOperationSync({
-      type: 'createIndex',
-      tableName,
-      index: {
-        name: indexName,
-        columns,
-        unique: options.unique ?? false,
-        where: options.where,
-      },
-    });
+  async createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void> {
+    this.recordOperationSync(createIndexOperation(tableName, columns, options));
   }
 
   async dropIndex(tableName: string, indexName: string): Promise<void> {
@@ -305,14 +307,6 @@ export class OperationRecorder implements IMigrationBuilder {
 }
 
 /**
- * Options for the migration builder.
- */
-export interface MigrationBuilderOptions {
-  /** Custom naming strategy for generated SQL */
-  namingStrategy?: NamingStrategy;
-}
-
-/**
  * Executes DDL operations via a SQL querier.
  * Use for integration tests and runtime schema management.
  *
@@ -328,14 +322,11 @@ export interface MigrationBuilderOptions {
  * ```
  */
 export class MigrationBuilder extends OperationRecorder {
-  private readonly sqlGenerator: SchemaGenerator;
+  private readonly sqlGenerator: SqlDdlGenerator;
 
-  constructor(
-    private readonly querier: SqlQuerier,
-    options: MigrationBuilderOptions = {},
-  ) {
+  constructor(private readonly querier: SqlQuerier) {
     super();
-    const generator = createSchemaGenerator(querier.dialect, options.namingStrategy);
+    const generator = createSchemaGenerator(querier.dialect);
     if (!generator) {
       throw new TypeError(`Could not find a schema generator for dialect: ${querier.dialect.dialectName}`);
     }
@@ -394,18 +385,11 @@ export class MigrationBuilder extends OperationRecorder {
     await this.execute(operation);
   }
 
-  override async addColumn(
-    tableName: string,
-    columnName: string,
-    callback: (column: IColumnBuilder) => void,
-  ): Promise<void> {
-    const builder = new ColumnBuilder(columnName, { category: 'string' });
-    callback(builder);
-
+  override async addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
     const operation: AnyMigrationOperation = {
       type: 'addColumn',
       tableName,
-      column: builder.build(),
+      column: buildOneColumn(callback),
     };
     this.operations.push(operation);
     await this.execute(operation);
@@ -421,19 +405,13 @@ export class MigrationBuilder extends OperationRecorder {
     await this.execute(operation);
   }
 
-  override async alterColumn(
-    tableName: string,
-    columnName: string,
-    callback: (column: IColumnBuilder) => void,
-  ): Promise<void> {
-    const builder = new ColumnBuilder(columnName, { category: 'string' });
-    callback(builder);
-
+  override async alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
+    const column = buildOneColumn(callback);
     const operation: AnyMigrationOperation = {
       type: 'alterColumn',
       tableName,
-      columnName,
-      changes: builder.build(),
+      columnName: column.name,
+      changes: column,
     };
     this.operations.push(operation);
     await this.execute(operation);
@@ -452,21 +430,10 @@ export class MigrationBuilder extends OperationRecorder {
 
   override async createIndex(
     tableName: string,
-    columns: string[],
-    options: { name?: string; unique?: boolean; where?: string } = {},
+    columns: readonly IndexColumnInput[],
+    options?: IndexOptions,
   ): Promise<void> {
-    const indexName = options.name ?? `idx_${tableName}_${columns.join('_')}`;
-
-    const operation: AnyMigrationOperation = {
-      type: 'createIndex',
-      tableName,
-      index: {
-        name: indexName,
-        columns,
-        unique: options.unique ?? false,
-        where: options.where,
-      },
-    };
+    const operation = createIndexOperation(tableName, columns, options);
     this.operations.push(operation);
     await this.execute(operation);
   }
@@ -531,7 +498,7 @@ export class MigrationBuilder extends OperationRecorder {
 
     const sql = this.operationToSql(operation);
     if (sql) {
-      for (const statement of splitSqlStatementsOnSemicolons(sql)) {
+      for (const statement of splitSqlStatements(sql)) {
         await this.querier.run(statement);
       }
     }
@@ -543,7 +510,7 @@ export class MigrationBuilder extends OperationRecorder {
         // One line per statement in preview; execute() runs each separately (#87).
         return this.getCreateTableStatements(operation).join('\n');
       case 'dropTable':
-        return this.sqlGenerator.generateDropTableSql(operation.tableName, {
+        return this.sqlGenerator.generateDropTable(operation.tableName, {
           ifExists: operation.ifExists,
           cascade: operation.cascade,
         });
@@ -558,9 +525,9 @@ export class MigrationBuilder extends OperationRecorder {
       case 'alterColumn':
         return this.sqlGenerator.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
       case 'createIndex':
-        return this.sqlGenerator.generateCreateIndexSql(operation.tableName, operation.index);
+        return this.sqlGenerator.generateCreateIndex(operation.tableName, operation.index);
       case 'dropIndex':
-        return this.sqlGenerator.generateDropIndexSql(operation.tableName, operation.indexName);
+        return this.sqlGenerator.generateDropIndex(operation.tableName, operation.indexName);
       case 'addForeignKey':
         return this.sqlGenerator.generateAddForeignKeySql(operation.tableName, operation.foreignKey);
       case 'dropForeignKey':
@@ -571,12 +538,4 @@ export class MigrationBuilder extends OperationRecorder {
         return undefined;
     }
   }
-}
-
-/**
- * Create an operation recorder for dry-run (recording only).
- * @deprecated Use `new OperationRecorder()` directly
- */
-export function createDryRunBuilder(): OperationRecorder {
-  return new OperationRecorder();
 }

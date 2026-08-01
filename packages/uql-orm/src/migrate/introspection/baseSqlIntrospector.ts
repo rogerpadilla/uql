@@ -1,8 +1,8 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import { sqlToCanonical } from '../../schema/canonicalType.js';
+import { canonicalColumnType } from '../../schema/canonicalType.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
-import type { CanonicalType, ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
-import type { ColumnSchema, TableSchema } from '../../type/migration.js';
+import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import type { TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
 
 /**
@@ -64,7 +64,7 @@ export abstract class BaseSqlIntrospector {
       for (const col of schema.columns) {
         const column: ColumnNode = {
           name: col.name,
-          type: this.columnSchemaToCanonical(col),
+          type: canonicalColumnType(col.type, col),
           nullable: col.nullable,
           defaultValue: col.defaultValue,
           isPrimaryKey: col.isPrimaryKey,
@@ -119,7 +119,7 @@ export abstract class BaseSqlIntrospector {
       if (!table) continue;
 
       for (const idx of schema.indexes) {
-        const columns = idx.columns.map((c) => table.columns.get(c)).filter((c): c is ColumnNode => !!c);
+        const columns = idx.columns.map((e) => table.columns.get(e.column)).filter((c): c is ColumnNode => !!c);
         if (columns.length > 0) {
           const index: IndexNode = {
             name: idx.name,
@@ -131,15 +131,5 @@ export abstract class BaseSqlIntrospector {
         }
       }
     }
-  }
-
-  private columnSchemaToCanonical(col: ColumnSchema): CanonicalType {
-    const base = sqlToCanonical(col.type);
-    return {
-      ...base,
-      length: col.length ?? base.length,
-      precision: col.precision ?? base.precision,
-      scale: col.scale ?? base.scale,
-    };
   }
 }

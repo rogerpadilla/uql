@@ -58,7 +58,6 @@ import {
   fillOnFields,
   filterFieldKeys,
   flatObject,
-  getFieldKeys,
   getInsertFieldKeys,
   getKeys,
   getRelationRequestSummary,
@@ -81,11 +80,11 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-
+import { IndexSqlDialect } from './indexSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { JSON_ELEM_ALIAS_PREFIX, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
-import { VectorSqlDialect } from './vectorSqlDialect.js';
+import { isVectorFieldType } from './vectorCast.js';
 
 /** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
 type JsonUpdateOperators = {
@@ -95,7 +94,10 @@ type JsonUpdateOperators = {
   readonly $pull?: Record<string, unknown>;
 };
 
-export abstract class AbstractSqlDialect extends VectorSqlDialect implements QueryDialect, SqlQueryDialect {
+/** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
+type PersistKind = 'plain' | 'json' | 'vector';
+
+export abstract class AbstractSqlDialect extends IndexSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 
@@ -257,7 +259,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       } else {
         const field = meta.fields[key];
         if (!field) return;
-        const columnName = this.resolveColumnName(key, field);
         if (field.virtual) {
           this.getRawValue(ctx, {
             value: raw(field.virtual[RAW_VALUE], key),
@@ -265,15 +266,41 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
           });
-        } else {
-          ctx.append(escapedPrefix + this.escapeId(columnName));
+          return;
         }
-        if (!field.virtual && (columnName !== key || opts.autoPrefixAlias)) {
-          const aliasStr = prefix + key;
-          ctx.append(' ' + this.escapeId(aliasStr, true));
+        const columnName = this.resolveColumnName(key, field);
+        const column = escapedPrefix + this.escapeId(columnName);
+        const expr = this.selectFieldExpr(column, field);
+        ctx.append(expr);
+        // An expression needs the alias too, or the row comes back keyed by the expression text.
+        if (expr !== column || columnName !== key || opts.autoPrefixAlias) {
+          ctx.append(' ' + this.escapeId(prefix + key, true));
         }
       }
     });
+  }
+
+  /**
+   * The expression a scalar field is read through, the plain column by default. MariaDB reads a
+   * vector column back with `VEC_ToText`, since selecting it raw yields its binary form.
+   */
+  protected selectFieldExpr(escapedColumn: string, _field: FieldOptions): string {
+    return escapedColumn;
+  }
+
+  /**
+   * The `$text` full-text predicate, which every engine spells differently: `MATCH ... AGAINST`
+   * (MySQL family), `to_tsvector @@ websearch_to_tsquery` (Postgres-wire), an FTS5 `MATCH` against
+   * the table itself (SQLite). No portable form exists, so a dialect without one says so here rather
+   * than inheriting another engine's syntax.
+   */
+  protected appendTextSearch<E>(
+    _ctx: QueryContext,
+    _entity: Type<E>,
+    _meta: EntityMeta<E>,
+    _search: QueryTextSearchOptions<E>,
+  ): void {
+    throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 
   select<E>(
@@ -495,16 +522,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
 
     if (key === '$text') {
-      const search = val as QueryTextSearchOptions<E>;
-      const searchFields = search.$fields ?? (getFieldKeys(meta.fields) as FieldKey<E>[]);
-      const fields = searchFields.map((fKey) => {
-        const field = meta.fields[fKey];
-        const columnName = this.resolveColumnName(fKey, field);
-        return this.escapeId(columnName);
-      });
-      ctx.append(`MATCH(${fields.join(', ')}) AGAINST(`);
-      ctx.addValue(search.$value);
-      ctx.append(')');
+      this.appendTextSearch(ctx, entity, meta, val as QueryTextSearchOptions<E>);
       return;
     }
 
@@ -1245,6 +1263,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+    this.appendInsertValues(ctx, entity, payload, opts);
+
+    // Every engine whose ids come back from the statement itself wants the same clause, so it is
+    // appended once here instead of in an identical `insert` override per dialect.
+    if (this.insertIdSource === 'returning') {
+      ctx.append(` ${this.returningId(entity)}`);
+    }
+  }
+
+  /**
+   * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than
+   * {@link insert}: their own clause has to come before the `RETURNING`, not after it.
+   */
+  protected appendInsertValues<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
     const meta = getMeta(entity);
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = getInsertFieldKeys(meta, payloads);
@@ -1254,10 +1286,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const width = keys.length;
     const fields: (FieldOptions | undefined)[] = new Array(width);
     const columns: string[] = new Array(width);
+    const kinds: PersistKind[] = new Array(width);
     for (let i = 0; i < width; i++) {
       const key = keys[i];
-      fields[i] = meta.fields[key];
+      const field = meta.fields[key];
+      fields[i] = field;
       columns[i] = this.escapedColumnName(meta, key);
+      kinds[i] = this.persistKind(field);
     }
 
     const tableName = this.resolveTableName(entity, meta);
@@ -1275,8 +1310,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         const value = record[keys[i]];
         if (value === undefined) {
           this.appendDefaultInsertValue(ctx, fields[i]);
+        } else if (kinds[i] === 'plain' && !(value instanceof QueryRaw)) {
+          // The overwhelmingly common case in a bulk insert, so it binds without a dispatch.
+          ctx.addValue(value);
         } else {
-          this.formatPersistableValue(ctx, fields[i], value);
+          this.writePersistableValue(ctx, kinds[i], fields[i], value);
         }
       }
     }
@@ -1337,12 +1375,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     );
 
     if (update) {
-      this.insert(ctx, entity, payload);
+      this.appendInsertValues(ctx, entity, payload);
       ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
       ctx.pushValue(...updateCtx.values);
     } else {
       const insertCtx = this.createContext();
-      this.insert(insertCtx, entity, payload);
+      this.appendInsertValues(insertCtx, entity, payload);
       ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
       ctx.pushValue(...insertCtx.values);
     }
@@ -1413,22 +1451,45 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * The single type dispatch for a persisted value. Dialects override {@link appendJsonValue} and
-   * {@link appendVectorValue} rather than this, so the chain runs once per value - overriding this
-   * and delegating back to `super` ran every check twice, measurably slowing every INSERT/UPDATE.
+   * Bind one persisted value, classifying its column on the spot. Dialects override
+   * {@link appendJsonValue} and {@link appendVectorValue} rather than this, so the chain runs once per
+   * value - overriding this and delegating back to `super` ran every check twice, measurably slowing
+   * every INSERT/UPDATE.
    */
   protected formatPersistableValue(ctx: QueryContext, field: FieldOptions | undefined, value: unknown): void {
+    this.writePersistableValue(ctx, this.persistKind(field), field, value);
+  }
+
+  /**
+   * How a column's values are written. A function of the column, not of the value, so a bulk insert
+   * classifies each column once instead of re-deciding per row: a 20-row, 6-column insert asked
+   * `isJsonType` and `isVectorFieldType` 120 times to get the same six answers.
+   */
+  protected persistKind(field: FieldOptions | undefined): PersistKind {
+    const type = field?.type;
+    if (isJsonType(type)) {
+      return 'json';
+    }
+    return isVectorFieldType(type) ? 'vector' : 'plain';
+  }
+
+  /** The one type dispatch for a persisted value, over a column kind decided by the caller. */
+  private writePersistableValue(
+    ctx: QueryContext,
+    kind: PersistKind,
+    field: FieldOptions | undefined,
+    value: unknown,
+  ): void {
     if (value instanceof QueryRaw) {
       this.getRawValue(ctx, { value });
       return;
     }
-    const type = field?.type;
-    if (isJsonType(type)) {
-      this.appendJsonValue(ctx, value, type as JsonColumnType);
+    if (kind === 'json') {
+      this.appendJsonValue(ctx, value, field?.type as JsonColumnType);
       return;
     }
-    if (type === 'vector' && Array.isArray(value)) {
-      this.appendVectorValue(ctx, value);
+    if (kind === 'vector' && Array.isArray(value)) {
+      this.appendVectorValue(ctx, value, field);
       return;
     }
     ctx.addValue(value);
@@ -1436,10 +1497,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   protected appendJsonValue(ctx: QueryContext, value: unknown, _type: JsonColumnType): void {
     ctx.addValue(value == null ? null : JSON.stringify(value));
-  }
-
-  protected appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
-    ctx.addValue(`[${value.join(',')}]`);
   }
 
   /**

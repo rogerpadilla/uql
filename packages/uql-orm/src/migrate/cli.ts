@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AbstractDialect } from '../dialect/index.js';
 import { type Drift, type DriftReport, SchemaASTBuilder } from '../schema/index.js';
-import type { Config, MigratorOptions, NamingStrategy } from '../type/index.js';
+import type { ForeignKeyAction } from '../schema/types.js';
+import type { Config, MigratorOptions } from '../type/index.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
@@ -12,11 +13,10 @@ import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
-import { createSchemaSync } from './sync/schemaSync.js';
 
 /** Sync helper for SQL dialects only; returns `undefined` for MongoDB - use {@link createSchemaGeneratorAsync}. */
-export function getSchemaGenerator(dialect: AbstractDialect, namingStrategy?: NamingStrategy) {
-  return createSchemaGenerator(dialect, namingStrategy);
+export function getSchemaGenerator(dialect: AbstractDialect, defaultForeignKeyAction?: ForeignKeyAction) {
+  return createSchemaGenerator(dialect, defaultForeignKeyAction);
 }
 
 export { createSchemaGeneratorAsync };
@@ -51,12 +51,12 @@ export async function main(args = process.argv.slice(2)) {
       tableName: config.tableName,
       logger: console.log,
       entities: config.entities,
-      namingStrategy: config.namingStrategy,
+      defaultForeignKeyAction: config.defaultForeignKeyAction,
     };
 
     const migrator = new Migrator(config.pool, options);
     if (!migrator.schemaGenerator) {
-      const generator = await createSchemaGeneratorAsync(config.pool.dialect, config.namingStrategy);
+      const generator = await createSchemaGeneratorAsync(config.pool.dialect, config.defaultForeignKeyAction);
       if (!generator) {
         throw new TypeError(`Could not find a schema generator for dialect: ${dialectName}`);
       }
@@ -224,53 +224,29 @@ export async function runGenerateFromEntities(migrator: Migrator, args: string[]
 }
 
 export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
-  const force = args.includes('--force');
-  const push = args.includes('--push');
-  const pull = args.includes('--pull');
-  const dryRun = args.includes('--dry-run');
-
-  // Parse direction
-  let direction: 'bidirectional' | 'entity-to-db' | 'db-to-entity' = 'bidirectional';
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--direction' && args[i + 1]) {
-      direction = args[++i] as typeof direction;
-    }
-  }
-
-  // Shorthand flags
-  if (push) direction = 'entity-to-db';
-  if (pull) direction = 'db-to-entity';
-
-  if (force) {
+  if (args.includes('--force')) {
     console.log('\n⚠️  WARNING: This will drop and recreate all tables!');
     console.log('   All data will be lost. This should only be used in development.\n');
-    await migrator.sync({ force });
+    await migrator.sync({ force: true });
     console.log('\nSchema sync completed.');
     return;
   }
 
-  // Use SchemaSync for direction-aware sync
-  if (config.entities && migrator.schemaIntrospector) {
-    const schemaSync = createSchemaSync({
-      entities: config.entities,
-      introspector: migrator.schemaIntrospector,
-      direction,
-      safe: !args.includes('--unsafe'),
-      dryRun,
-    });
-
-    const result = await schemaSync.sync();
-
-    console.log('\n' + result.summary);
-
-    if (result.conflicts.length > 0) {
-      console.log('\n⚠️  Conflicts require manual resolution.');
-      process.exit(1);
-    }
-  } else {
-    await migrator.sync({ force: false });
-    console.log('\nSchema sync completed.');
+  // Pulling the database into entity files is what `generate:from-db` does; one implementation.
+  if (args.includes('--pull')) {
+    return runGenerateFromDb(migrator, args, config);
   }
+
+  const safe = !args.includes('--unsafe');
+
+  if (args.includes('--dry-run')) {
+    const statements = await migrator.planSync({ safe, drop: !safe });
+    console.log(statements.length ? `\n${statements.join('\n')}` : '\nSchema is already in sync.');
+    return;
+  }
+
+  await migrator.autoSync({ safe, drop: !safe, logging: true });
+  console.log('\nSchema sync completed.');
 }
 
 export async function runGenerateFromDb(migrator: Migrator, args: string[], config: Partial<Config>) {
@@ -415,13 +391,11 @@ Commands:
   generate:from-db      Generate TypeScript entities from database
     --output, -o <dir>  Output directory (default: ./src/entities)
 
-  sync                  Sync schema with direction support
+  sync                  Apply the entity schema to the database
+    --dry-run           Print the statements instead of running them
+    --unsafe            Allow destructive changes (drops, column alterations)
+    --pull              Go the other way: generate entities from the database
     --force             Drop and recreate all tables (dangerous!)
-    --direction <mode>  Sync direction: bidirectional, entity-to-db, db-to-entity
-    --push              Shorthand for --direction entity-to-db
-    --pull              Shorthand for --direction db-to-entity
-    --dry-run           Preview changes without applying
-    --unsafe            Allow destructive changes
 
   drift:check           Check for schema drift between entities and database
 
@@ -447,7 +421,7 @@ Examples:
   uql-orm/migrate generate add_users_table
   uql-orm/migrate generate:entities initial_schema
   uql-orm/migrate generate:from-db --output ./src/entities
-  uql-orm/migrate sync --push
+  uql-orm/migrate sync --dry-run
   uql-orm/migrate sync --pull
   uql-orm/migrate drift:check
 `);

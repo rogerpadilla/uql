@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { raw } from '../../util/index.js';
 import { TableBuilder } from './tableBuilder.js';
 
 describe('TableBuilder', () => {
@@ -266,8 +267,38 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.indexes[0].name).toBe('idx_users_name');
-      expect(def.indexes[0].columns).toEqual(['lastName', 'firstName']);
+      expect(def.indexes[0].columns).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
       expect(def.indexes[0].unique).toBe(false);
+    });
+
+    it('should take the same entries and options as the @Index decorator', () => {
+      const table = new TableBuilder('notes');
+      table.index([raw('lower("email")'), { column: 'body', length: 64 }], {
+        name: 'idx_notes_lookup',
+        type: 'gin',
+        where: '"deletedAt" IS NULL',
+        include: ['title'],
+      });
+      const def = table.build();
+
+      expect(def.indexes[0]).toEqual({
+        name: 'idx_notes_lookup',
+        columns: [
+          { column: 'lower("email")', expression: true },
+          { column: 'body', length: 64 },
+        ],
+        unique: false,
+        type: 'gin',
+        where: '"deletedAt" IS NULL',
+        include: ['title'],
+      });
+    });
+
+    it('should name an index after its entries when none is given', () => {
+      const table = new TableBuilder('notes');
+      table.index([{ column: 'tenantId' }, { column: 'createdAt', order: 'desc' }]);
+
+      expect(table.build().indexes[0].name).toBe('idx_notes_tenantId_createdAt');
     });
 
     it('should add table-level foreign key with options', () => {

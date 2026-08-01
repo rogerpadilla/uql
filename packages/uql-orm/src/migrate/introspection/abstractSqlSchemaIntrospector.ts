@@ -18,6 +18,18 @@ import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 export type ReferentialAction = 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
 
 /**
+ * Reads the rows of one statement while introspecting a table.
+ *
+ * Identical statements share a single round trip, which is what the mappers get instead of a querier:
+ * describing one table needs four facts, and on SQLite three of them come out of the same two PRAGMAs
+ * (`table_info` is both the column list and the primary key; the column mapper walks `index_list` and
+ * `index_info` for single-column uniqueness while the index mapper is walking them too). That was four
+ * redundant statements out of ten per table - on D1 and Turso, where every PRAGMA is an HTTP round trip,
+ * it is four avoidable ones.
+ */
+export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/**
  * Abstract base class for SQL schema introspectors.
  *
  * Uses the template-method pattern to consolidate shared logic while allowing
@@ -47,18 +59,19 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     const querier = await this.getQuerier();
+    const read = createTableRowReader(querier);
 
     try {
-      const exists = await this.tableExistsInternal(querier, tableName);
+      const exists = await this.tableExistsInternal(read, tableName);
       if (!exists) {
         return undefined;
       }
 
       const [columns, indexes, foreignKeys, primaryKey] = await Promise.all([
-        this.getColumns(querier, tableName),
-        this.getIndexes(querier, tableName),
-        this.getForeignKeys(querier, tableName),
-        this.getPrimaryKey(querier, tableName),
+        this.getColumns(read, tableName),
+        this.getIndexes(read, tableName),
+        this.getForeignKeys(read, tableName),
+        this.getPrimaryKey(read, tableName),
       ]);
 
       return {
@@ -88,7 +101,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     const querier = await this.getQuerier();
 
     try {
-      return this.tableExistsInternal(querier, tableName);
+      return this.tableExistsInternal(createTableRowReader(querier), tableName);
     } finally {
       await querier.release();
     }
@@ -105,38 +118,28 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return querier;
   }
 
-  protected async tableExistsInternal(querier: SqlQuerier, tableName: string): Promise<boolean> {
-    const sql = this.tableExistsQuery();
-    const params = this.tableExistsParams(tableName);
-    const results = await querier.all<RawRow>(sql, params);
+  protected async tableExistsInternal(read: TableRowReader, tableName: string): Promise<boolean> {
+    const results = await read<RawRow>(this.tableExistsQuery(), this.tableExistsParams(tableName));
     return this.parseTableExistsResult(results);
   }
 
-  protected async getColumns(querier: SqlQuerier, tableName: string): Promise<ColumnSchema[]> {
-    const sql = this.getColumnsQuery(tableName);
-    const params = this.getColumnsParams(tableName);
-    const results = await querier.all<RawRow>(sql, params);
-    return this.mapColumnsResult(querier, tableName, results);
+  protected async getColumns(read: TableRowReader, tableName: string): Promise<ColumnSchema[]> {
+    const results = await read<RawRow>(this.getColumnsQuery(tableName), this.getColumnsParams(tableName));
+    return this.mapColumnsResult(read, tableName, results);
   }
 
-  protected async getIndexes(querier: SqlQuerier, tableName: string): Promise<IndexSchema[]> {
-    const sql = this.getIndexesQuery(tableName);
-    const params = this.getIndexesParams(tableName);
-    const results = await querier.all<RawRow>(sql, params);
-    return this.mapIndexesResult(querier, tableName, results);
+  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const results = await read<RawRow>(this.getIndexesQuery(tableName), this.getIndexesParams(tableName));
+    return this.mapIndexesResult(read, tableName, results);
   }
 
-  protected async getForeignKeys(querier: SqlQuerier, tableName: string): Promise<ForeignKeySchema[]> {
-    const sql = this.getForeignKeysQuery(tableName);
-    const params = this.getForeignKeysParams(tableName);
-    const results = await querier.all<RawRow>(sql, params);
-    return this.mapForeignKeysResult(querier, tableName, results);
+  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
+    const results = await read<RawRow>(this.getForeignKeysQuery(tableName), this.getForeignKeysParams(tableName));
+    return this.mapForeignKeysResult(read, tableName, results);
   }
 
-  protected async getPrimaryKey(querier: SqlQuerier, tableName: string): Promise<string[] | undefined> {
-    const sql = this.getPrimaryKeyQuery(tableName);
-    const params = this.getPrimaryKeyParams(tableName);
-    const results = await querier.all<RawRow>(sql, params);
+  protected async getPrimaryKey(read: TableRowReader, tableName: string): Promise<string[] | undefined> {
+    const results = await read<RawRow>(this.getPrimaryKeyQuery(tableName), this.getPrimaryKeyParams(tableName));
     return this.mapPrimaryKeyResult(results);
   }
 
@@ -226,28 +229,51 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
 
   /** Map column query results to ColumnSchema array. Allows async for SQLite's unique column check. */
   protected abstract mapColumnsResult(
-    querier: SqlQuerier,
+    read: TableRowReader,
     tableName: string,
     results: RawRow[],
   ): Promise<ColumnSchema[]>;
 
   /** Map index query results to IndexSchema array. Allows async for SQLite's index_info calls. */
   protected abstract mapIndexesResult(
-    querier: SqlQuerier,
+    read: TableRowReader,
     tableName: string,
     results: RawRow[],
   ): Promise<IndexSchema[]>;
 
   /** Map foreign key query results to ForeignKeySchema array. */
   protected abstract mapForeignKeysResult(
-    querier: SqlQuerier,
+    read: TableRowReader,
     tableName: string,
     results: RawRow[],
   ): Promise<ForeignKeySchema[]>;
 
-  /** Map primary key query results to column names array. */
-  protected abstract mapPrimaryKeyResult(results: RawRow[]): string[] | undefined;
+  /**
+   * Map primary key query results to column names, in key order. `information_schema` gives every SQL
+   * engine here a `column_name` per row; SQLite reads its key off `PRAGMA table_info` instead and
+   * overrides this.
+   */
+  protected mapPrimaryKeyResult(results: RawRow[]): string[] | undefined {
+    const columns = results.map((row) => String(row['column_name']));
+    return columns.length ? columns : undefined;
+  }
 
   /** Parse default value string to appropriate type. */
   protected abstract parseDefaultValue(defaultValue: string | null): unknown;
+}
+
+/** A {@link TableRowReader} over one querier: the same statement is only ever sent once. */
+function createTableRowReader(querier: SqlQuerier): TableRowReader {
+  const sent = new Map<string, Promise<RawRow[]>>();
+
+  return <T extends RawRow>(sql: string, params?: unknown[]): Promise<T[]> => {
+    const key = params?.length ? `${sql}\u0000${JSON.stringify(params)}` : sql;
+    let rows = sent.get(key);
+    if (!rows) {
+      // PRAGMA statements take no parameters at all, so they are sent as a bare statement.
+      rows = params?.length ? querier.all<RawRow>(sql, params) : querier.all<RawRow>(sql);
+      sent.set(key, rows);
+    }
+    return rows as Promise<T[]>;
+  };
 }

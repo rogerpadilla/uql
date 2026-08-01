@@ -1,5 +1,6 @@
-import { type Client, type Config, createClient } from '@libsql/client';
-import { AbstractSqlQuerierPool } from '../querier/index.js';
+import type { Config } from '@libsql/client';
+import type { HranaClient, HranaQuerierConnectionOptions } from '../sqlite/hranaQuerier.js';
+import { AbstractHranaQuerierPool } from '../sqlite/hranaQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { LibsqlDialect } from './libsqlDialect.js';
 import { LibsqlQuerier } from './libsqlQuerier.js';
@@ -15,33 +16,37 @@ function remoteMigrationClientConfig(config: Config): Config {
   return { ...rest, url: syncUrl! };
 }
 
-export class LibsqlQuerierPool extends AbstractSqlQuerierPool<LibsqlQuerier, LibsqlDialect> {
-  readonly client: Client;
-  private readonly libsqlConfig: Config;
-
-  constructor(conf: Config, extra?: ExtraOptions) {
+export class LibsqlQuerierPool extends AbstractHranaQuerierPool<LibsqlQuerier, LibsqlDialect> {
+  constructor(
+    private readonly conf: Config,
+    extra?: ExtraOptions,
+  ) {
     super(new LibsqlDialect({ namingStrategy: extra?.namingStrategy }), extra);
-    this.libsqlConfig = conf;
-    this.client = createClient(conf);
   }
 
-  async getQuerier() {
-    return new LibsqlQuerier(this.client, this.dialect, this.extra);
+  protected override openClient() {
+    return this.createClient(this.conf);
+  }
+
+  protected override buildQuerier(client: HranaClient, connection?: HranaQuerierConnectionOptions) {
+    return new LibsqlQuerier(client, this.dialect, this.extra, connection);
   }
 
   /**
    * For embedded replicas (`file:` + `syncUrl`), returns a querier connected to `syncUrl` so migrations hit sqld.
-   * Otherwise same as {@link getQuerier}. The migrator calls this for `up`/`down`, `syncForce`, and `autoSync` DDL.
+   * Otherwise same as `getQuerier`. The migrator calls this for `up`/`down`, `syncForce`, and `autoSync` DDL.
    */
   async getMigrationQuerier(): Promise<LibsqlQuerier> {
-    if (!libsqlUseRemoteForMigrations(this.libsqlConfig)) {
+    if (!libsqlUseRemoteForMigrations(this.conf)) {
       return this.getQuerier();
     }
-    const remote = createClient(remoteMigrationClientConfig(this.libsqlConfig));
-    return new LibsqlQuerier(remote, this.dialect, this.extra, { closeClientOnRelease: true });
+    const remote = await this.createClient(remoteMigrationClientConfig(this.conf));
+    return this.buildQuerier(remote, { closeClientOnRelease: true });
   }
 
-  async end() {
-    this.client.close();
+  /** Imported on use, so `uql-orm/libsql` loads without the optional `@libsql/client` peer installed. */
+  private async createClient(conf: Config): Promise<HranaClient> {
+    const { createClient } = await import('@libsql/client');
+    return createClient(conf);
   }
 }

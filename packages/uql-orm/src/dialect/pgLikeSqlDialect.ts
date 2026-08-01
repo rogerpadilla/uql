@@ -3,11 +3,12 @@ import {
   type DialectFeatures,
   type EntityMeta,
   type FieldOptions,
+  type IndexColumnSchema,
+  type IndexFeature,
+  type IndexSchema,
   type JsonColumnType,
-  type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
-  type QueryOptions,
   QueryRaw,
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
@@ -18,6 +19,7 @@ import {
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonSetTarget } from './jsonSql.js';
+import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /**
  * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
@@ -40,7 +42,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     columnComment: false,
-    vectorIndexStyle: 'create',
+    inlineVectorIndex: false,
     vectorSupportsLength: true,
     supportsTimestamptz: true,
     defaultStringAsText: true,
@@ -60,12 +62,16 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly insertIdSource = 'returning';
   override readonly maxBindValues: number = 65535;
 
-  override readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = new Map([
-    ['cosine', 'vector_cosine_ops'],
-    ['l2', 'vector_l2_ops'],
-    ['inner', 'vector_ip_ops'],
-    ['l1', 'vector_l1_ops'],
-    ['hamming', 'bit_hamming_ops'],
+  /**
+   * Each metric's pgvector distance operator and the operator-class suffix its index takes, in one
+   * place so a dialect cannot end up with the operator but not the opclass. The key set is the single
+   * source of truth for which metrics the dialect supports at all: CockroachDB narrows it to three.
+   */
+  readonly vectorMetrics: ReadonlyMap<VectorDistance, { op: string; opsSuffix: string }> = new Map([
+    ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
+    ['l2', { op: '<->', opsSuffix: 'l2' }],
+    ['inner', { op: '<#>', opsSuffix: 'ip' }],
+    ['l1', { op: '<+>', opsSuffix: 'l1' }],
   ]);
 
   override normalizeValue(value: unknown): unknown {
@@ -75,13 +81,65 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return super.normalizeValue(value);
   }
 
-  override placeholder(index: number): string {
-    return `$${index}`;
+  /** pgvector's own index types; CockroachDB's native one widens this. */
+  protected isVectorIndex(index: IndexSchema): boolean {
+    return index.type === 'hnsw' || index.type === 'ivfflat';
   }
 
-  override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
-    super.insert(ctx, entity, payload, opts);
-    ctx.append(' ' + this.returningId(entity));
+  protected override indexAccessMethod(index: IndexSchema): string {
+    return index.type ? ` USING ${index.type}` : '';
+  }
+
+  protected override readonly indexFeatures = new Set<IndexFeature>([
+    'expression',
+    'nullsOrder',
+    'opsClass',
+    'include',
+  ]);
+
+  /**
+   * A vector index's operator class is named `{type}_{metric}_ops`: an index on a `halfvec` column
+   * needs `halfvec_cosine_ops`, and `vector_cosine_ops` there is rejected outright. An unsupported
+   * distance throws rather than being omitted, since a bare `USING hnsw ("embedding")` would build
+   * with the dialect's default metric instead of the one requested, with nothing signalling it.
+   * Everything else takes the operator class the entry declares, e.g. `jsonb_path_ops` for GIN.
+   */
+  protected override indexColumnOpsClass(entry: IndexColumnSchema, index: IndexSchema): string {
+    if (!this.isVectorIndex(index) || !index.distance) {
+      return entry.opsClass ? ` ${entry.opsClass}` : '';
+    }
+    const metric = this.vectorMetrics.get(index.distance);
+    if (!metric) {
+      throw new TypeError(
+        `${this.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
+      );
+    }
+    const vectorType = this.supportedVectorType(index.vectorType ?? 'vector');
+    const opsClass = `${vectorType}_${metric.opsSuffix}_ops`;
+    // IVFFlat has neither a sparsevec nor an L1 operator class; HNSW has all of them (pgvector 0.8.2).
+    if (index.type === 'ivfflat' && (vectorType === 'sparsevec' || index.distance === 'l1')) {
+      throw new TypeError(`ivfflat has no ${opsClass} operator class (index "${index.name}"); use hnsw`);
+    }
+    return ` ${opsClass}`;
+  }
+
+  protected override indexInclude(index: IndexSchema): string {
+    return index.include?.length ? ` INCLUDE (${index.include.map((column) => this.escapeId(column)).join(', ')})` : '';
+  }
+
+  protected override indexTuning(index: IndexSchema): string {
+    if (!this.isVectorIndex(index)) {
+      return '';
+    }
+    const params: string[] = [];
+    if (index.m !== undefined) params.push(`m = ${index.m}`);
+    if (index.efConstruction !== undefined) params.push(`ef_construction = ${index.efConstruction}`);
+    if (index.lists !== undefined) params.push(`lists = ${index.lists}`);
+    return params.length > 0 ? ` WITH (${params.join(', ')})` : '';
+  }
+
+  override placeholder(index: number): string {
+    return `$${index}`;
   }
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
@@ -106,40 +164,29 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (name) => `EXCLUDED.${name}`);
     const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    super.insert(ctx, entity, payload);
+    this.appendInsertValues(ctx, entity, payload);
     ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
   }
 
   /**
-   * Full-text search: `to_tsvector(...) @@ websearch_to_tsquery(...)`. `websearch_to_tsquery` takes
-   * free-form user input (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike
-   * `to_tsquery`, which rejects anything unparseable - including a plain two-word search.
+   * `to_tsvector(...) @@ websearch_to_tsquery(...)`. `websearch_to_tsquery` takes free-form user input
+   * (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike `to_tsquery`, which
+   * rejects anything unparseable - including a plain two-word search.
    */
-  override compare<E>(
+  protected override appendTextSearch<E>(
     ctx: QueryContext,
-    entity: Type<E>,
-    key: string,
-    val: unknown,
-    opts: QueryComparisonOptions = {},
+    _entity: Type<E>,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
   ): void {
-    if (key === '$text') {
-      const meta = getMeta(entity);
-      const search = val as QueryTextSearchOptions<E>;
-      const fields = (search.$fields ?? [])
-        .map((fKey) => {
-          const field = meta.fields[fKey];
-          const columnName = this.resolveColumnName(fKey, field!);
-          return this.escapeId(columnName);
-        })
-        .join(` || ' ' || `);
-      // The config is bound once and its numbered placeholder reused by both calls.
-      const config = search.$config ? `${this.addValue(ctx.values, search.$config)}::regconfig, ` : '';
-      ctx.append(`to_tsvector(${config}${fields}) @@ websearch_to_tsquery(${config}`);
-      ctx.addValue(search.$value);
-      ctx.append(')');
-      return;
-    }
-    super.compare(ctx, entity, key, val, opts);
+    const fields = (search.$fields ?? [])
+      .map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])))
+      .join(` || ' ' || `);
+    // The config is bound once and its numbered placeholder reused by both calls.
+    const config = search.$config ? `${this.addValue(ctx.values, search.$config)}::regconfig, ` : '';
+    ctx.append(`to_tsvector(${config}${fields}) @@ websearch_to_tsquery(${config}`);
+    ctx.addValue(search.$value);
+    ctx.append(')');
   }
 
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
@@ -194,9 +241,14 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(this.jsonVal(ctx, value, type));
   }
 
-  protected override appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
-    ctx.addValue(`[${value.join(',')}]`);
-    ctx.append('::vector');
+  /**
+   * pgvector needs the cast to pick the right type, and `sparsevec` needs its own literal: the dense
+   * `[1,0,2]` every other type takes is rejected as "invalid input syntax for type sparsevec".
+   */
+  protected override appendVectorValue(ctx: QueryContext, value: readonly unknown[], field?: FieldOptions): void {
+    const vectorType = this.supportedVectorType(resolveVectorCast(field));
+    ctx.addValue(vectorType === 'sparsevec' ? toSparsevecLiteral(value) : `[${value.join(',')}]`);
+    ctx.append(`::${vectorType}`);
   }
 
   /**
@@ -254,20 +306,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return this.features.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
   }
 
-  /**
-   * pgvector distance operators. Not every dialect supports every metric - see
-   * {@link CockroachDialect.vectorOpsClass} for which ones each dialect actually has; the
-   * `vectorOpsClass` key set (checked in `appendVectorSort` below via `vectorOpsClass.get`)
-   * is the single source of truth for that, not this map.
-   */
-  private static readonly VECTOR_OPS: Record<VectorDistance, string> = {
-    cosine: '<=>',
-    l2: '<->',
-    inner: '<#>',
-    l1: '<+>',
-    hamming: '<~>',
-  };
-
   /** Emit a pgvector-style distance expression: `"col" <op> $N::<vectorType>`. */
   protected override appendVectorSort<E>(
     ctx: QueryContext,
@@ -275,14 +313,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     key: string,
     search: QueryVectorSearch,
   ): void {
-    const { colName, distance, vectorCast } = this.resolveVectorSortParams(meta, key, search);
-    if (!this.vectorOpsClass!.get(distance)) {
+    const { colName, distance, field } = this.resolveVectorSortParams(meta, key, search);
+    const metric = this.vectorMetrics.get(distance);
+    if (!metric) {
       throw new TypeError(`${this.dialectName} does not support vector distance metric: ${distance}`);
     }
-    const op = PgLikeSqlDialect.VECTOR_OPS[distance];
-    ctx.append(`${this.escapeId(colName)} ${op} `);
-    ctx.addValue(`[${search.$vector.join(',')}]`);
-    ctx.append(`::${vectorCast}`);
+    ctx.append(`${this.escapeId(colName)} ${metric.op} `);
+    this.appendVectorValue(ctx, search.$vector, field);
   }
 }
 

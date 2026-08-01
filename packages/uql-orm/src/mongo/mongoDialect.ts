@@ -19,6 +19,7 @@ import type {
   QuerySelectValue,
   QuerySizeComparisonOps,
   QuerySortMap,
+  QueryTextSearchOptions,
   QueryVectorSearch,
   QueryWhere,
   QueryWhereFieldOperatorMap,
@@ -74,7 +75,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   renameColumn: false,
   foreignKeyAlter: false,
   columnComment: false,
-  vectorIndexStyle: 'create',
+  inlineVectorIndex: false,
   vectorSupportsLength: false,
   supportsTimestamptz: false,
   defaultStringAsText: false,
@@ -94,6 +95,9 @@ export class MongoDialect extends AbstractDialect {
   private static readonly REL_COUNT_KEY = 'n';
   private static readonly REL_NESTED_KEY = '__uql_target';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
+
+  /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
+  private static readonly MAX_NUM_CANDIDATES = 10_000;
 
   // Direct field aggregates → MongoDB accumulator. `$count` is handled separately (COUNT(*) vs
   // COUNT(field) differ), so it is not listed here.
@@ -184,6 +188,10 @@ export class MongoDialect extends AbstractDialect {
           this.assertNoRaw(filterIt);
           return this.renderFilter(entity, filterIt, opts, lookups);
         });
+      } else if (key === '$text') {
+        // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
+        // the way it does elsewhere - the same shape as `$distance` being index-defined here.
+        filter['$text'] = { $search: (val as QueryTextSearchOptions<E>).$value };
       } else if (meta.relations[key]) {
         this.assertNoRaw(val);
         if (!lookups) {
@@ -963,15 +971,20 @@ export class MongoDialect extends AbstractDialect {
 
     // Resolve index name from @Index metadata, or fall back to convention
     const indexMeta = meta.indexes?.find(
-      (idx) => idx.columns.includes(key) && MongoDialect.VECTOR_INDEX_TYPES.has(idx.type!),
+      (idx) => idx.columns.some((entry) => entry.column === key) && MongoDialect.VECTOR_INDEX_TYPES.has(idx.type!),
     );
     const indexName = indexMeta?.name ?? `${colName}_index`;
+
+    if (!limit) {
+      throw new TypeError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);
+    }
 
     const stage: Record<string, unknown> = {
       index: indexName,
       path: colName,
       queryVector: [...search.$vector],
-      numCandidates: limit * 10,
+      // Atlas caps `numCandidates` at 10000 and wants roughly 10x the limit below that.
+      numCandidates: Math.min(limit * 10, MongoDialect.MAX_NUM_CANDIDATES),
       limit,
     };
 

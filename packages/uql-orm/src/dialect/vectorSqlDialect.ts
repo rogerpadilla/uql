@@ -7,7 +7,7 @@ import type {
   VectorDistance,
 } from '../type/index.js';
 import { AbstractDialect } from './abstractDialect.js';
-import { resolveVectorCast, type VectorCast } from './vectorCast.js';
+import { MULTI_VECTOR_TYPE_DIALECTS, type VectorCast } from './vectorCast.js';
 
 /**
  * Vector similarity search for SQL dialects: the `ORDER BY <distance>` expression, its projection as
@@ -22,9 +22,6 @@ import { resolveVectorCast, type VectorCast } from './vectorCast.js';
  * {@link appendVectorSort} or filling {@link vectorDistanceFns}.
  */
 export abstract class VectorSqlDialect extends AbstractDialect {
-  /** Vector index operator classes, keyed by distance metric. Partial: not every dialect supports every metric. */
-  readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = undefined;
-
   readonly vectorExtension: string | undefined = undefined;
 
   /**
@@ -45,12 +42,27 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     meta: EntityMeta<E>,
     key: string,
     search: QueryVectorSearch,
-  ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined; vectorCast: VectorCast } {
+  ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined } {
     const field = meta.fields[key as FieldKey<E>];
     const colName = this.resolveColumnName(key, field);
     const distance = search.$distance ?? field?.distance ?? 'cosine';
-    const vectorCast = resolveVectorCast(field);
-    return { colName, distance, field, vectorCast };
+    return { colName, distance, field };
+  }
+
+  /**
+   * Binds a vector, both as a persisted value and as the query vector of a distance expression, so a
+   * dialect needing a conversion around it (`$1::vector`, `VEC_FromText(?)`) declares it once.
+   */
+  protected appendVectorValue(ctx: QueryContext, value: readonly unknown[], _field?: FieldOptions): void {
+    ctx.addValue(`[${value.join(',')}]`);
+  }
+
+  /**
+   * The vector type this dialect actually has for a declared one, so the cast follows the column
+   * rather than naming a type the engine does not define. See {@link MULTI_VECTOR_TYPE_DIALECTS}.
+   */
+  protected supportedVectorType(cast: VectorCast): VectorCast {
+    return MULTI_VECTOR_TYPE_DIALECTS.has(this.dialectName) ? cast : 'vector';
   }
 
   /**
@@ -63,13 +75,13 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     key: string,
     search: QueryVectorSearch,
   ): void {
-    const { colName, distance } = this.resolveVectorSortParams(meta, key, search);
+    const { colName, distance, field } = this.resolveVectorSortParams(meta, key, search);
     const fn = this.vectorDistanceFns.get(distance);
     if (!fn) {
       throw Error(`${this.dialectName} does not support vector distance metric: ${distance}`);
     }
     ctx.append(`${fn}(${this.escapeId(colName)}, `);
-    ctx.addValue(`[${search.$vector.join(',')}]`);
+    this.appendVectorValue(ctx, search.$vector, field);
     ctx.append(')');
   }
 
@@ -96,6 +108,6 @@ export abstract class VectorSqlDialect extends AbstractDialect {
       this.appendFunctionVectorSort(ctx, meta, key, search);
       return;
     }
-    throw new TypeError('Vector similarity sort is not supported by this dialect. Use raw() for vector queries.');
+    throw new TypeError(`${this.dialectName} does not support vector similarity sort. Use raw() for vector queries.`);
   }
 }

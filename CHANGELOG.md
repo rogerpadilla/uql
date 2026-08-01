@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.22.0] - 2026-07-31
+
+### Vector search works on every engine that has it
+
+It had only ever been exercised on Postgres. Verified live on pgvector 0.8.2, CockroachDB 26.2, MariaDB 12.3, MySQL 9.7, sqlite-vec, libSQL and Turso.
+
+### Index entries take expressions, prefix lengths, order, `INCLUDE` and operator classes
+
+```ts
+@Index(['tenantId', { column: 'createdAt', order: 'desc' }])
+@Index([raw('lower("email")')], { unique: true })
+@Index([{ column: 'body', length: 64 }])
+```
+
+`table.index(...)` and `builder.createIndex(...)` take the same entries and options. What an engine cannot express is refused when the migration is generated, naming the index.
+
+### Turso: `uql-orm/turso` and `uql-orm/turso/local`
+
+Turso Cloud over `fetch()` alone (edge-safe), and the embedded Rust engine with native streaming. Both report the SQLite dialect, so entities, queries and migrations are unchanged; both peers are optional.
+
+### Fixes
+
+- `uql sync` printed a plan and applied nothing unless `--force`. `--dry-run` now prints the statements it would run, `--unsafe` allows drops.
+- `addColumn`/`alterColumn` created a `VARCHAR` whatever type the migration declared.
+- Partial indexes (`where`) were silently widened to the whole table; `type` made `CREATE INDEX` invalid on the SQLite family; `type: 'fulltext'` produced an index MySQL and MariaDB reject, so `$text` could not work there.
+- Inverse one-to-one relations emitted a reversed foreign key.
+- SQLite under Bun lost every inserted id. Turso lost every `$push` onto a non-empty array.
+- MongoDB `$text` never reached the driver; `$vectorSearch` now requires `$limit` and caps `numCandidates`.
+- SQLite introspection sent 10 statements per table where 7 suffice, and described an expression index as a column named `null`.
+- Cloudflare D1 released silently with an open transaction, reporting an abandoned unit of work as clean.
+
+### Breaking
+
+- `addColumn(table, cb)` and `alterColumn(table, cb)` - the callback declares the column: `(c) => c.timestamp('createdAt')`.
+- `IndexDecoratorOptions` is now `IndexOptions`.
+- `namingStrategy` gone from `MigratorOptions` and the migrate config (it never reached a SQL generator - set it on the pool); `MigrationBuilderOptions` gone.
+
 ## [0.21.0] - 2026-07-30
 
 ### `reflect-metadata` and `jiti` are now optional peer dependencies (breaking)

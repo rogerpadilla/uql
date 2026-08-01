@@ -11,22 +11,6 @@ export {
   type EntityCodeGeneratorOptions,
   type GeneratedEntity,
 } from './entityCodeGenerator.js';
-// Entity merger
-export {
-  createEntityMerger,
-  EntityMerger,
-  type EntityMergerOptions,
-  type FieldToAdd,
-  type FieldToDeprecate,
-  type MergeResult,
-} from './entityMerger.js';
-// Migration code generator
-export {
-  createMigrationCodeGenerator,
-  type GeneratedMigration,
-  MigrationCodeGenerator,
-  type MigrationCodeOptions,
-} from './migrationCodeGenerator.js';
 export {
   buildSqlQuerierMigrationModule,
   EMPTY_MANUAL_MIGRATION_DOWN_INNER,

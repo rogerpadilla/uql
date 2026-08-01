@@ -105,12 +105,12 @@ if (violations.length) {
 // becoming reachable from a consumer entry, which leaves the `dist` total unchanged. Four suffice -
 // the SQL drivers share one core, so the root moves with them.
 const BUDGETS: Record<string, number> = {
-  '.': 23_800,
-  './postgres': 19_300,
+  '.': 24_400,
+  './postgres': 19_800,
   './migrate': 43_000,
   './browser': 1_700,
 };
-const DIST_BYTES_BUDGET = 1_040_000;
+const DIST_BYTES_BUDGET = 1_080_000;
 
 const external = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
 const oversized: string[] = [];

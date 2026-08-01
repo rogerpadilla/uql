@@ -8,6 +8,7 @@
  */
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import type { VectorCast } from '../dialect/vectorCast.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
 import type { DialectName } from '../type/index.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
@@ -16,8 +17,8 @@ import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 // Vector Category Helpers
 // ============================================================================
 
-/** Type guard for all vector-family categories. */
-export function isVectorCategory(category: TypeCategory): boolean {
+/** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
+export function isVectorCategory(category: TypeCategory | undefined): category is VectorCast {
   return category === 'vector' || category === 'halfvec' || category === 'sparsevec';
 }
 
@@ -105,7 +106,19 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   sparsevec: { category: 'sparsevec' },
 };
 
-const PG_TYPE_MAP: Record<TypeCategory, string> = {
+/** The scalar half of a dialect's type map; the vector categories are added per dialect below. */
+type ScalarTypeMap = Record<Exclude<TypeCategory, VectorCast>, string>;
+
+/**
+ * pgvector is the only engine with three vector column types, so every other dialect maps all three
+ * canonical categories onto the single type it does have (see {@link MULTI_VECTOR_TYPE_DIALECTS}, the
+ * dialect-side half of the same fact).
+ */
+function withVectorType(scalars: ScalarTypeMap, vector: string): Record<TypeCategory, string> {
+  return { ...scalars, vector, halfvec: vector, sparsevec: vector };
+}
+
+const PG_SCALAR_MAP: ScalarTypeMap = {
   integer: 'INTEGER',
   float: 'REAL',
   decimal: 'NUMERIC',
@@ -117,88 +130,86 @@ const PG_TYPE_MAP: Record<TypeCategory, string> = {
   json: 'JSONB',
   uuid: 'UUID',
   blob: 'BYTEA',
+};
+
+const PG_TYPE_MAP: Record<TypeCategory, string> = {
+  ...PG_SCALAR_MAP,
   vector: 'VECTOR',
   halfvec: 'HALFVEC',
   sparsevec: 'SPARSEVEC',
 };
 
-// CockroachDB's VECTOR type is native (no extension), but it has no HALFVEC/SPARSEVEC types at
-// all - verified live: `CREATE TABLE t (v HALFVEC(3))` is a syntax error, not just unsupported at
-// runtime. Falls back to VECTOR, same as MariaDB (see its own halfvec/sparsevec below).
-const CRDB_TYPE_MAP: Record<TypeCategory, string> = {
-  ...PG_TYPE_MAP,
-  halfvec: 'VECTOR',
-  sparsevec: 'VECTOR',
-};
-
 const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
   postgres: PG_TYPE_MAP,
-  cockroachdb: CRDB_TYPE_MAP,
-  mysql: {
-    integer: 'INT',
-    float: 'FLOAT',
-    decimal: 'DECIMAL',
-    string: 'VARCHAR',
-    boolean: 'TINYINT(1)',
-    date: 'DATE',
-    time: 'TIME',
-    timestamp: 'DATETIME',
-    json: 'JSON',
-    uuid: 'CHAR(36)',
-    blob: 'BLOB',
-    vector: 'JSON', // MySQL doesn't have native vector type
-    halfvec: 'JSON',
-    sparsevec: 'JSON',
-  },
-  sqlite: {
-    integer: 'INTEGER',
-    float: 'REAL',
-    decimal: 'REAL',
-    string: 'TEXT',
-    boolean: 'INTEGER',
-    date: 'TEXT',
-    time: 'TEXT',
-    timestamp: 'TEXT',
-    json: 'TEXT',
-    uuid: 'TEXT',
-    blob: 'BLOB',
-    vector: 'TEXT',
-    halfvec: 'TEXT',
-    sparsevec: 'TEXT',
-  },
-  mariadb: {
-    integer: 'INT',
-    float: 'FLOAT',
-    decimal: 'DECIMAL',
-    string: 'VARCHAR',
-    boolean: 'TINYINT(1)',
-    date: 'DATE',
-    time: 'TIME',
-    timestamp: 'DATETIME',
-    json: 'JSON',
-    uuid: 'CHAR(36)',
-    blob: 'BLOB',
-    vector: 'VECTOR',
-    halfvec: 'VECTOR', // MariaDB only supports VECTOR; no native halfvec/sparsevec
-    sparsevec: 'VECTOR',
-  },
+  // CockroachDB's VECTOR is native, no extension needed.
+  cockroachdb: withVectorType(PG_SCALAR_MAP, 'VECTOR'),
+  mysql: withVectorType(
+    {
+      integer: 'INT',
+      float: 'FLOAT',
+      decimal: 'DECIMAL',
+      string: 'VARCHAR',
+      boolean: 'TINYINT(1)',
+      date: 'DATE',
+      time: 'TIME',
+      timestamp: 'DATETIME',
+      json: 'JSON',
+      uuid: 'CHAR(36)',
+      blob: 'BLOB',
+    },
+    // MySQL 9.x does have a `VECTOR` type, but no distance function outside HeatWave and no vector
+    // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
+    'JSON',
+  ),
+  sqlite: withVectorType(
+    {
+      integer: 'INTEGER',
+      float: 'REAL',
+      decimal: 'REAL',
+      string: 'TEXT',
+      boolean: 'INTEGER',
+      date: 'TEXT',
+      time: 'TEXT',
+      timestamp: 'TEXT',
+      json: 'TEXT',
+      uuid: 'TEXT',
+      blob: 'BLOB',
+    },
+    'TEXT',
+  ),
+  mariadb: withVectorType(
+    {
+      integer: 'INT',
+      float: 'FLOAT',
+      decimal: 'DECIMAL',
+      string: 'VARCHAR',
+      boolean: 'TINYINT(1)',
+      date: 'DATE',
+      time: 'TIME',
+      timestamp: 'DATETIME',
+      json: 'JSON',
+      uuid: 'CHAR(36)',
+      blob: 'BLOB',
+    },
+    'VECTOR',
+  ),
   // MongoDB uses BSON types, not SQL types. These are placeholders for compatibility.
-  mongodb: {
-    integer: 'int',
-    float: 'double',
-    decimal: 'decimal128',
-    string: 'string',
-    boolean: 'bool',
-    date: 'date',
-    time: 'string',
-    timestamp: 'timestamp',
-    json: 'object',
-    uuid: 'binData',
-    blob: 'binData',
-    vector: 'array',
-    halfvec: 'array',
-    sparsevec: 'array',
-  },
+  mongodb: withVectorType(
+    {
+      integer: 'int',
+      float: 'double',
+      decimal: 'decimal128',
+      string: 'string',
+      boolean: 'bool',
+      date: 'date',
+      time: 'string',
+      timestamp: 'timestamp',
+      json: 'object',
+      uuid: 'binData',
+      blob: 'binData',
+    },
+    'array',
+  ),
 };
 
 /**
@@ -350,6 +361,25 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
   }
 
   return result;
+}
+
+/**
+ * The canonical type for a column an engine reported, merging the metadata columns it reports beside
+ * the type name (`character_maximum_length` and friends) over whatever the name itself carried. This is
+ * the one place a SQL type string is parsed: everything downstream compares and renders canonical
+ * types, so no consumer has to know that `TINYINT(1)` means boolean on MySQL.
+ */
+export function canonicalColumnType(
+  sqlType: string,
+  reported: { length?: number; precision?: number; scale?: number } = {},
+): CanonicalType {
+  const base = sqlToCanonical(sqlType);
+  return {
+    ...base,
+    length: reported.length ?? base.length,
+    precision: reported.precision ?? base.precision,
+    scale: reported.scale ?? base.scale,
+  };
 }
 
 /**

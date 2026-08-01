@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { expect } from 'vitest';
 import { getEntities, getMeta } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, TaxCategory, User } from '../test/index.js';
+import { createSpec, Item, TaxCategory, User } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -54,6 +54,26 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async shouldSoftDelete() {
     return super.shouldSoftDelete();
+  }
+
+  /**
+   * `$text` against a real text index, which is what makes MongoDB's full-text search work: the index
+   * declares the fields, so `$fields` is accepted for API consistency and ignored (as `$distance` is).
+   * Before this, `$text` never reached MongoDB at all - path validation rejected it as a field name.
+   */
+  async shouldFindByTextSearch() {
+    await this.querier.conn.db().collection('Item').createIndex({ name: 'text', description: 'text' });
+    await this.querier.insertMany(Item, [
+      { name: 'red bicycle', description: 'a fast one' },
+      { name: 'blue hammer', description: 'a heavy tool' },
+    ]);
+
+    const found = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { $text: { $fields: ['name'], $value: 'bicycle' } },
+    });
+
+    expect(found.map(({ name }) => name)).toEqual(['red bicycle']);
   }
 
   override async shouldUpsertOne() {

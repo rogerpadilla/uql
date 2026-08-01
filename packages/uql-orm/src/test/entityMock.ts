@@ -408,6 +408,19 @@ export class VectorItem {
 }
 
 /**
+ * pgvector's narrower vector types, which every other dialect maps onto the one it has. Their point
+ * here is the round-trip: `halfvec` and `sparsevec` used to bind as plain arrays on insert, and
+ * `sparsevec` rejects the dense literal the others take, both invisible to a SQL-text assertion.
+ */
+@Entity()
+export class NarrowVectorItem {
+  @Id() id?: number;
+  @Field() name?: string;
+  @Field({ type: 'halfvec', dimensions: 3 }) half!: number[];
+  @Field({ type: 'sparsevec', dimensions: 3 }) sparse!: number[];
+}
+
+/**
  * A JSON array column, dedicated to the dialect specs for the JSON array operators
  * (`$all`/`$size`/`$elemMatch`). The `unknown[]` element type keeps keys and values unchecked so
  * the specs can exercise arbitrary shapes against the generated SQL.

@@ -36,6 +36,12 @@ export abstract class AbstractDialect {
    */
   protected abstract readonly featureDefaults: DialectFeatures;
 
+  /**
+   * How this dialect differs from the family it extends, so a subclass states only its deltas rather
+   * than repeating {@link featureDefaults} in full or injecting them through its constructor.
+   */
+  protected readonly featureOverrides: Partial<DialectFeatures> = {};
+
   readonly namingStrategy: NamingStrategy | undefined;
   #features?: DialectFeatures;
 
@@ -44,12 +50,12 @@ export abstract class AbstractDialect {
   }
 
   /**
-   * Effective features: {@link featureDefaults} merged with any {@link DialectOptions.driverCapabilities}.
-   * Computed lazily (and memoized) because `featureDefaults` is a subclass field, initialized only
-   * after `super()` returns.
+   * Effective features: {@link featureDefaults}, then this dialect's {@link featureOverrides}, then
+   * any per-instance {@link DialectOptions.driverCapabilities}. Computed lazily (and memoized)
+   * because both are subclass fields, initialized only after `super()` returns.
    */
   get features(): DialectFeatures {
-    this.#features ??= { ...this.featureDefaults, ...this.options.driverCapabilities };
+    this.#features ??= { ...this.featureDefaults, ...this.featureOverrides, ...this.options.driverCapabilities };
     return this.#features;
   }
 

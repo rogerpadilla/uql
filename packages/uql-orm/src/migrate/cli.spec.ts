@@ -42,6 +42,8 @@ const mockMigrator = {
   generate: vi.fn().mockResolvedValue('file.ts'),
   generateFromEntities: vi.fn().mockResolvedValue('file.ts'),
   sync: vi.fn().mockResolvedValue(undefined),
+  autoSync: vi.fn().mockResolvedValue(undefined),
+  planSync: vi.fn().mockResolvedValue([]),
   pending: vi.fn().mockResolvedValue([]),
 };
 
@@ -116,9 +118,9 @@ describe('CLI', () => {
     expect(mockMigrator.generateFromEntities).toHaveBeenCalledWith('initial');
   });
 
-  it('main sync', async () => {
+  it('main sync should apply the entity schema', async () => {
     await cli.main(['sync']);
-    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: false });
+    expect(mockMigrator.autoSync).toHaveBeenCalledWith({ safe: true, drop: false, logging: true });
   });
 
   it('main sync --force', async () => {
@@ -256,15 +258,12 @@ describe('CLI', () => {
     expect(cli.getSchemaGenerator(new MariaDialect())).toBeDefined();
   });
 
-  it('runSync with --push should use entity-to-db direction', async () => {
-    const migrator = {
-      ...mockMigrator,
-      schemaIntrospector: { introspect: vi.fn().mockResolvedValue(new SchemaAST()) },
-      sync: vi.fn(),
-    } as unknown as Migrator;
+  it('runSync with --unsafe should allow destructive changes', async () => {
+    const autoSync = vi.fn();
+    const migrator = { ...mockMigrator, autoSync } as unknown as Migrator;
 
-    await cli.runSync(migrator, ['--push'], { entities: [TestEntity] });
-    expect(console.log).toHaveBeenCalled();
+    await cli.runSync(migrator, ['--unsafe'], { entities: [TestEntity] });
+    expect(autoSync).toHaveBeenCalledWith({ safe: false, drop: true, logging: true });
   });
 
   it('runSync with --pull should use db-to-entity direction', async () => {
@@ -278,32 +277,26 @@ describe('CLI', () => {
     expect(console.log).toHaveBeenCalled();
   });
 
-  it('runSync with --direction bidirectional', async () => {
+  it('runSync with --dry-run should print the statements it would run, and run nothing', async () => {
+    const autoSync = vi.fn();
     const migrator = {
       ...mockMigrator,
-      schemaIntrospector: { introspect: vi.fn().mockResolvedValue(new SchemaAST()) },
-      sync: vi.fn(),
-    } as unknown as Migrator;
-
-    await cli.runSync(migrator, ['--direction', 'bidirectional'], { entities: [TestEntity] });
-    expect(console.log).toHaveBeenCalled();
-  });
-
-  it('runSync with --dry-run', async () => {
-    const migrator = {
-      ...mockMigrator,
-      schemaIntrospector: { introspect: vi.fn().mockResolvedValue(new SchemaAST()) },
-      sync: vi.fn(),
+      autoSync,
+      planSync: vi.fn().mockResolvedValue(['ALTER TABLE "users" ADD COLUMN "age" INTEGER;']),
     } as unknown as Migrator;
 
     await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
-    expect(console.log).toHaveBeenCalled();
+
+    expect(console.log).toHaveBeenCalledWith('\nALTER TABLE "users" ADD COLUMN "age" INTEGER;');
+    expect(autoSync).not.toHaveBeenCalled();
   });
 
-  it('runSync without entities or introspector falls back to migrator.sync', async () => {
-    const migrator = { ...mockMigrator, sync: vi.fn() } as unknown as Migrator;
-    await cli.runSync(migrator, [], {});
-    expect(migrator.sync).toHaveBeenCalledWith({ force: false });
+  it('runSync with --dry-run should say so when there is nothing to do', async () => {
+    const migrator = { ...mockMigrator, planSync: vi.fn().mockResolvedValue([]) } as unknown as Migrator;
+
+    await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
+
+    expect(console.log).toHaveBeenCalledWith('\nSchema is already in sync.');
   });
 
   it('runGenerateFromDb should exit if no introspector', async () => {

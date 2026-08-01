@@ -1,9 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
+import { SchemaAST } from '../schema/schemaAST.js';
+import type { CanonicalType, ColumnNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
 import { Migrator } from './migrator.js';
+
+const BIG_INT: CanonicalType = { category: 'integer', size: 'big' };
+const TEXT: CanonicalType = { category: 'string' };
+
+/**
+ * An introspector reporting the given tables, each a column name to its canonical type. A real
+ * {@link SchemaAST} rather than an object literal: the four hand-rolled mocks this replaced each
+ * declared column types as SQL strings behind `as any`, which the generator has never produced, and
+ * that fiction was the only thing keeping a dead `typeof type === 'string'` branch alive in it.
+ */
+function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): SchemaIntrospector {
+  const ast = new SchemaAST();
+
+  for (const [tableName, columns] of Object.entries(tables)) {
+    const table: TableNode = {
+      name: tableName,
+      columns: new Map(),
+      primaryKey: [],
+      indexes: [],
+      schema: ast,
+      incomingRelations: [],
+      outgoingRelations: [],
+    };
+    for (const [columnName, type] of Object.entries(columns)) {
+      const isPrimaryKey = columnName === 'id';
+      const column: ColumnNode = {
+        name: columnName,
+        type,
+        nullable: !isPrimaryKey,
+        isPrimaryKey,
+        isAutoIncrement: isPrimaryKey,
+        isUnique: false,
+        table,
+        referencedBy: [],
+      };
+      table.columns.set(columnName, column);
+      if (isPrimaryKey) {
+        table.primaryKey.push(column);
+      }
+    }
+    ast.addTable(table);
+  }
+
+  return {
+    introspect: vi.fn().mockResolvedValue(ast),
+    getTableNames: vi.fn().mockResolvedValue(Object.keys(tables)),
+    getTableSchema: vi.fn().mockResolvedValue(undefined),
+    tableExists: vi.fn().mockImplementation((name: string) => Promise.resolve(name in tables)),
+  };
+}
 
 @Entity()
 class SyncUser {
@@ -43,18 +95,7 @@ describe('Migrator autoSync Integration', () => {
 
   it('should generate create statements for new tables', async () => {
     // Mock introspector to return nothing (no tables)
-    const tableMap = new Map();
-    const introspector = {
-      introspect: vi.fn().mockResolvedValue({
-        tables: tableMap,
-        getTable(name: string) {
-          return tableMap.get(name);
-        },
-      }),
-      getTableNames: vi.fn().mockResolvedValue([]),
-      tableExists: vi.fn().mockResolvedValue(false),
-    } as unknown as SchemaIntrospector;
-    migrator.schemaIntrospector = introspector;
+    migrator.schemaIntrospector = introspectorOf({});
 
     await migrator.autoSync({ logging: true });
 
@@ -65,41 +106,7 @@ describe('Migrator autoSync Integration', () => {
 
   it('should generate alter statements for missing columns', async () => {
     // Mock introspector to return existing table with one column missing
-    const introspector = {
-      introspect: vi.fn().mockImplementation(() => {
-        return Promise.resolve({
-          tables: new Map([
-            [
-              'SyncUser',
-              {
-                name: 'SyncUser',
-                columns: new Map([
-                  [
-                    'id',
-                    {
-                      name: 'id',
-                      type: 'INTEGER',
-                      nullable: false,
-                      isPrimaryKey: true,
-                      isAutoIncrement: true,
-                      isUnique: false,
-                    } as any,
-                  ],
-                ]),
-                indexes: [],
-                incomingRelations: [],
-                outgoingRelations: [],
-                primaryKey: [],
-              } as any,
-            ],
-          ]),
-          getTable(name: string) {
-            return this.tables.get(name);
-          },
-        });
-      }),
-    } as unknown as SchemaIntrospector;
-    migrator.schemaIntrospector = introspector;
+    migrator.schemaIntrospector = introspectorOf({ SyncUser: { id: BIG_INT } });
 
     await migrator.autoSync({ logging: true });
 
@@ -114,83 +121,10 @@ describe('Migrator autoSync Integration', () => {
     // 3. autoSync should detect this new field and add the column to the database
 
     // Simulate existing database state: SyncUser table exists with only 'id' and 'name' columns
-    const introspector = {
-      introspect: vi.fn().mockResolvedValue({
-        tables: new Map([
-          [
-            'SyncUser',
-            {
-              name: 'SyncUser',
-              columns: new Map([
-                [
-                  'id',
-                  {
-                    name: 'id',
-                    type: 'BIGINT',
-                    nullable: false,
-                    isPrimaryKey: true,
-                    isAutoIncrement: true,
-                    isUnique: false,
-                  } as any,
-                ],
-                [
-                  'name',
-                  {
-                    name: 'name',
-                    type: 'TEXT',
-                    nullable: true,
-                    isPrimaryKey: false,
-                    isAutoIncrement: false,
-                    isUnique: false,
-                  } as any,
-                ],
-              ]),
-              indexes: [],
-              incomingRelations: [],
-              outgoingRelations: [],
-              primaryKey: [],
-            } as any,
-          ],
-          [
-            'SyncProfile',
-            {
-              name: 'SyncProfile',
-              columns: new Map([
-                [
-                  'id',
-                  {
-                    name: 'id',
-                    type: 'BIGINT',
-                    nullable: false,
-                    isPrimaryKey: true,
-                    isAutoIncrement: true,
-                    isUnique: false,
-                  } as any,
-                ],
-                [
-                  'bio',
-                  {
-                    name: 'bio',
-                    type: 'TEXT',
-                    nullable: true,
-                    isPrimaryKey: false,
-                    isAutoIncrement: false,
-                    isUnique: false,
-                  } as any,
-                ],
-              ]),
-              indexes: [],
-              incomingRelations: [],
-              outgoingRelations: [],
-              primaryKey: [],
-            } as any,
-          ],
-        ]),
-        getTable(name: string) {
-          return this.tables.get(name);
-        },
-      }),
-    } as unknown as SchemaIntrospector;
+    const introspector = introspectorOf({
+      SyncUser: { id: BIG_INT, name: TEXT },
+      SyncProfile: { id: BIG_INT, bio: TEXT },
+    });
     migrator.schemaIntrospector = introspector;
 
     // Now when autoSync runs, it should detect that:
@@ -227,50 +161,9 @@ describe('Migrator autoSync Integration', () => {
     });
 
     // Simulate database state: table exists but only has 'id' and 'username'
-    const introspector = {
-      introspect: vi.fn().mockResolvedValue({
-        tables: new Map([
-          [
-            'MultiFieldUser',
-            {
-              name: 'MultiFieldUser',
-              columns: new Map([
-                [
-                  'id',
-                  {
-                    name: 'id',
-                    type: 'BIGINT',
-                    nullable: false,
-                    isPrimaryKey: true,
-                    isAutoIncrement: true,
-                    isUnique: false,
-                  } as any,
-                ],
-                [
-                  'username',
-                  {
-                    name: 'username',
-                    type: 'TEXT',
-                    nullable: true,
-                    isPrimaryKey: false,
-                    isAutoIncrement: false,
-                    isUnique: false,
-                  } as any,
-                ],
-              ]),
-              indexes: [],
-              incomingRelations: [],
-              outgoingRelations: [],
-              primaryKey: [],
-            } as any,
-          ],
-        ]),
-        getTable(name: string) {
-          return this.tables.get(name);
-        },
-      }),
-    } as unknown as SchemaIntrospector;
-    multiFieldMigrator.schemaIntrospector = introspector;
+    multiFieldMigrator.schemaIntrospector = introspectorOf({
+      MultiFieldUser: { id: BIG_INT, username: TEXT },
+    });
 
     await multiFieldMigrator.autoSync({ logging: true });
 

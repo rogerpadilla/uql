@@ -93,7 +93,9 @@ describe('Migrator (extra coverage)', () => {
       dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
     };
     const migrator = new Migrator(invalidPool);
-    await expect(migrator.generateFromEntities('test')).rejects.toThrow('Schema generator not set');
+    await expect(migrator.generateFromEntities('test')).rejects.toThrow(
+      'Schema generator and introspector must be set',
+    );
   });
 
   it('generateFromEntities should return empty if no changes', async () => {
@@ -127,43 +129,23 @@ describe('Migrator (extra coverage)', () => {
     expect(logger).toHaveBeenCalledWith('Schema is already in sync.');
   });
 
-  it('executeMongoSyncStatements should throw if collection name is missing', async () => {
+  it('executeSyncStatements should route mongodb statements to the database and log them', async () => {
     const mongoPool = { ...pool, dialect: new MongoDialect() };
     const migrator = new Migrator(mongoPool, { storage: mockStorage });
-    const mongoQuerier = { db: { collection: vi.fn() }, release: vi.fn() } as unknown as MongoQuerier;
-    (mongoPool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
-    await expect(migrator.executeSyncStatements(['{}'], {})).rejects.toThrow('MongoDB command missing collection name');
-  });
-
-  it('executeMongoSyncStatements should handle various actions', async () => {
-    const mongoPool = { ...pool, dialect: new MongoDialect() };
-    const migrator = new Migrator(mongoPool, { storage: mockStorage });
+    const logger = vi.fn();
+    migrator.logger = logger;
     const createCollection = vi.fn();
-    const dropCollection = vi.fn();
-    const createIndex = vi.fn();
-    const dropIndex = vi.fn();
-    const collection = { createIndex, drop: dropCollection, dropIndex };
-    const db = { collection: () => collection, createCollection };
-    const mongoQuerier = { db, release: vi.fn() } as unknown as MongoQuerier;
+    const release = vi.fn();
+    const mongoQuerier = { db: { createCollection }, release } as unknown as MongoQuerier;
     (mongoPool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
 
-    const stmts = [
-      JSON.stringify({
-        action: 'createCollection',
-        name: 'users',
-        indexes: [{ columns: ['id'], unique: true, name: 'idx1' }],
-      }),
-      JSON.stringify({ action: 'dropCollection', name: 'users' }),
-      JSON.stringify({ action: 'createIndex', collection: 'users', key: { name: 1 }, options: { unique: true } }),
-      JSON.stringify({ action: 'dropIndex', collection: 'users', name: 'idx2' }),
-    ];
+    await migrator.executeSyncStatements([JSON.stringify({ action: 'createCollection', name: 'users' })], {
+      logging: true,
+    });
 
-    await migrator.executeSyncStatements(stmts, { logging: true });
-
-    expect(createCollection).toHaveBeenCalled();
-    expect(createIndex).toHaveBeenCalledTimes(2);
-    expect(dropCollection).toHaveBeenCalled();
-    expect(dropIndex).toHaveBeenCalledWith('idx2');
+    expect(createCollection).toHaveBeenCalledWith('users');
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Executing MongoDB:'));
+    expect(release).toHaveBeenCalled();
   });
 
   it('getMigrationFiles should throw error other than ENOENT', async () => {

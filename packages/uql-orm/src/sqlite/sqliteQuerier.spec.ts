@@ -1,28 +1,11 @@
 import { vi } from 'vitest';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { createSpec } from '../test/index.js';
-
-vi.mock('better-sqlite3', async () => {
-  try {
-    const { Database } = await import('bun:sqlite');
-    class BetterSqlite3 extends Database {
-      pragma(source: string) {
-        return (this as any).query(`PRAGMA ${source}`).all();
-      }
-    }
-    return {
-      default: BetterSqlite3,
-    };
-  } catch (e) {
-    return await vi.importActual('better-sqlite3');
-  }
-});
-
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
   constructor() {
-    super(new Sqlite3QuerierPool(':memory:'), 'INTEGER PRIMARY KEY');
+    super(new Sqlite3QuerierPool(':memory:'));
   }
 
   override async beforeEach() {
@@ -67,7 +50,7 @@ describe('global listeners', () => {
   beforeAll(async () => {
     q = await pool.getQuerier();
     await dropTables(q).catch(() => {});
-    await createTables(q, 'INTEGER PRIMARY KEY');
+    await createTables(q);
   });
 
   beforeEach(async () => {
@@ -110,11 +93,11 @@ describe('global listeners', () => {
 // ─── insertMany: chunking and ID reliability ───
 import BetterSqlite3 from 'better-sqlite3';
 import { Entity, Field, Id } from '../entity/index.js';
-import { BetterSqlite3Dialect } from './betterSqlite3Dialect.js';
+import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
 /** Forces tiny statements: floor(6 / params-per-record) records per INSERT. */
-class TinyBatchDialect extends BetterSqlite3Dialect {
+class TinyBatchDialect extends SqliteDialect {
   override readonly maxBindValues = 6;
 }
 
@@ -146,7 +129,7 @@ describe('insertMany id semantics', () => {
   });
 
   it('should return the real persisted value (not the internal rowid) when the primary key is not database-generated', async () => {
-    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new BetterSqlite3Dialect());
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
     await querier.run('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)');
     // No id provided: RETURNING reports the real persisted NULL, never the internal rowid.
     const generated = await querier.insertMany(TextPkNote, [{ title: 'no pk' }]);
@@ -213,7 +196,7 @@ describe('entity lifecycle hooks', () => {
 
   beforeEach(async () => {
     HookedNote.seen.length = 0;
-    querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new BetterSqlite3Dialect());
+    querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
     await querier.run('CREATE TABLE `HookedNote` (`id` INTEGER PRIMARY KEY, `title` TEXT, `slug` TEXT)');
   });
 

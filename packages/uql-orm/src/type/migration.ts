@@ -1,11 +1,12 @@
+import type { VectorCast } from '../dialect/vectorCast.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
+import type { CanonicalType, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
   FieldOptions,
+  IndexColumnSchema,
   LoggingOptions,
-  NamingStrategy,
   SqlQuerier,
   Type,
   VectorIndexOptions,
@@ -95,11 +96,6 @@ export interface MigratorOptions {
   readonly entities?: Type<unknown>[];
 
   /**
-   * Naming strategy for database tables and columns
-   */
-  readonly namingStrategy?: NamingStrategy;
-
-  /**
    * Default action for foreign key ON DELETE and ON UPDATE clauses.
    */
   readonly defaultForeignKeyAction?: ForeignKeyAction;
@@ -127,6 +123,13 @@ export interface MigrationResult {
  */
 export interface ColumnSchema {
   readonly name: string;
+  /**
+   * The engine's own type spelling, as introspection read it (`tinyint(1)`, `DATETIME`, `VARCHAR`).
+   * Deliberately not a {@link CanonicalType}: the diff has to compare what the engine would *store*,
+   * and several canonical types share one storage type per engine - an entity `boolean` is `TINYINT(1)`
+   * on MySQL and `INTEGER` on SQLite. Comparing canonical categories instead reports an alteration on
+   * every sync for those columns. Use `sqlToCanonical` to interpret it.
+   */
   readonly type: string;
   readonly nullable: boolean;
   readonly defaultValue?: unknown;
@@ -155,10 +158,20 @@ export interface TableSchema {
  */
 export interface IndexSchema extends VectorIndexOptions {
   readonly name: string;
-  readonly columns: string[];
+  readonly columns: readonly IndexColumnSchema[];
   readonly unique: boolean;
   /** Index type (btree, hnsw, ivfflat, etc.) */
   readonly type?: IndexType;
+  /** Partial index condition (WHERE clause) */
+  readonly where?: string;
+  /** Non-key columns stored in the index (Postgres-wire `INCLUDE`). */
+  readonly include?: readonly string[];
+  /**
+   * The indexed column's vector type, which pgvector's operator-class names are built from
+   * (`halfvec_cosine_ops`). Absent for a non-vector index, and for an index whose column types are
+   * unknown, where `vector` is assumed.
+   */
+  readonly vectorType?: VectorCast;
 }
 
 /**
@@ -198,10 +211,8 @@ export interface SchemaGenerator {
    */
   generateCreateTable<E>(entity: Type<E>, options?: { ifNotExists?: boolean }): string[];
 
-  /**
-   * Generate DROP TABLE statement for an entity
-   */
-  generateDropTable<E>(entity: Type<E>): string;
+  /** Generate DROP TABLE statement. */
+  generateDropTable(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string;
 
   /**
    * Generate ALTER TABLE statements based on schema diff
@@ -248,16 +259,20 @@ export interface SchemaGenerator {
   generateCreateTableFromNode(table: TableNode, options?: { ifNotExists?: boolean }): string[];
   /** Generate CREATE INDEX statement from an IndexNode */
   generateCreateIndexFromNode(index: IndexNode, options?: { ifNotExists?: boolean }): string;
-  /** Generate DROP TABLE statement from a TableNode */
-  generateDropTableFromNode(table: TableNode, options?: { ifExists?: boolean }): string;
 
   // === Migration Builder Support ===
   /** DDL from a `TableDefinition`, one string per `querier.run`. */
   generateCreateTableFromDefinition(table: TableDefinition, options?: { ifNotExists?: boolean }): string[];
-  /** Generate DROP TABLE statement */
-  generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string;
   /** Generate RENAME TABLE statement */
   generateRenameTableSql(oldName: string, newName: string): string;
+}
+
+/**
+ * The column and constraint DDL a migration builder emits, which only a SQL engine has. Split from
+ * {@link SchemaGenerator} because MongoDB used to satisfy these six by returning `''`: a document store
+ * has no `ADD COLUMN`, and an empty statement silently did nothing rather than saying so.
+ */
+export interface SqlDdlGenerator extends SchemaGenerator {
   /** Generate ADD COLUMN statement */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string;
   /** Generate ALTER COLUMN statement */
@@ -266,10 +281,6 @@ export interface SchemaGenerator {
   generateDropColumnSql(tableName: string, columnName: string): string;
   /** Generate RENAME COLUMN statement */
   generateRenameColumnSql(tableName: string, oldName: string, newName: string): string;
-  /** Generate CREATE INDEX statement from IndexSchema */
-  generateCreateIndexSql(tableName: string, index: IndexSchema): string;
-  /** Generate DROP INDEX statement */
-  generateDropIndexSql(tableName: string, indexName: string): string;
   /** Generate ADD FOREIGN KEY statement */
   generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string;
   /** Generate DROP FOREIGN KEY statement */

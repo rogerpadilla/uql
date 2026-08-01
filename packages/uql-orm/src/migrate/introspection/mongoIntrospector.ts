@@ -30,7 +30,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         if (schema.indexes) {
           for (const idx of schema.indexes) {
             const indexColumns: ColumnNode[] = [];
-            for (const colName of idx.columns) {
+            for (const { column: colName } of idx.columns) {
               let column = columns.get(colName);
               if (!column) {
                 column = {
@@ -80,7 +80,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         columns: [], // We don't have columns in Mongo
         indexes: indexes.map((idx) => ({
           name: idx.name ?? Object.keys(idx.key).join('_'),
-          columns: Object.keys(idx.key),
+          columns: Object.keys(idx.key).map((column) => ({ column })),
           unique: !!idx.unique,
         })),
       };

@@ -1,28 +1,24 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SqliteDialect } from '../sqlite/index.js';
-import { type D1Database, D1Querier, type D1Result } from './d1Querier.js';
+import { D1Querier, type D1Result } from './d1Querier.js';
+
+function buildStmt() {
+  return { bind: vi.fn().mockReturnThis(), all: vi.fn(), run: vi.fn() };
+}
+
+function buildDb(stmt: ReturnType<typeof buildStmt>) {
+  return { prepare: vi.fn().mockReturnValue(stmt) };
+}
 
 describe('D1Querier', () => {
-  let mockDb: {
-    prepare: Mock<any>;
-  };
-  let mockStmt: {
-    bind: Mock<any>;
-    all: Mock<any>;
-    run: Mock<any>;
-  };
+  let mockDb: ReturnType<typeof buildDb>;
+  let mockStmt: ReturnType<typeof buildStmt>;
   let querier: D1Querier;
 
   beforeEach(() => {
-    mockStmt = {
-      bind: vi.fn().mockReturnThis(),
-      all: vi.fn(),
-      run: vi.fn(),
-    };
-    mockDb = {
-      prepare: vi.fn().mockReturnValue(mockStmt),
-    };
-    querier = new D1Querier(mockDb as unknown as D1Database, new SqliteDialect());
+    mockStmt = buildStmt();
+    mockDb = buildDb(mockStmt);
+    querier = new D1Querier(mockDb, new SqliteDialect());
   });
 
   it('should execute findMany via all()', async () => {
@@ -112,6 +108,13 @@ describe('D1Querier', () => {
   it('should release without touching the D1 binding', async () => {
     await expect(querier.release()).resolves.toBeUndefined();
     expect(mockDb.prepare).not.toHaveBeenCalled();
+  });
+
+  it('should reject release while a transaction is still open', async () => {
+    mockStmt.run.mockResolvedValue({ results: [], success: true, meta: {} });
+    await querier.beginTransaction();
+
+    await expect(querier.release()).rejects.toThrow('pending transaction');
   });
 
   it('should execute internalRun without values', async () => {

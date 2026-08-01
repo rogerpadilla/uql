@@ -1,6 +1,6 @@
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ForeignKeyAction } from '../schema/types.js';
-import type { NamingStrategy, SchemaGenerator } from '../type/index.js';
+import type { SchemaGenerator } from '../type/index.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 
 /**
@@ -9,12 +9,11 @@ import { createSchemaGenerator } from './schemaGenerator.js';
  */
 export async function createSchemaGeneratorAsync(
   dialect: AbstractDialect,
-  namingStrategy?: NamingStrategy,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): Promise<SchemaGenerator | undefined> {
   if (dialect.dialectName === 'mongodb') {
     const { MongoSchemaGenerator } = await import('./generator/mongoSchemaGenerator.js');
-    return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
+    return new MongoSchemaGenerator(dialect.namingStrategy, defaultForeignKeyAction);
   }
-  return createSchemaGenerator(dialect, namingStrategy, defaultForeignKeyAction);
+  return createSchemaGenerator(dialect, defaultForeignKeyAction);
 }

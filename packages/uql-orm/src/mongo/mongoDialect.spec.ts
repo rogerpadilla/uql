@@ -945,6 +945,39 @@ class MongoDialectSpec implements Spec {
     expect((r20['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(200);
   }
 
+  /** Atlas rejects a `numCandidates` above 10000, which `limit * 10` reaches at a limit of 1001. */
+  shouldCapNumCandidatesAtTheAtlasMaximum() {
+    @Entity({ name: 'VectorCap' })
+    class VectorCap {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    const stage = this.dialect.buildVectorSearchStage(VectorCap, 'vec', { $vector: [1, 2, 3] }, undefined, 5000);
+    expect((stage['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(10_000);
+  }
+
+  /** Atlas requires `limit`; without it the stage used to carry `numCandidates: null` and no limit. */
+  shouldRejectVectorSearchWithoutALimit() {
+    @Entity({ name: 'VectorNoLimit' })
+    class VectorNoLimit {
+      @Id() id?: number;
+      @Field({ type: 'vector' }) vec!: number[];
+    }
+    expect(() =>
+      this.dialect.buildVectorSearchStage(VectorNoLimit, 'vec', { $vector: [1, 2, 3] }, undefined, 0),
+    ).toThrow("$vectorSearch requires $limit (vector sort on 'vec' of 'VectorNoLimit')");
+  }
+
+  /**
+   * MongoDB's own `$text` takes only the search string: its text index declares which fields it
+   * covers, so `$fields` cannot narrow it. Before this, `$text` fell through to path validation and
+   * failed with "path $text does not exist".
+   */
+  shouldTranslateTextSearchToMongoTextOperator() {
+    const filter = this.dialect.where(Item, { $text: { $fields: ['name', 'description'], $value: 'some text' } });
+    expect(filter).toEqual({ $text: { $search: 'some text' } });
+  }
+
   shouldPreFilterVectorSearch() {
     @Entity({ name: 'VectorItem2' })
     class VectorItem2 {

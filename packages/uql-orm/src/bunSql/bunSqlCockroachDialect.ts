@@ -1,6 +1,6 @@
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from '../postgres/postgresWireDriverCapabilities.js';
+import type { DialectFeatures } from '../type/index.js';
 
 /**
  * CockroachDB Dialect specialization for the `bun:sql` driver, which routes CockroachDB
@@ -10,14 +10,8 @@ import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from '../postgres/postgresWireDrive
  * (verified directly against a live CockroachDB instance via `bun:sql`).
  */
 export class BunSqlCockroachDialect extends CockroachDialect {
-  constructor(options: DialectOptions = {}) {
-    super({
-      ...options,
-      driverCapabilities: {
-        ...POSTGRES_WIRE_DRIVER_CAPABILITIES,
-        explicitJsonCast: true,
-        ...options.driverCapabilities,
-      },
-    });
-  }
+  protected override readonly featureOverrides: Partial<DialectFeatures> = {
+    ...POSTGRES_WIRE_DRIVER_CAPABILITIES,
+    explicitJsonCast: true,
+  };
 }

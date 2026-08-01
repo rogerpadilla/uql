@@ -1,10 +1,17 @@
 import type {
   DialectFeatures,
+  EntityMeta,
+  FieldKey,
   FieldOptions,
+  IndexFeature,
+  IndexSchema,
   InsertIdSource,
   QueryContext,
   QuerySizeComparisonOps,
+  QueryTextSearchOptions,
+  Type,
 } from '../type/index.js';
+import { getFieldKeys } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
@@ -31,7 +38,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     columnComment: true,
-    vectorIndexStyle: 'inline',
+    inlineVectorIndex: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: false,
@@ -69,6 +76,48 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override escape(value: unknown): string {
     return escapeMysqlSqlLiteral(value);
+  }
+
+  /**
+   * `MATCH(cols) AGAINST(?)`, which needs a `FULLTEXT` index over exactly those columns: without one
+   * the server answers "Can't find FULLTEXT index matching the column list". Declare it with
+   * `@Index([...], { type: 'fulltext' })`.
+   */
+  protected override appendTextSearch<E>(
+    ctx: QueryContext,
+    _entity: Type<E>,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
+  ): void {
+    const searchFields = search.$fields ?? (getFieldKeys(meta.fields) as FieldKey<E>[]);
+    const columns = searchFields.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    ctx.append(`MATCH(${columns.join(', ')}) AGAINST(`);
+    ctx.addValue(search.$value);
+    ctx.append(')');
+  }
+
+  /**
+   * A full-text index is its own keyword here (`CREATE FULLTEXT INDEX ... (cols)`); `USING fulltext`
+   * is a syntax error, so it is the keyword that changes rather than the access method.
+   */
+  protected override indexKeyword(index: IndexSchema): string {
+    return index.type === 'fulltext' ? 'FULLTEXT INDEX' : super.indexKeyword(index);
+  }
+
+  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'prefixLength']);
+
+  protected override indexAccessMethod(index: IndexSchema): string {
+    return index.type && index.type !== 'fulltext' ? ` USING ${index.type}` : '';
+  }
+
+  /** Neither MySQL nor MariaDB has partial indexes, and quietly widening one changes which rows it rejects. */
+  protected override indexPredicate(index: IndexSchema): string {
+    if (index.where) {
+      throw new TypeError(
+        `${this.dialectName} does not support partial indexes (index "${index.name}" declares a "where" condition)`,
+      );
+    }
+    return '';
   }
 
   protected override numericCast(expr: string): string {

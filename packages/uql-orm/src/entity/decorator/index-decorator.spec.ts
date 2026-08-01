@@ -20,7 +20,7 @@ describe('@Index decorator', () => {
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
     expect(meta.indexes?.length).toBe(1);
-    expect(meta.indexes?.[0].columns).toEqual(['email']);
+    expect(meta.indexes?.[0].columns).toEqual([{ column: 'email' }]);
     expect(meta.indexes?.[0].unique).toBe(false);
   });
 
@@ -56,7 +56,7 @@ describe('@Index decorator', () => {
 
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
-    expect(meta.indexes?.[0].columns).toEqual(['firstName', 'lastName']);
+    expect(meta.indexes?.[0].columns).toEqual([{ column: 'firstName' }, { column: 'lastName' }]);
   });
 
   it('should register a named index', () => {

@@ -31,15 +31,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(generator.formatDefaultValue(false)).toBe('0');
   });
 
-  it('should return boolean type', () => {
-    expect(generator.getBooleanType()).toBe('INTEGER');
-  });
-
   it('should return empty string for column comment', () => {
     expect(generator.generateColumnComment('name', 'comment')).toBe('');
-  });
-
-  it('should get table options', () => {
-    expect(generator.getTableOptions({} as any)).toBe('');
   });
 });

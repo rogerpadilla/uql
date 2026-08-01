@@ -130,7 +130,7 @@ describe('SqliteSchemaIntrospector', () => {
     expect(schema!.columns[1].defaultValue).toBe('Guest');
     expect(schema!.indexes).toHaveLength(1);
     expect(schema!.indexes![0].name).toBe('idx_users_name');
-    expect(schema!.indexes![0].columns).toEqual(['name']);
+    expect(schema!.indexes![0].columns).toEqual([{ column: 'name' }]);
   });
 
   it('getTableSchema with foreign keys and empty primary key', async () => {
