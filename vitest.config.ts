@@ -67,9 +67,6 @@ export default defineConfig({
         'packages/*/src/browser/type/**/*.ts',
         'packages/*/src/**/types.ts', // Pure type definition files
       ],
-      // A point of leeway under the current 98.4 / 93.7 / 99.3 / 99.1. Set flush against those numbers,
-      // `lines` had 0.10 to spare, so deleting well-covered code failed the run while adding no untested
-      // line: a refactor that removes six copies of a lifecycle moves the ratio down, not the risk up.
       thresholds: {
         statements: 97,
         branches: 92,
