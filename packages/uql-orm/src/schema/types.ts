@@ -360,28 +360,6 @@ export interface ValidationError {
 // Smart Relation Detection Types
 // ============================================================================
 
-/**
- * A detected/inferred relationship with confidence score.
- */
-export interface DetectedRelation {
-  readonly type: RelationshipType;
-  readonly from: {
-    readonly table: TableNode;
-    readonly columns: ColumnNode[];
-  };
-  readonly to: {
-    readonly table: TableNode;
-    readonly columns: ColumnNode[];
-  };
-  readonly through?: TableNode;
-  /** Confidence level (0-1) */
-  readonly confidence: number;
-  /** How this relation was detected */
-  readonly source: RelationshipSource;
-  /** Suggested constraint name */
-  readonly suggestedName?: string;
-}
-
 // ============================================================================
 // Drift Detection Types
 // ============================================================================

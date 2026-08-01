@@ -23,8 +23,17 @@ export interface DriftDetectorOptions {
   checkIndexes?: boolean;
   /** Include foreign key differences */
   checkForeignKeys?: boolean;
-  /** Include default value differences */
+  /**
+   * Include default value differences. Off by default: an engine reports a default as it stored it
+   * (`now()`, `CURRENT_TIMESTAMP`, `'active'::text`), which rarely matches the entity's literal.
+   */
   checkDefaults?: boolean;
+  /**
+   * Tables to leave out of the comparison. The migrations bookkeeping table belongs here - it exists in
+   * the database by design and has no entity, so reporting it as unexpected told every project to
+   * "create entity or drop table" for its own migration log.
+   */
+  excludeTables?: string[];
   /** Dialect instance for type formatting */
   dialect?: AbstractDialect;
 }
@@ -46,6 +55,7 @@ export class DriftDetector {
       checkIndexes: options.checkIndexes ?? true,
       checkForeignKeys: options.checkForeignKeys ?? true,
       checkDefaults: options.checkDefaults ?? false,
+      excludeTables: options.excludeTables ?? [],
       dialect: options.dialect,
     } as Required<DriftDetectorOptions>;
   }
@@ -55,7 +65,11 @@ export class DriftDetector {
    */
   detect(): DriftReport {
     const differ = new SchemaASTDiffer();
-    const diff = differ.diff(this.expectedAST, this.actualAST);
+    const diff = differ.diff(this.expectedAST, this.actualAST, {
+      compareIndexes: this.options.checkIndexes,
+      compareRelationships: this.options.checkForeignKeys,
+      excludeTables: this.options.excludeTables,
+    });
 
     const drifts: Drift[] = [
       ...this.detectTableDrifts(diff),
@@ -141,8 +155,8 @@ export class DriftDetector {
     colDiff: {
       table: string;
       column: string;
-      expected?: { type?: unknown; nullable?: boolean };
-      actual?: { type?: unknown; nullable?: boolean };
+      expected?: { type?: unknown; nullable?: boolean; defaultValue?: unknown };
+      actual?: { type?: unknown; nullable?: boolean; defaultValue?: unknown };
       isBreaking?: boolean;
     },
     drifts: Drift[],
@@ -180,14 +194,29 @@ export class DriftDetector {
         });
       }
     }
+
+    if (this.options.checkDefaults && colDiff.expected && colDiff.actual) {
+      const expected = String(colDiff.expected.defaultValue ?? 'NULL');
+      const actual = String(colDiff.actual.defaultValue ?? 'NULL');
+      if (expected !== actual) {
+        drifts.push({
+          type: 'constraint_mismatch',
+          severity: 'info',
+          table: colDiff.table,
+          column: colDiff.column,
+          expected,
+          actual,
+          details: `Default mismatch for "${colDiff.column}"`,
+          suggestion: 'Align the default in the entity or the database',
+        });
+      }
+    }
   }
 
   /**
    * Detect index drifts.
    */
   private detectIndexDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    if (!this.options.checkIndexes) return [];
-
     const drifts: Drift[] = [];
 
     for (const idxDiff of diff.indexDiffs) {
@@ -219,8 +248,6 @@ export class DriftDetector {
    * Detect relationship/FK drifts.
    */
   private detectRelationshipDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    if (!this.options.checkForeignKeys) return [];
-
     const drifts: Drift[] = [];
 
     for (const relDiff of diff.relationshipDiffs) {

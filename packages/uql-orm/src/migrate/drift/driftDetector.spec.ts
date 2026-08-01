@@ -38,6 +38,37 @@ function createTable(name: string, columns: Partial<ColumnNode>[]): TableNode {
 
 describe('DriftDetector', () => {
   describe('detect', () => {
+    it('should leave excluded tables out of the comparison', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(createTable('users', [{ name: 'id', isPrimaryKey: true }]));
+      actual.addTable(createTable('users', [{ name: 'id', isPrimaryKey: true }]));
+      // Present in the database by design, with no entity behind it.
+      actual.addTable(createTable('uql_migrations', [{ name: 'name', isPrimaryKey: true }]));
+
+      const report = detectDrift(expected, actual, {
+        dialect: new MySqlDialect(),
+        excludeTables: ['uql_migrations'],
+      });
+
+      expect(report.status).toBe('in_sync');
+      expect(report.drifts).toEqual([]);
+    });
+
+    it('should report a default mismatch only when asked to', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(createTable('users', [{ name: 'status', defaultValue: 'active' }]));
+      actual.addTable(createTable('users', [{ name: 'status', defaultValue: 'pending' }]));
+
+      const options = { dialect: new MySqlDialect() };
+      expect(detectDrift(expected, actual, options).drifts).toEqual([]);
+
+      const drifts = detectDrift(expected, actual, { ...options, checkDefaults: true }).drifts;
+      expect(drifts).toHaveLength(1);
+      expect(drifts[0].details).toContain('Default mismatch');
+    });
+
     it('should detect type mismatches', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
