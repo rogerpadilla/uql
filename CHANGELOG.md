@@ -6,6 +6,28 @@ date format is [yyyy-mm-dd]
 
 ## [0.23.0] - 2026-07-31
 
+### SQLite with no native dependency
+
+`NodeSqliteQuerierPool` runs on Node's built-in `node:sqlite`, so SQLite no longer needs a `better-sqlite3` native build. `better-sqlite3` stays supported and remains the faster choice for read-heavy work.
+
+```ts
+import { NodeSqliteQuerierPool } from 'uql-orm/sqlite';
+
+const pool = new NodeSqliteQuerierPool('app.db');
+```
+
+### `await using` releases the querier
+
+Every querier now implements `Symbol.asyncDispose`, so a unit of work cannot leak a connection on an early return or a throw.
+
+```ts
+await using querier = await pool.getQuerier();
+```
+
+### Node 24 is the minimum
+
+`engines.node` moves from `>=20` (end of life since April 2026) to `>=24`, the active LTS.
+
 ### Fixes
 
 - `drift:check` reported the migrations table itself as an unexpected table, telling every project to "create entity or drop table" for its own migration log. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.

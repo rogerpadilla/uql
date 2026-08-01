@@ -148,6 +148,13 @@ export interface Querier extends UniversalQuerier {
    * release the querier to the pool.
    */
   release(): Promise<void>;
+
+  /**
+   * Releases the querier when an `await using` binding goes out of scope, so a unit of work cannot
+   * leak a connection on an early return or a throw.
+   * @example `await using querier = await pool.getQuerier();`
+   */
+  [Symbol.asyncDispose](): Promise<void>;
 }
 
 export interface SqlQuerier extends Querier {

@@ -6,7 +6,7 @@
   "version": "0.22.0",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "sideEffects": false,
   "main": "./dist/index.js",

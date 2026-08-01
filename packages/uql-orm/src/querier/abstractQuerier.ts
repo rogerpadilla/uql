@@ -716,4 +716,8 @@ export abstract class AbstractQuerier implements Querier {
   async release(): Promise<void> {
     return this.internalRelease();
   }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    return this.release();
+  }
 }
