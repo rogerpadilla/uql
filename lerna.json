@@ -1,6 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/lerna.json",
   "version": "independent",
+  "npmClient": "bun",
   "command": {
     "publish": {
       "conventionalCommits": true,
@@ -9,6 +10,5 @@
       "allowBranch": "main",
       "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"]
     }
-  },
-  "packages": ["packages/*"]
+  }
 }
