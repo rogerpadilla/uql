@@ -7,9 +7,9 @@ import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
 class MongoUser {
-  @Id() id?: string;
-  @Field({ index: true }) username?: string;
-  @Field({ index: 'idx_email', unique: true }) email?: string;
+  @Id({ type: String }) id?: string;
+  @Field({ type: String, index: true }) username?: string;
+  @Field({ type: String, index: 'idx_email', unique: true }) email?: string;
 }
 
 describe('MongoSchemaGenerator', () => {

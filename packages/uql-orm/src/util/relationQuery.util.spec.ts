@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { getMeta } from '../entity/decorator/index.js';
+import { getMeta } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import type { QueryPopulate } from '../type/index.js';
 import {

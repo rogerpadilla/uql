@@ -3,6 +3,7 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
 import { Migrator } from './migrator.js';
@@ -59,14 +60,14 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
 
 @Entity()
 class SyncUser {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
 }
 
 @Entity()
 class SyncProfile {
-  @Id() id?: number;
-  @Field() bio?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) bio?: string;
   @Field({ references: () => SyncUser }) userId?: number;
 }
 
@@ -77,15 +78,11 @@ describe('Migrator autoSync Integration', () => {
   beforeEach(() => {
     // Mock pool and querier for testing
     const sqliteDialect = new SqliteDialect();
-    const querier = {
+    const querier = createMockQuerier({
       run: vi.fn().mockResolvedValue({}),
       all: vi.fn().mockResolvedValue([]),
-      beginTransaction: vi.fn().mockResolvedValue(undefined),
-      commitTransaction: vi.fn().mockResolvedValue(undefined),
-      rollbackTransaction: vi.fn().mockResolvedValue(undefined),
-      release: vi.fn().mockResolvedValue(undefined),
       dialect: sqliteDialect,
-    } as unknown as SqlQuerier;
+    }) as unknown as SqlQuerier;
     pool = createMockQuerierPool(sqliteDialect, vi.fn().mockResolvedValue(querier));
 
     migrator = new Migrator(pool, {
@@ -149,11 +146,11 @@ describe('Migrator autoSync Integration', () => {
     // Create a new entity with multiple fields for this test
     @Entity()
     class MultiFieldUser {
-      @Id() id?: number;
-      @Field() username?: string;
-      @Field() email?: string;
-      @Field() age?: number;
-      @Field() isActive?: boolean;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) username?: string;
+      @Field({ type: String }) email?: string;
+      @Field({ type: Number }) age?: number;
+      @Field({ type: Boolean }) isActive?: boolean;
     }
 
     const multiFieldMigrator = new Migrator(pool, {

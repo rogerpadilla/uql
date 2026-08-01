@@ -19,21 +19,21 @@ declare module '../type/index.js' {
 })
 @Entity()
 class SecureRelated {
-  @Id()
+  @Id({ type: Number })
   id?: number;
-  @Field()
+  @Field({ type: Number })
   tenantId?: number;
-  @Field()
+  @Field({ type: String })
   name?: string;
 }
 
 @Entity()
 class SecureParent {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureRelated })
   relatedId?: number;
-  @ManyToOne()
+  @ManyToOne({ entity: () => SecureRelated })
   related?: SecureRelated;
 }
 
@@ -44,11 +44,11 @@ class SecureParent {
  */
 @Entity({ name: 'renamed_doc' })
 class RenamedDoc {
-  @Id()
+  @Id({ type: Number })
   id?: number;
-  @Field({ name: 'the_label' })
+  @Field({ type: String, name: 'the_label' })
   label?: string;
-  @Field({ name: 'deleted_at', softDelete: true })
+  @Field({ type: Date, name: 'deleted_at', softDelete: true })
   deletedAt?: Date;
 }
 
@@ -906,7 +906,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildBasicVectorSearchStage() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(VectorItem, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
@@ -925,7 +925,7 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchOnUnknownField() {
     @Entity({ name: 'VectorUnknown' })
     class VectorUnknown {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     expect(() =>
@@ -936,7 +936,7 @@ class MongoDialectSpec implements Spec {
   shouldDeriveNumCandidatesFromLimit() {
     @Entity({ name: 'VectorNum' })
     class VectorNum {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const r5 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
@@ -949,7 +949,7 @@ class MongoDialectSpec implements Spec {
   shouldCapNumCandidatesAtTheAtlasMaximum() {
     @Entity({ name: 'VectorCap' })
     class VectorCap {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const stage = this.dialect.buildVectorSearchStage(VectorCap, 'vec', { $vector: [1, 2, 3] }, undefined, 5000);
@@ -960,7 +960,7 @@ class MongoDialectSpec implements Spec {
   shouldRejectVectorSearchWithoutALimit() {
     @Entity({ name: 'VectorNoLimit' })
     class VectorNoLimit {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     expect(() =>
@@ -981,8 +981,8 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterVectorSearch() {
     @Entity({ name: 'VectorItem2' })
     class VectorItem2 {
-      @Id() id?: number;
-      @Field() category!: string;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) category!: string;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(
@@ -1007,9 +1007,9 @@ class MongoDialectSpec implements Spec {
   shouldPreFilterWithComplexWhere() {
     @Entity({ name: 'VectorComplex' })
     class VectorComplex {
-      @Id() id?: number;
-      @Field() category!: string;
-      @Field() status!: string;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) category!: string;
+      @Field({ type: String }) status!: string;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(
@@ -1034,7 +1034,7 @@ class MongoDialectSpec implements Spec {
   shouldNotAddFilterForEmptyWhere() {
     @Entity({ name: 'VectorItem3' })
     class VectorItem3 {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(VectorItem3, 'vec', { $vector: [1, 2, 3] }, {}, 10);
@@ -1052,7 +1052,7 @@ class MongoDialectSpec implements Spec {
   shouldProjectVectorSearchScore() {
     @Entity({ name: 'VectorProj' })
     class VectorProj {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(
@@ -1077,7 +1077,7 @@ class MongoDialectSpec implements Spec {
   shouldIgnoreDistanceMetricForMongo() {
     @Entity({ name: 'VectorDist' })
     class VectorDist {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(
@@ -1096,7 +1096,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorCustomIdx' })
     @Index(['vec'], { type: 'vectorSearch', name: 'my_custom_idx' })
     class VectorCustomIdx {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(VectorCustomIdx, 'vec', { $vector: [1, 2, 3] }, undefined, 10);

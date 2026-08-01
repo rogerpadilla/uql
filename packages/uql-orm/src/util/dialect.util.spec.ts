@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { Entity, Field, Filter, getMeta, Id } from '../entity/decorator/index.js';
+import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
 import {
@@ -21,11 +21,11 @@ import { raw } from './raw.js';
 @Filter('recent', { condition: () => ({ status: 'new' }), default: false })
 @Entity()
 class Filtered {
-  @Field({ isId: true })
+  @Field({ type: Number, isId: true })
   id?: number;
-  @Field()
+  @Field({ type: String })
   status?: string;
-  @Field({ softDelete: true })
+  @Field({ type: Date, softDelete: true })
   deletedAt?: Date;
 }
 
@@ -61,11 +61,11 @@ it('applyFilters escape hatch: does not overwrite a key already in $where', () =
 })
 @Entity()
 class Tenanted {
-  @Field({ isId: true })
+  @Field({ type: Number, isId: true })
   id?: number;
-  @Field()
+  @Field({ type: Number })
   companyId?: number;
-  @Field({ softDelete: true })
+  @Field({ type: Date, softDelete: true })
   deletedAt?: Date;
 }
 
@@ -101,9 +101,9 @@ it('a condition resolving to {} means "no restriction" and merges nothing (trust
   })
   @Entity()
   class SystemScoped {
-    @Field({ isId: true })
+    @Field({ type: Number, isId: true })
     id?: number;
-    @Field()
+    @Field({ type: Number })
     companyId?: number;
   }
   const meta = getMeta(SystemScoped);
@@ -195,9 +195,9 @@ it('normalizeScalarFieldSelection', () => {
 
 @Entity()
 class LazyId {
-  @Id({ eager: false })
+  @Id({ type: Number, eager: false })
   id?: number;
-  @Field()
+  @Field({ type: String })
   name?: string;
 }
 

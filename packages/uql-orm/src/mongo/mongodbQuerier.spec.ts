@@ -8,21 +8,21 @@ import { MongodbQuerier } from './mongodbQuerier.js';
 @Entity({ name: 'Article' })
 @Index(['embedding'], { type: 'vectorSearch', name: 'embedding_vs' })
 class Article {
-  @Id() id?: number;
-  @Field() title?: string;
-  @Field() category?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) title?: string;
+  @Field({ type: String }) category?: string;
   @Field({ type: 'vector' }) embedding?: number[];
 }
 
 @Entity({ name: 'Author' })
 class Author {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
 }
 
 @Entity({ name: 'Post' })
 class Post {
-  @Id() id?: number;
+  @Id({ type: Number }) id?: number;
   @Field({ references: () => Author }) authorId?: number;
   @ManyToOne({ entity: () => Author }) author?: Author;
   @Field({ references: () => Author }) reviewerId?: number;
@@ -32,16 +32,16 @@ class Post {
 /** Soft-deletable through a renamed column. */
 @Entity({ name: 'SoftDoc' })
 class SoftDoc {
-  @Id() id?: number;
-  @Field({ name: 'deleted_at', softDelete: true }) deletedAt?: Date;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Date, name: 'deleted_at', softDelete: true }) deletedAt?: Date;
 }
 
 /** An entity that is both vector-searchable and has a relation, for the combined case. */
 @Entity({ name: 'Chunk' })
 @Index(['embedding'], { type: 'vectorSearch', name: 'chunk_vs' })
 class Chunk {
-  @Id() id?: number;
-  @Field() text?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) text?: string;
   @Field({ references: () => Author }) authorId?: number;
   @ManyToOne({ entity: () => Author }) author?: Author;
   @Field({ type: 'vector' }) embedding?: number[];

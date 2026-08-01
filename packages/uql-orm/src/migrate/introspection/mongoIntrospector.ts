@@ -2,6 +2,9 @@ import { SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../../schema/types.js';
 import type { MongoQuerier, QuerierPool, SchemaIntrospector, TableSchema } from '../../type/index.js';
 
+/** The parts of a Mongo index description this introspector reads. */
+type MongoIndex = { readonly name?: string; readonly key: Record<string, unknown>; readonly unique?: boolean };
+
 /**
  * MongoDB schema introspector.
  * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
@@ -64,16 +67,17 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    const querier = await this.pool.getQuerier();
-    try {
+    return this.pool.withQuerier(async (querier) => {
       const { db } = querier as MongoQuerier;
       const collections = await db.listCollections({ name: tableName }).toArray();
       if (collections.length === 0) {
         return undefined;
       }
 
-      // MongoDB doesn't have a fixed schema, but we can look at the indexes
-      const indexes = await db.collection(tableName).indexes();
+      // MongoDB doesn't have a fixed schema, but we can look at the indexes. Annotated rather than
+      // inferred: the driver's `indexes()` is overloaded and resolves to `any` on some versions, which
+      // silently made every field below unchecked.
+      const indexes: readonly MongoIndex[] = await db.collection(tableName).indexes();
 
       return {
         name: tableName,
@@ -84,20 +88,15 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
           unique: !!idx.unique,
         })),
       };
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   async getTableNames(): Promise<string[]> {
-    const querier = await this.pool.getQuerier();
-    try {
+    return this.pool.withQuerier(async (querier) => {
       const { db } = querier as MongoQuerier;
       const collections = await db.listCollections().toArray();
       return collections.map((c: { name: string }) => c.name);
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   async tableExists(tableName: string): Promise<boolean> {

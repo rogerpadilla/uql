@@ -214,7 +214,7 @@ describe('EntityCodeGenerator', () => {
 
       expect(result!.code).toContain('import { User } from');
       expect(result!.code).toContain('@ManyToOne');
-      expect(result!.code).toContain('author?: Relation<User>');
+      expect(result!.code).toContain('author?: User');
     });
 
     it('should generate OneToMany relations on the inverse side', () => {
@@ -240,7 +240,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
 
       expect(result!.code).toContain('@OneToMany');
-      expect(result!.code).toContain('posts?: Relation<Post[]>');
+      expect(result!.code).toContain('posts?: Post[]');
     });
 
     it('should generate Id with custom name', () => {
@@ -507,7 +507,7 @@ describe('EntityCodeGenerator', () => {
 
       const result = new EntityCodeGenerator(ast).generateForTable('posts');
 
-      expect(result!.code).toContain('user?: Relation<User>;');
+      expect(result!.code).toContain('user?: User;');
     });
 
     /** Relations recovered by name conventions rather than a real constraint are flagged as a guess. */
@@ -555,7 +555,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
       expect(result!.code).toContain("@OneToOne({ entity: () => Profile, references: 'user' })");
-      expect(result!.code).toContain('profiles?: Relation<Profile>;');
+      expect(result!.code).toContain('profiles?: Profile;');
     });
 
     it('should emit a bare @Index for a composite index with no name and no unique flag', () => {

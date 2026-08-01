@@ -1,32 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { ExtraOptions, Json, QueryUpdateResult, RawRow, Relation } from '../type/index.js';
+import type { ExtraOptions, Json, QueryUpdateResult, RawRow } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
-import type { QueryError } from './decorator/index.js';
+import type { QueryError } from './queryError.js';
 
 @Entity()
 class HydratedChild {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ type: 'jsonb' })
   payload?: Json<{ b?: number }>;
   @Field({ references: () => HydratedParent })
   parentId?: number;
   @ManyToOne({ entity: () => HydratedParent })
-  parent?: Relation<HydratedParent>;
+  parent?: HydratedParent;
 }
 
 @Entity()
 class HydratedParent {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ type: 'json' })
   settings?: Json<{ a?: number }>;
-  @Field()
+  @Field({ type: String })
   name?: string;
   @OneToMany({ entity: () => HydratedChild, mappedBy: 'parent' })
-  children?: Relation<HydratedChild[]>;
+  children?: HydratedChild[];
 }
 
 /** Querier over canned driver rows: no database, so `internalAll` returns exactly what a test hands it. */
@@ -138,7 +138,7 @@ describe('AbstractSqlQuerier error context', () => {
     );
   }
 
-  /** Transaction statements bypass `@Log()`, so they attach their own query context on failure. */
+  /** Transaction statements are not run through `timed()`, so they attach their own query context. */
   it('should attach the failing BEGIN statement to the error', async () => {
     const querier = new StubSqlQuerier();
     querier.failOn = 'BEGIN TRANSACTION';

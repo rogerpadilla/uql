@@ -22,7 +22,7 @@ import type {
 } from '../type/index.js';
 import { isKnownMigratorDialect, isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
-import { acquireQuerierForMigrations } from './acquireQuerierForMigrations.js';
+import { withQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import {
   buildSqlQuerierMigrationModule,
@@ -246,57 +246,47 @@ export class Migrator {
    */
   public async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
-    const querier = await acquireQuerierForMigrations(this.pool);
 
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('Migrator requires a SQL-based querier');
-    }
+    return withSqlQuerierForMigrations(this.pool, 'Migrator', async (querier) => {
+      try {
+        this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
-    try {
-      this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
+        await querier.transaction(async () => {
+          if (direction === 'up') {
+            await migration.up(querier);
+            // Log within the same transaction
+            await this.storage.logWithQuerier(querier, migration.name);
+          } else {
+            await migration.down(querier);
+            // Unlog within the same transaction
+            await this.storage.unlogWithQuerier(querier, migration.name);
+          }
+        });
 
-      await querier.beginTransaction();
+        const duration = Date.now() - startTime;
+        this.logger.logMigration(
+          `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`,
+        );
 
-      if (direction === 'up') {
-        await migration.up(querier);
-        // Log within the same transaction
-        await this.storage.logWithQuerier(querier, migration.name);
-      } else {
-        await migration.down(querier);
-        // Unlog within the same transaction
-        await this.storage.unlogWithQuerier(querier, migration.name);
+        return {
+          name: migration.name,
+          direction,
+          duration,
+          success: true,
+        };
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
+
+        return {
+          name: migration.name,
+          direction,
+          duration,
+          success: false,
+          error: error as Error,
+        };
       }
-
-      await querier.commitTransaction();
-
-      const duration = Date.now() - startTime;
-      this.logger.logMigration(
-        `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`,
-      );
-
-      return {
-        name: migration.name,
-        direction,
-        duration,
-        success: true,
-      };
-    } catch (error) {
-      await querier.rollbackTransaction();
-
-      const duration = Date.now() - startTime;
-      this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
-
-      return {
-        name: migration.name,
-        direction,
-        duration,
-        success: false,
-        error: error as Error,
-      };
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   /**
@@ -420,41 +410,29 @@ export class Migrator {
    */
   public async syncForce(): Promise<void> {
     await this.ensureSchemaGenerator();
-    const querier = await acquireQuerierForMigrations(this.pool);
 
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('Migrator requires a SQL-based querier');
-    }
-
-    try {
-      await querier.beginTransaction();
-
-      // Drop all tables first (in reverse order for foreign keys)
-      for (const entity of [...this.entities].reverse()) {
-        const tableName = this.generator.resolveTableName(entity, getMeta(entity));
-        const dropSql = this.generator.generateDropTable(tableName, { ifExists: true });
-        this.logger.logSchema(`Executing: ${dropSql}`);
-        await querier.run(dropSql);
-      }
-
-      // Create all tables
-      for (const entity of this.entities) {
-        const createStmts = this.generator.generateCreateTable(entity);
-        for (const createSql of createStmts) {
-          this.logger.logSchema(`Executing: ${createSql}`);
-          await querier.run(createSql);
+    await withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
+      querier.transaction(async () => {
+        // Drop all tables first (in reverse order for foreign keys)
+        for (const entity of [...this.entities].reverse()) {
+          const tableName = this.generator.resolveTableName(entity, getMeta(entity));
+          const dropSql = this.generator.generateDropTable(tableName, { ifExists: true });
+          this.logger.logSchema(`Executing: ${dropSql}`);
+          await querier.run(dropSql);
         }
-      }
 
-      await querier.commitTransaction();
-      this.logger.logSchema('Schema sync (force) completed');
-    } catch (error) {
-      await querier.rollbackTransaction();
-      throw error;
-    } finally {
-      await querier.release();
-    }
+        // Create all tables
+        for (const entity of this.entities) {
+          const createStmts = this.generator.generateCreateTable(entity);
+          for (const createSql of createStmts) {
+            this.logger.logSchema(`Executing: ${createSql}`);
+            await querier.run(createSql);
+          }
+        }
+      }),
+    );
+
+    this.logger.logSchema('Schema sync (force) completed');
   }
 
   /**
@@ -551,22 +529,13 @@ export class Migrator {
   }
 
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    const querier = await acquireQuerierForMigrations(this.pool);
-    try {
-      if (this.dialectName === 'mongodb') {
-        await this.executeMongoSyncStatements(statements, options, querier as MongoQuerier);
-      } else {
-        await this.executeSqlSyncStatements(statements, options, querier);
-      }
-      if (options.logging) this.logger.logSchema('Schema synchronization completed');
-    } catch (error) {
-      if (this.dialectName !== 'mongodb' && isSqlQuerier(querier)) {
-        await querier.rollbackTransaction();
-      }
-      throw error;
-    } finally {
-      await querier.release();
-    }
+    // Mongo creates collections and indexes outside any transaction, so only the SQL path opens one.
+    await withQuerierForMigrations(this.pool, (querier) =>
+      this.dialectName === 'mongodb'
+        ? this.executeMongoSyncStatements(statements, options, querier as MongoQuerier)
+        : querier.transaction(() => this.executeSqlSyncStatements(statements, options, querier)),
+    );
+    if (options.logging) this.logger.logSchema('Schema synchronization completed');
   }
 
   public async executeMongoSyncStatements(
@@ -588,12 +557,10 @@ export class Migrator {
     if (!isSqlQuerier(querier)) {
       throw new Error('Migrator requires a SQL-based querier for this dialect');
     }
-    await querier.beginTransaction();
     for (const sql of statements) {
       if (options.logging) this.logger.logSchema(`Executing: ${sql}`);
       await querier.run(sql);
     }
-    await querier.commitTransaction();
   }
 
   /**

@@ -1,4 +1,4 @@
-import { getEntities } from '../entity/decorator/index.js';
+import { getEntities } from '../entity/index.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
@@ -18,7 +18,7 @@ function buildSchema(querier: AbstractSqlQuerier) {
 
 export async function createTables(querier: AbstractSqlQuerier) {
   const { generator, ast } = buildSchema(querier);
-  await runInTransaction(querier, async () => {
+  await querier.transaction(async () => {
     for (const table of ast.getCreateOrder()) {
       // Without the foreign keys: the shared suites insert rows whose `companyId`/`creatorId` point
       // at no row on purpose, being about ORM behavior rather than referential integrity.
@@ -32,7 +32,7 @@ export async function createTables(querier: AbstractSqlQuerier) {
 
 export async function dropTables(querier: AbstractSqlQuerier) {
   const { generator, ast } = buildSchema(querier);
-  await runInTransaction(querier, async () => {
+  await querier.transaction(async () => {
     for (const table of ast.getDropOrder()) {
       await querier.run(generator.generateDropTable(table.name, { ifExists: true }));
     }
@@ -41,7 +41,7 @@ export async function dropTables(querier: AbstractSqlQuerier) {
 
 export async function clearTables(querier: AbstractSqlQuerier) {
   const { ast } = buildSchema(querier);
-  await runInTransaction(querier, async () => {
+  await querier.transaction(async () => {
     // Drop order: a referenced row cannot go before the rows pointing at it.
     for (const table of ast.getDropOrder()) {
       await querier.run(`DELETE FROM ${querier.dialect.escapeId(table.name)}`);
@@ -52,20 +52,4 @@ export async function clearTables(querier: AbstractSqlQuerier) {
       await querier.run('DELETE FROM sqlite_sequence');
     }
   });
-}
-
-/**
- * Runs `callback` inside a transaction on the querier's already-open connection, unlike
- * `querier.transaction()` which releases the connection back to the pool when done - unwanted
- * here since these helpers run mid-hook, before the querier is used again for the test body.
- */
-async function runInTransaction(querier: AbstractSqlQuerier, callback: () => Promise<void>) {
-  await querier.beginTransaction();
-  try {
-    await callback();
-    await querier.commitTransaction();
-  } catch (err) {
-    await querier.rollbackTransaction();
-    throw err;
-  }
 }

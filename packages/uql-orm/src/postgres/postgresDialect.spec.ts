@@ -192,10 +192,10 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
   shouldUpsertWithTwoFallbackUpdateColumns() {
     @Entity({ name: 'UpsertFallbackWidget' })
     class UpsertFallbackWidget {
-      @Id() id?: number;
-      @Field() email!: string;
-      @Field({ onUpdate: () => 111 }) updatedAt?: number;
-      @Field({ onUpdate: () => 'v2' }) version?: string;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) email!: string;
+      @Field({ type: Number, onUpdate: () => 111 }) updatedAt?: number;
+      @Field({ type: String, onUpdate: () => 'v2' }) version?: string;
     }
 
     const { sql, values } = this.exec((ctx) =>
@@ -795,7 +795,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
   shouldFormatVector() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
@@ -810,7 +810,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
   shouldCastHalfvecSort() {
     @Entity({ name: 'HalfvecItem' })
     class HalfvecItem {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'halfvec' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
@@ -832,7 +832,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
   shouldBindSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'sparsevec' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) =>
@@ -849,7 +849,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
   shouldInsertSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem2' })
     class SparsevecItem2 {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'sparsevec' }) vec!: number[];
     }
     const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));

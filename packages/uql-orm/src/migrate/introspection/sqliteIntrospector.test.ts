@@ -1,8 +1,8 @@
 import { expect } from 'vitest';
 import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { createSpec } from '../../test/index.js';
-import type { QuerierPool, SqlQuerier } from '../../type/index.js';
+import { createMockQuerierPool, createSpec } from '../../test/index.js';
+import type { SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -67,15 +67,14 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     }) as typeof querier.all;
 
     try {
-      await new SqliteSchemaIntrospector({
-        ...this.pool,
-        getQuerier: async () => querier,
-      } as QuerierPool).getTableSchema(INTROSPECT_TABLES.A);
+      // A real pool over the instrumented querier: spreading `this.pool` dropped the prototype, so the
+      // introspector's `withQuerier` was not there. The pool releases what it hands out.
+      const pool = createMockQuerierPool(this.pool.dialect, async () => querier);
+      await new SqliteSchemaIntrospector(pool).getTableSchema(INTROSPECT_TABLES.A);
 
       expect(sent.length).toBe(new Set(sent).size);
     } finally {
       querier.all = all;
-      await querier.release();
     }
   }
 

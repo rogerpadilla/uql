@@ -7,8 +7,8 @@ import { Migrator } from './migrator.js';
 
 @Entity()
 class SyncMongoUser {
-  @Id() id?: string;
-  @Field({ index: true }) name?: string;
+  @Id({ type: String }) id?: string;
+  @Field({ type: String, index: true }) name?: string;
 }
 
 describe('Migrator autoSync MongoDB Integration', () => {

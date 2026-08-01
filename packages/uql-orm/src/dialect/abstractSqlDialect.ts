@@ -1363,28 +1363,36 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     this.search(ctx, entity, q, opts);
   }
 
-  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
+  /**
+   * `INSERT ... ON CONFLICT (...) DO UPDATE/NOTHING RETURNING ...`, which SQLite adopted from Postgres
+   * and which every dialect here speaks except the MySQL family (see {@link MysqlLikeSqlDialect}).
+   *
+   * Two orderings matter, and they pull in opposite directions. The assignments are computed *before*
+   * the insert, because `appendInsertValues` fills `onInsert` fields into the payload and a column that
+   * exists only there - `createdAt` - must not join the update set. Their bound values are pushed
+   * *after* it, because a `?` placeholder is positional and the clause comes last in the statement.
+   * {@link PgLikeSqlDialect} overrides this: `$N` placeholders make array order irrelevant, so it can
+   * bind into the main context and skip the second one.
+   */
+  upsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    extraReturning = '',
+  ): void {
     const meta = getMeta(entity);
     const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(
-      updateCtx,
-      meta,
-      conflictPaths,
-      payload,
-      (name) => `VALUES(${name})`,
-    );
-
-    if (update) {
-      this.appendInsertValues(ctx, entity, payload);
-      ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
-      ctx.pushValue(...updateCtx.values);
-    } else {
-      const insertCtx = this.createContext();
-      this.appendInsertValues(insertCtx, entity, payload);
-      ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
-      ctx.pushValue(...insertCtx.values);
-    }
+    const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, this.upsertExcluded);
+    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    this.appendInsertValues(ctx, entity, payload);
+    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
+    ctx.pushValue(...updateCtx.values);
   }
+
+  /** How an `ON CONFLICT` assignment reads the row that was being inserted. */
+  protected readonly upsertExcluded = (columnName: string): string => `EXCLUDED.${columnName}`;
 
   protected getUpsertUpdateAssignments<E>(
     ctx: QueryContext,

@@ -7,10 +7,10 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 
 @Entity()
 class UserProfileDialect {
-  @Id() id?: number;
-  @Field() firstName?: string;
-  @Field() lastName?: string;
-  @Field({ name: 'explicit_name' }) explicitField?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) firstName?: string;
+  @Field({ type: String }) lastName?: string;
+  @Field({ type: String, name: 'explicit_name' }) explicitField?: string;
 }
 
 describe('Naming Strategy SQL Generation', () => {

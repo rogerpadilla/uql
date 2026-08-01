@@ -15,7 +15,7 @@ import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 /** A per-field default metric, which a query without `$distance` inherits. */
 @Entity({ name: 'L2Item' })
 class L2Item {
-  @Id() id?: number;
+  @Id({ type: Number }) id?: number;
   @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
 }
 

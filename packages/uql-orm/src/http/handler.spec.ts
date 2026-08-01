@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { getContext } from '../context/context.js';
 import * as options from '../options.js';
-import { createMockQuerier, type MockedQuerier, User } from '../test/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
 import { createRequestHandler, type HandlerRequest } from './handler.js';
 
 vi.mock('../options.js');
@@ -17,7 +18,9 @@ describe('createRequestHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuerier = createMockQuerier();
-    (options.getQuerier as Mock).mockResolvedValue(mockQuerier);
+    (options.getQuerierPool as Mock).mockReturnValue(
+      createMockQuerierPool(new PostgresDialect(), async () => mockQuerier),
+    );
   });
 
   it('throws if no entities are provided', () => {
@@ -400,7 +403,7 @@ describe('createRequestHandler', () => {
         },
       });
       await expect(handle(req({ method: 'GET', entityPath: 'user' }))).rejects.toBe(err);
-      expect(options.getQuerier).not.toHaveBeenCalled();
+      expect(options.getQuerierPool).not.toHaveBeenCalled();
     });
   });
 });

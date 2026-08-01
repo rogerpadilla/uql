@@ -113,9 +113,9 @@ for (const db of databases) {
       it('should detect and sync a new property added to an existing entity', async () => {
         @Entity()
         class AutoSyncUserTest1 {
-          @Id() id?: number;
-          @Field() name?: string;
-          @Field() email?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) name?: string;
+          @Field({ type: String }) email?: string;
         }
 
         const tableName = 'AutoSyncUserTest1';
@@ -146,11 +146,11 @@ for (const db of databases) {
       it('should add multiple new properties to an existing entity', async () => {
         @Entity()
         class AutoSyncProductTest1 {
-          @Id() id?: number;
-          @Field() name?: string;
-          @Field() price?: number;
-          @Field() description?: string;
-          @Field() active?: boolean;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) name?: string;
+          @Field({ type: Number }) price?: number;
+          @Field({ type: String }) description?: string;
+          @Field({ type: Boolean }) active?: boolean;
         }
 
         const tableName = 'AutoSyncProductTest1';
@@ -175,8 +175,8 @@ for (const db of databases) {
       it('should not modify table when schema is already in sync', async () => {
         @Entity()
         class AutoSyncCategoryTest1 {
-          @Id() id?: number;
-          @Field() name?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) name?: string;
         }
 
         const tableName = 'AutoSyncCategoryTest1';
@@ -204,9 +204,9 @@ for (const db of databases) {
       it('should create a new table if it does not exist', async () => {
         @Entity()
         class AutoSyncNewTableTest1 {
-          @Id() id?: number;
-          @Field() title?: string;
-          @Field() content?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) title?: string;
+          @Field({ type: String }) content?: string;
         }
 
         const tableName = 'AutoSyncNewTableTest1';
@@ -233,9 +233,9 @@ for (const db of databases) {
       it('should handle entity with custom table name', async () => {
         @Entity({ name: 'custom_user_table' })
         class AutoSyncCustomNameTest1 {
-          @Id() id?: number;
-          @Field() username?: string;
-          @Field() email?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) username?: string;
+          @Field({ type: String }) email?: string;
         }
 
         const tableName = 'custom_user_table';
@@ -260,8 +260,8 @@ for (const db of databases) {
       it('should handle field with custom column name', async () => {
         @Entity()
         class AutoSyncCustomColumnTest1 {
-          @Id() id?: number;
-          @Field({ name: 'user_email' }) email?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String, name: 'user_email' }) email?: string;
         }
 
         const tableName = 'AutoSyncCustomColumnTest1';
@@ -283,8 +283,8 @@ for (const db of databases) {
       it('should handle field rename safely (add new, keep old)', async () => {
         @Entity()
         class AutoSyncRenameTest {
-          @Id() id?: number;
-          @Field() newName?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) newName?: string;
         }
 
         const tableName = 'AutoSyncRenameTest';
@@ -313,8 +313,8 @@ for (const db of databases) {
       it('should drop old column and add new one when renaming with safe: false', async () => {
         @Entity()
         class AutoSyncUnsafeRenameTest {
-          @Id() id?: number;
-          @Field() newName?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) newName?: string;
         }
 
         const tableName = 'AutoSyncUnsafeRenameTest';
@@ -345,8 +345,8 @@ for (const db of databases) {
       it('should NOT alter existing DOUBLE column to BIGINT for number field (Safe Mode)', async () => {
         @Entity()
         class AutoSyncFloatTest {
-          @Id() id?: number;
-          @Field() cost?: number;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: Number }) cost?: number;
         }
 
         const tableName = 'AutoSyncFloatTest';
@@ -384,8 +384,8 @@ for (const db of databases) {
       it('should block drops even if safe: false (when drop: false)', async () => {
         @Entity()
         class AutoSyncNoDropTest {
-          @Id() id?: number;
-          @Field() name?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) name?: string;
         }
 
         const tableName = 'AutoSyncNoDropTest';
@@ -418,8 +418,8 @@ for (const db of databases) {
       it('should log skipped migrations when safe mode blocks changes', async () => {
         @Entity()
         class AutoSyncLogTest {
-          @Id() id?: number;
-          @Field() name?: string;
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String }) name?: string;
         }
 
         const tableName = 'AutoSyncLogTest';
@@ -454,8 +454,8 @@ for (const db of databases) {
       test.skipIf(!!db.unsafeAlterError)('should alter column type when safe: false', async () => {
         @Entity()
         class AutoSyncUnsafeAlterTest {
-          @Id() id?: number;
-          @Field() cost?: number; // Defaults to bigint
+          @Id({ type: Number }) id?: number;
+          @Field({ type: Number }) cost?: number; // Defaults to bigint
         }
 
         const tableName = 'AutoSyncUnsafeAlterTest';
@@ -490,8 +490,8 @@ for (const db of databases) {
         async () => {
           @Entity()
           class AutoSyncUnsafeAlterErrorTest {
-            @Id() id?: number;
-            @Field() cost?: number;
+            @Id({ type: Number }) id?: number;
+            @Field({ type: Number }) cost?: number;
           }
 
           const tableName = 'AutoSyncUnsafeAlterErrorTest';

@@ -58,10 +58,8 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   // ============================================================================
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    const querier = await this.getQuerier();
-    const read = createTableRowReader(querier);
-
-    try {
+    return this.withSqlQuerier(async (querier) => {
+      const read = createTableRowReader(querier);
       const exists = await this.tableExistsInternal(read, tableName);
       if (!exists) {
         return undefined;
@@ -81,41 +79,31 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         indexes,
         foreignKeys,
       };
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   async getTableNames(): Promise<string[]> {
-    const querier = await this.getQuerier();
-
-    try {
+    return this.withSqlQuerier(async (querier) => {
       const results = await querier.all<RawRow>(this.getTableNamesQuery());
       return results.map((row) => this.mapTableNameRow(row));
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   async tableExists(tableName: string): Promise<boolean> {
-    const querier = await this.getQuerier();
-
-    try {
-      return this.tableExistsInternal(createTableRowReader(querier), tableName);
-    } finally {
-      await querier.release();
-    }
+    return this.withSqlQuerier((querier) => this.tableExistsInternal(createTableRowReader(querier), tableName));
   }
 
-  protected async getQuerier(): Promise<SqlQuerier> {
-    const querier = await this.pool.getQuerier();
-
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error(`${this.constructor.name} requires a SQL-based querier`);
-    }
-
-    return querier;
+  /**
+   * Introspection reads, so `withQuerier` rather than `transaction`: the pool owns the release either
+   * way, and wrapping catalogue queries in a transaction would hold one open for nothing.
+   */
+  protected withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
+    return this.pool.withQuerier((querier) => {
+      if (!isSqlQuerier(querier)) {
+        throw new Error(`${this.constructor.name} requires a SQL-based querier`);
+      }
+      return task(querier);
+    });
   }
 
   protected async tableExistsInternal(read: TableRowReader, tableName: string): Promise<boolean> {

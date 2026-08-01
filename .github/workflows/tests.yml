@@ -40,7 +40,9 @@ jobs:
         run: bun run lint
       - name: Commitlint
         if: github.event_name == 'pull_request'
-        run: bunx commitlint --from ${{ github.event.pull_request.base_sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        # `base.sha`, not `base_sha`: the latter is not a field, so it rendered empty and commitlint
+        # walked the whole history instead of the PR, failing on release commits from years ago.
+        run: bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
       - name: Typecheck
         run: bun run ts
 

@@ -2,8 +2,8 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, createSpec } from '../test/index.js';
-import type { UpdatePayload } from '../type/index.js';
+import { Company, createSpec, User } from '../test/index.js';
+import type { QueryConflictPaths, UpdatePayload } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySqlDialectSpec extends MySqlFamilySpec {
@@ -18,7 +18,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
   shouldThrowForVectorSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];
     }
     expect(() =>
@@ -173,6 +173,28 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     // Applied innermost-first: $pull -> $set -> $push -> $unset.
     expect(sql).toContain("JSON_REMOVE(JSON_MERGE_PRESERVE(JSON_SET(COALESCE(JSON_REPLACE(`kind`, '$.tags'");
     expect(values).toEqual(['"a"', '1', '"b"', 123, 1]);
+  }
+  /**
+   * Every non-conflict column is itself a conflict key, so there is nothing to assign and the statement
+   * degrades to `INSERT IGNORE`. This was asserted on the base dialect's spec while the base implemented
+   * MySQL's syntax; it belongs with the family that speaks it.
+   */
+  shouldUpsertWithNothingToUpdate() {
+    const ctx = this.dialect.createContext();
+    const conflictPaths = {
+      id: true,
+      companyId: true,
+      creatorId: true,
+      createdAt: true,
+      updatedAt: true,
+      name: true,
+      email: true,
+      password: true,
+    } as QueryConflictPaths<User>;
+
+    this.dialect.upsert(ctx, User, conflictPaths, { name: 'John' });
+
+    expect(ctx.sql).toContain('INSERT IGNORE');
   }
 }
 
