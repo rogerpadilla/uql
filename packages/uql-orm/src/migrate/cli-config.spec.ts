@@ -19,7 +19,7 @@ describe('cli-config', () => {
     expect(config.pool.dialect.dialectName).toBe('sqlite');
   });
 
-  it('loadConfig should load TypeScript config using jiti', async () => {
+  it('loadConfig should load a TypeScript config when the runtime can transpile it', async () => {
     const tsConfigPath = path.resolve(process.cwd(), 'uql.config.ts');
     const configContent = /** ts */ `
       export default {

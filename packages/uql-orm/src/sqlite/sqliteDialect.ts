@@ -8,12 +8,10 @@ import {
   jsonRemoveCall,
   jsonSetTarget,
 } from '../dialect/jsonSql.js';
-import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   EntityMeta,
   FieldOptions,
-  QueryConflictPaths,
   QueryContext,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
@@ -160,25 +158,6 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   protected override numericCast(expr: string): string {
     return `CAST(${expr} AS REAL)`;
-  }
-
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    const meta = getMeta(entity);
-    const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(
-      updateCtx,
-      meta,
-      conflictPaths,
-      payload,
-      (name) => `EXCLUDED.${name}`,
-    );
-    const keysStr = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    // Use the base (non-RETURNING) insert here: the appended RETURNING below would otherwise
-    // be doubled by `this.insert`'s own.
-    this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
-    ctx.pushValue(...updateCtx.values);
   }
 
   protected override jsonCast(operand: string): string {

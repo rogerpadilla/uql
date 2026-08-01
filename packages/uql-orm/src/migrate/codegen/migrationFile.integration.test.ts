@@ -1,8 +1,7 @@
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { loadTsDefaultExportWithJiti } from '../../test/loadTsDefaultExportWithJiti.js';
+import { loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
 import { isSqlQuerier, type MigrationDefinition, type QuerierPool, type SqlQuerier } from '../../type/index.js';
 import { buildSqlQuerierMigrationModule, emitSqlRunCalls } from './migrationFile.js';
 
@@ -10,8 +9,6 @@ import { buildSqlQuerierMigrationModule, emitSqlRunCalls } from './migrationFile
  * Integration checks for GitHub #86 (generated TS must tolerate SQLite/LibSQL backticks and `${` in SQL)
  * and #87 (one `querier.run` per statement - matches sqld-over-HTTP behavior).
  */
-
-const uqlOrmPackageRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** SQLite/LibSQL DDL with backticks - would break if emitted inside an outer template literal (#86). */
 const createTableSql =
@@ -40,7 +37,7 @@ const backends: {
 
 describe('generated SQL migration module (integration)', () => {
   it.each(backends)(
-    '$name: jiti-loaded migration with backticks runs; split run() calls apply table + index (#86, #87)',
+    '$name: generated migration with backticks runs; split run() calls apply table + index (#86, #87)',
     async ({ createPool }) => {
       const upInner = emitSqlRunCalls([createTableSql, createIndexSql]);
       const downInner = emitSqlRunCalls([
@@ -56,7 +53,7 @@ describe('generated SQL migration module (integration)', () => {
         downInner,
       });
 
-      const migration = await loadTsDefaultExportWithJiti<MigrationDefinition>(source, uqlOrmPackageRoot);
+      const migration = await loadTsDefaultExport<MigrationDefinition>(source);
       const pool = createPool();
       const querier = await pool.getQuerier();
       if (!isSqlQuerier(querier)) {

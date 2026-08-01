@@ -1,0 +1,45 @@
+{
+  "name": "uql-codemod",
+  "description": "Migrates uql-orm entities from legacy decorators to the TC39 standard spec",
+  "license": "MIT",
+  "version": "0.22.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "uql-codemod": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rimraf dist .tsconfig.tsbuildinfo && tsc -b tsconfig.build.json",
+    "clean": "rimraf dist .tsconfig.tsbuildinfo"
+  },
+  "dependencies": {
+    "typescript": "^6.0.3"
+  },
+  "author": "Roger Padilla",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rogerpadilla/uql.git",
+    "directory": "packages/uql-codemod"
+  },
+  "keywords": [
+    "uql",
+    "codemod",
+    "decorators",
+    "migration"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

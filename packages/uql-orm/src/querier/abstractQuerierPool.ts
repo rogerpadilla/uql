@@ -35,10 +35,12 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
 
   /**
    * get a querier from the pool and run the given callback inside a transaction.
+   *
+   * The pool acquired the connection, so the pool releases it: `withQuerier` owns that half and
+   * `querier.transaction` owns begin/commit/rollback. Neither knows about the other's job.
    */
-  async transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions & PoolRunOptions): Promise<T> {
-    const querier = await this.getQuerier();
-    return this.runScoped(opts?.context, () => querier.transaction(() => callback(querier), opts));
+  transaction<T>(callback: (querier: Q) => Promise<T>, opts?: TransactionOptions & PoolRunOptions): Promise<T> {
+    return this.withQuerier((querier) => querier.transaction(() => callback(querier), opts), opts);
   }
 
   /**

@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { getContext, withContext } from '../context/context.js';
 import { PostgresDialect } from '../dialect/index.js';
+import { createMockQuerier, createMockQuerierPool, User } from '../test/index.js';
 import type { Querier, QueryUpdateResult, SqlQuerier, Type, UqlContext } from '../type/index.js';
 import { AbstractQuerierPool } from './abstractQuerierPool.js';
 import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
@@ -201,4 +202,31 @@ it('concurrent all() calls each acquire their own connection', async () => {
   const pool = new CountingSqlPool(createSqlStubQuerier);
   await Promise.all([pool.all('SELECT 1'), pool.all('SELECT 2')]);
   expect(pool.acquired).toHaveLength(2);
+});
+
+/**
+ * The pattern the docs recommend, and the one the implementation broke: `querier.transaction` used to
+ * release inside the callback, so `withQuerier` released a second time and any work after the
+ * transactional section ran on a connection already back in the pool.
+ */
+it('releases exactly once when a transaction runs inside withQuerier', async () => {
+  const querier = createMockQuerier();
+  const pool = createMockQuerierPool(new PostgresDialect(), async () => querier);
+
+  await pool.withQuerier(async (acquired) => {
+    await acquired.findOne(User, {});
+    await acquired.transaction(async () => {
+      await acquired.insertOne(User, { name: 'John' });
+    });
+    // Still usable afterwards: the connection is the caller's until `withQuerier` returns.
+    return acquired.count(User);
+  });
+
+  expect(querier.release).toHaveBeenCalledTimes(1);
+  expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
+  expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
+  // Still reached the connection after the commit, rather than one already back in the pool.
+  expect(querier.count.mock.invocationCallOrder[0]).toBeGreaterThan(
+    querier.commitTransaction.mock.invocationCallOrder[0],
+  );
 });

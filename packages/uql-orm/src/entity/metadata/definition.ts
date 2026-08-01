@@ -4,7 +4,6 @@ import type {
   EntityOptions,
   FieldKey,
   FieldOptions,
-  FieldType,
   FilterOptions,
   HookEvent,
   IdKey,
@@ -16,37 +15,33 @@ import type {
   Type,
 } from '../../type/index.js';
 import { getKeys, hasKeys, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
-import { LoggerWrapper } from '../../util/logger.js';
+import { ownRegistrations } from '../decorator/bag.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
 // Held on `globalThis` via the global symbol registry so a single metadata map survives multiple
-// evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading).
+// evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading). Version-suffixed
+// because v1 changed the `FieldOptions` shape: a tree holding both majors gets two maps rather than one
+// map with entries the other major cannot read.
 const holder = globalThis as unknown as Record<symbol, Meta>;
-const metaKey = Symbol.for('uql-orm/entity/metadata');
+const metaKey = Symbol.for('uql-orm/entity/metadata/v1');
 const metas: Meta = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
-const registrationLogger = new LoggerWrapper(true);
-
-/**
- * Append a composite index entry with normalized `unique` (default false) and columns. Normalizing
- * here is what lets the dialects render one shape instead of re-parsing the authored sugar.
- */
-export function appendEntityIndex<E>(meta: EntityMeta<E>, index: EntityIndexInput): void {
-  if (!meta.indexes) meta.indexes = [];
-  meta.indexes.push({ ...index, unique: index.unique ?? false, columns: index.columns.map(normalizeIndexColumn) });
-}
-
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  if (opts.type) {
-    opts = { ...opts, typeInferred: false };
-  } else {
-    opts = { ...opts, type: inferType(entity, key), typeInferred: true };
+  if (!opts.type && !opts.references && !opts.virtual) {
+    throw new TypeError(
+      `'${entity.name}.${key}' needs a 'type'. Declare it - '@Field({ type: String })' - or point the field ` +
+        "at another entity with 'references', which resolves the column type from its primary key.",
+    );
   }
   const fieldKey = key as FieldKey<E>;
-  meta.fields[fieldKey] = { ...meta.fields[fieldKey], ...{ name: key, ...opts } };
+  // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
+  // column from the referenced primary key (picking up its `columnType`, length and chained keys)
+  // instead of treating whatever ends up in `type` as deliberate.
+  const resolved = opts.type ? opts : { ...opts, typeFromReference: true as const };
+  meta.fields[fieldKey] = { ...meta.fields[fieldKey], ...{ name: key, ...resolved } };
   return meta;
 }
 
@@ -54,22 +49,23 @@ export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): E
   const meta = ensureMeta(entity);
   const id = getIdKey(meta);
   if (id) {
-    registrationLogger.logInfo(`Overriding ID property for '${entity.name}' from '${id}' to '${key}'`);
+    // A subclass narrowing the inherited primary key: drop the old one so exactly one stays marked.
     delete meta.fields[id];
   }
   return defineField(entity, key, { ...opts, isId: true });
 }
 
-export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOptions<E>): EntityMeta<E> {
-  const resolved: RelationOptions<E> = opts.entity
-    ? opts
-    : (() => {
-        const inferredType = inferEntityType(entity, key);
-        return { ...opts, entity: () => inferredType };
-      })();
+// `RelationOptions` is parameterized by the *target* entity, which is independent of the owner `E`, so it
+// is left at its default here rather than tied to the class being registered.
+export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOptions): EntityMeta<E> {
+  if (!opts.entity) {
+    throw new TypeError(
+      `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
+    );
+  }
   const meta = ensureMeta(entity);
   const relKey = key as RelationKey<E>;
-  meta.relations[relKey] = { ...meta.relations[relKey], ...resolved };
+  meta.relations[relKey] = { ...meta.relations[relKey], ...opts };
   return meta;
 }
 
@@ -81,9 +77,14 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
   return meta;
 }
 
-export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput): EntityMeta<E> {
+/**
+ * Declares a composite index. `unique` and the authored column sugar are normalized here, which is what
+ * lets the dialects render one shape instead of re-parsing it.
+ */
+export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>>): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  appendEntityIndex(meta, index);
+  if (!meta.indexes) meta.indexes = [];
+  meta.indexes.push({ ...index, unique: index.unique ?? false, columns: index.columns.map(normalizeIndexColumn) });
   return meta;
 }
 
@@ -102,9 +103,23 @@ export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptio
   return meta;
 }
 
-function applyBulkFields<E>(entity: Type<E>, fields: Record<string, FieldOptions>): void {
-  for (const key of Object.keys(fields)) {
-    const spec = fields[key];
+/**
+ * What a decorator bag and {@link EntityOptions} have in common at registration time. The keyed mapped
+ * types in `EntityOptions<E>` are what check the imperative call; a member decorator has no class to key
+ * against, so by the time either reaches the primitives the keys are plain strings.
+ */
+type MemberSpecs = {
+  readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
+  readonly relations?: Readonly<Record<string, RelationOptions | undefined>>;
+  readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
+};
+
+/**
+ * Feeds fields, relations and hooks into the `define*` primitives, so the decorators and the imperative
+ * API converge on one registration path before anything is finalized.
+ */
+export function applyMembers<E>(entity: Type<E>, specs: MemberSpecs | undefined): void {
+  for (const [key, spec] of Object.entries(specs?.fields ?? {})) {
     if (!spec) continue;
     if (spec.isId) {
       defineId(entity, key, spec);
@@ -112,54 +127,29 @@ function applyBulkFields<E>(entity: Type<E>, fields: Record<string, FieldOptions
       defineField(entity, key, spec);
     }
   }
-}
-
-function applyBulkRelations<E>(entity: Type<E>, relations: Record<string, RelationOptions<E>>): void {
-  for (const key of Object.keys(relations)) {
-    const spec = relations[key];
+  for (const [key, spec] of Object.entries(specs?.relations ?? {})) {
     if (spec) defineRelation(entity, key, spec);
   }
-}
-
-function applyBulkIndexes<E>(entity: Type<E>, indexes: readonly EntityIndexInput[]): void {
-  const meta = ensureMeta(entity);
-  for (const idx of indexes) {
-    appendEntityIndex(meta, idx);
-  }
-}
-
-function applyBulkHooks<E>(entity: Type<E>, hooks: NonNullable<EntityOptions<E>['hooks']>): void {
-  for (const event of Object.keys(hooks) as HookEvent[]) {
-    const methodNames = hooks[event];
-    if (!methodNames?.length) continue;
-    for (const methodName of methodNames) {
-      defineHook(entity, methodName, event);
+  for (const [event, methodNames] of Object.entries(specs?.hooks ?? {})) {
+    for (const methodName of methodNames ?? []) {
+      defineHook(entity, methodName, event as HookEvent);
     }
   }
 }
 
-function applyBulkFilters<E>(entity: Type<E>, filters: NonNullable<EntityOptions<E>['filters']>): void {
-  for (const name of Object.keys(filters)) {
-    const spec = filters[name];
-    if (spec) defineFilter(entity, name, spec);
-  }
-}
-
-/**
- * Applies `fields`, `relations`, `indexes`, and `hooks` from {@link EntityOptions} before
- * entity finalization. Used by `defineEntity` for decorator-free registration.
- */
-function applyBulkEntityOptions<E>(entity: Type<E>, opts: EntityOptions<E>): void {
-  if (opts.fields) applyBulkFields(entity, opts.fields);
-  if (opts.relations) applyBulkRelations(entity, opts.relations);
-  if (opts.indexes?.length) applyBulkIndexes(entity, opts.indexes);
-  if (opts.hooks) applyBulkHooks(entity, opts.hooks);
-  if (opts.filters) applyBulkFilters(entity, opts.filters);
-}
-
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  applyBulkEntityOptions(entity, opts);
+  // Covers `defineEntity(Decorated)` called on a class whose members carry decorators. `@Entity()`
+  // drains `context.metadata` itself, because TypeScript only attaches `Symbol.metadata` to the class
+  // after class decorators return; draining empties the bag, so whichever runs second is a no-op.
+  applyMembers(entity, ownRegistrations(entity));
+  applyMembers(entity, opts);
+  for (const index of opts.indexes ?? []) {
+    defineIndex(entity, index);
+  }
+  for (const [name, spec] of Object.entries(opts.filters ?? {})) {
+    if (spec) defineFilter(entity, name, spec);
+  }
 
   if (!hasKeys(meta.fields)) {
     throw TypeError(`'${entity.name}' must have fields`);
@@ -169,8 +159,13 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
   while (proto.constructor !== Object) {
-    const parentMeta = ensureMeta(proto.constructor as Type<E>);
-    extendMeta(meta, parentMeta);
+    const parent = proto.constructor as Type<E>;
+    // An `abstract class BaseEntity` carrying `@Field`s but no `@Entity()` has nobody to drain its
+    // registrations, so do it here. Walking the *class* prototype chain rather than reading through the
+    // metadata object's is what makes this work on every transformer: tsc and esbuild chain metadata
+    // across `extends`, SWC does not.
+    applyMembers(parent, ownRegistrations(parent));
+    extendMeta(meta, ensureMeta(parent));
     proto = Object.getPrototypeOf(proto);
   }
 
@@ -277,7 +272,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
           name: fkKey,
           type: relatedIdField?.type ?? Number,
           references: relOpts.entity,
-          typeInferred: true,
+          typeFromReference: true,
         };
       }
     }
@@ -394,44 +389,4 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
       }
     }
   }
-}
-
-/** Present only once an app loads the optional `reflect-metadata` polyfill. */
-type ReflectWithMetadata = {
-  getMetadata?: (metadataKey: string, target: object, propertyKey: string) => FieldType;
-};
-
-/** Reads the `design:type` emitted by `emitDecoratorMetadata`, if the optional polyfill is loaded. */
-function inferType<E>(entity: Type<E>, key: string): FieldType {
-  const { getMetadata } = Reflect as ReflectWithMetadata;
-  if (!getMetadata) {
-    throw new TypeError(
-      `'${entity.name}.${key}' has no explicit type and 'design:type' metadata is unavailable. Either declare the type - '@Field({ type: String })' or '@Relation({ entity: () => Other })' - or install 'reflect-metadata' and add 'import "reflect-metadata"' once at your app entry point.`,
-    );
-  }
-  return getMetadata('design:type', entity.prototype, key);
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: reflected type is unknown at compile time
-function inferEntityType<E>(entity: Type<E>, key: string): Type<any> {
-  const inferredType = inferType(entity, key);
-  const isValidType = isValidEntityType(inferredType);
-  if (!isValidType) {
-    throw TypeError(
-      `'${entity.name}.${key}' type was auto-inferred with invalid type '${(inferredType as { name?: string })?.name}'`,
-    );
-  }
-  return inferredType;
-}
-
-export function isValidEntityType(type: unknown): type is Type<unknown> {
-  return (
-    typeof type === 'function' &&
-    type !== Boolean &&
-    type !== String &&
-    type !== Number &&
-    type !== BigInt &&
-    type !== Date &&
-    type !== Symbol
-  );
 }

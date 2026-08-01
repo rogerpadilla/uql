@@ -2,7 +2,8 @@ import express from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import * as options from '../options.js';
-import { createMockQuerier, type MockedQuerier, User } from '../test/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
 import { errorHandler, querierMiddleware } from './querierMiddleware.js';
 
 vi.mock('../options.js');
@@ -18,7 +19,9 @@ describe('querierMiddleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuerier = createMockQuerier();
-    (options.getQuerier as Mock).mockResolvedValue(mockQuerier);
+    (options.getQuerierPool as Mock).mockReturnValue(
+      createMockQuerierPool(new PostgresDialect(), async () => mockQuerier),
+    );
 
     app = express();
     app.use(express.json());
@@ -109,7 +112,7 @@ describe('querierMiddleware', () => {
   it('unknown methods fall through to 404', async () => {
     const res = await request(app).options('/api/user/1');
     expect(res.status).toBe(404);
-    expect(options.getQuerier).not.toHaveBeenCalled();
+    expect(options.getQuerierPool).not.toHaveBeenCalled();
   });
 
   it('unknown entities fall through to 404 (respects exclude)', async () => {

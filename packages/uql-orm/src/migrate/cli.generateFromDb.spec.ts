@@ -13,8 +13,8 @@ vi.mock('node:fs', () => ({
 
 @Entity({ name: 'shops' })
 class Shop {
-  @Id() id?: number;
-  @Field({ columnType: 'varchar', length: 100 }) name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 100 }) name?: string;
 }
 
 /** Migrator whose introspection reports the `shops` table. */

@@ -16,37 +16,10 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, type Relation } from '../../type/index.js';
+import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
-import { Entity } from '../decorator/entity.js';
-import { Field } from '../decorator/field.js';
-import { Filter } from '../decorator/filter.js';
-import { Id } from '../decorator/id.js';
-import { ManyToOne } from '../decorator/relation.js';
-import { defineField, getEntities, getMeta } from './definition.js';
-
-// `reflect-metadata` is an optional peer (loaded by vitest.setup.ts): a consumer who skipped it must
-// get a message naming the field and both remedies, not `undefined` metadata.
-it('reports a missing reflect-metadata polyfill when a field type must be inferred', () => {
-  class Untyped {
-    name?: string;
-  }
-  const reflect = Reflect as { getMetadata?: unknown };
-  const polyfilled = reflect.getMetadata;
-  delete reflect.getMetadata;
-  try {
-    expect(() => defineField(Untyped, 'name')).toThrow(/'Untyped\.name' has no explicit type/);
-    expect(() => defineField(Untyped, 'name')).toThrow(/install 'reflect-metadata'/);
-    // The documented alternative works with no polyfill at all.
-    expect(defineField(Untyped, 'name', { type: String }).fields.name).toMatchObject({
-      name: 'name',
-      type: String,
-      typeInferred: false,
-    });
-  } finally {
-    reflect.getMetadata = polyfilled;
-  }
-});
+import { Entity, Field, Filter, Id, ManyToOne } from '../index.js';
+import { getEntities, getMeta } from './definition.js';
 
 it('User', () => {
   const meta = getMeta(User);
@@ -68,12 +41,10 @@ it('User', () => {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -123,12 +94,10 @@ it('Profile', () => {
       pk: { name: 'pk', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -162,12 +131,10 @@ it('Item', () => {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -177,22 +144,18 @@ it('Item', () => {
       code: { name: 'code', type: String },
       buyLedgerAccountId: {
         name: 'buyLedgerAccountId',
-        type: Number,
         references: expect.anything(),
       },
       saleLedgerAccountId: {
         name: 'saleLedgerAccountId',
-        type: Number,
         references: expect.anything(),
       },
       taxId: {
         name: 'taxId',
-        type: Number,
         references: expect.anything(),
       },
       measureUnitId: {
         name: 'measureUnitId',
-        type: Number,
         references: expect.anything(),
       },
       salePrice: { name: 'salePrice', type: Number },
@@ -265,7 +228,6 @@ it('Tag', () => {
       companyId: {
         name: 'companyId',
         references: expect.anything(),
-        type: Number,
       },
       createdAt: {
         name: 'createdAt',
@@ -291,7 +253,6 @@ it('Tag', () => {
       creatorId: {
         name: 'creatorId',
         references: expect.anything(),
-        type: Number,
       },
     },
     relations: {
@@ -331,12 +292,10 @@ it('ItemTag', () => {
       id: { name: 'id', type: Number, isId: true as const },
       itemId: {
         name: 'itemId',
-        type: Number,
         references: expect.anything(),
       },
       tagId: {
         name: 'tagId',
-        type: Number,
         references: expect.anything(),
       },
     },
@@ -367,12 +326,10 @@ it('TaxCategory', () => {
       pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -408,7 +365,6 @@ it('Tax', () => {
       categoryId: {
         name: 'categoryId',
         references: expect.anything(),
-        type: String,
       },
       percentage: {
         name: 'percentage',
@@ -416,12 +372,10 @@ it('Tax', () => {
       },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -471,12 +425,10 @@ it('ItemAdjustment', () => {
       inventoryAdjustmentId: {
         name: 'inventoryAdjustmentId',
         references: expect.anything(),
-        type: Number,
       },
       itemId: {
         name: 'itemId',
         references: expect.anything(),
-        type: Number,
       },
       number: {
         name: 'number',
@@ -485,16 +437,13 @@ it('ItemAdjustment', () => {
       storehouseId: {
         name: 'storehouseId',
         references: expect.anything(),
-        type: Number,
       },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -547,12 +496,10 @@ it('InventoryAdjustment', () => {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -596,12 +543,10 @@ it('MeasureUnitCategory', () => {
       name: { name: 'name', type: String },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -643,17 +588,14 @@ it('MeasureUnit', () => {
       name: { name: 'name', type: String },
       categoryId: {
         name: 'categoryId',
-        type: Number,
         references: expect.anything(),
       },
       companyId: {
         name: 'companyId',
-        type: Number,
         references: expect.anything(),
       },
       creatorId: {
         name: 'creatorId',
-        type: Number,
         references: expect.anything(),
       },
       createdAt: { name: 'createdAt', type: Number, onInsert: expect.anything() },
@@ -724,7 +666,7 @@ it('no @Id', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
-      @Field()
+      @Field({ type: String })
       id!: string;
     }
   }).toThrow(
@@ -745,11 +687,11 @@ it('at most one softDelete field', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
-      @Field({ isId: true })
+      @Field({ type: String, isId: true })
       id!: string;
-      @Field({ softDelete: true })
+      @Field({ type: Number, softDelete: true })
       deletedAt?: number;
-      @Field({ softDelete: () => new Date() })
+      @Field({ type: Date, softDelete: () => new Date() })
       archivedAt?: Date;
     }
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
@@ -758,23 +700,23 @@ it('at most one softDelete field', () => {
 it('auto-generates the FK column from a relation-only declaration', () => {
   @Entity()
   class AutoFkTarget {
-    @Id()
+    @Id({ type: Number })
     id?: number;
-    @Field()
+    @Field({ type: String })
     name?: string;
   }
 
   @Entity()
   class AutoFkOwner {
-    @Id()
+    @Id({ type: Number })
     id?: number;
     @ManyToOne({ entity: () => AutoFkTarget })
-    target?: Relation<AutoFkTarget>;
+    target?: AutoFkTarget;
   }
 
   const meta = getMeta(AutoFkOwner);
   // auto-created FK column mirrors an explicit `@Field({ references })` column
-  expect(meta.fields['targetId']).toMatchObject({ name: 'targetId', type: Number, typeInferred: true });
+  expect(meta.fields['targetId']).toMatchObject({ name: 'targetId', type: Number, typeFromReference: true });
   expect(meta.fields['targetId']!.references!()).toBe(AutoFkTarget);
   expect(meta.relations.target!.references).toEqual([{ local: 'targetId', foreign: 'id' }]);
 });
@@ -788,9 +730,9 @@ it('registers @Filter and bulk filters', () => {
   @Filter('active', { condition: { status: 'active' }, default: false })
   @Entity({ filters: { recent: { condition: { status: 'new' } } } })
   class FilteredEntity {
-    @Id()
+    @Id({ type: Number })
     id?: number;
-    @Field()
+    @Field({ type: String })
     status?: string;
   }
   const meta = getMeta(FilteredEntity);
@@ -803,9 +745,9 @@ it('softDelete is a reserved filter name', () => {
     @Filter('softDelete', { condition: { status: 'bogus' } })
     @Entity()
     class ReservedFilter {
-      @Id()
+      @Id({ type: Number })
       id?: number;
-      @Field()
+      @Field({ type: String })
       status?: string;
     }
     return ReservedFilter;
@@ -822,7 +764,7 @@ it('a security filter cannot opt into skipping when its condition is unresolved'
     @Filter('tenant', { condition: () => undefined, security: true, onMissing: 'skip' })
     @Entity()
     class SkippableSecurityFilter {
-      @Id()
+      @Id({ type: Number })
       id?: number;
     }
     return SkippableSecurityFilter;
@@ -833,11 +775,11 @@ it('a security filter cannot opt into skipping when its condition is unresolved'
 it('a second @Id replaces the first one', () => {
   @Entity()
   class ReIdentified {
-    @Id()
+    @Id({ type: Number })
     legacyId?: number;
-    @Id()
+    @Id({ type: Number })
     id?: number;
-    @Field()
+    @Field({ type: String })
     name?: string;
   }
 
@@ -849,13 +791,13 @@ it('a second @Id replaces the first one', () => {
 
 it('subclass declaring the only @Id inherits the parent fields', () => {
   class IdlessBase {
-    @Field()
+    @Field({ type: String })
     name?: string;
   }
 
   @Entity()
   class IdentifiedChild extends IdlessBase {
-    @Id()
+    @Id({ type: Number })
     id?: number;
   }
 
@@ -868,17 +810,17 @@ it('subclass inherits parent softDelete field key and filters', () => {
   @Filter('active', { condition: { status: 'active' }, default: false })
   @Entity()
   class SoftBase {
-    @Id()
+    @Id({ type: Number })
     id?: number;
-    @Field()
+    @Field({ type: String })
     status?: string;
-    @Field({ softDelete: true })
+    @Field({ type: Date, softDelete: true })
     deletedAt?: Date;
   }
 
   @Entity()
   class SoftChild extends SoftBase {
-    @Field()
+    @Field({ type: String })
     name?: string;
   }
 

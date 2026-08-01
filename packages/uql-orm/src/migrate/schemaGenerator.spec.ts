@@ -10,31 +10,31 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 // Test entities
 @Entity()
 class TestUser {
-  @Id()
+  @Id({ type: Number })
   id?: number;
 
-  @Field({ length: 100 })
+  @Field({ type: String, length: 100 })
   name?: string;
 
-  @Field({ unique: true })
+  @Field({ type: String, unique: true })
   email?: string;
 
-  @Field({ nullable: false })
+  @Field({ type: String, nullable: false })
   password?: string;
 
-  @Field({ onInsert: Date.now })
+  @Field({ type: Number, onInsert: Date.now })
   createdAt?: number;
 }
 
 @Entity({ name: 'blog_posts' })
 class TestPost {
-  @Id({ onInsert: () => crypto.randomUUID(), length: 36 })
+  @Id({ type: String, onInsert: () => crypto.randomUUID(), length: 36 })
   id?: string;
 
-  @Field()
+  @Field({ type: String })
   title?: string;
 
-  @Field({ columnType: 'text' })
+  @Field({ type: String, columnType: 'text' })
   content?: string;
 
   @Field({ type: 'jsonb' })
@@ -43,14 +43,14 @@ class TestPost {
   @Field({ references: () => TestUser })
   authorId?: number;
 
-  @ManyToOne()
+  @ManyToOne({ entity: () => TestUser })
   author?: TestUser;
 }
 
 @Entity()
 class SqliteIndexedEntity {
-  @Id() id?: number;
-  @Field({ index: true })
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, index: true })
   slug?: string;
 }
 

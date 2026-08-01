@@ -9,23 +9,23 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class DiffUser {
-  @Id() id?: number;
-  @Field({ columnType: 'varchar', length: 255 }) name?: string;
-  @Field({ columnType: 'varchar', length: 100 }) email?: string;
-  @Field({ columnType: 'varchar', length: 255, index: true }) status?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
+  @Field({ type: String, columnType: 'varchar', length: 100 }) email?: string;
+  @Field({ type: String, columnType: 'varchar', length: 255, index: true }) status?: string;
 }
 
 @Entity()
 class DefaultsEntity {
-  @Id() id?: number;
-  @Field({ columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string;
-  @Field({ columnType: 'int', defaultValue: 0 }) attempts?: number;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string;
+  @Field({ type: Number, columnType: 'int', defaultValue: 0 }) attempts?: number;
 }
 
 @Entity()
 class VirtualEntity {
-  @Id() id?: number;
-  @Field({ virtual: raw('1 + 1') }) computed?: number;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number, virtual: raw('1 + 1') }) computed?: number;
 }
 
 describe('SqlSchemaGenerator Advanced', () => {
