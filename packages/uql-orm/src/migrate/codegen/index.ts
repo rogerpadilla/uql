@@ -19,9 +19,3 @@ export {
   emitSqlRunCalls,
   type SqlMigrationModuleOptions,
 } from './migrationFile.js';
-// Smart relation detector
-export {
-  createRelationDetector,
-  type RelationDetectorOptions,
-  SmartRelationDetector,
-} from './smartRelationDetector.js';

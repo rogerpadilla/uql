@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.23.0] - 2026-07-31
+
+### Fixes
+
+- `drift:check` reported the migrations table itself as an unexpected table, telling every project to "create entity or drop table" for its own migration log. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.
+- `DriftDetectorOptions.checkDefaults` was declared and never read, so asking for default mismatches reported nothing.
+
+
 ## [0.22.0] - 2026-07-31
 
 ### Vector search works on every engine that has it
@@ -25,6 +33,7 @@ It had only ever been exercised on Postgres. Verified live on pgvector 0.8.2, Co
 Turso Cloud over `fetch()` alone (edge-safe), and the embedded Rust engine with native streaming. Both report the SQLite dialect, so entities, queries and migrations are unchanged; both peers are optional.
 
 ### Fixes
+
 
 - `uql sync` printed a plan and applied nothing unless `--force`. `--dry-run` now prints the statements it would run, `--unsafe` allows drops.
 - `addColumn`/`alterColumn` created a `VARCHAR` whatever type the migration declared.

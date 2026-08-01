@@ -14,6 +14,9 @@ interface MigrationRecord {
  * Stores migration state in a database table.
  * Uses the querier's dialect for escaping and placeholders.
  */
+/** Where executed migrations are recorded when the config does not name a table. */
+export const DEFAULT_MIGRATIONS_TABLE = 'uql_migrations';
+
 export class DatabaseMigrationStorage implements MigrationStorage {
   private readonly tableName: string;
   private storageInitialized = false;
@@ -24,7 +27,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       tableName?: string;
     } = {},
   ) {
-    this.tableName = options.tableName ?? 'uql_migrations';
+    this.tableName = options.tableName ?? DEFAULT_MIGRATIONS_TABLE;
   }
 
   async ensureStorage(): Promise<void> {

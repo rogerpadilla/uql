@@ -49,7 +49,6 @@ export type {
   ColumnDiff,
   ColumnNode,
   // Relation detection types
-  DetectedRelation,
   // Drift detection types
   Drift,
   DriftReport,

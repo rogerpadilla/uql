@@ -13,6 +13,7 @@ import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
+import { DEFAULT_MIGRATIONS_TABLE } from './storage/databaseStorage.js';
 
 /** Sync helper for SQL dialects only; returns `undefined` for MongoDB - use {@link createSchemaGeneratorAsync}. */
 export function getSchemaGenerator(dialect: AbstractDialect, defaultForeignKeyAction?: ForeignKeyAction) {
@@ -313,7 +314,10 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
 
     // Detect drift. The dialect renders canonical types as SQL - without it every type formats as
     // `unknown` and type drift compares equal, silently reporting a mismatched column as in sync.
-    const report = detectDrift(expectedAST, actualAST, { dialect: config.pool?.dialect });
+    const report = detectDrift(expectedAST, actualAST, {
+      dialect: config.pool?.dialect,
+      excludeTables: [config.tableName ?? DEFAULT_MIGRATIONS_TABLE],
+    });
 
     printDriftReport(report);
   }
