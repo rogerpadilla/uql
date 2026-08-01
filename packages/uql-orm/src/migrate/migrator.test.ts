@@ -3,6 +3,7 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
 import { Migrator } from './migrator.js';
@@ -77,15 +78,11 @@ describe('Migrator autoSync Integration', () => {
   beforeEach(() => {
     // Mock pool and querier for testing
     const sqliteDialect = new SqliteDialect();
-    const querier = {
+    const querier = createMockQuerier({
       run: vi.fn().mockResolvedValue({}),
       all: vi.fn().mockResolvedValue([]),
-      beginTransaction: vi.fn().mockResolvedValue(undefined),
-      commitTransaction: vi.fn().mockResolvedValue(undefined),
-      rollbackTransaction: vi.fn().mockResolvedValue(undefined),
-      release: vi.fn().mockResolvedValue(undefined),
       dialect: sqliteDialect,
-    } as unknown as SqlQuerier;
+    }) as unknown as SqlQuerier;
     pool = createMockQuerierPool(sqliteDialect, vi.fn().mockResolvedValue(querier));
 
     migrator = new Migrator(pool, {

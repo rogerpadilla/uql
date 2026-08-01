@@ -639,6 +639,23 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract readonly hasOpenTransaction: boolean;
 
+  /**
+   * Runs `callback` in a transaction: begin, commit on success, roll back on failure.
+   *
+   * The single place that sequence is written; everything else delegates here, because both subtleties
+   * below were got wrong by code that hand-rolled it:
+   *
+   * - `beginTransaction` connects before it begins, so a refused connection lands in the catch with no
+   *   transaction open. Rolling back regardless threw `not a pending transaction`, and that replaced the
+   *   real cause: a wrong password surfaced as a transaction-state error.
+   * - A rollback that fails too is a consequence of the original failure, not news, so it must not
+   *   replace it either.
+   *
+   * The connection is **not** released here: whoever took it from the pool gives it back, through
+   * {@link QuerierPool.transaction}, {@link QuerierPool.withQuerier} or `await using`. Releasing a
+   * connection this method never acquired is what forced every caller to know whether it still owned
+   * one afterwards.
+   */
   async transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions) {
     if (this.hasOpenTransaction) {
       return callback();
@@ -649,10 +666,10 @@ export abstract class AbstractQuerier implements Querier {
       await this.commitTransaction();
       return res;
     } catch (err) {
-      await this.rollbackTransaction();
+      if (this.hasOpenTransaction) {
+        await this.rollbackTransaction().catch(() => {});
+      }
       throw err;
-    } finally {
-      await this.release();
     }
   }
 

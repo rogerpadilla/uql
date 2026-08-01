@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setQuerierPool } from '../options.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { Querier, QuerierPool } from '../type/index.js';
+import { AbstractQuerier } from './abstractQuerier.js';
 import { currentQuerier, currentQuerierIfAny } from './querierContext.js';
 import { Transactional } from './transactional.js';
 
@@ -9,6 +12,8 @@ function createQuerier() {
   const calls: string[] = [];
   const querier = {
     hasOpenTransaction: false,
+    // The real sequencing, driven by the recorders below, so `calls` shows what the ORM actually does.
+    transaction: AbstractQuerier.prototype.transaction,
     async beginTransaction(opts?: { isolationLevel?: string }) {
       calls.push(opts?.isolationLevel ? `begin:${opts.isolationLevel}` : 'begin');
       querier.hasOpenTransaction = true;
@@ -29,7 +34,8 @@ function createQuerier() {
 }
 
 function createPool(querier: Querier): QuerierPool {
-  return { getQuerier: vi.fn().mockResolvedValue(querier), end: vi.fn() } as unknown as QuerierPool;
+  // A spy, since MockQuerierPool keeps the exact function passed and specs assert on the acquisitions.
+  return createMockQuerierPool(new PostgresDialect(), vi.fn().mockResolvedValue(querier));
 }
 
 describe('@Transactional', () => {

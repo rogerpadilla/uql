@@ -1,6 +1,6 @@
 import { withContext } from '../context/context.js';
 import { getEntities, getMeta } from '../entity/index.js';
-import { getQuerier } from '../options.js';
+import { getQuerierPool } from '../options.js';
 import type {
   EntityMeta,
   IdValue,
@@ -273,29 +273,11 @@ function ok(body: unknown): HandlerResponse {
   return { status: 200, body };
 }
 
-async function withQuerier(fn: (querier: Querier) => Promise<HandlerResponse>): Promise<HandlerResponse> {
-  const querier = await getQuerier();
-  try {
-    return await fn(querier);
-  } finally {
-    await querier.release();
-  }
-}
+/** Read paths: the pool acquires and releases; nothing here owns a connection. */
+const withQuerier = (fn: (querier: Querier) => Promise<HandlerResponse>) => getQuerierPool().withQuerier(fn);
 
-async function withTransaction(fn: (querier: Querier) => Promise<HandlerResponse>): Promise<HandlerResponse> {
-  const querier = await getQuerier();
-  try {
-    await querier.beginTransaction();
-    const resp = await fn(querier);
-    await querier.commitTransaction();
-    return resp;
-  } catch (err) {
-    await querier.rollbackTransaction().catch(() => {});
-    throw err;
-  } finally {
-    await querier.release();
-  }
-}
+/** Write paths: same, plus commit on success and rollback on failure. */
+const withTransaction = (fn: (querier: Querier) => Promise<HandlerResponse>) => getQuerierPool().transaction(fn);
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
   const idKey = meta.id as string;
