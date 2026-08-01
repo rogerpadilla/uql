@@ -1,15 +1,26 @@
 import { getLoadablePath } from 'sqlite-vec';
 import { expect } from 'vitest';
+import type { AbstractSqlQuerierPool } from '../querier/index.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, VectorItem } from '../test/index.js';
 import type { WithDistance } from '../type/index.js';
+import type { SqliteDialect } from './sqliteDialect.js';
+import type { SqliteQuerier } from './sqliteQuerier.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 // SQLite ships no vector functions, so the shared vector suite only runs with sqlite-vec loaded -
 // the one way to catch a `vec_distance_*` name that extension does not actually define.
 export class Sqlite3QuerierIt extends VectorQuerierIt {
-  constructor() {
-    super(new Sqlite3QuerierPool(':memory:', { extensions: [getLoadablePath()] }));
+  /**
+   * Takes the pool so the whole suite can be replayed against another SQLite driver with the same
+   * specified behaviour - see `nodeSqliteQuerier.test.ts`, which runs it on `node:sqlite`.
+   */
+  constructor(
+    pool: AbstractSqlQuerierPool<SqliteQuerier, SqliteDialect> = new Sqlite3QuerierPool(':memory:', {
+      extensions: [getLoadablePath()],
+    }),
+  ) {
+    super(pool);
   }
 
   override async beforeEach() {

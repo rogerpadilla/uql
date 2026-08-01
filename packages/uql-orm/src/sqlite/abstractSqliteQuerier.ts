@@ -2,8 +2,15 @@ import { AbstractSqlQuerier } from '../querier/index.js';
 import type { RawRow } from '../type/index.js';
 import { throwPendingTransaction } from '../util/index.js';
 
-/** Values every SQLite driver accepts as a bound parameter. */
-export type SqliteBindValue = null | string | number | bigint | boolean | Uint8Array;
+/**
+ * Values every SQLite driver accepts as a bound parameter.
+ *
+ * @remarks No `boolean`: SQLite has no boolean storage class, and both `better-sqlite3` ("SQLite3 can
+ * only bind numbers, strings, bigints, buffers, and null") and `node:sqlite` reject one outright. The
+ * dialect already binds booleans as integers (`booleanLiteral: 'integer'`), so nothing reaches a
+ * driver as one; leaving `boolean` here only invited a runtime throw that is now a compile error.
+ */
+export type SqliteBindValue = null | string | number | bigint | Uint8Array;
 
 /** Header a SQLite driver returns for a statement without a `RETURNING` clause. */
 export type SqliteRunResult = {

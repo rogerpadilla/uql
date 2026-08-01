@@ -46,6 +46,51 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.pool.end();
   }
 
+  /**
+   * Every driver inherits `Symbol.asyncDispose` from `AbstractQuerier`, so `await using` has to
+   * release on any backend. Takes its own querier rather than `this.querier`, which the harness owns,
+   * and counts calls by wrapping `release` instead of mocking: this suite also runs under `bun:test`.
+   */
+  async shouldReleaseOnAsyncDispose() {
+    const querier = await this.pool.getQuerier();
+    const release = querier.release.bind(querier);
+    let releases = 0;
+    querier.release = async () => {
+      releases++;
+      return release();
+    };
+
+    {
+      await using scoped = querier;
+      await scoped.count(User);
+    }
+
+    expect(releases).toBe(1);
+  }
+
+  /** The release still happens when the block exits through a throw. */
+  async shouldReleaseOnAsyncDisposeWhenBodyThrows() {
+    const querier = await this.pool.getQuerier();
+    const release = querier.release.bind(querier);
+    let releases = 0;
+    querier.release = async () => {
+      releases++;
+      return release();
+    };
+
+    const failed = await (async () => {
+      await using scoped = querier;
+      await scoped.count(User);
+      throw new Error('boom');
+    })().then(
+      () => undefined,
+      (err: Error) => err.message,
+    );
+
+    expect(failed).toBe('boom');
+    expect(releases).toBe(1);
+  }
+
   async shouldInsertMany() {
     const ids = await this.querier.insertMany(User, [
       {
