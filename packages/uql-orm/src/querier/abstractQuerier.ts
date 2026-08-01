@@ -1,4 +1,4 @@
-import { getMeta } from '../entity/decorator/index.js';
+import { getMeta } from '../entity/index.js';
 
 import type {
   EntityMeta,
@@ -42,7 +42,7 @@ import {
   type RelationQuery,
   runHooks,
 } from '../util/index.js';
-import { Serialized } from './decorator/index.js';
+import { enrichError } from './queryError.js';
 
 /**
  * Base class for all database queriers.
@@ -704,6 +704,26 @@ export abstract class AbstractQuerier implements Querier {
     return res;
   }
 
+  /**
+   * Runs `task`, logs `query` with how long it took, and tags any error it throws with that query.
+   *
+   * A method rather than the `@Log()` decorator it replaces. A standard-spec method decorator works by
+   * returning a replacement function, and a replacement cannot carry the original's type parameters, so
+   * decorating `internalFindMany<E extends Document>` made its signature unresolvable. Most of the query
+   * surface is generic like that, and wrapping at the call site costs one line while keeping the
+   * signature intact.
+   */
+  protected async timed<T>(query: string, values: unknown[] | undefined, task: () => Promise<T>): Promise<T> {
+    const startTime = performance.now();
+    try {
+      return await task();
+    } catch (err) {
+      throw enrichError(err, this.logger, query, values);
+    } finally {
+      this.logger.logQuery(query, values, Math.round(performance.now() - startTime));
+    }
+  }
+
   abstract beginTransaction(opts?: TransactionOptions): Promise<void>;
 
   abstract commitTransaction(): Promise<void>;
@@ -712,9 +732,8 @@ export abstract class AbstractQuerier implements Querier {
 
   protected abstract internalRelease(): Promise<void>;
 
-  @Serialized()
   async release(): Promise<void> {
-    return this.internalRelease();
+    return this.serialize(() => this.internalRelease());
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

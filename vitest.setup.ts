@@ -1,5 +1,3 @@
-// `reflect-metadata` is an optional peer dependency; the app loads it, and this suite is such an app.
-import 'reflect-metadata';
 import { vi } from 'vitest';
 
 vi.mock('bun', () => {

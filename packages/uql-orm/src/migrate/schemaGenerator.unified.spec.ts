@@ -6,8 +6,8 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({ name: 'users' })
 class User {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
 }
 
 // One row per dialect instead of an `if (dialectName === ...)` ladder inside each test body: the

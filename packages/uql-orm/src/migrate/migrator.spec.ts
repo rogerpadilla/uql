@@ -154,7 +154,7 @@ describe('Migrator Core Methods', () => {
   it('generateFromEntities should create a migration file', async () => {
     @Entity()
     class DummyEntity {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     migrator = new Migrator(pool, { entities: [DummyEntity] });
@@ -193,7 +193,7 @@ describe('Migrator Core Methods', () => {
   it('generateFromEntities emits valid JS for SQL with backticks (SQLite/LibSQL identifiers)', async () => {
     @Entity()
     class Article {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     migrator = new Migrator(pool, { entities: [Article] });
@@ -250,7 +250,7 @@ describe('Migrator Core Methods', () => {
   it('syncForce should drop and create tables', async () => {
     @Entity()
     class SyncEntity {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
     migrator = new Migrator(pool, { entities: [SyncEntity] });
 
@@ -359,7 +359,7 @@ describe('Migrator Core Methods', () => {
   describe('Schema Sync', () => {
     @Entity()
     class MigratorUser {
-      @Id()
+      @Id({ type: Number })
       id!: number;
     }
 

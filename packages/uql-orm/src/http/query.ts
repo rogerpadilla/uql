@@ -1,5 +1,5 @@
 import type { Query, QueryOptions } from '../type/index.js';
-// specific util module (not the barrel) to keep reflect-metadata out of the browser bundle
+// the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
 
 const JSON_QUERY_KEYS = [

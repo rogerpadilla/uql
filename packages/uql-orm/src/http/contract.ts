@@ -1,6 +1,5 @@
 import type { Type, UniversalQuerier } from '../type/index.js';
-// import from the specific util modules (not the barrel) to keep entity
-// metadata and reflect-metadata out of the browser bundle
+// the specific util modules, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
 import { kebabCase } from '../util/string.util.js';
 

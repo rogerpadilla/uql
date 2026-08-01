@@ -4,7 +4,10 @@
     "moduleResolution": "NodeNext",
     "lib": ["ESNext"],
     "types": ["@types/bun"],
-    "target": "ESNext",
+    // Deliberately not `esnext`: it is the one target where TypeScript emits decorator syntax
+    // untransformed, which Node and every browser reject with a SyntaxError. Every dated target
+    // downlevels it. Also the floor for `uql-codemod`, which builds with the TypeScript it depends on.
+    "target": "es2025",
     "moduleDetection": "force",
 
     "strict": true,
@@ -13,8 +16,6 @@
     "verbatimModuleSyntax": true,
     "incremental": true,
     "allowUnreachableCode": false,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
 
     "noFallthroughCasesInSwitch": true,
     "inlineSourceMap": true,

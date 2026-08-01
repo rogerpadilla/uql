@@ -13,16 +13,16 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { QueryContext, Relation, Type, UpdatePayload } from '../type/index.js';
+import type { QueryContext, Type, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 /** Exercises a soft-delete stamp whose value is a raw SQL expression. */
 @Entity()
 class SoftDeleteRaw {
-  @Id()
+  @Id({ type: Number })
   id?: number;
-  @Field({ softDelete: () => raw(() => 'NOW()') })
+  @Field({ type: Date, softDelete: () => raw(() => 'NOW()') })
   deletedAt?: Date;
 }
 
@@ -39,21 +39,21 @@ declare module '../type/index.js' {
 })
 @Entity()
 class SecureRelated {
-  @Id()
+  @Id({ type: Number })
   id?: number;
-  @Field()
+  @Field({ type: Number })
   tenantId?: number;
-  @Field()
+  @Field({ type: String })
   name?: string;
 }
 
 @Entity()
 class SecureParent {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureRelated })
   relatedId?: number;
-  @ManyToOne()
+  @ManyToOne({ entity: () => SecureRelated })
   related?: SecureRelated;
 }
 
@@ -64,33 +64,33 @@ class SecureParent {
 })
 @Entity()
 class SecureChild {
-  @Id()
+  @Id({ type: Number })
   id?: number;
-  @Field()
+  @Field({ type: Number })
   tenantId?: number;
   @Field({ references: () => SecureCollection })
   collectionId?: number;
-  @Field({ softDelete: () => Date.now() })
+  @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
   @ManyToOne({ entity: () => SecureCollection })
-  collection?: Relation<SecureCollection>;
+  collection?: SecureCollection;
 }
 
 /** No filters of its own, so a count over the junction to it stays junction-only. */
 @Entity()
 class PlainChild {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
   collectionId?: number;
   @ManyToOne({ entity: () => SecureCollection })
-  collection?: Relation<SecureCollection>;
+  collection?: SecureCollection;
 }
 
 /** Junction FK names follow the derived `lowerFirst(entity) + Id` convention for mm relations. */
 @Entity()
 class SecureCollectionChild {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
   secureCollectionId?: number;
@@ -100,7 +100,7 @@ class SecureCollectionChild {
 
 @Entity()
 class SecureCollectionPlain {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
   secureCollectionId?: number;
@@ -111,7 +111,7 @@ class SecureCollectionPlain {
 /** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
 @Entity()
 class RenamedParent {
-  @Id({ name: 'parent_pk' })
+  @Id({ type: Number, name: 'parent_pk' })
   id?: number;
   @OneToMany({ entity: () => RenamedChild, mappedBy: (child) => child.parentId! })
   children?: RenamedChild[];
@@ -119,7 +119,7 @@ class RenamedParent {
 
 @Entity()
 class RenamedChild {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ name: 'parent_fk', references: () => RenamedParent })
   parentId?: number;
@@ -128,7 +128,7 @@ class RenamedChild {
 /** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
 @Entity()
 class SecureCollectionRenamed {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ name: 'renamed_collection', references: () => SecureCollection })
   secureCollectionId?: number;
@@ -139,19 +139,19 @@ class SecureCollectionRenamed {
 /** A soft-deletable junction: an unlinked row must not count as a link. */
 @Entity()
 class SecureCollectionLink {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
   secureCollectionId?: number;
   @Field({ references: () => PlainChild })
   plainChildId?: number;
-  @Field({ softDelete: () => Date.now() })
+  @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
 }
 
 @Entity()
 class SecureCollection {
-  @Id()
+  @Id({ type: Number })
   id?: number;
   @OneToMany({ entity: () => SecureChild, mappedBy: (child) => child.collectionId! })
   children?: SecureChild[];

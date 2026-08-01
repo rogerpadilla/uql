@@ -1,7 +1,6 @@
 import {
   type DynamicModule,
   type FactoryProvider,
-  Inject,
   Module,
   type OnApplicationShutdown,
   type Provider,
@@ -51,14 +50,26 @@ export type UqlModuleAsyncOptions<Req = unknown> = UqlModuleCommon<Req> & {
  * optionally scopes every request to a {@link UqlContext} (multi-tenancy), and ends the pool on
  * application shutdown.
  */
-@Module({})
-export class UqlModule implements OnApplicationShutdown {
-  constructor(@Inject(UQL_QUERIER_POOL) private readonly pool: QuerierPool) {}
+/**
+ * Ends the pool when Nest shuts down.
+ *
+ * @remarks A provider rather than a hook on the module class, and built through `useFactory` with an
+ * `inject` list rather than constructor injection: Nest injects constructor parameters with a parameter
+ * decorator, and the TC39 decorator spec has none, so `@Inject()` cannot appear in a file compiled
+ * against it. Nest runs lifecycle hooks on providers too, so this keeps the pool that *this* module was
+ * configured with instead of reaching for the global default.
+ */
+class UqlPoolLifecycle implements OnApplicationShutdown {
+  constructor(private readonly pool: QuerierPool) {}
 
   onApplicationShutdown(): Promise<void> {
     return this.pool.end();
   }
+}
 
+@Module({})
+// biome-ignore lint/complexity/noStaticOnlyClass: NestJS needs a decorated class as the module token; the shutdown hook that once made this an instance now lives on its own provider.
+export class UqlModule {
   /** Configure with an already-built pool. */
   static forRoot<Req = unknown>({ pool, global = true, getContext }: UqlModuleOptions<Req>): DynamicModule {
     setQuerierPool(pool);
@@ -91,7 +102,14 @@ export class UqlModule implements OnApplicationShutdown {
     getContext?: (request: Req) => UqlContext | undefined,
     imports?: DynamicModule['imports'],
   ): DynamicModule {
-    const providers: Provider[] = [poolProvider];
+    const providers: Provider[] = [
+      poolProvider,
+      {
+        provide: UqlPoolLifecycle,
+        useFactory: (pool: QuerierPool) => new UqlPoolLifecycle(pool),
+        inject: [UQL_QUERIER_POOL],
+      },
+    ];
     if (getContext) {
       // Scope every request to its context so multi-tenancy / security filters apply automatically.
       providers.push({ provide: APP_INTERCEPTOR, useValue: new UqlContextInterceptor(getContext) });

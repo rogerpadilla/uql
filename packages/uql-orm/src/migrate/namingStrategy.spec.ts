@@ -6,9 +6,9 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class UserProfileMigrate {
-  @Id() id?: number;
-  @Field() firstName?: string;
-  @Field() lastName?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) firstName?: string;
+  @Field({ type: String }) lastName?: string;
 }
 
 describe('Schema Generator with Naming Strategy', () => {

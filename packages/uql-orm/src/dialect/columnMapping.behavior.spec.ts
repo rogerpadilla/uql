@@ -13,11 +13,11 @@ import { Item } from '../test/entityMock.js';
  */
 @Entity({ name: 'renamed_row' })
 class Renamed {
-  @Id({ name: 'row_pk' })
+  @Id({ type: Number, name: 'row_pk' })
   id?: number;
-  @Field({ name: 'the_label' })
+  @Field({ type: String, name: 'the_label' })
   label?: string;
-  @Field({ name: 'deleted_at', softDelete: true })
+  @Field({ type: Date, name: 'deleted_at', softDelete: true })
   deletedAt?: Date;
 }
 

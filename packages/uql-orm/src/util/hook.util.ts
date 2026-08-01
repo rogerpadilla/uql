@@ -1,4 +1,4 @@
-import { getMeta } from '../entity/decorator/index.js';
+import { getMeta } from '../entity/index.js';
 import type { HookEvent, Querier, Type } from '../type/index.js';
 
 /**

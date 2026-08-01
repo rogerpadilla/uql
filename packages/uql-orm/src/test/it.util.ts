@@ -1,4 +1,4 @@
-import { getEntities } from '../entity/decorator/index.js';
+import { getEntities } from '../entity/index.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';

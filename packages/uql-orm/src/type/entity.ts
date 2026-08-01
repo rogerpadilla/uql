@@ -248,6 +248,16 @@ export type JsonColumnType = 'json' | 'jsonb';
 export type BlobColumnType = 'blob' | 'bytea';
 
 /**
+ * SQL boolean column types
+ */
+export type BooleanColumnType = 'bool' | 'boolean';
+
+/**
+ * SQL vector column types
+ */
+export type VectorColumnType = 'vector' | 'halfvec' | 'sparsevec';
+
+/**
  * SQL column types supported by uql migrations
  */
 export type ColumnType =
@@ -256,11 +266,8 @@ export type ColumnType =
   | DateColumnType
   | JsonColumnType
   | BlobColumnType
-  | 'bool'
-  | 'boolean'
-  | 'vector'
-  | 'halfvec'
-  | 'sparsevec';
+  | BooleanColumnType
+  | VectorColumnType;
 
 /**
  * Logical types for a field
@@ -274,6 +281,40 @@ export type FieldType =
   | ColumnType;
 
 /**
+ * The {@link FieldType} values legal for a field declared as `V`.
+ *
+ * This is what makes an explicit `type` an improvement over the reflected one it replaces: the
+ * annotation is checked against the property's real TypeScript type, so `@Field({ type: String })` on
+ * a `number` no longer compiles into a silent TEXT column. `unknown` shapes fall through to the full
+ * {@link FieldType}, keeping genuinely untyped fields usable.
+ *
+ * JSON is matched on the `__json` brand rather than structurally, because {@link Json} intersects its
+ * payload (`Json<string>` really does extend `string`) and would otherwise land on the string arm.
+ * Both `Json<T>` and `Json<T>[]` have to be recognised, and the array check has to precede the scalar
+ * arms so a `number[]` vector is not read as a `number`.
+ */
+export type TypeFor<V, T = NonNullable<V>> =
+  IsJson<T> extends true
+    ? JsonColumnType
+    : IsJson<NonNullable<Unpacked<T>>> extends true
+      ? JsonColumnType
+      : T extends readonly number[]
+        ? VectorColumnType
+        : T extends string
+          ? StringConstructor | StringColumnType
+          : T extends number
+            ? NumberConstructor | NumericColumnType
+            : T extends bigint
+              ? BigIntConstructor | NumericColumnType
+              : T extends boolean
+                ? BooleanConstructor | BooleanColumnType
+                : T extends Date
+                  ? DateConstructor | DateColumnType
+                  : T extends Uint8Array
+                    ? BlobColumnType
+                    : FieldType;
+
+/**
  * Configurable options for a field
  */
 export type FieldOptions = {
@@ -281,11 +322,13 @@ export type FieldOptions = {
   readonly isId?: true;
   readonly type?: FieldType;
   /**
-   * Set by `defineField` when `type` was inferred via reflection rather than
-   * given explicitly. Internal bookkeeping - do not set this from a decorator.
+   * Set by `defineField` when the field gave `references` but no `type`, so schema generation resolves
+   * the column from the referenced primary key rather than from whatever ended up in `type`. That is
+   * what keeps a `uuid` primary key from becoming TEXT on every foreign key pointing at it.
+   * Internal bookkeeping - do not set this from a decorator.
    * @internal
    */
-  readonly typeInferred?: boolean;
+  readonly typeFromReference?: boolean;
   /**
    * Dimensions for vector fields. Used in schema generation.
    * @example `@Field({ type: 'vector', dimensions: 1536 })`
@@ -364,6 +407,81 @@ export type FieldOptions = {
 
 export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
 
+/**
+ * The TypeScript types a field may be declared as, given the `type` it registers: the inverse of
+ * {@link TypeFor}.
+ *
+ * Both directions are needed because they are consumed at opposite ends. `defineEntity` keys its bulk
+ * `fields` by property name, so the property's type is already known and {@link TypeFor} narrows the
+ * `type` allowed. A decorator has it the other way round: `@Field({ type: String })` is checked before
+ * the class exists, so the only way to reach the property is to state what `type: String` implies and
+ * let the decorator's context position compare it against the real field. Neither can be derived from
+ * the other by inference, so `entityOptions.type-test.ts` asserts they agree instead.
+ */
+export type TsTypeOf<T> = T extends StringConstructor
+  ? string
+  : T extends NumberConstructor
+    ? number
+    : T extends BigIntConstructor
+      ? bigint
+      : T extends BooleanConstructor
+        ? boolean
+        : T extends DateConstructor
+          ? Date
+          : T extends StringColumnType
+            ? string
+            : T extends NumericColumnType
+              ? number | bigint
+              : T extends BooleanColumnType
+                ? boolean
+                : T extends DateColumnType
+                  ? Date
+                  : T extends JsonColumnType
+                    ? Json<unknown> | readonly Json<unknown>[]
+                    : T extends BlobColumnType
+                      ? Uint8Array
+                      : T extends VectorColumnType
+                        ? readonly number[]
+                        : unknown;
+
+/**
+ * {@link FieldOptions} for a field declared as `V`, with `type` required and checked by
+ * {@link TypeFor}.
+ *
+ * The second arm is load-bearing rather than a convenience: a foreign-key column may omit `type` so
+ * that schema generation resolves it from the referenced primary key instead, picking up that key's
+ * `columnType`, length and chained references. Forcing `type: Number` onto
+ * `@Field({ references: () => Company })` would silently downgrade a `uuid` key to TEXT on every
+ * column pointing at it.
+ */
+export type FieldOptionsFor<V> =
+  | (FieldOptions & { readonly type: TypeFor<V> })
+  | (FieldOptions & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
+
+/**
+ * The entity a relation field points at: `Company` for both `company?: Company` and
+ * `companies?: Company[]`.
+ */
+export type RelationTarget<V> = NonNullable<Unpacked<NonNullable<V>>>;
+
+/**
+ * {@link RelationOptions} for a relation field declared as `V`, with `entity` required and pinned to
+ * `V`'s own type, and the cardinality restricted to the ones that field shape can hold. Together those
+ * reject `@ManyToOne({ entity: () => Other })` on a `Company` field, and any to-many cardinality on a
+ * field that is not an array.
+ */
+export type RelationOptionsFor<V> = Omit<RelationOptions<RelationTarget<V>>, 'entity' | 'cardinality'> & {
+  readonly entity: EntityGetter<RelationTarget<V>>;
+  readonly cardinality: NonNullable<V> extends readonly unknown[] ? '1m' | 'mm' : '11' | 'm1';
+};
+
+/**
+ * The method names of an entity, so hook registrations name a method that exists.
+ */
+export type MethodKey<E> = {
+  readonly [K in keyof E]-?: NonNullable<E[K]> extends (...args: never[]) => unknown ? K : never;
+}[Key<E>];
+
 // biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
 export type EntityGetter<E = any> = () => Type<E>;
 
@@ -401,21 +519,6 @@ export type RelationOneToManyOptions<E> = RelationOptionsInverseSide<E> | Relati
 export type RelationManyToOneOptions<E> = RelationOptionsOwner<E>;
 
 export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | RelationOptionsInverseSide<E>;
-
-/**
- * Wrapper type for relation type definitions in entities.
- * Used to circumvent ESM modules circular dependency issue caused by reflection metadata saving the type of the property.
- *
- * Usage example:
- * @Entity()
- * export default class User {
- *
- *     @OneToOne(() => Profile, profile => profile.user)
- *     profile: Relation<Profile>;
- *
- * }
- */
-export type Relation<T> = T;
 
 /**
  * Lifecycle hook event names.
@@ -464,8 +567,12 @@ export type IndexTypeOptions =
  * @Index([{ column: 'body', length: 64 }])                       // MySQL needs a prefix on TEXT
  * @Index(['data'], { type: 'gin' })                              // JSONB containment
  * ```
+ *
+ * `C` is the entity's `FieldKey` on the `@Index`/`defineEntity` paths, where the decorated class says
+ * which columns exist. It defaults to `string` for the migration builder's `table.index(...)`, which
+ * names raw table columns with no entity in scope.
  */
-export type IndexColumnInput = string | QueryRaw | IndexColumnOptions;
+export type IndexColumnInput<C extends string = string> = C | QueryRaw | IndexColumnOptions<C>;
 
 /**
  * What an index entry can carry besides the thing being indexed. Shared with the normalized
@@ -485,9 +592,9 @@ export type IndexColumnModifiers = {
   readonly opsClass?: string;
 };
 
-export type IndexColumnOptions = IndexColumnModifiers & {
+export type IndexColumnOptions<C extends string = string> = IndexColumnModifiers & {
   /** The column to index, or `raw(...)` for an expression. */
-  readonly column: string | QueryRaw;
+  readonly column: C | QueryRaw;
 };
 
 /**
@@ -552,11 +659,11 @@ export type EntityOptions<E = unknown> = {
   /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
   readonly filters?: Record<string, FilterOptions<E>>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
-  readonly fields?: Record<string, FieldOptions>;
-  readonly relations?: Record<string, RelationOptions>;
-  readonly indexes?: readonly EntityIndexInput[];
+  readonly fields?: { readonly [K in FieldKey<E>]?: FieldOptionsFor<E[K]> };
+  readonly relations?: { readonly [K in RelationKey<E>]?: RelationOptionsFor<E[K]> };
+  readonly indexes?: readonly EntityIndexInput<FieldKey<E>>[];
   /** Map hook events to method names on the entity class. */
-  readonly hooks?: Partial<Record<HookEvent, readonly string[]>>;
+  readonly hooks?: Partial<Record<HookEvent, readonly MethodKey<E>[]>>;
 };
 
 /**
@@ -567,8 +674,8 @@ export type EntityOptions<E = unknown> = {
 export type IndexOptions = DistributiveOmit<EntityIndexMeta, 'columns'>;
 
 /**
- * An index as authored, before {@link appendEntityIndex} normalizes its columns.
+ * An index as authored, before `defineIndex` normalizes its columns.
  */
-export type EntityIndexInput = IndexOptions & {
-  readonly columns: readonly IndexColumnInput[];
+export type EntityIndexInput<C extends string = string> = IndexOptions & {
+  readonly columns: readonly IndexColumnInput<C>[];
 };

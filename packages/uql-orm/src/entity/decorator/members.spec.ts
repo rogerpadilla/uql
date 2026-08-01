@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../metadata/definition.js';
 import { Entity } from './entity.js';
-import { Field } from './field.js';
-import { AfterInsert, AfterLoad, AfterUpdate, BeforeDelete, BeforeInsert, BeforeUpdate } from './hook.js';
-import { Id } from './id.js';
+import { AfterInsert, AfterLoad, AfterUpdate, BeforeDelete, BeforeInsert, BeforeUpdate, Field, Id } from './members.js';
 
 describe('hook decorators', () => {
   it('should register a @BeforeInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -23,7 +21,7 @@ describe('hook decorators', () => {
   it('should register a @AfterInsert hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @AfterInsert()
@@ -37,7 +35,7 @@ describe('hook decorators', () => {
   it('should register a @BeforeUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeUpdate()
@@ -51,7 +49,7 @@ describe('hook decorators', () => {
   it('should register a @AfterUpdate hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @AfterUpdate()
@@ -65,7 +63,7 @@ describe('hook decorators', () => {
   it('should register @AfterLoad hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @AfterLoad()
@@ -79,7 +77,7 @@ describe('hook decorators', () => {
   it('should register @BeforeDelete hook', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeDelete()
@@ -93,7 +91,7 @@ describe('hook decorators', () => {
   it('should register multiple hooks for the same event', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -110,7 +108,7 @@ describe('hook decorators', () => {
   it('should register hooks for multiple different events', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -128,7 +126,7 @@ describe('hook decorators', () => {
   it('should support stacking multiple decorators on one method', () => {
     @Entity()
     class TestEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -143,7 +141,7 @@ describe('hook decorators', () => {
 
   it('should inherit hooks from parent entity', () => {
     class BaseEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -152,7 +150,7 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field()
+      @Field({ type: String })
       name?: string;
 
       @BeforeInsert()
@@ -166,7 +164,7 @@ describe('hook decorators', () => {
 
   it('should inherit parent hooks when the child declares none of its own', () => {
     class BaseEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -175,7 +173,7 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field()
+      @Field({ type: String })
       name?: string;
     }
 
@@ -185,7 +183,7 @@ describe('hook decorators', () => {
 
   it('should merge parent and child hooks registered on different events', () => {
     class BaseEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
       @BeforeInsert()
@@ -194,7 +192,7 @@ describe('hook decorators', () => {
 
     @Entity()
     class ChildEntity extends BaseEntity {
-      @Field()
+      @Field({ type: String })
       name?: string;
 
       @AfterUpdate()
@@ -209,10 +207,10 @@ describe('hook decorators', () => {
   it('should not have hooks when none are defined', () => {
     @Entity()
     class PlainEntity {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       name?: string;
     }
 

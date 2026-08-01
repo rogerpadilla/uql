@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../metadata/definition.js';
-import { Entity } from './entity.js';
-import { Field } from './field.js';
-import { Id } from './id.js';
-import { Index } from './index-decorator.js';
+import { Entity, Index } from './entity.js';
+import { Field, Id } from './members.js';
 
 describe('@Index decorator', () => {
   it('should register a single-column index', () => {
     @Entity()
     @Index(['email'])
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
     }
 
@@ -28,10 +26,10 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['email'], { unique: true })
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
     }
 
@@ -44,13 +42,13 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['firstName', 'lastName'])
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       firstName?: string;
 
-      @Field()
+      @Field({ type: String })
       lastName?: string;
     }
 
@@ -63,10 +61,10 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['email'], { name: 'idx_user_email' })
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
     }
 
@@ -80,16 +78,16 @@ describe('@Index decorator', () => {
     @Index(['email'], { unique: true })
     @Index(['firstName', 'lastName'])
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
 
-      @Field()
+      @Field({ type: String })
       firstName?: string;
 
-      @Field()
+      @Field({ type: String })
       lastName?: string;
     }
 
@@ -102,13 +100,13 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['email'], { where: 'deleted_at IS NULL' })
     class User {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       email?: string;
 
-      @Field({ nullable: true })
+      @Field({ type: Date, nullable: true })
       deletedAt?: Date;
     }
 
@@ -121,10 +119,10 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['name'])
     class Category {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       name?: string;
     }
 
@@ -136,13 +134,13 @@ describe('@Index decorator', () => {
     @Entity()
     @Index(['status', 'priority'])
     class Task {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: String })
       status?: string;
 
-      @Field()
+      @Field({ type: Number })
       priority?: number;
     }
 

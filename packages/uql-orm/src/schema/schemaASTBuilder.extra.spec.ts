@@ -7,7 +7,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should default autoIncrement to true for integer PK', () => {
     @Entity()
     class AutoInc {
-      @Id()
+      @Id({ type: Number })
       id?: number;
     }
 
@@ -21,7 +21,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should respect explicit autoIncrement false for integer PK', () => {
     @Entity()
     class NoAutoInc {
-      @Id({ autoIncrement: false })
+      @Id({ type: Number, autoIncrement: false })
       id?: number;
     }
 
@@ -35,8 +35,8 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should generate default index name when index is true', () => {
     @Entity()
     class DefaultIndex {
-      @Id() id?: number;
-      @Field({ index: true })
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String, index: true })
       name?: string;
     }
 
@@ -50,16 +50,16 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should default relation references if not provided (Implicit FK)', () => {
     @Entity()
     class Target {
-      @Id()
+      @Id({ type: Number })
       id?: number;
     }
 
     @Entity()
     class Source {
-      @Id()
+      @Id({ type: Number })
       id?: number;
 
-      @Field()
+      @Field({ type: Number })
       targetId?: number;
 
       @ManyToOne({ entity: () => Target })
@@ -78,14 +78,14 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should use explicit references in ManyToOne', () => {
     @Entity()
     class Group {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     @Entity()
     class Member {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
 
-      @Field()
+      @Field({ type: Number })
       groupIdKey?: number;
 
       @ManyToOne({ entity: () => Group, references: [{ local: 'groupIdKey', foreign: 'id' }] })
@@ -102,12 +102,12 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should skip relation if local field is missing', () => {
     @Entity()
     class RelTarget {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     @Entity()
     class RelSource {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
 
       // 'missingId' field does not exist
       @ManyToOne({ entity: () => RelTarget, references: [{ local: 'missingId', foreign: 'id' }] })
@@ -123,13 +123,13 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should skip relation if foreign field is missing', () => {
     @Entity()
     class RelTarget2 {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     @Entity()
     class RelSource2 {
-      @Id() id?: number;
-      @Field() targetId?: number;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number }) targetId?: number;
 
       // 'missingId' field does not exist on target
       @ManyToOne({ entity: () => RelTarget2, references: [{ local: 'targetId', foreign: 'missingId' }] })
@@ -144,14 +144,14 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should skip relation if columns are virtual (no columns created)', () => {
     @Entity()
     class VirtualTarget {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
     }
 
     @Entity()
     class VirtualSource {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
 
-      @Field({ virtual: raw('1') })
+      @Field({ type: Number, virtual: raw('1') })
       targetId?: number;
 
       @ManyToOne({ entity: () => VirtualTarget, references: [{ local: 'targetId', foreign: 'id' }] })
@@ -167,8 +167,8 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should handle missing tables due to unstable resolution (Entity Guards)', () => {
     @Entity()
     class Unstable {
-      @Id() id?: number;
-      @Field({ index: true }) name?: string;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String, index: true }) name?: string;
       @ManyToOne({ entity: () => Unstable }) self?: Unstable;
     }
 
@@ -196,9 +196,9 @@ describe('SchemaASTBuilder Extra Coverage', () => {
   it('should ignore indexes on missing columns', () => {
     @Entity()
     class VirtualIndex {
-      @Id() id?: number;
+      @Id({ type: Number }) id?: number;
 
-      @Field({ virtual: raw('1'), index: true })
+      @Field({ type: Number, virtual: raw('1'), index: true })
       virtualField?: number;
     }
 

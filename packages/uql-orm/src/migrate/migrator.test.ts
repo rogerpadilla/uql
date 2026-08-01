@@ -59,14 +59,14 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
 
 @Entity()
 class SyncUser {
-  @Id() id?: number;
-  @Field() name?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
 }
 
 @Entity()
 class SyncProfile {
-  @Id() id?: number;
-  @Field() bio?: string;
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) bio?: string;
   @Field({ references: () => SyncUser }) userId?: number;
 }
 
@@ -149,11 +149,11 @@ describe('Migrator autoSync Integration', () => {
     // Create a new entity with multiple fields for this test
     @Entity()
     class MultiFieldUser {
-      @Id() id?: number;
-      @Field() username?: string;
-      @Field() email?: string;
-      @Field() age?: number;
-      @Field() isActive?: boolean;
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) username?: string;
+      @Field({ type: String }) email?: string;
+      @Field({ type: Number }) age?: number;
+      @Field({ type: Boolean }) isActive?: boolean;
     }
 
     const multiFieldMigrator = new Migrator(pool, {
