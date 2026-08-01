@@ -2,6 +2,10 @@ import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Vite 8 transforms with Oxc, which does not implement decorators at all (verified: it preserves
+  // `@Entity()` verbatim at every target). SWC does, so it owns the transform and Oxc's default is
+  // turned off here. `unplugin-swc` still sets the pre-Vite-8 `esbuild: false`, which is now a no-op.
+  oxc: false,
   plugins: [
     swc.vite({
       jsc: {
