@@ -48,6 +48,15 @@ await using querier = await pool.getQuerier();
 
 `engines.node` moves from `>=20` (end of life since April 2026) to `>=24`, the active LTS.
 
+### Transactions have one owner
+
+`querier.transaction()` no longer releases the connection, which is what the docs always said it did ("commits/rollbacks, caller releases"). The documented pattern was broken by it: inside `pool.withQuerier()`, the transaction released early and everything after it ran on a connection already back in the pool.
+
+The pool owns the connection it handed out; the querier owns begin/commit/rollback. That sequence now exists in one place, and two failures it used to get wrong are fixed with it:
+
+- **A failure while starting a transaction reported the wrong error.** `beginTransaction` connects before it begins, so a refused connection left nothing to roll back; rolling back anyway threw `not a pending transaction`, which replaced the real cause. A wrong password surfaced as a transaction-state error.
+- **A rollback that failed replaced the error that caused it.**
+
 ### Fixes
 
 - `drift:check` reported the migrations table itself as an unexpected table. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.

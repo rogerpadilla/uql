@@ -1,6 +1,5 @@
 import type { MigrationStorage, QuerierPool, SqlQuerier } from '../../type/index.js';
-import { isSqlQuerier } from '../../type/index.js';
-import { acquireQuerierForMigrations } from '../acquireQuerierForMigrations.js';
+import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 
 /**
  * Migration metadata stored in the database
@@ -35,19 +34,10 @@ export class DatabaseMigrationStorage implements MigrationStorage {
       return;
     }
 
-    const querier = await acquireQuerierForMigrations(this.pool);
-
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('DatabaseMigrationStorage requires a SQL-based querier');
-    }
-
-    try {
+    await withSqlQuerierForMigrations(this.pool, 'DatabaseMigrationStorage', async (querier) => {
       await this.createTableIfNotExists(querier);
       this.storageInitialized = true;
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   private async createTableIfNotExists(querier: SqlQuerier): Promise<void> {
@@ -65,21 +55,12 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   async executed(): Promise<string[]> {
     await this.ensureStorage();
 
-    const querier = await acquireQuerierForMigrations(this.pool);
-
-    if (!isSqlQuerier(querier)) {
-      await querier.release();
-      throw new Error('DatabaseMigrationStorage requires a SQL-based querier');
-    }
-
-    try {
+    return withSqlQuerierForMigrations(this.pool, 'DatabaseMigrationStorage', async (querier) => {
       const { dialect } = querier;
       const sql = /*sql*/ `SELECT ${dialect.escapeId('name')} FROM ${dialect.escapeId(this.tableName)} ORDER BY ${dialect.escapeId('name')} ASC`;
       const results = await querier.all<MigrationRecord>(sql);
       return results.map((r) => r.name);
-    } finally {
-      await querier.release();
-    }
+    });
   }
 
   /**

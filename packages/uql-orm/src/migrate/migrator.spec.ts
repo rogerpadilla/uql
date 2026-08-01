@@ -5,6 +5,7 @@ import { Entity, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { User } from '../test/entityMock.js';
+import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type {
   Migration,
@@ -49,15 +50,11 @@ describe('Migrator Core Methods', () => {
   beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const postgresDialect = new PostgresDialect();
-    querier = {
-      beginTransaction: vi.fn().mockResolvedValue(undefined),
-      commitTransaction: vi.fn().mockResolvedValue(undefined),
-      rollbackTransaction: vi.fn().mockResolvedValue(undefined),
-      release: vi.fn().mockResolvedValue(undefined),
+    querier = createMockQuerier({
       all: vi.fn().mockResolvedValue([]),
       run: vi.fn().mockResolvedValue({}),
       dialect: postgresDialect,
-    } as unknown as SqlQuerier;
+    }) as unknown as SqlQuerier;
 
     pool = createMockQuerierPool(postgresDialect, vi.fn().mockResolvedValue(querier));
 
@@ -587,6 +584,28 @@ describe('Migrator Core Methods', () => {
       expect(querier.rollbackTransaction).toHaveBeenCalled();
     });
 
+    /**
+     * `beginTransaction` connects before it begins, so a refused connection lands in the catch with no
+     * transaction open. Rolling back regardless threw `not a pending transaction`, and that replaced the
+     * real cause: a wrong password surfaced as a transaction-state error.
+     */
+    it('syncForce reports why the transaction never started, not that it is missing', async () => {
+      (querier.beginTransaction as Mock).mockRejectedValueOnce(new Error('password authentication failed'));
+
+      await expect(migrator.syncForce()).rejects.toThrow('password authentication failed');
+      expect(querier.rollbackTransaction).not.toHaveBeenCalled();
+      expect(querier.release).toHaveBeenCalled();
+    });
+
+    /** A rollback that fails too is a consequence of the original error, and must not replace it. */
+    it('syncForce keeps the original error when the rollback also fails', async () => {
+      (querier.run as Mock).mockRejectedValueOnce(new Error('Sync error'));
+      (querier.rollbackTransaction as Mock).mockRejectedValueOnce(new Error('connection is dead'));
+
+      await expect(migrator.syncForce()).rejects.toThrow('Sync error');
+      expect(querier.release).toHaveBeenCalled();
+    });
+
     it('syncForce should throw if schemaGenerator is missing', async () => {
       const unknownPool = {
         ...pool,
@@ -654,20 +673,14 @@ describe('Migrator Core Methods', () => {
       expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
     });
 
-    it('executeSqlSyncStatements should run statements in transaction', async () => {
-      const mockQuerier = {
-        beginTransaction: vi.fn(),
-        all: vi.fn(),
-        run: vi.fn(),
-        commitTransaction: vi.fn(),
-        dialect: new PostgresDialect(),
-      } as any;
+    /** The transaction belongs to the method that acquired the querier, so it is asserted from there. */
+    it('executeSyncStatements runs the statements in one transaction, then releases', async () => {
+      await migrator.executeSyncStatements(['STMT1', 'STMT2'], { logging: true });
 
-      await migrator.executeSqlSyncStatements(['STMT1', 'STMT2'], { logging: true }, mockQuerier);
-
-      expect(mockQuerier.beginTransaction).toHaveBeenCalled();
-      expect(mockQuerier.run).toHaveBeenCalledTimes(2);
-      expect(mockQuerier.commitTransaction).toHaveBeenCalled();
+      expect(querier.beginTransaction).toHaveBeenCalledOnce();
+      expect(querier.run).toHaveBeenCalledTimes(2);
+      expect(querier.commitTransaction).toHaveBeenCalledOnce();
+      expect(querier.release).toHaveBeenCalledOnce();
     });
 
     it('executeSqlSyncStatements should throw if not SQL querier', async () => {

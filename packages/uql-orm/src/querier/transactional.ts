@@ -1,5 +1,5 @@
 import { getQuerierPool } from '../options.js';
-import type { IsolationLevel, Querier, QuerierPool } from '../type/index.js';
+import type { IsolationLevel, QuerierPool } from '../type/index.js';
 import { currentQuerierIfAny, withQuerierContext } from './querierContext.js';
 
 export type TransactionalOptions = {
@@ -44,26 +44,16 @@ export function Transactional({ propagation = 'required', pool, isolationLevel }
         return original.apply(this, args);
       }
 
-      const querier: Querier = await (pool ?? getQuerierPool()).getQuerier();
-      try {
-        return await withQuerierContext(querier, async () => {
-          if (propagation === 'required' && !querier.hasOpenTransaction) {
-            await querier.beginTransaction(isolationLevel ? { isolationLevel } : undefined);
-          }
-          const result = await original.apply(this, args);
-          if (querier.hasOpenTransaction) {
-            await querier.commitTransaction();
-          }
-          return result;
-        });
-      } catch (err) {
-        if (querier.hasOpenTransaction) {
-          await querier.rollbackTransaction();
-        }
-        throw err;
-      } finally {
-        await querier.release();
-      }
+      // `withQuerier` releases; `transaction` commits or rolls back. `supported` joins a transaction but
+      // never starts one, so it takes only the first half.
+      return (pool ?? getQuerierPool()).withQuerier((querier) => {
+        const run = () => original.apply(this, args);
+        return withQuerierContext(querier, () =>
+          propagation === 'supported'
+            ? run()
+            : querier.transaction(run, isolationLevel ? { isolationLevel } : undefined),
+        );
+      });
     };
   };
 }
