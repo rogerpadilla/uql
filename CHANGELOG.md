@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.23.0] - 2026-07-31
+## UNRELEASED - 2026-08-01
 
 ### SQLite with no native dependency
 
