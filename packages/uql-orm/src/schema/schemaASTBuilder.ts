@@ -8,11 +8,11 @@
 
 import { getMeta } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
-import type { EntityMeta, FieldOptions, Type } from '../type/index.js';
+import type { EntityIndexMeta, EntityMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { SchemaAST } from './schemaAST.js';
-import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, RelationshipNode, TableNode } from './types.js';
+import type { CanonicalType, ColumnNode, ForeignKeyAction, RelationshipNode, TableNode } from './types.js';
 import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
 
 /**
@@ -212,8 +212,13 @@ export class SchemaASTBuilder {
       const relatedTable = this.ast.getTable(relatedTableName);
       if (!relatedTable) continue;
 
-      // Only create FK for owning side (m1 and owner side of 11)
-      if (relation.cardinality === 'm1' || (relation.cardinality === '11' && relation.references)) {
+      // Only the owning side gets the FK. `mappedBy` marks the inverse side of a one-to-one, whose
+      // `references` describe how to join back (its own primary key against the owner's FK column) -
+      // reading those as a foreign key emitted a reversed constraint (`User(id) REFERENCES
+      // user_profile(creatorId)`), which SQLite rejects outright as a foreign key mismatch.
+      const ownsForeignKey =
+        relation.cardinality === 'm1' || (relation.cardinality === '11' && !!relation.references && !relation.mappedBy);
+      if (ownsForeignKey) {
         const references = relation.references ?? [{ local: `${key}Id`, foreign: relatedMeta.id as string }];
         const localPropName = references[0].local;
         const foreignPropName = references[0].foreign;
@@ -249,7 +254,8 @@ export class SchemaASTBuilder {
   }
 
   /**
-   * Add indexes from field options.
+   * Add indexes from field options (`@Field({ index })`) and from `@Index([...])`, which have nothing
+   * in common beyond their target table.
    */
   private addIndexesFromEntity(
     entity: Type<unknown>,
@@ -261,63 +267,69 @@ export class SchemaASTBuilder {
     const table = this.ast.getTable(tableName);
     if (!table) return;
 
-    // 1. Single column indexes from @Field({ index: true })
-    const indexFields = meta.fields;
-    for (const key of Object.keys(indexFields)) {
-      const field = indexFields[key];
+    for (const key of Object.keys(meta.fields)) {
+      const field = meta.fields[key];
       if (!field?.index) continue;
-
-      const columnName = resolveColumnName(key, field);
-      const column = table.columns.get(columnName);
+      const column = table.columns.get(resolveColumnName(key, field));
       if (!column) continue;
-
-      const indexName = typeof field.index === 'string' ? field.index : `idx_${tableName}_${columnName}`;
-
-      const indexNode: IndexNode = {
-        name: indexName,
+      this.ast.addIndex({
+        name: typeof field.index === 'string' ? field.index : `idx_${tableName}_${column.name}`,
         table,
         columns: [column],
         unique: field.unique ?? false,
         source: 'entity',
         syncStatus: 'entity_only',
-      };
-
-      this.ast.addIndex(indexNode);
+      });
     }
 
-    // 2. Composite indexes from @Index([...])
-    if (meta.indexes) {
-      for (const idxMeta of meta.indexes) {
-        const columns: ColumnNode[] = [];
-        for (const propName of idxMeta.columns) {
-          const field = meta.fields[propName as keyof typeof meta.fields];
-          if (!field) continue;
-          const colName = resolveColumnName(propName, field);
-          const column = table.columns.get(colName);
-          if (column) {
-            columns.push(column);
-          }
-        }
-
-        if (columns.length > 0) {
-          const indexName = idxMeta.name ?? `idx_${tableName}_${columns.map((c) => c.name).join('_')}`;
-          const indexNode: IndexNode = {
-            name: indexName,
-            table,
-            columns,
-            unique: idxMeta.unique ?? false,
-            type: idxMeta.type,
-            where: idxMeta.where,
-            distance: idxMeta.distance,
-            m: idxMeta.m,
-            efConstruction: idxMeta.efConstruction,
-            lists: idxMeta.lists,
-            source: 'entity',
-            syncStatus: 'entity_only',
-          };
-          this.ast.addIndex(indexNode);
-        }
-      }
+    for (const idxMeta of meta.indexes ?? []) {
+      this.addCompositeIndex(table, meta, idxMeta, resolveColumnName);
     }
+  }
+
+  /**
+   * One `@Index([...])`. Its entries keep the authored form (expression, prefix length, order) with
+   * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
+   * subset, which is what diffing and introspection compare.
+   */
+  private addCompositeIndex(
+    table: TableNode,
+    meta: EntityMeta<unknown>,
+    idxMeta: EntityIndexMeta,
+    resolveColumnName: (key: string, field: FieldOptions) => string,
+  ): void {
+    // An entry survives if it is an expression (nothing to resolve) or names a column that exists;
+    // an index left with none is dropped, the same as one naming only unknown columns always was.
+    const entries = idxMeta.columns
+      .map((entry) => {
+        if (entry.expression) return entry;
+        const field = meta.fields[entry.column as keyof typeof meta.fields];
+        const column = field && resolveColumnName(entry.column, field);
+        return column && table.columns.has(column) ? { ...entry, column } : undefined;
+      })
+      .filter((entry): entry is IndexColumnSchema => entry !== undefined);
+    if (!entries.length) return;
+
+    const columns = entries
+      .map((entry) => (entry.expression ? undefined : table.columns.get(entry.column)))
+      .filter((column): column is ColumnNode => column !== undefined);
+    const named = columns.length ? columns.map((column) => column.name) : entries.map((_, at) => `expr${at}`);
+
+    this.ast.addIndex({
+      name: idxMeta.name ?? `idx_${table.name}_${named.join('_')}`,
+      table,
+      columns,
+      entries,
+      include: idxMeta.include,
+      unique: idxMeta.unique ?? false,
+      type: idxMeta.type,
+      where: idxMeta.where,
+      distance: idxMeta.distance,
+      m: idxMeta.m,
+      efConstruction: idxMeta.efConstruction,
+      lists: idxMeta.lists,
+      source: 'entity',
+      syncStatus: 'entity_only',
+    });
   }
 }

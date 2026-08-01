@@ -1,19 +1,12 @@
 import { expect } from 'vitest';
 import { Coupon, createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
-import type { IdValue, PrimaryKey, QuerierPool } from '../type/index.js';
+import type { IdValue, PrimaryKey } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
-  constructor(
-    pool: QuerierPool<AbstractSqlQuerier>,
-    readonly idType: string,
-  ) {
-    super(pool);
-  }
-
   override createTables() {
-    return createTables(this.querier, this.idType);
+    return createTables(this.querier);
   }
 
   override dropTables() {

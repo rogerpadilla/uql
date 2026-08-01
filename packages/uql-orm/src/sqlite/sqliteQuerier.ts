@@ -1,44 +1,29 @@
-import type { Database } from 'better-sqlite3';
-import type { ExtraOptions, RawRow } from '../type/index.js';
-import { throwPendingTransaction } from '../util/index.js';
-import { AbstractSqliteQuerier } from './abstractSqliteQuerier.js';
+import type { ExtraOptions } from '../type/index.js';
+import { PreparedSqliteQuerier, type SqlitePreparedStatement } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
-export class SqliteQuerier extends AbstractSqliteQuerier {
+/**
+ * Structural subset of a synchronous better-sqlite3-compatible driver, declared locally so this
+ * querier carries no vendor type. A real `better-sqlite3` `Database` satisfies it directly;
+ * `bun:sqlite` is adapted to it by {@link Sqlite3QuerierPool}.
+ */
+export type SqliteDatabase = {
+  prepare(sql: string): SqlitePreparedStatement;
+  /** Installs a loadable extension (`sqlite-vec`, ...) into this connection. */
+  loadExtension(path: string): void;
+  close(): unknown;
+};
+
+export class SqliteQuerier extends PreparedSqliteQuerier {
   constructor(
-    readonly db: Database,
+    readonly db: SqliteDatabase,
     dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
   ) {
     super(dialect, extra);
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    return this.db.prepare(query).all(values || []) as T[];
-  }
-
-  override async *internalStream<T>(query: string, values?: unknown[]) {
-    for (const row of this.db.prepare(query).iterate(values || [])) {
-      yield row as T;
-    }
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const stmt = this.db.prepare(query);
-    // `reader` is true for any statement with a RETURNING clause; `.run()` silently discards
-    // returned rows, so those statements must go through `.all()` instead.
-    if (stmt.reader) {
-      const rows = stmt.all(values || []) as RawRow[];
-      return this.buildUpdateResult({ rows });
-    }
-    const { changes, lastInsertRowid } = stmt.run(values || []);
-    return this.buildUpdateResult({ changes, id: lastInsertRowid });
-  }
-
-  override async internalRelease() {
-    if (this.hasOpenTransaction) {
-      throwPendingTransaction();
-    }
-    // no-op
+  protected override prepare(query: string) {
+    return this.db.prepare(query);
   }
 }

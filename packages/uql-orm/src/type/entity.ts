@@ -1,7 +1,7 @@
 import type { IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
-import type { Json, Scalar, Type, Unpacked } from './utility.js';
+import type { DistributiveOmit, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /**
@@ -454,17 +454,70 @@ export type IndexTypeOptions =
   | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
 
 /**
- * Index metadata from @Index decorator.
+ * One entry of an index: a column name by default, `raw(...)` to index an expression, or an object
+ * when the entry needs more than a name.
+ *
+ * @example
+ * ```ts
+ * @Index(['tenantId', { column: 'createdAt', order: 'desc' }])   // keyset pagination
+ * @Index([raw('lower("email")')], { unique: true })              // case-insensitive uniqueness
+ * @Index([{ column: 'body', length: 64 }])                       // MySQL needs a prefix on TEXT
+ * @Index(['data'], { type: 'gin' })                              // JSONB containment
+ * ```
+ */
+export type IndexColumnInput = string | QueryRaw | IndexColumnOptions;
+
+/**
+ * What an index entry can carry besides the thing being indexed. Shared with the normalized
+ * `IndexColumnSchema`, so the authored and internal shapes cannot drift apart.
+ */
+export type IndexColumnModifiers = {
+  /**
+   * Index only the first `n` characters. MySQL and MariaDB *require* this to index a `TEXT`/`BLOB`
+   * column at all ("used in key specification without a key length"); no other engine accepts it.
+   */
+  readonly length?: number;
+  /** Stored sort order, which lets `ORDER BY ... DESC` pagination use the index. */
+  readonly order?: 'asc' | 'desc';
+  /** Where NULLs sort. Postgres only. */
+  readonly nulls?: 'first' | 'last';
+  /** Operator class, e.g. `jsonb_path_ops` for a smaller GIN index. Postgres only. */
+  readonly opsClass?: string;
+};
+
+export type IndexColumnOptions = IndexColumnModifiers & {
+  /** The column to index, or `raw(...)` for an expression. */
+  readonly column: string | QueryRaw;
+};
+
+/**
+ * One index entry, normalized: {@link IndexColumnInput}'s three authored shapes all reduce to this
+ * before any dialect or generator sees them, so rendering never re-parses the sugar.
+ */
+export type IndexColumnSchema = IndexColumnModifiers & {
+  /** A column name, or raw SQL when {@link expression} is set. */
+  readonly column: string;
+  /** Whether {@link column} is an expression to emit as-is rather than an identifier to quote. */
+  readonly expression?: boolean;
+};
+
+/**
+ * An index as stored in entity metadata: authored options with the columns normalized.
  */
 export type EntityIndexMeta = {
-  /** Column names in the index */
-  columns: string[];
+  /** The indexed columns, in order. */
+  columns: readonly IndexColumnSchema[];
   /** Custom index name */
   name?: string;
   /** Whether index is unique; omit or `false` for a non-unique index (default). */
   unique?: boolean;
   /** Partial index condition (WHERE clause) */
   where?: string;
+  /**
+   * Extra columns stored in the index but not part of its key, so a query reading only these is
+   * answered from the index alone. Postgres-wire only (`INCLUDE`).
+   */
+  include?: readonly string[];
 } & VectorIndexOptions &
   IndexTypeOptions;
 
@@ -501,7 +554,21 @@ export type EntityOptions<E = unknown> = {
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: Record<string, FieldOptions>;
   readonly relations?: Record<string, RelationOptions>;
-  readonly indexes?: readonly EntityIndexMeta[];
+  readonly indexes?: readonly EntityIndexInput[];
   /** Map hook events to method names on the entity class. */
   readonly hooks?: Partial<Record<HookEvent, readonly string[]>>;
+};
+
+/**
+ * Everything an index carries beyond its columns, shared by `@Index`, `defineEntity` and the
+ * migration builder's `table.index(...)`. `DistributiveOmit` (not plain `Omit`) keeps `type`/
+ * `distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
+ */
+export type IndexOptions = DistributiveOmit<EntityIndexMeta, 'columns'>;
+
+/**
+ * An index as authored, before {@link appendEntityIndex} normalizes its columns.
+ */
+export type EntityIndexInput = IndexOptions & {
+  readonly columns: readonly IndexColumnInput[];
 };

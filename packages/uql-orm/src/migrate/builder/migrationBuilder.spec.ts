@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { createDryRunBuilder, MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
+import { MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
 import type {
   AddColumnOperation,
   AddForeignKeyOperation,
@@ -38,7 +38,7 @@ describe('OperationRecorder', () => {
 
   describe('dropTable', () => {
     it('should record dropTable operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropTable('users');
 
@@ -49,7 +49,7 @@ describe('OperationRecorder', () => {
     });
 
     it('should support ifExists option', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropTable('users', { ifExists: true });
 
@@ -58,7 +58,7 @@ describe('OperationRecorder', () => {
     });
 
     it('should support cascade option', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropTable('users', { cascade: true });
 
@@ -69,7 +69,7 @@ describe('OperationRecorder', () => {
 
   describe('renameTable', () => {
     it('should record renameTable operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.renameTable('old_users', 'users');
 
@@ -83,11 +83,9 @@ describe('OperationRecorder', () => {
 
   describe('addColumn', () => {
     it('should record addColumn operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
-      await recorder.addColumn('users', 'age', (col) => {
-        col.nullable(false);
-      });
+      await recorder.addColumn('users', (c) => c.integer('age'));
 
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
@@ -99,7 +97,7 @@ describe('OperationRecorder', () => {
 
   describe('dropColumn', () => {
     it('should record dropColumn operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropColumn('users', 'age');
 
@@ -113,7 +111,7 @@ describe('OperationRecorder', () => {
 
   describe('renameColumn', () => {
     it('should record renameColumn operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.renameColumn('users', 'old_name', 'new_name');
 
@@ -127,18 +125,18 @@ describe('OperationRecorder', () => {
 
   describe('createIndex', () => {
     it('should record createIndex operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createIndex('users', ['email']);
 
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createIndex');
-      expect((ops[0] as CreateIndexOperation).index.columns).toEqual(['email']);
+      expect((ops[0] as CreateIndexOperation).index.columns).toEqual([{ column: 'email' }]);
     });
 
     it('should auto-generate index name', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createIndex('users', ['email', 'status']);
 
@@ -147,7 +145,7 @@ describe('OperationRecorder', () => {
     });
 
     it('should use custom index name', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createIndex('users', ['email'], { name: 'custom_idx' });
 
@@ -156,7 +154,7 @@ describe('OperationRecorder', () => {
     });
 
     it('should support unique option', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createIndex('users', ['email'], { unique: true });
 
@@ -167,7 +165,7 @@ describe('OperationRecorder', () => {
 
   describe('dropIndex', () => {
     it('should record dropIndex operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropIndex('users', 'idx_users_email');
 
@@ -180,7 +178,7 @@ describe('OperationRecorder', () => {
 
   describe('addForeignKey', () => {
     it('should record addForeignKey operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] });
 
@@ -192,7 +190,7 @@ describe('OperationRecorder', () => {
     });
 
     it('should support onDelete option', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] }, { onDelete: 'CASCADE' });
 
@@ -203,7 +201,7 @@ describe('OperationRecorder', () => {
 
   describe('dropForeignKey', () => {
     it('should record dropForeignKey operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.dropForeignKey('posts', 'fk_posts_author');
 
@@ -216,7 +214,7 @@ describe('OperationRecorder', () => {
 
   describe('raw', () => {
     it('should record raw SQL operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.raw('ALTER TABLE users ADD CONSTRAINT custom CHECK (age > 0)');
 
@@ -229,7 +227,7 @@ describe('OperationRecorder', () => {
 
   describe('multiple operations', () => {
     it('should record multiple operations in order', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createTable('users', (table) => {
         table.id();
@@ -254,7 +252,7 @@ describe('OperationRecorder', () => {
 
   describe('getOperations', () => {
     it('should return a copy of operations', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.createTable('users', (table) => {
         table.id();
@@ -270,13 +268,13 @@ describe('OperationRecorder', () => {
 
   describe('alterTable', () => {
     it('should record alterTable operation with nested column changes', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.alterTable('users', (table) => {
-        table.addColumn('email', (col) => col.unique());
+        table.addColumn((c) => c.string('email', { unique: true }));
         table.dropColumn('old_field');
         table.renameColumn('old_name', 'new_name');
-        table.alterColumn('email', (col) => col.nullable(true));
+        table.alterColumn((c) => c.string('email', { nullable: true }));
       });
 
       const ops = recorder.getOperations();
@@ -287,9 +285,9 @@ describe('OperationRecorder', () => {
 
   describe('alterColumn', () => {
     it('should record alterColumn operation', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
-      await recorder.alterColumn('users', 'email', (col) => col.nullable(true));
+      await recorder.alterColumn('users', (c) => c.string('email', { nullable: true }));
 
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
@@ -299,7 +297,7 @@ describe('OperationRecorder', () => {
 
   describe('alterTable operations', () => {
     it('should record addIndex, dropIndex, addForeignKey, dropForeignKey', async () => {
-      const recorder = createDryRunBuilder();
+      const recorder = new OperationRecorder();
 
       await recorder.alterTable('users', (table) => {
         table.addIndex(['email'], { unique: true, name: 'custom_idx' });
@@ -375,14 +373,14 @@ describe('MigrationBuilder', () => {
       const builder = new MigrationBuilder(mockQuerier as any);
 
       await builder.alterTable('users', (table) => {
-        table.addColumn('nickname', (col) => col.nullable());
+        table.addColumn((c) => c.string('nickname', { nullable: true }));
         table.dropColumn('legacy');
       });
 
       expect(builder.getOperations().map((op) => op.type)).toEqual(['addColumn', 'dropColumn']);
       await vi.waitFor(() => expect(mockQuerier.run).toHaveBeenCalledTimes(2));
       expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
-        'ALTER TABLE "users" ADD COLUMN "nickname" TEXT',
+        'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255)',
         'ALTER TABLE "users" DROP COLUMN "legacy"',
       ]);
     });
@@ -413,10 +411,10 @@ describe('MigrationBuilder', () => {
       await builder.createTable('t', (t) => t.id());
       await builder.dropTable('t');
       await builder.renameTable('t', 't2');
-      await builder.addColumn('t', 'c', (c) => c.nullable());
+      await builder.addColumn('t', (c) => c.integer('c', { nullable: true }));
       await builder.dropColumn('t', 'c');
       await builder.renameColumn('t', 'c', 'c2');
-      await builder.alterColumn('t', 'c', (c) => c.nullable(true));
+      await builder.alterColumn('t', (c) => c.integer('c', { nullable: true }));
       await builder.createIndex('t', ['c']);
       await builder.dropIndex('t', 'i');
       await builder.addForeignKey('t', ['c'], { table: 't2', columns: ['id'] });

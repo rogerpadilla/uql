@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
+import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
@@ -11,9 +11,9 @@ import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 // sees a blank schema. A real file is shared across connections like any other database file.
 const dbFile = join(tmpdir(), `uql-libsql-${randomUUID()}.db`);
 
-export class LibsqlQuerierIt extends AbstractSqlQuerierIt {
+export class LibsqlQuerierIt extends VectorQuerierIt {
   constructor() {
-    super(new LibsqlQuerierPool({ url: `file:${dbFile}` }), 'INTEGER PRIMARY KEY');
+    super(new LibsqlQuerierPool({ url: `file:${dbFile}` }));
   }
 
   override async beforeEach() {

@@ -29,7 +29,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('Vector similarity sort is not supported by this dialect');
+    ).toThrow('mysql does not support vector similarity sort');
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {

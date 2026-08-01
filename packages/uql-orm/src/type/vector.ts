@@ -6,9 +6,12 @@ import type { IndexType } from '../schema/types.js';
  * - `l2` - Euclidean distance
  * - `inner` - inner (dot) product
  * - `l1` - Manhattan distance
- * - `hamming` - for binary vectors
+ *
+ * @remarks Hamming distance is absent because no engine can express it over a float vector column:
+ * pgvector's `<~>`/`bit_hamming_ops` and sqlite-vec's `vec_distance_hamming` both require a *bit*
+ * vector, which no field type maps to. It would be a value that compiles and always throws.
  */
-export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1' | 'hamming';
+export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1';
 
 /**
  * Vector similarity search options - used inside `$sort` on vector fields.

@@ -121,8 +121,8 @@ describe('BaseSqlIntrospector indexes', () => {
     name: 'users',
     columns: [column({ name: 'id', isPrimaryKey: true }), column({ name: 'email', type: 'VARCHAR', length: 255 })],
     indexes: [
-      { name: 'uq_users_email', columns: ['email'], unique: true },
-      { name: 'idx_users_ghost', columns: ['ghost'], unique: false },
+      { name: 'uq_users_email', columns: [{ column: 'email' }], unique: true },
+      { name: 'idx_users_ghost', columns: [{ column: 'ghost' }], unique: false },
     ],
   };
 

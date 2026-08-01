@@ -29,7 +29,7 @@
 ---
 
 ```sh
-npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/client
+npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
 ```
 
 Decorators also need `reflect-metadata` ([setup](https://uql-orm.dev/getting-started)); the
@@ -54,7 +54,8 @@ from the browser to the server. The same object runs on every supported database
 - **Queries are data, not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
 - **Type-safe to the leaf.** Operators are gated per field type, and JSON/JSONB dot-paths resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error instead of a runtime surprise.
 - **No codegen.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` file to regenerate, no generated client to keep in sync.
-- **One API everywhere.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, LibSQL/Turso, Neon, Cloudflare D1, Bun SQL, and MongoDB.
+- **One API everywhere.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, LibSQL, Neon, Cloudflare D1, Bun SQL, and MongoDB.
+- **First ORM with a native Turso driver.** Turso Cloud over pure `fetch()` with zero native dependencies, so it runs on Cloudflare Workers and Vercel Edge, plus the embedded Rust engine for local-first apps.
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [non-bypassable multi-tenant filters](https://uql-orm.dev/multi-tenancy), [entity-first migrations](https://uql-orm.dev/migrations), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/extensions-http).
 
 ## Get started

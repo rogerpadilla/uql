@@ -4,14 +4,15 @@
  * Fluent API for defining tables in migrations.
  */
 
-import type { ForeignKeyAction } from '../../schema/types.js';
+import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
+import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
+import { normalizeIndexColumn } from '../../util/index.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { t } from './expressions.js';
 import type {
   BaseColumnOptions,
   DecimalColumnOptions,
   IColumnBuilder,
-  IndexDefinition,
   ITableBuilder,
   ITableForeignKeyBuilder,
   StringColumnOptions,
@@ -80,7 +81,7 @@ export class TableBuilder implements ITableBuilder {
   private _name: string;
   private _columnBuilders: ColumnBuilder[] = [];
   private _primaryKey?: string[];
-  private _indexes: IndexDefinition[] = [];
+  private _indexes: IndexSchema[] = [];
   private _foreignKeyBuilders: TableForeignKeyBuilder[] = [];
   private _comment?: string;
 
@@ -93,148 +94,94 @@ export class TableBuilder implements ITableBuilder {
   // ============================================================================
 
   id(name = 'id', options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'integer' }, { ...options, primaryKey: true, autoIncrement: true });
-    this._columnBuilders.push(col);
-    return col;
+    return this.add(name, { category: 'integer' }, { ...options, primaryKey: true, autoIncrement: true });
   }
 
-  integer(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'integer' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  integer(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'integer' }, options);
   }
 
-  smallint(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'integer', size: 'small' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  smallint(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'integer', size: 'small' }, options);
   }
 
-  bigint(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'integer', size: 'big' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  bigint(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'integer', size: 'big' }, options);
   }
 
-  float(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'float' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  float(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'float' }, options);
   }
 
-  double(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'float', size: 'big' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  double(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'float', size: 'big' }, options);
   }
 
   decimal(name: string, options: DecimalColumnOptions = {}): IColumnBuilder {
     const { precision, scale, ...rest } = options;
-    const col = new ColumnBuilder(name, { category: 'decimal', precision, scale }, rest);
-    this._columnBuilders.push(col);
-    return col;
+    return this.add(name, { category: 'decimal', precision, scale }, rest);
   }
-
-  // ============================================================================
-  // String Types
-  // ============================================================================
 
   string(name: string, options: StringColumnOptions = {}): IColumnBuilder {
     const { length = 255, ...rest } = options;
-    const col = new ColumnBuilder(name, { category: 'string', length }, rest);
-    this._columnBuilders.push(col);
-    return col;
+    return this.add(name, { category: 'string', length }, rest);
   }
 
   char(name: string, options: StringColumnOptions = {}): IColumnBuilder {
     const { length = 1, ...rest } = options;
-    const col = new ColumnBuilder(name, { category: 'string', length }, rest);
-    this._columnBuilders.push(col);
-    return col;
+    return this.add(name, { category: 'string', length }, rest);
   }
 
-  text(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'string' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  text(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'string' }, options);
   }
 
-  // ============================================================================
-  // Boolean
-  // ============================================================================
-
-  boolean(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'boolean' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  boolean(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'boolean' }, options);
   }
 
-  // ============================================================================
-  // Date/Time Types
-  // ============================================================================
-
-  date(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'date' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  date(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'date' }, options);
   }
 
-  time(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'time' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  time(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'time' }, options);
   }
 
-  timestamp(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'timestamp' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  timestamp(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'timestamp' }, options);
   }
 
-  timestamptz(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'timestamp', withTimezone: true }, options);
-    this._columnBuilders.push(col);
-    return col;
+  timestamptz(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'timestamp', withTimezone: true }, options);
   }
 
-  // ============================================================================
-  // JSON Types
-  // ============================================================================
-
-  json(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'json' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  json(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'json' }, options);
   }
 
-  jsonb(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    // JSONB is the same category, dialect handles the difference
-    const col = new ColumnBuilder(name, { category: 'json' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  /** One canonical json category; the dialect decides between `JSON` and `JSONB`. */
+  jsonb(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'json' }, options);
   }
 
-  // ============================================================================
-  // Other Types
-  // ============================================================================
-
-  uuid(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'uuid' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  uuid(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'uuid' }, options);
   }
 
-  blob(name: string, options: BaseColumnOptions = {}): IColumnBuilder {
-    const col = new ColumnBuilder(name, { category: 'blob' }, options);
-    this._columnBuilders.push(col);
-    return col;
+  blob(name: string, options?: BaseColumnOptions): IColumnBuilder {
+    return this.add(name, { category: 'blob' }, options);
   }
 
   vector(name: string, options: VectorColumnOptions = {}): IColumnBuilder {
     const { dimensions, ...rest } = options;
-    const col = new ColumnBuilder(name, { category: 'vector', length: dimensions }, rest);
-    this._columnBuilders.push(col);
-    return col;
+    return this.add(name, { category: 'vector', length: dimensions }, rest);
+  }
+
+  private add(name: string, type: CanonicalType, options: BaseColumnOptions = {}): IColumnBuilder {
+    const column = new ColumnBuilder(name, type, options);
+    this._columnBuilders.push(column);
+    return column;
   }
 
   // ============================================================================
@@ -242,15 +189,11 @@ export class TableBuilder implements ITableBuilder {
   // ============================================================================
 
   createdAt(): IColumnBuilder {
-    const col = new ColumnBuilder('createdAt', { category: 'timestamp' }, { defaultValue: t.now() });
-    this._columnBuilders.push(col);
-    return col;
+    return this.add('createdAt', { category: 'timestamp' }, { defaultValue: t.now() });
   }
 
   updatedAt(): IColumnBuilder {
-    const col = new ColumnBuilder('updatedAt', { category: 'timestamp' }, { defaultValue: t.now() });
-    this._columnBuilders.push(col);
-    return col;
+    return this.add('updatedAt', { category: 'timestamp' }, { defaultValue: t.now() });
   }
 
   timestamps(): void {
@@ -267,22 +210,33 @@ export class TableBuilder implements ITableBuilder {
     return this;
   }
 
-  unique(columns: string[], name?: string): this {
-    const indexName = name ?? `uq_${this._name}_${columns.join('_')}`;
-    this._indexes.push({
-      name: indexName,
-      columns,
-      unique: true,
-    });
-    return this;
+  unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
+    return this.addIndex('uq', columns, options, true);
   }
 
-  index(columns: string[], name?: string): this {
-    const indexName = name ?? `idx_${this._name}_${columns.join('_')}`;
+  index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
+    return this.addIndex('idx', columns, options, false);
+  }
+
+  /**
+   * `@Index` and `table.index(...)` differ only in how the name is defaulted, so both normalize their
+   * entries here: the generator renders expressions and per-column modifiers from the normalized
+   * form, and anything left as a bare string would reach it as a column literally named `[object
+   * Object]`.
+   */
+  private addIndex(
+    prefix: string,
+    columns: readonly IndexColumnInput[],
+    options: string | IndexOptions | undefined,
+    unique: boolean,
+  ): this {
+    const { name, ...rest } = typeof options === 'string' ? { name: options } : (options ?? {});
+    const entries = columns.map(normalizeIndexColumn);
     this._indexes.push({
-      name: indexName,
-      columns,
-      unique: false,
+      ...rest,
+      name: name ?? `${prefix}_${this._name}_${entries.map((entry) => entry.column).join('_')}`,
+      columns: entries,
+      unique,
     });
     return this;
   }
@@ -318,7 +272,7 @@ export class TableBuilder implements ITableBuilder {
         if (!this._indexes.some((idx) => idx.name === indexName)) {
           this._indexes.push({
             name: indexName,
-            columns: [col.name],
+            columns: [{ column: col.name }],
             unique: col.unique,
           });
         }

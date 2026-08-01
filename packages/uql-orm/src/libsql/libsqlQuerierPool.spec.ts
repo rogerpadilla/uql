@@ -26,48 +26,55 @@ describe('LibsqlQuerierPool', () => {
     vi.mocked(createClient).mockClear();
   });
 
-  it('getQuerier', async () => {
+  it('builds no client until a querier is acquired', async () => {
     const config = { url: ':memory:' };
     const pool = new LibsqlQuerierPool(config);
+    expect(createClient).not.toHaveBeenCalled();
+
     const querier = await pool.getQuerier();
+
     expect(querier).toBeInstanceOf(LibsqlQuerier);
     expect(createClient).toHaveBeenCalledWith(config);
   });
 
-  it('getMigrationQuerier matches getQuerier when not embedded replica', async () => {
-    const config = { url: ':memory:' };
-    const pool = new LibsqlQuerierPool(config);
+  it('shares one client across queriers when not an embedded replica', async () => {
+    const pool = new LibsqlQuerierPool({ url: ':memory:' });
     const q1 = await pool.getQuerier();
     const q2 = await pool.getMigrationQuerier();
-    expect(q1.client).toBe(pool.client);
-    expect(q2.client).toBe(pool.client);
+    expect(q1.client).toBe(q2.client);
     expect(createClient).toHaveBeenCalledTimes(1);
   });
 
   it('getMigrationQuerier uses remote config for file: + syncUrl', async () => {
     const config = { url: 'file:./local.db', syncUrl: 'libsql://remote.test', authToken: 't' };
     const pool = new LibsqlQuerierPool(config);
-    expect(createClient).toHaveBeenCalledTimes(1);
 
     const q = await pool.getMigrationQuerier();
     expect(q).toBeInstanceOf(LibsqlQuerier);
-    expect(createClient).toHaveBeenCalledTimes(2);
+    expect(createClient).toHaveBeenCalledTimes(1);
 
-    expect(createClient).toHaveBeenNthCalledWith(1, config);
-
-    const remoteArg = vi.mocked(createClient).mock.calls[1][0] as Config;
+    const remoteArg = vi.mocked(createClient).mock.calls[0][0] as Config;
     expect(remoteArg.url).toBe('libsql://remote.test');
     expect(remoteArg.authToken).toBe('t');
     expect('syncUrl' in remoteArg ? remoteArg.syncUrl : undefined).toBeUndefined();
 
+    // A one-shot migration client is closed by the querier that owns it.
     await q.release();
     expect(q.client.close).toHaveBeenCalled();
   });
 
-  it('end', async () => {
-    const config = { url: ':memory:' };
-    const pool = new LibsqlQuerierPool(config);
+  it('closes the client on end', async () => {
+    const pool = new LibsqlQuerierPool({ url: ':memory:' });
+    const querier = await pool.getQuerier();
+
     await pool.end();
-    expect(pool.client.close).toHaveBeenCalled();
+
+    expect(querier.client.close).toHaveBeenCalled();
+  });
+
+  it('closes nothing on end when no querier was acquired', async () => {
+    const pool = new LibsqlQuerierPool({ url: ':memory:' });
+    await expect(pool.end()).resolves.toBeUndefined();
+    expect(createClient).not.toHaveBeenCalled();
   });
 });

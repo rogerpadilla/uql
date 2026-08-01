@@ -1,35 +1,25 @@
-import type { Client, ResultSet } from '@libsql/client';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { SqliteDialect } from '../sqlite/index.js';
-import { LibsqlQuerier } from './libsqlQuerier.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { HranaQuerier } from './hranaQuerier.js';
+import { SqliteDialect } from './sqliteDialect.js';
 
-describe('LibsqlQuerier', () => {
-  let mockClient: {
-    execute: Mock<any>;
-    transaction: Mock<any>;
-    close: Mock<any>;
-  };
-  let mockTx: {
-    execute: Mock<any>;
-    commit: Mock<any>;
-    rollback: Mock<any>;
-    close: Mock<any>;
-  };
-  let querier: LibsqlQuerier;
+function buildTx() {
+  return { execute: vi.fn(), commit: vi.fn(), rollback: vi.fn(), close: vi.fn() };
+}
+
+function buildClient(tx: ReturnType<typeof buildTx>) {
+  return { execute: vi.fn(), transaction: vi.fn().mockResolvedValue(tx), close: vi.fn() };
+}
+
+describe('HranaQuerier', () => {
+  let mockClient: ReturnType<typeof buildClient>;
+  let mockTx: ReturnType<typeof buildTx>;
+  let querier: HranaQuerier;
 
   beforeEach(() => {
-    mockTx = {
-      execute: vi.fn(),
-      commit: vi.fn(),
-      rollback: vi.fn(),
-      close: vi.fn(),
-    };
-    mockClient = {
-      execute: vi.fn(),
-      transaction: vi.fn().mockResolvedValue(mockTx),
-      close: vi.fn(),
-    };
-    querier = new LibsqlQuerier(mockClient as unknown as Client, new SqliteDialect());
+    mockTx = buildTx();
+    mockClient = buildClient(mockTx);
+    // No cast: the querier's client contract is structural, so a plain mock satisfies it.
+    querier = new HranaQuerier(mockClient, new SqliteDialect());
   });
 
   it('should execute select query using client', async () => {
@@ -39,7 +29,7 @@ describe('LibsqlQuerier', () => {
       columnTypes: ['INTEGER'],
       rowsAffected: 0,
       lastInsertRowid: undefined,
-    } as unknown as ResultSet);
+    });
 
     const res = await querier.internalAll('SELECT 1');
 
@@ -56,7 +46,7 @@ describe('LibsqlQuerier', () => {
       columnTypes: ['INTEGER'],
       rowsAffected: 0,
       lastInsertRowid: undefined,
-    } as unknown as ResultSet);
+    });
 
     const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
 
@@ -78,7 +68,7 @@ describe('LibsqlQuerier', () => {
       columns: [],
       columnTypes: [],
       rowsAffected: 0,
-    } as unknown as ResultSet);
+    });
     await querier.internalAll('SELECT 1');
     expect(mockTx.execute).toHaveBeenCalled();
     expect(mockClient.execute).not.toHaveBeenCalled();
@@ -102,7 +92,7 @@ describe('LibsqlQuerier', () => {
   });
 
   it('should close client on internalRelease when closeClientOnRelease', async () => {
-    const q = new LibsqlQuerier(mockClient as unknown as Client, new SqliteDialect(), undefined, {
+    const q = new HranaQuerier(mockClient, new SqliteDialect(), undefined, {
       closeClientOnRelease: true,
     });
     await q.internalRelease();

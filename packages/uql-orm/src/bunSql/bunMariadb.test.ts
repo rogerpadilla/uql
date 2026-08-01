@@ -8,7 +8,6 @@ class BunMariadbIt extends AbstractSqlQuerierIt {
       new BunSqlQuerierPool({
         url: 'mariadb://test:test@0.0.0.0:3326/test_bun_maria',
       }),
-      'BIGINT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }

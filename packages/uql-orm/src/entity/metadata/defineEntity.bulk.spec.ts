@@ -1,6 +1,23 @@
 import { expect, it } from 'vitest';
-import { metaCore } from '../test-helpers.js';
+import type { EntityMeta, Type } from '../../type/index.js';
 import { defineEntity, defineField, defineFilter, defineId, defineRelation, getMeta } from './definition.js';
+
+/** Stable projection for parity assertions (drops `entity` and `processed`). */
+function metaCore<E>(
+  entity: Type<E>,
+): Pick<EntityMeta<E>, 'id' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
+  const m = getMeta(entity);
+  return {
+    id: m.id,
+    name: m.name,
+    fields: m.fields,
+    relations: m.relations,
+    indexes: m.indexes,
+    hooks: m.hooks,
+    softDelete: m.softDelete,
+    filters: m.filters,
+  };
+}
 
 it('defineEntity bulk fields match incremental defineField + defineEntity', () => {
   class Incremental {}
@@ -112,11 +129,11 @@ it('defineEntity bulk indexes and hooks', () => {
   const m = getMeta(Indexed);
   expect(m.indexes).toHaveLength(2);
   expect(m.indexes![0]).toMatchObject({
-    columns: ['email', 'status'],
+    columns: [{ column: 'email' }, { column: 'status' }],
     name: 'idx_email_status',
     unique: false,
   });
-  expect(m.indexes![1]).toMatchObject({ columns: ['email'], unique: true });
+  expect(m.indexes![1]).toMatchObject({ columns: [{ column: 'email' }], unique: true });
   expect(m.hooks!.beforeInsert).toEqual([{ methodName: 'stampCreatedAt' }]);
   expect(m.hooks!.afterLoad).toEqual([{ methodName: 'hydrate' }]);
 });

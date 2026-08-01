@@ -43,4 +43,3 @@ export { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 export { JsonMigrationStorage } from './storage/jsonStorage.js';
 
 // Schema sync
-export * from './sync/index.js';

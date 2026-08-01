@@ -1,6 +1,5 @@
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ForeignKeyAction } from '../schema/types.js';
-import type { NamingStrategy } from './namingStrategy.js';
 import type { Querier } from './querier.js';
 import type { QuerierPool } from './querierPool.js';
 import type { Type } from './utility.js';
@@ -34,11 +33,6 @@ export interface Config {
    */
   tableName?: string;
 
-  /**
-   * The naming strategy for mapping class/property names to database table/column names.
-   * @default DefaultNamingStrategy (camelCase -> camelCase)
-   */
-  namingStrategy?: NamingStrategy;
   /**
    * Default action for foreign key ON DELETE and ON UPDATE clauses.
    * @default 'NO ACTION'

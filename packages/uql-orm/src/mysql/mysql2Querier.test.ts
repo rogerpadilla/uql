@@ -12,7 +12,6 @@ export class MySql2QuerierIt extends MySqlLikeQuerierIt {
         password: 'test',
         database: 'test',
       }),
-      'INT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }

@@ -8,7 +8,6 @@ class BunMysqlIt extends MySqlLikeQuerierIt {
       new BunSqlQuerierPool({
         url: 'mysql://test:test@0.0.0.0:3316/test_bun_mysql',
       }),
-      'BIGINT AUTO_INCREMENT PRIMARY KEY',
     );
   }
 }

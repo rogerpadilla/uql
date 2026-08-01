@@ -49,7 +49,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
 
   private async createTableIfNotExists(querier: SqlQuerier): Promise<void> {
     const { dialect } = querier;
-    const sql = `
+    const sql = /*sql*/ `
       CREATE TABLE IF NOT EXISTS ${dialect.escapeId(this.tableName)} (
         ${dialect.escapeId('name')} VARCHAR(255) PRIMARY KEY,
         ${dialect.escapeId('executed_at')} TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -71,7 +71,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
 
     try {
       const { dialect } = querier;
-      const sql = `SELECT ${dialect.escapeId('name')} FROM ${dialect.escapeId(this.tableName)} ORDER BY ${dialect.escapeId('name')} ASC`;
+      const sql = /*sql*/ `SELECT ${dialect.escapeId('name')} FROM ${dialect.escapeId(this.tableName)} ORDER BY ${dialect.escapeId('name')} ASC`;
       const results = await querier.all<MigrationRecord>(sql);
       return results.map((r) => r.name);
     } finally {
@@ -85,7 +85,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   async logWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void> {
     await this.ensureStorage();
     const { dialect } = querier;
-    const sql = `INSERT INTO ${dialect.escapeId(this.tableName)} (${dialect.escapeId('name')}) VALUES (${dialect.placeholder(1)})`;
+    const sql = /*sql*/ `INSERT INTO ${dialect.escapeId(this.tableName)} (${dialect.escapeId('name')}) VALUES (${dialect.placeholder(1)})`;
     await querier.run(sql, [migrationName]);
   }
 
@@ -95,7 +95,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   async unlogWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void> {
     await this.ensureStorage();
     const { dialect } = querier;
-    const sql = `DELETE FROM ${dialect.escapeId(this.tableName)} WHERE ${dialect.escapeId('name')} = ${dialect.placeholder(1)}`;
+    const sql = /*sql*/ `DELETE FROM ${dialect.escapeId(this.tableName)} WHERE ${dialect.escapeId('name')} = ${dialect.placeholder(1)}`;
     await querier.run(sql, [migrationName]);
   }
 }

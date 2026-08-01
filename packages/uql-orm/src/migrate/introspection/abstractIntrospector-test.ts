@@ -1,6 +1,15 @@
 import { expect } from 'vitest';
+import { sqlToCanonical } from '../../schema/canonicalType.js';
+import type { TypeCategory } from '../../schema/types.js';
 import type { Spec } from '../../test/index.js';
-import type { ColumnSchema, QuerierPool, SchemaIntrospector, SqlQuerier, TableSchema } from '../../type/index.js';
+import type {
+  ColumnSchema,
+  IndexSchema,
+  QuerierPool,
+  SchemaIntrospector,
+  SqlQuerier,
+  TableSchema,
+} from '../../type/index.js';
 import { t } from '../builder/expressions.js';
 import { MigrationBuilder } from '../builder/migrationBuilder.js';
 
@@ -164,6 +173,14 @@ export abstract class AbstractIntrospectorIt implements Spec {
     await this.afterDropTables(querier);
   }
 
+  /**
+   * What a `timestamp` column reads back as. SQLite has no date/time type at all - it stores one as
+   * `TEXT` - so the canonical category it introspects to is genuinely different, not a bug.
+   */
+  protected expectedTimestampCategory(): TypeCategory {
+    return 'timestamp';
+  }
+
   /** Dialect-specific pre-setup, e.g. SQLite's `PRAGMA foreign_keys = ON`. */
   protected async beforeCreateTables(_querier: SqlQuerier): Promise<void> {}
 
@@ -254,7 +271,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
     const index = this.getIndex(schema, 'idx_test_b_cols');
-    expect(index.columns).toEqual(['col1', 'col2']);
+    expect(index.columns.map((entry) => entry.column)).toEqual(['col1', 'col2']);
     expect(index.unique).toBe(false);
   }
 
@@ -262,7 +279,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
 
     const index = this.getIndex(schema, 'idx_test_c_priority');
-    expect(index.columns).toEqual(['priority']);
+    expect(index.columns.map((entry) => entry.column)).toEqual(['priority']);
   }
 
   async shouldIntrospectUniqueColumn() {
@@ -298,6 +315,26 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     const scoreCol = this.getColumn(schema, 'score');
     expect(scoreCol.defaultValue).toBe(0);
+  }
+
+  /**
+   * `addColumn` declares its own type. It used to take a callback that could only set nullability, so
+   * the builder created every added column as a `VARCHAR` whatever the migration said.
+   */
+  async shouldAddColumnWithTheDeclaredType() {
+    const querier = await this.pool.getQuerier();
+    try {
+      const builder = new MigrationBuilder(querier);
+      await builder.addColumn(INTROSPECT_TABLES.A, (column) => column.timestamp('added_at', { nullable: true }));
+
+      const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
+      const addedCol = this.getColumn(schema, 'added_at');
+      expect(sqlToCanonical(addedCol.type).category).toBe(this.expectedTimestampCategory());
+    } finally {
+      const table = querier.dialect.escapeId(INTROSPECT_TABLES.A);
+      await querier.run(`ALTER TABLE ${table} DROP COLUMN ${querier.dialect.escapeId('added_at')}`);
+      await querier.release();
+    }
   }
 
   async shouldIntrospectAutoIncrement() {
@@ -372,9 +409,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_UNIQUE);
 
     // Find composite unique constraint - stored as unique index
-    const uniqueIndex = schema.indexes!.find(
-      (i) => i.unique && i.columns.includes('code') && i.columns.includes('region'),
-    );
+    const covers = (index: IndexSchema, column: string) => index.columns.some((entry) => entry.column === column);
+    const uniqueIndex = schema.indexes!.find((i) => i.unique && covers(i, 'code') && covers(i, 'region'));
     this.assertDefined(uniqueIndex, 'Composite unique index on (code, region) not found');
 
     expect(uniqueIndex.columns).toHaveLength(2);

@@ -27,15 +27,12 @@ function mockAllResolvedValueOnce(all: AbstractSqlQuerier['all'], value: unknown
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier!: AbstractSqlQuerier;
 
-  constructor(
-    readonly pool: QuerierPool<AbstractSqlQuerier>,
-    readonly idType: string,
-  ) {}
+  constructor(readonly pool: QuerierPool<AbstractSqlQuerier>) {}
 
   async beforeAll() {
     this.querier = await this.pool.getQuerier();
     await dropTables(this.querier);
-    await createTables(this.querier, this.idType);
+    await createTables(this.querier);
   }
 
   async beforeEach() {

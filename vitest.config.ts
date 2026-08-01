@@ -24,7 +24,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
-    exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts'],
+    // `*.bun.test.ts` files assert Bun-only driver behavior and import `bun:test`; see `test:bun`.
+    exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
@@ -37,6 +38,8 @@ export default defineConfig({
         'packages/*/src/**/*-spec.ts',
         'packages/*/src/**/*.test.ts',
         'packages/*/src/**/*-test.ts',
+        // `*.bun.ts` only ever executes under Bun, so this run cannot reach it; `test:bun` covers it.
+        'packages/*/src/**/*.bun.ts',
         'packages/*/src/test/**/*.ts',
         'packages/*/src/**/index.ts',
         'packages/*/src/**/*.d.ts',

@@ -5,7 +5,8 @@
  * Enables reliable diffing, smart relation detection, and dialect-agnostic schema operations.
  */
 
-import type { VectorIndexOptions } from '../type/vector.js';
+import type { IndexColumnSchema } from '../type/entity.js';
+import type { IndexSchema } from '../type/migration.js';
 
 // ============================================================================
 // Canonical Type System
@@ -222,26 +223,23 @@ export interface RelationshipNode {
  * Index node in the schema graph.
  * Represents a database index on one or more columns.
  */
-export type IndexNode = {
-  /** Index name */
-  readonly name: string;
+export type IndexNode = Omit<IndexSchema, 'columns'> & {
   /** Reference to the table this index belongs to */
   readonly table: TableNode;
-  /** Columns included in the index (order matters) */
+  /** Columns included in the index (order matters). Empty for an index over expressions only. */
   readonly columns: ColumnNode[];
-  /** Whether this is a unique index */
-  readonly unique: boolean;
-  /** Index algorithm/type */
-  readonly type?: IndexType;
-  /** Partial index condition (WHERE clause) */
-  readonly where?: string;
+  /**
+   * The index as authored, with names resolved: expressions, prefix lengths and per-column order that
+   * a `ColumnNode` cannot represent. The generator renders these; `columns` is what diffing compares.
+   */
+  readonly entries?: readonly IndexColumnSchema[];
 
   // === Sync Metadata ===
   /** Where this index was defined */
   readonly source?: IndexSource;
   /** Current sync status */
   readonly syncStatus?: IndexSyncStatus;
-} & VectorIndexOptions;
+};
 
 /**
  * Root of the schema graph.
@@ -442,43 +440,4 @@ export interface DriftReport {
     readonly warning: number;
     readonly info: number;
   };
-}
-
-// ============================================================================
-// Sync Direction Types
-// ============================================================================
-
-/**
- * Direction for schema synchronization.
- */
-export type SyncDirection =
-  | 'bidirectional' // Sync both ways (default for development)
-  | 'entity-to-db' // Entities are source of truth → push to DB
-  | 'db-to-entity'; // Database is source of truth → pull to entities
-
-/**
- * Strategy for resolving conflicts in bidirectional sync.
- */
-export type ConflictResolution =
-  | 'prompt' // Ask user interactively
-  | 'entity-wins' // Entity definition takes precedence
-  | 'db-wins' // Database definition takes precedence
-  | 'skip'; // Skip conflicting changes
-
-/**
- * Options for sync operations.
- */
-export interface SyncOptions {
-  /** Direction of synchronization */
-  readonly direction?: SyncDirection;
-  /** How to resolve conflicts (for bidirectional) */
-  readonly conflictResolution?: ConflictResolution;
-  /** Prevent destructive changes (DROP, type narrowing) */
-  readonly safe?: boolean;
-  /** Include indexes in sync */
-  readonly includeIndexes?: boolean;
-  /** Include foreign keys in sync */
-  readonly includeForeignKeys?: boolean;
-  /** Dry run - report changes without applying */
-  readonly dryRun?: boolean;
 }

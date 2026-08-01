@@ -11,11 +11,10 @@ import {
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
+  EntityMeta,
   FieldOptions,
-  QueryComparisonOptions,
   QueryConflictPaths,
   QueryContext,
-  QueryOptions,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
   Type,
@@ -34,7 +33,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
     columnComment: false, // SQLite does not support column comments
-    vectorIndexStyle: 'create',
+    inlineVectorIndex: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: true,
@@ -63,10 +62,15 @@ export class SqliteDialect extends AbstractSqlDialect {
   // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.
   override readonly insertIdSource = 'returning';
 
+  /**
+   * The [sqlite-vec](https://github.com/asg017/sqlite-vec) functions, which need that extension
+   * loaded on the connection (see `Sqlite3QuerierPool`'s `extensions` option). libSQL and Turso ship
+   * their own vector functions instead, so `LibsqlDialect` overrides this.
+   */
   protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
     ['cosine', 'vec_distance_cosine'],
     ['l2', 'vec_distance_L2'],
-    ['hamming', 'vec_distance_hamming'],
+    ['l1', 'vec_distance_L1'],
   ]);
 
   /**
@@ -94,27 +98,19 @@ export class SqliteDialect extends AbstractSqlDialect {
     return super.normalizeValue(value);
   }
 
-  override compare<E>(
+  /**
+   * FTS5 matches the table itself rather than its columns, so this only works when the table *is* an
+   * FTS5 virtual table (UQL does not create those; declare it outside your entities).
+   */
+  protected override appendTextSearch<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: string,
-    val: unknown,
-    opts?: QueryComparisonOptions,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
   ): void {
-    if (key === '$text') {
-      const meta = getMeta(entity);
-      const search = val as QueryTextSearchOptions<E>;
-      const fields = search.$fields!.map((fKey) => {
-        const field = meta.fields[fKey];
-        const columnName = this.resolveColumnName(fKey, field!);
-        return this.escapeId(columnName);
-      });
-      const tableName = this.resolveTableName(entity, meta);
-      ctx.append(`${this.escapeId(tableName)} MATCH {${fields.join(' ')}} : `);
-      ctx.addValue(search.$value);
-      return;
-    }
-    super.compare(ctx, entity, key, val, opts);
+    const columns = search.$fields!.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    ctx.append(`${this.escapeId(this.resolveTableName(entity, meta))} MATCH {${columns.join(' ')}} : `);
+    ctx.addValue(search.$value);
   }
 
   /**
@@ -166,11 +162,6 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `CAST(${expr} AS REAL)`;
   }
 
-  override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
-    super.insert(ctx, entity, payload, opts);
-    ctx.append(' ' + this.returningId(entity));
-  }
-
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
     const updateCtx = this.createContext();
@@ -185,7 +176,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     // Use the base (non-RETURNING) insert here: the appended RETURNING below would otherwise
     // be doubled by `this.insert`'s own.
-    super.insert(ctx, entity, payload);
+    this.appendInsertValues(ctx, entity, payload);
     ctx.append(` ON CONFLICT (${keysStr}) ${onConflict} ${this.returningId(entity)}`);
     ctx.pushValue(...updateCtx.values);
   }
@@ -226,9 +217,15 @@ export class SqliteDialect extends AbstractSqlDialect {
     );
   }
 
-  /** `[#]` appends, creating the array when the key is absent. */
+  /**
+   * `[#]` appends, creating the array when the key is absent.
+   *
+   * @remarks `json_set` rather than `json_insert`: the two are equivalent here because `[#]` always
+   * resolves past the end of the array, and Turso's engine implements `json_insert` as create-only,
+   * so it silently drops the element when the array already exists.
+   */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'json_insert', expr, push, '[#]');
+    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'json_set', expr, push, '[#]');
   }
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {

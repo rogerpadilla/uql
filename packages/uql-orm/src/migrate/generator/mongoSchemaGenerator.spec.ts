@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
 import type { TableNode } from '../../schema/types.js';
+import type { IndexSchema } from '../../type/index.js';
+import type { TableDefinition } from '../builder/types.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
@@ -13,29 +15,75 @@ class MongoUser {
 describe('MongoSchemaGenerator', () => {
   const generator = new MongoSchemaGenerator();
 
-  it('should generate createCollection statement', () => {
-    const json = generator.generateCreateTable(MongoUser)[0];
-    const cmd = JSON.parse(json);
+  /**
+   * A collection plus one `createIndex` command per index, mirroring the SQL generator's
+   * `[CREATE TABLE, ...CREATE INDEX]`. The key spec used to be re-derived in the migrator instead,
+   * which is why a descending or text index could not be expressed at all.
+   */
+  it('should generate createCollection followed by a createIndex per index', () => {
+    const statements = generator.generateCreateTable(MongoUser).map((json) => JSON.parse(json));
 
-    expect(cmd).toMatchObject({
-      action: 'createCollection',
-      name: 'MongoUser',
-    });
-    expect(cmd.indexes).toHaveLength(2);
-    expect(cmd.indexes).toContainEqual({
-      name: 'idx_MongoUser_username',
-      columns: ['username'],
-      unique: false,
-    });
-    expect(cmd.indexes).toContainEqual({
-      name: 'idx_email',
-      columns: ['email'],
-      unique: true,
-    });
+    expect(statements[0]).toMatchObject({ action: 'createCollection', name: 'MongoUser' });
+    expect(statements.slice(1)).toEqual([
+      {
+        action: 'createIndex',
+        collection: 'MongoUser',
+        name: 'idx_MongoUser_username',
+        key: { username: 1 },
+        options: { name: 'idx_MongoUser_username', unique: false },
+      },
+      {
+        action: 'createIndex',
+        collection: 'MongoUser',
+        name: 'idx_email',
+        key: { email: 1 },
+        options: { name: 'idx_email', unique: true },
+      },
+    ]);
+  });
+
+  it('should map a descending entry to -1 and a fulltext index to a text key', () => {
+    const descending = JSON.parse(
+      generator.generateCreateIndex('MongoUser', {
+        name: 'idx_recent',
+        columns: [{ column: 'createdAt', order: 'desc' }],
+        unique: false,
+      }),
+    );
+    const text = JSON.parse(
+      generator.generateCreateIndex('MongoUser', {
+        name: 'idx_text',
+        columns: [{ column: 'username' }, { column: 'email' }],
+        unique: false,
+        type: 'fulltext',
+      }),
+    );
+
+    expect(descending.key).toEqual({ createdAt: -1 });
+    expect(text.key).toEqual({ username: 'text', email: 'text' });
+  });
+
+  it('should reject index options MongoDB has no equivalent for', () => {
+    expect(() =>
+      generator.generateCreateIndex('MongoUser', {
+        name: 'idx_expr',
+        columns: [{ column: 'lower(username)', expression: true }],
+        unique: false,
+      }),
+    ).toThrow('mongodb does not support that index column option');
+
+    expect(() =>
+      generator.generateCreateIndex('MongoUser', {
+        name: 'idx_partial',
+        columns: [{ column: 'username' }],
+        unique: false,
+        where: 'deletedAt IS NULL',
+      }),
+    ).toThrow('mongodb does not support partial indexes from a SQL predicate');
   });
 
   it('should generate dropCollection statement', () => {
-    const json = generator.generateDropTable(MongoUser);
+    const json = generator.generateDropTable('MongoUser');
     const cmd = JSON.parse(json);
 
     expect(cmd).toMatchObject({
@@ -47,7 +95,7 @@ describe('MongoSchemaGenerator', () => {
   it('should generate createIndex statement', () => {
     const json = generator.generateCreateIndex('MongoUser', {
       name: 'idx_test',
-      columns: ['test'],
+      columns: [{ column: 'test' }],
       unique: true,
     });
     const cmd = JSON.parse(json);
@@ -123,7 +171,7 @@ describe('MongoSchemaGenerator', () => {
     const diff = {
       tableName: 'MongoUser',
       type: 'alter' as const,
-      indexesToAdd: [{ name: 'idx_test', columns: ['test'], unique: false }],
+      indexesToAdd: [{ name: 'idx_test', columns: [{ column: 'test' }], unique: false }],
     };
     const statements = generator.generateAlterTable(diff);
     expect(statements).toHaveLength(1);
@@ -134,7 +182,7 @@ describe('MongoSchemaGenerator', () => {
     const diff = {
       tableName: 'MongoUser',
       type: 'alter' as const,
-      indexesToAdd: [{ name: 'idx_test', columns: ['test'], unique: false }],
+      indexesToAdd: [{ name: 'idx_test', columns: [{ column: 'test' }], unique: false }],
     };
     const statements = generator.generateAlterTableDown(diff);
     expect(statements).toHaveLength(1);
@@ -143,24 +191,6 @@ describe('MongoSchemaGenerator', () => {
 
   it('should return empty string for getSqlType', () => {
     expect(generator.getSqlType({})).toBe('');
-  });
-
-  it('should cover no-op / empty return methods', () => {
-    expect(generator.getBooleanType()).toBe('');
-    expect(generator.generateColumnDefinitions()).toEqual([]);
-    expect(generator.generateColumnDefinition()).toBe('');
-    expect(generator.generateColumnDefinitionFromSchema()).toBe('');
-    expect(generator.generateTableConstraints()).toEqual([]);
-    expect(generator.generateAlterColumnStatements()).toEqual([]);
-    expect(generator.getTableOptions()).toBe('');
-    expect(generator.generateColumnComment()).toBe('');
-    expect(generator.formatDefaultValue()).toBe('');
-    expect(generator.generateAddColumnSql()).toBe('');
-    expect(generator.generateDropColumnSql()).toBe('');
-    expect(generator.generateRenameColumnSql()).toBe('');
-    expect(generator.generateAlterColumnSql()).toBe('');
-    expect(generator.generateAddForeignKeySql()).toBe('');
-    expect(generator.generateDropForeignKeySql()).toBe('');
   });
 
   describe('Node-based generation', () => {
@@ -182,7 +212,7 @@ describe('MongoSchemaGenerator', () => {
     });
 
     it('should generate dropTable from node', () => {
-      expect(JSON.parse(generator.generateDropTableFromNode(tableNode))).toMatchObject({
+      expect(JSON.parse(generator.generateDropTable(tableNode.name))).toMatchObject({
         action: 'dropCollection',
         name: 'users',
       });
@@ -206,34 +236,39 @@ describe('MongoSchemaGenerator', () => {
   });
 
   describe('Definition-based generation', () => {
-    it('should generate createTable from definition', () => {
-      const def: any = { name: 'posts' };
-      expect(JSON.parse(generator.generateCreateTableFromDefinition(def)[0])).toMatchObject({
-        action: 'createCollection',
+    it('should generate createTable from definition, with its indexes', () => {
+      const def: TableDefinition = {
         name: 'posts',
+        columns: [],
+        foreignKeys: [],
+        indexes: [{ name: 'idx_posts_slug', columns: [{ column: 'slug' }], unique: true }],
+      };
+      const statements = generator.generateCreateTableFromDefinition(def).map((sql) => JSON.parse(sql));
+
+      expect(statements[0]).toMatchObject({ action: 'createCollection', name: 'posts' });
+      expect(statements[1]).toMatchObject({
+        action: 'createIndex',
+        collection: 'posts',
+        key: { slug: 1 },
+        options: { unique: true, name: 'idx_posts_slug' },
       });
     });
 
-    it('should generate generic SQL methods', () => {
-      expect(JSON.parse(generator.generateDropTableSql('users'))).toMatchObject({
-        action: 'dropCollection',
-        name: 'users',
-      });
-
+    it('should generate the table-level commands by name', () => {
       expect(JSON.parse(generator.generateRenameTableSql('old', 'new'))).toMatchObject({
         action: 'renameCollection',
         from: 'old',
         to: 'new',
       });
 
-      const idx: any = { name: 'idx', columns: ['c'], unique: true };
-      expect(JSON.parse(generator.generateCreateIndexSql('users', idx))).toMatchObject({
+      const idx: IndexSchema = { name: 'idx', columns: [{ column: 'c' }], unique: true };
+      expect(JSON.parse(generator.generateCreateIndex('users', idx))).toMatchObject({
         action: 'createIndex',
         collection: 'users',
         name: 'idx',
       });
 
-      expect(JSON.parse(generator.generateDropIndexSql('users', 'idx'))).toMatchObject({
+      expect(JSON.parse(generator.generateDropIndex('users', 'idx'))).toMatchObject({
         action: 'dropIndex',
         collection: 'users',
         name: 'idx',

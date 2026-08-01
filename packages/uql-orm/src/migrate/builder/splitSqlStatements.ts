@@ -44,6 +44,3 @@ export function splitSqlStatements(sql: string): string[] {
 
   return statements;
 }
-
-/** Legacy alias kept for backward compatibility. */
-export const splitSqlStatementsOnSemicolons = splitSqlStatements;

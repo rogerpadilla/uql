@@ -10,10 +10,11 @@
  * - JSDoc comments for sync-added fields
  */
 
-import { canonicalToColumnType, canonicalToTypeScript } from '../../schema/canonicalType.js';
+import { canonicalToTypeScript } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, RelationshipNode, RelationshipType, TableNode } from '../../schema/types.js';
 import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
+import { buildFieldOptionsSource } from './fieldOptionsSource.js';
 
 /**
  * Options for entity code generation.
@@ -253,53 +254,9 @@ export class EntityCodeGenerator {
    * Build Field decorator options.
    */
   private buildFieldOptions(col: ColumnNode): string {
-    const options: string[] = [];
-
-    // Column type
-    const columnType = canonicalToColumnType(col.type);
-    if (columnType) {
-      options.push(`columnType: '${columnType}'`);
-    }
-
-    // Length
-    if (col.type.length && col.type.category === 'string') {
-      options.push(`length: ${col.type.length}`);
-    }
-
-    // Precision and scale
-    if (col.type.precision) {
-      options.push(`precision: ${col.type.precision}`);
-      if (col.type.scale) {
-        options.push(`scale: ${col.type.scale}`);
-      }
-    }
-
-    // Nullable
-    if (col.nullable) {
-      options.push('nullable: true');
-    }
-
-    // Unique
-    if (col.isUnique) {
-      options.push('unique: true');
-    }
-
-    // Default value
-    if (col.defaultValue !== undefined) {
-      options.push(`defaultValue: ${this.formatDefaultValue(col.defaultValue)}`);
-    }
-
-    // Index (single column)
-    if (this.options.includeIndexes) {
-      const indexes = this.ast.getTableIndexes(col.table.name);
-      const singleColIndex = indexes.find((idx) => idx.columns.length === 1 && idx.columns[0].name === col.name);
-
-      if (singleColIndex) {
-        options.push(`index: '${singleColIndex.name}'`);
-      }
-    }
-
-    return options.length > 0 ? `{ ${options.join(', ')} }` : '';
+    const indexes = this.options.includeIndexes ? this.ast.getTableIndexes(col.table.name) : [];
+    const singleColIndex = indexes.find((idx) => idx.columns.length === 1 && idx.columns[0].name === col.name);
+    return buildFieldOptionsSource(col, singleColIndex?.name);
   }
 
   /**
@@ -432,33 +389,6 @@ export class EntityCodeGenerator {
     }
     if (type.unsigned) desc += ' UNSIGNED';
     return desc;
-  }
-
-  /**
-   * Format default value for code.
-   */
-  private formatDefaultValue(value: unknown): string {
-    if (typeof value === 'string') {
-      // Check for SQL expressions
-      if (
-        value.includes('(') ||
-        value.toUpperCase() === 'CURRENT_TIMESTAMP' ||
-        value.toUpperCase().includes('NEXTVAL')
-      ) {
-        return `'${value}'`; // Keep as string for expressions
-      }
-      return `'${value.replace(/'/g, "\\'")}'`;
-    }
-    if (typeof value === 'boolean') {
-      return value.toString();
-    }
-    if (typeof value === 'number') {
-      return value.toString();
-    }
-    if (value === null) {
-      return 'null';
-    }
-    return JSON.stringify(value);
   }
 
   /**

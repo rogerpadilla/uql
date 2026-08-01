@@ -61,7 +61,7 @@ describe('MongoSchemaIntrospector', () => {
     expect(schema!.indexes).toHaveLength(2);
     expect(schema!.indexes![1]).toMatchObject({
       name: 'idx_username',
-      columns: ['username'],
+      columns: [{ column: 'username' }],
       unique: true,
     });
   });
@@ -109,7 +109,7 @@ describe('MongoSchemaIntrospector', () => {
 
     expect(schema!.indexes![0]).toEqual({
       name: 'lastName_firstName',
-      columns: ['lastName', 'firstName'],
+      columns: [{ column: 'lastName' }, { column: 'firstName' }],
       unique: false,
     });
   });

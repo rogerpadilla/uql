@@ -1,5 +1,5 @@
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, RawRow, SqlQuerier } from '../../type/index.js';
-import { AbstractSqlSchemaIntrospector } from './abstractSqlSchemaIntrospector.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, RawRow } from '../../type/index.js';
+import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * PostgreSQL schema introspector
@@ -147,7 +147,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapColumnsResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: PostgresColumnRow[],
   ): Promise<ColumnSchema[]> {
@@ -167,19 +167,19 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async mapIndexesResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: { index_name: string; columns: string[]; is_unique: boolean }[],
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
-      columns: row.columns,
+      columns: row.columns.map((column) => ({ column })),
       unique: row.is_unique,
     }));
   }
 
   protected async mapForeignKeysResult(
-    _querier: SqlQuerier,
+    _read: TableRowReader,
     _tableName: string,
     results: {
       constraint_name: string;
@@ -198,13 +198,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));
-  }
-
-  protected mapPrimaryKeyResult(results: { column_name: string }[]): string[] | undefined {
-    if (results.length === 0) {
-      return undefined;
-    }
-    return results.map((r) => r.column_name);
   }
 
   // ============================================================================

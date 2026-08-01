@@ -1,6 +1,5 @@
-import type { DialectOptions } from '../dialect/abstractDialect.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
-import type { VectorDistance } from '../type/index.js';
+import type { IndexFeature, IndexSchema, VectorDistance } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -16,25 +15,45 @@ import type { VectorDistance } from '../type/index.js';
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
-  // CockroachDB only implements 3 of pgvector's 5 distance metrics. Verified live (both `<+>`/`<~>`
-  // query operators and `vector_l1_ops`/`bit_hamming_ops` index opclasses throw "unimplemented:
-  // operator class ... is not supported") and confirmed in CockroachDB's own docs, "Known
-  // limitations": https://www.cockroachlabs.com/docs/stable/vector-indexes - tracked upstream at
-  // https://github.com/cockroachdb/cockroach/issues/147839. Re-check that issue before adding
-  // `l1`/`hamming` here; they're omitted on purpose, not an oversight.
-  override readonly vectorOpsClass: ReadonlyMap<VectorDistance, string> | undefined = new Map([
-    ['cosine', 'vector_cosine_ops'],
-    ['l2', 'vector_l2_ops'],
-    ['inner', 'vector_ip_ops'],
+  // CockroachDB implements 3 of pgvector's 4 metrics: `<+>` and `vector_l1_ops` throw
+  // "unimplemented: operator class ... is not supported" (verified live on v26.2), which its own docs
+  // list under "Known limitations": https://www.cockroachlabs.com/docs/stable/vector-indexes -
+  // tracked upstream at https://github.com/cockroachdb/cockroach/issues/147839. Re-check that issue
+  // before adding `l1` here; it is omitted on purpose, not an oversight.
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, { op: string; opsSuffix: string }> = new Map([
+    ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
+    ['l2', { op: '<->', opsSuffix: 'l2' }],
+    ['inner', { op: '<#>', opsSuffix: 'ip' }],
   ]);
 
-  constructor(options: DialectOptions = {}) {
-    super({
-      ...options,
-      driverCapabilities: {
-        vectorIndexStyle: 'native',
-        ...options.driverCapabilities,
-      },
-    });
+  /**
+   * `NULLS FIRST/LAST` answers "unimplemented: this syntax" and `jsonb_path_ops` "operator class is
+   * not supported" (both verified on v26.2), so neither is offered here.
+   */
+  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'include']);
+
+  /**
+   * CockroachDB's vector index is native and has its own syntax: `CREATE VECTOR INDEX ... ("col"
+   * vector_cosine_ops)`, with no access-method keyword, and tuning knobs of its own names that UQL
+   * does not map. `type: 'vector'` is its trigger, the same generic value MariaDB's inline index uses.
+   */
+  private isNativeVectorIndex(index: IndexSchema): boolean {
+    return index.type === 'vector';
+  }
+
+  protected override isVectorIndex(index: IndexSchema): boolean {
+    return this.isNativeVectorIndex(index) || super.isVectorIndex(index);
+  }
+
+  protected override indexKeyword(index: IndexSchema): string {
+    return this.isNativeVectorIndex(index) ? 'VECTOR INDEX' : super.indexKeyword(index);
+  }
+
+  protected override indexAccessMethod(index: IndexSchema): string {
+    return this.isNativeVectorIndex(index) ? '' : super.indexAccessMethod(index);
+  }
+
+  protected override indexTuning(index: IndexSchema): string {
+    return this.isNativeVectorIndex(index) ? '' : super.indexTuning(index);
   }
 }

@@ -25,25 +25,19 @@ import type {
   IndexSchema,
   NamingStrategy,
   SchemaDiff,
-  SchemaGenerator,
+  SqlDdlGenerator,
   Type,
-  VectorDistance,
 } from '../type/index.js';
 import { escapeSqlId, getKeys, isAutoIncrement } from '../util/index.js';
 import { formatDefaultValue } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
-
-/** Maps UQL distance metric names to inline DDL keywords (e.g. MariaDB `DISTANCE=euclidean`). */
-const INLINE_VECTOR_DISTANCE_MAP = new Map<VectorDistance, string>([
-  ['cosine', 'cosine'],
-  ['l2', 'euclidean'],
-]);
+import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 
 /**
  * Unified SQL schema generator.
  * Parameterized by dialect to handle Postgres, MySQL, MariaDB, and SQLite.
  */
-export class SqlSchemaGenerator implements SchemaGenerator {
+export class SqlSchemaGenerator implements SqlDdlGenerator {
   constructor(
     protected readonly dialect: AbstractSqlDialect,
     protected readonly defaultForeignKeyAction: ForeignKeyAction = 'NO ACTION',
@@ -90,15 +84,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return fieldOptionsToCanonical(field, fieldType);
   }
 
-  /**
-   * Convert CanonicalType to SQL type string for this dialect.
-   * Also handles legacy string types for backward compatibility.
-   */
-  protected canonicalTypeToSql(type: CanonicalType | string): string {
-    // Handle legacy string types
-    if (typeof type === 'string') {
-      return type;
-    }
+  protected canonicalTypeToSql(type: CanonicalType): string {
     return canonicalToSql(type, this.dialect);
   }
 
@@ -113,10 +99,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return this.generateCreateTableFromNode(tableNode, options);
   }
 
-  generateDropTable<E>(entity: Type<E>): string {
-    const meta = getMeta(entity);
-    const tableName = this.dialect.resolveTableName(entity, meta);
-    return `DROP TABLE IF EXISTS ${this.escapeId(tableName)};`;
+  generateDropTable(tableName: string, options: { ifExists?: boolean; cascade?: boolean } = {}): string {
+    const ifExists = options.ifExists ? 'IF EXISTS ' : '';
+    const cascade = options.cascade && this.features.dropTableCascade ? ' CASCADE' : '';
+    return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
   }
 
   generateAlterTable(diff: SchemaDiff): string[] {
@@ -199,51 +185,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
-    const unique = index.unique ? 'UNIQUE ' : '';
-    const ifNotExists = (options.ifNotExists ?? this.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
-    const opsClassMap = this.dialect.vectorOpsClass;
-    // CockroachDB's native vector index has one algorithm (no hnsw/ivfflat choice), so `type: 'vector'`
-    // is its trigger - same generic value MariaDB's inline style already uses (see `isInlineVectorIdx`).
-    const isNativeVectorIndex = this.features.vectorIndexStyle === 'native' && index.type === 'vector';
-    const hasOpsClass = opsClassMap && (isNativeVectorIndex || index.type === 'hnsw' || index.type === 'ivfflat');
-
-    // For pgvector/CockroachDB vector indexes: append operator class to the column. Throws rather
-    // than silently omitting the operator class for an unsupported distance - e.g. a bare
-    // `CREATE VECTOR INDEX ... (col)` on CockroachDB would build using its default distance
-    // metric instead of the one actually requested, with no error to signal the mismatch.
-    const columns = index.columns
-      .map((c) => {
-        const escaped = this.escapeId(c);
-        if (!opsClassMap || !hasOpsClass || !index.distance) {
-          return escaped;
-        }
-        const opsClass = opsClassMap.get(index.distance);
-        if (!opsClass) {
-          throw new TypeError(
-            `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
-          );
-        }
-        return `${escaped} ${opsClass}`;
-      })
-      .join(', ');
-
-    // CockroachDB has no access-method keyword: `CREATE VECTOR INDEX ... (col)`, not
-    // `CREATE INDEX ... USING vector (col)`.
-    const indexKeyword = isNativeVectorIndex ? 'VECTOR INDEX' : 'INDEX';
-    const using = !isNativeVectorIndex && index.type ? ` USING ${index.type}` : '';
-
-    // Build WITH params for pgvector indexes with operator class support. CockroachDB's native
-    // vector index has its own, differently-named tuning knobs - not generated here.
-    let withClause = '';
-    if (hasOpsClass && !isNativeVectorIndex) {
-      const withParams: string[] = [];
-      if (index.m !== undefined) withParams.push(`m = ${index.m}`);
-      if (index.efConstruction !== undefined) withParams.push(`ef_construction = ${index.efConstruction}`);
-      if (index.lists !== undefined) withParams.push(`lists = ${index.lists}`);
-      withClause = withParams.length > 0 ? ` WITH (${withParams.join(', ')})` : '';
-    }
-
-    return `CREATE ${unique}${indexKeyword} ${ifNotExists}${this.escapeId(index.name)} ON ${this.escapeId(tableName)}${using} (${columns})${withClause};`;
+    return this.dialect.getCreateIndexStatement(tableName, index, options);
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
@@ -254,23 +196,19 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Generate column definition from a ColumnSchema object
+   * Generate a column definition from a {@link ColumnSchema}, whose type is the engine's own spelling
+   * and may already carry its precision (or even `PRIMARY KEY`, for a serial).
    */
   public generateColumnDefinitionFromSchema(
     column: ColumnSchema,
     options: { includePrimaryKey?: boolean; includeUnique?: boolean } = {},
   ): string {
     const { includePrimaryKey = true, includeUnique = true } = options;
-
     let type = column.type;
 
     if (!type.includes('(')) {
       if (column.precision !== undefined) {
-        if (column.scale !== undefined) {
-          type += `(${column.precision}, ${column.scale})`;
-        } else {
-          type += `(${column.precision})`;
-        }
+        type += column.scale === undefined ? `(${column.precision})` : `(${column.precision}, ${column.scale})`;
       } else if (column.length !== undefined) {
         type += `(${column.length})`;
       }
@@ -280,29 +218,50 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       type = type.replace(/\s+PRIMARY\s+KEY/i, '');
     }
 
-    let definition = `${this.escapeId(column.name)} ${type}`;
+    // `includePrimaryKey: false` suppresses the keyword, not the fact: the column is still the primary
+    // key, so it must not pick up `NOT NULL` (implied) or `UNIQUE` (redundant) on the way out.
+    return this.renderColumn({
+      ...column,
+      type,
+      isUnique: column.isUnique && includeUnique,
+      declaresPrimaryKey: includePrimaryKey && column.isPrimaryKey,
+    });
+  }
 
-    if (includePrimaryKey && column.isPrimaryKey && !type.includes('PRIMARY KEY')) {
-      definition += ' PRIMARY KEY';
+  /**
+   * The one place a column definition is spelled. Both callers reach it - the `ColumnSchema` path above
+   * and the `ColumnNode` path below - because the clause order and the "no NOT NULL on a primary key"
+   * rules are the same everywhere, and having them written twice is how the two paths drifted.
+   */
+  private renderColumn(column: {
+    name: string;
+    type: string;
+    nullable: boolean;
+    isPrimaryKey: boolean;
+    isUnique: boolean;
+    declaresPrimaryKey: boolean;
+    defaultValue?: unknown;
+    comment?: string;
+  }): string {
+    let def = `${this.escapeId(column.name)} ${column.type}`;
+
+    if (column.declaresPrimaryKey && !column.type.includes('PRIMARY KEY')) {
+      def += ' PRIMARY KEY';
     }
-
     if (!column.nullable && !column.isPrimaryKey) {
-      definition += ' NOT NULL';
+      def += ' NOT NULL';
     }
-
-    if (includeUnique && column.isUnique && !column.isPrimaryKey) {
-      definition += ' UNIQUE';
+    if (column.isUnique && !column.isPrimaryKey) {
+      def += ' UNIQUE';
     }
-
     if (column.defaultValue !== undefined) {
-      definition += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
+      def += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
     }
-
     if (column.comment) {
-      definition += this.generateColumnComment(column.name, column.comment);
+      def += this.generateColumnComment(column.name, column.comment);
     }
 
-    return definition;
+    return def;
   }
 
   public getSqlType(field: FieldOptions, fieldType?: unknown): string {
@@ -326,13 +285,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     return this.canonicalTypeToSql(canonical);
-  }
-
-  /**
-   * Get the boolean type for this database
-   */
-  public getBooleanType(): string {
-    return this.canonicalTypeToSql({ category: 'boolean' });
   }
 
   /**
@@ -371,13 +323,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     return [`ALTER TABLE ${table} ${this.dialect.alterColumnSyntax} ${newDefinition};`];
-  }
-
-  /**
-   * Get table options (e.g., ENGINE for MySQL)
-   */
-  public getTableOptions<E>(_meta: EntityMeta<E>): string {
-    return this.dialect.tableOptions ? ` ${this.dialect.tableOptions}` : '';
   }
 
   /**
@@ -471,7 +416,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Convert field options to ColumnSchema
+   * Convert field options to ColumnSchema. Both sides of a diff are the engine's SQL spelling: what it
+   * would create for this field, against what it reported for the existing column.
    */
   protected fieldToColumnSchema<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): ColumnSchema {
     const isPrimaryKey = field.isId === true && meta.id === fieldKey;
@@ -510,12 +456,16 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Compare two column types for equality using the canonical type system
+   * Whether two column types are the same *as this engine stores them*.
+   *
+   * Both sides are SQL spellings, parsed back to canonical so that `INT` and `INTEGER`, or `DATETIME`
+   * and `TIMESTAMP`, do not read as a change. Do not "simplify" this into comparing the entity's
+   * canonical type against the column's: several canonical types share one storage type per engine
+   * (`boolean` is `TINYINT(1)` on MySQL and `INTEGER` on SQLite), so that comparison reports an
+   * alteration for those columns on every single sync.
    */
   protected isTypeEqual(current: ColumnSchema, desired: ColumnSchema): boolean {
-    const typeA = sqlToCanonical(current.type);
-    const typeB = sqlToCanonical(desired.type);
-    return areTypesEqual(typeA, typeB);
+    return areTypesEqual(sqlToCanonical(current.type), sqlToCanonical(desired.type));
   }
 
   /**
@@ -547,8 +497,17 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const columns: string[] = [];
     const constraints: string[] = [];
 
+    const isInlineVectorIdx = this.features.inlineVectorIndex;
+    const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
+    const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
+    // MariaDB rejects a `VECTOR INDEX` whose column is nullable ("All parts of a VECTOR index must
+    // be NOT NULL"), so being indexed decides it rather than the entity's own nullability.
+    const indexedVectorColumns = new Set(vectorIndexes.flatMap((idx) => idx.columns.map((col) => col.name)));
+
     for (const col of table.columns.values()) {
-      const colDef = this.generateColumnFromNode(col);
+      const colDef = this.generateColumnFromNode(
+        indexedVectorColumns.has(col.name) ? { ...col, nullable: false } : col,
+      );
       columns.push(colDef);
     }
 
@@ -578,13 +537,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       createSql += constraints.map((c) => `  ${c}`).join(',\n');
     }
 
-    const isInlineVectorIdx = this.features.vectorIndexStyle === 'inline';
-    const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
-    const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
-
     if (vectorIndexes.length > 0) {
       createSql += ',\n';
-      createSql += vectorIndexes.map((idx) => `  ${this.generateInlineVectorIndex(idx)}`).join(',\n');
+      createSql += vectorIndexes
+        .map((idx) => `  ${this.dialect.getInlineVectorIndexDeclaration(indexNodeToSchema(idx))}`)
+        .join(',\n');
     }
 
     createSql += '\n)';
@@ -610,64 +567,15 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Generate a column definition from a ColumnNode.
+   * Generate a column definition from a ColumnNode. A composite key is declared as a table constraint,
+   * so only a lone primary key column carries `PRIMARY KEY` inline.
    */
   protected generateColumnFromNode(col: ColumnNode): string {
-    const colName = this.escapeId(col.name);
-    let sqlType = this.canonicalTypeToSql(col.type);
-
-    if (col.isPrimaryKey && col.isAutoIncrement) {
-      sqlType = this.serialPrimaryKeyType;
-    }
-
-    let def = `${colName} ${sqlType}`;
-
-    if (!col.nullable && !col.isPrimaryKey) {
-      def += ' NOT NULL';
-    }
-
-    if (col.isPrimaryKey && col.table.primaryKey.length === 1 && !sqlType.includes('PRIMARY KEY')) {
-      def += ' PRIMARY KEY';
-    }
-
-    if (col.isUnique && !col.isPrimaryKey) {
-      def += ' UNIQUE';
-    }
-
-    if (col.defaultValue !== undefined) {
-      def += ` DEFAULT ${this.formatDefaultValue(col.defaultValue)}`;
-    }
-
-    if (col.comment) {
-      def += this.generateColumnComment(col.name, col.comment);
-    }
-
-    return def;
-  }
-
-  /**
-   * Generate an inline VECTOR INDEX clause for use inside CREATE TABLE.
-   * Syntax: `VECTOR INDEX (col) M=n DISTANCE=metric`
-   */
-  private generateInlineVectorIndex(index: IndexNode): string {
-    const columns = index.columns.map((c) => this.escapeId(c.name)).join(', ');
-    let clause = `VECTOR INDEX (${columns})`;
-
-    if (index.m !== undefined) {
-      clause += ` M=${index.m}`;
-    }
-
-    if (index.distance) {
-      const metric = INLINE_VECTOR_DISTANCE_MAP.get(index.distance);
-      if (!metric) {
-        throw new TypeError(
-          `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
-        );
-      }
-      clause += ` DISTANCE=${metric}`;
-    }
-
-    return clause;
+    return this.renderColumn({
+      ...col,
+      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialPrimaryKeyType : this.canonicalTypeToSql(col.type),
+      declaresPrimaryKey: col.isPrimaryKey && col.table.primaryKey.length === 1,
+    });
   }
 
   /**
@@ -675,28 +583,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * Delegates to `generateCreateIndex` for unified SQL assembly.
    */
   generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists: boolean } = { ifNotExists: false }): string {
-    return this.generateCreateIndex(
-      index.table.name,
-      {
-        name: index.name,
-        columns: index.columns.map((c) => c.name),
-        unique: index.unique,
-        type: index.type,
-        distance: index.distance,
-        m: index.m,
-        efConstruction: index.efConstruction,
-        lists: index.lists,
-      },
-      options,
-    );
-  }
-
-  /**
-   * Generate DROP TABLE SQL from a TableNode.
-   */
-  generateDropTableFromNode(table: TableNode, options: { ifExists?: boolean } = {}): string {
-    const ifExists = options.ifExists ? 'IF EXISTS ' : '';
-    return `DROP TABLE ${ifExists}${this.escapeId(table.name)};`;
+    return this.generateCreateIndex(index.table.name, indexNodeToSchema(index), options);
   }
 
   // ============================================================================
@@ -706,13 +593,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
     const tableNode = this.tableDefinitionToNode(table);
     return this.generateCreateTableFromNode(tableNode, options);
-  }
-
-  generateDropTableSql(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string {
-    const ifExists = options?.ifExists ? 'IF EXISTS ' : '';
-    // Use dialect-specific cascade support from config
-    const cascade = options?.cascade && this.features.dropTableCascade ? ' CASCADE' : '';
-    return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
@@ -728,10 +608,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string {
-    const colSql = this.generateColumnFromNode(this.fullColumnDefinitionToNode(column, tableName));
-    return this.generateAlterColumnStatements(tableName, { name: columnName, type: '' } as ColumnSchema, colSql).join(
-      '\n',
-    );
+    const node = this.fullColumnDefinitionToNode(column, tableName);
+    return this.generateAlterColumnStatements(
+      tableName,
+      { ...this.columnNodeToSchema(node), name: columnName },
+      this.generateColumnFromNode(node),
+    ).join('\n');
   }
 
   generateDropColumnSql(tableName: string, columnName: string): string {
@@ -740,14 +622,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateRenameColumnSql(tableName: string, oldName: string, newName: string): string {
     return `ALTER TABLE ${this.escapeId(tableName)} RENAME COLUMN ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
-  }
-
-  generateCreateIndexSql(tableName: string, index: IndexSchema): string {
-    return this.generateCreateIndex(tableName, index);
-  }
-
-  generateDropIndexSql(tableName: string, indexName: string): string {
-    return this.generateDropIndex(tableName, indexName);
   }
 
   generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string {
@@ -804,10 +678,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
     for (const idxDef of def.indexes) {
       const indexNode: IndexNode = {
-        name: idxDef.name,
+        ...idxDef,
         table,
-        columns: idxDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
-        unique: idxDef.unique,
+        columns: idxDef.columns
+          .map((entry) => (entry.expression ? undefined : columns.get(entry.column)))
+          .filter((c): c is ColumnNode => c !== undefined),
+        entries: idxDef.columns,
       };
       table.indexes.push(indexNode);
     }
@@ -868,9 +744,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
  */
 export function createSchemaGenerator(
   dialect: AbstractDialect,
-  namingStrategy?: NamingStrategy,
   defaultForeignKeyAction?: ForeignKeyAction,
-): SchemaGenerator | undefined {
+): SqlSchemaGenerator | undefined {
   if (!(dialect instanceof AbstractSqlDialect)) {
     return undefined;
   }

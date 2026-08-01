@@ -5,7 +5,8 @@
  * Enables type-safe migrations without raw SQL.
  */
 
-import type { CanonicalType, ForeignKeyAction, IndexType } from '../../schema/types.js';
+import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
+import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 
 // ============================================================================
 // Column Options (User-facing API)
@@ -129,26 +130,6 @@ export interface FullColumnDefinition extends ColumnDefinition {
 }
 
 // ============================================================================
-// Index Definition Types
-// ============================================================================
-
-/**
- * Index definition.
- */
-export interface IndexDefinition {
-  /** Index name */
-  name: string;
-  /** Column names */
-  columns: string[];
-  /** Whether unique */
-  unique: boolean;
-  /** Index type (btree, hash, etc.) */
-  type?: IndexType;
-  /** Partial index WHERE clause */
-  where?: string;
-}
-
-// ============================================================================
 // Table Definition Types
 // ============================================================================
 
@@ -163,7 +144,7 @@ export interface TableDefinition {
   /** Primary key columns (for composite keys) */
   primaryKey?: string[];
   /** Index definitions */
-  indexes: IndexDefinition[];
+  indexes: IndexSchema[];
   /** Foreign key definitions at table level */
   foreignKeys: TableForeignKeyDefinition[];
   /** Table comment */
@@ -289,7 +270,7 @@ export interface RenameColumnOperation extends MigrationOperation {
 export interface CreateIndexOperation extends MigrationOperation {
   type: 'createIndex';
   tableName: string;
-  index: IndexDefinition;
+  index: IndexSchema;
   ifNotExists?: boolean;
 }
 
@@ -389,9 +370,13 @@ export interface IForeignKeyBuilder extends IColumnBuilder {
 }
 
 /**
- * Interface for table builder (fluent API).
+ * The column vocabulary: every column type the builder can declare, name first.
+ *
+ * Split out of {@link ITableBuilder} so `addColumn`/`alterColumn` can hand it to their callback. They
+ * used to take an {@link IColumnBuilder}, which has no way to say what type a column is - so the
+ * builder hard-coded `VARCHAR`, and every column a generated migration added or altered was a string.
  */
-export interface ITableBuilder {
+export interface IColumnFactory {
   // === Numeric Types ===
   /** Add an auto-incrementing primary key */
   id(name?: string, options?: BaseColumnOptions): IColumnBuilder;
@@ -443,7 +428,12 @@ export interface ITableBuilder {
   blob(name: string, options?: BaseColumnOptions): IColumnBuilder;
   /** Add a vector column (for embeddings) */
   vector(name: string, options?: VectorColumnOptions): IColumnBuilder;
+}
 
+/**
+ * Interface for table builder (fluent API).
+ */
+export interface ITableBuilder extends IColumnFactory {
   // === Convenience Methods ===
   /** Add createdAt timestamp column */
   createdAt(): IColumnBuilder;
@@ -455,10 +445,10 @@ export interface ITableBuilder {
   // === Indexes & Constraints ===
   /** Add composite primary key */
   primaryKey(columns: string[]): this;
-  /** Add composite unique constraint */
-  unique(columns: string[], name?: string): this;
-  /** Add composite index */
-  index(columns: string[], name?: string): this;
+  /** Add a composite unique index; takes the same options as `@Index`, or just its name. */
+  unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this;
+  /** Add a composite index; takes the same options as `@Index`, or just its name. */
+  index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this;
   /** Add table-level foreign key */
   foreignKey(columns: string[]): ITableForeignKeyBuilder;
 
@@ -487,16 +477,16 @@ export interface ITableForeignKeyBuilder {
  * Interface for altering a table.
  */
 export interface IAlterTableBuilder {
-  /** Add a column to the table */
-  addColumn(name: string, callback: (column: IColumnBuilder) => void): this;
+  /** Add a column, declared exactly as in `createTable`: `addColumn((c) => c.timestamp('createdAt'))`. */
+  addColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this;
   /** Drop a column from the table */
   dropColumn(name: string): this;
   /** Rename a column */
   renameColumn(oldName: string, newName: string): this;
-  /** Alter a column definition */
-  alterColumn(name: string, callback: (column: IColumnBuilder) => void): this;
+  /** Redeclare a column, named and typed as it should end up. */
+  alterColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this;
   /** Add an index to the table */
-  addIndex(columns: string[], options?: { name?: string; unique?: boolean }): this;
+  addIndex(columns: readonly IndexColumnInput[], options?: IndexOptions): this;
   /** Drop an index from the table */
   dropIndex(name: string): this;
   /** Add a foreign key to the table */
@@ -524,18 +514,18 @@ export interface IMigrationBuilder {
   alterTable(name: string, callback: (table: IAlterTableBuilder) => void): Promise<void>;
 
   // === Column Operations ===
-  /** Add a column to an existing table */
-  addColumn(tableName: string, columnName: string, callback: (column: IColumnBuilder) => void): Promise<void>;
+  /** Add a column, declared exactly as in `createTable`: `addColumn('t', (c) => c.timestamp('at'))`. */
+  addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
   /** Drop a column from a table */
   dropColumn(tableName: string, columnName: string): Promise<void>;
-  /** Alter a column */
-  alterColumn(tableName: string, columnName: string, callback: (column: IColumnBuilder) => void): Promise<void>;
+  /** Redeclare a column, named and typed as it should end up. */
+  alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
   /** Rename a column */
   renameColumn(tableName: string, oldName: string, newName: string): Promise<void>;
 
   // === Index Operations ===
-  /** Create an index */
-  createIndex(tableName: string, columns: string[], options?: { name?: string; unique?: boolean }): Promise<void>;
+  /** Create an index; takes the same options as `@Index`, so a generated migration can restate them. */
+  createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void>;
   /** Drop an index */
   dropIndex(tableName: string, indexName: string): Promise<void>;
 

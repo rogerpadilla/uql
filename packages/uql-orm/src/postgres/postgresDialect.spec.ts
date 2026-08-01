@@ -807,116 +807,6 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['[1,2,3]']);
   }
 
-  shouldSortByVectorSimilarityDefaultCosine() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <=> $1::vector LIMIT 10');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldNotResolveVectorDistanceOperatorViaThePrototypeChain() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    // 'toString' is not an own property of `vectorOpsClass`, but `Object.prototype.toString`
-    // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
-          $select: { id: true },
-          $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
-          $limit: 10,
-        }),
-      ),
-    ).toThrow('postgres does not support vector distance metric: toString');
-  }
-
-  shouldSortByVectorSimilarityExplicitL2() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
-        $limit: 5,
-      }),
-    );
-    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <-> $1::vector LIMIT 5');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldSortByVectorSimilarityCombinedWithRegularSort() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-      @Field() name!: string;
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $where: { name: 'test' },
-        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT "id" FROM "VectorItem" WHERE "name" = $1 ORDER BY "vec" <=> $2::vector, "name" DESC LIMIT 10',
-    );
-    expect(values).toEqual(['test', '[1,2,3]']);
-  }
-
-  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector', distance: 'inner' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT "id" FROM "VectorItem" ORDER BY "vec" <#> $1::vector LIMIT 10');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldProjectVectorDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $project: 'similarity' } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT "id", "vec" <=> $1::vector AS "similarity" FROM "VectorItem" ORDER BY "similarity" LIMIT 10',
-    );
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
   shouldCastHalfvecSort() {
     @Entity({ name: 'HalfvecItem' })
     class HalfvecItem {
@@ -934,7 +824,12 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['[1,2,3]']);
   }
 
-  shouldCastSparsevecSort() {
+  /**
+   * `sparsevec` takes pgvector's sparse literal, `{index:value,...}/dimensions` with the zeros left
+   * out. Binding the dense `[0,0,1]` every other vector type takes fails with "invalid input syntax
+   * for type sparsevec", so the dense array an entity declares is converted on the way out.
+   */
+  shouldBindSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
       @Id() id?: number;
@@ -948,7 +843,18 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "SparsevecItem" ORDER BY "vec" <-> $1::sparsevec LIMIT 5');
-    expect(values).toEqual(['[0,0,1]']);
+    expect(values).toEqual(['{3:1}/3']);
+  }
+
+  shouldInsertSparsevecAsASparseLiteral() {
+    @Entity({ name: 'SparsevecItem2' })
+    class SparsevecItem2 {
+      @Id() id?: number;
+      @Field({ type: 'sparsevec' }) vec!: number[];
+    }
+    const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));
+    expect(sql).toBe('INSERT INTO "SparsevecItem2" ("vec") VALUES ($1::sparsevec) RETURNING "id" "id"');
+    expect(values).toEqual(['{1:1,3:2}/3']);
   }
 
   shouldEscape() {

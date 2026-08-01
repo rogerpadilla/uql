@@ -48,7 +48,6 @@ export type {
   // Diff types
   ColumnDiff,
   ColumnNode,
-  ConflictResolution,
   // Relation detection types
   DetectedRelation,
   // Drift detection types
@@ -71,8 +70,6 @@ export type {
   SchemaDiffResult,
   SizeVariant,
   // Sync types
-  SyncDirection,
-  SyncOptions,
   TableDiff,
   TableNode,
   // Type categories and variants

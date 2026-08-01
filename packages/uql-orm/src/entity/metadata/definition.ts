@@ -1,5 +1,5 @@
 import type {
-  EntityIndexMeta,
+  EntityIndexInput,
   EntityMeta,
   EntityOptions,
   FieldKey,
@@ -15,7 +15,7 @@ import type {
   RelationOptions,
   Type,
 } from '../../type/index.js';
-import { getKeys, hasKeys, lowerFirst, upperFirst } from '../../util/index.js';
+import { getKeys, hasKeys, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
 import { LoggerWrapper } from '../../util/logger.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry - stores EntityMeta for all entity types
@@ -30,11 +30,12 @@ holder[metaKey] = metas;
 const registrationLogger = new LoggerWrapper(true);
 
 /**
- * Append a composite index entry with normalized `unique` (default false).
+ * Append a composite index entry with normalized `unique` (default false) and columns. Normalizing
+ * here is what lets the dialects render one shape instead of re-parsing the authored sugar.
  */
-export function appendEntityIndex<E>(meta: EntityMeta<E>, index: EntityIndexMeta): void {
+export function appendEntityIndex<E>(meta: EntityMeta<E>, index: EntityIndexInput): void {
   if (!meta.indexes) meta.indexes = [];
-  meta.indexes.push({ ...index, unique: index.unique ?? false });
+  meta.indexes.push({ ...index, unique: index.unique ?? false, columns: index.columns.map(normalizeIndexColumn) });
 }
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
@@ -80,7 +81,7 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
   return meta;
 }
 
-export function defineIndex<E>(entity: Type<E>, index: EntityIndexMeta): EntityMeta<E> {
+export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput): EntityMeta<E> {
   const meta = ensureMeta(entity);
   appendEntityIndex(meta, index);
   return meta;
@@ -120,7 +121,7 @@ function applyBulkRelations<E>(entity: Type<E>, relations: Record<string, Relati
   }
 }
 
-function applyBulkIndexes<E>(entity: Type<E>, indexes: readonly EntityIndexMeta[]): void {
+function applyBulkIndexes<E>(entity: Type<E>, indexes: readonly EntityIndexInput[]): void {
   const meta = ensureMeta(entity);
   for (const idx of indexes) {
     appendEntityIndex(meta, idx);

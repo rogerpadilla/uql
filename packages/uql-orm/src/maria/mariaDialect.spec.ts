@@ -1,8 +1,7 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
-import { Entity, Field, Id } from '../entity/index.js';
-import { Company, ItemTag } from '../test/index.js';
+import { Company, ItemTag, VectorItem } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import type { Type } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -103,131 +102,22 @@ export class MariaDialectSpec extends MySqlFamilySpec {
     expect(sql).toContain('INSERT IGNORE');
   }
 
-  shouldSortByVectorSimilarityDefaultCosine() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_COSINE(`vec`, ?) LIMIT 10');
+  /**
+   * A `VECTOR` column takes a packed float32 blob, so a bound `'[1,2,3]'` is rejected outright
+   * (`Incorrect vector value`) and reading the column raw hands back that blob. Both directions go
+   * through MariaDB's text conversions, verified against MariaDB 12.3.
+   */
+  shouldInsertVectorThroughVecFromText() {
+    const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, VectorItem, { vec: [1, 2, 3] }));
+    expect(sql).toBe('INSERT INTO `VectorItem` (`vec`) VALUES (VEC_FromText(?)) RETURNING `id` `id`');
     expect(values).toEqual(['[1,2,3]']);
   }
 
-  shouldSortByVectorSimilarityExplicitL2() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
-        $limit: 5,
-      }),
+  shouldReadVectorThroughVecToText() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, VectorItem, { $select: { id: true, name: true, vec: true } }),
     );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_EUCLIDEAN(`vec`, ?) LIMIT 5');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldThrowForUnsupportedVectorDistanceMetric() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
-          $select: { id: true },
-          $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
-          $limit: 10,
-        }),
-      ),
-    ).toThrow('mariadb does not support vector distance metric: inner');
-  }
-
-  shouldNotResolveVectorDistanceFnViaThePrototypeChain() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    // 'toString' is not an own property of `vectorDistanceFns`, but `Object.prototype.toString`
-    // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
-          $select: { id: true },
-          $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
-          $limit: 10,
-        }),
-      ),
-    ).toThrow('mariadb does not support vector distance metric: toString');
-  }
-
-  shouldSortByVectorSimilarityCombinedWithRegularSort() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-      @Field() name!: string;
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $where: { name: 'test' },
-        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT `id` FROM `VectorItem` WHERE `name` = ? ORDER BY VEC_DISTANCE_COSINE(`vec`, ?), `name` DESC LIMIT 10',
-    );
-    expect(values).toEqual(['test', '[1,2,3]']);
-  }
-
-  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY VEC_DISTANCE_EUCLIDEAN(`vec`, ?) LIMIT 10');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldProjectVectorDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT `id`, VEC_DISTANCE_COSINE(`vec`, ?) AS `distance` FROM `VectorItem` ORDER BY `distance` LIMIT 10',
-    );
-    expect(values).toEqual(['[1,2,3]']);
+    expect(sql).toBe('SELECT `id`, `name`, VEC_ToText(`vec`) `vec` FROM `VectorItem`');
   }
 }
 

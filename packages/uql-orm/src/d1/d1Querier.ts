@@ -43,9 +43,12 @@ export interface D1Database {
   exec(query: string): Promise<D1ExecResult>;
 }
 
+/** The only part of a D1 binding the querier uses; a full {@link D1Database} satisfies it. */
+export type D1Preparer = Pick<D1Database, 'prepare'>;
+
 export class D1Querier extends AbstractSqliteQuerier {
   constructor(
-    readonly db: D1Database,
+    readonly db: D1Preparer,
     dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
   ) {
@@ -66,9 +69,5 @@ export class D1Querier extends AbstractSqliteQuerier {
     const rows = res.results;
     const changes = rows.length || res.meta?.changes || 0;
     return this.buildUpdateResult({ rows, changes, id: res.meta?.last_row_id });
-  }
-
-  override async internalRelease() {
-    // no-op
   }
 }

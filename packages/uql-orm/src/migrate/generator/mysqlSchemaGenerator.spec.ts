@@ -35,14 +35,6 @@ describe('MysqlSchemaGenerator Specifics', () => {
     expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN `age` INT NOT NULL DEFAULT 18;']);
   });
 
-  it('should get table options', () => {
-    expect(generator.getTableOptions({} as any)).toContain('ENGINE=InnoDB');
-  });
-
-  it('should get boolean type', () => {
-    expect(generator.getBooleanType()).toBe('TINYINT(1)');
-  });
-
   it('should generate column comment', () => {
     expect(generator.generateColumnComment('name', "user's name")).toBe(" COMMENT 'user''s name'");
   });

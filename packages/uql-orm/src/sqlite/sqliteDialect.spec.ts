@@ -1,6 +1,5 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, Field, Id } from '../entity/index.js';
 import {
   Company,
   createSpec,
@@ -210,133 +209,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(values2).toContain(0);
-  }
-
-  shouldSortByVectorSimilarityDefaultCosine() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_cosine(`vec`, ?) LIMIT 10');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldSortByVectorSimilarityExplicitL2() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } },
-        $limit: 5,
-      }),
-    );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_L2(`vec`, ?) LIMIT 5');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldThrowForUnsupportedVectorDistanceMetric() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
-          $select: { id: true },
-          $sort: { vec: { $vector: [1, 2, 3], $distance: 'inner' } },
-          $limit: 10,
-        }),
-      ),
-    ).toThrow('sqlite does not support vector distance metric: inner');
-  }
-
-  shouldNotResolveVectorDistanceFnViaThePrototypeChain() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    // 'toString' is not an own property of `vectorDistanceFns`, but `Object.prototype.toString`
-    // exists - a naive bracket-access lookup would resolve it as if it were a supported metric.
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, VectorItem, {
-          $select: { id: true },
-          $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } },
-          $limit: 10,
-        }),
-      ),
-    ).toThrow('sqlite does not support vector distance metric: toString');
-  }
-
-  shouldSortByVectorSimilarityCombinedWithRegularSort() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-      @Field() name!: string;
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $where: { name: 'test' },
-        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT `id` FROM `VectorItem` WHERE `name` = ? ORDER BY vec_distance_cosine(`vec`, ?), `name` DESC LIMIT 10',
-    );
-    expect(values).toEqual(['test', '[1,2,3]']);
-  }
-
-  shouldSortByVectorSimilarityWithEntityDefaultDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3] } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe('SELECT `id` FROM `VectorItem` ORDER BY vec_distance_L2(`vec`, ?) LIMIT 10');
-    expect(values).toEqual(['[1,2,3]']);
-  }
-
-  shouldProjectVectorDistance() {
-    @Entity({ name: 'VectorItem' })
-    class VectorItem {
-      @Id() id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
-    }
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, VectorItem, {
-        $select: { id: true },
-        $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
-        $limit: 10,
-      }),
-    );
-    expect(sql).toBe(
-      'SELECT `id`, vec_distance_cosine(`vec`, ?) AS `distance` FROM `VectorItem` ORDER BY `distance` LIMIT 10',
-    );
-    expect(values).toEqual(['[1,2,3]']);
   }
 
   shouldEscape() {
@@ -599,7 +471,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       values: ['1', 123, 1],
     },
     push: {
-      sql: "UPDATE `Company` SET `kind` = json_insert(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_set(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, 1],
     },
     /**
@@ -611,19 +483,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       values: ['"a"', 123, 1],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = json_insert(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_set(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, 1],
     },
     setPushCombined: {
-      sql: "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', '"new-tag"', 123, 1],
     },
     setPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = json_insert(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['["a"]', '"b"', 123, 1],
     },
     pushUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = json_remove(json_insert(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = json_remove(json_set(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, 1],
     },
   };

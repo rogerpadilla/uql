@@ -46,10 +46,6 @@ describe('PostgresSchemaGenerator Specifics', () => {
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET DEFAULT 18;');
   });
 
-  it('should get boolean type', () => {
-    expect(generator.getBooleanType()).toBe('BOOLEAN');
-  });
-
   it('should return empty string for generateColumnComment', () => {
     expect(generator.generateColumnComment('name', 'comment')).toBe('');
   });

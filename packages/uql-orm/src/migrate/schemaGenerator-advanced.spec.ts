@@ -142,10 +142,17 @@ describe('SqlSchemaGenerator Advanced', () => {
       tableName: 'users',
       type: 'alter',
       columnsToAdd: [
-        { name: 'age', type: 'INTEGER', nullable: true, isPrimaryKey: false, isAutoIncrement: false, isUnique: false },
+        {
+          name: 'age',
+          type: 'INTEGER',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+        },
       ],
       columnsToDrop: ['old_name'],
-      indexesToAdd: [{ name: 'idx_age', columns: ['age'], unique: false }],
+      indexesToAdd: [{ name: 'idx_age', columns: [{ column: 'age' }], unique: false }],
       indexesToDrop: ['idx_old'],
     });
 

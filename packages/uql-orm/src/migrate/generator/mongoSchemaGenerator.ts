@@ -14,6 +14,8 @@ import type {
 } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import type { TableDefinition } from '../builder/types.js';
+import { indexNodeToSchema } from './indexNodeToSchema.js';
+import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
 
 export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
   readonly dialectName = 'mongodb' satisfies DialectName;
@@ -41,19 +43,22 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
         const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
         indexes.push({
           name: indexName,
-          columns: [columnName],
+          columns: [{ column: columnName }],
           unique: !!field.unique,
         });
       }
     }
 
-    return [JSON.stringify({ action: 'createCollection', name: collectionName, indexes })];
+    // One `createIndex` command each, mirroring the SQL generator's `[CREATE TABLE, ...CREATE INDEX]`,
+    // so the key spec is built here and the migrator only executes it.
+    return [
+      serializeMongoCommand({ action: 'createCollection', name: collectionName }),
+      ...indexes.map((index) => this.generateCreateIndex(collectionName, index)),
+    ];
   }
 
-  generateDropTable<E>(entity: Type<E>): string {
-    const meta = getMeta(entity);
-    const collectionName = this.resolveTableName(entity, meta);
-    return JSON.stringify({ action: 'dropCollection', name: collectionName });
+  generateDropTable(tableName: string): string {
+    return serializeMongoCommand({ action: 'dropCollection', name: tableName });
   }
 
   generateAlterTable(diff: SchemaDiff): string[] {
@@ -76,12 +81,26 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return statements;
   }
 
+  /**
+   * MongoDB's key spec is where its index options live: `-1` for a descending entry and `'text'` for a
+   * full-text index, which is what `$text` needs since a text index declares its own fields.
+   *
+   * @remarks The SQL-only modifiers are refused rather than dropped, for the same reason the SQL
+   * dialects refuse each other's - a silently weaker index is worse than a clear failure. `where`
+   * included: MongoDB's partial indexes take a filter document, not a SQL predicate.
+   */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
-    const key: Record<string, number> = {};
-    for (const col of index.columns) {
-      key[col] = 1;
+    const key: MongoIndexKey = {};
+    for (const entry of index.columns) {
+      if (entry.expression || entry.length !== undefined || entry.nulls || entry.opsClass) {
+        throw new TypeError(`mongodb does not support that index column option (index "${index.name}")`);
+      }
+      key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
     }
-    return JSON.stringify({
+    if (index.where) {
+      throw new TypeError(`mongodb does not support partial indexes from a SQL predicate (index "${index.name}")`);
+    }
+    return serializeMongoCommand({
       action: 'createIndex',
       collection: tableName,
       name: index.name,
@@ -91,7 +110,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
-    return JSON.stringify({
+    return serializeMongoCommand({
       action: 'dropIndex',
       collection: tableName,
       name: indexName,
@@ -102,106 +121,26 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return '';
   }
 
-  getBooleanType(): string {
-    return '';
-  }
-
-  generateColumnDefinitions(): string[] {
-    return [];
-  }
-
-  generateColumnDefinition(): string {
-    return '';
-  }
-
-  generateColumnDefinitionFromSchema(): string {
-    return '';
-  }
-
-  generateTableConstraints(): string[] {
-    return [];
-  }
-
-  generateAlterColumnStatements(): string[] {
-    return [];
-  }
-
-  getTableOptions(): string {
-    return '';
-  }
-
-  generateColumnComment(): string {
-    return '';
-  }
-
-  formatDefaultValue(): string {
-    return '';
-  }
-
   generateCreateTableFromNode(table: TableNode, _options?: { ifNotExists?: boolean }): string[] {
-    return [JSON.stringify({ action: 'createCollection', name: table.name })];
+    return [
+      serializeMongoCommand({ action: 'createCollection', name: table.name }),
+      ...table.indexes.map((index) => this.generateCreateIndexFromNode(index)),
+    ];
   }
 
   generateCreateIndexFromNode(index: IndexNode): string {
-    const key: Record<string, number> = {};
-    for (const col of index.columns) {
-      key[col.name] = 1;
-    }
-    return JSON.stringify({
-      action: 'createIndex',
-      collection: index.table.name,
-      name: index.name,
-      key,
-      options: { unique: index.unique, name: index.name },
-    });
-  }
-
-  generateDropTableFromNode(table: TableNode): string {
-    return JSON.stringify({ action: 'dropCollection', name: table.name });
+    return this.generateCreateIndex(index.table.name, indexNodeToSchema(index));
   }
 
   generateCreateTableFromDefinition(table: TableDefinition, _options?: { ifNotExists?: boolean }): string[] {
-    return [JSON.stringify({ action: 'createCollection', name: table.name })];
-  }
-
-  generateDropTableSql(tableName: string): string {
-    return JSON.stringify({ action: 'dropCollection', name: tableName });
+    return [
+      serializeMongoCommand({ action: 'createCollection', name: table.name }),
+      ...table.indexes.map((index) => this.generateCreateIndex(table.name, index)),
+    ];
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
-    return JSON.stringify({ action: 'renameCollection', from: oldName, to: newName });
-  }
-
-  generateAddColumnSql(): string {
-    return '';
-  }
-
-  generateDropColumnSql(): string {
-    return '';
-  }
-
-  generateRenameColumnSql(): string {
-    return '';
-  }
-
-  generateAlterColumnSql(): string {
-    return '';
-  }
-
-  generateCreateIndexSql(tableName: string, index: IndexSchema): string {
-    return this.generateCreateIndex(tableName, index);
-  }
-
-  generateDropIndexSql(tableName: string, indexName: string): string {
-    return this.generateDropIndex(tableName, indexName);
-  }
-
-  generateAddForeignKeySql(): string {
-    return '';
-  }
-
-  generateDropForeignKeySql(): string {
-    return '';
+    return serializeMongoCommand({ action: 'renameCollection', from: oldName, to: newName });
   }
 
   diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
@@ -223,7 +162,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
         if (!existingIndexes.has(indexName)) {
           indexesToAdd.push({
             name: indexName,
-            columns: [columnName],
+            columns: [{ column: columnName }],
             unique: !!field.unique,
           });
         }
