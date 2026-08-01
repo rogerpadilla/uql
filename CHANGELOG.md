@@ -50,12 +50,9 @@ await using querier = await pool.getQuerier();
 
 ### Transactions have one owner
 
-`querier.transaction()` no longer releases the connection, which is what the docs always said it did ("commits/rollbacks, caller releases"). The documented pattern was broken by it: inside `pool.withQuerier()`, the transaction released early and everything after it ran on a connection already back in the pool.
+`querier.transaction()` no longer releases the connection, as the docs always said it didn't. It released early inside `pool.withQuerier()`, so anything after the transactional section ran on a connection already back in the pool. `pool.transaction()` and `@Transactional()` are unchanged.
 
-The pool owns the connection it handed out; the querier owns begin/commit/rollback. That sequence now exists in one place, and two failures it used to get wrong are fixed with it:
-
-- **A failure while starting a transaction reported the wrong error.** `beginTransaction` connects before it begins, so a refused connection left nothing to roll back; rolling back anyway threw `not a pending transaction`, which replaced the real cause. A wrong password surfaced as a transaction-state error.
-- **A rollback that failed replaced the error that caused it.**
+Two failures went with it: a connection error while *starting* a transaction was reported as `not a pending transaction` instead of the real cause, and a failing rollback replaced the error that caused it.
 
 ### Fixes
 
