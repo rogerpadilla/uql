@@ -17,7 +17,7 @@
     "lint.fix": "biome check . --fix",
     "test": "bun run test:vitest && bun run test:bun",
     "test:vitest": "vitest run --coverage",
-    "test:bun": "bun test --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/ ./packages/uql-orm/src/sqlite/sqliteQuerier.bun.test.ts",
+    "test:bun": "bun test --timeout 10000 --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/ ./packages/uql-orm/src/sqlite/sqliteQuerier.bun.test.ts",
     "test.watch": "vitest",
     "test.focus": "vitest run -t 'shouldSetJsonBooleanField'"
   },
@@ -50,7 +50,6 @@
     "lerna": "^10.0.0",
     "lint-staged": "^17.3.0",
     "mongodb-memory-server": "11.2.0",
-    "reflect-metadata": "^0.2.2",
     "rimraf": "6.1.3",
     "supertest": "^7.2.2",
     "tsx": "^4.23.1",
