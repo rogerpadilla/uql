@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.5] - 2026-08-03
+
+### Fixes
+
+- **`RelationOptions.entity` was optional**, so a hand-built relation could omit the one thing every path needs and only find out when `defineRelation` threw. It is required now, which is also what `RelationMeta` and the three `Required<Pick<>>` wrappers around it had been re-stating.
+
 ## [0.24.4] - 2026-08-03
 
 ### Fixes

@@ -263,7 +263,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
 }
 
 function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relOpts: RelationOptions): void {
-  const relMeta = ensureMeta(relOpts.entity!());
+  const relMeta = ensureMeta(relOpts.entity());
   const relIdKey = relMeta.id;
 
   if (relOpts.through) {
@@ -300,7 +300,7 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
 }
 
 function fillInverseSide(at: string, relOpts: RelationOptions): void {
-  const relEntity = relOpts.entity!();
+  const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
   const mappedBy = getMappedByKey(relOpts);
   relOpts.mappedBy = mappedBy;
