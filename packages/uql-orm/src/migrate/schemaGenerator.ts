@@ -269,7 +269,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (field.references) {
       const refEntity = field.references();
       const refMeta = getMeta(refEntity);
-      const refIdField = refMeta.fields[refMeta.id!];
+      const refIdField = refMeta.fields[refMeta.id];
       return this.getSqlType(
         { ...refIdField, references: undefined, isId: undefined, autoIncrement: false },
         refIdField!.type,

@@ -204,7 +204,7 @@ export class SchemaASTBuilder {
     const relations = meta.relations;
     for (const key of Object.keys(relations)) {
       const relation = relations[key];
-      if (!relation?.entity) continue;
+      if (!relation) continue;
 
       const relatedEntity = relation.entity();
       const relatedMeta = getMeta(relatedEntity);
@@ -216,12 +216,10 @@ export class SchemaASTBuilder {
       // `references` describe how to join back (its own primary key against the owner's FK column) -
       // reading those as a foreign key emitted a reversed constraint (`User(id) REFERENCES
       // user_profile(creatorId)`), which SQLite rejects outright as a foreign key mismatch.
-      const ownsForeignKey =
-        relation.cardinality === 'm1' || (relation.cardinality === '11' && !!relation.references && !relation.mappedBy);
+      const ownsForeignKey = relation.cardinality === 'm1' || (relation.cardinality === '11' && !relation.mappedBy);
       if (ownsForeignKey) {
-        const references = relation.references ?? [{ local: `${key}Id`, foreign: relatedMeta.id as string }];
-        const localPropName = references[0].local;
-        const foreignPropName = references[0].foreign;
+        const localPropName = relation.references[0].local;
+        const foreignPropName = relation.references[0].foreign;
 
         const localField = meta.fields[localPropName];
         if (!localField) continue;

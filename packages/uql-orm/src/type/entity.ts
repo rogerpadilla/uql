@@ -468,12 +468,12 @@ export type RelationTarget<V> = NonNullable<Unpacked<NonNullable<V>>>;
  * {@link RelationOptions} for a relation field declared as `V`, with `entity` required and pinned to
  * `V`'s own type, and the cardinality restricted to the ones that field shape can hold. Together those
  * reject `@ManyToOne({ entity: () => Other })` on a `Company` field, and any to-many cardinality on a
- * field that is not an array.
+ * field that is not an array. An array field additionally needs a {@link RelationJoin}.
  */
 export type RelationOptionsFor<V> = Omit<RelationOptions<RelationTarget<V>>, 'entity' | 'cardinality'> & {
   readonly entity: EntityGetter<RelationTarget<V>>;
   readonly cardinality: NonNullable<V> extends readonly unknown[] ? '1m' | 'mm' : '11' | 'm1';
-};
+} & (NonNullable<V> extends readonly unknown[] ? RelationJoin<RelationTarget<V>> : unknown);
 
 /**
  * The method names of an entity, so hook registrations name a method that exists.
@@ -500,11 +500,36 @@ export type RelationOptions<E = any> = {
   through?: EntityGetter;
   references?: RelationReferences;
 };
+
+/**
+ * A relation once `getMeta` has resolved it: `entity` and `references` are settled and `mappedBy` is
+ * the key its callback named. Consumers read this shape rather than {@link RelationOptions}, so they
+ * need no assertions - `fillRelations` establishes the invariant once, and throws where it cannot.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: mirrors RelationOptions' public generic default
+export type RelationMeta<E = any> = Omit<RelationOptions<E>, 'entity' | 'mappedBy' | 'references'> & {
+  entity: EntityGetter<E>;
+  mappedBy?: Key<E>;
+  references: RelationReferences;
+};
+
+/** How a to-many owner reaches its children: a junction entity, or the join columns by name. */
+type RelationOwnerJoin<E> =
+  | Required<Pick<RelationOptions<E>, 'through'>>
+  | Required<Pick<RelationOptions<E>, 'references'>>;
+
+/**
+ * Every way a to-many can say where its rows are. Required because nothing about the field implies it:
+ * without one of the three, resolution has no columns to join on and throws.
+ */
+type RelationJoin<E> = RelationOwnerJoin<E> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
+
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
 type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> &
   Pick<RelationOptions<E>, 'cascade'>;
 type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> &
-  Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
+  Pick<RelationOptions<E>, 'cascade'> &
+  RelationOwnerJoin<E>;
 
 /**
  * The key names of `E` as values, so `mappedBy` can be written as `(user) => user.company` instead of
@@ -512,9 +537,11 @@ type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'
  *
  * Mapping over `Key<E>` rather than `keyof E` is what makes the callback usable: a homomorphic
  * `[K in keyof E]` inherits the entity's optional modifiers, so `user.company` is
- * `'company' | undefined` and {@link RelationKeyMapper} rejects it - every callback needed a `!`. The
- * map is built from the target's metadata (see `getRelationKeyMap`), where every key is present and
- * every key is a string.
+ * `'company' | undefined` and {@link RelationKeyMapper} rejects it - every callback needed a `!`.
+ *
+ * At runtime a callback only ever reads one property off the map, so a single `Proxy` returning its
+ * own key stands in for every entity's: see `RELATION_KEY_MAP`. A key that names neither a field nor
+ * a relation of the target is rejected when the entity resolves.
  */
 export type RelationKeyMap<E> = { readonly [K in Key<E>]: K };
 
@@ -653,8 +680,8 @@ export type EntityMeta<E> = {
     [K in FieldKey<E>]?: FieldOptions;
   } & { [key: string]: FieldOptions | undefined };
   relations: {
-    [K in RelationKey<E>]?: RelationOptions;
-  } & { [key: string]: RelationOptions | undefined };
+    [K in RelationKey<E>]?: RelationMeta;
+  } & { [key: string]: RelationMeta | undefined };
   /** Composite indexes defined via @Index decorator */
   indexes?: EntityIndexMeta[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */

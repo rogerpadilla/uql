@@ -5,7 +5,6 @@ import type { QueryPopulate } from '../type/index.js';
 import {
   getRelationRequestSummary,
   isPopulatingRelations,
-  isRelationQueryObject,
   parseRelationAtKey,
   parseRelationQueryValue,
 } from './relationQuery.util.js';
@@ -35,20 +34,21 @@ it('parseRelationAtKey fetches populate properly', () => {
   expect(parseRelationAtKey('profile' as const, pop)).toEqual(parseRelationQueryValue(pop.profile));
 });
 
-it('relation query shape rejects invalid boolean, number, and object-typed keys', () => {
-  expect(isRelationQueryObject({ $where: { id: 1 }, $distinct: 2 })).toBe(false);
-  expect(isRelationQueryObject({ $where: { id: 1 }, $skip: Number.NaN })).toBe(false);
-  expect(isRelationQueryObject({ $where: { id: 1 }, $sort: 'asc' })).toBe(false);
-  expect(isRelationQueryObject({ $where: { id: 1 }, $select: null })).toBe(false);
+it('a key of the wrong type is not a relation query', () => {
+  expect(() => parseRelationQueryValue({ $where: { id: 1 }, $distinct: 2 })).toThrow('Invalid relation query value');
+  expect(() => parseRelationQueryValue({ $where: { id: 1 }, $skip: Number.NaN })).toThrow(
+    'Invalid relation query value',
+  );
+  expect(() => parseRelationQueryValue({ $where: { id: 1 }, $sort: 'asc' })).toThrow('Invalid relation query value');
+  expect(() => parseRelationQueryValue({ $where: { id: 1 }, $select: null })).toThrow('Invalid relation query value');
+  expect(() => parseRelationQueryValue({ id: 1 })).toThrow('Invalid relation query value');
+  expect(() => parseRelationQueryValue({ $limit: '10' })).toThrow('Invalid relation query value');
+  expect(() => parseRelationQueryValue({ $where: null })).toThrow('Invalid relation query value');
 });
 
-it('parseRelationQueryValue and relation guard', () => {
-  expect(isRelationQueryObject({ $where: { id: 1 } })).toBe(true);
-  expect(isRelationQueryObject({ $required: 1 })).toBe(true);
-  expect(isRelationQueryObject({ id: 1 })).toBe(false);
-  expect(isRelationQueryObject({ $select: 123 })).toBe(false);
-  expect(isRelationQueryObject({ $limit: '10' })).toBe(false);
-  expect(isRelationQueryObject({ $where: null })).toBe(false);
+it('parseRelationQueryValue', () => {
+  expect(parseRelationQueryValue({ $where: { id: 1 } }).nested).toBe(true);
+  expect(parseRelationQueryValue({ $required: 1 }).nested).toBe(true);
 
   expect(parseRelationQueryValue({ $select: { id: true }, $required: true })).toEqual({
     query: { $select: { id: true }, $required: true },

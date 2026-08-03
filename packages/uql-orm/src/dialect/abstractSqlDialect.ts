@@ -44,7 +44,7 @@ import {
   type QueryWhereOptions,
   RAW_ALIAS,
   RAW_VALUE,
-  type RelationOptions,
+  type RelationMeta,
   type SqlDialectName,
   type SqlQueryDialect,
   type Type,
@@ -389,7 +389,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
         ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
         let refAppended = false;
-        for (const it of relOpts.references ?? []) {
+        for (const it of relOpts.references) {
           if (refAppended) ctx.append(' AND ');
           const relField = relMeta.fields[it.foreign];
           const field = meta.fields[it.local];
@@ -423,7 +423,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       relEntity: Type<object>,
       relQuery: RelationQuery,
       joinRelAlias: string,
-      relOpts: RelationOptions,
+      relOpts: RelationMeta,
       meta: EntityMeta<E>,
       tableName: string,
       required: boolean,
@@ -437,7 +437,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
-      if (!relOpts?.entity) continue;
+      if (!relOpts) continue;
 
       const isFirstLevel = prefix === tableName;
       const joinRelAlias = isFirstLevel ? relKey : prefix ? `${prefix}.${relKey}` : relKey;
@@ -552,10 +552,10 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     if (rel) {
       const sizeVal = parseRelationSize(val);
       if (sizeVal !== undefined) {
-        this.compareRelationSize(ctx, entity, key, sizeVal, rel, opts);
+        this.compareRelationSize(ctx, entity, sizeVal, rel, opts);
         return;
       }
-      this.compareRelation(ctx, entity, key, val as QueryWhereMap<unknown>, rel, opts);
+      this.compareRelation(ctx, entity, val as QueryWhereMap<unknown>, rel, opts);
       return;
     }
 
@@ -1746,20 +1746,16 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   private appendRelationSubquery<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: string,
-    rel: RelationOptions,
+    rel: RelationMeta,
     opts: QueryComparisonOptions,
     projection: '1' | 'COUNT(*)',
     val: QueryWhereMap<unknown>,
   ): void {
     const meta = getMeta(entity);
     const parentTable = this.resolveTableName(entity, meta);
-    if (!rel.references?.length) {
-      throw new TypeError(`Relation '${key}' on '${parentTable}' has no references defined`);
-    }
     const references = rel.references;
     const escapedParentId = this.escapedParentColumn(parentTable, meta, opts, meta.id);
-    const relatedEntity = rel.entity!();
+    const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
     const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
     // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
@@ -1804,29 +1800,23 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   protected compareRelation<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: string,
     val: QueryWhereMap<unknown>,
-    rel: RelationOptions,
+    rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
     ctx.append('EXISTS ');
-    this.appendRelationSubquery(ctx, entity, key, rel, opts, '1', val);
+    this.appendRelationSubquery(ctx, entity, rel, opts, '1', val);
   }
 
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */
   protected compareRelationSize<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: string,
     sizeVal: number | QuerySizeComparisonOps,
-    rel: RelationOptions,
+    rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
-    this.buildSizeComparison(
-      ctx,
-      () => this.appendRelationSubquery(ctx, entity, key, rel, opts, 'COUNT(*)', {}),
-      sizeVal,
-    );
+    this.buildSizeComparison(ctx, () => this.appendRelationSubquery(ctx, entity, rel, opts, 'COUNT(*)', {}), sizeVal);
   }
 
   /**
