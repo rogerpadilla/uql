@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.4] - 2026-08-03
+
+### Fixes
+
+- **`defaultValue` rejected a JSONB column's default.** 0.24.3 pinned it to the field's declared type along with the generators, but it is the DDL literal: a JSONB column defaults with the string it stores, `defaultValue: '{}'`, whatever the property's TypeScript type is. `onInsert`, `onUpdate` and `softDelete` do stamp the property, so they keep the check.
+
 ## [0.24.3] - 2026-08-03
 
 ### Fixes

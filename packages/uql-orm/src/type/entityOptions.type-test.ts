@@ -96,27 +96,26 @@ class Referrer {
   // @ts-expect-error a string property cannot hold Company's numeric key
   @Field({ references: () => Company }) misTypedId?: string;
 }
-// ─── Generators and defaults produce the value the field declares ───
+// ─── Generators stamp the value the field declares ───
+// `defaultValue` is deliberately not among them: it is the DDL literal, so a JSONB column defaults
+// with the string it stores. Requiring the field's own type there broke every such column in 0.24.3.
 class Generated {
   @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
   @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number;
-  @Field({ type: String, defaultValue: 'unnamed' }) name?: string;
   @Field({ type: Date, softDelete: true }) deletedAt?: Date;
   @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number;
+  @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }>;
 
   // @ts-expect-error a uuid column is not stamped with a number
   @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string;
-  // @ts-expect-error nor does a string column default to one
-  @Field({ type: String, defaultValue: 7 }) badDefault?: string;
 }
 expectType<string | undefined>(new Generated().id);
 
 // The same check on the imperative path, which `FieldOptions<V>` carries into `FieldOptionsFor<V>`.
 expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => Date.now() });
+expectType<FieldOptionsFor<Json<{ theme?: string }>>>({ type: 'jsonb', defaultValue: '{}' });
 // @ts-expect-error a number column is not stamped with a string
 expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
-// @ts-expect-error nor does it default to one
-expectType<FieldOptionsFor<number>>({ type: Number, defaultValue: 'nope' });
 
 // ─── RelationOptionsFor: `entity` required and pinned, cardinality follows the field shape ───
 expectType<RelationTarget<Company>>(new Company());
