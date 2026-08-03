@@ -100,6 +100,48 @@ expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 
 // @ts-expect-error `entity` is required
 expectType<RelationOptionsFor<Company>>({ cardinality: 'm1' });
 
+// ─── mappedBy: the key map holds every key, with no optionality to assert away ───
+class Employee {
+  id?: number;
+  companyId?: number;
+  company?: Company;
+}
+expectType<RelationOptionsFor<Employee[]>>({
+  entity: () => Employee,
+  cardinality: '1m',
+  mappedBy: (employee) => employee.companyId,
+});
+expectType<RelationOptionsFor<Employee[]>>({
+  entity: () => Employee,
+  cardinality: '1m',
+  mappedBy: (employee) => employee.company,
+});
+expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'companyId' });
+
+expectType<RelationOptionsFor<Employee[]>>({
+  entity: () => Employee,
+  cardinality: '1m',
+  // @ts-expect-error a misspelled key is not on the key map
+  mappedBy: (employee) => employee.compnayId,
+});
+// @ts-expect-error nor can the callback conjure a key name from nothing
+expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: () => 'nope' });
+// @ts-expect-error and the string form is checked the same way
+expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'compnayId' });
+
+// ─── through: a pivot is its own entity, unrelated to the target's shape ───
+class EmployeeProject {
+  id?: number;
+  employeeId?: number;
+  projectId?: number;
+}
+// `Company` declares no relation of its own, which used to collapse `through` to `never`.
+expectType<RelationOptionsFor<Company[]>>({
+  entity: () => Company,
+  cardinality: 'mm',
+  through: () => EmployeeProject,
+});
+
 // ─── MethodKey ───
 class WithMethods {
   id?: number;

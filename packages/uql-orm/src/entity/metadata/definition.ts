@@ -278,7 +278,15 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     if (relOpts.through) {
-      fillThroughRelations(relOpts.through());
+      const throughEntity = relOpts.through();
+      const throughMeta = fillThroughRelations(throughEntity);
+      for (const { local } of relOpts.references) {
+        if (throughMeta.fields[local]) continue;
+        throw new TypeError(
+          `'${meta.entity.name}.${relKey}' joins through '${throughEntity.name}', which has no '${local}' ` +
+            "field. Declare it, or name the join columns yourself with 'references'.",
+        );
+      }
     }
   }
 
@@ -311,8 +319,11 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   }));
 }
 
-function fillThroughRelations<E>(entity: Type<E>): void {
-  const meta = ensureMeta(entity);
+// `getMeta` rather than `ensureMeta`: a pivot that declares its sides as relations rather than as
+// `@Field({ references })` columns gets those foreign-key columns auto-created there, and the caller
+// checks its own derived join columns against them.
+function fillThroughRelations<E>(entity: Type<E>): EntityMeta<E> {
+  const meta = getMeta(entity);
   meta.relations = getKeys(meta.fields).reduce<EntityMeta<E>['relations']>(
     (relations, key) => {
       const field = meta.fields[key];
@@ -333,6 +344,7 @@ function fillThroughRelations<E>(entity: Type<E>): void {
     },
     {} as EntityMeta<E>['relations'],
   );
+  return meta;
 }
 
 function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
@@ -347,13 +359,7 @@ function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
 
 function getRelationKeyMap<E>(meta: EntityMeta<E>): RelationKeyMap<E> {
   const keys = [...getKeys(meta.fields), ...getKeys(meta.relations)];
-  return keys.reduce(
-    (acc, key) => {
-      (acc as Record<string, string>)[key] = key;
-      return acc;
-    },
-    {} as RelationKeyMap<E>,
-  );
+  return Object.fromEntries(keys.map((key) => [key, key])) as RelationKeyMap<E>;
 }
 
 function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> {

@@ -493,7 +493,11 @@ export type RelationOptions<E = any> = {
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   mappedBy?: RelationMappedBy<E>;
-  through?: EntityGetter<RelationValue<E>>;
+  /**
+   * The pivot entity of a many-to-many. Unconstrained by `E`: a pivot holds foreign keys to both
+   * sides and is not a relation value of the target, so nothing about it is derivable from `E`.
+   */
+  through?: EntityGetter;
   references?: RelationReferences;
 };
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
@@ -502,7 +506,17 @@ type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' 
 type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> &
   Pick<RelationOptions<E>, 'through' | 'references' | 'cascade'>;
 
-export type RelationKeyMap<E> = { readonly [K in keyof E]: K } & { readonly [key: string]: string };
+/**
+ * The key names of `E` as values, so `mappedBy` can be written as `(user) => user.company` instead of
+ * a string literal and survive a rename.
+ *
+ * Mapping over `Key<E>` rather than `keyof E` is what makes the callback usable: a homomorphic
+ * `[K in keyof E]` inherits the entity's optional modifiers, so `user.company` is
+ * `'company' | undefined` and {@link RelationKeyMapper} rejects it - every callback needed a `!`. The
+ * map is built from the target's metadata (see `getRelationKeyMap`), where every key is present and
+ * every key is a string.
+ */
+export type RelationKeyMap<E> = { readonly [K in Key<E>]: K };
 
 export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => Key<E>;
 
