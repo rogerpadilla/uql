@@ -18,7 +18,7 @@ import {
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
-import { Entity, Field, Filter, Id, ManyToMany, ManyToOne } from '../index.js';
+import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import { getEntities, getMeta } from './definition.js';
 
 it('User', () => {
@@ -683,6 +683,83 @@ it('no fields', () => {
   }).toThrow(`'SomeEntity' must have fields`);
 });
 
+it('one-to-many through a junction joins by the junction columns', () => {
+  @Entity()
+  class Author {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class BookAuthor {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ type: Number, references: () => Author })
+    authorId?: number;
+    @Field({ type: Number })
+    bookId?: number;
+  }
+
+  @Entity()
+  class Book {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @OneToMany({ entity: () => Author, through: () => BookAuthor })
+    authors?: Author[];
+  }
+
+  const meta = getMeta(Book);
+
+  expect(meta.relations.authors!.references).toEqual([
+    { local: 'bookId', foreign: 'id' },
+    { local: 'authorId', foreign: 'id' },
+  ]);
+  // The to-one shape would have derived one reference and put an `authorsId` column on the owner.
+  expect(meta.fields['authorsId']).toBeUndefined();
+});
+
+it('to-many relation with no way to join', () => {
+  @Entity()
+  class Chapter {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  expect(() => {
+    @Entity()
+    class Novel {
+      @Field({ type: Number, isId: true })
+      id?: number;
+      @ManyToMany({ entity: () => Chapter })
+      chapters?: Chapter[];
+    }
+    getMeta(Novel);
+  }).toThrow(
+    `'Novel.chapters' is a to-many relation with no way to join: it needs 'mappedBy' (the field on the other side), 'through' (a junction entity), or 'references' (the columns).`,
+  );
+});
+
+it('mappedBy naming neither a field nor a relation', () => {
+  @Entity()
+  class Track {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    undeclared?: string;
+  }
+
+  @Entity()
+  class Album {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @OneToMany({ entity: () => Track, mappedBy: 'undeclared' })
+    tracks?: Track[];
+  }
+
+  expect(() => getMeta(Album)).toThrow(
+    `'Album.tracks' is mapped by 'undeclared', which is neither a field nor a relation of 'Track'.`,
+  );
+});
+
 it('through entity missing a derived join column', () => {
   @Entity()
   class Colour {
@@ -707,7 +784,7 @@ it('through entity missing a derived join column', () => {
   }
 
   expect(() => getMeta(Shirt)).toThrow(
-    `'Shirt.colours' joins through 'ShirtColour', which has no 'shirtId' field. Declare it, or name the join columns yourself with 'references'.`,
+    `'Shirt.colours' joins through 'ShirtColour', which has no 'shirtId' field. Declare it, or name the join columns with 'references'.`,
   );
 });
 

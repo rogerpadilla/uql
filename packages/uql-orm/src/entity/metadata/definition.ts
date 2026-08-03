@@ -238,62 +238,69 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
     }
 
     if (relOpts.mappedBy) {
-      fillInverseSideRelations(relOpts);
+      fillInverseSideRelations(meta, relKey, relOpts);
       continue;
     }
 
     const relEntity = relOpts.entity!();
     const relMeta = ensureMeta(relEntity);
-
-    if (relOpts.cardinality === 'mm') {
-      const idKey = meta.id!;
-      const relIdKey = relMeta.id!;
-      const idName = meta.fields[idKey]?.name ?? idKey;
-      const relIdName = relMeta.fields[relIdKey]?.name ?? relIdKey;
-      const source = lowerFirst(meta.name ?? '') + upperFirst(idName);
-      const target = lowerFirst(relMeta.name ?? '') + upperFirst(relIdName);
-      relOpts.references = [
-        { local: source, foreign: idKey },
-        { local: target, foreign: relIdKey },
-      ];
-    } else {
-      const relIdKey = relMeta.id;
-      const fkKey = `${relKey}Id` as FieldKey<E>;
-      relOpts.references = [{ local: fkKey, foreign: relIdKey }];
-
-      // Auto-create the FK column when only the relation is declared (no explicit `@Field`).
-      // Mirror an explicit `@Field({ references })` column: carry `references` and mark the type
-      // as inferred so schema generation resolves the exact referenced primary-key type
-      // (columnType, length, chained keys) via `resolveColumnCanonicalType`.
-      if (!meta.fields[fkKey]) {
-        const relatedIdField = relMeta.fields[relIdKey];
-        meta.fields[fkKey] = {
-          ...meta.fields[fkKey],
-          name: fkKey,
-          type: relatedIdField?.type ?? Number,
-          references: relOpts.entity,
-          typeFromReference: true,
-        };
-      }
-    }
+    const relIdKey = relMeta.id;
 
     if (relOpts.through) {
+      // Both columns live on the junction, whatever the cardinality: `fillToManyThroughRelation`,
+      // `deleteRelations` and every dialect read them as junction columns.
+      const idKey = meta.id;
+      const idName = meta.fields[idKey]?.name ?? idKey;
+      const relIdName = relMeta.fields[relIdKey]?.name ?? relIdKey;
+      relOpts.references = [
+        { local: lowerFirst(meta.name ?? '') + upperFirst(idName), foreign: idKey },
+        { local: lowerFirst(relMeta.name ?? '') + upperFirst(relIdName), foreign: relIdKey },
+      ];
+
       const throughEntity = relOpts.through();
       const throughMeta = fillThroughRelations(throughEntity);
       for (const { local } of relOpts.references) {
         if (throughMeta.fields[local]) continue;
         throw new TypeError(
           `'${meta.entity.name}.${relKey}' joins through '${throughEntity.name}', which has no '${local}' ` +
-            "field. Declare it, or name the join columns yourself with 'references'.",
+            "field. Declare it, or name the join columns with 'references'.",
         );
       }
+      continue;
+    }
+
+    // A to-many owner reaches its children through a junction, and nothing else here can reach them:
+    // `mappedBy` and hand-written `references`, both handled above, are the other two ways to say how.
+    if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+      throw new TypeError(
+        `'${meta.entity.name}.${relKey}' is a to-many relation with no way to join: it needs 'mappedBy' ` +
+          "(the field on the other side), 'through' (a junction entity), or 'references' (the columns).",
+      );
+    }
+
+    const fkKey = `${relKey}Id` as FieldKey<E>;
+    relOpts.references = [{ local: fkKey, foreign: relIdKey }];
+
+    // Auto-create the FK column when only the relation is declared (no explicit `@Field`).
+    // Mirror an explicit `@Field({ references })` column: carry `references` and mark the type
+    // as inferred so schema generation resolves the exact referenced primary-key type
+    // (columnType, length, chained keys) via `resolveColumnCanonicalType`.
+    if (!meta.fields[fkKey]) {
+      const relatedIdField = relMeta.fields[relIdKey];
+      meta.fields[fkKey] = {
+        ...meta.fields[fkKey],
+        name: fkKey,
+        type: relatedIdField?.type ?? Number,
+        references: relOpts.entity,
+        typeFromReference: true,
+      };
     }
   }
 
   return meta;
 }
 
-function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
+function fillInverseSideRelations<O, E>(meta: EntityMeta<O>, relKey: string, relOpts: RelationOptions<E>): void {
   const relEntity = relOpts.entity!();
   const relMeta = getMeta(relEntity);
   const mappedBy = getMappedByRelationKey(relOpts);
@@ -305,7 +312,12 @@ function fillInverseSideRelations<E>(relOpts: RelationOptions<E>): void {
   }
 
   const mappedByRelation = relMeta.relations[mappedBy];
-  if (!mappedByRelation) return;
+  if (!mappedByRelation) {
+    throw new TypeError(
+      `'${meta.entity.name}.${relKey}' is mapped by '${mappedBy}', which is neither a field nor a relation of ` +
+        `'${relEntity.name}'.`,
+    );
+  }
 
   if (relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm') {
     relOpts.references = (mappedByRelation.references ?? []).slice().reverse();
@@ -350,7 +362,9 @@ function fillThroughRelations<E>(entity: Type<E>): EntityMeta<E> {
 function getMappedByRelationKey<E>(relOpts: RelationOptions<E>): Key<E> {
   if (typeof relOpts.mappedBy === 'function') {
     const relEntity = relOpts.entity!();
-    const relMeta = ensureMeta(relEntity);
+    // `getMeta`: the caller has already resolved the target, and its auto-created foreign-key columns
+    // are keys the callback is entitled to name.
+    const relMeta = getMeta(relEntity);
     const keyMap = getRelationKeyMap(relMeta);
     return relOpts.mappedBy(keyMap);
   }
