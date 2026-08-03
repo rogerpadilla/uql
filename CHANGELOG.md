@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.2] - 2026-08-03
+
+### Fixes
+
+- **Field names went unchecked in any project without `@types/node`.** `Scalar` named `Buffer`, an ambient Node global, so where nothing declares it - a browser or edge project - it resolved to nothing and collapsed `Scalar`, then `FieldKey`, to `any`: `$select`, `$where`, `$sort`, `@Index`, `mappedBy` and `defineEntity({ fields })` took any string at all, and said nothing. `Scalar` says `Uint8Array` now, which every `Buffer` satisfies.
+- **A `raw` callback needed `= {}`, a `!` on each option and a `void` on its body.** Its options were typed optional and its return `void | Scalar`, and the one caller does neither. `virtual: raw(({ ctx }) => ctx.append('1'))` compiles as written now.
+- **A to-many relation with no `mappedBy`, `through` or `references`, or a `mappedBy` naming nothing on the target, failed mid-query** against columns nobody has. Both throw when the entity is first resolved now.
+- **`@OneToMany({ entity, through })` derived a foreign key on the owner** - a spurious column in its DDL - **instead of the junction's pair.** It joins through the junction now.
+
 ## [0.24.1] - 2026-08-02
 
 ### Relations: two types that rejected correct code
