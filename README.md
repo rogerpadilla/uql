@@ -51,7 +51,7 @@ from the browser to the server. The same object runs on every supported database
 ## Why UQL?
 
 - **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, over 4.6M ops/s on simple SELECTs.
-- **Light.** Zero dependencies, under 1 MB installed, every dialect included.
+- **Light.** Zero runtime dependencies, 288 kB on the wire, every dialect included.
 - **Queries are data, not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
 - **Type-safe to the leaf.** Operators are gated per field type, and JSON/JSONB dot-paths resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error instead of a runtime surprise.
 - **No codegen.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` file to regenerate, no generated client to keep in sync.
