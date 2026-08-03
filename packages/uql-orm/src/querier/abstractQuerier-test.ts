@@ -91,6 +91,42 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(releases).toBe(1);
   }
 
+  /** Each pool call is its own acquire/run/release, which is why the read below sees the write above. */
+  async shouldRunOperationsOnThePool() {
+    const id = await this.pool.insertOne(User, {
+      name: 'Pool Write',
+      email: 'poolwrite@example.com',
+      password: '123456789p!',
+    });
+    expect(id).toBeDefined();
+
+    const updated = await this.pool.updateMany(User, { $where: { id } }, { name: 'Pool Write Renamed' });
+    expect(updated).toBe(1);
+
+    const found = await this.pool.findOneById(User, id, { $select: { name: true } });
+    expect(found).toMatchObject({ name: 'Pool Write Renamed' });
+
+    expect(await this.pool.deleteMany(User, { $where: { id } })).toBe(1);
+    expect(await this.pool.count(User, { $where: { id } })).toBe(0);
+  }
+
+  /** The one pool call whose connection outlives the call itself: it is held until the loop ends. */
+  async shouldStreamFromThePool() {
+    await this.pool.insertMany(User, [
+      { name: 'Stream A', email: 'streama@example.com', password: '123456789a!' },
+      { name: 'Stream B', email: 'streamb@example.com', password: '123456789b!' },
+    ]);
+
+    const names: (string | undefined)[] = [];
+    for await (const user of this.pool.findManyStream(User, { $select: { name: true }, $sort: { name: 1 } })) {
+      names.push(user.name);
+    }
+    expect(names).toEqual(['Stream A', 'Stream B']);
+
+    // The pool still hands one out, so the loop gave its connection back.
+    expect(await this.pool.count(User)).toBe(2);
+  }
+
   async shouldInsertMany() {
     const ids = await this.querier.insertMany(User, [
       {

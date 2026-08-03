@@ -6,9 +6,10 @@ import { pathToFileURL } from 'node:url';
 /**
  * Write TypeScript source to a temp file and load its default export.
  *
- * Use in tests to check that generated `.ts` actually runs. The file lands outside the project, so
- * the test runner's own transform cannot reach it; `tsx` (a devDependency here, never a peer) supplies
- * the transpile that a real user's runtime would.
+ * Mirrors how {@link Migrator.loadMigration} reaches a user's migration: a plain `import()`, left to
+ * whatever runtime is running. `vitest.config.ts` externalizes the temp dir so this run's esbuild
+ * plugin stays out of the way, which makes the loader Node's own type stripping. That is the strictest
+ * runtime uql supports and the one worth testing against; bun accepts syntax plain `node` rejects.
  */
 export async function loadTsDefaultExport<T>(source: string): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'uql-ts-'));
@@ -17,8 +18,7 @@ export async function loadTsDefaultExport<T>(source: string): Promise<T> {
   const filePath = join(dir, 'module.mts');
   await writeFile(filePath, source, 'utf8');
   try {
-    const { tsImport } = await import('tsx/esm/api');
-    const mod = (await tsImport(pathToFileURL(filePath).href, import.meta.url)) as { default: T };
+    const mod = (await import(pathToFileURL(filePath).href)) as { default: T };
     return mod.default;
   } finally {
     await rm(dir, { recursive: true, force: true });

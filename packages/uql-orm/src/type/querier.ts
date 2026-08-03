@@ -1,11 +1,10 @@
 import type { Db } from 'mongodb';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlDialectName } from './dialect.js';
-import type { HookEvent, IdValue, UpdatePayload } from './entity.js';
+import type { HookEvent } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
-import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
+import type { Query, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -56,68 +55,11 @@ export interface Querier extends UniversalQuerier {
   count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
 
   /**
-   * Insert a single record and return its ID (provided, `onInsert`-generated, or
-   * database-generated - see {@link Querier.insertMany} for the exact semantics).
-   * Returns `undefined` when the ID cannot be determined (e.g. MySQL/SQLite non-auto-increment
-   * keys in batches without explicit IDs).
-   */
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined>;
-
-  /**
-   * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
-   * dialect's bind-parameter limit) and return their IDs in payload order.
-   *
-   * Provided IDs and client-generated ones (`@Id({ onInsert })`) are always returned as-is.
-   * Database-generated IDs are exact on `'returning'` dialects (Postgres, MariaDB, MongoDB);
-   * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
-   * auto-increment keys in batches without explicit IDs - otherwise those entries are
-   * `undefined` rather than potentially wrong values.
-   */
-  insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
-
-  updateMany<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: UpdatePayload<E>,
-    opts?: QueryOptions,
-  ): Promise<number>;
-
-  /**
-   * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the
-   * entity has no soft-delete field.
-   */
-  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number>;
-  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
-
-  upsertOne<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E,
-  ): Promise<QueryUpdateResult>;
-
-  upsertMany<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
-  ): Promise<QueryUpdateResult>;
-
-  saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
-
-  /**
    * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).
    * Supports both entity-as-argument and entity-as-field patterns.
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-
-  /**
-   * Run an aggregate query (GROUP BY with aggregate functions).
-   */
-  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
-    entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
-    opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]>;
 
   /**
    * whether this querier is in a transaction or not.

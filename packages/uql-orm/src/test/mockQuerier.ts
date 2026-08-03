@@ -40,6 +40,7 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
       querier.hasOpenTransaction = false;
     }),
     release: vi.fn().mockResolvedValue(undefined),
+    [Symbol.asyncDispose]: vi.fn().mockImplementation(() => querier.release()),
   };
   // Assigned onto the same object the recorders above close over, so `hasOpenTransaction` stays shared:
   // spreading into a copy would leave the copy's flag stuck at `false`.

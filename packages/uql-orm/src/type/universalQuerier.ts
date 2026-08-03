@@ -66,7 +66,10 @@ export interface UniversalQuerier {
   count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   /**
-   * inserts a record.
+   * Insert a single record and return its ID (provided, `onInsert`-generated, or
+   * database-generated - see {@link UniversalQuerier.insertMany} for the exact semantics).
+   * Returns `undefined` when the ID cannot be determined (e.g. MySQL/SQLite non-auto-increment
+   * keys in batches without explicit IDs).
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    * @return the ID
@@ -74,12 +77,19 @@ export interface UniversalQuerier {
   insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined>;
 
   /**
-   * Inserts many records.
+   * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
+   * dialect's bind-parameter limit) and return their IDs in payload order.
+   *
+   * Provided IDs and client-generated ones (`@Id({ onInsert })`) are always returned as-is.
+   * Database-generated IDs are exact on `'returning'` dialects (Postgres, MariaDB, MongoDB);
+   * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
+   * auto-increment keys in batches without explicit IDs - otherwise those entries are
+   * `undefined` rather than potentially wrong values.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    * @return the IDs
    */
-  insertMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   /**
    * updates a record partially.
@@ -102,7 +112,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the number of affected records
    */
-  updateMany?<E extends object>(
+  updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
@@ -116,7 +126,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return operation metadata; see {@link QueryUpdateResult}
    */
-  upsertOne?<E extends object>(
+  upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E,
@@ -129,7 +139,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return operation metadata; see {@link QueryUpdateResult}
    */
-  upsertMany?<E extends object>(
+  upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
@@ -149,7 +159,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany?<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
 
   /**
    * delete or SoftDelete a record.
@@ -166,6 +176,14 @@ export interface UniversalQuerier {
    * @return the number of affected records
    */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+
+  /**
+   * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the
+   * entity has no soft-delete field.
+   */
+  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number>;
+
+  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number>;
 
   /**
    * runs an aggregate query (GROUP BY with aggregate functions).

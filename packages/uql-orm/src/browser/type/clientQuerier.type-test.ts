@@ -29,7 +29,13 @@ class Article {
 type AssertEmpty<T extends never> = T;
 
 /** Server methods intentionally absent from the wire API - reviewed list, extend consciously. */
-type ServerOnlyOperation = 'findManyStream' | 'aggregate' | 'upsertOne' | 'upsertMany';
+type ServerOnlyOperation =
+  | 'findManyStream'
+  | 'aggregate'
+  | 'upsertOne'
+  | 'upsertMany'
+  | 'restoreOneById'
+  | 'restoreMany';
 
 /** A server method (other than the reviewed server-only ones) is missing on the client. */
 export type MissingOnClient = AssertEmpty<Exclude<keyof UniversalQuerier, ServerOnlyOperation | keyof ClientQuerier>>;
@@ -65,19 +71,19 @@ export async function clientServerParity() {
   void serverInsertedId;
   void clientInsertedId;
 
-  await server.insertMany?.(Article, [{ id: 1, title: 'a' }]);
+  await server.insertMany(Article, [{ id: 1, title: 'a' }]);
   await client.insertMany(Article, [{ id: 1, title: 'a' }]);
 
   await server.updateOneById(Article, 1, { title: 'b' });
   await client.updateOneById(Article, 1, { title: 'b' });
 
-  await server.updateMany?.(Article, { $where: { id: 1 } }, { title: 'b' });
+  await server.updateMany(Article, { $where: { id: 1 } }, { title: 'b' });
   await client.updateMany(Article, { $where: { id: 1 } }, { title: 'b' });
 
   await server.saveOne(Article, { id: 1, title: 'a' });
   await client.saveOne(Article, { id: 1, title: 'a' });
 
-  await server.saveMany?.(Article, [{ id: 1, title: 'a' }]);
+  await server.saveMany(Article, [{ id: 1, title: 'a' }]);
   await client.saveMany(Article, [{ id: 1, title: 'a' }]);
 
   await server.deleteOneById(Article, 1);

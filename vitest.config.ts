@@ -45,6 +45,12 @@ export default defineConfig({
     // `*.bun.test.ts` files assert Bun-only driver behavior and import `bun:test`; see `test:bun`.
     exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
+    server: {
+      // `loadTsDefaultExport` writes generated migrations to a temp dir to prove they run on a real
+      // runtime. Externalizing them keeps this run's esbuild transform out of the way, so Node's own
+      // type stripping does the work a user's would.
+      deps: { external: [/[\\/]uql-ts-[^\\/]*[\\/]/] },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text', 'text-summary'],
