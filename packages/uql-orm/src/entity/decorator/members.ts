@@ -3,6 +3,7 @@ import type {
   FieldOptions,
   FieldType,
   HookEvent,
+  IdValue,
   RelationManyToManyOptions,
   RelationManyToOneOptions,
   RelationOneToManyOptions,
@@ -15,10 +16,23 @@ import { memberRegistrations } from './bag.js';
 // The member decorators share one mechanism, which is why they share a file: the standard spec gives a
 // member decorator no reference to its class, so each records what it was told on `context.metadata` and
 // `@Entity()` drains it (see `bag.ts`). What they add on top is checking, by pinning the context's value
-// type: the `type` or `entity` a decorator declares is compared against the property it is written on.
+// type: the `type`, `entity` or referenced key a decorator declares is compared against the property it is
+// written on.
 
 /** A member decorator that also constrains the property it may be applied to. */
 type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext<unknown, V>) => void;
+
+/**
+ * The property type a set of field options describes, in the same order schema generation resolves the
+ * column: a declared `type` wins, and otherwise the column - and so the property - is the referenced
+ * primary key's own type. Which is what makes `@Field({ references: () => User })` on a `number`, where
+ * `User.id` is a `uuid`, a compile error rather than a column that disagrees with its property.
+ */
+type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
+  ? TsTypeOf<T>
+  : O extends { readonly references: EntityGetter<infer E> }
+    ? IdValue<E>
+    : never;
 
 /**
  * Declares a persisted field.
@@ -27,17 +41,11 @@ type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext
  * which is what makes the now-mandatory `type` worth stating.
  *
  * @example `@Field({ type: String }) name?: string;`
- * @example `@Field({ references: () => Company }) companyId?: string;`
+ * @example `@Field({ references: () => User }) userId?: string;` (where `User.id` is a `uuid`)
  */
-export function Field<T extends FieldType>(
-  opts: FieldOptions & { readonly type: T },
-): MemberDecorator<TsTypeOf<T> | undefined>;
-/**
- * A foreign key may omit `type`: schema generation resolves it from the referenced primary key, so the
- * column picks up that key's `columnType`, length and chained references rather than a guess.
- */
-export function Field(opts: FieldOptions & { readonly references: EntityGetter }): MemberDecorator<unknown>;
-export function Field(opts: FieldOptions): MemberDecorator<never> {
+export function Field<O extends FieldOptions<DeclaredValue<O>> & ({ type: FieldType } | { references: EntityGetter })>(
+  opts: O,
+): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = opts;
   };
@@ -49,9 +57,9 @@ export function Field(opts: FieldOptions): MemberDecorator<never> {
  * @example `@Id({ type: Number }) id?: number;`
  * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
  */
-export function Id<T extends FieldType>(
-  opts: FieldOptions & { readonly type: T },
-): MemberDecorator<TsTypeOf<T> | undefined> {
+export function Id<O extends FieldOptions<DeclaredValue<O>> & { type: FieldType }>(
+  opts: O,
+): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = { ...opts, isId: true };
   };

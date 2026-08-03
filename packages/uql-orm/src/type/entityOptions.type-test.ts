@@ -8,7 +8,7 @@
  * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, and excluded from the build by
  * the `-test.ts` suffix.
  */
-import { defineEntity } from '../entity/index.js';
+import { defineEntity, Field, Id } from '../entity/index.js';
 import type {
   FieldOptionsFor,
   Json,
@@ -73,7 +73,9 @@ expectType<TypeFor<Json<{ a: number }>>>('text');
 expectType<FieldOptionsFor<string>>({ type: String });
 expectType<FieldOptionsFor<string>>({ type: 'varchar', length: 150 });
 expectType<FieldOptionsFor<number>>({ type: Number, isId: true });
-// A foreign key may omit `type` so schema generation resolves it from the referenced primary key.
+// A foreign key may omit `type` so schema generation resolves it from the referenced primary key. Unlike
+// `@Field`, this arm cannot also check the property against that key: `FieldOptionsFor<V>` is reached
+// through a mapped type, which gives the target no inference position to be read from.
 expectType<FieldOptionsFor<string>>({ references: () => Company });
 expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'uuid' });
 
@@ -83,6 +85,38 @@ expectType<FieldOptionsFor<string>>({ length: 150 });
 expectType<FieldOptionsFor<string>>({ type: Number, length: 150 });
 // @ts-expect-error and it is checked on the `references` arm too
 expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'int' });
+
+// ─── @Field({ references }): a foreign key holds the referenced key's own type ───
+// Only where the column is resolved from that key. An explicit `type` opts out of the resolution, so
+// it is checked on its own - the case `schemaASTBuilder.spec` pins, a BIGINT column over a uuid key.
+class Referrer {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => Company }) companyId?: number;
+  @Field({ type: BigInt, references: () => Company }) wideCompanyId?: bigint;
+  // @ts-expect-error a string property cannot hold Company's numeric key
+  @Field({ references: () => Company }) misTypedId?: string;
+}
+// ─── Generators and defaults produce the value the field declares ───
+class Generated {
+  @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
+  @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number;
+  @Field({ type: String, defaultValue: 'unnamed' }) name?: string;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
+  @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number;
+
+  // @ts-expect-error a uuid column is not stamped with a number
+  @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string;
+  // @ts-expect-error nor does a string column default to one
+  @Field({ type: String, defaultValue: 7 }) badDefault?: string;
+}
+expectType<string | undefined>(new Generated().id);
+
+// The same check on the imperative path, which `FieldOptions<V>` carries into `FieldOptionsFor<V>`.
+expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => Date.now() });
+// @ts-expect-error a number column is not stamped with a string
+expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
+// @ts-expect-error nor does it default to one
+expectType<FieldOptionsFor<number>>({ type: Number, defaultValue: 'nope' });
 
 // ─── RelationOptionsFor: `entity` required and pinned, cardinality follows the field shape ───
 expectType<RelationTarget<Company>>(new Company());

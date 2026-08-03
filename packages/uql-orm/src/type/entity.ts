@@ -315,9 +315,11 @@ export type TypeFor<V, T = NonNullable<V>> =
                     : FieldType;
 
 /**
- * Configurable options for a field
+ * Configurable options for a field, carrying `V`, the value the column holds: what a generator returns
+ * and what a default is has to be that value, checked the same way the declared `type` is. `Scalar` by
+ *  by default, for the places that handle a field without knowing which one it is.
  */
-export type FieldOptions = {
+export type FieldOptions<V = TsTypeOf<FieldType>> = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
@@ -347,8 +349,8 @@ export type FieldOptions = {
   readonly virtual?: QueryRaw;
   readonly updatable?: boolean;
   readonly eager?: boolean;
-  readonly onInsert?: OnFieldCallback;
-  readonly onUpdate?: OnFieldCallback;
+  readonly onInsert?: OnFieldCallback<V>;
+  readonly onUpdate?: OnFieldCallback<V>;
   /**
    * Marks this field as the soft-delete field. Its presence makes the entity "soft deletable":
    * a `delete` becomes an `UPDATE` that stamps this field instead of removing the row, and reads
@@ -360,7 +362,7 @@ export type FieldOptions = {
    * @example `@Field({ softDelete: true }) deletedAt?: Date;`
    * @example `@Field({ softDelete: () => Date.now() }) deletedAt?: number;`
    */
-  readonly softDelete?: OnFieldCallback;
+  readonly softDelete?: true | OnFieldCallback<V>;
 
   // Schema/migration properties
   /**
@@ -390,7 +392,7 @@ export type FieldOptions = {
   /**
    * Default value for the column
    */
-  readonly defaultValue?: Scalar | Record<string, unknown>;
+  readonly defaultValue?: V | Record<string, unknown>;
   /**
    * Whether the column is auto-incrementing (for integer IDs).
    */
@@ -405,7 +407,7 @@ export type FieldOptions = {
   readonly comment?: string;
 };
 
-export type OnFieldCallback = Scalar | QueryRaw | (() => Scalar | QueryRaw);
+export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V | QueryRaw);
 
 /**
  * The TypeScript types a field may be declared as, given the `type` it registers: the inverse of
@@ -455,8 +457,8 @@ export type TsTypeOf<T> = T extends StringConstructor
  * column pointing at it.
  */
 export type FieldOptionsFor<V> =
-  | (FieldOptions & { readonly type: TypeFor<V> })
-  | (FieldOptions & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
+  | (FieldOptions<NonNullable<V>> & { readonly type: TypeFor<V> })
+  | (FieldOptions<NonNullable<V>> & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
 
 /**
  * The entity a relation field points at: `Company` for both `company?: Company` and

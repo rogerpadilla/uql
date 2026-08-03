@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.3] - 2026-08-03
+
+### Fixes
+
+- **`@Field({ references })` with no `type` left the property unchecked**, so a `string` foreign key to a numeric primary key compiled into a column that disagreed with it. It has to hold the referenced key's type now; declaring a `type` still opts out, being what the column is resolved from instead.
+- **`onInsert`, `onUpdate`, `defaultValue` and `softDelete` took any value**, so `@Id({ type: 'uuid', onInsert: () => 42 })` compiled and stamped a number into a uuid column. They produce what the field declares now, on `defineEntity` as well as the decorators.
+
 ## [0.24.2] - 2026-08-03
 
 ### Fixes
