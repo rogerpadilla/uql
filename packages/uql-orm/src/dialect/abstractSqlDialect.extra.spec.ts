@@ -505,20 +505,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(" WHERE LOWER((`kind`->>'description')) LIKE ?");
       expect(ctx.values).toEqual(['%active%']);
     });
-
-    it('relation with missing references throws TypeError', () => {
-      const meta = getMeta(Item);
-      const tagRelation = meta.relations.tags;
-      if (!tagRelation) throw new Error('Test setup: tags relation must exist');
-      const originalRefs = tagRelation.references;
-      tagRelation.references = undefined;
-      try {
-        const ctx = dialect.createContext();
-        expect(() => dialect.where(ctx, Item, { tags: { id: 1 } })).toThrow('has no references defined');
-      } finally {
-        tagRelation.references = originalRefs;
-      }
-    });
   });
 
   // ─── Unsafe map lookups: an unvalidated query-provided key (queries are plain data) must
@@ -659,20 +645,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(() => dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } } as any)).toThrow(
         'unsupported $size comparison operator: $like',
       );
-    });
-
-    it('throws for relation with missing references', () => {
-      const meta = getMeta(Item);
-      const tagRelation = meta.relations.tags;
-      if (!tagRelation) throw new Error('Test setup: tags relation must exist');
-      const originalRefs = tagRelation.references;
-      tagRelation.references = undefined;
-      try {
-        const ctx = dialect.createContext();
-        expect(() => dialect.where(ctx, Item, { tags: { $size: 1 } })).toThrow('has no references defined');
-      } finally {
-        tagRelation.references = originalRefs;
-      }
     });
   });
 

@@ -54,13 +54,8 @@ const RELATION_QUERY_ALLOWED_KEYS = new Set([
   '$where',
 ]);
 
-export function getRelationQueryValue<E>(relKey: RelationKey<E>, populate?: QueryPopulate<E>): unknown {
-  return populate?.[relKey];
-}
-
-export function isRelationQueryObject<E extends object = object>(value: unknown): value is RelationQuery<E> {
-  if (!isRecord(value)) return false;
-  return isValidRelationQueryShape(value);
+function isRelationQueryObject<E extends object = object>(value: unknown): value is RelationQuery<E> {
+  return isRecord(value) && isValidRelationQueryShape(value);
 }
 
 export type ParsedRelationQuery<E extends object = object> = {
@@ -91,7 +86,7 @@ export function parseRelationQueryValue<E extends object = object>(value: unknow
 
 /** Parses the relation payload for `relKey` */
 export function parseRelationAtKey<E>(relKey: RelationKey<E>, populate?: QueryPopulate<E>): ParsedRelationQuery {
-  return parseRelationQueryValue(getRelationQueryValue(relKey, populate));
+  return parseRelationQueryValue(populate?.[relKey]);
 }
 
 export function forEachRequestedRelation<E extends object>(
@@ -100,7 +95,7 @@ export function forEachRequestedRelation<E extends object>(
   fn: (relKey: RelationKey<E>, rawValue: unknown) => void,
 ): void {
   for (const relKey of getRelationRequestSummary(meta, populate).requestedKeys) {
-    fn(relKey, getRelationQueryValue(relKey, populate));
+    fn(relKey, populate?.[relKey]);
   }
 }
 

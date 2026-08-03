@@ -10,8 +10,11 @@ date format is [yyyy-mm-dd]
 
 - **Field names went unchecked in any project without `@types/node`.** `Scalar` named `Buffer`, an ambient Node global, so where nothing declares it - a browser or edge project - it resolved to nothing and collapsed `Scalar`, then `FieldKey`, to `any`: `$select`, `$where`, `$sort`, `@Index`, `mappedBy` and `defineEntity({ fields })` took any string at all, and said nothing. `Scalar` says `Uint8Array` now, which every `Buffer` satisfies.
 - **A `raw` callback needed `= {}`, a `!` on each option and a `void` on its body.** Its options were typed optional and its return `void | Scalar`, and the one caller does neither. `virtual: raw(({ ctx }) => ctx.append('1'))` compiles as written now.
-- **A to-many relation with no `mappedBy`, `through` or `references`, or a `mappedBy` naming nothing on the target, failed mid-query** against columns nobody has. Both throw when the entity is first resolved now.
+- **A to-many relation with no `mappedBy`, `through` or `references`, or a `mappedBy` naming nothing on the target, failed mid-query** against columns nobody has. The first is a compile error now; both throw when the entity is first resolved.
 - **`@OneToMany({ entity, through })` derived a foreign key on the owner** - a spurious column in its DDL - **instead of the junction's pair.** It joins through the junction now.
+- **A `@Field({ references })` column got the relation it describes only when some *other* entity pointed `through` at its table**, so a junction written as two plain columns was `$populate`-able and carried foreign-key constraints in one graph and not in another. Every such column now gets its many-to-one, and a junction that declares its own relations keeps them - `cascade` included, where they used to be discarded and rebuilt.
+- **A to-many mapped by the other side's inverse** - neither side owning the foreign key - **produced a relation with no join columns**, then read column `undefined` at query time. It throws when the entity resolves, like the other two join errors above.
+- **`references` skipped the junction check** it points into, and left a `mappedBy` callback unresolved. Both now happen whether or not the columns were named by hand.
 
 ## [0.24.1] - 2026-08-02
 

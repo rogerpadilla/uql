@@ -254,7 +254,7 @@ export class MongodbQuerier extends AbstractQuerier {
         .aggregate<Document>([...stages, { $match: filter }, { $project: { _id: true } }], { session })
         .toArray(),
     );
-    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id!]);
+    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id]);
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
@@ -275,7 +275,7 @@ export class MongodbQuerier extends AbstractQuerier {
       const ids = Object.values(insertedIds) as IdValue<E>[];
 
       for (const [index, it] of payloads.entries()) {
-        it[meta.id!] = ids[index];
+        it[meta.id] = ids[index];
       }
 
       await this.insertRelations(entity, payloads);

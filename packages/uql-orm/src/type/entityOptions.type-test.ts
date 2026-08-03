@@ -91,7 +91,13 @@ expectType<RelationTarget<Company[]>>(new Company());
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: 'm1' });
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '11' });
 expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: '1m', mappedBy: 'id' });
+// @ts-expect-error a to-many needs to say how to reach its children
 expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'mm' });
+expectType<RelationOptionsFor<Company[]>>({
+  entity: () => Company,
+  cardinality: 'mm',
+  references: [{ local: 'companyId', foreign: 'id' }],
+});
 
 // @ts-expect-error a to-many cardinality needs an array field
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '1m' });

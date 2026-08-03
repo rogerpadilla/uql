@@ -730,6 +730,7 @@ it('to-many relation with no way to join', () => {
     class Novel {
       @Field({ type: Number, isId: true })
       id?: number;
+      // @ts-expect-error the type rejects it too; this covers the runtime guard for untyped callers
       @ManyToMany({ entity: () => Chapter })
       chapters?: Chapter[];
     }
@@ -933,4 +934,153 @@ it('subclass inherits parent softDelete field key and filters', () => {
   expect(meta.softDelete).toBe('deletedAt');
   expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
   expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
+});
+
+it('foreign-key column gets its relation without anyone declaring one', () => {
+  @Entity()
+  class Warehouse {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class Pallet {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ references: () => Warehouse })
+    warehouseId?: number;
+    @Field({ type: String })
+    label?: string;
+  }
+
+  const meta = getMeta(Pallet);
+
+  expect(meta.relations['warehouse']!.cardinality).toBe('m1');
+  expect(meta.relations['warehouse']!.entity()).toBe(Warehouse);
+  expect(meta.relations['warehouse']!.references).toEqual([{ local: 'warehouseId', foreign: 'id' }]);
+  expect(meta.relations['label']).toBe(undefined);
+});
+
+it('a junction keeps the relations it declares itself', () => {
+  @Entity()
+  class Screening {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class Note {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ type: Number })
+    filmScreeningId?: number;
+  }
+
+  @Entity()
+  class FilmScreening {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @ManyToOne({ entity: () => Film, cascade: 'delete' })
+    film?: Film;
+    @Field({ references: () => Screening })
+    screeningId?: number;
+    @OneToMany({ entity: () => Note, mappedBy: (note) => note.filmScreeningId })
+    notes?: Note[];
+  }
+
+  @Entity()
+  class Film {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @ManyToMany({ entity: () => Screening, through: () => FilmScreening })
+    screenings?: Screening[];
+  }
+
+  expect(getMeta(Film).relations.screenings!.references).toEqual([
+    { local: 'filmId', foreign: 'id' },
+    { local: 'screeningId', foreign: 'id' },
+  ]);
+  const junction = getMeta(FilmScreening);
+  expect(junction.relations.film!.cascade).toBe('delete');
+  expect(junction.relations.notes!.references).toEqual([{ local: 'id', foreign: 'filmScreeningId' }]);
+  expect(junction.relations['screening']!.references).toEqual([{ local: 'screeningId', foreign: 'id' }]);
+});
+
+it('mappedBy naming an inverse side, so neither side owns the foreign key', () => {
+  @Entity()
+  class Passport {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @OneToMany({ entity: () => Traveller, mappedBy: (traveller) => traveller.passports })
+    travellers?: Traveller[];
+  }
+
+  @Entity()
+  class Traveller {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @OneToMany({ entity: () => Passport, mappedBy: (passport) => passport.travellers })
+    passports?: Passport[];
+  }
+
+  // Resolving either side resolves the other first, so the pair is reported from the inner one.
+  expect(() => getMeta(Traveller)).toThrow(
+    `'Passport.travellers' is mapped by 'Traveller.passports', an inverse side too, so neither owns the foreign key.`,
+  );
+});
+
+it('hand-written references are still checked against the junction', () => {
+  @Entity()
+  class Seat {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class CoachSeat {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ references: () => Seat })
+    seatId?: number;
+  }
+
+  @Entity()
+  class Coach {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @ManyToMany({
+      entity: () => Seat,
+      through: () => CoachSeat,
+      references: [
+        { local: 'coachRef', foreign: 'id' },
+        { local: 'seatId', foreign: 'id' },
+      ],
+    })
+    seats?: Seat[];
+  }
+
+  expect(() => getMeta(Coach)).toThrow(
+    `'Coach.seats' joins through 'CoachSeat', which has no 'coachRef' field. Declare it, or name the join columns with 'references'.`,
+  );
+});
+
+it('a foreign-key column not named after the key it points at stays a plain column', () => {
+  @Entity()
+  class Airport {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class Flight {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ references: () => Airport })
+    origin?: number;
+  }
+
+  const meta = getMeta(Flight);
+
+  expect(getKeys(meta.relations)).toEqual([]);
+  expect(meta.fields.origin!.references!()).toBe(Airport);
 });

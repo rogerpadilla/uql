@@ -180,10 +180,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
     for (const key in meta.relations) {
       const rel = meta.relations[key];
-      const relEntity = rel?.entity?.();
-      if (!relEntity) {
-        continue;
-      }
+      if (!rel) continue;
+      const relEntity = rel.entity();
       const value = row[key];
       if (Array.isArray(value)) {
         for (const it of value) {
@@ -225,7 +223,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     payload = clone(payload);
     const meta = getMeta(entity);
-    const idKey = meta.id!;
+    const idKey = meta.id;
     const idField = meta.fields[idKey];
     // RETURNING-based IDs are exact per row. Header-derived IDs (LAST_INSERT_ID /
     // lastInsertRowid arithmetic) are only sound when the primary key is database-generated
@@ -305,12 +303,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
     const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
     const findCtx = this.dialect.createContext();
-    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id!]: true } } as Query<E>, findOpts);
+    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, findOpts);
     const founds = await this.all<E>(findCtx.sql, findCtx.values);
     if (!founds.length) {
       return 0;
     }
-    const ids = founds.map((it) => it[meta.id!]);
+    const ids = founds.map((it) => it[meta.id]);
     const deleteCtx = this.dialect.createContext();
     this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
     const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);

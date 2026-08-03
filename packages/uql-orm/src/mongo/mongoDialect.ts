@@ -24,7 +24,7 @@ import type {
   QueryWhere,
   QueryWhereFieldOperatorMap,
   RelationKey,
-  RelationOptions,
+  RelationMeta,
   Type,
 } from '../type/index.js';
 import { QueryRaw } from '../type/queryRaw.js';
@@ -230,7 +230,7 @@ export class MongoDialect extends AbstractDialect {
     lookups: RelationLookups,
   ): Record<string, unknown> {
     const relOpts = meta.relations[relKey]!;
-    const relEntity = relOpts.entity!();
+    const relEntity = relOpts.entity();
     const relMeta = getMeta(relEntity);
     const temp = `${MongoDialect.REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
@@ -268,7 +268,7 @@ export class MongoDialect extends AbstractDialect {
    */
   private junctionLookup<E>(
     meta: EntityMeta<E>,
-    relOpts: RelationOptions,
+    relOpts: RelationMeta,
     relMeta: EntityMeta<Document>,
     relEntity: Type<Document>,
     targetScope: Filter<Document>,
@@ -285,13 +285,13 @@ export class MongoDialect extends AbstractDialect {
       $lookup: {
         from: this.resolveTableName(throughEntity, throughMeta),
         localField: MongoDialect.ID_KEY,
-        foreignField: this.columnOf(throughMeta, relOpts.references![0].local),
+        foreignField: this.columnOf(throughMeta, relOpts.references[0].local),
         pipeline: [
           ...(hasKeys(junctionScope) ? [{ $match: junctionScope }] : []),
           {
             $lookup: {
               from: this.resolveTableName(relEntity, relMeta),
-              localField: this.columnOf(throughMeta, relOpts.references![1].local),
+              localField: this.columnOf(throughMeta, relOpts.references[1].local),
               foreignField: MongoDialect.ID_KEY,
               pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), { $limit: 1 }],
               as: nested,
@@ -581,7 +581,7 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
 
-      const relEntity = relOpts.entity!();
+      const relEntity = relOpts.entity();
       const relMeta = getMeta(relEntity);
       const { query: relQuery, required } = parseRelationAtKey<E>(relKey, q.$populate);
       // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
@@ -614,11 +614,11 @@ export class MongoDialect extends AbstractDialect {
   private joinKeys<E, R extends Document>(
     meta: EntityMeta<E>,
     relMeta: EntityMeta<R>,
-    relOpts: RelationOptions,
+    relOpts: RelationMeta,
   ): { localField: string; foreignField: string } {
     return relOpts.cardinality === 'm1'
-      ? { localField: this.columnOf(meta, relOpts.references![0].local), foreignField: MongoDialect.ID_KEY }
-      : { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references![0].foreign) };
+      ? { localField: this.columnOf(meta, relOpts.references[0].local), foreignField: MongoDialect.ID_KEY }
+      : { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
   }
 
   /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */
@@ -669,7 +669,7 @@ export class MongoDialect extends AbstractDialect {
     for (const relKey of relKeys) {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;
-      const relMeta = getMeta(relOpts.entity!());
+      const relMeta = getMeta(relOpts.entity());
       res[relKey] = Array.isArray(res[relKey])
         ? this.normalizeIds(relMeta, res[relKey] as Document[])
         : this.normalizeId(relMeta, res[relKey] as Document);
