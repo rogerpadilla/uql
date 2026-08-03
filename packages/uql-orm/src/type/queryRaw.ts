@@ -25,11 +25,15 @@ export type QueryRawFnOptions = {
 };
 
 /**
- * A `raw` callback. `Required`, and the parameter not optional, because the one place that calls it
- * (`getRawValue`) passes all four every time: declaring them optional made `({ ctx }) => ctx.append(...)`
- * - the form every virtual field is written in - not compile without a default or a `!`.
+ * A `raw` callback: write into `ctx`, or return a string or number to have it appended. Anything else
+ * it returns is ignored, which is why the return type is `unknown` rather than `void | Scalar` - the
+ * latter rejected `({ ctx }) => ctx.append(...)`, the form every virtual field is written in, because
+ * TypeScript's "returning a value where void is expected" allowance does not apply to a union.
+ *
+ * `Required`, and the parameter not optional, because the one place that calls it (`getRawValue`)
+ * passes all four every time.
  */
-export type QueryRawFn = (opts: Required<QueryRawFnOptions>) => void | Scalar;
+export type QueryRawFn = (opts: Required<QueryRawFnOptions>) => unknown;
 
 export const RAW_VALUE: unique symbol = Symbol('rawValue');
 export const RAW_ALIAS: unique symbol = Symbol('rawAlias');

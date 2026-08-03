@@ -25,7 +25,7 @@ describe('Query with $exists and nested relation filtering', () => {
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw((o) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
+                  companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -54,7 +54,7 @@ describe('Query with $exists and nested relation filtering', () => {
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw((o) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
+                  companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -116,7 +116,7 @@ describe('Query with $exists and nested relation filtering', () => {
               {
                 $select: { id: true },
                 $where: {
-                  inventoryAdjustmentId: raw((o) => void o.ctx.append(`${escapedPrefix}"id"`)),
+                  inventoryAdjustmentId: raw((o) => o.ctx.append(`${escapedPrefix}"id"`)),
                   buyPrice: { $gte: 100 },
                 },
               },
@@ -172,7 +172,7 @@ describe('getRawValue alias', () => {
   it('should use dot separator when autoPrefixAlias is true', () => {
     const ctx = dialect.createContext();
     dialect.getRawValue(ctx, {
-      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
       prefix: 'relation',
       autoPrefixAlias: true,
     });
@@ -182,7 +182,7 @@ describe('getRawValue alias', () => {
   it('should not prefix alias when autoPrefixAlias is false', () => {
     const ctx = dialect.createContext();
     dialect.getRawValue(ctx, {
-      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
       prefix: 'relation',
       autoPrefixAlias: false,
     });
@@ -192,7 +192,7 @@ describe('getRawValue alias', () => {
   it('should not prefix alias when prefix is empty', () => {
     const ctx = dialect.createContext();
     dialect.getRawValue(ctx, {
-      value: raw(() => void ctx.append('SOME_EXPR()'), 'myAlias'),
+      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
       prefix: '',
       autoPrefixAlias: true,
     });
