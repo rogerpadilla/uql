@@ -486,6 +486,15 @@ export type MethodKey<E> = {
   readonly [K in keyof E]-?: NonNullable<E[K]> extends (...args: never[]) => unknown ? K : never;
 }[Key<E>];
 
+/**
+ * A deferred reference to an entity class, e.g. `() => Company`.
+ *
+ * A getter rather than the class itself because decorator expressions are evaluated while the class is
+ * being defined, before its binding is initialized, so naming the class directly is a `ReferenceError`
+ * for a self-reference and for whichever side of a circular import is evaluated first - the two shapes an
+ * entity graph almost always has. Nothing about the standard decorator spec changes that; it only removed
+ * the reflected `design:type` that used to make `entity` optional.
+ */
 // biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
 export type EntityGetter<E = any> = () => Type<E>;
 
@@ -493,7 +502,7 @@ export type CascadeType = 'persist' | 'delete';
 
 // biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
 export type RelationOptions<E = any> = {
-  entity?: EntityGetter<E>;
+  entity: EntityGetter<E>;
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   mappedBy?: RelationMappedBy<E>;
@@ -506,13 +515,18 @@ export type RelationOptions<E = any> = {
 };
 
 /**
- * A relation once `getMeta` has resolved it: `entity` and `references` are settled and `mappedBy` is
- * the key its callback named. Consumers read this shape rather than {@link RelationOptions}, so they
- * need no assertions - `fillRelations` establishes the invariant once, and throws where it cannot.
+ * A relation once `getMeta` has resolved it: `references` is filled in and `mappedBy` is the key its
+ * callback named. Consumers read this shape rather than {@link RelationOptions}, so they need no
+ * assertions - `fillRelations` establishes the invariant once, and throws where it cannot.
+ *
+ * `entity` and `through` stay {@link EntityGetter}s. Resolution could call them once and store the class,
+ * but only by keeping the authored relations in a second map: it reads them *across* entities, and a
+ * circular import can leave the entity being read mid-resolution, where telling "no such relation" apart
+ * from "declared, but an inverse side too, so neither owns the foreign key" needs the unresolved shape
+ * still there to find. A phase-split metadata map costs more than the call parentheses it saves.
  */
 // biome-ignore lint/suspicious/noExplicitAny: mirrors RelationOptions' public generic default
-export type RelationMeta<E = any> = Omit<RelationOptions<E>, 'entity' | 'mappedBy' | 'references'> & {
-  entity: EntityGetter<E>;
+export type RelationMeta<E = any> = Omit<RelationOptions<E>, 'mappedBy' | 'references'> & {
   mappedBy?: Key<E>;
   references: RelationReferences;
 };
@@ -529,11 +543,9 @@ type RelationOwnerJoin<E> =
 type RelationJoin<E> = RelationOwnerJoin<E> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
 
 type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
-type RelationOptionsInverseSide<E> = Required<Pick<RelationOptions<E>, 'entity' | 'mappedBy'>> &
-  Pick<RelationOptions<E>, 'cascade'>;
-type RelationOptionsThroughOwner<E> = Required<Pick<RelationOptions<E>, 'entity'>> &
-  Pick<RelationOptions<E>, 'cascade'> &
-  RelationOwnerJoin<E>;
+type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> &
+  Required<Pick<RelationOptions<E>, 'mappedBy'>>;
+type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> & RelationOwnerJoin<E>;
 
 /**
  * The key names of `E` as values, so `mappedBy` can be written as `(user) => user.company` instead of

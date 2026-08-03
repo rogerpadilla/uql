@@ -167,6 +167,8 @@ describe('standard decorators', () => {
     class NoTarget {
       other?: unknown;
     }
+    // The type makes `entity` mandatory; the guard is what a JavaScript caller hits.
+    // @ts-expect-error - deliberately omitted
     expect(() => defineRelation(NoTarget, 'other', { cardinality: 'm1' })).toThrow(/needs an 'entity' getter/);
   });
 });
