@@ -150,6 +150,89 @@ it('every read helper delegates to a fresh querier and releases it', async () =>
   }
 });
 
+/** Stub querier exposing the write methods the pool delegates to, plus a stream. */
+function createWriteStubQuerier() {
+  const querier = {
+    insertOne: vi.fn(async () => 1),
+    insertMany: vi.fn(async () => [1, 2]),
+    updateOneById: vi.fn(async () => 1),
+    updateMany: vi.fn(async () => 2),
+    upsertOne: vi.fn(async (): Promise<QueryUpdateResult> => ({ changes: 1 })),
+    upsertMany: vi.fn(async (): Promise<QueryUpdateResult> => ({ changes: 2 })),
+    saveOne: vi.fn(async () => 1),
+    saveMany: vi.fn(async () => [1, 2]),
+    deleteOneById: vi.fn(async () => 1),
+    deleteMany: vi.fn(async () => 2),
+    restoreOneById: vi.fn(async () => 1),
+    restoreMany: vi.fn(async () => 2),
+    findManyStream: vi.fn(async function* () {
+      yield { id: 1 };
+      yield { id: 2 };
+    }),
+    release: vi.fn(async () => {}),
+    [Symbol.asyncDispose]: vi.fn(async () => {}),
+  };
+  return querier as unknown as Querier;
+}
+
+it('every write delegates to a fresh querier and releases it', async () => {
+  const pool = new CountingPool(createWriteStubQuerier);
+  const entity = Item as Type<Item>;
+
+  expect(await pool.insertOne(entity, { id: 1 })).toBe(1);
+  expect(await pool.insertMany(entity, [{ id: 1 }])).toEqual([1, 2]);
+  expect(await pool.updateOneById(entity, 1, { id: 2 })).toBe(1);
+  expect(await pool.updateMany(entity, {}, { id: 2 })).toBe(2);
+  expect(await pool.upsertOne(entity, { id: true }, { id: 1 })).toEqual({ changes: 1 });
+  expect(await pool.upsertMany(entity, { id: true }, [{ id: 1 }])).toEqual({ changes: 2 });
+  expect(await pool.saveOne(entity, { id: 1 })).toBe(1);
+  expect(await pool.saveMany(entity, [{ id: 1 }])).toEqual([1, 2]);
+  expect(await pool.deleteOneById(entity, 1)).toBe(1);
+  expect(await pool.deleteMany(entity, {})).toBe(2);
+  expect(await pool.restoreOneById(entity, 1)).toBe(1);
+  expect(await pool.restoreMany(entity, {})).toBe(2);
+
+  // A pool call is one unit of work, and two of them are not one.
+  expect(pool.acquired).toHaveLength(12);
+  for (const acquired of pool.acquired) {
+    expect(acquired.release).toHaveBeenCalledTimes(1);
+  }
+});
+
+it('a pool write releases the connection when the operation throws', async () => {
+  const querier = createWriteStubQuerier();
+  (querier.insertOne as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('constraint'));
+  const pool = new CountingPool(() => querier);
+
+  await expect(pool.insertOne(Item as Type<Item>, { id: 1 })).rejects.toThrow('constraint');
+  expect(querier.release).toHaveBeenCalledTimes(1);
+});
+
+it('findManyStream holds one connection for the whole iteration and disposes it at the end', async () => {
+  const querier = createWriteStubQuerier();
+  const pool = new CountingPool(() => querier);
+  const seen: unknown[] = [];
+
+  for await (const row of pool.findManyStream(Item as Type<Item>, {})) {
+    seen.push(row);
+  }
+
+  expect(seen).toEqual([{ id: 1 }, { id: 2 }]);
+  expect(pool.acquired).toHaveLength(1);
+  expect(querier[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
+});
+
+it('findManyStream disposes the connection when the consumer stops early', async () => {
+  const querier = createWriteStubQuerier();
+  const pool = new CountingPool(() => querier);
+
+  for await (const _row of pool.findManyStream(Item as Type<Item>, {})) {
+    break;
+  }
+
+  expect(querier[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
+});
+
 it('pool reads run under the ambient context', async () => {
   const querier = createReadStubQuerier();
   const pool = new CountingPool(() => querier);

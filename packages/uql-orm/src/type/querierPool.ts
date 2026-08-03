@@ -17,25 +17,26 @@ export interface PoolRunOptions {
 /**
  * Querier pool. Read the dialect id via `pool.dialect.dialectName` (see {@link AbstractDialect.dialectName}); queriers expose the same on `querier.dialect`.
  *
- * The read methods of {@link UniversalQuerier} are available directly on the pool. Each call
- * acquires its own querier, runs the single read, and releases it - so
- * `Promise.all([pool.findMany(A, {}), pool.count(B, {})])` runs on separate connections in
- * parallel, while the same calls inside one `withQuerier`/`transaction` callback share a pinned
- * connection and serialize. Single-connection backends (better-sqlite3, Bun sqlite, D1) stay
- * correct but always serialize on their one connection.
+ * A pool is a {@link UniversalQuerier} too, so a function that runs queries takes that type and the
+ * caller passes its own querier or the pool. `pool.op(...)` is exactly
+ * `pool.withQuerier((querier) => querier.op(...))`, so two pool calls are two units of work; when they
+ * must commit together, that is `transaction`.
  *
- * An enclosing `withContext` scopes the pool reads (`security` filters apply); one wrapper covers a
- * whole parallel fan-out, which is why the reads take no per-call `context` option (unlike
- * `withQuerier`/`transaction`).
+ * Acquiring per call is also what makes `Promise.all([pool.findMany(A, {}), pool.count(B, {})])` run on
+ * separate connections, while the same calls inside one `withQuerier`/`transaction` share a pinned
+ * connection and serialize. Single-connection backends (better-sqlite3, Bun sqlite, D1) stay correct
+ * but always serialize.
  *
- * Pool reads take the entity-as-argument form only. For the `{ $entity }` form, streaming, or
- * writes (they need a unit of work), use `withQuerier`/`transaction`.
+ * An enclosing `withContext` scopes pool calls (`security` filters apply), which is why they take no
+ * per-call `context` option (unlike `withQuerier`/`transaction`).
+ *
+ * Pool calls take the entity-as-argument form only; the `{ $entity }` form needs a querier.
  *
  * @typeParam Q - Querier implementation returned from the pool.
  * @typeParam D - Concrete dialect class held by the pool.
  */
 export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDialect = AbstractDialect>
-  extends Pick<UniversalQuerier, 'findOneById' | 'findOne' | 'findMany' | 'findManyAndCount' | 'count' | 'aggregate'> {
+  extends UniversalQuerier {
   /**
    * Database dialect instance (single source of truth for dialect id and SQL/NoSQL behavior).
    */

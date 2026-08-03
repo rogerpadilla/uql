@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.0] - 2026-08-02
+
+### The pool runs every operation
+
+The pool had six read methods and nothing else, so a function that writes could not take "a querier, or the pool". `QuerierPool` now implements the whole `UniversalQuerier`, which makes that interface the useful thing to accept:
+
+```ts
+async function markPaid(db: UniversalQuerier, invoiceId: string) {
+  await db.updateOneById(Invoice, invoiceId, { status: 'paid' });
+}
+
+// On its own: the pool lends it a connection and commits.
+await markPaid(pool, invoiceId);
+
+// As one step of something larger, with nothing changed in the helper.
+await pool.transaction(async (querier) => {
+  await markPaid(querier, invoiceId);
+  await querier.insertOne(Payment, payment);
+});
+```
+
+Atomicity is the caller's decision, not a property baked into each helper.
+
+`pool.op(...)` is still exactly `pool.withQuerier((querier) => querier.op(...))`. Two pool calls are two units of work; when they have to commit together, that is a transaction. `findManyStream` works on the pool too, and holds its connection until the loop ends.
+
+### Fixes
+
+- Streaming as the first operation on a freshly acquired querier threw `pool querier not connected` on every pooled driver. It was the one query path that never connected on its own.
+
 ## [0.23.0] - 2026-08-01
 
 ### Decorators are now the standard TC39 ones (breaking)

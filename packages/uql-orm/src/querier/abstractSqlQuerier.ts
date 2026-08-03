@@ -121,6 +121,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
         `findManyStream does not load to-many relations (${toManyKeys.join(', ')}). Use findMany so fillToManyRelations can run, or omit those keys from the stream query.`,
       );
     }
+    // The one path that does not go through `all`/`run`, so it connects on its own: streaming first on
+    // a freshly acquired querier used to reach `getConn()` with nothing acquired.
+    await this.lazyConnect();
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts);
     const normalizedParams = this.dialect.normalizeValues(ctx.values);

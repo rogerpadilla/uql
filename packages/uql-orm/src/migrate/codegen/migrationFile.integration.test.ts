@@ -36,6 +36,18 @@ const backends: {
 ];
 
 describe('generated SQL migration module (integration)', () => {
+  /**
+   * `Migrator.loadMigration` is a plain `import()`, so a generated migration has to survive the
+   * strictest runtime it can land on: plain `node`, which strips types but compiles nothing. Also
+   * guards the `server.deps.external` entry in `vitest.config.ts` - without it esbuild transpiles the
+   * temp file and the cases below prove only that esbuild can compile the output.
+   *
+   * Vitest-only, and cannot move to a shared suite: bun compiles an enum happily.
+   */
+  it('rejects syntax plain node cannot strip, so generated migrations stay loadable', async () => {
+    await expect(loadTsDefaultExport('enum E { A }\nexport default { e: E.A };')).rejects.toThrow();
+  });
+
   it.each(backends)(
     '$name: generated migration with backticks runs; split run() calls apply table + index (#86, #87)',
     async ({ createPool }) => {
