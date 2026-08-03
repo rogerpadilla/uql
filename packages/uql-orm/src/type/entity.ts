@@ -390,9 +390,11 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    */
   readonly unique?: boolean;
   /**
-   * Default value for the column
+   * The column's DDL default, rendered into `CREATE TABLE` by `formatDefaultValue` - not `V`, unlike
+   * the generators above. A JSONB column defaults with the SQL literal it stores, `defaultValue: '{}'`,
+   * which is a string whatever the field's TypeScript type is.
    */
-  readonly defaultValue?: V | Record<string, unknown>;
+  readonly defaultValue?: Scalar | Record<string, unknown>;
   /**
    * Whether the column is auto-incrementing (for integer IDs).
    */
