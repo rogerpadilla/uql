@@ -18,7 +18,7 @@ import {
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
-import { Entity, Field, Filter, Id, ManyToOne } from '../index.js';
+import { Entity, Field, Filter, Id, ManyToMany, ManyToOne } from '../index.js';
 import { getEntities, getMeta } from './definition.js';
 
 it('User', () => {
@@ -681,6 +681,34 @@ it('no fields', () => {
       id!: string;
     }
   }).toThrow(`'SomeEntity' must have fields`);
+});
+
+it('through entity missing a derived join column', () => {
+  @Entity()
+  class Colour {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class ShirtColour {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ type: Number, references: () => Colour })
+    colourId?: number;
+  }
+
+  @Entity()
+  class Shirt {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @ManyToMany({ entity: () => Colour, through: () => ShirtColour })
+    colours?: Colour[];
+  }
+
+  expect(() => getMeta(Shirt)).toThrow(
+    `'Shirt.colours' joins through 'ShirtColour', which has no 'shirtId' field. Declare it, or name the join columns yourself with 'references'.`,
+  );
 });
 
 it('at most one softDelete field', () => {

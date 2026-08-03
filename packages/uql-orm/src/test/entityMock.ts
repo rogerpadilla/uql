@@ -115,7 +115,7 @@ export class User extends BaseEntity {
   /**
    * `mappedBy` property can be a callback or a string (callback is useful for auto-refactoring).
    */
-  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator!, cascade: true })
+  @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
 
   @OneToMany({ entity: () => User, mappedBy: 'creator' })
@@ -198,7 +198,7 @@ export class MeasureUnitCategory extends BaseEntity {
   @Field({ type: String })
   name?: string;
 
-  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId! })
+  @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
 
   @Field({ type: Number, softDelete: () => Date.now() })
@@ -309,7 +309,7 @@ export class Tag extends BaseEntity {
   @Field({ type: String })
   name?: string;
 
-  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags! })
+  @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
 
   @Field({
@@ -350,7 +350,7 @@ export class ItemTag {
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({
     entity: () => ItemAdjustment,
-    mappedBy: (rel) => rel.inventoryAdjustment!,
+    mappedBy: (rel) => rel.inventoryAdjustment,
     cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];

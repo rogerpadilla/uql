@@ -113,7 +113,7 @@ class SecureCollectionPlain {
 class RenamedParent {
   @Id({ type: Number, name: 'parent_pk' })
   id?: number;
-  @OneToMany({ entity: () => RenamedChild, mappedBy: (child) => child.parentId! })
+  @OneToMany({ entity: () => RenamedChild, mappedBy: (child) => child.parentId })
   children?: RenamedChild[];
 }
 
@@ -153,7 +153,7 @@ class SecureCollectionLink {
 class SecureCollection {
   @Id({ type: Number })
   id?: number;
-  @OneToMany({ entity: () => SecureChild, mappedBy: (child) => child.collectionId! })
+  @OneToMany({ entity: () => SecureChild, mappedBy: (child) => child.collectionId })
   children?: SecureChild[];
   @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionChild })
   taggedChildren?: SecureChild[];

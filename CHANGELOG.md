@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.1] - 2026-08-02
+
+### Relations: two types that rejected correct code
+
+```ts
+@OneToMany({ entity: () => Post, mappedBy: (post) => post.author })  // no `!` needed now
+@ManyToMany({ entity: () => Tag, through: () => PostTag })           // compiles now
+```
+
+- **`mappedBy` callbacks needed a `!`.** `RelationKeyMap` mapped over `keyof E`, inheriting the entity's optional modifiers, so a key read off it was `'author' | undefined`. It maps over `Key<E>` now, matching the metadata it is built from. A misspelled key is still rejected, at the property access instead of the return type.
+- **`through` was typed against the target**, and collapsed to `never` for any target with no relations of its own. A pivot is not a relation value of the target and nothing about it is derivable from `E`. What the compiler cannot check, the metadata does: a pivot missing a derived join column now throws when the entity is first resolved, instead of emitting SQL for a column that is not there.
+
 ## [0.24.0] - 2026-08-02
 
 ### The pool runs every operation
