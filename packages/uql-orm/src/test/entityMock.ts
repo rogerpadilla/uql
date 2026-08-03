@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import { idKey, type Json, type QueryRawFnOptions } from '../type/index.js';
+import { idKey, type Json } from '../type/index.js';
 import { raw } from '../util/index.js';
 
 /**
@@ -284,21 +284,21 @@ export class Item extends BaseEntity {
      * replaced is replaced at runtime.
      */
     type: Number,
-    virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
-      ctx!.append('(');
-      dialect!.count(
-        ctx!,
+    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+      ctx.append('(');
+      dialect.count(
+        ctx,
         ItemTag,
         {
           $where: {
-            itemId: raw(({ ctx: innerCtx }: QueryRawFnOptions = {}) => {
-              innerCtx!.append(escapedPrefix + dialect!.escapeId('id'));
+            itemId: raw(({ ctx: innerCtx }) => {
+              innerCtx.append(escapedPrefix + dialect.escapeId('id'));
             }),
           },
         },
         { autoPrefix: true },
       );
-      ctx!.append(')');
+      ctx.append(')');
     }),
   })
   tagsCount?: number;
@@ -314,21 +314,21 @@ export class Tag extends BaseEntity {
 
   @Field({
     type: Number,
-    virtual: raw(({ ctx, escapedPrefix, dialect }: QueryRawFnOptions = {}) => {
-      ctx!.append('(');
-      dialect!.count(
-        ctx!,
+    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+      ctx.append('(');
+      dialect.count(
+        ctx,
         ItemTag,
         {
           $where: {
-            tagId: raw(({ ctx: innerCtx }: QueryRawFnOptions = {}) => {
-              innerCtx!.append(escapedPrefix + dialect!.escapeId('id'));
+            tagId: raw(({ ctx: innerCtx }) => {
+              innerCtx.append(escapedPrefix + dialect.escapeId('id'));
             }),
           },
         },
         { autoPrefix: true },
       );
-      ctx!.append(')');
+      ctx.append(')');
     }),
   })
   itemsCount?: number;

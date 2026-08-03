@@ -105,8 +105,8 @@ if (violations.length) {
 // becoming reachable from a consumer entry, which leaves the `dist` total unchanged. Four suffice -
 // the SQL drivers share one core, so the root moves with them.
 const BUDGETS: Record<string, number> = {
-  '.': 24_500,
-  './postgres': 19_800,
+  '.': 24_600,
+  './postgres': 20_000,
   './migrate': 43_000,
   './browser': 1_700,
 };

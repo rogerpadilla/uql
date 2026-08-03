@@ -9,8 +9,14 @@ export type MongoId = {
 /**
  * Every value type storable in an entity column. Superset of {@link QueryComparableScalar}
  * and {@link PrimaryKey}.
+ *
+ * `Uint8Array` rather than `Buffer`, which every `Buffer` still satisfies: naming an ambient Node
+ * global here made the whole key-checking layer depend on `@types/node` being in scope. Without it
+ * `Buffer` resolves to nothing, this union collapses to `any`, and `FieldKey` - the basis of
+ * `$select`, `$where`, `$sort`, `@Index` and `defineEntity({ fields })` - silently stops checking
+ * anything. A browser or edge project would have got no type safety and no error saying so.
  */
-export type Scalar = string | number | boolean | bigint | Date | RegExp | Buffer | MongoId;
+export type Scalar = string | number | boolean | bigint | Date | RegExp | Uint8Array | MongoId;
 
 /**
  * Scalar types with a meaningful ordering, accepted by `$lt`/`$lte`/`$gt`/`$gte`/`$between`.

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
-import type { QueryRawFnOptions } from '../type/index.js';
 import { raw } from './raw.js';
 
 describe('Query with $exists and nested relation filtering', () => {
@@ -19,16 +18,14 @@ describe('Query with $exists and nested relation filtering', () => {
         $select: { id: true, name: true },
         $where: {
           $exists: raw((rawOpts) => {
-            const { ctx, dialect, escapedPrefix } = rawOpts as Required<QueryRawFnOptions>;
+            const { ctx, dialect, escapedPrefix } = rawOpts;
             dialect.find(
               ctx,
               User,
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw(
-                    (o) => void (o as Required<QueryRawFnOptions>).ctx.append(`${escapedPrefix}"companyId"`),
-                  ),
+                  companyId: raw((o) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -50,16 +47,14 @@ describe('Query with $exists and nested relation filtering', () => {
         $select: { id: true },
         $where: {
           $nexists: raw((rawOpts) => {
-            const { ctx, dialect, escapedPrefix } = rawOpts as Required<QueryRawFnOptions>;
+            const { ctx, dialect, escapedPrefix } = rawOpts;
             dialect.find(
               ctx,
               User,
               {
                 $select: { id: true },
                 $where: {
-                  companyId: raw(
-                    (o) => void (o as Required<QueryRawFnOptions>).ctx.append(`${escapedPrefix}"companyId"`),
-                  ),
+                  companyId: raw((o) => void o.ctx.append(`${escapedPrefix}"companyId"`)),
                 },
               },
               { autoPrefix: true },
@@ -114,16 +109,14 @@ describe('Query with $exists and nested relation filtering', () => {
         $where: {
           createdAt: { $gte: 1000 },
           $exists: raw((rawOpts) => {
-            const { ctx, dialect, escapedPrefix } = rawOpts as Required<QueryRawFnOptions>;
+            const { ctx, dialect, escapedPrefix } = rawOpts;
             dialect.find(
               ctx,
               ItemAdjustment,
               {
                 $select: { id: true },
                 $where: {
-                  inventoryAdjustmentId: raw(
-                    (o) => void (o as Required<QueryRawFnOptions>).ctx.append(`${escapedPrefix}"id"`),
-                  ),
+                  inventoryAdjustmentId: raw((o) => void o.ctx.append(`${escapedPrefix}"id"`)),
                   buyPrice: { $gte: 100 },
                 },
               },
