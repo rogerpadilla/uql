@@ -626,7 +626,6 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
   }
 
-  /** Simple comparison operators: `getComparisonKey → op → addValue`. */
   /** Memoizes {@link escapedColumnName}; see there for why it is per dialect instance. */
   private readonly escapedColumns = new WeakMap<FieldOptions, string>();
 

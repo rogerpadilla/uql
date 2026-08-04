@@ -49,13 +49,6 @@ import { enrichError } from './queryError.js';
  * It provides a standardized way to execute tasks serially to prevent race conditions on database connections.
  */
 export abstract class AbstractQuerier implements Querier {
-  private static readonly emittedWarnings = new Set<string>();
-
-  /** Clears process-wide warning deduplication. For tests only. */
-  static clearEmittedWarningsForTests(): void {
-    AbstractQuerier.emittedWarnings.clear();
-  }
-
   /**
    * Internal promise used to queue database operations.
    * This ensures that each operation is executed serially, preventing race conditions
