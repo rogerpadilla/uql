@@ -134,9 +134,9 @@
     "@tursodatabase/serverless": "^1.4.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
-    "@types/pg": "^8.20.3",
+    "@types/pg": "^8.20.4",
     "@types/ws": "^8.18.1",
-    "better-sqlite3": "^13.0.2",
+    "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
     "mariadb": "^3.5.3",
     "mongodb": "^7.5.0",
@@ -145,7 +145,7 @@
     "pg-query-stream": "^4.16.0",
     "rxjs": "^7.8.2",
     "sqlite-vec": "^0.1.9",
-    "ws": "^8.21.1"
+    "ws": "^8.21.2"
   },
   "author": "Roger Padilla",
   "repository": {
