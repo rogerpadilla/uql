@@ -97,6 +97,23 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline.some((s: Record<string, unknown>) => '$project' in s)).toBe(false);
   });
 
+  it('projects after the lookups when a vector query narrows its columns', async () => {
+    const { querier, aggregate } = createMockedQuerier([]);
+
+    await querier.findMany(Chunk, {
+      $select: { text: true },
+      $sort: { embedding: { $vector: [1, 2, 3], $project: 'score' } },
+      $populate: { author: true },
+      $limit: 5,
+    });
+
+    const pipeline = aggregate.mock.calls[0][0];
+    const unwindIndex = pipeline.findIndex((s: Record<string, unknown>) => '$unwind' in s);
+    const projectIndex = pipeline.findIndex((s: Record<string, unknown>) => '$project' in s);
+    expect(projectIndex).toBeGreaterThan(unwindIndex);
+    expect(pipeline[projectIndex].$project).toEqual({ text: 1, author: 1, score: 1 });
+  });
+
   it('should add $project stage with $meta for score projection', async () => {
     const { querier, aggregate } = createMockedQuerier([]);
 

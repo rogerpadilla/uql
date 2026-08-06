@@ -224,23 +224,14 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     const prefix = opts.prefix ? opts.prefix + '.' : '';
     const escapedPrefix = this.escapeId(opts.prefix as string, true, true);
 
-    let selectArr: (FieldKey<E> | QueryRaw)[];
+    const scalars: (FieldKey<E> | QueryRaw)[] = Array.isArray(select)
+      ? select // raw SQL projections passed as QueryRaw[]
+      : normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
 
-    if (select) {
-      if (Array.isArray(select)) {
-        // Raw SQL projections passed as QueryRaw[]
-        selectArr = select;
-      } else {
-        selectArr = normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
-      }
-
-      const id = meta.id;
-      if (id && opts.prefix && !selectArr.includes(id)) {
-        selectArr = [id, ...selectArr];
-      }
-    } else {
-      selectArr = normalizeScalarFieldSelection(meta, undefined, exclude);
-    }
+    // A prefix means relations are in play: rows arrive keyed by the id and `fillToManyRelations`
+    // groups children by it, so it outlives any subtraction - `$exclude` or falsy `$select` alike.
+    const id = meta.id;
+    const selectArr = id && opts.prefix && !scalars.includes(id) ? [id, ...scalars] : scalars;
 
     if (!selectArr.length) {
       ctx.append(escapedPrefix + '*');

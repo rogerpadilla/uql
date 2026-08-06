@@ -555,7 +555,38 @@ export class MongoDialect extends AbstractDialect {
     const dropsParents = relStages.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
     pipeline.push(...(dropsParents ? [...relStages, ...pager] : [...pager, ...relStages]));
 
+    const projection = this.pipelineProjection(entity, q, relationSummary);
+    if (projection) {
+      pipeline.push({ $project: projection });
+    }
+
     return pipeline;
+  }
+
+  /**
+   * The scalar projection a narrowing query asks for, widened by what the pipeline itself produced:
+   * the joined documents, and the `_id` a to-many fill groups children by. It goes last, after the
+   * lookups have read the join keys - projecting any earlier is what used to leave `$populate`
+   * empty, and is why the pipeline emitted no projection at all and returned every column.
+   */
+  public pipelineProjection<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    relationSummary?: RelationRequestSummary<E>,
+  ): Record<string, 0 | 1> | undefined {
+    if (!q.$select && !q.$exclude) {
+      return undefined;
+    }
+    const projection = this.select(entity, q.$select, q.$exclude);
+    const summary = relationSummary ?? getRelationRequestSummary(getMeta(entity), q.$populate);
+    for (const relKey of summary.joinableKeys) {
+      projection[relKey] = 1;
+    }
+    // Only ever undoes an exclusion: a relation cannot be filled onto a parent with no key.
+    if (summary.requestedKeys.length && projection[MongoDialect.ID_KEY] === 0) {
+      delete projection[MongoDialect.ID_KEY];
+    }
+    return projection;
   }
 
   /**
@@ -588,12 +619,23 @@ export class MongoDialect extends AbstractDialect {
       // filters (in particular `security: true` ones) must apply even to a bare
       // `$populate: { rel: true }`, exactly like the SQL dialects' JOIN ON-clause filters.
       const relationFilter = this.where(relEntity, relQuery.$where ?? {}, opts);
+      // The relation's own projection runs inside the lookup, where its keys resolve against the
+      // related entity. Left out, `$populate: { rel: { $select } }` returned all of `rel`'s columns.
+      const relationProjection = this.pipelineProjection(relEntity, relQuery);
+      // MongoDB returns `_id` unless a projection subtracts it, so dropping the key from the map is
+      // how a joined document keeps its own id - as it does on the SQL dialects, and as a nested
+      // to-many fill needs.
+      delete relationProjection?.[MongoDialect.ID_KEY];
+      const lookupPipeline = [
+        ...(hasKeys(relationFilter) ? [{ $match: relationFilter }] : []),
+        ...(relationProjection ? [{ $project: relationProjection }] : []),
+      ];
 
       pipeline.push({
         $lookup: {
           from: this.resolveTableName(relEntity, relMeta),
           ...this.joinKeys(meta, relMeta, relOpts),
-          ...(hasKeys(relationFilter) ? { pipeline: [{ $match: relationFilter }] } : {}),
+          ...(lookupPipeline.length ? { pipeline: lookupPipeline } : {}),
           as: relKey,
         },
       });

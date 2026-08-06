@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.6] - 2026-08-05
+
+### Fixes
+
+- **`$exclude` could subtract the keys a relation is assembled from**, leaving `$populate` unfilled. A joined row's primary key and a to-many's foreign key now outlive the projection, as they already did under a falsy `$select`.
+- **MongoDB ignored `$select` and `$exclude` whenever a relation was populated or filtered on**, returning every column. The aggregation pipeline now projects after its lookups, at the top level and inside each `$lookup`; same for `$vectorSearch`.
+- **A many-to-many `$populate` sent the target's relation query to the join table**, so `$exclude` threw and `$where` failed with "no such column". Both resolve against the target now. `$sort` on a many-to-many is still unsupported.
+
 ## [0.24.5] - 2026-08-03
 
 ### Fixes

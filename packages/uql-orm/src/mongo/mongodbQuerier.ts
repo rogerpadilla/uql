@@ -177,14 +177,19 @@ export class MongodbQuerier extends AbstractQuerier {
     const relationSummary = getRelationRequestSummary(meta, q.$populate);
     const scoreAlias = vectorSort.vectorSearch.$project;
 
-    // With relations, the score is captured with `$addFields` before the lookups and no scalar
-    // `$project` is emitted: projecting here would drop both the join keys and the joined documents,
-    // which is why `$populate` used to come back empty under a vector sort.
+    // With relations the score is captured with `$addFields` before the lookups, and the scalar
+    // projection waits until after them: projecting any earlier drops the join keys and the joined
+    // documents, which is why `$populate` used to come back empty under a vector sort.
     if (relationSummary.requestedKeys.length) {
       if (scoreAlias) {
         pipeline.push({ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } });
       }
       pipeline.push(...(this.dialect.relationStages(entity, q, relationSummary) as Record<string, unknown>[]));
+      const projection = this.dialect.pipelineProjection(entity, q, relationSummary);
+      if (projection) {
+        // `$addFields` already made the score a real field, so it projects like any other.
+        pipeline.push({ $project: scoreAlias ? { ...projection, [scoreAlias]: 1 } : projection });
+      }
     } else if (scoreAlias) {
       const select = q.$select || q.$exclude ? this.buildScalarProjection(entity, q) : {};
       pipeline.push({
