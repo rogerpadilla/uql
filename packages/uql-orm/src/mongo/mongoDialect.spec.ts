@@ -176,6 +176,18 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.select(RenamedDoc, undefined, { id: true })).toEqual({ the_label: 1, deleted_at: 1, _id: 0 });
   }
 
+  /** ...but a populated query keeps it anyway: the to-many fill groups children by the parent's. */
+  shouldKeepThePrimaryKeyWhenPopulatingDespite$exclude() {
+    const pipeline = this.dialect.aggregationPipeline(Item, {
+      $exclude: { id: true },
+      $populate: { tax: true },
+    });
+    const projections = pipeline.filter((stage) => stage.$project);
+    expect(projections).toHaveLength(1);
+    expect(projections[0].$project).not.toHaveProperty('_id');
+    expect(projections[0].$project).toHaveProperty('tax', 1);
+  }
+
   shouldThrowOnRawInWhere() {
     expect(() => this.dialect.where(Item, { $and: [raw('code IS NOT NULL')] })).toThrow(
       'raw() in $where is not supported on MongoDB',
@@ -552,12 +564,16 @@ class MongoDialectSpec implements Spec {
           from: 'SecureRelated',
           localField: 'relatedId',
           foreignField: '_id',
-          pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }],
+          // no `_id` key: MongoDB returns it by default, which is how the joined row keeps its id
+          pipeline: [{ $match: { $and: [{ tenantId: 5 }] } }, { $project: { name: 1 } }],
           as: 'related',
         },
       },
       {
         $unwind: { path: '$related', preserveNullAndEmptyArrays: true },
+      },
+      {
+        $project: { _id: 1, related: 1 },
       },
     ]);
   }

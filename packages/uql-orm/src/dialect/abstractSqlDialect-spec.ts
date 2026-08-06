@@ -1155,6 +1155,58 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
+  /**
+   * A to-many is filled by a second query keyed on the parent's id, so subtracting it is refused -
+   * by `$exclude` and by a falsy `$select` alike. The relation itself adds no join of its own.
+   */
+  shouldFind$excludeKeepsTheParentIdAToManyFillNeeds() {
+    const e = this.dialect.escapeIdChar;
+    const expected = `SELECT ${e}User${e}.${e}id${e}, ${e}User${e}.${e}companyId${e}, ${e}User${e}.${e}creatorId${e}, ${e}User${e}.${e}createdAt${e}, ${e}User${e}.${e}updatedAt${e}, ${e}User${e}.${e}name${e}, ${e}User${e}.${e}email${e} FROM ${e}User${e}`;
+
+    expect(
+      this.exec((ctx) => this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } })).sql,
+    ).toBe(expected);
+    expect(
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } })).sql,
+    ).toBe(expected);
+  }
+
+  shouldFind$excludeOnAJoinedRelation() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $populate: { profile: { $exclude: { picture: true } } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}User${e}.${e}id${e}, ${e}profile${e}.${e}companyId${e} ${e}profile.companyId${e}, ${e}profile${e}.${e}creatorId${e} ${e}profile.creatorId${e}, ${e}profile${e}.${e}createdAt${e} ${e}profile.createdAt${e}, ${e}profile${e}.${e}updatedAt${e} ${e}profile.updatedAt${e}, ${e}profile${e}.${e}pk${e} ${e}profile.pk${e} FROM ${e}User${e} LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`,
+    );
+  }
+
+  /** Same rule one level down: the joined row is keyed by `profile.pk`, so subtracting it is refused. */
+  shouldFind$excludeKeepsTheIdOfAJoinedRelation() {
+    const e = this.dialect.escapeIdChar;
+    const expected = `SELECT ${e}User${e}.${e}id${e}, ${e}profile${e}.${e}pk${e} ${e}profile.pk${e}, ${e}profile${e}.${e}companyId${e} ${e}profile.companyId${e}, ${e}profile${e}.${e}creatorId${e} ${e}profile.creatorId${e}, ${e}profile${e}.${e}createdAt${e} ${e}profile.createdAt${e}, ${e}profile${e}.${e}updatedAt${e} ${e}profile.updatedAt${e}, ${e}profile${e}.${e}image${e} ${e}profile.picture${e} FROM ${e}User${e} LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`;
+
+    expect(
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $populate: { profile: { $exclude: { pk: true } } },
+        }),
+      ).sql,
+    ).toBe(expected);
+    expect(
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $populate: { profile: { $select: { pk: false } } },
+        }),
+      ).sql,
+    ).toBe(expected);
+  }
+
   shouldFind$selectManyToOne() {
     const e = this.dialect.escapeIdChar;
     const { sql } = this.exec((ctx) =>

@@ -451,6 +451,70 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(foundTags).toMatchObject(payload.tags!.map((tag) => ({ ...tag, items: [foundItem] })));
   }
 
+  /**
+   * Narrowing a query used to cost it its projection on MongoDB: populating a relation forces the
+   * aggregation path, which emitted no `$project` at all and handed back every column.
+   */
+  async shouldNarrowTheProjectionWhilePopulatingAJoinedRelation() {
+    const measureUnitId = await this.querier.insertOne(MeasureUnit, { name: 'unit one' });
+    const id = await this.querier.insertOne(Item, { name: 'item one', salePrice: 5, measureUnitId });
+
+    const found = await this.querier.findOneById(Item, id, {
+      $exclude: { salePrice: true },
+      $populate: { measureUnit: { $select: { name: true } } },
+    });
+
+    expect(found).toMatchObject({ id, name: 'item one', measureUnit: { name: 'unit one' } });
+    expect('salePrice' in found!).toBe(false);
+    // the relation's own projection narrows too, inside the join
+    expect('categoryId' in found!.measureUnit!).toBe(false);
+  }
+
+  /** A joined document keeps its own key on every engine, exactly as the parent's does. */
+  async shouldKeepAJoinedRelationsIdDespite$exclude() {
+    const measureUnitId = await this.querier.insertOne(MeasureUnit, { name: 'unit one' });
+    const id = await this.querier.insertOne(Item, { name: 'item one', measureUnitId });
+
+    const found = await this.querier.findOneById(Item, id, {
+      $populate: { measureUnit: { $exclude: { id: true } } },
+    });
+
+    expect(found!.measureUnit).toMatchObject({ id: measureUnitId, name: 'unit one' });
+  }
+
+  /** A relation query names the target's columns, so a m2m one must not reach the join table. */
+  async shouldPopulateManyToManyWith$exclude() {
+    const id = await this.querier.insertOne(Item, {
+      name: 'item one',
+      createdAt: 1,
+      tags: [{ name: 'tag one', createdAt: 1 }],
+    });
+
+    const found = await this.querier.findOneById(Item, id, {
+      $populate: { tags: { $exclude: { name: true } } },
+    });
+
+    expect(found!.tags).toHaveLength(1);
+    expect('name' in found!.tags![0]).toBe(false);
+  }
+
+  async shouldFilterAManyToManyRelation() {
+    const id = await this.querier.insertOne(Item, {
+      name: 'item one',
+      createdAt: 1,
+      tags: [
+        { name: 'keep', createdAt: 1 },
+        { name: 'drop', createdAt: 1 },
+      ],
+    });
+
+    const found = await this.querier.findOneById(Item, id, {
+      $populate: { tags: { $select: { name: true }, $where: { name: 'keep' } } },
+    });
+
+    expect(found!.tags).toMatchObject([{ name: 'keep' }]);
+  }
+
   async shouldUpdateOneAndCascadeManyToMany() {
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
     const payload: Item = {

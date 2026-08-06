@@ -430,8 +430,13 @@ export abstract class AbstractQuerier implements Querier {
       throughMeta.relations[key]?.references.some(({ local }) => local === relOpts.references[1].local),
     );
     const ids = payload.map((it) => it[meta.id]);
+    // A relation query names the target's columns, not the join table's, so the projection and the
+    // filter belong on the populate below - resolved there against the entity that has them. Spread
+    // onto the through query they asked `ItemTag` for `Tag`'s columns: `$where`/`$sort` failed with
+    // "no such column", and `$exclude` collided with the `$select` this builds.
+    const { $select: _select, $exclude: _exclude, $where: _where, ...throughQuery } = relationQuery;
     const throughFounds = await this.findMany(throughEntity, {
-      ...relationQuery,
+      ...throughQuery,
       $select: {
         [localField]: true,
       },
@@ -442,7 +447,6 @@ export abstract class AbstractQuerier implements Querier {
         },
       },
       $where: {
-        ...relationQuery.$where,
         [localField]: ids,
       },
     });
@@ -462,12 +466,14 @@ export abstract class AbstractQuerier implements Querier {
     relEntity: Type<object>,
   ): Promise<void> {
     const foreignField = relOpts.references[0].foreign;
-    // Ensure the FK column is selected so putChildrenInParents can group by it; skips the raw-array
-    // `$select` form (nothing to augment). Mutates the same object asSelectMap returns.
+    // The FK is what putChildrenInParents groups on, so it outlives the relation's projection
+    // either way: added to a whitelisting `$select` (the raw-array form has nothing to augment),
+    // dropped from a subtractive `$exclude`. `relationQuery` is already a clone.
     const select = asSelectMap(relationQuery.$select) as Record<string, unknown> | undefined;
     if (select && !select[foreignField]) {
       select[foreignField] = true;
     }
+    delete (relationQuery.$exclude as Record<string, unknown> | undefined)?.[foreignField];
     const ids = payload.map((it) => it[meta.id]);
     relationQuery.$where = { ...relationQuery.$where, [foreignField]: ids };
     const founds = await this.findMany(relEntity, relationQuery);

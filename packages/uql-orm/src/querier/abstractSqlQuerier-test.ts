@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Coupon, createTables, dropTables, LedgerAccount, TaxCategory } from '../test/index.js';
+import { Coupon, createTables, dropTables, InventoryAdjustment, LedgerAccount, TaxCategory } from '../test/index.js';
 import type { IdValue, PrimaryKey } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -92,6 +92,46 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const record3 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
     expect(record3).toMatchObject({ name: 'Some Name D' });
+  }
+
+  async shouldFindWith$excludeOmittingTheColumn() {
+    await this.querier.insertOne(LedgerAccount, { name: 'Some Account' });
+
+    const [found] = await this.querier.findMany(LedgerAccount, { $exclude: { name: true } });
+
+    expect(found.id).toBeDefined();
+    expect('name' in found).toBe(false);
+  }
+
+  /** The children are looked up by the parent's id, so it comes back despite being subtracted. */
+  async shouldFillToManyRelationsWhen$excludeSubtractsTheParentId() {
+    const id = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+    });
+
+    const [found] = await this.querier.findMany(InventoryAdjustment, {
+      $exclude: { id: true },
+      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
+    });
+
+    expect(found.id).toBe(id);
+    expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
+  }
+
+  /** Same for the FK the children are grouped onto their parent by. */
+  async shouldFillToManyRelationsWhen$excludeSubtractsTheChildForeignKey() {
+    await this.querier.insertOne(InventoryAdjustment, {
+      description: 'some description',
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
+    });
+
+    const [found] = await this.querier.findMany(InventoryAdjustment, {
+      $populate: { itemAdjustments: { $exclude: { inventoryAdjustmentId: true, number: true } } },
+    });
+
+    expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
+    expect('number' in found.itemAdjustments![0]).toBe(false);
   }
 
   async shouldInsertManyWithProvidedAndGeneratedIds() {

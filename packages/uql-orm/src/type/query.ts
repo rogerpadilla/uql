@@ -195,6 +195,8 @@ export type Query<E> = {
 
   /**
    * field exclusion - `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
+   * Keys a relation is assembled from (a joined row's primary key, a to-many's foreign key) are kept
+   * regardless, since subtracting them would leave the relation unfilled.
    */
   $exclude?: QueryExclude<E>;
 
