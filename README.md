@@ -9,7 +9,7 @@
 
 <h3>The smartest TypeScript ORM</h3>
 
-<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and unified API across Postgres, CockroachDB, MySQL, SQLite, MongoDB, MariaDB, and the edge.</p>
+<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and a unified API across Postgres, CockroachDB, MySQL, MariaDB, SQLite, and MongoDB, on every runtime from Node and Bun to Workers and the edge.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
@@ -50,12 +50,13 @@ from the browser to the server. The same object runs on every supported database
 
 ## Why UQL?
 
-- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our [open benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, over 4.6M ops/s on simple SELECTs.
-- **Light.** Zero runtime dependencies, 288 kB on the wire, every dialect included.
-- **Queries are data, not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
-- **Type-safe to the leaf.** Operators are gated per field type, and JSON/JSONB dot-paths resolve each path's value type, so `{ age: { $like: 'x' } }` or a typo'd path is a compile error instead of a runtime surprise.
-- **No codegen.** Entities are TypeScript classes, so your code *is* the schema. No `.prisma` file to regenerate, no generated client to keep in sync.
-- **One API everywhere.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, LibSQL, Neon, Cloudflare D1, Bun SQL, and MongoDB.
+- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, reaching over 4.6M ops/s on simple SELECTs.
+- **Light.** Zero runtime dependencies, 288 kB on the wire, every dialect included. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
+- **Queries are data (JSON), not method chains.** Build them dynamically, store them, diff them, or send them straight from the browser, mobile or micro-service. There's no DSL to learn and nothing to compile.
+- **Type-safe to the leaf.** Every key is autocompleted and checked against your entity, down to the fields of a populated relation. Operators are gated per field type, and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths resolve each path's value type, so `$like` on a numeric column, or a typo'd path, is a compile error instead of a runtime surprise.
+- **No codegen, no build step.** Entities are TypeScript classes, so your code *is* the schema. There's no `.prisma` file to regenerate and no generated client to keep in sync.
+- **One API everywhere.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB!
+- **Runs on every runtime.** Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser). ESM-only with no native binaries on the `fetch`-based drivers, so an edge bundle needs no special build.
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [non-bypassable multi-tenant filters](https://uql-orm.dev/multi-tenancy), [entity-first migrations](https://uql-orm.dev/migrations), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
 
 ## Get started
