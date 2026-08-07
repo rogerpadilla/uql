@@ -19,7 +19,9 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     const found = await this.querier.findOneById(VectorItem, id);
     expect(found).toBeDefined();
     expect(found!.name).toBe('alpha');
-    expect(found!.vec).toBe('[1,0,0]');
+    // The array that went in, not the engine's text for it: the field declares `number[]` and a read
+    // that returned the literal made every consumer's arithmetic silently wrong while type-checking.
+    expect(found!.vec).toEqual([1, 0, 0]);
   }
 
   async shouldSortByVectorSimilarity() {

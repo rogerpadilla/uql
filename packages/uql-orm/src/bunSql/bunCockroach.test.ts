@@ -1,8 +1,8 @@
-import { CockroachLikeQuerierIt } from '../querier/cockroachQuerier-test.js';
+import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
-class BunCockroachIt extends CockroachLikeQuerierIt {
+class BunCockroachIt extends PgLikeQuerierIt {
   constructor() {
     super(
       new BunSqlQuerierPool({

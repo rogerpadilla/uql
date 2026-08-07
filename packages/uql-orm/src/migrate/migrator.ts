@@ -176,33 +176,7 @@ export class Migrator {
    * Run all pending migrations
    */
   async up(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    const pendingMigrations = await this.pending();
-    const results: MigrationResult[] = [];
-
-    let migrationsToRun = pendingMigrations;
-
-    if (options.to) {
-      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
-      if (toIndex === -1) {
-        throw new Error(`Migration '${options.to}' not found`);
-      }
-      migrationsToRun = migrationsToRun.slice(0, toIndex + 1);
-    }
-
-    if (options.step !== undefined) {
-      migrationsToRun = migrationsToRun.slice(0, options.step);
-    }
-
-    for (const migration of migrationsToRun) {
-      const result = await this.runMigration(migration, 'up');
-      results.push(result);
-
-      if (!result.success) {
-        break; // Stop on first failure
-      }
-    }
-
-    return results;
+    return this.runInOrder(await this.pending(), 'up', options);
   }
 
   /**
@@ -214,30 +188,43 @@ export class Migrator {
     const executedSet = new Set(executed);
     const executedMigrations = migrations.filter((m) => executedSet.has(m.name)).reverse(); // Rollback in reverse order
 
-    const results: MigrationResult[] = [];
-    let migrationsToRun = executedMigrations;
+    return this.runInOrder(executedMigrations, 'down', options);
+  }
+
+  /**
+   * Narrow a run list by `to`/`step` and execute it, stopping at the first failure.
+   *
+   * Both directions do exactly this and differ only in the list they start from: `up` takes the
+   * pending migrations, `down` the executed ones reversed. Keeping the selection in one place is what
+   * makes `--to` and `--step` mean the same thing whichever way you are going.
+   */
+  private async runInOrder(
+    migrations: Migration[],
+    direction: 'up' | 'down',
+    options: { to?: string; step?: number },
+  ): Promise<MigrationResult[]> {
+    let selected = migrations;
 
     if (options.to) {
-      const toIndex = migrationsToRun.findIndex((m) => m.name === options.to);
+      const toIndex = selected.findIndex((m) => m.name === options.to);
       if (toIndex === -1) {
         throw new Error(`Migration '${options.to}' not found`);
       }
-      migrationsToRun = migrationsToRun.slice(0, toIndex + 1);
+      selected = selected.slice(0, toIndex + 1);
     }
 
     if (options.step !== undefined) {
-      migrationsToRun = migrationsToRun.slice(0, options.step);
+      selected = selected.slice(0, options.step);
     }
 
-    for (const migration of migrationsToRun) {
-      const result = await this.runMigration(migration, 'down');
+    const results: MigrationResult[] = [];
+    for (const migration of selected) {
+      const result = await this.runMigration(migration, direction);
       results.push(result);
-
       if (!result.success) {
-        break; // Stop on first failure
+        break;
       }
     }
-
     return results;
   }
 

@@ -366,7 +366,7 @@ function printDriftGroup(title: string, drifts: Drift[], icon: string, showSugge
   }
 }
 
-export function printHelp() {
+function printHelp() {
   console.log(`
 uql-orm/migrate - Database migration tool for uql ORM
 

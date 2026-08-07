@@ -1,4 +1,4 @@
-import { neonConfig, types } from '@neondatabase/serverless';
+import { neonConfig } from '@neondatabase/serverless';
 import { expect } from 'vitest';
 import ws from 'ws';
 import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
@@ -16,12 +16,6 @@ neonConfig.wsProxy = (host, port) => `localhost:5443/v1?address=${host}:${port}`
 // without it the client offers a SASL mechanism the server rejects.
 neonConfig.pipelineConnect = false;
 neonConfig.pipelineTLS = false;
-
-// `@neondatabase/serverless` has its own type-parser registry, separate from `pg`'s (see
-// `test/pgTypeParsers.util.ts`) - same INT8/FLOAT8/NUMERIC-as-JS-number fix, different package.
-types.setTypeParser(types.builtins['INT8'], (value: string) => Number.parseInt(value, 10));
-types.setTypeParser(types.builtins['FLOAT8'], (value: string) => Number.parseFloat(value));
-types.setTypeParser(types.builtins['NUMERIC'], (value: string) => Number.parseFloat(value));
 
 export class NeonQuerierIt extends PgLikeQuerierIt {
   constructor() {

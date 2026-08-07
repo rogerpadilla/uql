@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.24.7] - 2026-08-07
+
+### Fixes
+
+- **A read returned whatever the driver returned, not the type the field declares.** A `vector` column arrived as pgvector's text, `type: Boolean` as `1` on every engine with no boolean type, and `type: Number` as `'9'` from node-postgres, auto-increment ids included. All of them type-check and survive a mocked test, so they surfaced only as arithmetic on real rows going quietly wrong. Reads, streams and `aggregate()` now decode by the entity's declaration, and the pg-family and MariaDB pools decode wide integers at the wire. A column declared by its SQL type (`type: 'decimal'`, `type: 'boolean'`) is covered too, and `type: BigInt` stays a `bigint` instead of being widened to a number.
+- **`aggregate()` returned a `$sum` as a string.** Postgres widens a sum over BIGINT to NUMERIC, which no driver can know was meant as a JS number. `$count`/`$sum`/`$avg` now come back as numbers, and `$min`/`$max` as the aggregated field's own type, matching what the result type already claimed.
+- **`$having` threw on operators its own type accepts.** It carried a partial copy of the WHERE operator dispatch, so a text operator on a `$min`/`$max` (`$having: { biggest: { $startsWith: 'A' } }`) type-checked and then failed with `unsupported HAVING operator`. Both paths now share one renderer, which also makes `$having: { alias: { $eq: null } }` emit `IS NULL` instead of a never-true `= NULL`.
+
 ## [0.24.6] - 2026-08-05
 
 ### Fixes

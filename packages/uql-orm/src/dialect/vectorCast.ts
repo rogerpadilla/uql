@@ -46,3 +46,59 @@ export function toSparsevecLiteral(values: readonly unknown[]): string {
     .join(',');
   return `{${pairs}}/${values.length}`;
 }
+
+/**
+ * The inverse of the two literals above. pgvector hands a vector column back as **text**, so a read
+ * that did not parse it returned a string from a field whose declared type is `number[]`: invisible
+ * to the compiler, and invisible to any mocked test, because a mock returns the array the entity
+ * promises. It surfaces only as arithmetic quietly producing nonsense on real rows.
+ *
+ * Driven by `cast`, never by the shape of the text, so this is the exact mirror of the write side:
+ * a `sparsevec` column is read as `{1:1,3:2}/3` because that is what it was written as, and a dense
+ * one as `[1,2,3]`. Both return the dense array the field type promises, whichever width the column
+ * has. Sniffing the string instead would guess at a type the caller already knows.
+ *
+ * Returns `undefined` when the text does not match the column's own format, so a caller can keep the
+ * raw value rather than replace it with something invented.
+ */
+export function parseVectorLiteral(raw: string, cast: VectorCast): number[] | undefined {
+  const text = raw.trim();
+  return cast === 'sparsevec' ? parseSparse(text) : parseDense(text);
+}
+
+const SPARSE_LITERAL = /^\{(.*)\}\/(\d+)$/;
+
+/** `{1:1,3:2}/3` expanded to the dense array the field type promises, zeros included. */
+function parseSparse(text: string): number[] | undefined {
+  const sparse = SPARSE_LITERAL.exec(text);
+  if (!sparse) return undefined;
+  const dense = new Array<number>(Number(sparse[2])).fill(0);
+  if (!sparse[1]) return dense;
+  for (const pair of sparse[1].split(',')) {
+    // Split into exactly two non-empty parts before converting: `Number('')` is 0, not NaN, so a
+    // truncated `{1:}/3` would otherwise decode to a confident zero instead of being refused.
+    const parts = pair.split(':');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+    const [index, value] = parts.map(Number);
+    if (!Number.isInteger(index) || index < 1 || index > dense.length || Number.isNaN(value)) return undefined;
+    dense[index - 1] = value;
+  }
+  return dense;
+}
+
+/**
+ * `[1,0,2]`, whatever width the column has.
+ *
+ * A dense literal is valid JSON by construction, so parsing it as JSON is both stricter and cheaper
+ * than splitting: `[1,,2]` throws here, where `split(',').map(Number)` would have turned the hole
+ * into a 0.
+ */
+function parseDense(text: string): number[] | undefined {
+  if (!text.startsWith('[') || !text.endsWith(']')) return undefined;
+  try {
+    const dense: unknown = JSON.parse(text);
+    return Array.isArray(dense) && dense.every((n) => typeof n === 'number') ? (dense as number[]) : undefined;
+  } catch {
+    return undefined;
+  }
+}

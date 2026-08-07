@@ -161,7 +161,12 @@ export class DriftDetector {
     },
     drifts: Drift[],
   ): void {
-    if (this.options.checkTypes && colDiff.expected && colDiff.actual) {
+    // Every check below compares the two sides, so there is nothing to report without both.
+    if (!colDiff.expected || !colDiff.actual) {
+      return;
+    }
+
+    if (this.options.checkTypes) {
       const expectedType = this.formatType(colDiff.expected.type as CanonicalType | undefined);
       const actualType = this.formatType(colDiff.actual.type as CanonicalType | undefined);
       if (expectedType !== actualType) {
@@ -180,22 +185,20 @@ export class DriftDetector {
       }
     }
 
-    if (this.options.checkNullable && colDiff.expected && colDiff.actual) {
-      if (colDiff.expected.nullable !== colDiff.actual.nullable) {
-        drifts.push({
-          type: 'constraint_mismatch',
-          severity: 'warning',
-          table: colDiff.table,
-          column: colDiff.column,
-          expected: colDiff.expected.nullable ? 'NULLABLE' : 'NOT NULL',
-          actual: colDiff.actual.nullable ? 'NULLABLE' : 'NOT NULL',
-          details: `Nullable mismatch for "${colDiff.column}"`,
-          suggestion: 'Align nullable setting in entity or database',
-        });
-      }
+    if (this.options.checkNullable && colDiff.expected.nullable !== colDiff.actual.nullable) {
+      drifts.push({
+        type: 'constraint_mismatch',
+        severity: 'warning',
+        table: colDiff.table,
+        column: colDiff.column,
+        expected: colDiff.expected.nullable ? 'NULLABLE' : 'NOT NULL',
+        actual: colDiff.actual.nullable ? 'NULLABLE' : 'NOT NULL',
+        details: `Nullable mismatch for "${colDiff.column}"`,
+        suggestion: 'Align nullable setting in entity or database',
+      });
     }
 
-    if (this.options.checkDefaults && colDiff.expected && colDiff.actual) {
+    if (this.options.checkDefaults) {
       const expected = String(colDiff.expected.defaultValue ?? 'NULL');
       const actual = String(colDiff.actual.defaultValue ?? 'NULL');
       if (expected !== actual) {

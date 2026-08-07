@@ -1270,7 +1270,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     // MongoDB returns _id: null, while SQL dialects might return it differently depending on group by.
     // We are mainly checking that the task was executed.
     expect(res[0]).toHaveProperty('total');
-    expect(Number(res[0].total)).toBe(500);
+    // Not `Number(res[0].total)`: Postgres widens a SUM over BIGINT to NUMERIC and hands it back as
+    // text, so coercing here is the test agreeing to whatever the driver did instead of checking.
+    expect(res[0].total).toBe(500);
   }
 
   async shouldSoftDeleteExcludeFromReadsAndRestore() {

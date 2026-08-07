@@ -2,10 +2,6 @@ import type { FieldKey } from './entity.js';
 import type { QueryPager, QuerySortDirection, QuerySortMap } from './query.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 
-// ============================================================================
-// Aggregation Types
-// ============================================================================
-
 /**
  * Maps the offending keys to `never`, turning an excess key into a compile error; resolves to
  * `unknown` (an inert intersection member) when there are none. Used by `aggregate`'s `$group`,
@@ -141,6 +137,9 @@ type FieldValueType<E, F> = F extends keyof E ? E[F] : unknown;
 /**
  * Resolves a single computed column's type from its aggregate function: `$count`/`$sum`/`$avg` are
  * always `number`; `$min`/`$max` keep the aggregated field's own type.
+ *
+ * `$sum`/`$avg` are exact to 2^53: Postgres widens a sum over BIGINT to NUMERIC, and decoding that
+ * text to satisfy this `number` drops the digits past that bound. Use `raw()` for a wider total.
  * @internal
  */
 type QueryAggregateFnResult<E, Fn> = Fn extends QueryAggregateNumericFn

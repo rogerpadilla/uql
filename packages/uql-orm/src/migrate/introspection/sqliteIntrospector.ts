@@ -5,10 +5,6 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * SQLite schema introspector
  */
 export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  // ============================================================================
-  // SQL Queries (dialect-specific)
-  // ============================================================================
-
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT name
@@ -69,11 +65,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return [];
   }
 
-  // ============================================================================
-  // Row Mapping (dialect-specific)
-  // ============================================================================
-
-  protected mapTableNameRow(row: { name: string }): string {
+  /** `sqlite_master`, not `information_schema`, so the column is `name`. */
+  protected override mapTableNameRow(row: { name: string }): string {
     return row.name;
   }
 
@@ -170,10 +163,6 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
     return pkColumns.map((r) => r.name);
   }
-
-  // ============================================================================
-  // SQLite-specific helpers
-  // ============================================================================
 
   private async getUniqueColumns(read: TableRowReader, tableName: string): Promise<Set<string>> {
     const indexes = await read<SqliteIndexRow>(this.getIndexesQuery(tableName));

@@ -1,7 +1,8 @@
-import { Pool, type PoolClient, type PoolConfig } from 'pg';
+import { Pool, type PoolClient, type PoolConfig, types } from 'pg';
 import type { ExtraOptions } from '../type/index.js';
 import { AbstractPgQuerierPool } from './abstractPgQuerierPool.js';
 import { PgDialect } from './pgDialect.js';
+import { numericTypes } from './pgNumericTypes.js';
 import { PgQuerier } from './pgQuerier.js';
 
 export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PgQuerier, PgDialect> {
@@ -10,10 +11,14 @@ export class PgQuerierPool extends AbstractPgQuerierPool<PoolClient, PgQuerier, 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
     // keepAlive reduces (but can't eliminate) idle connections being silently
     // dropped by NATs/firewalls on long-lived remote connections.
-    super(new PgDialect({ namingStrategy: extra?.namingStrategy }), new Pool({ keepAlive: true, ...opts }), extra);
+    super(
+      new PgDialect({ namingStrategy: extra?.namingStrategy }),
+      new Pool({ keepAlive: true, types: numericTypes(types), ...opts }),
+      extra,
+    );
   }
 
-  async getQuerier() {
-    return new PgQuerier(() => this.pool.connect(), this.dialect, this.extra);
+  protected override buildQuerier(connect: () => Promise<PoolClient>) {
+    return new PgQuerier(connect, this.dialect, this.extra);
   }
 }

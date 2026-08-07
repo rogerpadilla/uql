@@ -13,17 +13,10 @@ import type { ColumnType, FieldOptions } from '../type/entity.js';
 import type { DialectName } from '../type/index.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
-// ============================================================================
-// Vector Category Helpers
-// ============================================================================
-
 /** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
 export function isVectorCategory(category: TypeCategory | undefined): category is VectorCast {
   return category === 'vector' || category === 'halfvec' || category === 'sparsevec';
 }
-
-// Type Mapping Tables
-// ============================================================================
 
 /**
  * Maps SQL type strings to canonical type categories.
@@ -291,10 +284,6 @@ const CANONICAL_TO_TS: Record<TypeCategory, string> = {
   sparsevec: 'number[]',
 };
 
-// ============================================================================
-// Type Conversion Functions
-// ============================================================================
-
 /**
  * Parse a SQL type string into a canonical type.
  * Handles complex types like VARCHAR(255), DECIMAL(10,2), etc.
@@ -484,10 +473,8 @@ export function fieldOptionsToCanonical(options: FieldOptions, tsType?: unknown)
         scale: options.scale,
       };
     }
-    // Infer bigint for Number if autoIncrement is true or if it's a primary key
-    if (options.autoIncrement || options.isId) {
-      return { category: 'integer', size: 'big' };
-    }
+    // BIGINT for every `Number`, key or not: a 32-bit column is a migration waiting to happen, and
+    // the pools decode it back to a JS number at the wire (see `pgNumericTypes`).
     return { category: 'integer', size: 'big' };
   }
 

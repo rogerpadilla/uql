@@ -30,10 +30,6 @@ export class SchemaAST implements ISchemaAST {
   readonly relationships: RelationshipNode[] = [];
   readonly indexes: IndexNode[] = [];
 
-  // ============================================================================
-  // Table Operations
-  // ============================================================================
-
   /**
    * Get a table by name.
    */
@@ -88,10 +84,6 @@ export class SchemaAST implements ISchemaAST {
     return Array.from(this.tables.keys());
   }
 
-  // ============================================================================
-  // Graph Navigation
-  // ============================================================================
-
   /**
    * Get all tables that depend on this table (have FKs pointing to it).
    * These are tables that reference this table's primary key.
@@ -128,10 +120,6 @@ export class SchemaAST implements ISchemaAST {
   getReferencedColumn(fkColumn: ColumnNode): ColumnNode | undefined {
     return fkColumn.references?.to.columns[0];
   }
-
-  // ============================================================================
-  // Graph Analysis
-  // ============================================================================
 
   /**
    * Detect circular foreign key dependencies.
@@ -220,10 +208,6 @@ export class SchemaAST implements ISchemaAST {
     return result;
   }
 
-  // ============================================================================
-  // Validation
-  // ============================================================================
-
   /**
    * Validate schema integrity.
    * Checks for:
@@ -280,10 +264,6 @@ export class SchemaAST implements ISchemaAST {
   isValid(): boolean {
     return this.validate().length === 0;
   }
-
-  // ============================================================================
-  // Smart Relation Detection
-  // ============================================================================
 
   /**
    * Check if a table looks like a junction table (ManyToMany through).
@@ -354,10 +334,6 @@ export class SchemaAST implements ISchemaAST {
     }
   }
 
-  // ============================================================================
-  // Index Operations
-  // ============================================================================
-
   /**
    * Add an index to the schema.
    */
@@ -382,10 +358,6 @@ export class SchemaAST implements ISchemaAST {
   getIndex(name: string): IndexNode | undefined {
     return this.indexes.find((i) => i.name === name);
   }
-
-  // ============================================================================
-  // Relationship Operations
-  // ============================================================================
 
   /**
    * Add a relationship to the schema.
@@ -436,10 +408,6 @@ export class SchemaAST implements ISchemaAST {
     this.relationships.splice(index, 1);
     return true;
   }
-
-  // ============================================================================
-  // Utility Methods
-  // ============================================================================
 
   /**
    * Create a deep clone of this schema.

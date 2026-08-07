@@ -208,7 +208,7 @@ export function getEntities(): Type<unknown>[] {
   }, [] as Type<unknown>[]);
 }
 
-export function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
+function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   let meta = metas.get(entity);
   if (meta) {
     return meta;

@@ -1,10 +1,73 @@
 import { expect } from 'vitest';
-import { Coupon, createTables, dropTables, InventoryAdjustment, LedgerAccount, TaxCategory } from '../test/index.js';
+import {
+  Coupon,
+  createTables,
+  dropTables,
+  InventoryAdjustment,
+  LedgerAccount,
+  TaxCategory,
+  TypedRow,
+} from '../test/index.js';
 import type { IdValue, PrimaryKey } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
+/** Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. */
+const EXACT_DECIMAL = '12345678901234567890.99';
+
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
+  /**
+   * A read returns the JS types the entity declared, for every dialect.
+   *
+   * The class of bug this exists for is invisible to the compiler and to any mocked test: an engine
+   * stores a declared type in whatever it has (SQLite has no boolean; node-postgres returns BIGINT
+   * as text) and the driver hands that back verbatim, so a field declared `boolean` arrives as `1`
+   * and one declared `number` as `'9'`. Every consumer then computes on it and is quietly wrong.
+   * Two shipped instances were found this way, so the contract is asserted rather than assumed.
+   */
+  async shouldReadBackDeclaredTypes() {
+    const id = await this.querier.insertOne(TypedRow, { name: 'typed', count: 7, amount: 12.5, enabled: true });
+    const found = await this.querier.findOneById(TypedRow, id, {
+      $select: { id: true, name: true, count: true, amount: true, enabled: true },
+    });
+
+    // The id too: it is BIGINT on every engine here, and the one every consumer indexes by.
+    expect(typeof found!.id).toBe('number');
+    expect(typeof found!.name).toBe('string');
+    expect(typeof found!.count).toBe('number');
+    expect(found!.count).toBe(7);
+    expect(typeof found!.amount).toBe('number');
+    expect(found!.amount).toBe(12.5);
+    expect(typeof found!.enabled).toBe('boolean');
+    expect(found!.enabled).toBe(true);
+  }
+
+  /**
+   * The opt-out from that numeric decoding, for a decimal wider than a JS number can hold.
+   *
+   * `columnType: 'decimal'` still builds a DECIMAL column, but the declared `String` keeps the field
+   * off the numeric path, so the driver's exact text survives. Drizzle and MikroORM both make this
+   * the *default* for a decimal and require opting in to a number; uql decodes by the declaration
+   * instead, which only works as a trade if this way out keeps working.
+   */
+  async shouldKeepADecimalDeclaredAsStringExact() {
+    const id = await this.querier.insertOne(TypedRow, { name: 'exact', exact: EXACT_DECIMAL });
+    const found = await this.querier.findOneById(TypedRow, id, { $select: { exact: true } });
+
+    expect(found!.exact).toBe(this.expectedExactDecimal());
+  }
+
+  /**
+   * What survives a round-trip through a DECIMAL column declared `String`.
+   *
+   * The text itself, on every engine that has a real DECIMAL. The SQLite family overrides this: it
+   * has no such type, and NUMERIC affinity converts the literal to a float *on write*, so the digits
+   * are gone in the database before anything on the read side could preserve them.
+   */
+  protected expectedExactDecimal(): string | number {
+    return EXACT_DECIMAL;
+  }
+
   override createTables() {
     return createTables(this.querier);
   }

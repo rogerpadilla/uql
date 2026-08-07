@@ -401,6 +401,27 @@ export class Coupon {
   @Field({ type: String }) label?: string;
 }
 
+/**
+ * One column per declared JS type, for the round-trip that asserts a read gives back what the entity
+ * promised. Engines disagree wildly underneath: `Number` becomes BIGINT (or DECIMAL with a scale),
+ * `Boolean` becomes TINYINT(1) or a plain INTEGER, and several drivers hand every one of those back
+ * as text. Three shipped bugs of that shape were found before this existed.
+ */
+@Entity()
+export class TypedRow {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
+  @Field({ type: Number }) count?: number;
+  /** precision/scale makes this DECIMAL/NUMERIC, which pg and mysql2 both return as a string. */
+  @Field({ type: Number, precision: 12, scale: 2 }) amount?: number;
+  @Field({ type: Boolean }) enabled?: boolean;
+  /**
+   * The opt-out from that: `columnType` still makes it DECIMAL, but declaring `String` keeps it off
+   * the numeric path, so a value wider than 2^53 survives as the exact text the driver returned.
+   */
+  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
+}
+
 @Entity()
 export class VectorItem {
   @Id({ type: Number }) id?: number;
