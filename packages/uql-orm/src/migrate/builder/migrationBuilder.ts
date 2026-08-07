@@ -12,6 +12,7 @@ import type { SqlDdlGenerator } from '../../type/migration.js';
 import type { SqlQuerier } from '../../type/querier.js';
 import { normalizeIndexColumn } from '../../util/index.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
+
 import { splitSqlStatements } from './splitSqlStatements.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
@@ -50,6 +51,36 @@ function createIndexOperation(
       name: name ?? `idx_${tableName}_${entries.map((entry) => entry.column).join('_')}`,
       columns: entries,
       unique: unique ?? false,
+    },
+  };
+}
+
+type ForeignKeyTarget = { table: string; columns: string[] };
+type ForeignKeyOptions = { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction };
+
+/**
+ * The one shape of an `addForeignKey` operation, `NO ACTION` defaults included.
+ *
+ * Three callers build it and differ only in what they do with the result: the table builder records
+ * it through its parent, the recorder records it directly, and the executing builder also runs it.
+ * Spelled out three times, a changed default would have had to be found in all three.
+ */
+function addForeignKeyOperation(
+  tableName: string,
+  columns: string[],
+  target: ForeignKeyTarget,
+  options: ForeignKeyOptions = {},
+): AnyMigrationOperation {
+  return {
+    type: 'addForeignKey',
+    tableName,
+    foreignKey: {
+      name: options.name,
+      columns,
+      referencesTable: target.table,
+      referencesColumns: target.columns,
+      onDelete: options.onDelete ?? 'NO ACTION',
+      onUpdate: options.onUpdate ?? 'NO ACTION',
     },
   };
 }
@@ -122,23 +153,8 @@ class AlterTableBuilder implements IAlterTableBuilder {
     return this;
   }
 
-  addForeignKey(
-    columns: string[],
-    target: { table: string; columns: string[] },
-    options?: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction },
-  ): this {
-    this.parentBuilder.recordOperationSync({
-      type: 'addForeignKey',
-      tableName: this.tableName,
-      foreignKey: {
-        name: options?.name,
-        columns,
-        referencesTable: target.table,
-        referencesColumns: target.columns,
-        onDelete: options?.onDelete ?? 'NO ACTION',
-        onUpdate: options?.onUpdate ?? 'NO ACTION',
-      },
-    });
+  addForeignKey(columns: string[], target: ForeignKeyTarget, options?: ForeignKeyOptions): this {
+    this.parentBuilder.recordOperationSync(addForeignKeyOperation(this.tableName, columns, target, options));
     return this;
   }
 
@@ -158,10 +174,6 @@ class AlterTableBuilder implements IAlterTableBuilder {
  */
 export class OperationRecorder implements IMigrationBuilder {
   protected readonly operations: AnyMigrationOperation[] = [];
-
-  // ============================================================================
-  // Table Operations
-  // ============================================================================
 
   async createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void> {
     const builder = new TableBuilder(name);
@@ -194,10 +206,6 @@ export class OperationRecorder implements IMigrationBuilder {
     const builder = new AlterTableBuilder(name, this);
     callback(builder);
   }
-
-  // ============================================================================
-  // Column Operations
-  // ============================================================================
 
   async addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
     this.recordOperationSync({
@@ -234,10 +242,6 @@ export class OperationRecorder implements IMigrationBuilder {
     });
   }
 
-  // ============================================================================
-  // Index Operations
-  // ============================================================================
-
   async createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void> {
     this.recordOperationSync(createIndexOperation(tableName, columns, options));
   }
@@ -250,28 +254,13 @@ export class OperationRecorder implements IMigrationBuilder {
     });
   }
 
-  // ============================================================================
-  // Foreign Key Operations
-  // ============================================================================
-
   async addForeignKey(
     tableName: string,
     columns: string[],
-    target: { table: string; columns: string[] },
-    options: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction } = {},
+    target: ForeignKeyTarget,
+    options: ForeignKeyOptions = {},
   ): Promise<void> {
-    this.recordOperationSync({
-      type: 'addForeignKey',
-      tableName,
-      foreignKey: {
-        name: options.name,
-        columns,
-        referencesTable: target.table,
-        referencesColumns: target.columns,
-        onDelete: options.onDelete ?? 'NO ACTION',
-        onUpdate: options.onUpdate ?? 'NO ACTION',
-      },
-    });
+    this.recordOperationSync(addForeignKeyOperation(tableName, columns, target, options));
   }
 
   async dropForeignKey(tableName: string, constraintName: string): Promise<void> {
@@ -282,20 +271,12 @@ export class OperationRecorder implements IMigrationBuilder {
     });
   }
 
-  // ============================================================================
-  // Raw SQL
-  // ============================================================================
-
   async raw(sql: string): Promise<void> {
     this.recordOperationSync({
       type: 'raw',
       sql,
     });
   }
-
-  // ============================================================================
-  // Operation Access
-  // ============================================================================
 
   getOperations(): AnyMigrationOperation[] {
     return [...this.operations];
@@ -348,9 +329,7 @@ export class MigrationBuilder extends OperationRecorder {
     await this.querier.run(sql);
   }
 
-  // ============================================================================
   // Override async methods to execute immediately
-  // ============================================================================
 
   override async createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void> {
     const builder = new TableBuilder(name);
@@ -451,21 +430,10 @@ export class MigrationBuilder extends OperationRecorder {
   override async addForeignKey(
     tableName: string,
     columns: string[],
-    target: { table: string; columns: string[] },
-    options: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction } = {},
+    target: ForeignKeyTarget,
+    options: ForeignKeyOptions = {},
   ): Promise<void> {
-    const operation: AnyMigrationOperation = {
-      type: 'addForeignKey',
-      tableName,
-      foreignKey: {
-        name: options.name,
-        columns,
-        referencesTable: target.table,
-        referencesColumns: target.columns,
-        onDelete: options.onDelete ?? 'NO ACTION',
-        onUpdate: options.onUpdate ?? 'NO ACTION',
-      },
-    };
+    const operation = addForeignKeyOperation(tableName, columns, target, options);
     this.operations.push(operation);
     await this.execute(operation);
   }
@@ -479,10 +447,6 @@ export class MigrationBuilder extends OperationRecorder {
     this.operations.push(operation);
     await this.execute(operation);
   }
-
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
 
   private getCreateTableStatements(operation: Extract<AnyMigrationOperation, { type: 'createTable' }>): string[] {
     return this.sqlGenerator.generateCreateTableFromDefinition(operation.table);

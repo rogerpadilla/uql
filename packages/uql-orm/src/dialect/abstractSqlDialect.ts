@@ -20,7 +20,6 @@ import {
   type QueryExclude,
   type QueryGroupMap,
   type QueryHavingMap,
-  type QueryHavingOp,
   type QueryLikeOp,
   type QueryNegateOp,
   type QueryOptions,
@@ -64,8 +63,10 @@ import {
   getSoftDeleteValue,
   hasKeys,
   hasMultipleKeys,
+  isBooleanType,
   isJsonType,
   isJsonUpdateOp,
+  isNumericType,
   isOperatorObject,
   isOperatorOnlyObject,
   isPopulatingRelations,
@@ -80,11 +81,12 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
+import type { HydrateKind } from './hydrateColumn.js';
 import { IndexSqlDialect } from './indexSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
-import { JSON_ELEM_ALIAS_PREFIX, jsonElemExists } from './jsonSql.js';
+import { isJsonbOp, JSON_ELEM_ALIAS_PREFIX, jsonCompareMode, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
-import { isVectorFieldType } from './vectorCast.js';
+import { isVectorFieldType, resolveVectorCast } from './vectorCast.js';
 
 /** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
 type JsonUpdateOperators = {
@@ -96,6 +98,11 @@ type JsonUpdateOperators = {
 
 /** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
 type PersistKind = 'plain' | 'json' | 'vector';
+
+/** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
+type HydratableField = readonly [string, HydrateKind];
+
+export type { HydrateKind };
 
 export abstract class AbstractSqlDialect extends IndexSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
@@ -694,49 +701,15 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   ): void {
     const field = this.resolveOperandField(ctx, entity, key as string, opts);
 
-    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
-    if (simpleOp) {
-      this.appendFieldSql(ctx, field, `${simpleOp}${this.addValue(ctx.values, val)}`);
-      return;
-    }
-
-    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP.get(op as QueryLikeOp);
-    if (likeWrap) {
-      this.appendLikeOp(ctx, field, op as string, likeWrap(val as string));
+    if (this.appendOperatorCondition(ctx, field, op as string, val)) {
       return;
     }
 
     switch (op) {
-      case '$eq':
-      case '$ne':
-        this.appendEqNe(ctx, field, op as string, val);
-        break;
-      case '$regex':
-        this.appendFieldSql(ctx, field, ` ${this.regexpOp} ${this.addValue(ctx.values, val)}`);
-        break;
       case '$not':
         ctx.append('NOT (');
         this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], opts);
         ctx.append(')');
-        break;
-      case '$in':
-      case '$nin':
-        this.appendInNin(ctx, field, op as string, val);
-        break;
-      case '$between': {
-        const [min, max] = val as [unknown, unknown];
-        this.appendFieldSql(
-          ctx,
-          field,
-          ` BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`,
-        );
-        break;
-      }
-      case '$isNull':
-        this.appendFieldSql(ctx, field, val ? ' IS NULL' : ' IS NOT NULL');
-        break;
-      case '$isNotNull':
-        this.appendFieldSql(ctx, field, val ? ' IS NOT NULL' : ' IS NULL');
         break;
       case '$all':
         ctx.append(this.jsonAll(ctx, field ?? '', val));
@@ -749,6 +722,64 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         break;
       default:
         throw TypeError(`unknown operator: ${op}`);
+    }
+  }
+
+  /**
+   * Render `<operand> <op> <value>` for every operator that needs nothing but its left-hand SQL, and
+   * report whether `op` was one of them.
+   *
+   * One implementation for three callers that each had their own: a WHERE column, a HAVING aggregate
+   * expression, and a `$size` count (which passes no operand, since its expression is already in the
+   * context). They previously disagreed - HAVING carried a second comparison-operator map and threw
+   * `unsupported HAVING operator` on the `$like` that `QueryHavingMap` accepts, and neither of the
+   * other two turned `$eq: null` into `IS NULL` the way the WHERE path does.
+   *
+   * The operators kept out are the ones that need more than an operand: `$not` recurses through the
+   * entity, and `$all`/`$size`/`$elemMatch` address a JSON document.
+   */
+  protected appendOperatorCondition(ctx: QueryContext, operand: string | undefined, op: string, val: unknown): boolean {
+    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
+    if (simpleOp) {
+      this.appendFieldSql(ctx, operand, `${simpleOp}${this.addValue(ctx.values, val)}`);
+      return true;
+    }
+
+    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP.get(op as QueryLikeOp);
+    if (likeWrap) {
+      this.appendLikeOp(ctx, operand, op, likeWrap(val as string));
+      return true;
+    }
+
+    switch (op) {
+      case '$eq':
+      case '$ne':
+        this.appendEqNe(ctx, operand, op, val);
+        return true;
+      case '$regex':
+        this.appendFieldSql(ctx, operand, ` ${this.regexpOp} ${this.addValue(ctx.values, val)}`);
+        return true;
+      case '$in':
+      case '$nin':
+        this.appendInNin(ctx, operand, op, val);
+        return true;
+      case '$between': {
+        const [min, max] = val as [unknown, unknown];
+        this.appendFieldSql(
+          ctx,
+          operand,
+          ` BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`,
+        );
+        return true;
+      }
+      case '$isNull':
+        this.appendFieldSql(ctx, operand, val ? ' IS NULL' : ' IS NOT NULL');
+        return true;
+      case '$isNotNull':
+        this.appendFieldSql(ctx, operand, val ? ' IS NOT NULL' : ' IS NULL');
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -865,30 +896,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * {@link jsonCompareMode} for why each mode exists.
    */
   protected jsonComparand(jsonField: string, value: unknown): string {
-    return this.jsonCompareMode(value) === 'numeric' ? this.numericCast(jsonField) : jsonField;
-  }
-
-  /**
-   * How a JSON scalar has to be compared against `value` (or, for `$in`/`$nin`, against every element
-   * of it). Extracting a JSON value yields *text*, which loses the type, so each operand type is
-   * compared in the representation every engine agrees on:
-   * - `numeric` - cast the accessor. Keeps `1` equal to a stored `1.0`, which strict JSON equality
-   *   would not, and satisfies drivers that send typed parameters (`text = integer` otherwise).
-   * - `json` - compare the JSON value against a JSON-encoded parameter. No cast recovers a boolean
-   *   portably: PostgreSQL raises `text = boolean` and MySQL matches `'true'` against `1`.
-   * - `text` - compare as extracted, which is also what the string operators need.
-   *
-   * Mixed operand types fall back to `text`, since one comparison cannot be two shapes at once.
-   */
-  protected jsonCompareMode(value: unknown): 'json' | 'numeric' | 'text' {
-    const operands = Array.isArray(value) ? value : [value];
-    if (operands.length === 0) {
-      return 'text';
-    }
-    if (operands.every((operand) => typeof operand === 'boolean')) {
-      return 'json';
-    }
-    return operands.every((operand) => typeof operand === 'number') ? 'numeric' : 'text';
+    return jsonCompareMode(value) === 'numeric' ? this.numericCast(jsonField) : jsonField;
   }
 
   /** `$all`: the JSON array at `jsonField` contains every value (also serves element containment). */
@@ -948,7 +956,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     // only when *every* operand needs it - the same all-operands rule the comparison classifier uses.
     if (isOperatorOnlyObject(match)) {
       const entries = Object.entries(match);
-      const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => this.isJsonbOp(op, val));
+      const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => isJsonbOp(op, val));
       const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
       const conditions = entries.map(([op, val]) =>
         this.buildJsonFieldCondition(ctx, () => this.jsonElemRef(alias, undefined, asJson), '', op, val, asJson),
@@ -967,28 +975,10 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
     const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
     const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
-      const asJson = this.isJsonbOp(op, opVal);
+      const asJson = isJsonbOp(op, opVal);
       return this.buildJsonFieldCondition(ctx, (f) => this.jsonElemRef(alias, f, asJson), field, op, opVal, asJson);
     });
     return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match), alias), conditions);
-  }
-
-  /**
-   * Whether the operator reads the JSON *value* instead of its text form. The array operators always
-   * do. Equality joins them for boolean operands, because extracting JSON as text loses the type in
-   * a way no cast recovers portably: PostgreSQL raises `operator does not exist: text = boolean`,
-   * MySQL compares `'true'` to `1` and silently matches nothing, and SQLite's `json_extract` yields
-   * `1`. Comparing the JSON value against a JSON-encoded parameter is exact on every dialect.
-   *
-   * Numbers stay on the text accessor with a numeric cast ({@link jsonComparand}), which keeps
-   * `1` equal to `1.0` - JSON equality would not.
-   */
-  protected isJsonbOp(op: string, value?: unknown): boolean {
-    if (op === '$all' || op === '$size' || op === '$elemMatch') {
-      return true;
-    }
-    const comparesValue = op === '$eq' || op === '$ne' || op === '$in' || op === '$nin';
-    return comparesValue && this.jsonCompareMode(value) === 'json';
   }
 
   /**
@@ -1204,45 +1194,16 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   /** Scalar comparison operators shared by `HAVING` conditions and `$size` comparisons. */
-  private static readonly comparisonOpMap = new Map<QueryHavingOp, string>([
-    ['$eq', '='],
-    ['$ne', '<>'],
-    ['$gt', '>'],
-    ['$gte', '>='],
-    ['$lt', '<'],
-    ['$lte', '<='],
-  ]);
-
   protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
     if (typeof condition !== 'object' || condition === null) {
-      ctx.append(`${expr} = `);
-      ctx.addValue(condition);
+      this.appendOperatorCondition(ctx, expr, '$eq', condition);
       return;
     }
     const ops = condition as QueryWhereFieldOperatorMap<number>;
-    const keys = getKeys(ops);
-    keys.forEach((op, i) => {
+    getKeys(ops).forEach((op, i) => {
       if (i > 0) ctx.append(' AND ');
-      const val = ops[op];
-      if (op === '$between') {
-        const [min, max] = val as [number, number];
-        ctx.append(`${expr} BETWEEN `);
-        ctx.addValue(min);
-        ctx.append(' AND ');
-        ctx.addValue(max);
-      } else if (op === '$in' || op === '$nin') {
-        ctx.append(`${expr}${this.formatIn(ctx, Array.isArray(val) ? (val as unknown[]) : [], op === '$nin')}`);
-      } else if (op === '$isNull') {
-        ctx.append(`${expr}${val ? ' IS NULL' : ' IS NOT NULL'}`);
-      } else if (op === '$isNotNull') {
-        ctx.append(`${expr}${val ? ' IS NOT NULL' : ' IS NULL'}`);
-      } else if (op === '$ne') {
-        ctx.append(this.neExpr(expr, this.addValue(ctx.values, val)));
-      } else {
-        const sqlOp = AbstractSqlDialect.comparisonOpMap.get(op as QueryHavingOp);
-        if (!sqlOp) throw TypeError(`unsupported HAVING operator: ${op}`);
-        ctx.append(`${expr} ${sqlOp} `);
-        ctx.addValue(val);
+      if (!this.appendOperatorCondition(ctx, expr, op, ops[op])) {
+        throw TypeError(`unsupported HAVING operator: ${op}`);
       }
     });
   }
@@ -1372,14 +1333,26 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     extraReturning = '',
   ): void {
     const meta = getMeta(entity);
-    const updateCtx = this.createContext();
+    const updateCtx = this.upsertUpdateBindsInPlace ? ctx : this.createContext();
     const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, this.upsertExcluded);
     const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     this.appendInsertValues(ctx, entity, payload);
     ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
-    ctx.pushValue(...updateCtx.values);
+    if (updateCtx !== ctx) {
+      ctx.pushValue(...updateCtx.values);
+    }
   }
+
+  /**
+   * Whether the upsert's update assignments can bind straight into the statement's own context.
+   *
+   * They cannot on a `?`-placeholder dialect: the assignments are built before the insert but read
+   * after it, so their values have to be pushed afterwards to land in the right positional order.
+   * A `$n` placeholder carries its own index, so there is nothing to reorder - but it also cannot use
+   * the scratch context, whose numbering would restart at `$1` and collide with the insert's.
+   */
+  protected readonly upsertUpdateBindsInPlace: boolean = false;
 
   /** How an `ON CONFLICT` assignment reads the row that was being inserted. */
   protected readonly upsertExcluded = (columnName: string): string => `EXCLUDED.${columnName}`;
@@ -1470,6 +1443,102 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
     return isVectorFieldType(type) ? 'vector' : 'plain';
   }
+
+  /**
+   * Which of an entity's columns need decoding on READ, and how: the inverse of {@link persistKind},
+   * cached per entity for the same reason it classifies per column. A 1000-row read of a 10-field
+   * entity otherwise asks `isJsonType` (which lowercases a string on every call) 10,000 times to get
+   * the same ten answers. Most entities land here for their numeric columns alone, where the per-row
+   * cost is one `typeof` against a value the driver usually decoded already.
+   *
+   * Dialect-aware exactly like {@link supportedVectorType}, because it has to be: a `sparsevec` field
+   * is written as a plain dense vector everywhere but Postgres, so reading it back by the field's own
+   * declared cast would look for a sparse literal that was never stored.
+   *
+   * A type lands here rather than at the driver when the wire type alone cannot decide it, and only
+   * the declaration can: `Boolean` is 0/1 in a SQLite INTEGER and a MySQL `TINYINT(1)`, both
+   * indistinguishable from a genuine small integer; a decimal is text from pg *and* mysql2, and only
+   * the field says it was meant as a number; and `type: BigInt` shares BIGINT with `type: Number`, so
+   * the wire decode has to be undone for it. All are no-ops where the driver already decoded.
+   *
+   * Classified through the same `isNumericType`/`isBooleanType`/`isJsonType` the rest of the library
+   * uses, not against the constructors: `type` accepts a string logical type for every one of these
+   * (`@Field({ type: 'decimal' })`), and matching `=== Number` alone left those reading back as text.
+   */
+  hydratableFields<E>(entity: Type<E>): readonly HydratableField[] {
+    const cached = this.hydratable.get(entity as Type<object>);
+    if (cached) {
+      return cached;
+    }
+    const decoded: HydratableField[] = [];
+    for (const [key, field] of Object.entries(getMeta(entity).fields)) {
+      const kind = this.hydrateKind(field);
+      if (kind) {
+        decoded.push([key, kind]);
+      }
+    }
+    this.hydratable.set(entity as Type<object>, decoded);
+    return decoded;
+  }
+
+  /**
+   * The same classification for an aggregate row. Not cached, because these columns are a shape of the
+   * query rather than of the entity, and it is computed once per call either way.
+   *
+   * Mirrors `QueryAggregateFnResult`, which is the contract callers already compile against:
+   * `$count`/`$sum`/`$avg` are a number whatever they aggregate, while `$min`/`$max` and every
+   * `$group` column keep the aggregated field's own type, so they decode as that field would. Without
+   * it a `$sum` over a BIGINT column came back as `'500'` from a result type that says `number`, since
+   * Postgres widens that sum to NUMERIC and no driver can know it was meant as a JS number.
+   */
+  hydratableAggregates<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+    entity: Type<E>,
+    q: QueryAggregate<E, G, A>,
+  ): readonly HydratableField[] {
+    const { fields } = getMeta(entity);
+    const decoded: HydratableField[] = [];
+    for (const entry of parseGroupMap(q.$group, q.$agg)) {
+      if (entry.kind === 'fn' && entry.op !== '$min' && entry.op !== '$max') {
+        decoded.push([entry.alias, 'number']);
+        continue;
+      }
+      // `$min`/`$max` read the field they aggregate; a `$group` column is that field. Only `$count`
+      // takes `'*'`, and it went down the numeric path above, so there is always a field to look up.
+      const key = entry.kind === 'fn' ? entry.fieldRef : entry.alias;
+      const kind = this.hydrateKind(fields[key as FieldKey<E>]);
+      if (kind) {
+        decoded.push([entry.alias, kind]);
+      }
+    }
+    return decoded;
+  }
+
+  /**
+   * The mirror of {@link persistKind}: what one column decodes as, or nothing if it needs no decode.
+   *
+   * Ordered for correctness, not for speed - this runs once per entity, cached, never per row. The
+   * one order that is load-bearing is `BigInt` before {@link isNumericType}, which answers true for
+   * `BigInt` as well as `Number`: swap them and every `type: BigInt` property silently decodes to a
+   * JS number again.
+   */
+  protected hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
+    const type = field?.type;
+    if (isJsonType(type)) {
+      return 'json';
+    }
+    if (isVectorFieldType(type)) {
+      return this.supportedVectorType(resolveVectorCast(field));
+    }
+    if (isBooleanType(type)) {
+      return 'boolean';
+    }
+    if (type === BigInt) {
+      return 'bigint';
+    }
+    return isNumericType(type) ? 'number' : undefined;
+  }
+
+  private readonly hydratable = new WeakMap<Type<object>, readonly HydratableField[]>();
 
   /** The one type dispatch for a persisted value, over a column kind decided by the caller. */
   private writePersistableValue(
@@ -1647,7 +1716,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
     operators.forEach((op, index) => {
       if (index > 0) ctx.append(' AND ');
-      const asJson = this.isJsonbOp(op, value[op]);
+      const asJson = isJsonbOp(op, value[op]);
       const sql = this.buildJsonFieldCondition(ctx, () => accessor(asJson), jsonPath, op, value[op], asJson);
       if (sql) {
         ctx.append(sql);
@@ -1845,24 +1914,36 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
   }
 
+  /** The runtime half of {@link QuerySizeComparisonOps}: what a count can sensibly be compared with. */
+  private static readonly SIZE_COMPARE_OPS: ReadonlySet<string> = new Set([
+    '$eq',
+    '$ne',
+    '$gt',
+    '$gte',
+    '$lt',
+    '$lte',
+    '$between',
+  ]);
+
   /**
-   * Append a single size comparison operator and value to the context.
+   * Append a single size comparison operator and value. No operand: the count expression is already
+   * in the context, so this contributes only the ` <op> <value>` tail.
+   *
+   * Gated on {@link SIZE_COMPARE_OPS} rather than on whatever the shared renderer accepts, because
+   * that renderer also knows `$like`, `$regex` and `$in`, none of which mean anything against a
+   * count. `$size: { $like: 5 }` has to stay the error it always was.
    */
   private appendSizeOp(ctx: QueryContext, op: string, val: unknown): void {
-    if (op === '$between') {
-      const [min, max] = val as [number, number];
-      ctx.append(' BETWEEN ');
-      ctx.addValue(min);
-      ctx.append(' AND ');
-      ctx.addValue(max);
-      return;
-    }
-    const sqlOp = AbstractSqlDialect.comparisonOpMap.get(op as QueryHavingOp);
-    if (!sqlOp) {
+    if (!AbstractSqlDialect.SIZE_COMPARE_OPS.has(op)) {
       throw TypeError(`unsupported $size comparison operator: ${op}`);
     }
-    ctx.append(` ${sqlOp} `);
-    ctx.addValue(val);
+    // A COUNT is never NULL, so equality stays plain here instead of taking the shared renderer's
+    // null-safe `$ne` (`IS DISTINCT FROM` on Postgres, `IS NOT` on SQLite). Same rows, shorter SQL.
+    if (op === '$eq' || op === '$ne') {
+      this.appendFieldSql(ctx, undefined, ` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx.values, val)}`);
+      return;
+    }
+    this.appendOperatorCondition(ctx, undefined, op, val);
   }
 
   /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */

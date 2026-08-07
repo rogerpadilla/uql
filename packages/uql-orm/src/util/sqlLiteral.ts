@@ -80,6 +80,25 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
     return sql;
   };
 
+  /** Split out so the `typeof` switch below stays a flat one-line-per-type dispatch. */
+  const escapeObject = (value: object): string => {
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? 'NULL' : dateLiteral(value);
+    }
+    if (Array.isArray(value)) {
+      return sqlList(value);
+    }
+    if (isByteSource(value)) {
+      return bytesToHexLiteral(value);
+    }
+    if ('toSqlString' in value && typeof (value as { toSqlString?: unknown }).toSqlString === 'function') {
+      return String((value as { toSqlString: () => unknown }).toSqlString());
+    }
+    throw new TypeError(
+      'escapeSqlLiteral: plain objects are not supported; use bound parameters or JSON.stringify + a string column.',
+    );
+  };
+
   const escapeValue = (value: unknown): string => {
     if (value === undefined || value === null) {
       return 'NULL';
@@ -94,26 +113,11 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
         return String(value);
       case 'string':
         return escapeString(value);
+      case 'object':
+        return escapeObject(value);
       case 'symbol':
       case 'function':
         throw new TypeError('escapeSqlLiteral: symbol and function values are not supported; use bound parameters.');
-      case 'object': {
-        if (value instanceof Date) {
-          return Number.isNaN(value.getTime()) ? 'NULL' : dateLiteral(value);
-        }
-        if (Array.isArray(value)) {
-          return sqlList(value);
-        }
-        if (isByteSource(value)) {
-          return bytesToHexLiteral(value);
-        }
-        if ('toSqlString' in value && typeof (value as { toSqlString?: unknown }).toSqlString === 'function') {
-          return String((value as { toSqlString: () => unknown }).toSqlString());
-        }
-        throw new TypeError(
-          'escapeSqlLiteral: plain objects are not supported; use bound parameters or JSON.stringify + a string column.',
-        );
-      }
       default:
         // Unreachable today; throwing keeps a future JS type from silently becoming SQL.
         throw new TypeError(`escapeSqlLiteral: unsupported value type '${typeof value}'; use bound parameters.`);

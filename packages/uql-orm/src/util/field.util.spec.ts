@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldOptions } from '../type/index.js';
-import { isAutoIncrement, isNumericType } from './field.util.js';
+import { isAutoIncrement, isBooleanType, isNumericType } from './field.util.js';
 
 describe('isNumericType', () => {
   it('should return true for Number constructor', () => {
@@ -50,6 +50,27 @@ describe('isNumericType', () => {
     expect(isNumericType({})).toBe(false);
     expect(isNumericType(Boolean)).toBe(false);
     expect(isNumericType(Date)).toBe(false);
+  });
+});
+
+describe('isBooleanType', () => {
+  it('should return true for the Boolean constructor and both boolean string types', () => {
+    expect(isBooleanType(Boolean)).toBe(true);
+    expect(isBooleanType('bool')).toBe(true);
+    expect(isBooleanType('boolean')).toBe(true);
+    expect(isBooleanType('BOOLEAN')).toBe(true);
+  });
+
+  it('should return false for anything else', () => {
+    // `tinyint` in particular: MySQL stores a boolean as TINYINT(1), but a field declaring the column
+    // type asked for an integer, and reading it back as `true`/`false` would be a different type.
+    for (const type of ['tinyint', 'int', 'string', 'json']) {
+      expect(isBooleanType(type)).toBe(false);
+    }
+    expect(isBooleanType(Number)).toBe(false);
+    expect(isBooleanType(null)).toBe(false);
+    expect(isBooleanType(undefined)).toBe(false);
+    expect(isBooleanType({})).toBe(false);
   });
 });
 

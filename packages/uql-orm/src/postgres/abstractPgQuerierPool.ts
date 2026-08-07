@@ -30,6 +30,16 @@ export abstract class AbstractPgQuerierPool<
     attachPoolErrorHandler(pool, 'Idle Postgres pool client encountered an error');
   }
 
+  /**
+   * Every pg-compatible pool acquires a client the same way, so only the querier class varies.
+   * Subclasses name that instead of restating the lazy `connect` the querier expects.
+   */
+  protected abstract buildQuerier(connect: () => Promise<C>): Q;
+
+  async getQuerier() {
+    return this.buildQuerier(() => this.pool.connect());
+  }
+
   async end() {
     await this.pool.end();
   }

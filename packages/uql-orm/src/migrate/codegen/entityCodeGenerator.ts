@@ -354,10 +354,6 @@ export class EntityCodeGenerator {
     return lines.join('\n');
   }
 
-  // ============================================================================
-  // Helper Methods
-  // ============================================================================
-
   /**
    * Get decorator name for relation type.
    */

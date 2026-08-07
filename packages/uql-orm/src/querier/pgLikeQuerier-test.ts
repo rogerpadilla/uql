@@ -40,8 +40,10 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
     const found = await this.querier.findOneById(NarrowVectorItem, id);
 
     expect(found!.name).toBe('narrow');
-    expect(found!.half).toBe('[1,0,0]');
-    expect(found!.sparse).toBe(this.expectedSparsevecValue);
+    // Both come back dense, whichever literal the engine stored them as: `sparsevec` is a storage
+    // format, and the field type promises the same array on the way out as on the way in.
+    expect(found!.half).toEqual([1, 0, 0]);
+    expect(found!.sparse).toEqual([0, 0, 1]);
   }
 
   async shouldSortByNarrowVectorDistance() {
@@ -61,10 +63,5 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
 
     expect(byHalf.map((r) => r.name)).toEqual(['near', 'far']);
     expect(bySparse.map((r) => r.name)).toEqual(['near', 'far']);
-  }
-
-  /** Postgres keeps the sparse form it was given; CockroachDB stores a dense `vector`. */
-  protected get expectedSparsevecValue(): string {
-    return '{3:1}/3';
   }
 }

@@ -53,10 +53,6 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     super(pool.dialect as AbstractSqlDialect);
   }
 
-  // ============================================================================
-  // Template Methods (shared control flow)
-  // ============================================================================
-
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     return this.withSqlQuerier(async (querier) => {
       const read = createTableRowReader(querier);
@@ -131,10 +127,6 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return this.mapPrimaryKeyResult(results);
   }
 
-  // ============================================================================
-  // Parameter Methods (can be overridden by dialects)
-  // ============================================================================
-
   protected tableExistsParams(tableName: string): unknown[] {
     return [tableName];
   }
@@ -154,10 +146,6 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected getPrimaryKeyParams(tableName: string): unknown[] {
     return [tableName];
   }
-
-  // ============================================================================
-  // Shared Utilities
-  // ============================================================================
 
   /**
    * Normalize referential action string to standard type.
@@ -187,10 +175,6 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return Number(value);
   }
 
-  // ============================================================================
-  // Abstract Methods (dialect-specific)
-  // ============================================================================
-
   /** SQL query to list all table names. */
   protected abstract getTableNamesQuery(): string;
 
@@ -212,8 +196,16 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   /** SQL query to get primary key columns. Parameter: tableName (for PRAGMA-style). */
   protected abstract getPrimaryKeyQuery(tableName: string): string;
 
-  /** Extract table name from a row returned by getTableNamesQuery. */
-  protected abstract mapTableNameRow(row: RawRow): string;
+  /**
+   * Extract table name from a row returned by getTableNamesQuery.
+   *
+   * Defaults to `information_schema`'s own column, which is what every engine with an
+   * `information_schema` returns and what Postgres and MySQL both restated identically. SQLite reads
+   * `sqlite_master` instead and overrides.
+   */
+  protected mapTableNameRow(row: RawRow): string {
+    return row['table_name'] as string;
+  }
 
   /** Map column query results to ColumnSchema array. Allows async for SQLite's unique column check. */
   protected abstract mapColumnsResult(

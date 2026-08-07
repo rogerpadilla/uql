@@ -13,7 +13,6 @@ export class MariadbQuerierIt extends VectorQuerierIt {
         database: 'test',
         connectionLimit: 5,
         trace: true,
-        bigIntAsNumber: true,
       }),
     );
   }

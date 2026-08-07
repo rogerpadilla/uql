@@ -57,10 +57,6 @@ export class SchemaASTBuilder {
     return this.ast;
   }
 
-  // ============================================================================
-  // Build from Entities
-  // ============================================================================
-
   /**
    * Build AST from entity classes (decorated with @Entity, @Field, etc.)
    */

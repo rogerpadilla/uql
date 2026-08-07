@@ -8,10 +8,6 @@
 import type { IndexColumnSchema } from '../type/entity.js';
 import type { IndexSchema } from '../type/migration.js';
 
-// ============================================================================
-// Canonical Type System
-// ============================================================================
-
 /**
  * Type categories universal across SQL dialects.
  * These represent logical/semantic types, not specific SQL types.
@@ -60,10 +56,6 @@ export interface CanonicalType {
   readonly withTimezone?: boolean;
 }
 
-// ============================================================================
-// Foreign Key Actions
-// ============================================================================
-
 /**
  * Actions for foreign key ON DELETE and ON UPDATE clauses.
  */
@@ -73,10 +65,6 @@ export type ForeignKeyAction = 'CASCADE' | 'SET NULL' | 'SET DEFAULT' | 'RESTRIC
  * Default action for foreign key ON DELETE and ON UPDATE clauses.
  */
 export const DEFAULT_FOREIGN_KEY_ACTION: ForeignKeyAction = 'NO ACTION';
-
-// ============================================================================
-// Relationship Types
-// ============================================================================
 
 /**
  * Relationship cardinality types.
@@ -92,10 +80,6 @@ export type RelationshipSource =
   | 'naming_pattern' // Inferred from column naming (user_id -> users)
   | 'junction_table' // Inferred from junction table structure
   | 'unique_fk'; // Inferred from unique FK (OneToOne)
-
-// ============================================================================
-// Index Types
-// ============================================================================
 
 /**
  * Index algorithm/type supported by various databases.
@@ -121,10 +105,6 @@ export type IndexSource = 'entity' | 'database' | 'both';
  * Sync status for indexes.
  */
 export type IndexSyncStatus = 'in_sync' | 'entity_only' | 'db_only' | 'mismatch';
-
-// ============================================================================
-// Schema AST Nodes
-// ============================================================================
 
 /**
  * Column node in the schema graph.
@@ -254,10 +234,6 @@ export interface SchemaAST {
   readonly indexes: IndexNode[];
 }
 
-// ============================================================================
-// Schema Diff Types
-// ============================================================================
-
 /**
  * Difference between two column definitions.
  */
@@ -330,10 +306,6 @@ export interface SchemaDiffResult {
   readonly hasBreakingChanges: boolean;
 }
 
-// ============================================================================
-// Validation Types
-// ============================================================================
-
 /**
  * Type of schema validation error.
  */
@@ -355,14 +327,6 @@ export interface ValidationError {
   readonly relationship?: RelationshipNode;
   readonly tables?: TableNode[];
 }
-
-// ============================================================================
-// Smart Relation Detection Types
-// ============================================================================
-
-// ============================================================================
-// Drift Detection Types
-// ============================================================================
 
 /**
  * Severity level for schema drift issues.

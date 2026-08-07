@@ -71,22 +71,24 @@ jobs:
       - name: Check type resolution
         run: bunx --bun @arethetypeswrong/cli --pack --ignore-rules cjs-resolves-to-esm no-resolution
         working-directory: packages/uql-orm
-      # Proves the tarball resolves and runs from a real node_modules, with no peers installed.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # Proves the tarball resolves and runs from a real node_modules, with no peers installed, on
+      # every runtime the README claims. The assertions live in smoke.mjs and enumerate the entry
+      # points from the manifest, so a new export is covered without editing this file, and a new
+      # runtime is one more line here.
       - name: Smoke-test the packed tarball
         run: |
           set -euo pipefail
           tgz=$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -1)
+          cp smoke.mjs "$RUNNER_TEMP/"
           cd "$RUNNER_TEMP"
           npm init -y >/dev/null
           npm i --no-save --no-audit --no-fund "./$tgz"
-          node --input-type=module -e '
-            const root = await import("uql-orm");
-            for (const name of ["Entity", "Field", "Id", "getMeta", "defineEntity", "AbstractSqlDialect"]) {
-              if (!(name in root)) throw new Error(`missing root export: ${name}`);
-            }
-            await Promise.all(["type", "util", "options", "entity", "querier", "dialect"].map((s) => import(`uql-orm/${s}`)));
-            console.log(`tarball ok: ${Object.keys(root).length} root exports, subpaths resolve`);
-          '
+          node smoke.mjs
+          deno run smoke.mjs
+          bun smoke.mjs
         working-directory: packages/uql-orm
 
   tests:

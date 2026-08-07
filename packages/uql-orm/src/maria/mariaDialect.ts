@@ -1,13 +1,11 @@
 import { jsonPath } from '../dialect/jsonSql.js';
 import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { isVectorFieldType } from '../dialect/vectorCast.js';
-import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   FieldOptions,
   IndexFeature,
   IndexSchema,
-  QueryConflictPaths,
   QueryContext,
   Type,
   VectorDistance,
@@ -32,29 +30,9 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     inlineVectorIndex: true,
   };
 
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    const meta = getMeta(entity);
-    const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(
-      updateCtx,
-      meta,
-      conflictPaths,
-      payload,
-      (name) => `VALUES(${name})`,
-    );
-    const returning = this.returningId(entity);
-
-    if (update) {
-      this.appendInsertValues(ctx, entity, payload);
-      ctx.append(` ON DUPLICATE KEY UPDATE ${update} ${returning}`);
-      ctx.pushValue(...updateCtx.values);
-    } else {
-      const insertCtx = this.createContext();
-      this.appendInsertValues(insertCtx, entity, payload);
-      ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
-      ctx.append(' ' + returning);
-      ctx.pushValue(...insertCtx.values);
-    }
+  /** MariaDB 10.5+ supports `INSERT ... RETURNING`, so the ids are exact per row. */
+  protected override upsertReturning<E>(entity: Type<E>): string {
+    return ` ${this.returningId(entity)}`;
   }
 
   /**

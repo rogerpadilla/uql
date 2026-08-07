@@ -1,3 +1,4 @@
+import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
@@ -104,7 +105,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts);
     const res = await this.all<RawRow>(ctx.sql, ctx.values);
-    const founds = unflatObjects<E>(res).map((row) => this.hydrateJsonFields(entity, row));
+    const founds = unflatObjects<E>(res).map((row) => this.hydrateFields(entity, row));
     await this.fillToManyRelations(entity, founds, q.$populate);
     return founds;
   }
@@ -131,7 +132,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     try {
       for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
         attrsPaths ??= obtainAttrsPaths(row);
-        yield this.hydrateJsonFields(entity, unflatObject<E>(row, attrsPaths));
+        yield this.hydrateFields(entity, unflatObject<E>(row, attrsPaths));
       }
     } catch (err) {
       throw enrichError(err, this.logger, ctx.sql, normalizedParams);
@@ -148,33 +149,27 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     yield* rows;
   }
 
-  private hydrateJsonFields<E extends object>(entity: Type<E>, dto: E): E {
-    this.hydrateJsonFieldsRecursive(entity, dto, new WeakSet<object>());
-    return dto;
-  }
-
-  private hydrateJsonFieldsRecursive<E extends object>(entity: Type<E>, dto: E, visited: WeakSet<object>) {
+  /**
+   * Turn what a driver returned back into the types the entity declares, for the row and everything
+   * populated under it. Which columns, and as what, is `hydratableFields`; the per-cell decode is
+   * `decodeColumn`. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
+   *
+   * `visited` guards a populated graph that points back at itself; it defaults rather than living in
+   * a separate entry-point wrapper, because the wrapper's whole body was seeding it.
+   */
+  private hydrateFields<E extends object>(entity: Type<E>, dto: E, visited = new WeakSet<object>()): E {
     if (!dto || typeof dto !== 'object' || visited.has(dto)) {
-      return;
+      return dto;
     }
     visited.add(dto);
 
     const meta = getMeta(entity);
     const row = dto as Record<string, unknown>;
 
-    for (const key in meta.fields) {
-      const field = meta.fields[key];
-      if (!field || (field.type !== 'json' && field.type !== 'jsonb')) {
-        continue;
-      }
+    for (const [key, kind] of this.dialect.hydratableFields(entity)) {
       const value = row[key];
-      if (typeof value !== 'string') {
-        continue;
-      }
-      try {
-        row[key] = JSON.parse(value);
-      } catch {
-        // Keep the original value when the driver returns non-JSON text.
+      if (value != null) {
+        row[key] = decodeColumn(value, kind);
       }
     }
 
@@ -185,14 +180,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       const value = row[key];
       if (Array.isArray(value)) {
         for (const it of value) {
-          this.hydrateJsonFieldsRecursive(relEntity, it, visited);
+          this.hydrateFields(relEntity, it, visited);
         }
         continue;
       }
       if (value && typeof value === 'object') {
-        this.hydrateJsonFieldsRecursive(relEntity, value, visited);
+        this.hydrateFields(relEntity, value, visited);
       }
     }
+    return dto;
   }
 
   protected override async internalCount<E extends object>(
@@ -203,6 +199,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     this.dialect.count(ctx, entity, q, opts);
     const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
+    // `COUNT(*)` is BIGINT, which the pools decode at the wire - but a caller who supplies their own
+    // `types` replaces that, and the signature promises a number here regardless.
     return Number(res[0].count);
   }
 
@@ -214,7 +212,16 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q, opts);
     // biome-ignore lint/suspicious/noExplicitAny: raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify
-    return this.all<any>(ctx.sql, ctx.values);
+    const res = await this.all<any>(ctx.sql, ctx.values);
+    const hydratable = this.dialect.hydratableAggregates(entity, q);
+    for (const row of res) {
+      for (const [alias, kind] of hydratable) {
+        if (row[alias] != null) {
+          row[alias] = decodeColumn(row[alias], kind);
+        }
+      }
+    }
+    return res;
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, payload: E[]) {

@@ -1,4 +1,3 @@
-import { types } from 'pg';
 import { afterAll, beforeAll, describe, expect, it, test, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariadbQuerierPool } from '../maria/mariadbQuerierPool.js';
@@ -10,9 +9,6 @@ import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspect
 import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
-
-// Configure pg types for proper number parsing
-types.setTypeParser(types.builtins.INT8, (value: string) => Number.parseInt(value, 10));
 
 interface DatabaseConfig {
   name: string;
@@ -65,7 +61,6 @@ const databases: DatabaseConfig[] = [
       password: 'test',
       database: 'test',
       connectionLimit: 5,
-      bigIntAsNumber: true,
     }),
     createIntrospector: (pool) => new MariadbSchemaIntrospector(pool),
     escapeId: (id) => `\`${id}\``,

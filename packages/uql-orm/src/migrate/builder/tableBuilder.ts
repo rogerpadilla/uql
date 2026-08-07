@@ -89,10 +89,6 @@ export class TableBuilder implements ITableBuilder {
     this._name = name;
   }
 
-  // ============================================================================
-  // Numeric Types
-  // ============================================================================
-
   id(name = 'id', options: BaseColumnOptions = {}): IColumnBuilder {
     return this.add(name, { category: 'integer' }, { ...options, primaryKey: true, autoIncrement: true });
   }
@@ -184,10 +180,6 @@ export class TableBuilder implements ITableBuilder {
     return column;
   }
 
-  // ============================================================================
-  // Convenience Methods
-  // ============================================================================
-
   createdAt(): IColumnBuilder {
     return this.add('createdAt', { category: 'timestamp' }, { defaultValue: t.now() });
   }
@@ -200,10 +192,6 @@ export class TableBuilder implements ITableBuilder {
     this.createdAt();
     this.updatedAt();
   }
-
-  // ============================================================================
-  // Indexes & Constraints
-  // ============================================================================
 
   primaryKey(columns: string[]): this {
     this._primaryKey = columns;
@@ -246,10 +234,6 @@ export class TableBuilder implements ITableBuilder {
     this._foreignKeyBuilders.push(fk);
     return fk;
   }
-
-  // ============================================================================
-  // Utilities
-  // ============================================================================
 
   comment(text: string): this {
     this._comment = text;

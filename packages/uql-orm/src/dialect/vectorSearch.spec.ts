@@ -11,6 +11,7 @@ import { VectorItem } from '../test/index.js';
 import { TursoDialect } from '../turso/tursoDialect.js';
 import type { VectorDistance } from '../type/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
 
 /** A per-field default metric, which a query without `$distance` inherits. */
 @Entity({ name: 'L2Item' })
@@ -187,5 +188,44 @@ describe('dialects without vector search', () => {
     expect(() => dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3] } } })).toThrow(
       'Cloudflare D1 has no vector functions',
     );
+  });
+});
+
+/**
+ * Reading a vector back. pgvector returns the column as text, and the field type promises `number[]`,
+ * so a read that skipped this handed every consumer a string that still satisfied the compiler. In
+ * Variability it made `cosineSimilarity` score a stored embedding as 0 against itself, which reads as
+ * "different person" rather than as an error, and silently released every user-confirmed speaker.
+ *
+ * Driven by the column's own cast, never by sniffing the text: the write side already knows whether a
+ * column is dense or sparse, and so does this.
+ */
+describe('parseVectorLiteral', () => {
+  it('reads a dense literal back as the array that was written', () => {
+    expect(parseVectorLiteral('[1,0,2.5]', 'vector')).toEqual([1, 0, 2.5]);
+    expect(parseVectorLiteral('[-1,2e-3]', 'halfvec')).toEqual([-1, 0.002]);
+    expect(parseVectorLiteral('[]', 'vector')).toEqual([]);
+  });
+
+  it('expands a sparse literal to the dense array the field type promises', () => {
+    // The exact inverse of toSparsevecLiteral, including the zeros it drops.
+    expect(parseVectorLiteral(toSparsevecLiteral([1, 0, 2]), 'sparsevec')).toEqual([1, 0, 2]);
+    expect(parseVectorLiteral('{}/3', 'sparsevec')).toEqual([0, 0, 0]);
+  });
+
+  it('round-trips whatever the write side produced, for every cast', () => {
+    const dense = [0.5, 0, -2, 0, 1];
+    expect(parseVectorLiteral(`[${dense.join(',')}]`, 'vector')).toEqual(dense);
+    expect(parseVectorLiteral(toSparsevecLiteral(dense), 'sparsevec')).toEqual(dense);
+  });
+
+  it('keeps out of the way when the text is not that column’s literal', () => {
+    // Returning undefined lets the caller keep the raw value instead of inventing one.
+    expect(parseVectorLiteral('not a vector', 'vector')).toBeUndefined();
+    expect(parseVectorLiteral('[1,two]', 'vector')).toBeUndefined();
+    expect(parseVectorLiteral('[1,,2]', 'vector')).toBeUndefined(); // a hole is not a zero
+    expect(parseVectorLiteral('{1:}/3', 'sparsevec')).toBeUndefined(); // nor is a missing value
+    expect(parseVectorLiteral('[1,2]', 'sparsevec')).toBeUndefined();
+    expect(parseVectorLiteral('{9:1}/3', 'sparsevec')).toBeUndefined(); // index past the dimension
   });
 });

@@ -1,4 +1,3 @@
-import { getMeta } from '../entity/index.js';
 import {
   type DialectFeatures,
   type EntityMeta,
@@ -7,7 +6,6 @@ import {
   type IndexFeature,
   type IndexSchema,
   type JsonColumnType,
-  type QueryConflictPaths,
   type QueryContext,
   QueryRaw,
   type QuerySizeComparisonOps,
@@ -59,6 +57,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly commitTransactionCommand = 'COMMIT';
   override readonly rollbackTransactionCommand = 'ROLLBACK';
   override readonly alterColumnStrategy = 'separate-clauses';
+
+  /** `$N` placeholders carry their own index, so the upsert's assignments need no scratch context. */
+  protected override readonly upsertUpdateBindsInPlace = true;
   override readonly insertIdSource = 'returning';
   override readonly maxBindValues: number = 65535;
 
@@ -140,26 +141,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   override placeholder(index: number): string {
     return `$${index}`;
-  }
-
-  /**
-   * The same statement as the base, binding the assignments into the main context instead of a second
-   * one: `$N` placeholders carry their own index, so the values need not be in statement order, and
-   * computing them first is what keeps `appendInsertValues`' `onInsert` fields out of the update set.
-   */
-  override upsert<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E | E[],
-    extraReturning = '',
-  ): void {
-    const meta = getMeta(entity);
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, this.upsertExcluded);
-    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
-    this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
   }
 
   /**

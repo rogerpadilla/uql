@@ -2247,6 +2247,37 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([5]);
   }
 
+  /**
+   * `$having` accepts the full operator vocabulary its type advertises. It used to carry its own
+   * partial copy of the WHERE operator dispatch, so a text operator on a `$min`/`$max` type-checked
+   * and then threw `unsupported HAVING operator` at runtime.
+   */
+  shouldAggregateWithHavingTextOperator() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { companyId: true },
+        $agg: { biggest: { $max: 'name' } },
+        $having: { biggest: { $startsWith: 'A' } },
+      }),
+    );
+    expect(sql).toContain('HAVING MAX(');
+    expect(sql).toContain('LIKE ');
+    expect(values).toEqual(['A%']);
+  }
+
+  /** And it compares against null the way every other operand does, rather than emitting `= NULL`. */
+  shouldAggregateWithHavingNullComparison() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { companyId: true },
+        $agg: { biggest: { $max: 'name' } },
+        $having: { biggest: { $eq: null } },
+      }),
+    );
+    expect(sql).toContain('IS NULL');
+    expect(values).toEqual([]);
+  }
+
   shouldAggregateSortByAliasInsteadOfField() {
     const { sql } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {

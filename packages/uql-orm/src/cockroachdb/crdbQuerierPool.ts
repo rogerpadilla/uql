@@ -1,5 +1,6 @@
-import { Pool, type PoolClient, type PoolConfig } from 'pg';
+import { Pool, type PoolClient, type PoolConfig, types } from 'pg';
 import { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
+import { numericTypes } from '../postgres/pgNumericTypes.js';
 import type { ExtraOptions } from '../type/index.js';
 import { CockroachDialect } from './cockroachDialect.js';
 import { CrdbQuerier } from './crdbQuerier.js';
@@ -13,12 +14,12 @@ export class CrdbQuerierPool extends AbstractPgQuerierPool<PoolClient, CrdbQueri
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
     super(
       new CockroachDialect({ namingStrategy: extra?.namingStrategy }),
-      new Pool({ keepAlive: true, ...opts }),
+      new Pool({ keepAlive: true, types: numericTypes(types), ...opts }),
       extra,
     );
   }
 
-  async getQuerier() {
-    return new CrdbQuerier(() => this.pool.connect(), this.dialect, this.extra);
+  protected override buildQuerier(connect: () => Promise<PoolClient>) {
+    return new CrdbQuerier(connect, this.dialect, this.extra);
   }
 }

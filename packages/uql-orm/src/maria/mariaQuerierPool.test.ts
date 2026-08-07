@@ -14,7 +14,6 @@ export class MariadbQuerierPoolIt extends AbstractSqlQuerierPoolIt<MariadbQuerie
         database: 'test',
         connectionLimit: 5,
         trace: true,
-        bigIntAsNumber: true,
       }),
     );
   }

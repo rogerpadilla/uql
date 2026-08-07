@@ -1,10 +1,7 @@
 import { expect } from 'vitest';
 import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
-import { configurePgNumericTypeParsers } from '../test/pgTypeParsers.util.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
-
-configurePgNumericTypeParsers();
 
 export class PostgresQuerierIt extends PgLikeQuerierIt {
   constructor() {

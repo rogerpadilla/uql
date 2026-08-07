@@ -5,10 +5,6 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  // ============================================================================
-  // SQL Queries (dialect-specific)
-  // ============================================================================
-
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT table_name
@@ -138,14 +134,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  // ============================================================================
-  // Internal Types
-  // ============================================================================
-
-  protected mapTableNameRow(row: { table_name: string }): string {
-    return row.table_name;
-  }
-
   protected async mapColumnsResult(
     _read: TableRowReader,
     _tableName: string,
@@ -199,10 +187,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));
   }
-
-  // ============================================================================
-  // PostgreSQL-specific helpers
-  // ============================================================================
 
   protected normalizeType(dataType: string, udtName: string): string {
     // Handle user-defined types and arrays

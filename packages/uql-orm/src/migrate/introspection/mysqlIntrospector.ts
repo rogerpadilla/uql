@@ -6,10 +6,6 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
 export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  // ============================================================================
-  // SQL Queries (dialect-specific)
-  // ============================================================================
-
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT TABLE_NAME as table_name
@@ -103,14 +99,6 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND CONSTRAINT_NAME = 'PRIMARY'
       ORDER BY ORDINAL_POSITION
     `;
-  }
-
-  // ============================================================================
-  // Internal Types
-  // ============================================================================
-
-  protected mapTableNameRow(row: { table_name: string }): string {
-    return row.table_name;
   }
 
   protected async mapColumnsResult(

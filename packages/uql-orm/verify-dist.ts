@@ -115,13 +115,16 @@ function checkBrowserGraph(): number {
 // Gzipped bytes per entry, peers external. Catches what the checks above cannot: a dev-only module
 // becoming reachable from a consumer entry, which leaves the `dist` total unchanged. Four suffice -
 // the SQL drivers share one core, so the root moves with them.
+// `.` and `./postgres` carry ~+500 each for read-side decoding; see the CHANGELOG entry for it.
 const BUDGETS: Record<string, number> = {
-  '.': 24_600,
-  './postgres': 20_000,
+  '.': 25_200,
+  './postgres': 20_700,
   './migrate': 43_000,
   './browser': 1_700,
 };
-const DIST_BYTES_BUDGET = 1_080_000;
+// Counts declarations, so JSDoc on an exported symbol lands here: the last raise was documentation
+// on `numericTypes` and `QueryAggregateFnResult`, not code.
+const DIST_BYTES_BUDGET = 1_092_000;
 
 async function checkSizeBudgets(): Promise<number> {
   function totalBytes(dir: string): number {

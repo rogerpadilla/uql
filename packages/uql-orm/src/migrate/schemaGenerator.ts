@@ -73,10 +73,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.dialect.serialPrimaryKey;
   }
 
-  // ============================================================================
-  // CanonicalType Integration (Unified Type System)
-  // ============================================================================
-
   /**
    * Convert FieldOptions to CanonicalType using the unified type system.
    */
@@ -87,10 +83,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   protected canonicalTypeToSql(type: CanonicalType): string {
     return canonicalToSql(type, this.dialect);
   }
-
-  // ============================================================================
-  // SchemaGenerator Implementation
-  // ============================================================================
 
   generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string[] {
     const builder = new SchemaASTBuilder(this.dialect.namingStrategy);
@@ -489,10 +481,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return normalize(current) === normalize(desired);
   }
 
-  // ============================================================================
-  // SchemaAST Support Methods
-  // ============================================================================
-
   generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string[] {
     const columns: string[] = [];
     const constraints: string[] = [];
@@ -585,10 +573,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists: boolean } = { ifNotExists: false }): string {
     return this.generateCreateIndex(index.table.name, indexNodeToSchema(index), options);
   }
-
-  // ============================================================================
-  // Phase 3: Builder Operation Methods (Moved forward for unification)
-  // ============================================================================
 
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
     const tableNode = this.tableDefinitionToNode(table);

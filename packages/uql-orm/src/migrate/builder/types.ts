@@ -8,10 +8,6 @@
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 
-// ============================================================================
-// Column Options (User-facing API)
-// ============================================================================
-
 /**
  * Foreign key reference options.
  */
@@ -77,10 +73,6 @@ export interface VectorColumnOptions extends BaseColumnOptions {
   dimensions?: number;
 }
 
-// ============================================================================
-// Column Definition Types
-// ============================================================================
-
 /**
  * Base options for a column definition.
  */
@@ -129,10 +121,6 @@ export interface FullColumnDefinition extends ColumnDefinition {
   index?: string | boolean;
 }
 
-// ============================================================================
-// Table Definition Types
-// ============================================================================
-
 /**
  * Complete table definition.
  */
@@ -168,10 +156,6 @@ export interface TableForeignKeyDefinition {
   /** Action on update */
   onUpdate: ForeignKeyAction;
 }
-
-// ============================================================================
-// Migration Operation Types
-// ============================================================================
 
 /**
  * Type of migration operation.
@@ -326,10 +310,6 @@ export type AnyMigrationOperation =
   | AddForeignKeyOperation
   | DropForeignKeyOperation
   | RawSqlOperation;
-
-// ============================================================================
-// Builder Interfaces
-// ============================================================================
 
 /**
  * Interface for column builder (fluent API).

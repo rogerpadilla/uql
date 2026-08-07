@@ -36,6 +36,18 @@ export function isNumericType(type: unknown): boolean {
 }
 
 /**
+ * Checks if a field type is boolean (Boolean, or an explicit boolean logical type)
+ */
+export function isBooleanType(type: unknown): boolean {
+  if (type === Boolean) return true;
+  if (typeof type === 'string') {
+    const lowered = type.toLowerCase();
+    return lowered === 'bool' || lowered === 'boolean';
+  }
+  return false;
+}
+
+/**
  * Checks if a field type is JSON
  */
 export function isJsonType(type: unknown): boolean {

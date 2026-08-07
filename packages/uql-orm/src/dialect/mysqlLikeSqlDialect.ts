@@ -94,16 +94,27 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
       (name) => `VALUES(${name})`,
     );
 
+    const returning = this.upsertReturning(entity);
+
     if (update) {
       this.appendInsertValues(ctx, entity, payload);
-      ctx.append(` ON DUPLICATE KEY UPDATE ${update}`);
+      ctx.append(` ON DUPLICATE KEY UPDATE ${update}${returning}`);
       ctx.pushValue(...updateCtx.values);
       return;
     }
     const insertCtx = this.createContext();
     this.appendInsertValues(insertCtx, entity, payload);
     ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
+    ctx.append(returning);
     ctx.pushValue(...insertCtx.values);
+  }
+
+  /**
+   * Appended to both branches above. Empty on MySQL, which has no `INSERT ... RETURNING`; MariaDB
+   * 10.5+ has it, and used to restate this whole method just to add it.
+   */
+  protected upsertReturning<E>(_entity: Type<E>): string {
+    return '';
   }
 
   override readonly maxBindValues: number = 65535;
