@@ -37,7 +37,7 @@ and no compiler flag to turn on ([setup](https://uql-orm.dev/getting-started)), 
 [imperative API](https://uql-orm.dev/entities/imperative) skips decorators altogether.
 
 ```ts
-await querier.findMany(User, {
+await pool.findMany(User, {
   $select: { id: true, email: true },
   $populate: { posts: { $select: { title: true } } },
   $where: { email: { $endsWith: '@uql-orm.dev' } },
