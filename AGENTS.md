@@ -27,3 +27,10 @@ Canonical, tool-neutral instructions for this repo. Claude Code reads them via `
 
 ## Changelog
 - Only put what worth it, keep described changes small for each release.
+- Write the entry **before** releasing, with the heading set to the version the bump will produce. Nothing checks that the two agree.
+
+## Releasing
+
+- `bun run release.patch` (or `.minor` / `.major`) is the whole flow: `build`, `check.package` (publint + `attw`), `lerna publish`, then `git push --follow-tags`. It does **not** run the tests, so `bun run check` first.
+- npm auth needs no setup: `.npmrc` is tracked and holds only the `${NPM_ACCESS_TOKEN}` placeholder, the token itself lives in `.env`, which is gitignored, and `bun run` loads `.env` automatically. Anything invoking `npm` outside `bun` has to export the variable itself.
+- `lerna publish` prompts for confirmation, which a non-interactive shell cannot answer. Use `bun run release patch --yes` and then `git push --follow-tags` separately: arguments append to the end of the script, so they land on `lerna publish`.
