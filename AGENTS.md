@@ -5,7 +5,7 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 ## Verifying a change
 
 - `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` belongs in it because `check.package` inspects `dist`, so without one the gate validates the previous release's output and passes. `bun run lint.fix` fixes formatting instead of only reporting it.
-- `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, and no entry exceeds its size budget. `DIST_BYTES_BUDGET` counts declarations, so JSDoc spends it and raising it for documentation is expected; a *per-entry* budget moving is the leaked-module case the budgets exist to catch.
+- `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, and no entry exceeds its size budget. `DIST_BYTES_BUDGET` counts raw bytes of everything in `dist`, comments included, since `tsc` keeps them in the emitted `.js` as well as the `.d.ts`; prose spends it, so raising it for documentation is expected. Do not reach for `removeComments` to win it back: it strips the `.d.ts` JSDoc too, which is every consumer's editor hover. A *per-entry* gzipped budget moving is the leaked-module case the budgets exist to catch.
 - `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases through the same fixture tables. Anything else touching them concurrently corrupts them, including an orphaned worker from an earlier run, so never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive. Redirect to a file and read that.
 
 ## Conventions
