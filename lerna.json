@@ -3,10 +3,10 @@
   "version": "independent",
   "npmClient": "bun",
   "command": {
-    "publish": {
+    "version": {
       "conventionalCommits": true,
       "changelog": false,
-      "message": "chore(release): publish",
+      "message": "chore(release): version bump",
       "allowBranch": "main",
       "ignoreChanges": ["**/*.spec.ts", "**/*.test.ts", "**/test/**"]
     }

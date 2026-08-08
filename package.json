@@ -6,12 +6,13 @@
     "packages/*"
   ],
   "scripts": {
-    "release": "bun run build && bun run check.package && lerna publish",
+    "release": "bun run build && bun run check.package && lerna version",
     "check.package": "publint packages/uql-orm && attw --pack --profile esm-only packages/uql-orm",
     "release.patch": "bun run release patch && git push --follow-tags",
     "release.minor": "bun run release minor && git push --follow-tags",
     "release.major": "bun run release major && git push --follow-tags",
-    "release.current": "bun run release from-package && git push --follow-tags",
+    "publish.orm": "cd packages/uql-orm && bun publish",
+    "publish.codemod": "cd packages/uql-codemod && bun publish",
     "check": "bun run lint && bun run ts && bun run test && bun run build && bun run check.package",
     "ts": "tsc --noEmit",
     "build": "bun run --filter '*' build",

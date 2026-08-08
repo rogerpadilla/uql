@@ -26,7 +26,12 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 
 ## Releasing
 
+Versioning and publishing are two separate steps, deliberately: `lerna publish`'s own npm-publish step
+404s unreliably against the registry here regardless of `npmClient`, so `lerna` only bumps/tags/pushes
+and `bun publish` does the actual publish, per package.
+
 - Write the CHANGELOG entry first, with the heading set to the version the bump will produce: nothing checks that the two agree. Keep it to the changes worth a reader's time, not one line per commit.
-- `bun run release.patch` (or `.minor` / `.major`) does `build`, `check.package`, `lerna publish`, `git push --follow-tags`. It does **not** run the tests, so `bun run check` first. `lerna publish` prompts, which a non-interactive shell cannot answer: use `bun run release patch --yes` and push the tags separately.
+- `bun run release.patch` (or `.minor` / `.major`) does `build`, `check.package`, `lerna version`, `git push --follow-tags`. It does **not** run the tests, so `bun run check` first. `lerna version` prompts, which a non-interactive shell cannot answer: use `bun run release patch --yes` and push the tags separately.
+- Then publish whichever package(s) `lerna version` reported as changed: `bun run publish.orm` / `bun run publish.codemod` (each is just `cd packages/<name> && bun publish`). `bun publish` exits `0` even when the registry rejects a republish of an already-published version, so read its output rather than trust the exit code - a real failure looks the same on the surface as a correct no-op skip.
 - npm auth needs no setup: `.npmrc` holds only the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` has to export it.
-- **A failed publish leaves the release half-done**, since `lerna` bumps, commits and pushes the tag before publishing. Do not bump again: that burns a version and leaves the tag pointing at nothing published. Recover with `bun run release.current` (`lerna publish from-package`).
+- Because versioning and publishing are separate, a failed publish never leaves the release half-done the way a combined step would: the tag and CHANGELOG are already correct, and re-running `bun run publish.orm` costs nothing.
