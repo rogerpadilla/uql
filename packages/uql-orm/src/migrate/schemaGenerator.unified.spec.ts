@@ -57,7 +57,7 @@ describe('SqlSchemaGenerator (unified)', () => {
       const generator = new SqlSchemaGenerator(dialect);
 
       it('should generate correct CREATE TABLE SQL', () => {
-        const sql = generator.generateCreateTable(User).join('\n');
+        const sql = generator.generateCreateSchema([User]).join('\n');
 
         expect(sql).toContain('CREATE TABLE');
         expect(sql).toContain('users');

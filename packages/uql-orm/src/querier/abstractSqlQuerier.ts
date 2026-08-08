@@ -316,10 +316,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       return 0;
     }
     const ids = founds.map((it) => it[meta.id]);
+    // Children first: they hold the foreign key, so deleting the parent ahead of them is rejected
+    // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
+    await this.deleteRelations(entity, ids, opts);
     const deleteCtx = this.dialect.createContext();
     this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
     const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);
-    await this.deleteRelations(entity, ids, opts);
     return changes;
   }
 

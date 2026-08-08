@@ -18,7 +18,9 @@ import type {
 } from '../schema/types.js';
 import type {
   ColumnSchema,
+  CreateSchemaOptions,
   DialectFeatures,
+  DropSchemaOptions,
   EntityMeta,
   FieldKey,
   FieldOptions,
@@ -84,14 +86,70 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return canonicalToSql(type, this.dialect);
   }
 
-  generateCreateTable<E>(entity: Type<E>, options: { ifNotExists?: boolean } = {}): string[] {
-    const builder = new SchemaASTBuilder(this.dialect.namingStrategy);
-    const ast = builder.fromEntities([entity]);
-    const tableNode = ast.getTables()[0];
-    return this.generateCreateTableFromNode(tableNode, options);
+  /**
+   * Every `CREATE TABLE` for `entities`, then their foreign keys.
+   *
+   * Two phases rather than inline constraints, because a relation graph is routinely cyclic: any
+   * `createdBy`-style back-reference makes `A` reference `B` while `B` references `A`, and no create
+   * order satisfies that. TypeORM's schema builder splits for the same reason (`createNewTables()`
+   * then `createForeignKeys()`). SQLite is the exception and keeps them inline: it cannot `ALTER` a
+   * foreign key in, but it resolves targets lazily, so a forward reference is fine there.
+   */
+  generateCreateSchema(entities: readonly Type<unknown>[], options: CreateSchemaOptions = {}): string[] {
+    const tables = this.orderedTables(entities, 'create', options.only);
+    const withForeignKeys = options.foreignKeys ?? true;
+    // Inline only where a constraint cannot be added afterwards, which is what makes the cyclic case
+    // work everywhere else.
+    const inline = withForeignKeys && !this.features.foreignKeyAlter;
+
+    const statements = tables.flatMap((table) =>
+      this.generateCreateTableFromNode(inline ? table : { ...table, outgoingRelations: [] }, options),
+    );
+
+    if (withForeignKeys && !inline) {
+      for (const table of tables) {
+        for (const rel of table.outgoingRelations) {
+          statements.push(
+            this.generateAddForeignKeySql(table.name, {
+              name: rel.name,
+              columns: rel.from.columns.map((c) => c.name),
+              referencesTable: rel.to.table.name,
+              referencesColumns: rel.to.columns.map((c) => c.name),
+              onDelete: rel.onDelete ?? this.defaultForeignKeyAction,
+              onUpdate: rel.onUpdate ?? this.defaultForeignKeyAction,
+            }),
+          );
+        }
+      }
+    }
+
+    return statements;
   }
 
-  generateDropTable(tableName: string, options: { ifExists?: boolean; cascade?: boolean } = {}): string {
+  generateDropSchema(entities: readonly Type<unknown>[], options: DropSchemaOptions = {}): string[] {
+    return this.orderedTables(entities, 'drop').map((table) => this.generateDropTable(table.name, options));
+  }
+
+  /**
+   * The tables of `entities` in dependency order, optionally narrowed to `only`. The AST always spans
+   * every entity even when narrowed, so a relation pointing at a table outside the subset still
+   * resolves instead of being silently dropped.
+   */
+  private orderedTables(
+    entities: readonly Type<unknown>[],
+    direction: 'create' | 'drop',
+    only?: readonly string[],
+  ): TableNode[] {
+    const ast = new SchemaASTBuilder(this.dialect.namingStrategy).fromEntities(entities);
+    const tables = direction === 'create' ? ast.getCreateOrder() : ast.getDropOrder();
+    if (!only) {
+      return tables;
+    }
+    const wanted = new Set(only);
+    return tables.filter((table) => wanted.has(table.name));
+  }
+
+  generateDropTable(tableName: string, options: DropSchemaOptions = {}): string {
     const ifExists = options.ifExists ? 'IF EXISTS ' : '';
     const cascade = options.cascade && this.features.dropTableCascade ? ' CASCADE' : '';
     return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;

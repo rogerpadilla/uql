@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Company, NarrowVectorItem } from '../test/index.js';
+import { Company, NarrowVectorItem, Profile, User } from '../test/index.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -63,5 +63,47 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
 
     expect(byHalf.map((r) => r.name)).toEqual(['near', 'far']);
     expect(bySparse.map((r) => r.name)).toEqual(['near', 'far']);
+  }
+  /**
+   * A cascade has to delete the children before the parent, because the children hold the foreign key.
+   * Nothing else in the suite can catch a wrong order: `createTables` builds the fixtures without
+   * constraints on purpose, so an out-of-order delete succeeds there and only fails on a real schema.
+   * This adds the constraint for the duration of the test and takes it back off.
+   */
+  async shouldCascadeDeleteChildrenBeforeParent() {
+    const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
+    await this.querier.run(
+      'ALTER TABLE "user_profile" ADD CONSTRAINT "user_profile_creator_fk" FOREIGN KEY ("creatorId") REFERENCES "User" ("id")',
+    );
+
+    try {
+      expect(await this.querier.deleteOneById(User, id)).toBe(1);
+      expect(await this.querier.findMany(Profile, { $where: { creatorId: id } })).toHaveLength(0);
+      expect(await this.querier.findMany(User, { $where: { id } })).toHaveLength(0);
+    } finally {
+      await this.querier.run('ALTER TABLE "user_profile" DROP CONSTRAINT "user_profile_creator_fk"');
+    }
+  }
+  /**
+   * `onDelete: 'CASCADE'` hands the cascade to the database, so deleting the parent is one statement
+   * rather than the graph walk `cascade: 'delete'` performs. Asserted against a real constraint with
+   * `ON DELETE CASCADE`, since that is the only place the behaviour exists.
+   */
+  async shouldLetTheDatabaseCascadeWhenOnDeleteIsDeclared() {
+    const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
+    await this.querier.run(
+      'ALTER TABLE "user_profile" ADD CONSTRAINT "user_profile_creator_cascade_fk"' +
+        ' FOREIGN KEY ("creatorId") REFERENCES "User" ("id") ON DELETE CASCADE',
+    );
+
+    try {
+      // Bypasses `deleteMany` deliberately: this asserts what the constraint does on its own, which is
+      // what a user gets once the relation declares `onDelete` and drops `cascade`.
+      const { changes } = await this.querier.run('DELETE FROM "User" WHERE "id" = $1', [id]);
+      expect(changes).toBe(1);
+      expect(await this.querier.findMany(Profile, { $where: { creatorId: id } })).toHaveLength(0);
+    } finally {
+      await this.querier.run('ALTER TABLE "user_profile" DROP CONSTRAINT "user_profile_creator_cascade_fk"');
+    }
   }
 }

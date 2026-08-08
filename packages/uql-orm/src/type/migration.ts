@@ -201,18 +201,47 @@ export interface SchemaDiff {
   readonly foreignKeysToDrop?: string[];
 }
 
+export interface CreateSchemaOptions {
+  readonly ifNotExists?: boolean;
+  /**
+   * Restrict which tables are created, for an incremental migration adding one table to a schema that
+   * already exists. Constraints still resolve against the full entity graph.
+   */
+  readonly only?: readonly string[];
+  /**
+   * Emit the tables without their foreign keys. Only the integration fixtures want this, and only until
+   * their data stops relying on dangling references; a migration always wants the constraints.
+   */
+  readonly foreignKeys?: boolean;
+}
+
+export interface DropSchemaOptions {
+  readonly ifExists?: boolean;
+  readonly cascade?: boolean;
+}
+
 /**
  * Interface for generating DDL statements from entity metadata
  */
 export interface SchemaGenerator {
   /**
-   * DDL to create an entity’s table: one element per `querier.run` (optional `CREATE EXTENSION`, `CREATE TABLE`, each `CREATE INDEX`, …).
-   * Join with `'\n'` if you need a single script blob.
+   * The whole schema for `entities`: every table, then the foreign keys between them.
+   *
+   * There is deliberately no per-entity counterpart. One entity means an AST holding one table, so every
+   * cross-entity foreign key has nothing to resolve against and is dropped: all three call sites that
+   * used to work that way emitted schemas with no referential integrity.
    */
-  generateCreateTable<E>(entity: Type<E>, options?: { ifNotExists?: boolean }): string[];
+  generateCreateSchema(entities: readonly Type<unknown>[], options?: CreateSchemaOptions): string[];
+
+  /**
+   * Every `DROP TABLE` for `entities`, dependents first. The inverse of {@link generateCreateSchema},
+   * and the reason it takes the whole set: dropping in any order that ignores the relation graph is
+   * rejected once the foreign keys are really there.
+   */
+  generateDropSchema(entities: readonly Type<unknown>[], options?: DropSchemaOptions): string[];
 
   /** Generate DROP TABLE statement. */
-  generateDropTable(tableName: string, options?: { ifExists?: boolean; cascade?: boolean }): string;
+  generateDropTable(tableName: string, options?: DropSchemaOptions): string;
 
   /**
    * Generate ALTER TABLE statements based on schema diff

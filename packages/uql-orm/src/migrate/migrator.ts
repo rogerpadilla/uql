@@ -302,20 +302,23 @@ export class Migrator {
    * Generate a migration based on entity schema differences
    */
   async generateFromEntities(name: string): Promise<string> {
-    const upStatements: string[] = [];
+    const creating: string[] = [];
+    const altering: string[] = [];
     const downStatements: string[] = [];
 
     for (const { diff, entity } of await this.pendingDiffs()) {
       if (diff.type === 'create') {
         if (entity) {
-          upStatements.push(...this.generator.generateCreateTable(entity));
+          creating.push(diff.tableName);
           downStatements.push(this.generator.generateDropTable(diff.tableName, { ifExists: true }));
         }
       } else if (diff.type === 'alter') {
-        upStatements.push(...this.generator.generateAlterTable(diff));
+        altering.push(...this.generator.generateAlterTable(diff));
         downStatements.push(...this.generator.generateAlterTableDown(diff));
       }
     }
+
+    const upStatements = [...this.createSchema(creating), ...altering];
 
     if (upStatements.length === 0) {
       this.logger.logInfo('No schema changes detected.');
@@ -398,23 +401,20 @@ export class Migrator {
   public async syncForce(): Promise<void> {
     await this.ensureSchemaGenerator();
 
+    // Both directions span the whole entity set rather than looping an entity at a time. A per-entity
+    // AST cannot resolve a cross-entity foreign key, so the old create loop silently produced a schema
+    // with no referential integrity; and the old drop loop went in reverse *declaration* order, which
+    // says nothing about the relation graph and is rejected as soon as the constraints are really there.
+    const statements = [
+      ...this.generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
+      ...this.generator.generateCreateSchema(this.entities),
+    ];
+
     await withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
       querier.transaction(async () => {
-        // Drop all tables first (in reverse order for foreign keys)
-        for (const entity of [...this.entities].reverse()) {
-          const tableName = this.generator.resolveTableName(entity, getMeta(entity));
-          const dropSql = this.generator.generateDropTable(tableName, { ifExists: true });
-          this.logger.logSchema(`Executing: ${dropSql}`);
-          await querier.run(dropSql);
-        }
-
-        // Create all tables
-        for (const entity of this.entities) {
-          const createStmts = this.generator.generateCreateTable(entity);
-          for (const createSql of createStmts) {
-            this.logger.logSchema(`Executing: ${createSql}`);
-            await querier.run(createSql);
-          }
+        for (const sql of statements) {
+          this.logger.logSchema(`Executing: ${sql}`);
+          await querier.run(sql);
         }
       }),
     );
@@ -441,17 +441,30 @@ export class Migrator {
    * statements rather than a summary of a second, differently-computed diff.
    */
   async planSync(options: { safe?: boolean; drop?: boolean } = {}): Promise<string[]> {
-    const statements: string[] = [];
+    const creating: string[] = [];
+    const altering: string[] = [];
 
     for (const { diff, entity } of await this.pendingDiffs()) {
       if (diff.type === 'create') {
-        if (entity) statements.push(...this.generator.generateCreateTable(entity));
+        if (entity) creating.push(diff.tableName);
       } else if (diff.type === 'alter') {
-        statements.push(...this.generator.generateAlterTable(this.filterDiff(diff, options)));
+        altering.push(...this.generator.generateAlterTable(this.filterDiff(diff, options)));
       }
     }
 
-    return statements;
+    return [...this.createSchema(creating), ...altering];
+  }
+
+  /**
+   * New tables are emitted together, never one at a time: a single-entity AST has no other table for a
+   * relation to resolve against, so every cross-entity foreign key was dropped and generated schemas
+   * carried none. Spanning the graph is also what lets a cyclic relation (any `createdBy`
+   * back-reference) be created at all.
+   *
+   * Empty in, empty out, so a diff with no new tables does not build an AST for the whole graph.
+   */
+  private createSchema(tableNames: readonly string[]): string[] {
+    return tableNames.length ? this.generator.generateCreateSchema(this.entities, { only: tableNames }) : [];
   }
 
   /**

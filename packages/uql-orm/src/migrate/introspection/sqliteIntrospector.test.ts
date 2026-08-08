@@ -2,7 +2,6 @@ import { expect } from 'vitest';
 import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createMockQuerierPool, createSpec } from '../../test/index.js';
-import type { SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -10,11 +9,6 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   constructor() {
     const pool = new Sqlite3QuerierPool(':memory:');
     super(pool, new SqliteSchemaIntrospector(pool));
-  }
-
-  /** SQLite requires enabling foreign keys with PRAGMA. */
-  override async beforeCreateTables(querier: SqlQuerier): Promise<void> {
-    await querier.run('PRAGMA foreign_keys = ON');
   }
 
   /** SQLite has no date/time type: a timestamp is stored, and read back, as `TEXT`. */

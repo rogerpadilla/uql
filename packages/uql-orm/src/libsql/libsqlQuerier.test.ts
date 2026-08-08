@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
-import { createSpec } from '../test/index.js';
+import { createSpec, probeForeignKeys } from '../test/index.js';
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
 // `:memory:` is avoided here: `client.transaction()` opens a separate connection, and SQLite's
@@ -23,10 +24,8 @@ export class LibsqlQuerierIt extends VectorQuerierIt {
     return 12345678901234567000;
   }
 
-  override async beforeEach() {
-    await super.beforeEach();
-    await this.querier.run('PRAGMA foreign_keys = ON');
-  }
+  // No `foreign_keys` pragma here: libSQL turns enforcement on itself, unlike vanilla SQLite. The test
+  // below is what holds that default in place.
 
   override async afterAll() {
     await super.afterAll();
@@ -37,3 +36,15 @@ export class LibsqlQuerierIt extends VectorQuerierIt {
 }
 
 createSpec(new LibsqlQuerierIt());
+
+describe('foreign key enforcement', () => {
+  it('should enforce without the pool setting a pragma, which libSQL does itself', async () => {
+    const file = join(tmpdir(), `uql-libsql-fk-${randomUUID()}.db`);
+    const pool = new LibsqlQuerierPool({ url: `file:${file}` });
+    const querier = await pool.getQuerier();
+
+    expect(await probeForeignKeys(querier)).toEqual({ dangling: 'rejected', orphans: [] });
+    await pool.end();
+    rmSync(file, { force: true });
+  });
+});

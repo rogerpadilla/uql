@@ -44,6 +44,7 @@ export class TursoLocalQuerierPool extends AbstractSqlQuerierPool<TursoLocalQuer
     // Annotated rather than cast, so the structural contract is checked against the real driver.
     const db: TursoDatabase = await connect(this.filename, this.opts);
     await db.pragma('journal_mode = WAL');
+    await db.pragma('foreign_keys = ON');
     return db;
   }
 

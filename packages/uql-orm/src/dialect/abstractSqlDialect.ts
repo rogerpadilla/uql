@@ -811,7 +811,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   private appendInNin(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
-    this.appendFieldSql(ctx, field, this.formatIn(ctx, Array.isArray(val) ? val : [], op === '$nin'));
+    if (!Array.isArray(val)) {
+      // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
+      throw TypeError(`${op} expects an array, got ${val === null ? 'null' : typeof val}`);
+    }
+    this.appendFieldSql(ctx, field, this.formatIn(ctx, val, op === '$nin'));
   }
 
   /**

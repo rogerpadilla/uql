@@ -60,7 +60,7 @@ export class SchemaASTBuilder {
   /**
    * Build AST from entity classes (decorated with @Entity, @Field, etc.)
    */
-  fromEntities(entities: Type<unknown>[], options: BuildFromEntitiesOptions = {}): SchemaAST {
+  fromEntities(entities: readonly Type<unknown>[], options: BuildFromEntitiesOptions = {}): SchemaAST {
     this.reset();
 
     const namingStrategy = options.namingStrategy ?? this.namingStrategy;
@@ -235,8 +235,10 @@ export class SchemaASTBuilder {
             type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
             from: { table, columns: [localColumn] },
             to: { table: relatedTable, columns: [foreignColumn] },
-            onDelete: options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
-            onUpdate: options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
+            // The relation's own action wins over the global default, so one relation can cascade in the
+            // database while the rest stay on `NO ACTION`.
+            onDelete: relation.onDelete ?? options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
+            onUpdate: relation.onUpdate ?? options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
             confidence: 1.0,
             inferredFrom: 'entity_decorator',
           };

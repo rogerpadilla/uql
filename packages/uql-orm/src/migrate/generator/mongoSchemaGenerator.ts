@@ -3,6 +3,7 @@ import { getMeta } from '../../entity/index.js';
 import { mongoDialectFeatures } from '../../mongo/mongoDialect.js';
 import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
 import type {
+  CreateSchemaOptions,
   DialectName,
   FieldOptions,
   IndexSchema,
@@ -29,6 +30,29 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     protected readonly defaultForeignKeyAction?: ForeignKeyAction,
   ) {
     super({ namingStrategy });
+  }
+
+  /**
+   * A document store has no cross-collection constraint, so unlike the SQL generator there is nothing to
+   * defer and no order to respect: this is each collection and nothing more. `foreignKeys` is accepted
+   * and ignored for the same reason.
+   */
+  generateCreateSchema(entities: readonly Type<unknown>[], options?: CreateSchemaOptions): string[] {
+    return this.selected(entities, options?.only).flatMap((entity) => this.generateCreateTable(entity, options));
+  }
+
+  generateDropSchema(entities: readonly Type<unknown>[]): string[] {
+    return this.selected(entities).map((entity) =>
+      this.generateDropTable(this.resolveTableName(entity, getMeta(entity))),
+    );
+  }
+
+  private selected(entities: readonly Type<unknown>[], only?: readonly string[]): readonly Type<unknown>[] {
+    if (!only) {
+      return entities;
+    }
+    const wanted = new Set(only);
+    return entities.filter((entity) => wanted.has(this.resolveTableName(entity, getMeta(entity))));
   }
 
   generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {

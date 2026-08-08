@@ -57,15 +57,9 @@ export abstract class AbstractIntrospectorIt implements Spec {
     await this.pool.end();
   }
 
-  /**
-   * Create all test tables using MigrationBuilder.
-   * Override `beforeCreateTables` and `afterCreateTables` for dialect-specific setup.
-   */
+  /** Create all test tables using MigrationBuilder. */
   async createTables(querier: SqlQuerier): Promise<void> {
     const builder = new MigrationBuilder(querier);
-
-    // Hook for dialect-specific pre-setup (e.g., SQLite PRAGMA)
-    await this.beforeCreateTables(querier);
 
     // Table A: Base table with various column types
     await builder.createTable(INTROSPECT_TABLES.A, (tab) => {
@@ -144,9 +138,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Indexes
     await builder.createIndex(INTROSPECT_TABLES.B, ['col1', 'col2'], { name: 'idx_test_b_cols' });
     await builder.createIndex(INTROSPECT_TABLES.C, ['priority'], { name: 'idx_test_c_priority' });
-
-    // Hook for dialect-specific post-setup
-    await this.afterCreateTables(querier);
   }
 
   /**
@@ -180,12 +171,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
   protected expectedTimestampCategory(): TypeCategory {
     return 'timestamp';
   }
-
-  /** Dialect-specific pre-setup, e.g. SQLite's `PRAGMA foreign_keys = ON`. */
-  protected async beforeCreateTables(_querier: SqlQuerier): Promise<void> {}
-
-  /** Dialect-specific post-setup, run once the shared fixture tables exist. */
-  protected async afterCreateTables(_querier: SqlQuerier): Promise<void> {}
 
   /** Dialect-specific columns added to table A, e.g. Postgres's array columns. */
   protected async addDialectSpecificColumnsA(_querier: SqlQuerier): Promise<void> {}
