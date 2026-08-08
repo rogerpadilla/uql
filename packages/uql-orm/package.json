@@ -58,7 +58,7 @@
   ],
   "scripts": {
     "prepack": "bun run verify-dist.ts && cp ../../README.md .",
-    "postpack": "rm README.md",
+    "postpack": "rm README.md && npm pkg delete gitHead",
     "compile.browser": "bun build src/browser/index.ts --minify --sourcemap=linked --format=esm --target=browser --outdir=dist/browser --entry-naming 'uql-browser.min.[ext]'",
     "build": "bun run clean && tsc -b tsconfig.build.json && bun run compile.browser && bun run verify-dist.ts",
     "start": "tsc --watch",
