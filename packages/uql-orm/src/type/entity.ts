@@ -1,4 +1,4 @@
-import type { IndexType } from '../schema/types.js';
+import type { ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { DistributiveOmit, Json, Scalar, Type, Unpacked } from './utility.js';
@@ -505,6 +505,20 @@ export type RelationOptions<E = any> = {
   entity: EntityGetter<E>;
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
+  /**
+   * Referential actions for the generated foreign key, letting the database do the work instead of the
+   * ORM: `onDelete: 'CASCADE'` makes deleting the parent a single statement rather than the graph walk
+   * `cascade` performs. Defaults to the migrator's `defaultForeignKeyAction`.
+   *
+   * Read only from the side that owns the key (`@ManyToOne`, or a `@OneToOne` without `mappedBy`),
+   * matching where TypeORM, Prisma and Drizzle put it. Not available on a bare `@Field({ references })`
+   * with no relation, because `FieldOptions.onUpdate` already means a value callback there.
+   *
+   * This overlaps `cascade` rather than conflicting with it: declaring both deletes the children in JS
+   * and then leaves the foreign key nothing to cascade, so pick one.
+   */
+  readonly onDelete?: ForeignKeyAction;
+  readonly onUpdate?: ForeignKeyAction;
   mappedBy?: RelationMappedBy<E>;
   /**
    * The pivot entity of a many-to-many. Unconstrained by `E`: a pivot holds foreign keys to both
@@ -542,7 +556,9 @@ type RelationOwnerJoin<E> =
  */
 type RelationJoin<E> = RelationOwnerJoin<E> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
 
-type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade'>;
+// `onDelete`/`onUpdate` only here: the owning side is the one that holds the foreign key, so the inverse
+// side (`mappedBy`) has no constraint to attach an action to.
+type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade' | 'onDelete' | 'onUpdate'>;
 type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> &
   Required<Pick<RelationOptions<E>, 'mappedBy'>>;
 type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> & RelationOwnerJoin<E>;

@@ -42,6 +42,7 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSq
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });
     nodeDb.exec('PRAGMA journal_mode = WAL');
+    nodeDb.exec('PRAGMA foreign_keys = ON');
     return adaptNodeSqlite(nodeDb);
   }
 }

@@ -1115,6 +1115,32 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['some', 1, 2, 3]);
   }
 
+  /**
+   * A non-array `$in` used to coerce to `[]` and match nothing, which reads as a legitimately empty
+   * result. The types forbid it, but `/http` casts client JSON straight to `Query`, so it arrives untyped.
+   */
+  shouldRejectNonArray$in() {
+    for (const operand of [undefined, null, 'abc', 5, {}]) {
+      expect(() =>
+        this.exec((ctx) =>
+          this.dialect.find(ctx, User, {
+            $select: { id: true },
+            $where: { companyId: { $in: operand } } as never,
+          }),
+        ),
+      ).toThrow(/\$in expects an array/);
+    }
+
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $where: { companyId: { $nin: 'abc' } } as never,
+        }),
+      ),
+    ).toThrow(/\$nin expects an array/);
+  }
+
   shouldFind$nin() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {

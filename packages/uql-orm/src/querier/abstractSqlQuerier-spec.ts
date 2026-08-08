@@ -930,8 +930,10 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
     expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` IN (?)', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `Item` WHERE `id` IN (?)', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `ItemTag` WHERE `id` IN (?, ?)', [1, 2]);
+    // Children before the parent: they hold the foreign key, so the reverse order is rejected by any
+    // schema that declares the constraint. Asserted by position on purpose.
+    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `ItemTag` WHERE `id` IN (?, ?)', [1, 2]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `Item` WHERE `id` IN (?)', [1]);
 
     expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(2);
@@ -967,8 +969,9 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.deleteOneById(User, id);
 
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `user_profile` WHERE `pk` IN (?)', [1]);
+    // Children before the parent; see shouldDeleteOneAndCascadeManyToManyDeletes.
+    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `pk` IN (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [1]);
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,

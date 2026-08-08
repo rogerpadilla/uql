@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.25.0] - 2026-08-08
+
+Foreign keys: UQL declared them, but did not reliably create or enforce them.
+
+### Features
+
+- **`onDelete` and `onUpdate` per relation.** `@ManyToOne({ entity: () => Company, onDelete: 'CASCADE' })` lets the database cascade in one statement, where `cascade: 'delete'` walks the graph in JS. Until now the only control was the migrator's `defaultForeignKeyAction`, which applies to every key at once. Declared on the side that owns the key, as in TypeORM, Prisma and Drizzle.
+
+### Breaking
+
+- **`generateCreateTable` is gone**, from `SqlSchemaGenerator` and from the `SchemaGenerator` interface. A single-entity AST cannot resolve a relation to another entity, so it dropped those foreign keys and there was no correct way to call it. Use `generateCreateSchema(entities, { only })`, or `generateCreateTableFromNode` if you already hold an AST. `MongoSchemaGenerator` keeps its own, since collections have no cross-collection constraints.
+
+### Fixes
+
+- **`sync`, `sync --dry-run` and `generate:entities` left out most foreign keys.** Each built one table at a time, so only self-references survived: 38 constraints became 1 on the test schema. All three now emit every table first and the constraints after, which is also the only way a cyclic relation graph can be created at all. SQLite keeps them inline, since it cannot alter one in.
+- **Cascade delete removed the parent before its children**, so it failed with `violates foreign key constraint` against any schema with real constraints. Children go first now.
+- **`bun:sqlite` and Turso did not enforce foreign keys.** SQLite leaves enforcement off per connection, and the drivers disagree: `better-sqlite3`, `node:sqlite` and libSQL switch it on themselves, those two do not. `PRAGMA foreign_keys = ON` is now set on connect for all of them, so enforcement no longer depends on a driver default. Existing Bun or Turso databases holding rows that violate their own constraints will start reporting them.
+- **`sync --force` dropped tables in declaration order**, which says nothing about what references what. It drops dependents first now, with `CASCADE` where the dialect has it.
+- **A non-array `$in`/`$nin` matched nothing instead of failing.** It throws now. The types forbid it, but `/http` casts client JSON straight to `Query`.
+
 ## [0.24.7] - 2026-08-07
 
 ### Fixes

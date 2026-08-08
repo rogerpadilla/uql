@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { probeForeignKeys } from '../test/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 /**
@@ -13,6 +14,17 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     await querier.run('CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, s TEXT)');
     return { pool, querier };
   }
+
+  it('enforces foreign keys, which bun:sqlite leaves off by default', async () => {
+    const pool = new Sqlite3QuerierPool(':memory:');
+    const querier = await pool.getQuerier();
+
+    // The one branch where the pool's `PRAGMA foreign_keys = ON` is load-bearing: `better-sqlite3` and
+    // `node:sqlite` enforce without being asked, `bun:sqlite` does not, so before this the constraints
+    // UQL emits in its own DDL were decorative here.
+    expect(await probeForeignKeys(querier)).toEqual({ dangling: 'rejected', orphans: [] });
+    await pool.end();
+  });
 
   it('reports inserted ids from a RETURNING statement', async () => {
     const { pool, querier } = await seed();

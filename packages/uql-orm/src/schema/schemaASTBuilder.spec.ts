@@ -154,6 +154,40 @@ describe('SchemaASTBuilder', () => {
       expect(col?.type.category).toBe('string');
     });
 
+    it("should emit a relation's own onDelete/onUpdate over the global default", () => {
+      @Entity()
+      class FkParent {
+        @Id({ type: Number }) id?: number;
+        @OneToMany({ entity: () => FkChild, mappedBy: 'parent' }) children?: FkChild[];
+      }
+      @Entity()
+      class FkChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, references: () => FkParent }) parentId?: number;
+        // The action lives on the owning side, which is the side that holds the key.
+        @ManyToOne({ entity: () => FkParent, onDelete: 'CASCADE', onUpdate: 'RESTRICT' })
+        parent?: FkParent;
+      }
+      @Entity()
+      class PlainChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, references: () => FkParent }) parentId?: number;
+        @ManyToOne({ entity: () => FkParent }) parent?: FkParent;
+      }
+
+      const ast = new SchemaASTBuilder().fromEntities([FkParent, FkChild, PlainChild]);
+
+      const declared = ast.getTable('FkChild')?.outgoingRelations[0];
+      expect(declared?.onDelete).toBe('CASCADE');
+      expect(declared?.onUpdate).toBe('RESTRICT');
+
+      // A relation that declares nothing keeps the default, so one relation cascading does not drag
+      // the rest of the schema with it.
+      const untouched = ast.getTable('PlainChild')?.outgoingRelations[0];
+      expect(untouched?.onDelete).toBe('NO ACTION');
+      expect(untouched?.onUpdate).toBe('NO ACTION');
+    });
+
     it('should respect an explicit constructor type (e.g. BigInt) on a FK field over the referenced entity', () => {
       @Entity()
       class Parent3 {

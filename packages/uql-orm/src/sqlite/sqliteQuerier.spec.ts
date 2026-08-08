@@ -11,7 +11,8 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
   override async beforeEach() {
     await super.beforeEach();
     await Promise.all([
-      this.querier.run('PRAGMA foreign_keys = ON'),
+      // No `foreign_keys` here on purpose: the pool sets it on connect now, and a suite that turns it on
+      // itself is exactly why nobody noticed the pool never did. See the enforcement test below.
       this.querier.run('PRAGMA journal_mode = WAL'),
       this.querier.run('PRAGMA synchronous = normal'),
       this.querier.run('PRAGMA temp_store = memory'),
@@ -24,7 +25,7 @@ createSpec(new SqliteQuerierSpec());
 
 // ─── Global listeners (covers abstractQuerier.ts emitHook lines 533-545) ───
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { clearTables, createTables, dropTables, User } from '../test/index.js';
+import { clearTables, createTables, dropTables, probeForeignKeys, User } from '../test/index.js';
 import type { QuerierListener } from '../type/index.js';
 
 describe('global listeners', () => {
@@ -229,5 +230,20 @@ describe('entity lifecycle hooks', () => {
     await querier.updateMany(HookedNote, { $where: { id: 1 } }, { title: 'Renamed' });
 
     expect(HookedNote.seen).toContain('beforeUpdate');
+  });
+});
+
+describe('foreign key enforcement', () => {
+  /**
+   * Guards the `better-sqlite3` branch, which already defaults to enforcing. It is here so a future
+   * driver default flipping off is caught rather than silently changing behaviour; the branch where the
+   * pool's `PRAGMA` is what makes the difference is `bun:sqlite`, covered in `sqliteQuerier.bun.test.ts`.
+   */
+  it('should enforce the constraints in its own DDL', async () => {
+    const pool = new Sqlite3QuerierPool(':memory:');
+    const querier = await pool.getQuerier();
+
+    expect(await probeForeignKeys(querier)).toEqual({ dangling: 'rejected', orphans: [] });
+    await pool.end();
   });
 });

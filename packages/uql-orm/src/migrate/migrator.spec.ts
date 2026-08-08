@@ -202,7 +202,8 @@ describe('Migrator Core Methods', () => {
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('Article'),
       diffSchema: vi.fn(),
-      generateCreateTable: vi.fn().mockReturnValue([createSql, indexSql]),
+      generateCreateSchema: vi.fn().mockReturnValue([createSql, indexSql]),
+      generateDropSchema: vi.fn().mockReturnValue([dropSql]),
       generateDropTable: vi.fn().mockReturnValue(dropSql),
       generateAlterTable: vi.fn(),
       generateAlterTableDown: vi.fn(),
@@ -253,8 +254,8 @@ describe('Migrator Core Methods', () => {
 
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('SyncEntity'),
-      generateDropTable: vi.fn().mockReturnValue('DROP TABLE "SyncEntity"'),
-      generateCreateTable: vi.fn().mockReturnValue(['CREATE TABLE "SyncEntity"']),
+      generateDropSchema: vi.fn().mockReturnValue(['DROP TABLE "SyncEntity"']),
+      generateCreateSchema: vi.fn().mockReturnValue(['CREATE TABLE "SyncEntity"']),
       generateAlterTable: vi.fn(),
       generateAlterTableDown: vi.fn(),
       diffSchema: vi.fn(),
@@ -266,6 +267,9 @@ describe('Migrator Core Methods', () => {
     expect(querier.run).toHaveBeenCalledWith('DROP TABLE "SyncEntity"');
     expect(querier.run).toHaveBeenCalledWith('CREATE TABLE "SyncEntity"');
     expect(querier.commitTransaction).toHaveBeenCalled();
+    // Dependency order, not declaration order: dropping a referenced table first is rejected once the
+    // foreign keys are really emitted, so the drop must span the graph like the create does.
+    expect(generator.generateDropSchema).toHaveBeenCalledWith([SyncEntity], { ifExists: true, cascade: true });
   });
 
   describe('Dialect Auto-Inference', () => {
@@ -650,7 +654,7 @@ describe('Migrator Core Methods', () => {
       ];
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
       vi.spyOn(m, 'findEntityForTable').mockResolvedValue(User);
-      vi.spyOn(m.schemaGenerator!, 'generateCreateTable').mockReturnValue(['CREATE']);
+      vi.spyOn(m.schemaGenerator!, 'generateCreateSchema').mockReturnValue(['CREATE']);
       vi.spyOn(m.schemaGenerator!, 'generateDropTable').mockReturnValue('DROP');
       vi.spyOn(m.schemaGenerator!, 'generateAlterTable').mockReturnValue(['ALTER UP']);
       vi.spyOn(m.schemaGenerator!, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);
