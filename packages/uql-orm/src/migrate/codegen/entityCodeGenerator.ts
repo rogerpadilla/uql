@@ -12,7 +12,14 @@
 
 import { canonicalToTypeScript } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
-import type { CanonicalType, ColumnNode, RelationshipNode, RelationshipType, TableNode } from '../../schema/types.js';
+import {
+  type CanonicalType,
+  type ColumnNode,
+  DEFAULT_FOREIGN_KEY_ACTION,
+  type RelationshipNode,
+  type RelationshipType,
+  type TableNode,
+} from '../../schema/types.js';
 import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
 import { buildFieldOptionsSource } from './fieldOptionsSource.js';
 
@@ -313,8 +320,13 @@ export class EntityCodeGenerator {
       lines.push('   */');
     }
 
-    // Decorator
-    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName} })`);
+    // Decorator. `onDelete`/`onUpdate` only when introspection found a real referential action, so a
+    // round-trip through an unconstrained column stays as terse as before.
+    const fkActions: string[] = [];
+    if (rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION) fkActions.push(`onDelete: '${rel.onDelete}'`);
+    if (rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION) fkActions.push(`onUpdate: '${rel.onUpdate}'`);
+    const fkActionsSource = fkActions.length ? `, ${fkActions.join(', ')}` : '';
+    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName}${fkActionsSource} })`);
 
     // Property
     lines.push(`  ${propertyName}?: ${relatedClassName};`);

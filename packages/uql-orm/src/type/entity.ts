@@ -346,6 +346,13 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    * Entity that this field references (for foreign keys).
    */
   readonly references?: EntityGetter;
+  /**
+   * Referential action for the generated foreign key. Delete side only: `onUpdate` below already means
+   * a value callback. Reach for `@ManyToOne({ onDelete, onUpdate })` when the update side matters too, or
+   * when this disagrees with a relation also declared on the same column (the relation wins).
+   * @example `@Field({ references: () => Company, onDelete: 'CASCADE' }) companyId?: string;`
+   */
+  readonly onDelete?: ForeignKeyAction;
   readonly virtual?: QueryRaw;
   readonly updatable?: boolean;
   readonly eager?: boolean;
@@ -506,16 +513,11 @@ export type RelationOptions<E = any> = {
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   /**
-   * Referential actions for the generated foreign key, letting the database do the work instead of the
-   * ORM: `onDelete: 'CASCADE'` makes deleting the parent a single statement rather than the graph walk
-   * `cascade` performs. Defaults to the migrator's `defaultForeignKeyAction`.
-   *
-   * Read only from the side that owns the key (`@ManyToOne`, or a `@OneToOne` without `mappedBy`),
-   * matching where TypeORM, Prisma and Drizzle put it. Not available on a bare `@Field({ references })`
-   * with no relation, because `FieldOptions.onUpdate` already means a value callback there.
-   *
-   * This overlaps `cascade` rather than conflicting with it: declaring both deletes the children in JS
-   * and then leaves the foreign key nothing to cascade, so pick one.
+   * Referential actions for the generated foreign key, letting the database cascade instead of the ORM's
+   * `cascade` (pick one; declaring both leaves the FK nothing to do). Read from the owning side
+   * (`@ManyToOne`, or a `@OneToOne` without `mappedBy`). `onDelete` falls back to the FK field's own
+   * `@Field({ onDelete })` when unset here; `onUpdate` has no such fallback since that key already means
+   * a value callback on `FieldOptions`.
    */
   readonly onDelete?: ForeignKeyAction;
   readonly onUpdate?: ForeignKeyAction;

@@ -235,9 +235,13 @@ export class SchemaASTBuilder {
             type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
             from: { table, columns: [localColumn] },
             to: { table: relatedTable, columns: [foreignColumn] },
-            // The relation's own action wins over the global default, so one relation can cascade in the
-            // database while the rest stay on `NO ACTION`.
-            onDelete: relation.onDelete ?? options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
+            // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
+            // references, onDelete })` work with no relation declared at all.
+            onDelete:
+              relation.onDelete ??
+              localField.onDelete ??
+              options.defaultForeignKeyAction ??
+              this.defaultForeignKeyAction,
             onUpdate: relation.onUpdate ?? options.defaultForeignKeyAction ?? this.defaultForeignKeyAction,
             confidence: 1.0,
             inferredFrom: 'entity_decorator',

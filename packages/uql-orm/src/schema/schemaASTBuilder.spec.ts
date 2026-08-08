@@ -188,6 +188,44 @@ describe('SchemaASTBuilder', () => {
       expect(untouched?.onUpdate).toBe('NO ACTION');
     });
 
+    it("should fall back to the FK field's own onDelete when no relation sets one", () => {
+      @Entity()
+      class FkOnFieldParent {
+        @Id({ type: Number }) id?: number;
+      }
+      // No @ManyToOne at all: the relation UQL synthesizes for a bare FK field still needs the cascade.
+      @Entity()
+      class FkOnFieldOnlyChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+      }
+      // A declared relation with no onDelete of its own inherits the field's, so the two never drift.
+      @Entity()
+      class FkOnFieldWithRelationChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+        @ManyToOne({ entity: () => FkOnFieldParent }) parent?: FkOnFieldParent;
+      }
+      // The relation's own onDelete still wins over a disagreeing field.
+      @Entity()
+      class FkOnFieldOverriddenChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+        @ManyToOne({ entity: () => FkOnFieldParent, onDelete: 'SET NULL' }) parent?: FkOnFieldParent;
+      }
+
+      const ast = new SchemaASTBuilder().fromEntities([
+        FkOnFieldParent,
+        FkOnFieldOnlyChild,
+        FkOnFieldWithRelationChild,
+        FkOnFieldOverriddenChild,
+      ]);
+
+      expect(ast.getTable('FkOnFieldOnlyChild')?.outgoingRelations[0]?.onDelete).toBe('CASCADE');
+      expect(ast.getTable('FkOnFieldWithRelationChild')?.outgoingRelations[0]?.onDelete).toBe('CASCADE');
+      expect(ast.getTable('FkOnFieldOverriddenChild')?.outgoingRelations[0]?.onDelete).toBe('SET NULL');
+    });
+
     it('should respect an explicit constructor type (e.g. BigInt) on a FK field over the referenced entity', () => {
       @Entity()
       class Parent3 {
