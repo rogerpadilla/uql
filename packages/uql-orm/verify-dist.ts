@@ -122,9 +122,10 @@ const BUDGETS: Record<string, number> = {
   './migrate': 43_000,
   './browser': 1_700,
 };
-// Counts declarations, so JSDoc on an exported symbol lands here: the last raise was documentation
-// on `numericTypes` and `QueryAggregateFnResult`, not code.
-const DIST_BYTES_BUDGET = 1_092_000;
+// Counts declarations, so JSDoc on an exported symbol lands here: the last raise was documentation on
+// `generateCreateSchema`/`generateDropSchema` and the new `onDelete`/`onUpdate` relation options, not
+// code. The per-entry budgets above stayed put through it, which is what rules out a leaked module.
+const DIST_BYTES_BUDGET = 1_094_000;
 
 async function checkSizeBudgets(): Promise<number> {
   function totalBytes(dir: string): number {
