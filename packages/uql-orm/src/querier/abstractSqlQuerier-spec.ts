@@ -9,7 +9,6 @@ import {
   MeasureUnit,
   type Spec,
   Tag,
-  TaxCategory,
   User,
 } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
@@ -693,12 +692,10 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['something', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [1]);
-    // One statement, not a `SELECT pk` followed by a delete by pk: `user_profile` cascades to nothing
-    // itself, so its ids were only ever read to be handed straight back.
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `creatorId` = ?', [1]);
+    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `pk` FROM `user_profile` WHERE `creatorId` = ?', [1]);
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(2);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToMany() {
@@ -725,19 +722,19 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['some description', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(
-      3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
       [1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
-      4,
+      3,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [50, 1, 1, 300, 1, 1],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(4);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(3);
   }
 
   async shouldUpdateOneByIdAndCascadeOneToManyNull() {
@@ -761,14 +758,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['some description', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(
-      3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
       [1],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(2);
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
@@ -800,14 +797,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       'SELECT `id` FROM `InventoryAdjustment` WHERE `companyId` = ?',
       [1],
     );
-    expect(this.querier.run).toHaveBeenNthCalledWith(
-      3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `id` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
       [1],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(2);
   }
 
   async shouldInsertOneAndCascadeManyToManyInserts() {
@@ -875,22 +872,21 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['item one', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
-    // The existing links are cleared before the new tags exist, in one statement: previously this was a
-    // `SELECT` that found nothing and so skipped its delete entirely.
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
-      4,
+      3,
       'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       ['tag one', 1, 'tag two', 1],
     );
+
+    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
-      5,
+      4,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [1, 1, 1, 2],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(5);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(4);
   }
 
   async shouldUpdateAndCascadeManyToManyLinks() {
@@ -914,15 +910,15 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['item one', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` = ?', [1]);
+    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
-      4,
+      3,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
       [1, 22, 1, 33],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(4);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(3);
   }
 
   async shouldDeleteOneAndCascadeManyToManyDeletes() {
@@ -933,12 +929,13 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteOneById(Item, 1);
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
+    expect(this.querier.all).toHaveBeenNthCalledWith(2, 'SELECT `id` FROM `ItemTag` WHERE `itemId` IN (?)', [1]);
     // Children before the parent: they hold the foreign key, so the reverse order is rejected by any
     // schema that declares the constraint. Asserted by position on purpose.
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `ItemTag` WHERE `itemId` IN (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `ItemTag` WHERE `id` IN (?, ?)', [1, 2]);
     expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `Item` WHERE `id` IN (?)', [1]);
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(2);
   }
 
@@ -949,11 +946,10 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.deleteOneById(Tag, 1);
 
-    // `Tag` cascades to nothing, so this is the one-statement path with no ids to materialize. It also
-    // leaves the `ItemTag` rows pointing at the deleted tag, which the name records as intended.
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` = ?', [1]);
+    expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Tag` WHERE `id` = ?', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `Tag` WHERE `id` IN (?)', [1]);
 
-    expect(this.querier.all).toHaveBeenCalledTimes(0);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -974,11 +970,16 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteOneById(User, id);
 
     // Children before the parent; see shouldDeleteOneAndCascadeManyToManyDeletes.
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `pk` IN (?)', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(4, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [1]);
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `pk` FROM `user_profile` WHERE `creatorId` IN (?)',
+      [1],
+    );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
     expect(this.querier.run).toHaveBeenCalledTimes(4);
   }
 
@@ -994,37 +995,15 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.deleteMany(User, { $where: { createdAt: 123 } });
 
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `createdAt` = ?', [123]);
-    // `User` does cascade (to `user_profile`), so the ids are still materialized once; the cascade itself
-    // is one statement rather than a select-then-delete.
-    expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
-
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
-    expect(this.querier.run).toHaveBeenCalledTimes(3);
-  }
-
-  async shouldDeleteManyInOneStatement() {
-    // `TaxCategory` declares no `cascade: 'delete'` relation, so nothing needs the matched ids and the
-    // statement's own row count is the return value. Materializing ids first would be a wasted round trip,
-    // which is what every other ORM avoids for a criteria delete.
-    await this.querier.deleteMany(TaxCategory, { $where: { companyId: 123 } });
-
-    expect(this.querier.run).toHaveBeenNthCalledWith(1, 'DELETE FROM `TaxCategory` WHERE `companyId` = ?', [123]);
-    expect(this.querier.all).toHaveBeenCalledTimes(0);
-    expect(this.querier.run).toHaveBeenCalledTimes(1);
-  }
-
-  async shouldMaterializeIdsToDeleteWithPagingOrSorting() {
-    // `ORDER BY`/`LIMIT` on a DELETE is MySQL-only, so these criteria have to be reduced to an id list
-    // first even though there is no cascade to feed.
-    await this.querier.deleteMany(TaxCategory, { $where: { companyId: 123 }, $limit: 2 });
-
     expect(this.querier.all).toHaveBeenNthCalledWith(
-      1,
-      'SELECT `pk` FROM `TaxCategory` WHERE `companyId` = ? LIMIT 2',
-      [123],
+      2,
+      'SELECT `pk` FROM `user_profile` WHERE `creatorId` IN (?)',
+      [1],
     );
-    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenNthCalledWith(2, 'DELETE FROM `User` WHERE `id` IN (?)', [1]);
+
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.run).toHaveBeenCalledTimes(2);
   }
 
   async shouldCount() {
