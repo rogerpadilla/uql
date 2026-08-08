@@ -4,8 +4,10 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 
 ## Verifying a change
 
-- `bun run check` is the gate: `lint`, `ts`, `test`, `check.package`. Use `bun run lint.fix` when you want the formatting fixed rather than only reported.
+- `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. Use `bun run lint.fix` when you want the formatting fixed rather than only reported.
+- `build` is in that list because `check.package` reads `dist`: `publint` and `attw --pack` both inspect the built package, so without a build first the gate validates the *previous* release's output and reports it as passing.
 - `bun run build` ends with `verify-dist.ts`, which checks every path `package.json` promises to consumers, keeps browser-facing entry graphs free of Node builtins, and enforces per-entry size budgets. Do not skip it by running `tsc` alone.
+- `DIST_BYTES_BUDGET` in `verify-dist.ts` counts declarations, so JSDoc on an exported symbol spends it. Raising it for documentation is expected; raising it because a *per-entry* budget also moved is not, since that is the leaked-module case the budgets exist to catch.
 - `bun run test` runs vitest and then the Bun-runtime suites **sequentially on purpose**: both drive the same Docker databases through the same fixture tables, so running them concurrently corrupts each other's fixtures.
 
 ## Conventions
@@ -30,3 +32,5 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 - `bun run release.patch` (or `.minor` / `.major`) does the rest: `build`, `check.package`, `lerna publish`, `git push --follow-tags`. It does **not** run the tests, so `bun run check` first.
 - npm auth needs no setup: `.npmrc` holds only the `${NPM_ACCESS_TOKEN}` placeholder and the token itself lives in the gitignored `.env`, which `bun run` loads automatically. Anything invoking `npm` outside `bun` has to export it.
 - `lerna publish` prompts for confirmation, which a non-interactive shell cannot answer: use `bun run release patch --yes`, then `git push --follow-tags` separately.
+- **If the publish fails, the release is already half-done.** `lerna` bumps the version, commits and pushes the tag *before* it publishes, so a failure there leaves the repo released and npm not. Do not bump again: that burns a version and leaves the tag pointing at nothing published. Recover with `bun run release.current` (`lerna publish from-package`), which publishes whatever version is on disk.
+- That retry first fails with `EUNCOMMIT` on `packages/uql-orm/package.json`: `lerna` writes a `gitHead` field while packing and does not clean it up. `git checkout -- packages/uql-orm/package.json` and retry.
