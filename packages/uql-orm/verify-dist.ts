@@ -122,12 +122,10 @@ const BUDGETS: Record<string, number> = {
   './migrate': 43_000,
   './browser': 1_700,
 };
-// Raw bytes of everything in `dist`, comments included: `tsc` keeps them in the emitted `.js` as well as
-// the `.d.ts`, so prose spends this budget as readily as code does, and a raise for documentation is
-// expected. (`removeComments` is not the answer - it strips the `.d.ts` JSDoc too, taking every consumer's
-// editor hover with it, which measured a 35% smaller `dist` and was still not worth it.) A *per-entry*
-// gzipped budget moving is the signal that matters: that is the leaked-module case they exist to catch.
-const DIST_BYTES_BUDGET = 1_100_000;
+// Counts declarations, so JSDoc on an exported symbol lands here: the last raise was documentation on
+// `generateCreateSchema`/`generateDropSchema` and the new `onDelete`/`onUpdate` relation options, not
+// code. The per-entry budgets above stayed put through it, which is what rules out a leaked module.
+const DIST_BYTES_BUDGET = 1_094_000;
 
 async function checkSizeBudgets(): Promise<number> {
   function totalBytes(dir: string): number {

@@ -22,7 +22,6 @@ import type {
 import {
   buildUpdateResult,
   clone,
-  filterPersistableRelationKeys,
   getInsertFieldKeys,
   getRelationRequestSummary,
   isAutoIncrement,
@@ -308,42 +307,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     const meta = getMeta(entity);
-
-    /**
-     * Reducing the criteria to a list of ids costs a round trip, and only two things need it: a cascade,
-     * which has to reach the children while the parent still identifies them, and `$sort`/`$limit`/`$skip`,
-     * which no dialect but MySQL accepts on a DELETE. Otherwise the criteria ride on the statement itself
-     * and its own row count is the answer, which is what every other ORM does for a criteria delete.
-     */
-    const needsIds =
-      !!q.$sort ||
-      q.$limit !== undefined ||
-      q.$skip !== undefined ||
-      filterPersistableRelationKeys(meta, meta.relations, 'delete').length > 0;
-
-    let search = q;
-
-    if (needsIds) {
-      // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
-      const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
-      const findCtx = this.dialect.createContext();
-      this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, findOpts);
-      const founds = await this.all<E>(findCtx.sql, findCtx.values);
-      if (!founds.length) {
-        return 0;
-      }
-      const ids = founds.map((it) => it[meta.id]);
-      // Children first: they hold the foreign key, so deleting the parent ahead of them is rejected
-      // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
-      await this.deleteRelations(entity, ids, opts);
-      search = { $where: ids };
+    // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
+    const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
+    const findCtx = this.dialect.createContext();
+    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, findOpts);
+    const founds = await this.all<E>(findCtx.sql, findCtx.values);
+    if (!founds.length) {
+      return 0;
     }
-
-    // One statement either way. `dialect.delete` drops the soft-delete filter itself for a `hardDelete`,
-    // and emits the soft-delete `UPDATE` when it is not one.
-    const ctx = this.dialect.createContext();
-    this.dialect.delete(ctx, entity, search, opts);
-    const { changes = 0 } = await this.run(ctx.sql, ctx.values);
+    const ids = founds.map((it) => it[meta.id]);
+    // Children first: they hold the foreign key, so deleting the parent ahead of them is rejected
+    // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
+    await this.deleteRelations(entity, ids, opts);
+    const deleteCtx = this.dialect.createContext();
+    this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
+    const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);
     return changes;
   }
 
