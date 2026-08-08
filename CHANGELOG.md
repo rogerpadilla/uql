@@ -10,6 +10,12 @@ date format is [yyyy-mm-dd]
 
 - **A bare `@Field({ references, onDelete })` silently dropped `onDelete`; prev release put the option only on `RelationOptions`, so a foreign key with no need for a populate-able relation had no way to cascade short of adding a `@ManyToOne` just to carry it. `FieldOptions` now accepts `onDelete` directly; a relation's own `onDelete` still wins when both are declared on the same column.
 
+## [Unreleased]
+
+### Fixes
+
+- **A delete issued two statements where one would do.** `deleteMany` always ran a `SELECT` for the matching ids before deleting, but the ids are only needed for two things: a `cascade: 'delete'` relation, which has to reach the children while the parent still identifies them, and `$sort`/`$limit`/`$skip`, which no dialect but MySQL accepts on a `DELETE`. With neither in play the criteria now ride on the statement itself and its own row count is the result, which is what TypeORM, MikroORM, Drizzle, Sequelize and Prisma all do for a criteria delete. Measured at ~23µs of round trip per call on a local socket. Cascades keep the id list, but each cascade step is a single statement too now (`DELETE FROM child WHERE fk IN (...)` rather than selecting the children's own ids first).
+
 ## [0.25.0] - 2026-08-08
 
 Foreign keys: UQL declared them, but did not reliably create or enforce them.
