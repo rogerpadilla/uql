@@ -217,6 +217,56 @@ describe('EntityCodeGenerator', () => {
       expect(result!.code).toContain('author?: User');
     });
 
+    it('should carry a real referential action from introspection into the relation decorator', () => {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = createTable('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_id', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'fk_posts_users',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      const generator = new EntityCodeGenerator(ast);
+      const result = generator.generateForTable('posts');
+
+      expect(result!.code).toContain("@ManyToOne({ entity: () => User, onDelete: 'CASCADE', onUpdate: 'CASCADE' })");
+    });
+
+    it('should omit the referential action when introspection found none', () => {
+      const ast = new SchemaAST();
+      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = createTable('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_id', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'fk_posts_users',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const generator = new EntityCodeGenerator(ast);
+      const result = generator.generateForTable('posts');
+
+      expect(result!.code).toContain('@ManyToOne({ entity: () => User })');
+    });
+
     it('should generate OneToMany relations on the inverse side', () => {
       const ast = new SchemaAST();
       const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);

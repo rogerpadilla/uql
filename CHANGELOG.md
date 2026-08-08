@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.25.1] - 2026-08-08
+
+### Fixes
+
+- **A bare `@Field({ references, onDelete })` silently dropped `onDelete`; prev release put the option only on `RelationOptions`, so a foreign key with no need for a populate-able relation had no way to cascade short of adding a `@ManyToOne` just to carry it. `FieldOptions` now accepts `onDelete` directly; a relation's own `onDelete` still wins when both are declared on the same column.
+
 ## [0.25.0] - 2026-08-08
 
 Foreign keys: UQL declared them, but did not reliably create or enforce them.
