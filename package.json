@@ -12,7 +12,7 @@
     "release.minor": "bun run release minor && git push --follow-tags",
     "release.major": "bun run release major && git push --follow-tags",
     "release.current": "bun run release from-package && git push --follow-tags",
-    "check": "bun run lint && bun run ts && bun run test && bun run check.package",
+    "check": "bun run lint && bun run ts && bun run test && bun run build && bun run check.package",
     "ts": "tsc --noEmit",
     "build": "bun run --filter '*' build",
     "lint": "biome check .",
