@@ -9,7 +9,7 @@
 
 <h3>The smartest TypeScript ORM</h3>
 
-<p>Type-safe to the leaf, serializable queries, no codegen, <a href="https://uql-orm.dev/benchmark">extremely fast</a>, and one API across every SQL database, MongoDB, and every runtime.</p>
+<p>Type-safe to the leaf, serializable queries, no codegen, and one API across every SQL database, MongoDB, and every runtime. And the <a href="https://uql-orm.dev/benchmark">fastest</a>.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
@@ -50,14 +50,15 @@ from the browser to the server. The same object runs on every supported database
 
 ## Why UQL?
 
-- **The fastest.** Wins [all 8 categories](https://uql-orm.dev/benchmark) of our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.4× faster than the runner-up on average, reaching over 4.6M ops/s on simple SELECTs.
+- **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. Entities are plain classes: no `.prisma` file, no generated client, no build step.
+- **Queries are data (JSON), not method chains.** Plain JSON in, typed rows out. No DSL to learn, nothing to compile.
+- **One API, everywhere it runs.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
+- **Relations without N+1.** [`$populate`](https://uql-orm.dev/querying/relations) loads a to-many with one query for all parents, not one per parent. Nothing is lazy, so nothing fires behind your back in a serializer.
+- **Migrations you read before they run.** Edit an entity, run `uql-migrate generate:entities`, review the SQL in the PR like any other file. [`drift:check`](https://uql-orm.dev/migrations) catches a database that no longer matches.
+- **Raw SQL when you want it.** [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere in a query, [virtual fields](https://uql-orm.dev/entities/virtual-fields) are sub-queries you can filter on, and a migration can be plain SQL.
 - **Light.** Zero runtime dependencies, 305 kB on the wire, every dialect included. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
-- **Queries are data (JSON), not method chains.** Plain JSON in, typed rows out. There's no DSL to learn and nothing to compile.
-- **Type-safe to the leaf.** Every key is autocompleted and checked against your entity, down to the fields of a populated relation. Operators are gated per field type, and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths resolve each path's value type, so `$like` on a numeric column, or a typo'd path, is a compile error instead of a runtime surprise.
-- **No codegen, no build step.** Entities are TypeScript classes, so your code *is* the schema. There's no `.prisma` file to regenerate and no generated client to keep in sync.
-- **One API everywhere.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB!
-- **Runs on every runtime.** Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser). ESM-only with no native binaries on the `fetch`-based drivers, so an edge bundle needs no special build.
-- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [non-bypassable multi-tenant filters](https://uql-orm.dev/multi-tenancy), [entity-first migrations](https://uql-orm.dev/migrations), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
+- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
+- **The fastest.** Wins [all 9 categories](https://uql-orm.dev/benchmark) of our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), beating even query builders like Knex and Kysely: ~2.3× the runner-up on average, over 4.3M ops/s on simple SELECTs. On a full PostgreSQL round trip it is fastest of all on Bun's SQL driver and ~10% behind Knex and Kysely on `pg`.
 
 ## Get started
 
