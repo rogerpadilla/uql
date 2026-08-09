@@ -256,7 +256,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
     const index = this.getIndex(schema, 'idx_test_b_cols');
-    expect(index.columns.map((entry) => entry.column)).toEqual(['col1', 'col2']);
+    expect(index.entries.map((entry) => entry.column)).toEqual(['col1', 'col2']);
     expect(index.unique).toBe(false);
   }
 
@@ -264,7 +264,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
 
     const index = this.getIndex(schema, 'idx_test_c_priority');
-    expect(index.columns.map((entry) => entry.column)).toEqual(['priority']);
+    expect(index.entries.map((entry) => entry.column)).toEqual(['priority']);
   }
 
   async shouldIntrospectUniqueColumn() {
@@ -394,11 +394,11 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_UNIQUE);
 
     // Find composite unique constraint - stored as unique index
-    const covers = (index: IndexSchema, column: string) => index.columns.some((entry) => entry.column === column);
+    const covers = (index: IndexSchema, column: string) => index.entries.some((entry) => entry.column === column);
     const uniqueIndex = schema.indexes!.find((i) => i.unique && covers(i, 'code') && covers(i, 'region'));
     this.assertDefined(uniqueIndex, 'Composite unique index on (code, region) not found');
 
-    expect(uniqueIndex.columns).toHaveLength(2);
+    expect(uniqueIndex.entries).toHaveLength(2);
     expect(uniqueIndex.unique).toBe(true);
   }
 
@@ -474,12 +474,11 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     const idxBCols = ast.indexes.find((i) => i.name === 'idx_test_b_cols');
     expect(idxBCols).toBeDefined();
-    expect(idxBCols?.columns.length).toBe(2);
-    expect(idxBCols?.columns.map((c) => c.name)).toEqual(['col1', 'col2']);
+    expect(idxBCols?.entries.map((entry) => entry.column)).toEqual(['col1', 'col2']);
 
     const idxCPriority = ast.indexes.find((i) => i.name === 'idx_test_c_priority');
     expect(idxCPriority).toBeDefined();
-    expect(idxCPriority?.columns.length).toBe(1);
+    expect(idxCPriority?.entries.map((entry) => entry.column)).toEqual(['priority']);
   }
 
   protected async getTableSchema(tableName: string): Promise<TableSchema> {

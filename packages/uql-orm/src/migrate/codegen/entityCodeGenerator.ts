@@ -22,6 +22,7 @@ import {
 } from '../../schema/types.js';
 import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
 import { buildFieldOptionsSource } from './fieldOptionsSource.js';
+import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 
 /**
  * Options for entity code generation.
@@ -149,11 +150,13 @@ export class EntityCodeGenerator {
       }
     }
 
-    // Check for composite index decorators
     if (this.options.includeIndexes) {
-      const compositeIndexes = this.ast.getTableIndexes(table.name).filter((idx) => idx.columns.length > 1);
-      if (compositeIndexes.length > 0) {
+      const declared = this.declaredIndexes(table);
+      if (declared.length > 0) {
         uqlImports.add('Index');
+      }
+      if (declared.some(indexNeedsRaw)) {
+        uqlImports.add('raw');
       }
     }
 
@@ -173,18 +176,9 @@ export class EntityCodeGenerator {
   private buildEntityDecorators(table: TableNode): string {
     const lines: string[] = [];
 
-    // Add composite index decorators
     if (this.options.includeIndexes) {
-      const compositeIndexes = this.ast.getTableIndexes(table.name).filter((idx) => idx.columns.length > 1);
-
-      for (const idx of compositeIndexes) {
-        const propNames = idx.columns.map((c) => `'${this.options.propertyNameTransformer(c.name)}'`).join(', ');
-        const options: string[] = [];
-        if (idx.name) options.push(`name: '${idx.name}'`);
-        if (idx.unique) options.push('unique: true');
-
-        const optStr = options.length > 0 ? `, { ${options.join(', ')} }` : '';
-        lines.push(`@Index([${propNames}]${optStr})`);
+      for (const index of this.declaredIndexes(table)) {
+        lines.push(buildIndexDecoratorSource(index, this.options.propertyNameTransformer));
       }
     }
 
@@ -229,10 +223,10 @@ export class EntityCodeGenerator {
 
     // Decorator
     if (col.isPrimaryKey) {
-      const idOptions = this.buildIdOptions(col);
+      const idOptions = this.buildIdOptions(col, propertyName);
       lines.push(`  @Id(${idOptions})`);
     } else {
-      const fieldOptions = this.buildFieldOptions(col);
+      const fieldOptions = this.buildFieldOptions(col, propertyName);
       lines.push(`  @Field(${fieldOptions})`);
     }
 
@@ -246,23 +240,25 @@ export class EntityCodeGenerator {
   /**
    * Build Id decorator options.
    */
-  private buildIdOptions(col: ColumnNode): string {
-    const options: string[] = [];
-
-    if (col.name !== 'id') {
-      options.push(`name: '${col.name}'`);
-    }
-
-    return options.length > 0 ? `{ ${options.join(', ')} }` : '';
+  private buildIdOptions(col: ColumnNode, propertyName: string): string {
+    return propertyName === col.name ? '' : `{ name: '${col.name}' }`;
   }
 
   /**
    * Build Field decorator options.
    */
-  private buildFieldOptions(col: ColumnNode): string {
+  private buildFieldOptions(col: ColumnNode, propertyName: string): string {
     const indexes = this.options.includeIndexes ? this.ast.getTableIndexes(col.table.name) : [];
-    const singleColIndex = indexes.find((idx) => idx.columns.length === 1 && idx.columns[0].name === col.name);
-    return buildFieldOptionsSource(col, singleColIndex?.name);
+    const fieldIndex = indexes.find((idx) => isPlainFieldIndex(idx) && idx.entries[0]?.column === col.name);
+    return buildFieldOptionsSource(col, propertyName, fieldIndex?.name);
+  }
+
+  /**
+   * The indexes this table needs an `@Index` for, which is every one a `@Field({ index })` cannot
+   * carry on its own.
+   */
+  private declaredIndexes(table: TableNode) {
+    return this.ast.getTableIndexes(table.name).filter((index) => !isPlainFieldIndex(index));
   }
 
   /**

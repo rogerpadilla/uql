@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
-import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
+import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { runGenerateFromDb } from './cli.js';
 import type { Migrator } from './migrator.js';
 
@@ -21,7 +21,7 @@ class Shop {
 function createMigrator(): Migrator {
   return {
     schemaIntrospector: {
-      introspect: vi.fn().mockResolvedValue(new SchemaASTBuilder().fromEntities([Shop])),
+      introspect: vi.fn().mockResolvedValue(buildSchemaAST([Shop])),
     },
   } as unknown as Migrator;
 }

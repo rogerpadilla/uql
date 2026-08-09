@@ -235,12 +235,18 @@ export interface SqlQueryDialect extends QueryDialect {
  * An index capability that some engines have and others reject outright. Verified live: expression
  * indexes exist everywhere but MariaDB 12.3 (which needs a generated column); prefix lengths are
  * MySQL-family only and *required* there to index `TEXT`; `NULLS FIRST/LAST` and operator classes are
- * Postgres-only (CockroachDB 26.2 answers "unimplemented"); `INCLUDE` is Postgres-wire only.
+ * Postgres-only (CockroachDB 26.2 answers "unimplemented"); `INCLUDE` is Postgres-wire only; the
+ * MySQL family is alone in having no partial indexes.
+ *
+ * Introspectors reuse the vocabulary for what they can read *back*, which is what diffing may
+ * compare. The two sets are deliberately not the same object and must not be unified: Postgres can
+ * emit an expression index and read one back, but MySQL emits one it cannot describe afterwards.
  */
-export type IndexFeature = 'expression' | 'prefixLength' | 'nullsOrder' | 'opsClass' | 'include';
+export type IndexFeature = 'expression' | 'partial' | 'prefixLength' | 'nullsOrder' | 'opsClass' | 'include';
 
 export const INDEX_FEATURE_LABELS: Record<IndexFeature, string> = {
   expression: 'expression indexes',
+  partial: 'partial indexes',
   prefixLength: 'index prefix lengths',
   nullsOrder: 'NULLS FIRST/LAST in an index',
   opsClass: 'index operator classes',

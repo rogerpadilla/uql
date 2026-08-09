@@ -5,7 +5,6 @@
  * Enables reliable diffing, smart relation detection, and dialect-agnostic schema operations.
  */
 
-import type { IndexColumnSchema } from '../type/entity.js';
 import type { IndexSchema } from '../type/migration.js';
 
 /**
@@ -84,17 +83,20 @@ export type RelationshipSource =
 /**
  * Index algorithm/type supported by various databases.
  */
-export type IndexType =
-  | 'btree'
-  | 'hash'
-  | 'gin'
-  | 'gist'
-  | 'brin'
-  | 'fulltext'
-  | 'hnsw'
-  | 'ivfflat'
-  | 'vector'
-  | 'vectorSearch';
+export const INDEX_TYPES = [
+  'btree',
+  'hash',
+  'gin',
+  'gist',
+  'brin',
+  'fulltext',
+  'hnsw',
+  'ivfflat',
+  'vector',
+  'vectorSearch',
+] as const;
+
+export type IndexType = (typeof INDEX_TYPES)[number];
 
 /**
  * Source of where an index was defined.
@@ -203,16 +205,9 @@ export interface RelationshipNode {
  * Index node in the schema graph.
  * Represents a database index on one or more columns.
  */
-export type IndexNode = Omit<IndexSchema, 'columns'> & {
+export type IndexNode = IndexSchema & {
   /** Reference to the table this index belongs to */
   readonly table: TableNode;
-  /** Columns included in the index (order matters). Empty for an index over expressions only. */
-  readonly columns: ColumnNode[];
-  /**
-   * The index as authored, with names resolved: expressions, prefix lengths and per-column order that
-   * a `ColumnNode` cannot represent. The generator renders these; `columns` is what diffing compares.
-   */
-  readonly entries?: readonly IndexColumnSchema[];
 
   // === Sync Metadata ===
   /** Where this index was defined */
@@ -245,7 +240,6 @@ export interface ColumnDiff {
   readonly actual?: ColumnNode;
   /** Whether this change could cause data loss */
   readonly isBreaking?: boolean;
-  /** Human-readable description of the change */
   readonly description?: string;
 }
 
@@ -268,6 +262,7 @@ export interface IndexDiff {
   readonly type: 'create' | 'drop' | 'alter';
   readonly expected?: IndexNode;
   readonly actual?: IndexNode;
+  readonly description?: string;
 }
 
 /**
@@ -345,6 +340,7 @@ export type DriftType =
   | 'constraint_mismatch'
   | 'missing_index'
   | 'unexpected_index'
+  | 'index_mismatch'
   | 'missing_relationship'
   | 'unexpected_relationship';
 

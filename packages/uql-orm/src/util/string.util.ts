@@ -41,7 +41,12 @@ export function pascalCase(str: string): string {
   if (!str) return '';
   return str
     .split(/[_\s-]+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .map((word) => {
+      // Lower-casing the rest is only right for a word that carries no case of its own: it turns
+      // `USER_ID` into `UserId`, but it also turns `tenantId` into `Tenantid`.
+      const rest = word === word.toUpperCase() ? word.slice(1).toLowerCase() : word.slice(1);
+      return word.charAt(0).toUpperCase() + rest;
+    })
     .join('');
 }
 

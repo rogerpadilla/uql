@@ -473,14 +473,7 @@ export class SchemaAST implements ISchemaAST {
       const table = clone.tables.get(idx.table.name);
       if (!table) continue;
 
-      const columns = idx.columns.map((c) => table.columns.get(c.name)).filter((c): c is ColumnNode => c !== undefined);
-
-      const clonedIdx: IndexNode = {
-        ...idx,
-        table,
-        columns,
-      };
-      clone.addIndex(clonedIdx);
+      clone.addIndex({ ...idx, table });
     }
 
     return clone;
@@ -525,7 +518,7 @@ export class SchemaAST implements ISchemaAST {
         })),
         indexes: t.indexes.map((i) => ({
           name: i.name,
-          columns: i.columns.map((c) => c.name),
+          columns: i.entries.map((entry) => entry.column),
           unique: i.unique,
         })),
       })),

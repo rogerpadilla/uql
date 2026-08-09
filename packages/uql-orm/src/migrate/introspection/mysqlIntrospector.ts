@@ -128,7 +128,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
-      columns: (row.columns || '').split(',').map((column) => ({ column })),
+      entries: (row.columns || '').split(',').map((column) => ({ column })),
       unique: Boolean(row.is_unique),
     }));
   }

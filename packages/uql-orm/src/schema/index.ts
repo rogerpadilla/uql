@@ -33,14 +33,14 @@ export async function introspectSchema(introspector: SchemaIntrospector): Promis
 }
 // SchemaAST class
 export { SchemaAST } from './schemaAST.js';
-export type { BuildFromEntitiesOptions } from './schemaASTBuilder.js';
+export type { BuildSchemaASTOptions } from './schemaASTBuilder.js';
 
 // Builder
-export { SchemaASTBuilder } from './schemaASTBuilder.js';
+export { buildSchemaAST } from './schemaASTBuilder.js';
 export type { DiffOptions } from './schemaASTDiffer.js';
 
 // Differ
-export { diffSchemas, SchemaASTDiffer } from './schemaASTDiffer.js';
+export { diffSchemas } from './schemaASTDiffer.js';
 // Types
 export type {
   // Core node types

@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { canonicalColumnType } from '../../schema/canonicalType.js';
+import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { TableSchema } from '../../type/migration.js';
@@ -9,6 +10,9 @@ import { escapeSqlId } from '../../util/index.js';
  * Base class for SQL introspectors with shared AST building logic.
  */
 export abstract class BaseSqlIntrospector {
+  /** Columns and uniqueness only; each introspector opts in to what its catalogue queries report. */
+  readonly indexFacets: ReadonlySet<IndexFacet> = new Set();
+
   constructor(protected readonly dialect: AbstractSqlDialect) {}
 
   protected escapeId(identifier: string): string {
@@ -94,8 +98,8 @@ export abstract class BaseSqlIntrospector {
         const toTable = tableNodes.get(fk.referencedTable);
         if (!toTable) continue;
 
-        const fromColumns = fk.columns.map((c) => fromTable.columns.get(c)).filter((c): c is ColumnNode => !!c);
-        const toColumns = fk.referencedColumns.map((c) => toTable.columns.get(c)).filter((c): c is ColumnNode => !!c);
+        const fromColumns = fk.columns.flatMap((name) => fromTable.columns.get(name) ?? []);
+        const toColumns = fk.referencedColumns.flatMap((name) => toTable.columns.get(name) ?? []);
 
         if (fromColumns.length > 0 && toColumns.length > 0) {
           const rel: RelationshipNode = {
@@ -119,13 +123,19 @@ export abstract class BaseSqlIntrospector {
       if (!table) continue;
 
       for (const idx of schema.indexes) {
-        const columns = idx.columns.map((e) => table.columns.get(e.column)).filter((c): c is ColumnNode => !!c);
-        if (columns.length > 0) {
+        // An expression has no column to resolve. Dropping the entries that name a column this table
+        // does not have, and the index if that leaves none, is what the entity side does too.
+        const entries = idx.entries.filter((entry) => entry.expression || table.columns.has(entry.column));
+        if (entries.length > 0) {
           const index: IndexNode = {
             name: idx.name,
             table,
-            columns,
+            entries,
             unique: idx.unique,
+            type: idx.type,
+            where: idx.where,
+            include: idx.include,
+            source: 'database',
           };
           ast.addIndex(index);
         }

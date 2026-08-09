@@ -30,7 +30,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
    * `NULLS FIRST/LAST` answers "unimplemented: this syntax" and `jsonb_path_ops` "operator class is
    * not supported" (both verified on v26.2), so neither is offered here.
    */
-  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'include']);
+  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include']);
 
   /**
    * CockroachDB's vector index is native and has its own syntax: `CREATE VECTOR INDEX ... ("col"

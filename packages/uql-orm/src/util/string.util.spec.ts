@@ -109,8 +109,14 @@ describe('string.util', () => {
       expect(camelCase('my-component-name')).toBe('myComponentName');
     });
 
-    it('should handle PascalCase', () => {
-      expect(camelCase('SomeText')).toBe('sometext');
+    it('should keep the capitals a name already carries', () => {
+      expect(camelCase('SomeText')).toBe('someText');
+      expect(camelCase('tenantId')).toBe('tenantId');
+    });
+
+    // A word carrying no case of its own is the one case worth folding, or `USER_ID` reads as `USERID`.
+    it('should fold a word that is all capitals', () => {
+      expect(camelCase('USER_ID')).toBe('userId');
     });
 
     it('should handle empty string', () => {

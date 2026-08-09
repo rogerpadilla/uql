@@ -7,9 +7,17 @@
 
 import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
+import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
-import { SchemaASTDiffer } from '../../schema/schemaASTDiffer.js';
-import type { CanonicalType, Drift, DriftReport, DriftStatus } from '../../schema/types.js';
+import { diffSchemas } from '../../schema/schemaASTDiffer.js';
+import type {
+  CanonicalType,
+  ColumnDiff,
+  Drift,
+  DriftReport,
+  DriftStatus,
+  SchemaDiffResult,
+} from '../../schema/types.js';
 
 /**
  * Options for drift detection.
@@ -21,6 +29,8 @@ export interface DriftDetectorOptions {
   checkNullable?: boolean;
   /** Include index differences */
   checkIndexes?: boolean;
+  /** `indexFacets` of the introspector that produced the actual schema; anything else goes uncompared. */
+  indexFacets?: ReadonlySet<IndexFacet>;
   /** Include foreign key differences */
   checkForeignKeys?: boolean;
   /**
@@ -38,294 +48,275 @@ export interface DriftDetectorOptions {
   dialect?: AbstractDialect;
 }
 
+/** Every option resolved, except the dialect, which is genuinely absent when none was passed. */
+type DriftDetectorSettings = Required<Omit<DriftDetectorOptions, 'dialect'>> & Pick<DriftDetectorOptions, 'dialect'>;
+
+function resolveOptions(options: DriftDetectorOptions): DriftDetectorSettings {
+  return {
+    checkTypes: options.checkTypes ?? true,
+    checkNullable: options.checkNullable ?? true,
+    checkIndexes: options.checkIndexes ?? true,
+    indexFacets: options.indexFacets ?? new Set(),
+    checkForeignKeys: options.checkForeignKeys ?? true,
+    checkDefaults: options.checkDefaults ?? false,
+    excludeTables: options.excludeTables ?? [],
+    dialect: options.dialect,
+  };
+}
+
 /**
- * Detects drift between expected and actual database schemas.
+ * Compare an expected schema (from entities) with an actual one (from the database) and report every
+ * way they have drifted apart.
  */
-export class DriftDetector {
-  private readonly options: Required<DriftDetectorOptions>;
+export function detectDrift(
+  expectedAST: SchemaAST,
+  actualAST: SchemaAST,
+  options: DriftDetectorOptions = {},
+): DriftReport {
+  const opts = resolveOptions(options);
+  const diff = diffSchemas(expectedAST, actualAST, {
+    compareIndexes: opts.checkIndexes,
+    indexFacets: opts.indexFacets,
+    compareRelationships: opts.checkForeignKeys,
+    excludeTables: opts.excludeTables,
+  });
 
-  constructor(
-    private readonly expectedAST: SchemaAST,
-    private readonly actualAST: SchemaAST,
-    options: DriftDetectorOptions = {},
-  ) {
-    this.options = {
-      checkTypes: options.checkTypes ?? true,
-      checkNullable: options.checkNullable ?? true,
-      checkIndexes: options.checkIndexes ?? true,
-      checkForeignKeys: options.checkForeignKeys ?? true,
-      checkDefaults: options.checkDefaults ?? false,
-      excludeTables: options.excludeTables ?? [],
-      dialect: options.dialect,
-    } as Required<DriftDetectorOptions>;
-  }
+  const drifts: Drift[] = [
+    ...detectTableDrifts(diff),
+    ...detectColumnDrifts(diff, opts),
+    ...detectIndexDrifts(diff),
+    ...detectRelationshipDrifts(diff),
+  ];
 
-  /**
-   * Detect all schema drift.
-   */
-  detect(): DriftReport {
-    const differ = new SchemaASTDiffer();
-    const diff = differ.diff(this.expectedAST, this.actualAST, {
-      compareIndexes: this.options.checkIndexes,
-      compareRelationships: this.options.checkForeignKeys,
-      excludeTables: this.options.excludeTables,
+  return {
+    status: calculateStatus(drifts),
+    drifts,
+    summary: createSummary(drifts),
+    generatedAt: new Date(),
+  };
+}
+
+/**
+ * Detect table-level drifts (missing/unexpected tables).
+ */
+function detectTableDrifts(diff: SchemaDiffResult): Drift[] {
+  const drifts: Drift[] = [];
+
+  for (const table of diff.tablesToCreate) {
+    drifts.push({
+      type: 'missing_table',
+      severity: 'critical',
+      table: table.name,
+      details: `Entity "${table.name}" exists but table not in database`,
+      suggestion: 'Run migrations to create table',
     });
-
-    const drifts: Drift[] = [
-      ...this.detectTableDrifts(diff),
-      ...this.detectColumnDrifts(diff),
-      ...this.detectIndexDrifts(diff),
-      ...this.detectRelationshipDrifts(diff),
-    ];
-
-    return {
-      status: this.calculateStatus(drifts),
-      drifts,
-      summary: this.createSummary(drifts),
-      generatedAt: new Date(),
-    };
   }
 
-  /**
-   * Detect table-level drifts (missing/unexpected tables).
-   */
-  private detectTableDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    const drifts: Drift[] = [];
+  for (const table of diff.tablesToDrop) {
+    drifts.push({
+      type: 'unexpected_table',
+      severity: 'warning',
+      table: table.name,
+      details: `Table "${table.name}" exists in database but no matching entity`,
+      suggestion: 'Create entity or drop table',
+    });
+  }
 
-    for (const table of diff.tablesToCreate) {
+  return drifts;
+}
+
+/**
+ * Detect column-level drifts.
+ */
+function detectColumnDrifts(diff: SchemaDiffResult, opts: DriftDetectorSettings): Drift[] {
+  const drifts: Drift[] = [];
+
+  for (const colDiff of diff.columnDiffs) {
+    if (colDiff.type === 'add') {
       drifts.push({
-        type: 'missing_table',
+        type: 'missing_column',
         severity: 'critical',
-        table: table.name,
-        details: `Entity "${table.name}" exists but table not in database`,
-        suggestion: 'Run migrations to create table',
+        table: colDiff.table,
+        column: colDiff.column,
+        details: `Column "${colDiff.column}" expected but not found in database`,
+        suggestion: 'Run migration to add column',
       });
-    }
-
-    for (const table of diff.tablesToDrop) {
+    } else if (colDiff.type === 'drop') {
       drifts.push({
-        type: 'unexpected_table',
-        severity: 'warning',
-        table: table.name,
-        details: `Table "${table.name}" exists in database but no matching entity`,
-        suggestion: 'Create entity or drop table',
-      });
-    }
-
-    return drifts;
-  }
-
-  /**
-   * Detect column-level drifts.
-   */
-  private detectColumnDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    const drifts: Drift[] = [];
-
-    for (const colDiff of diff.columnDiffs) {
-      if (colDiff.type === 'add') {
-        drifts.push({
-          type: 'missing_column',
-          severity: 'critical',
-          table: colDiff.table,
-          column: colDiff.column,
-          details: `Column "${colDiff.column}" expected but not found in database`,
-          suggestion: 'Run migration to add column',
-        });
-      } else if (colDiff.type === 'drop') {
-        drifts.push({
-          type: 'unexpected_column',
-          severity: 'warning',
-          table: colDiff.table,
-          column: colDiff.column,
-          details: `Column "${colDiff.column}" exists in database but not in entity`,
-          suggestion: 'Add to entity or create migration to drop',
-        });
-      } else if (colDiff.type === 'alter') {
-        this.addAlterColumnDrifts(colDiff, drifts);
-      }
-    }
-
-    return drifts;
-  }
-
-  /**
-   * Add drifts for column alterations (type/nullable mismatches).
-   */
-  private addAlterColumnDrifts(
-    colDiff: {
-      table: string;
-      column: string;
-      expected?: { type?: unknown; nullable?: boolean; defaultValue?: unknown };
-      actual?: { type?: unknown; nullable?: boolean; defaultValue?: unknown };
-      isBreaking?: boolean;
-    },
-    drifts: Drift[],
-  ): void {
-    // Every check below compares the two sides, so there is nothing to report without both.
-    if (!colDiff.expected || !colDiff.actual) {
-      return;
-    }
-
-    if (this.options.checkTypes) {
-      const expectedType = this.formatType(colDiff.expected.type as CanonicalType | undefined);
-      const actualType = this.formatType(colDiff.actual.type as CanonicalType | undefined);
-      if (expectedType !== actualType) {
-        drifts.push({
-          type: 'type_mismatch',
-          severity: colDiff.isBreaking ? 'critical' : 'warning',
-          table: colDiff.table,
-          column: colDiff.column,
-          expected: expectedType,
-          actual: actualType,
-          details: `Type mismatch for "${colDiff.column}": expected ${expectedType}, got ${actualType}`,
-          suggestion: colDiff.isBreaking
-            ? 'Data truncation risk! Create migration to fix.'
-            : 'Create migration to align types',
-        });
-      }
-    }
-
-    if (this.options.checkNullable && colDiff.expected.nullable !== colDiff.actual.nullable) {
-      drifts.push({
-        type: 'constraint_mismatch',
+        type: 'unexpected_column',
         severity: 'warning',
         table: colDiff.table,
         column: colDiff.column,
-        expected: colDiff.expected.nullable ? 'NULLABLE' : 'NOT NULL',
-        actual: colDiff.actual.nullable ? 'NULLABLE' : 'NOT NULL',
-        details: `Nullable mismatch for "${colDiff.column}"`,
-        suggestion: 'Align nullable setting in entity or database',
+        details: `Column "${colDiff.column}" exists in database but not in entity`,
+        suggestion: 'Add to entity or create migration to drop',
+      });
+    } else if (colDiff.type === 'alter') {
+      addAlterColumnDrifts(colDiff, drifts, opts);
+    }
+  }
+
+  return drifts;
+}
+
+/**
+ * Add drifts for column alterations (type/nullable mismatches).
+ */
+function addAlterColumnDrifts(colDiff: ColumnDiff, drifts: Drift[], opts: DriftDetectorSettings): void {
+  // Every check below compares the two sides, so there is nothing to report without both.
+  if (!colDiff.expected || !colDiff.actual) {
+    return;
+  }
+
+  if (opts.checkTypes) {
+    const expectedType = formatType(colDiff.expected.type, opts.dialect);
+    const actualType = formatType(colDiff.actual.type, opts.dialect);
+    if (expectedType !== actualType) {
+      drifts.push({
+        type: 'type_mismatch',
+        severity: colDiff.isBreaking ? 'critical' : 'warning',
+        table: colDiff.table,
+        column: colDiff.column,
+        expected: expectedType,
+        actual: actualType,
+        details: `Type mismatch for "${colDiff.column}": expected ${expectedType}, got ${actualType}`,
+        suggestion: colDiff.isBreaking
+          ? 'Data truncation risk! Create migration to fix.'
+          : 'Create migration to align types',
       });
     }
+  }
 
-    if (this.options.checkDefaults) {
-      const expected = String(colDiff.expected.defaultValue ?? 'NULL');
-      const actual = String(colDiff.actual.defaultValue ?? 'NULL');
-      if (expected !== actual) {
-        drifts.push({
-          type: 'constraint_mismatch',
-          severity: 'info',
-          table: colDiff.table,
-          column: colDiff.column,
-          expected,
-          actual,
-          details: `Default mismatch for "${colDiff.column}"`,
-          suggestion: 'Align the default in the entity or the database',
-        });
-      }
+  if (opts.checkNullable && colDiff.expected.nullable !== colDiff.actual.nullable) {
+    drifts.push({
+      type: 'constraint_mismatch',
+      severity: 'warning',
+      table: colDiff.table,
+      column: colDiff.column,
+      expected: colDiff.expected.nullable ? 'NULLABLE' : 'NOT NULL',
+      actual: colDiff.actual.nullable ? 'NULLABLE' : 'NOT NULL',
+      details: `Nullable mismatch for "${colDiff.column}"`,
+      suggestion: 'Align nullable setting in entity or database',
+    });
+  }
+
+  if (opts.checkDefaults) {
+    const expected = String(colDiff.expected.defaultValue ?? 'NULL');
+    const actual = String(colDiff.actual.defaultValue ?? 'NULL');
+    if (expected !== actual) {
+      drifts.push({
+        type: 'constraint_mismatch',
+        severity: 'info',
+        table: colDiff.table,
+        column: colDiff.column,
+        expected,
+        actual,
+        details: `Default mismatch for "${colDiff.column}"`,
+        suggestion: 'Align the default in the entity or the database',
+      });
     }
-  }
-
-  /**
-   * Detect index drifts.
-   */
-  private detectIndexDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    const drifts: Drift[] = [];
-
-    for (const idxDiff of diff.indexDiffs) {
-      if (idxDiff.type === 'create') {
-        drifts.push({
-          type: 'missing_index',
-          severity: 'warning',
-          table: idxDiff.table,
-          index: idxDiff.name,
-          details: `Index "${idxDiff.name}" expected but not found in database`,
-          suggestion: 'Create index via migration',
-        });
-      } else if (idxDiff.type === 'drop') {
-        drifts.push({
-          type: 'unexpected_index',
-          severity: 'info',
-          table: idxDiff.table,
-          index: idxDiff.name,
-          details: `Index "${idxDiff.name}" exists in database but not defined in entity`,
-          suggestion: 'Add @Field({ index }) or create migration to drop',
-        });
-      }
-    }
-
-    return drifts;
-  }
-
-  /**
-   * Detect relationship/FK drifts.
-   */
-  private detectRelationshipDrifts(diff: ReturnType<SchemaASTDiffer['diff']>): Drift[] {
-    const drifts: Drift[] = [];
-
-    for (const relDiff of diff.relationshipDiffs) {
-      if (relDiff.type === 'create') {
-        drifts.push({
-          type: 'missing_relationship',
-          severity: 'warning',
-          table: relDiff.fromTable,
-          relationship: relDiff.name,
-          details: `FK "${relDiff.name}" expected but not found in database`,
-          suggestion: 'Add FK constraint or remove relation from entity',
-        });
-      } else if (relDiff.type === 'drop') {
-        drifts.push({
-          type: 'unexpected_relationship',
-          severity: 'info',
-          table: relDiff.fromTable,
-          relationship: relDiff.name,
-          details: `FK "${relDiff.name}" exists in database but not in entity`,
-          suggestion: 'Add relation to entity or drop FK',
-        });
-      }
-    }
-
-    return drifts;
-  }
-
-  /**
-   * Calculate overall status based on drifts.
-   */
-  private calculateStatus(drifts: Drift[]): DriftStatus {
-    if (drifts.length === 0) return 'in_sync';
-
-    const hasCritical = drifts.some((d) => d.severity === 'critical');
-    if (hasCritical) return 'critical';
-
-    return 'drifted';
-  }
-
-  /**
-   * Create a summary of drifts by severity.
-   */
-  private createSummary(drifts: Drift[]): { critical: number; warning: number; info: number } {
-    return {
-      critical: drifts.filter((d) => d.severity === 'critical').length,
-      warning: drifts.filter((d) => d.severity === 'warning').length,
-      info: drifts.filter((d) => d.severity === 'info').length,
-    };
-  }
-
-  /**
-   * Format type for display.
-   */
-  private formatType(type?: CanonicalType): string {
-    const dialect = this.options.dialect;
-    if (!type || !dialect) return 'unknown';
-    return canonicalToSql(type, dialect);
   }
 }
 
 /**
- * Create a DriftDetector for comparing expected vs actual schemas.
+ * Detect index drifts.
  */
-export function createDriftDetector(
-  expectedAST: SchemaAST,
-  actualAST: SchemaAST,
-  options?: DriftDetectorOptions,
-): DriftDetector {
-  return new DriftDetector(expectedAST, actualAST, options);
+function detectIndexDrifts(diff: SchemaDiffResult): Drift[] {
+  const drifts: Drift[] = [];
+
+  for (const idxDiff of diff.indexDiffs) {
+    if (idxDiff.type === 'create') {
+      drifts.push({
+        type: 'missing_index',
+        severity: 'warning',
+        table: idxDiff.table,
+        index: idxDiff.name,
+        details: `Index "${idxDiff.name}" expected but not found in database`,
+        suggestion: 'Create index via migration',
+      });
+    } else if (idxDiff.type === 'drop') {
+      drifts.push({
+        type: 'unexpected_index',
+        severity: 'info',
+        table: idxDiff.table,
+        index: idxDiff.name,
+        details: `Index "${idxDiff.name}" exists in database but not defined in entity`,
+        suggestion: 'Add @Field({ index }) or create migration to drop',
+      });
+    } else if (idxDiff.type === 'alter') {
+      // No `expected`/`actual` here: the CLI prints those by interpolation, where an `IndexNode`
+      // renders as `[object Object]`. What differs is already spelled out in `description`.
+      drifts.push({
+        type: 'index_mismatch',
+        severity: 'warning',
+        table: idxDiff.table,
+        index: idxDiff.name,
+        details: `Index "${idxDiff.name}" differs from the entity (${idxDiff.description})`,
+        suggestion: 'Drop and recreate the index via migration',
+      });
+    }
+  }
+
+  return drifts;
 }
 
 /**
- * Quick check for schema drift.
+ * Detect relationship/FK drifts.
  */
-export function detectDrift(expectedAST: SchemaAST, actualAST: SchemaAST, options?: DriftDetectorOptions): DriftReport {
-  const detector = new DriftDetector(expectedAST, actualAST, options);
-  return detector.detect();
+function detectRelationshipDrifts(diff: SchemaDiffResult): Drift[] {
+  const drifts: Drift[] = [];
+
+  for (const relDiff of diff.relationshipDiffs) {
+    if (relDiff.type === 'create') {
+      drifts.push({
+        type: 'missing_relationship',
+        severity: 'warning',
+        table: relDiff.fromTable,
+        relationship: relDiff.name,
+        details: `FK "${relDiff.name}" expected but not found in database`,
+        suggestion: 'Add FK constraint or remove relation from entity',
+      });
+    } else if (relDiff.type === 'drop') {
+      drifts.push({
+        type: 'unexpected_relationship',
+        severity: 'info',
+        table: relDiff.fromTable,
+        relationship: relDiff.name,
+        details: `FK "${relDiff.name}" exists in database but not in entity`,
+        suggestion: 'Add relation to entity or drop FK',
+      });
+    }
+  }
+
+  return drifts;
+}
+
+/**
+ * Calculate overall status based on drifts.
+ */
+function calculateStatus(drifts: Drift[]): DriftStatus {
+  if (drifts.length === 0) return 'in_sync';
+
+  const hasCritical = drifts.some((d) => d.severity === 'critical');
+  if (hasCritical) return 'critical';
+
+  return 'drifted';
+}
+
+/**
+ * Create a summary of drifts by severity.
+ */
+function createSummary(drifts: Drift[]): { critical: number; warning: number; info: number } {
+  return {
+    critical: drifts.filter((d) => d.severity === 'critical').length,
+    warning: drifts.filter((d) => d.severity === 'warning').length,
+    info: drifts.filter((d) => d.severity === 'info').length,
+  };
+}
+
+/**
+ * Format type for display.
+ */
+function formatType(type: CanonicalType | undefined, dialect: AbstractDialect | undefined): string {
+  if (!type || !dialect) return 'unknown';
+  return canonicalToSql(type, dialect);
 }

@@ -85,6 +85,35 @@ describe('SqlSchemaGenerator Advanced', () => {
    * they are compared normalized against the entity's plain value. Anything else reports a permanent
    * difference and every `migrate` run would emit the same no-op ALTER.
    */
+  it('diffSchema should add an index the entity declares and the table has not got', () => {
+    const currentSchema = createTableNode('DiffUser', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+
+    const diff = generator.diffSchema(DiffUser, currentSchema);
+
+    expect(diff?.columnsToAdd).toBeUndefined();
+    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['idx_DiffUser_status']);
+  });
+
+  it('diffSchema should leave an index the entity never declared alone', () => {
+    const currentSchema = createTableNode('DiffUser', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    currentSchema.indexes.push(
+      { name: 'idx_DiffUser_status', table: currentSchema, entries: [], unique: false },
+      { name: 'idx_made_by_a_dba', table: currentSchema, entries: [], unique: false },
+    );
+
+    expect(generator.diffSchema(DiffUser, currentSchema)).toBeUndefined();
+  });
+
   it('diffSchema should treat engine-spelled defaults as unchanged', () => {
     const currentSchema = defaultsTableNode("'active'::character varying");
 
@@ -152,7 +181,7 @@ describe('SqlSchemaGenerator Advanced', () => {
         },
       ],
       columnsToDrop: ['old_name'],
-      indexesToAdd: [{ name: 'idx_age', columns: [{ column: 'age' }], unique: false }],
+      indexesToAdd: [{ name: 'idx_age', entries: [{ column: 'age' }], unique: false }],
       indexesToDrop: ['idx_old'],
     });
 

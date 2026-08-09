@@ -39,7 +39,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
       const names = schema.indexes?.map((index) => index.name) ?? [];
 
       expect(names).not.toContain('idx_expr_name');
-      expect(schema.indexes?.flatMap((index) => index.columns.map((column) => column.column))).not.toContain(null);
+      expect(schema.indexes?.flatMap((index) => index.entries.map((column) => column.column))).not.toContain(null);
     } finally {
       await querier.run('DROP INDEX idx_expr_name');
       await querier.release();

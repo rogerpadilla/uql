@@ -1,4 +1,5 @@
 import { isVectorCategory } from '../../schema/canonicalType.js';
+import { indexColumns } from '../../schema/indexColumns.js';
 import type { IndexNode } from '../../schema/types.js';
 import type { IndexSchema } from '../../type/index.js';
 
@@ -11,7 +12,8 @@ import type { IndexSchema } from '../../type/index.js';
 export function indexNodeToSchema(index: IndexNode): IndexSchema {
   return {
     ...index,
-    columns: index.entries ?? index.columns.map((col) => ({ column: col.name })),
-    vectorType: index.columns.map((col) => col.type?.category).find(isVectorCategory),
+    vectorType: indexColumns(index)
+      .map((col) => col.type?.category)
+      .find(isVectorCategory),
   };
 }

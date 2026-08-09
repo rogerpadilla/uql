@@ -1,45 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SchemaAST } from '../../schema/schemaAST.js';
-import type { ColumnNode, TableNode } from '../../schema/types.js';
+import { mockTableNode } from '../../test/index.js';
 import { createEntityCodeGenerator, EntityCodeGenerator } from './entityCodeGenerator.js';
-
-function createTable(name: string, columns: Partial<ColumnNode>[]): TableNode {
-  const table: TableNode = {
-    name,
-    columns: new Map(),
-    primaryKey: [],
-    indexes: [],
-    incomingRelations: [],
-    outgoingRelations: [],
-    schema: undefined as unknown as SchemaAST,
-  };
-
-  for (const col of columns) {
-    const column: ColumnNode = {
-      name: col.name || 'unknown',
-      type: col.type || { category: 'string' },
-      nullable: col.nullable ?? true,
-      isPrimaryKey: col.isPrimaryKey ?? false,
-      isAutoIncrement: col.isAutoIncrement ?? false,
-      isUnique: col.isUnique ?? false,
-      table,
-      referencedBy: [],
-      ...col,
-    };
-    table.columns.set(column.name, column);
-    if (column.isPrimaryKey) {
-      table.primaryKey.push(column);
-    }
-  }
-
-  return table;
-}
 
 describe('EntityCodeGenerator', () => {
   describe('generateForTable', () => {
     it('should generate a basic entity class', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
         { name: 'name', type: { category: 'string', length: 255 } },
       ]);
@@ -59,7 +27,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should use PascalCase for class name', () => {
       const ast = new SchemaAST();
-      const table = createTable('user_profiles', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const table = mockTableNode('user_profiles', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
       ast.addTable(table);
 
       const generator = new EntityCodeGenerator(ast);
@@ -71,7 +39,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should use camelCase for property names', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'first_name', type: { category: 'string' } },
         { name: 'last_name', type: { category: 'string' } },
@@ -87,7 +55,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should add @Field with name when column name differs', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'first_name', type: { category: 'string' } },
       ]);
@@ -102,7 +70,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should handle different column types', () => {
       const ast = new SchemaAST();
-      const table = createTable('test', [
+      const table = mockTableNode('test', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'amount', type: { category: 'decimal', precision: 10, scale: 2 } },
         { name: 'is_active', type: { category: 'boolean' } },
@@ -121,7 +89,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should add unique constraint', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'email', type: { category: 'string' }, isUnique: true },
       ]);
@@ -135,7 +103,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should add nullable annotation', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'bio', type: { category: 'string' }, nullable: true },
       ]);
@@ -149,7 +117,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should handle explicit entity name for non-standard table names', () => {
       const ast = new SchemaAST();
-      const table = createTable('tbl_users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const table = mockTableNode('tbl_users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
       ast.addTable(table);
 
       const generator = new EntityCodeGenerator(ast);
@@ -162,8 +130,8 @@ describe('EntityCodeGenerator', () => {
   describe('generateAll', () => {
     it('should generate multiple entity files', () => {
       const ast = new SchemaAST();
-      ast.addTable(createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]));
-      ast.addTable(createTable('posts', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]));
+      ast.addTable(mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]));
+      ast.addTable(mockTableNode('posts', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]));
 
       const generator = new EntityCodeGenerator(ast);
       const entities = generator.generateAll();
@@ -177,7 +145,7 @@ describe('EntityCodeGenerator', () => {
   describe('imports', () => {
     it('should include necessary imports', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'name', type: { category: 'string' } },
       ]);
@@ -192,8 +160,8 @@ describe('EntityCodeGenerator', () => {
 
     it('should generate relation imports and decorators', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
       ]);
@@ -219,8 +187,8 @@ describe('EntityCodeGenerator', () => {
 
     it('should carry a real referential action from introspection into the relation decorator', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
       ]);
@@ -244,8 +212,8 @@ describe('EntityCodeGenerator', () => {
 
     it('should omit the referential action when introspection found none', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
       ]);
@@ -269,8 +237,8 @@ describe('EntityCodeGenerator', () => {
 
     it('should generate OneToMany relations on the inverse side', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
       ]);
@@ -295,7 +263,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should generate Id with custom name', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [{ name: 'user_id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const table = mockTableNode('users', [{ name: 'user_id', type: { category: 'integer' }, isPrimaryKey: true }]);
       ast.addTable(table);
 
       const generator = new EntityCodeGenerator(ast);
@@ -306,7 +274,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should generate field with default value', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'status', type: { category: 'string' }, defaultValue: 'active' },
       ]);
@@ -318,29 +286,40 @@ describe('EntityCodeGenerator', () => {
       expect(result!.code).toContain("defaultValue: 'active'");
     });
 
-    it('should generate single column index', () => {
+    it('should carry a plain single-column index on the field itself', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'email', type: { category: 'string' } },
       ]);
       ast.addTable(table);
-      ast.addIndex({
-        name: 'idx_email',
-        table,
-        columns: [table.columns.get('email')!],
-        unique: true,
-      });
+      ast.addIndex({ name: 'idx_email', table, entries: [{ column: 'email' }], unique: false });
 
-      const generator = new EntityCodeGenerator(ast);
-      const result = generator.generateForTable('users');
+      const result = new EntityCodeGenerator(ast).generateForTable('users');
 
       expect(result!.code).toContain("index: 'idx_email'");
     });
 
+    // `@Field({ index })` builds a plain index, so writing a unique one there would silently drop the
+    // uniqueness the database has.
+    it('should write a unique single-column index as its own decorator', () => {
+      const ast = new SchemaAST();
+      const table = mockTableNode('users', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'email', type: { category: 'string' } },
+      ]);
+      ast.addTable(table);
+      ast.addIndex({ name: 'idx_email', table, entries: [{ column: 'email' }], unique: true });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('users');
+
+      expect(result!.code).toContain("@Index(['email'], { name: 'idx_email', unique: true })");
+      expect(result!.code).not.toContain("index: 'idx_email'");
+    });
+
     it('should generate composite index', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'first_name', type: { category: 'string' } },
         { name: 'last_name', type: { category: 'string' } },
@@ -349,7 +328,7 @@ describe('EntityCodeGenerator', () => {
       ast.addIndex({
         name: 'idx_name',
         table,
-        columns: [table.columns.get('first_name')!, table.columns.get('last_name')!],
+        entries: [{ column: 'first_name' }, { column: 'last_name' }],
         unique: false,
       });
 
@@ -362,7 +341,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should handle boolean and Date types', () => {
       const ast = new SchemaAST();
-      const table = createTable('test', [
+      const table = mockTableNode('test', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'is_active', type: { category: 'boolean' } },
         { name: 'created_at', type: { category: 'timestamp' } },
@@ -378,7 +357,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should format complex default values correctly', () => {
       const ast = new SchemaAST();
-      const table = createTable('test', [
+      const table = mockTableNode('test', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'config', type: { category: 'json' }, defaultValue: { a: 1 } },
         { name: 'tags', type: { category: 'json' }, defaultValue: ['tag1'] },
@@ -402,10 +381,10 @@ describe('EntityCodeGenerator', () => {
 
     it('should handle OneToOne and ManyToMany relations', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const profiles = createTable('profiles', []);
-      const tags = createTable('tags', []);
-      const userTags = createTable('user_tags', []);
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const profiles = mockTableNode('profiles', []);
+      const tags = mockTableNode('tags', []);
+      const userTags = mockTableNode('user_tags', []);
 
       const profileRel: any = {
         name: 'profile',
@@ -450,8 +429,8 @@ describe('EntityCodeGenerator', () => {
     /** `users` + `posts.author_id -> users.id`, plus an index and a comment to switch off. */
     function createBlogAst() {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
         { name: 'title', type: { category: 'string', length: 255 }, comment: 'headline', nullable: false },
@@ -466,7 +445,12 @@ describe('EntityCodeGenerator', () => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
-      ast.addIndex({ name: 'idx_posts_title', table: posts, columns: [posts.columns.get('title')!], unique: false });
+      ast.addIndex({
+        name: 'idx_posts_title',
+        table: posts,
+        entries: [{ column: 'title' }],
+        unique: false,
+      });
       return ast;
     }
 
@@ -520,7 +504,7 @@ describe('EntityCodeGenerator', () => {
   describe('generated details', () => {
     it('should describe the column type in the JSDoc, size and signedness included', () => {
       const ast = new SchemaAST();
-      const table = createTable('orders', [
+      const table = mockTableNode('orders', [
         { name: 'id', type: { category: 'integer', size: 'big', unsigned: true }, isPrimaryKey: true },
         { name: 'total', type: { category: 'decimal', precision: 10, scale: 2 } },
         { name: 'ratio', type: { category: 'decimal', precision: 5 } },
@@ -539,8 +523,8 @@ describe('EntityCodeGenerator', () => {
     /** A foreign key not named `<something>id` has no base name to reuse, so the target table names it. */
     it('should name a relation after its target table when the column name has no id suffix', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'owner', type: { category: 'integer' } },
       ]);
@@ -563,8 +547,8 @@ describe('EntityCodeGenerator', () => {
     /** Relations recovered by name conventions rather than a real constraint are flagged as a guess. */
     it('should note the confidence of an inferred relation', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const posts = createTable('posts', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'author_id', type: { category: 'integer' } },
       ]);
@@ -586,8 +570,8 @@ describe('EntityCodeGenerator', () => {
     /** The inverse of a OneToOne is a single entity, not a list. */
     it('should declare the inverse side of a OneToOne as a single relation', () => {
       const ast = new SchemaAST();
-      const users = createTable('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const profiles = createTable('profiles', [
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const profiles = mockTableNode('profiles', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'user_id', type: { category: 'integer' }, isUnique: true },
       ]);
@@ -610,7 +594,7 @@ describe('EntityCodeGenerator', () => {
 
     it('should emit a bare @Index for a composite index with no name and no unique flag', () => {
       const ast = new SchemaAST();
-      const table = createTable('users', [
+      const table = mockTableNode('users', [
         { name: 'first_name', type: { category: 'string' } },
         { name: 'last_name', type: { category: 'string' } },
       ]);
@@ -618,7 +602,7 @@ describe('EntityCodeGenerator', () => {
       ast.addIndex({
         name: '',
         table,
-        columns: [table.columns.get('first_name')!, table.columns.get('last_name')!],
+        entries: [{ column: 'first_name' }, { column: 'last_name' }],
         unique: false,
       });
 

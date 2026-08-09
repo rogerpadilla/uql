@@ -67,7 +67,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
         const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
         indexes.push({
           name: indexName,
-          columns: [{ column: columnName }],
+          entries: [{ column: columnName }],
           unique: !!field.unique,
         });
       }
@@ -115,7 +115,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
    */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     const key: MongoIndexKey = {};
-    for (const entry of index.columns) {
+    for (const entry of index.entries) {
       if (entry.expression || entry.length !== undefined || entry.nulls || entry.opsClass) {
         throw new TypeError(`mongodb does not support that index column option (index "${index.name}")`);
       }
@@ -186,7 +186,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
         if (!existingIndexes.has(indexName)) {
           indexesToAdd.push({
             name: indexName,
-            columns: [{ column: columnName }],
+            entries: [{ column: columnName }],
             unique: !!field.unique,
           });
         }

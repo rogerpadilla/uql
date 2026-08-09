@@ -32,6 +32,7 @@ import {
 } from './codegen/migrationFile.js';
 import { runMongoCommand } from './generator/mongoCommand.js';
 import {
+  CockroachSchemaIntrospector,
   MongoSchemaIntrospector,
   MysqlSchemaIntrospector,
   PostgresSchemaIntrospector,
@@ -116,8 +117,9 @@ export class Migrator {
     }
     switch (d) {
       case 'postgres':
-      case 'cockroachdb':
         return new PostgresSchemaIntrospector(this.pool);
+      case 'cockroachdb':
+        return new CockroachSchemaIntrospector(this.pool);
       case 'mysql':
       case 'mariadb':
         return new MysqlSchemaIntrospector(this.pool);

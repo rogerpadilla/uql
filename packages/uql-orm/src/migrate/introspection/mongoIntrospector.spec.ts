@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { MongoDialect } from '../../mongo/mongoDialect.js';
+import { indexColumns } from '../../schema/indexColumns.js';
 import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
 import type { MongoQuerier, QuerierPool } from '../../type/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
@@ -61,7 +62,7 @@ describe('MongoSchemaIntrospector', () => {
     expect(schema!.indexes).toHaveLength(2);
     expect(schema!.indexes![1]).toMatchObject({
       name: 'idx_username',
-      columns: [{ column: 'username' }],
+      entries: [{ column: 'username' }],
       unique: true,
     });
   });
@@ -109,7 +110,7 @@ describe('MongoSchemaIntrospector', () => {
 
     expect(schema!.indexes![0]).toEqual({
       name: 'lastName_firstName',
-      columns: [{ column: 'lastName' }, { column: 'firstName' }],
+      entries: [{ column: 'lastName' }, { column: 'firstName' }],
       unique: false,
     });
   });
@@ -135,7 +136,7 @@ describe('MongoSchemaIntrospector', () => {
       { name: 'idx_email_status', unique: false },
     ]);
     // The shared column is one node, referenced by both indexes.
-    expect(table.indexes[1].columns[0]).toBe(table.columns.get('email'));
+    expect(indexColumns(table.indexes[1])[0]).toBe(table.columns.get('email'));
   });
 
   it('introspect should skip a collection that disappears before it can be described', async () => {
