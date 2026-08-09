@@ -2,19 +2,28 @@
 
 Canonical, tool-neutral instructions for this repo, read directly by Cursor and through `CLAUDE.md`. Repo-specific rules only: general coding preferences belong in each tool's user config.
 
+## Conventions
+
+- Follow high-quality, KISS, clean performant code, and always apply best practices.
+- Do your best to simplify, unify, and reuse always that you change code.
+- Always keep the best type-safety.
+- If you identify code-smells, like duplicated code, ambiguous, etc, do the best, deepest refactors to simplify, reuse, etc. Correct and keep constant self-improvements on the way.
+- Prefer fuctional programming (PURE functions) over OOP.
+- New string-literal union values are camelCase (`'firstId'`, not `'first-id'`). Some older kebab literals predate this; they are public API, so ask before renaming them.
+- Never narrow a find result by `$select`/`$exclude`/`$populate`. `QueryFindResult<E, Q>` stays the full entity, augmented only with vector `$sort` `$project` distance fields.
+- Avoid patches, always correct the root issues, refactor if possible to simplify and keep code as cleanest as it can be.
+- No hacks and no workarounds when refactoring, solving issues or implementing new features.
+- Avoid unnecesary comments.
+
 ## Verifying a change
 
 - `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` belongs in it because `check.package` inspects `dist`, so without one the gate validates the previous release's output and passes. `bun run lint.fix` fixes formatting instead of only reporting it.
 - `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, every entry point's types resolve with `types: []`, and no entry exceeds its gzipped size budget. A budget moving is the leaked-module case they exist to catch, so raise one only once you know which module became reachable.
 - `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases through the same fixture tables. Anything else touching them concurrently corrupts them, including an orphaned worker from an earlier run, so never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive. Redirect to a file and read that.
 
-## Conventions
-
-- New string-literal union values are camelCase (`'firstId'`, not `'first-id'`). Some older kebab literals predate this; they are public API, so ask before renaming them.
-- Never narrow a find result by `$select`/`$exclude`/`$populate`. `QueryFindResult<E, Q>` stays the full entity, augmented only with vector `$sort` `$project` distance fields.
-
 ## Tests
 
+- Always add/update/refactor the best, cleanest, real tests without any hacks.
 - No conditionals in a test body. Where a shared suite covers backends with genuinely different specified behaviour, put the expectation in an overridable protected method on the suite (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`), and keep the body linear.
 - Shared suites run under **both** vitest and `bun:test`, so only use matchers both have. For "null or undefined" write `expect(x == null).toBe(true)`: vitest has `toBeNullable()`, bun has `toBeNil()`, neither has the other's. A missing SQL column hydrates to `null` while Mongo omits it as `undefined`, so that case is genuinely nullish.
 
