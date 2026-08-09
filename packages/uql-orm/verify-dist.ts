@@ -10,7 +10,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
@@ -113,8 +113,9 @@ function checkBrowserGraph(): number {
 }
 
 // Gzipped bytes per entry, peers external. Catches what the checks above cannot: a dev-only module
-// becoming reachable from a consumer entry, which leaves the `dist` total unchanged. Four suffice -
-// the SQL drivers share one core, so the root moves with them.
+// becoming reachable from a consumer entry. Four suffice - the SQL drivers share one core, so the root
+// moves with them. Deliberately per-entry and not a `dist` total: a total also counts declarations, so
+// JSDoc spends it and it has to be raised for documentation alone, which is noise these budgets aren't.
 // `.` and `./postgres` carry ~+500 each for read-side decoding; see the CHANGELOG entry for it.
 const BUDGETS: Record<string, number> = {
   '.': 25_200,
@@ -122,27 +123,10 @@ const BUDGETS: Record<string, number> = {
   './migrate': 43_000,
   './browser': 1_700,
 };
-// Counts declarations, so JSDoc on an exported symbol lands here: the last raise was documentation on
-// `generateCreateSchema`/`generateDropSchema` and the new `onDelete`/`onUpdate` relation options, not
-// code. The per-entry budgets above stayed put through it, which is what rules out a leaked module.
-const DIST_BYTES_BUDGET = 1_094_000;
 
-async function checkSizeBudgets(): Promise<number> {
-  function totalBytes(dir: string): number {
-    let bytes = 0;
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      bytes += entry.isDirectory() ? totalBytes(path) : statSync(path).size;
-    }
-    return bytes;
-  }
-
+async function checkSizeBudgets(): Promise<void> {
   const external = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
   const oversized: string[] = [];
-  const distBytes = totalBytes(join(pkgDir, 'dist'));
-  if (distBytes > DIST_BYTES_BUDGET) {
-    oversized.push(`dist/ total: ${distBytes} > ${DIST_BYTES_BUDGET} bytes`);
-  }
 
   for (const [subpath, budget] of Object.entries(BUDGETS)) {
     const target = pkg.exports[subpath];
@@ -162,7 +146,6 @@ async function checkSizeBudgets(): Promise<number> {
   if (oversized.length) {
     refuse('over size budget', oversized, 'Usually a dev-only module became reachable from a consumer entry.');
   }
-  return distBytes;
 }
 
 /**
@@ -246,11 +229,11 @@ function checkDeclarationsStandalone(): void {
 
 const declaredPaths = checkDeclaredPaths();
 const browserModules = checkBrowserGraph();
-const distBytes = await checkSizeBudgets();
+await checkSizeBudgets();
 checkDeclarationsStandalone();
 
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
     `${entries.length} entry points' types resolve with \`types: []\`; ` +
-    `dist ${Math.round(distBytes / 1024)} KB and ${Object.keys(BUDGETS).length} entry budgets within limits)`,
+    `${Object.keys(BUDGETS).length} entry budgets within limits)`,
 );
