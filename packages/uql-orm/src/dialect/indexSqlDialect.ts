@@ -19,7 +19,7 @@ export abstract class IndexSqlDialect extends VectorSqlDialect {
     this.assertIndexFeatures(index);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
-    const columns = index.columns.map((entry) => this.indexColumn(entry, index)).join(', ');
+    const columns = index.entries.map((entry) => this.indexColumn(entry, index)).join(', ');
     return (
       `CREATE ${unique}${this.indexKeyword(index)} ${ifNotExists}${this.escapeId(index.name)} ` +
       `ON ${this.escapeId(tableName)}${this.indexAccessMethod(index)} (${columns})` +
@@ -32,14 +32,15 @@ export abstract class IndexSqlDialect extends VectorSqlDialect {
    * refused by at least one other, so an index asking for a missing one is rejected rather than
    * emitted: each of them is a hard error at the server, not a slower plan.
    */
-  protected readonly indexFeatures: ReadonlySet<IndexFeature> = new Set<IndexFeature>(['expression']);
+  protected readonly indexFeatures: ReadonlySet<IndexFeature> = new Set<IndexFeature>(['expression', 'partial']);
 
   private assertIndexFeatures(index: IndexSchema): void {
     const requested: readonly [IndexFeature, boolean][] = [
-      ['expression', index.columns.some((entry) => entry.expression)],
-      ['prefixLength', index.columns.some((entry) => entry.length !== undefined)],
-      ['nullsOrder', index.columns.some((entry) => entry.nulls !== undefined)],
-      ['opsClass', index.columns.some((entry) => entry.opsClass !== undefined)],
+      ['expression', index.entries.some((entry) => entry.expression)],
+      ['partial', index.where !== undefined],
+      ['prefixLength', index.entries.some((entry) => entry.length !== undefined)],
+      ['nullsOrder', index.entries.some((entry) => entry.nulls !== undefined)],
+      ['opsClass', index.entries.some((entry) => entry.opsClass !== undefined)],
       ['include', Boolean(index.include?.length)],
     ];
     for (const [feature, needed] of requested) {
@@ -109,8 +110,9 @@ export abstract class IndexSqlDialect extends VectorSqlDialect {
   }
 
   /**
-   * The partial-index predicate. Dialects without partial indexes throw instead of dropping it:
-   * silently widening a partial unique index changes which rows the database accepts.
+   * The partial-index predicate. Engines without one reject the index in {@link assertIndexFeatures}
+   * rather than reaching here: silently widening a partial unique index changes which rows the
+   * database accepts.
    */
   protected indexPredicate(index: IndexSchema): string {
     return index.where ? ` WHERE ${index.where}` : '';

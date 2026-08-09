@@ -7,15 +7,9 @@ import {
   isVectorCategory,
   sqlToCanonical,
 } from '../schema/canonicalType.js';
-import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
-import type {
-  CanonicalType,
-  ColumnNode,
-  ForeignKeyAction,
-  IndexNode,
-  RelationshipNode,
-  TableNode,
-} from '../schema/types.js';
+import type { SchemaAST } from '../schema/schemaAST.js';
+import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, TableNode } from '../schema/types.js';
 import type {
   ColumnSchema,
   CreateSchemaOptions,
@@ -27,12 +21,14 @@ import type {
   IndexSchema,
   NamingStrategy,
   SchemaDiff,
+  SchemaGenerator,
   SqlDdlGenerator,
   Type,
 } from '../type/index.js';
 import { escapeSqlId, getKeys, isAutoIncrement } from '../util/index.js';
 import { formatDefaultValue } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
+import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 
 /**
@@ -140,7 +136,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     direction: 'create' | 'drop',
     only?: readonly string[],
   ): TableNode[] {
-    const ast = new SchemaASTBuilder(this.dialect.namingStrategy).fromEntities(entities);
+    const ast = buildEntityAST(this, entities, this.defaultForeignKeyAction);
     const tables = direction === 'create' ? ast.getCreateOrder() : ast.getDropOrder();
     if (!only) {
       return tables;
@@ -439,7 +435,14 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       columnsToDrop.push(name);
     }
 
-    if (columnsToAdd.length === 0 && columnsToAlter.length === 0 && columnsToDrop.length === 0) {
+    const indexesToAdd = this.missingIndexes(entity, currentTable);
+
+    if (
+      columnsToAdd.length === 0 &&
+      columnsToAlter.length === 0 &&
+      columnsToDrop.length === 0 &&
+      indexesToAdd.length === 0
+    ) {
       return undefined;
     }
 
@@ -449,7 +452,33 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
       columnsToDrop: columnsToDrop.length > 0 ? columnsToDrop : undefined,
+      indexesToAdd: indexesToAdd.length > 0 ? indexesToAdd : undefined,
     };
+  }
+
+  /**
+   * Indexes the entity declares that the table does not have, matched by name and built the same way
+   * `CREATE TABLE` builds them, so adding an `@Index` to an entity already in the database is picked
+   * up rather than waiting for the table to be created from scratch somewhere else.
+   *
+   * Only ever additive. An index the entity does not name is left alone: it may well have been
+   * created deliberately outside the ORM, and dropping it is a decision for a reviewed migration.
+   */
+  private missingIndexes<E>(entity: Type<E>, currentTable: TableNode): IndexSchema[] {
+    const desired = buildEntityAST(this, [entity]).getTable(currentTable.name)?.indexes ?? [];
+    const present = new Set(currentTable.indexes.map((index) => index.name));
+    return desired
+      .filter((index) => !present.has(index.name) && !this.isInlineVectorIndex(index))
+      .map(indexNodeToSchema);
+  }
+
+  /**
+   * A vector index this dialect declares inside `CREATE TABLE` rather than as a statement of its own,
+   * which MariaDB is alone in doing. It has no `CREATE INDEX` form, so it can only ever be created
+   * with its table, never added to one.
+   */
+  private isInlineVectorIndex(index: IndexNode): boolean {
+    return this.features.inlineVectorIndex && index.type === 'vector';
   }
 
   private columnNodeToSchema(col: ColumnNode): ColumnSchema {
@@ -543,12 +572,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const columns: string[] = [];
     const constraints: string[] = [];
 
-    const isInlineVectorIdx = this.features.inlineVectorIndex;
-    const vectorIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type === 'vector') : [];
-    const regularIndexes = isInlineVectorIdx ? table.indexes.filter((idx) => idx.type !== 'vector') : table.indexes;
+    const vectorIndexes = table.indexes.filter((index) => this.isInlineVectorIndex(index));
+    const regularIndexes = table.indexes.filter((index) => !this.isInlineVectorIndex(index));
     // MariaDB rejects a `VECTOR INDEX` whose column is nullable ("All parts of a VECTOR index must
     // be NOT NULL"), so being indexed decides it rather than the entity's own nullability.
-    const indexedVectorColumns = new Set(vectorIndexes.flatMap((idx) => idx.columns.map((col) => col.name)));
+    const indexedVectorColumns = new Set(vectorIndexes.flatMap((idx) => idx.entries.map((entry) => entry.column)));
 
     for (const col of table.columns.values()) {
       const colDef = this.generateColumnFromNode(
@@ -633,7 +661,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
-    const tableNode = this.tableDefinitionToNode(table);
+    const tableNode = tableDefinitionToNode(table);
     return this.generateCreateTableFromNode(tableNode, options);
   }
 
@@ -645,12 +673,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string {
-    const colSql = this.generateColumnFromNode(this.fullColumnDefinitionToNode(column, tableName));
+    const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
     return `ALTER TABLE ${this.escapeId(tableName)} ADD COLUMN ${colSql};`;
   }
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string {
-    const node = this.fullColumnDefinitionToNode(column, tableName);
+    const node = fullColumnDefinitionToNode(column, tableName);
     return this.generateAlterColumnStatements(
       tableName,
       { ...this.columnNodeToSchema(node), name: columnName },
@@ -687,97 +715,26 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   generateDropForeignKeySql(tableName: string, constraintName: string): string {
     return `ALTER TABLE ${this.escapeId(tableName)} ${this.dialect.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
   }
+}
 
-  private tableDefinitionToNode(def: TableDefinition): TableNode {
-    const columns = new Map<string, ColumnNode>();
-    const pkNodes: ColumnNode[] = [];
-
-    const table: TableNode = {
-      name: def.name,
-      columns,
-      primaryKey: [], // placeholder
-      indexes: [],
-      schema: { tables: new Map(), relationships: [], indexes: [] },
-      incomingRelations: [],
-      outgoingRelations: [],
-      comment: def.comment,
-    };
-
-    for (const colDef of def.columns) {
-      const node = this.fullColumnDefinitionToNode(colDef, def.name);
-      (node as { table: TableNode }).table = table;
-      columns.set(node.name, node);
-      if (node.isPrimaryKey) {
-        pkNodes.push(node);
-      }
-    }
-
-    const finalPrimaryKey = def.primaryKey
-      ? def.primaryKey.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined)
-      : pkNodes;
-
-    (table as { primaryKey: ColumnNode[] }).primaryKey = finalPrimaryKey;
-
-    for (const idxDef of def.indexes) {
-      const indexNode: IndexNode = {
-        ...idxDef,
-        table,
-        columns: idxDef.columns
-          .map((entry) => (entry.expression ? undefined : columns.get(entry.column)))
-          .filter((c): c is ColumnNode => c !== undefined),
-        entries: idxDef.columns,
-      };
-      table.indexes.push(indexNode);
-    }
-
-    for (const fkDef of def.foreignKeys) {
-      const relNode: RelationshipNode = {
-        name: fkDef.name ?? `fk_${def.name}_${fkDef.columns.join('_')}`,
-        type: 'ManyToOne', // Builder default
-        from: {
-          table,
-          columns: fkDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
-        },
-        to: {
-          table: { name: fkDef.referencesTable } as TableNode,
-          columns: fkDef.referencesColumns.map((name) => ({ name }) as ColumnNode),
-        },
-        onDelete: fkDef.onDelete,
-        onUpdate: fkDef.onUpdate,
-      };
-      table.outgoingRelations.push(relNode);
-    }
-
-    return table;
-  }
-
-  private fullColumnDefinitionToNode(col: FullColumnDefinition, tableName: string): ColumnNode {
-    return {
-      name: col.name,
-      type: col.type,
-      nullable: col.nullable,
-      defaultValue: col.defaultValue,
-      isPrimaryKey: col.primaryKey,
-      isAutoIncrement: col.autoIncrement,
-      isUnique: col.unique,
-      comment: col.comment,
-      table: { name: tableName } as TableNode,
-      referencedBy: [],
-      references: col.foreignKey
-        ? {
-            name: `fk_${tableName}_${col.name}`,
-            type: 'ManyToOne',
-            from: { table: { name: tableName } as TableNode, columns: [] },
-            to: {
-              table: { name: col.foreignKey.table } as TableNode,
-              columns: col.foreignKey.columns.map((name) => ({ name }) as ColumnNode),
-            },
-            onDelete: col.foreignKey.onDelete,
-            onUpdate: col.foreignKey.onUpdate,
-          }
-        : undefined,
-    };
-  }
+/**
+ * The entities as an AST, named the way `generator` names things.
+ *
+ * Its resolvers rather than a naming strategy, because the two disagree: a strategy renames whatever
+ * it is handed, while a generator leaves an explicit `@Entity({ name })` alone. Build the AST the
+ * other way and the table is created under one name and compared under another, which reports every
+ * table of a project using a naming strategy as both missing and unexpected.
+ */
+export function buildEntityAST(
+  generator: Pick<SchemaGenerator, 'resolveTableName' | 'resolveColumnName'>,
+  entities: readonly Type<unknown>[],
+  defaultForeignKeyAction?: ForeignKeyAction,
+): SchemaAST {
+  return buildSchemaAST(entities, {
+    resolveTableName: (entity, meta) => generator.resolveTableName(entity, meta),
+    resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
+    defaultForeignKeyAction,
+  });
 }
 
 /**

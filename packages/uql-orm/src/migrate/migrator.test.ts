@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
+import type { IndexFacet } from '../schema/indexDifferences.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -51,6 +52,7 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
   }
 
   return {
+    indexFacets: new Set<IndexFacet>(),
     introspect: vi.fn().mockResolvedValue(ast),
     getTableNames: vi.fn().mockResolvedValue(Object.keys(tables)),
     getTableSchema: vi.fn().mockResolvedValue(undefined),

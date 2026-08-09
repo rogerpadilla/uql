@@ -93,6 +93,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   protected override readonly indexFeatures = new Set<IndexFeature>([
     'expression',
+    'partial',
     'nullsOrder',
     'opsClass',
     'include',

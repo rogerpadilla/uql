@@ -1,5 +1,6 @@
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
+import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
@@ -158,7 +159,13 @@ export interface TableSchema {
  */
 export interface IndexSchema extends VectorIndexOptions {
   readonly name: string;
-  readonly columns: readonly IndexColumnSchema[];
+  /**
+   * What the index is over, in order. Named `entries` and not `columns` because an entry need not be
+   * a column at all: `raw('lower(email)')` is one, and so is a column carrying a prefix length or a
+   * stored order. The authored form, `@Index([...])`, still spells this `columns`, since that is what
+   * it reads like at the call site.
+   */
+  readonly entries: readonly IndexColumnSchema[];
   readonly unique: boolean;
   /** Index type (btree, hnsw, ivfflat, etc.) */
   readonly type?: IndexType;
@@ -320,6 +327,13 @@ export interface SqlDdlGenerator extends SchemaGenerator {
  * Interface for introspecting the current database schema
  */
 export interface SchemaIntrospector {
+  /**
+   * What this introspector can read back about an index, and so all that diffing may compare.
+   * Comparing a feature it cannot read reports the same drift forever: the entity side declares it,
+   * the database side never reports it, and no migration can close the gap.
+   */
+  readonly indexFacets: ReadonlySet<IndexFacet>;
+
   /**
    * Introspect entire database schema and return SchemaAST.
    */

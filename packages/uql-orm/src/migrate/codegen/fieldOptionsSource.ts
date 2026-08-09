@@ -9,8 +9,14 @@ import type { ColumnNode } from '../../schema/types.js';
  * merging a column into an existing entity file quietly produced a weaker field than generating the
  * file from scratch.
  */
-export function buildFieldOptionsSource(col: ColumnNode, indexName?: string): string {
+export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, indexName?: string): string {
   const options: string[] = [];
+
+  // Without this the entity maps to a column named after the property, which for anything the
+  // transformer rewrote - every `user_id` - is a column the database does not have.
+  if (propertyName !== col.name) {
+    options.push(`name: '${col.name}'`);
+  }
 
   const columnType = canonicalToColumnType(col.type);
   if (columnType) {

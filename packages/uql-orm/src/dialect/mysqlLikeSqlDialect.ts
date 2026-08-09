@@ -155,16 +155,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return index.type && index.type !== 'fulltext' ? ` USING ${index.type}` : '';
   }
 
-  /** Neither MySQL nor MariaDB has partial indexes, and quietly widening one changes which rows it rejects. */
-  protected override indexPredicate(index: IndexSchema): string {
-    if (index.where) {
-      throw new TypeError(
-        `${this.dialectName} does not support partial indexes (index "${index.name}" declares a "where" condition)`,
-      );
-    }
-    return '';
-  }
-
   protected override numericCast(expr: string): string {
     return `CAST(${expr} AS DECIMAL)`;
   }

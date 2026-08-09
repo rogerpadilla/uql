@@ -58,7 +58,7 @@ describe('PostgresSchemaIntrospector', () => {
 
   it('getTableSchema should return table details', async () => {
     mockAll.mockImplementation((sql: string) => {
-      if (sql.includes('EXISTS')) {
+      if (sql.includes('information_schema.tables')) {
         return Promise.resolve([{ exists: true }]);
       }
       if (sql.includes('information_schema.columns')) {
@@ -78,8 +78,15 @@ describe('PostgresSchemaIntrospector', () => {
         return Promise.resolve([
           {
             index_name: 'idx1',
-            columns: ['name'],
             is_unique: false,
+            method: 'btree',
+            predicate: null,
+            is_key: true,
+            is_expression: false,
+            entry: 'name',
+            descending: false,
+            nulls_first: false,
+            ops_class: null,
           },
         ]);
       }
@@ -110,9 +117,61 @@ describe('PostgresSchemaIntrospector', () => {
     expect(schema!.primaryKey).toEqual(['id']);
   });
 
+  it('getTableSchema should read the index shapes only the catalogue functions report', async () => {
+    mockAll.mockImplementation((sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return Promise.resolve([{ exists: true }]);
+      }
+      if (sql.includes('pg_index')) {
+        return Promise.resolve([
+          {
+            index_name: 'idx_users_lower_email',
+            is_unique: true,
+            method: 'gin',
+            predicate: 'deleted_at IS NULL',
+            is_key: true,
+            is_expression: true,
+            entry: 'lower(email)',
+            descending: true,
+            nulls_first: true,
+            ops_class: 'gin_trgm_ops',
+          },
+          {
+            index_name: 'idx_users_lower_email',
+            is_unique: true,
+            method: 'gin',
+            predicate: 'deleted_at IS NULL',
+            is_key: false,
+            is_expression: false,
+            entry: 'status',
+            descending: false,
+            nulls_first: false,
+            ops_class: null,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const schema = await introspector.getTableSchema('users');
+
+    expect(schema!.indexes).toEqual([
+      {
+        name: 'idx_users_lower_email',
+        unique: true,
+        type: 'gin',
+        where: 'deleted_at IS NULL',
+        include: ['status'],
+        entries: [
+          { column: 'lower(email)', expression: true, order: 'desc', nulls: 'first', opsClass: 'gin_trgm_ops' },
+        ],
+      },
+    ]);
+  });
+
   it('getTableSchema should handle table with no primary key', async () => {
     mockAll.mockImplementation((sql: string) => {
-      if (sql.includes('EXISTS')) {
+      if (sql.includes('information_schema.tables')) {
         return Promise.resolve([{ exists: true }]);
       }
       if (sql.includes('information_schema.columns')) {

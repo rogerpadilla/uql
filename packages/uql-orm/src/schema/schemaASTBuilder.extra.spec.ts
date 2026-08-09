@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { raw } from '../util/index.js';
-import { SchemaASTBuilder } from './schemaASTBuilder.js';
+import { buildSchemaAST } from './schemaASTBuilder.js';
 
 describe('SchemaASTBuilder Extra Coverage', () => {
   it('should default autoIncrement to true for integer PK', () => {
@@ -11,8 +11,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       id?: number;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([AutoInc]);
+    const ast = buildSchemaAST([AutoInc]);
     const table = ast.getTable('AutoInc');
     const idCol = table?.columns.get('id');
     expect(idCol?.isAutoIncrement).toBe(true);
@@ -25,8 +24,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       id?: number;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([NoAutoInc]);
+    const ast = buildSchemaAST([NoAutoInc]);
     const table = ast.getTable('NoAutoInc');
     const idCol = table?.columns.get('id');
     expect(idCol?.isAutoIncrement).toBe(false);
@@ -40,10 +38,9 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       name?: string;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([DefaultIndex]);
+    const ast = buildSchemaAST([DefaultIndex]);
     const table = ast.getTable('DefaultIndex');
-    const index = table?.indexes.find((i) => i.columns[0].name === 'name');
+    const index = table?.indexes.find((i) => i.entries[0]?.column === 'name');
     expect(index?.name).toBe('idx_DefaultIndex_name');
   });
 
@@ -66,8 +63,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       target?: Target;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([Target, Source]);
+    const ast = buildSchemaAST([Target, Source]);
     const rel = ast.relationships.find((r) => r.from.table.name === 'Source');
 
     expect(rel).toBeDefined();
@@ -92,8 +88,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       group?: Group;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([Group, Member]);
+    const ast = buildSchemaAST([Group, Member]);
     const rel = ast.relationships.find((r) => r.from.table.name === 'Member');
     expect(rel).toBeDefined();
     expect(rel?.from.columns[0].name).toBe('groupIdKey');
@@ -114,8 +109,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       target?: RelTarget;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([RelTarget, RelSource]);
+    const ast = buildSchemaAST([RelTarget, RelSource]);
     // Should have no relationships because local field is missing
     expect(ast.relationships.length).toBe(0);
   });
@@ -136,8 +130,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       target?: RelSource2;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([RelTarget2, RelSource2]);
+    const ast = buildSchemaAST([RelTarget2, RelSource2]);
     expect(ast.relationships.length).toBe(0);
   });
 
@@ -158,8 +151,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       target?: VirtualTarget;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([VirtualTarget, VirtualSource]);
+    const ast = buildSchemaAST([VirtualTarget, VirtualSource]);
     // Relation depends on 'targetId' column, but it is virtual, so no column => no relation in AST
     expect(ast.relationships.length).toBe(0);
   });
@@ -173,19 +165,14 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     }
 
     let callCount = 0;
-    const builder = new SchemaASTBuilder();
 
     // This resolver returns a different name every time it's called
     // causing the table to be added with name "T1", but looked up as "T2", "T3" etc.
     // This triggers `if (!table) return` in addRelationshipsFromEntity and addIndexesFromEntity
     const unstableResolver = () => `T${++callCount}`;
 
-    builder.fromEntities([Unstable], {
-      resolveTableName: unstableResolver,
-    });
+    const ast = buildSchemaAST([Unstable], { resolveTableName: unstableResolver });
 
-    // We expect no crash, but probably no indexes/relations added because resolution mismatched
-    const ast = builder.getAST();
     // Table "T1" added
     expect(ast.tables.size).toBe(1);
 
@@ -202,8 +189,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       virtualField?: number;
     }
 
-    const builder = new SchemaASTBuilder();
-    const ast = builder.fromEntities([VirtualIndex]);
+    const ast = buildSchemaAST([VirtualIndex]);
     const table = ast.getTable('VirtualIndex');
     expect(table?.indexes.length).toBe(0);
   });

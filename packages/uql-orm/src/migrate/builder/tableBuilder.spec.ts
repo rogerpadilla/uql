@@ -267,7 +267,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.indexes[0].name).toBe('idx_users_name');
-      expect(def.indexes[0].columns).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
+      expect(def.indexes[0].entries).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
       expect(def.indexes[0].unique).toBe(false);
     });
 
@@ -283,7 +283,7 @@ describe('TableBuilder', () => {
 
       expect(def.indexes[0]).toEqual({
         name: 'idx_notes_lookup',
-        columns: [
+        entries: [
           { column: 'lower("email")', expression: true },
           { column: 'body', length: 64 },
         ],

@@ -3,6 +3,7 @@ import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
+import { mockTableNode } from '../test/index.js';
 import type { ColumnSchema, IndexSchema } from '../type/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -88,7 +89,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should generate CREATE INDEX statement', () => {
     const sql = generator.generateCreateIndex('users', {
       name: 'idx_users_email',
-      columns: [{ column: 'email' }],
+      entries: [{ column: 'email' }],
       unique: true,
     });
 
@@ -98,7 +99,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should generate CREATE INDEX for HNSW vector index', () => {
     const sql = generator.generateCreateIndex('articles', {
       name: 'idx_articles_embedding_hnsw',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
       distance: 'cosine',
@@ -111,7 +112,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should generate CREATE INDEX for HNSW with tuning params', () => {
     const sql = generator.generateCreateIndex('articles', {
       name: 'idx_embedding',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
       distance: 'l2',
@@ -126,7 +127,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should generate CREATE INDEX for IVFFlat', () => {
     const sql = generator.generateCreateIndex('articles', {
       name: 'idx_embedding_ivf',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type: 'ivfflat',
       distance: 'inner',
@@ -141,7 +142,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const mysqlGenerator = new SqlSchemaGenerator(new MySqlDialect());
     const sql = mysqlGenerator.generateCreateIndex('articles', {
       name: 'idx_title',
-      columns: [{ column: 'title' }],
+      entries: [{ column: 'title' }],
       unique: false,
       type: 'btree',
       m: 16,
@@ -159,7 +160,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   ] as const)('should emit CREATE FULLTEXT INDEX on %s', (_name, dialect) => {
     const sql = new SqlSchemaGenerator(dialect).generateCreateIndex('articles', {
       name: 'idx_text',
-      columns: [{ column: 'title' }, { column: 'body' }],
+      entries: [{ column: 'title' }, { column: 'body' }],
       unique: false,
       type: 'fulltext',
     });
@@ -173,7 +174,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       mysqlGenerator.generateCreateIndex('articles', {
         name: 'idx_embedding',
-        columns: [{ column: 'embedding' }],
+        entries: [{ column: 'embedding' }],
         unique: false,
         type,
         distance: 'cosine',
@@ -187,7 +188,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const sqliteGenerator = new SqlSchemaGenerator(new SqliteDialect());
     const sql = sqliteGenerator.generateCreateIndex('articles', {
       name: 'idx_embedding',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type,
       distance: 'cosine',
@@ -204,7 +205,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   ] as const)('should name the %s operator class', (vectorType, opsClass) => {
     const sql = generator.generateCreateIndex('articles', {
       name: 'idx_embedding',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
       distance: 'cosine',
@@ -220,7 +221,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       generator.generateCreateIndex('articles', {
         name: 'idx_embedding',
-        columns: [{ column: 'embedding' }],
+        entries: [{ column: 'embedding' }],
         unique: false,
         type: 'ivfflat',
         distance,
@@ -258,24 +259,24 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       ['mysql', 'CREATE INDEX `i` ON `t` ((lower("email")));'],
       ['sqlite', 'CREATE INDEX IF NOT EXISTS `i` ON `t` ((lower("email")));'],
     ] as const)('should index an expression on %s', (dialect, expected) => {
-      expect(render(dialect, { columns: [{ column: 'lower("email")', expression: true }] })).toBe(expected);
+      expect(render(dialect, { entries: [{ column: 'lower("email")', expression: true }] })).toBe(expected);
     });
 
     it('should reject an expression index on MariaDB, which has no functional indexes', () => {
-      expect(() => render('mariadb', { columns: [{ column: 'lower(`email`)', expression: true }] })).toThrow(
+      expect(() => render('mariadb', { entries: [{ column: 'lower(`email`)', expression: true }] })).toThrow(
         'mariadb does not support expression indexes (index "i")',
       );
     });
 
     // Without a prefix MySQL and MariaDB refuse to index a TEXT column at all.
     it.each(['mysql', 'mariadb'] as const)('should emit a prefix length on %s', (dialect) => {
-      expect(render(dialect, { columns: [{ column: 'body', length: 64 }] })).toBe(
+      expect(render(dialect, { entries: [{ column: 'body', length: 64 }] })).toBe(
         'CREATE INDEX `i` ON `t` (`body`(64));',
       );
     });
 
     it.each(['postgres', 'sqlite'] as const)('should reject a prefix length on %s', (dialect) => {
-      expect(() => render(dialect, { columns: [{ column: 'body', length: 64 }] })).toThrow(
+      expect(() => render(dialect, { entries: [{ column: 'body', length: 64 }] })).toThrow(
         'does not support index prefix lengths',
       );
     });
@@ -288,33 +289,33 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       ['mariadb', 'CREATE INDEX `i` ON `t` (`email` DESC);'],
       ['sqlite', 'CREATE INDEX IF NOT EXISTS `i` ON `t` (`email` DESC);'],
     ] as const)('should emit a descending entry on %s', (dialect, expected) => {
-      expect(render(dialect, { columns: [{ column: 'email', order: 'desc' }] })).toBe(expected);
+      expect(render(dialect, { entries: [{ column: 'email', order: 'desc' }] })).toBe(expected);
     });
 
     it('should emit NULLS ordering and INCLUDE and an operator class on Postgres', () => {
-      expect(render('postgres', { columns: [{ column: 'email', order: 'desc', nulls: 'first' }] })).toBe(
+      expect(render('postgres', { entries: [{ column: 'email', order: 'desc', nulls: 'first' }] })).toBe(
         'CREATE INDEX IF NOT EXISTS "i" ON "t" ("email" DESC NULLS FIRST);',
       );
-      expect(render('postgres', { columns: [{ column: 'email' }], include: ['body'] })).toBe(
+      expect(render('postgres', { entries: [{ column: 'email' }], include: ['body'] })).toBe(
         'CREATE INDEX IF NOT EXISTS "i" ON "t" ("email") INCLUDE ("body");',
       );
-      expect(render('postgres', { columns: [{ column: 'data', opsClass: 'jsonb_path_ops' }], type: 'gin' })).toBe(
+      expect(render('postgres', { entries: [{ column: 'data', opsClass: 'jsonb_path_ops' }], type: 'gin' })).toBe(
         'CREATE INDEX IF NOT EXISTS "i" ON "t" USING gin ("data" jsonb_path_ops);',
       );
     });
 
     // CockroachDB answers "unimplemented" to both, though it does take INCLUDE.
     it.each(['nullsOrder', 'opsClass'] as const)('should reject %s on CockroachDB', (feature) => {
-      const columns = [
+      const entries = [
         feature === 'nullsOrder'
           ? { column: 'email', nulls: 'first' as const }
           : { column: 'data', opsClass: 'jsonb_path_ops' },
       ];
-      expect(() => render('cockroachdb', { columns })).toThrow('cockroachdb does not support');
+      expect(() => render('cockroachdb', { entries })).toThrow('cockroachdb does not support');
     });
 
     it.each(['mysql', 'mariadb', 'sqlite'] as const)('should reject a covering index on %s', (dialect) => {
-      expect(() => render(dialect, { columns: [{ column: 'email' }], include: ['body'] })).toThrow(
+      expect(() => render(dialect, { entries: [{ column: 'email' }], include: ['body'] })).toThrow(
         'does not support covering indexes (INCLUDE)',
       );
     });
@@ -324,7 +325,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const sqliteGenerator = new SqlSchemaGenerator(new SqliteDialect());
     const sql = sqliteGenerator.generateCreateIndex('users', {
       name: 'idx_live_email',
-      columns: [{ column: 'email' }],
+      entries: [{ column: 'email' }],
       unique: true,
       where: '`deletedAt` IS NULL',
     });
@@ -340,7 +341,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       mysqlGenerator.generateCreateIndex('users', {
         name: 'idx_live_email',
-        columns: [{ column: 'email' }],
+        entries: [{ column: 'email' }],
         unique: true,
         where: '`deletedAt` IS NULL',
       }),
@@ -351,7 +352,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
     const sql = crdbGenerator.generateCreateIndex('articles', {
       name: 'idx_articles_embedding',
-      columns: [{ column: 'embedding' }],
+      entries: [{ column: 'embedding' }],
       unique: false,
       type: 'vector',
       distance: 'cosine',
@@ -368,7 +369,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const crdbGenerator = new SqlSchemaGenerator(new CockroachDialect());
     const sql = crdbGenerator.generateCreateIndex('articles', {
       name: 'idx_articles_name',
-      columns: [{ column: 'name' }],
+      entries: [{ column: 'name' }],
       unique: false,
       type: 'btree',
     });
@@ -380,7 +381,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       crdbGenerator.generateCreateIndex('articles', {
         name: 'idx_articles_embedding',
-        columns: [{ column: 'embedding' }],
+        entries: [{ column: 'embedding' }],
         unique: false,
         type: 'vector',
         distance: 'l1',
@@ -393,7 +394,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(() =>
       crdbGenerator.generateCreateIndex('articles', {
         name: 'idx_articles_embedding',
-        columns: [{ column: 'embedding' }],
+        entries: [{ column: 'embedding' }],
         unique: false,
         type: 'vector',
         distance: 'toString' as any, // deliberately unvalidated input, mirroring dynamic/JSON query data
@@ -441,6 +442,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
           name: 'idx_vec',
           table,
           columns: [{ name: 'embedding' }],
+          entries: [{ column: 'embedding' }],
           unique: false,
           type: 'vector',
           ...idx,
@@ -581,7 +583,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     const sql = generator.generateAlterTableDown({
       tableName: 'users',
       type: 'alter',
-      indexesToAdd: [{ name: 'idx_users_email', columns: [{ column: 'email' }], unique: true }],
+      indexesToAdd: [{ name: 'idx_users_email', entries: [{ column: 'email' }], unique: true }],
     });
     expect(sql[0]).toBe('DROP INDEX IF EXISTS "idx_users_email";');
   });
@@ -608,7 +610,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       type: 'alter',
       columnsToDrop: ['old_col'],
       indexesToDrop: ['idx_old'],
-      indexesToAdd: [{ name: 'idx_new', columns: [{ column: 'name' }], unique: false }],
+      indexesToAdd: [{ name: 'idx_new', entries: [{ column: 'name' }], unique: false }],
     });
     expect(sql).toContain('ALTER TABLE "users" DROP COLUMN "old_col";');
     expect(sql).toContain('DROP INDEX IF EXISTS "idx_old";');
@@ -707,11 +709,11 @@ describe('SqlSchemaGenerator Integration', () => {
   });
 
   it('should generate CREATE INDEX from IndexNode', () => {
-    const table = { name: 'users' } as TableNode;
+    const table = mockTableNode('users', [{ name: 'name' }]);
     const index: IndexNode = {
       name: 'idx_name',
       table,
-      columns: [{ name: 'name' } as ColumnNode],
+      entries: [{ column: 'name' }],
       unique: true,
     };
     const sql = generator.generateCreateIndexFromNode(index);
@@ -721,11 +723,11 @@ describe('SqlSchemaGenerator Integration', () => {
   // The predicate used to be dropped between IndexNode and IndexSchema, turning the soft-delete
   // pattern (unique among live rows) into a unique index over every row.
   it('should carry a partial index predicate from IndexNode', () => {
-    const table = { name: 'users' } as TableNode;
+    const table = mockTableNode('users', [{ name: 'email' }]);
     const index: IndexNode = {
       name: 'idx_live_email',
       table,
-      columns: [{ name: 'email' } as ColumnNode],
+      entries: [{ column: 'email' }],
       unique: true,
       where: '"deletedAt" IS NULL',
     };
@@ -945,10 +947,10 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     const statements = generator.generateCreateTableFromDefinition(
       tableDefinition({
         indexes: [
-          { name: 'idx_memberships_userId', columns: [{ column: 'userId' }], unique: false },
+          { name: 'idx_memberships_userId', entries: [{ column: 'userId' }], unique: false },
           {
             name: 'uq_memberships_pair',
-            columns: [{ column: 'userId' }, { column: 'groupId' }],
+            entries: [{ column: 'userId' }, { column: 'groupId' }],
             unique: true,
           },
         ],
@@ -965,7 +967,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         indexes: [
           {
             name: 'idx_memberships_active',
-            columns: [
+            entries: [
               { column: 'userId', order: 'desc' },
               { column: 'lower("groupId")', expression: true },
             ],

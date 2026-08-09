@@ -118,7 +118,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       if (named.length === columns.length && (isUserCreated || isCompositeUnique)) {
         indexSchemas.push({
           name: index.name,
-          columns: named.map((column) => ({ column: column.name })),
+          entries: named.map((column) => ({ column: column.name })),
           unique: Boolean(index.unique),
         });
       }

@@ -132,7 +132,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createIndex');
-      expect((ops[0] as CreateIndexOperation).index.columns).toEqual([{ column: 'email' }]);
+      expect((ops[0] as CreateIndexOperation).index.entries).toEqual([{ column: 'email' }]);
     });
 
     it('should auto-generate index name', async () => {

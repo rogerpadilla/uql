@@ -138,6 +138,31 @@ for (const db of databases) {
         await cleanupTable(tableName);
       });
 
+      it('should create an index the entity declares on a table that already exists', async () => {
+        @Entity()
+        class AutoSyncIndexTest {
+          @Id({ type: Number }) id?: number;
+          @Field({ type: String, index: true }) email?: string;
+        }
+
+        const tableName = 'AutoSyncIndexTest';
+        await cleanupTable(tableName);
+
+        await querier.run(
+          db.createTableSql(tableName, `${db.serialPrimaryKey}, ${db.escapeId('email')} ${db.textType}`),
+        );
+
+        const before = await introspector.introspect();
+        expect(before.getTable(tableName)!.indexes).toEqual([]);
+
+        await new Migrator(db.pool, { entities: [AutoSyncIndexTest] }).autoSync({ logging: true });
+
+        const after = await introspector.introspect();
+        expect(after.getTable(tableName)!.indexes.map((index) => index.name)).toEqual(['idx_AutoSyncIndexTest_email']);
+
+        await cleanupTable(tableName);
+      });
+
       it('should add multiple new properties to an existing entity', async () => {
         @Entity()
         class AutoSyncProductTest1 {

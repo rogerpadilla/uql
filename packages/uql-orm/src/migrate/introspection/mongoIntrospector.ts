@@ -1,3 +1,4 @@
+import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../../schema/types.js';
 import type { MongoQuerier, QuerierPool, SchemaIntrospector, TableSchema } from '../../type/index.js';
@@ -10,6 +11,9 @@ type MongoIndex = { readonly name?: string; readonly key: Record<string, unknown
  * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
  */
 export class MongoSchemaIntrospector implements SchemaIntrospector {
+  /** `listIndexes` reports keys and uniqueness; a `partialFilterExpression` is no SQL predicate. */
+  readonly indexFacets: ReadonlySet<IndexFacet> = new Set();
+
   constructor(private readonly pool: QuerierPool) {}
 
   async introspect(): Promise<SchemaAST> {
@@ -32,8 +36,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 
         if (schema.indexes) {
           for (const idx of schema.indexes) {
-            const indexColumns: ColumnNode[] = [];
-            for (const { column: colName } of idx.columns) {
+            for (const { column: colName } of idx.entries) {
               let column = columns.get(colName);
               if (!column) {
                 column = {
@@ -48,14 +51,8 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
                 };
                 columns.set(colName, column);
               }
-              indexColumns.push(column);
             }
-            table.indexes.push({
-              name: idx.name,
-              table,
-              columns: indexColumns,
-              unique: idx.unique,
-            });
+            table.indexes.push({ name: idx.name, table, entries: idx.entries, unique: idx.unique });
           }
         }
 
@@ -84,7 +81,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         columns: [], // We don't have columns in Mongo
         indexes: indexes.map((idx) => ({
           name: idx.name ?? Object.keys(idx.key).join('_'),
-          columns: Object.keys(idx.key).map((column) => ({ column })),
+          entries: Object.keys(idx.key).map((column) => ({ column })),
           unique: !!idx.unique,
         })),
       };

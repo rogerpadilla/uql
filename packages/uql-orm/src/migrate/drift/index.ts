@@ -5,8 +5,6 @@
  */
 
 export {
-  createDriftDetector,
-  DriftDetector,
   type DriftDetectorOptions,
   detectDrift,
 } from './driftDetector.js';

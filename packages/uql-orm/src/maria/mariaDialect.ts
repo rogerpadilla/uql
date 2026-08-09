@@ -95,7 +95,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
    * being dropped, which would silently build the index on cosine instead.
    */
   override getInlineVectorIndexDeclaration(index: IndexSchema): string {
-    const columns = index.columns.map((entry) => this.indexColumnTarget(entry)).join(', ');
+    const columns = index.entries.map((entry) => this.indexColumnTarget(entry)).join(', ');
     let clause = `VECTOR INDEX (${columns})`;
     if (index.m !== undefined) {
       clause += ` M=${index.m}`;

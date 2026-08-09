@@ -42,7 +42,7 @@ describe('SchemaAST', () => {
       const idx: IndexNode = {
         name: 'idx_users_email',
         table: users,
-        columns: [],
+        entries: [],
         unique: false,
       };
       ast.addIndex(idx);
@@ -222,13 +222,13 @@ describe('SchemaAST', () => {
       const idx1: IndexNode = {
         name: 'idx_duplicate',
         table: users,
-        columns: [],
+        entries: [],
         unique: false,
       };
       const idx2: IndexNode = {
         name: 'idx_duplicate',
         table: users,
-        columns: [],
+        entries: [],
         unique: false,
       };
 
@@ -379,7 +379,7 @@ describe('SchemaAST', () => {
       const idx: IndexNode = {
         name: 'idx_users_email',
         table: users,
-        columns: [],
+        entries: [],
         unique: true,
       };
 
@@ -422,7 +422,7 @@ describe('SchemaAST', () => {
       ast.addIndex({
         name: 'idx_users_name',
         table: users,
-        columns: [users.columns.get('col1')!],
+        entries: [{ column: 'col1' }],
         unique: false,
       });
 
@@ -470,7 +470,7 @@ describe('SchemaAST', () => {
     it('should ignore duplicate addIndex calls on table.indexes', () => {
       const users = createTable('users');
       ast.addTable(users);
-      const idx: IndexNode = { name: 'idx_users_email', table: users, columns: [], unique: false };
+      const idx: IndexNode = { name: 'idx_users_email', table: users, entries: [], unique: false };
       ast.addIndex(idx);
       // add the identical object again
       ast.addIndex(idx);
@@ -506,7 +506,7 @@ describe('SchemaAST', () => {
       ast.addIndex({
         name: 'idx_users_name',
         table: users,
-        columns: [users.columns.get('col1')!],
+        entries: [{ column: 'col1' }],
         unique: false,
       });
 

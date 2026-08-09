@@ -1,7 +1,7 @@
 import { getEntities } from '../entity/index.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
-import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
+import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 
 /**
  * The same generator migrations use, so the integration suites run against the columns a real migration
@@ -110,7 +110,7 @@ export async function probeForeignKeys(querier: AbstractSqlQuerier) {
 }
 
 export async function clearTables(querier: AbstractSqlQuerier) {
-  const ast = new SchemaASTBuilder(querier.dialect.namingStrategy).fromEntities(getEntities());
+  const ast = buildSchemaAST(getEntities(), { namingStrategy: querier.dialect.namingStrategy });
   const tables = ast.getDropOrder().map((table) => querier.dialect.escapeId(table.name));
 
   await querier.transaction(async () => {

@@ -3,11 +3,12 @@ import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../d
 import { Entity, Field, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
-import { SchemaASTBuilder } from '../schema/schemaASTBuilder.js';
+import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import type { QuerierPool } from '../type/index.js';
 import * as cli from './cli.js';
 import * as cliConfig from './cli-config.js';
 import type { Migrator } from './migrator.js';
+import { createSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class TestEntity {
@@ -35,6 +36,8 @@ class DriftedEntity {
 }
 
 const mockMigrator = {
+  // A real generator, because `runDriftCheck` names the expected schema through it.
+  schemaGenerator: createSchemaGenerator(new SqliteDialect()),
   setSchemaGenerator: vi.fn(),
   up: vi.fn().mockResolvedValue([]),
   down: vi.fn().mockResolvedValue([]),
@@ -314,9 +317,8 @@ describe('CLI', () => {
 
   it('runDriftCheck should report in_sync when schemas match', async () => {
     // Build an AST that matches the expected entity schema
-    const { SchemaASTBuilder } = await import('../schema/schemaASTBuilder.js');
-    const builder = new SchemaASTBuilder();
-    const matchingAST = builder.fromEntities([TestEntity]);
+    const { buildSchemaAST } = await import('../schema/schemaASTBuilder.js');
+    const matchingAST = buildSchemaAST([TestEntity]);
 
     const migrator = {
       ...mockMigrator,
@@ -352,11 +354,10 @@ describe('CLI', () => {
 
   /** A drift report drives the exit code, so each severity has to reach the right branch. */
   it('runDriftCheck should report a table the entities do not declare as a warning', async () => {
-    const builder = new SchemaASTBuilder();
     const migrator = {
       ...mockMigrator,
       schemaIntrospector: {
-        introspect: vi.fn().mockResolvedValue(builder.fromEntities([TestEntity, ExtraTableEntity])),
+        introspect: vi.fn().mockResolvedValue(buildSchemaAST([TestEntity, ExtraTableEntity])),
       },
     } as unknown as Migrator;
 
@@ -373,7 +374,7 @@ describe('CLI', () => {
     const migrator = {
       ...mockMigrator,
       schemaIntrospector: {
-        introspect: vi.fn().mockResolvedValue(new SchemaASTBuilder().fromEntities([DriftedEntity])),
+        introspect: vi.fn().mockResolvedValue(buildSchemaAST([DriftedEntity])),
       },
     } as unknown as Migrator;
 

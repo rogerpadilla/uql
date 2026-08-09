@@ -49,7 +49,7 @@ function createIndexOperation(
     index: {
       ...index,
       name: name ?? `idx_${tableName}_${entries.map((entry) => entry.column).join('_')}`,
-      columns: entries,
+      entries,
       unique: unique ?? false,
     },
   };

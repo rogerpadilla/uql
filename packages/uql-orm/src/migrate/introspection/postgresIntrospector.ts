@@ -1,10 +1,24 @@
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, RawRow } from '../../type/index.js';
+import type { IndexFacet } from '../../schema/indexDifferences.js';
+import { INDEX_TYPES } from '../../schema/types.js';
+import type { ColumnSchema, ForeignKeySchema, IndexColumnSchema, IndexSchema, RawRow } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  /**
+   * Expressions and predicates are read back too, for `generate:from-db`, but they are text the
+   * database reprints in its own words, so they are not comparable and are not claimed here.
+   */
+  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
+    'order',
+    'nulls',
+    'opsClass',
+    'accessMethod',
+    'include',
+  ]);
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT table_name
@@ -73,25 +87,59 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
+  /**
+   * `attname` where the entry is a column, `pg_get_indexdef` for that one position where it is an
+   * expression. Neither alone will do: an expression entry has `attnum = 0`, so joining `pg_attribute`
+   * on it silently dropped the entry (a `lower(email)` index read back as having no columns at all),
+   * while `pg_get_indexdef` reprints an identifier *quoted*, so a camelCase column came back as
+   * `"tenantId"` and matched no column of the table. Prisma and drizzle-kit both split it this way.
+   *
+   * Indexes backing a constraint are left out, primary keys among them: `@Field({ unique })` emits a
+   * `UNIQUE` constraint and no index, so reporting the index Postgres builds underneath it told every
+   * project it had an index its entities never asked for.
+   */
   protected getIndexesQuery(_tableName: string): string {
     return /*sql*/ `
       SELECT
         i.relname AS index_name,
-        array_to_json(array_agg(a.attname ORDER BY k.n)) AS columns,
-        ix.indisunique AS is_unique
+        ix.indisunique AS is_unique,
+        am.amname AS method,
+        pg_get_expr(ix.indpred, ix.indrelid, true) AS predicate,
+        k.n <= ix.indnkeyatts AS is_key,
+        k.attnum = 0 AS is_expression,
+        COALESCE(a.attname::text, pg_get_indexdef(ix.indexrelid, k.n::int, true)) AS entry,
+        (ix.indoption[k.n - 1] & 1) <> 0 AS descending,
+        (ix.indoption[k.n - 1] & 2) <> 0 AS nulls_first,
+        CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END AS ops_class
       FROM pg_class t
       JOIN pg_index ix ON t.oid = ix.indrelid
       JOIN pg_class i ON i.oid = ix.indexrelid
+      JOIN pg_am am ON am.oid = i.relam
       JOIN pg_namespace n ON n.oid = t.relnamespace
       CROSS JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, n)
-      JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+      LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
+      LEFT JOIN pg_opclass op ON op.oid = ix.indclass[k.n - 1]
       WHERE t.relname = $1
         AND n.nspname = 'public'
         AND NOT ix.indisprimary
-      GROUP BY i.relname, ix.indisunique
-      ORDER BY i.relname
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_constraint con
+          WHERE con.conindid = ix.indexrelid
+            AND con.contype IN (${this.constraintIndexTypes.map((type) => `'${type}'`).join(', ')})
+        )
+      ORDER BY i.relname, k.n
     `;
   }
+
+  /**
+   * Constraint kinds whose backing index is the constraint itself rather than an index anyone asked
+   * for. Postgres builds one for `PRIMARY KEY`, `UNIQUE` and `EXCLUDE`, and only for those: a plain
+   * `CREATE UNIQUE INDEX` has no `pg_constraint` row at all, so it survives.
+   *
+   * Nothing to do with {@link indexFacets}, which says which *attributes* of an index diffing may
+   * compare. This one decides which indexes are reported at all.
+   */
+  protected readonly constraintIndexTypes: readonly string[] = ['p', 'u', 'x'];
 
   protected getForeignKeysQuery(_tableName: string): string {
     return /*sql*/ `
@@ -157,13 +205,20 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapIndexesResult(
     _read: TableRowReader,
     _tableName: string,
-    results: { index_name: string; columns: string[]; is_unique: boolean }[],
+    results: PostgresIndexRow[],
   ): Promise<IndexSchema[]> {
-    return results.map((row) => ({
-      name: row.index_name,
-      columns: row.columns.map((column) => ({ column })),
-      unique: row.is_unique,
-    }));
+    // One row per index entry, ordered by position, so the rows of an index are its entries in order.
+    return [...Map.groupBy(results, (row) => row.index_name)].map(([name, rows]) => {
+      const include = rows.filter((row) => !row.is_key).map((row) => row.entry);
+      return {
+        name,
+        entries: rows.filter((row) => row.is_key).map(mapIndexEntry),
+        unique: rows[0].is_unique,
+        type: INDEX_TYPES.find((type) => type === rows[0].method),
+        where: rows[0].predicate ?? undefined,
+        include: include.length > 0 ? include : undefined,
+      };
+    });
   }
 
   protected async mapForeignKeysResult(
@@ -236,6 +291,54 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return columnDefault?.includes('nextval(') ?? false;
   }
 }
+
+/**
+ * Postgres states every entry in full: a plain column still reports `order: 'asc'`, and only a
+ * non-default operator class is named. The diff defaults the entity side to match, so an option
+ * omitted there and one written out are not read as two different indexes.
+ */
+function mapIndexEntry(row: PostgresIndexRow): IndexColumnSchema {
+  return {
+    column: row.entry,
+    ...(row.is_expression && { expression: true }),
+    order: row.descending ? 'desc' : 'asc',
+    nulls: row.nulls_first ? 'first' : 'last',
+    ...(row.ops_class && { opsClass: row.ops_class }),
+  };
+}
+
+/**
+ * CockroachDB answers the same catalogue queries and differs only in what it can express: v26.2.5
+ * still rejects `NULLS FIRST/LAST` and operator classes as "unimplemented", and it sorts nulls first
+ * on an ASC column where Postgres sorts them last. Reading a nulls order back would therefore report
+ * every ascending index as drifted, against an entity that could not have asked for one. Its access
+ * method, `prefix`, needs nothing: a method that is not a known index type is reported as no type.
+ */
+export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
+  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['order', 'include']);
+
+  /**
+   * `'u'` is missing on purpose. CockroachDB registers a `UNIQUE` constraint for a plain `CREATE
+   * UNIQUE INDEX` too, naming it after the index, so filtering on it would hide every unique index a
+   * user asked for and report it missing forever. It leaves no way to tell the two apart, so the
+   * index a `@Field({ unique })` builds underneath itself stays visible there.
+   */
+  protected override readonly constraintIndexTypes: readonly string[] = ['p', 'x'];
+}
+
+/** One entry of one index; what the index itself is repeats across its rows. */
+type PostgresIndexRow = {
+  index_name: string;
+  is_unique: boolean;
+  method: string;
+  predicate: string | null;
+  is_key: boolean;
+  is_expression: boolean;
+  entry: string;
+  descending: boolean;
+  nulls_first: boolean;
+  ops_class: string | null;
+};
 
 type PostgresColumnRow = {
   column_name: string;

@@ -121,8 +121,8 @@ describe('BaseSqlIntrospector indexes', () => {
     name: 'users',
     columns: [column({ name: 'id', isPrimaryKey: true }), column({ name: 'email', type: 'VARCHAR', length: 255 })],
     indexes: [
-      { name: 'uq_users_email', columns: [{ column: 'email' }], unique: true },
-      { name: 'idx_users_ghost', columns: [{ column: 'ghost' }], unique: false },
+      { name: 'uq_users_email', entries: [{ column: 'email' }], unique: true },
+      { name: 'idx_users_ghost', entries: [{ column: 'ghost' }], unique: false },
     ],
   };
 
@@ -131,7 +131,7 @@ describe('BaseSqlIntrospector indexes', () => {
 
     expect(ast.getTableIndexes('users').map((i) => i.name)).toEqual(['uq_users_email']);
     expect(ast.getIndex('uq_users_email')?.unique).toBe(true);
-    expect(ast.getIndex('uq_users_email')?.columns.map((c) => c.name)).toEqual(['email']);
+    expect(ast.getIndex('uq_users_email')?.entries.map((entry) => entry.column)).toEqual(['email']);
   });
 
   it('should skip an index over a column that does not exist', async () => {

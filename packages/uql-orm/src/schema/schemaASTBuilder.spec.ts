@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
-import { SchemaASTBuilder } from './schemaASTBuilder.js';
+import { buildSchemaAST } from './schemaASTBuilder.js';
 
 // Test entities
 @Entity()
@@ -52,8 +53,7 @@ class Category {
 describe('SchemaASTBuilder', () => {
   describe('fromEntities', () => {
     it('should build AST from a single entity', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User]);
+      const ast = buildSchemaAST([User]);
 
       expect(ast.tables.size).toBe(1);
       const userTable = ast.getTable('User');
@@ -62,8 +62,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should build AST from multiple entities', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User, Post, Category]);
+      const ast = buildSchemaAST([User, Post, Category]);
 
       expect(ast.tables.size).toBe(3);
       expect(ast.getTable('User')).toBeDefined();
@@ -72,8 +71,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should create columns with correct types', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User]);
+      const ast = buildSchemaAST([User]);
 
       const userTable = ast.getTable('User');
       const idCol = userTable?.columns.get('id');
@@ -100,8 +98,7 @@ describe('SchemaASTBuilder', () => {
         accountId?: string;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Account, Item]);
+      const ast = buildSchemaAST([Account, Item]);
 
       const itemTable = ast.getTable('Item');
       const accountIdCol = itemTable?.columns.get('accountId');
@@ -124,8 +121,7 @@ describe('SchemaASTBuilder', () => {
         owner?: Owner;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Owner, Holding]);
+      const ast = buildSchemaAST([Owner, Holding]);
 
       const ownerIdCol = ast.getTable('Holding')?.columns.get('ownerId');
 
@@ -145,8 +141,7 @@ describe('SchemaASTBuilder', () => {
         parentRef?: string;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Parent2, Child2]);
+      const ast = buildSchemaAST([Parent2, Child2]);
 
       const childTable = ast.getTable('Child2');
       const col = childTable?.columns.get('parentRef');
@@ -175,7 +170,7 @@ describe('SchemaASTBuilder', () => {
         @ManyToOne({ entity: () => FkParent }) parent?: FkParent;
       }
 
-      const ast = new SchemaASTBuilder().fromEntities([FkParent, FkChild, PlainChild]);
+      const ast = buildSchemaAST([FkParent, FkChild, PlainChild]);
 
       const declared = ast.getTable('FkChild')?.outgoingRelations[0];
       expect(declared?.onDelete).toBe('CASCADE');
@@ -214,7 +209,7 @@ describe('SchemaASTBuilder', () => {
         @ManyToOne({ entity: () => FkOnFieldParent, onDelete: 'SET NULL' }) parent?: FkOnFieldParent;
       }
 
-      const ast = new SchemaASTBuilder().fromEntities([
+      const ast = buildSchemaAST([
         FkOnFieldParent,
         FkOnFieldOnlyChild,
         FkOnFieldWithRelationChild,
@@ -241,8 +236,7 @@ describe('SchemaASTBuilder', () => {
         parentRef?: bigint;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Parent3, Child3]);
+      const ast = buildSchemaAST([Parent3, Child3]);
 
       const childTable = ast.getTable('Child3');
       const col = childTable?.columns.get('parentRef');
@@ -252,8 +246,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle nullable fields', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User]);
+      const ast = buildSchemaAST([User]);
 
       const userTable = ast.getTable('User');
       const emailCol = userTable?.columns.get('email');
@@ -262,8 +255,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle unique constraints', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Category]);
+      const ast = buildSchemaAST([Category]);
 
       const catTable = ast.getTable('categories');
       const slugCol = catTable?.columns.get('slug');
@@ -272,8 +264,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should handle field length', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Category]);
+      const ast = buildSchemaAST([Category]);
 
       const catTable = ast.getTable('categories');
       const nameCol = catTable?.columns.get('name');
@@ -282,8 +273,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should detect relationships from decorators', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User, Post]);
+      const ast = buildSchemaAST([User, Post]);
 
       expect(ast.relationships.length).toBeGreaterThan(0);
     });
@@ -301,20 +291,35 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Number }) profileId?: number;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Profile11, User11]);
+      const ast = buildSchemaAST([Profile11, User11]);
       const rel = ast.relationships.find((r) => r.from.table.name === 'User11');
       expect(rel?.type).toBe('OneToOne');
     });
 
-    it('should use custom naming strategy via constructor', () => {
-      const ns = {
-        tableName: (name: string) => `tb_${name}`,
-        columnName: (name: string) => `col_${name}`,
-      } as any;
-      const builder = new SchemaASTBuilder(ns);
+    it('should resolve include columns through the naming strategy too', () => {
+      @Index(['tenantId'], { include: ['createdAt'], name: 'idx_cov' })
+      @Entity()
+      class Covered {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, name: 'tenant_id' }) tenantId?: number;
+        @Field({ type: Date, name: 'created_at' }) createdAt?: Date;
+      }
 
-      const ast = builder.fromEntities([User, Category]);
+      const ast = buildSchemaAST([Covered]);
+      const index = ast.getTable('Covered')?.indexes[0];
+
+      expect(index?.entries.map((entry) => entry.column)).toEqual(['tenant_id']);
+      expect(index?.include).toEqual(['created_at']);
+    });
+
+    it('should use the naming strategy it was given', () => {
+      const namingStrategy: NamingStrategy = {
+        tableName: (name) => `tb_${name}`,
+        columnName: (name) => `col_${name}`,
+        joinTableName: (source, target) => `tb_${source}_${target}`,
+      };
+
+      const ast = buildSchemaAST([User, Category], { namingStrategy });
 
       // User -> namingStrategy(User) -> tb_User
       expect(ast.getTable('tb_User')).toBeDefined();
@@ -325,8 +330,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should use custom naming strategy options overriding constructor', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User], {
+      const ast = buildSchemaAST([User], {
         resolveTableName: (_entity, meta) => `tbl_${meta.name?.toLowerCase() ?? _entity.name.toLowerCase()}`,
         resolveColumnName: (key) => `col_${key}`,
       });
@@ -342,8 +346,7 @@ describe('SchemaASTBuilder', () => {
         @Id({ type: Number }) id?: number;
         @Field({ type: String, virtual: raw('TRUE') }) secret?: string;
       }
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([VirtualUser]);
+      const ast = buildSchemaAST([VirtualUser]);
       expect(ast.getTable('VirtualUser')?.columns.has('secret')).toBe(false);
     });
 
@@ -357,16 +360,15 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Boolean }) active?: boolean;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([IndexedUser]);
+      const ast = buildSchemaAST([IndexedUser]);
       const table = ast.getTable('IndexedUser');
 
-      const compositeIdx = table?.indexes.find((idx) => idx.columns.length > 1);
+      const compositeIdx = table?.indexes.find((idx) => idx.entries.length > 1);
       expect(compositeIdx).toBeDefined();
       expect(compositeIdx?.name).toBe('idx_fullname');
       expect(compositeIdx?.unique).toBe(true);
       expect(compositeIdx?.where).toBe('active = true');
-      expect(compositeIdx?.columns.map((c) => c.name)).toEqual(['firstName', 'lastName']);
+      expect(compositeIdx?.entries.map((entry) => entry.column)).toEqual(['firstName', 'lastName']);
     });
 
     it('should ignore composite index if columns do not exist', () => {
@@ -377,8 +379,7 @@ describe('SchemaASTBuilder', () => {
       class BadComposite {
         @Id({ type: Number }) id?: number;
       }
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([BadComposite]);
+      const ast = buildSchemaAST([BadComposite]);
       expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
     });
   });
@@ -396,8 +397,7 @@ describe('SchemaASTBuilder', () => {
         related?: Related;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Related, Owner]);
+      const ast = buildSchemaAST([Related, Owner]);
       expect(ast.relationships.length).toBe(0);
     });
 
@@ -410,8 +410,7 @@ describe('SchemaASTBuilder', () => {
       const noCol = 'no_col';
       (meta.fields as Record<string, any>)[noCol] = { index: true, name: noCol, virtual: true }; // Inject a field that wasn't properly added
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([BadIndex]);
+      const ast = buildSchemaAST([BadIndex]);
       expect(ast.getTable('BadIndex')?.indexes.length).toBe(0);
     });
 
@@ -421,14 +420,12 @@ describe('SchemaASTBuilder', () => {
         @Id({ type: Number }) id?: number;
         @Field({ type: String, index: 'my_custom_idx' }) name?: string;
       }
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([CustomIndex]);
+      const ast = buildSchemaAST([CustomIndex]);
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');
     });
 
     it('should use default callback when resolveTableName/resolveColumnName are not provided', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User]);
+      const ast = buildSchemaAST([User]);
       const table = ast.getTable('User');
       expect(table).toBeDefined();
       expect(table?.name).toBe('User');
@@ -448,8 +445,7 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Number }) profileId?: number;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([ProfileDef, UserDef]);
+      const ast = buildSchemaAST([ProfileDef, UserDef]);
       const rel = ast.relationships.find((r) => r.from.table.name === 'UserDef');
       expect(rel).toBeDefined();
       expect(rel?.from.columns[0].name).toBe('profileId');
@@ -469,8 +465,7 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Number }) otherId?: number;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Other, Main]);
+      const ast = buildSchemaAST([Other, Main]);
       expect(ast.relationships.length).toBe(0);
     });
 
@@ -488,25 +483,16 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Number }) otherId?: number;
       }
 
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([Other2, Main2]);
+      const ast = buildSchemaAST([Other2, Main2]);
       expect(ast.relationships.length).toBe(0);
     });
   });
 
-  describe('reset', () => {
-    it('should reset builder state', () => {
-      const builder = new SchemaASTBuilder();
-      builder.fromEntities([User]);
+  it('should build a schema of its own each time, sharing nothing with the last', () => {
+    const first = buildSchemaAST([User]);
+    const second = buildSchemaAST([]);
 
-      builder.reset();
-      expect(builder.getAST().tables.size).toBe(0);
-    });
-
-    it('should return AST via getAST', () => {
-      const builder = new SchemaASTBuilder();
-      const ast = builder.fromEntities([User]);
-      expect(builder.getAST()).toBe(ast);
-    });
+    expect(first.tables.size).toBe(1);
+    expect(second.tables.size).toBe(0);
   });
 });

@@ -223,7 +223,7 @@ export class TableBuilder implements ITableBuilder {
     this._indexes.push({
       ...rest,
       name: name ?? `${prefix}_${this._name}_${entries.map((entry) => entry.column).join('_')}`,
-      columns: entries,
+      entries,
       unique,
     });
     return this;
@@ -256,7 +256,7 @@ export class TableBuilder implements ITableBuilder {
         if (!this._indexes.some((idx) => idx.name === indexName)) {
           this._indexes.push({
             name: indexName,
-            columns: [{ column: col.name }],
+            entries: [{ column: col.name }],
             unique: col.unique,
           });
         }
