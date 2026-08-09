@@ -5,7 +5,7 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 ## Verifying a change
 
 - `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` belongs in it because `check.package` inspects `dist`, so without one the gate validates the previous release's output and passes. `bun run lint.fix` fixes formatting instead of only reporting it.
-- `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, and no entry exceeds its size budget. `DIST_BYTES_BUDGET` counts declarations, so JSDoc spends it and raising it for documentation is expected; a *per-entry* budget moving is the leaked-module case the budgets exist to catch.
+- `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, every entry point's types resolve with `types: []`, and no entry exceeds its gzipped size budget. A budget moving is the leaked-module case they exist to catch, so raise one only once you know which module became reachable.
 - `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases through the same fixture tables. Anything else touching them concurrently corrupts them, including an orphaned worker from an earlier run, so never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive. Redirect to a file and read that.
 
 ## Conventions
