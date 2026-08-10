@@ -4,29 +4,36 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.26.1] - 2026-08-10
+
+### Internal
+
+- **Expanded the compile-time type-test suite for the query, entity, querier, and pool APIs**, closing gaps like `IdKey` precedence, relation decorators, named filters, and the `$entity` dual-call form.
+- **Renamed `*.type-test.ts` to `*.test-d.ts`**, Vitest's and `tsd`'s own convention for type-only tests, and fixed two mocked test files misnamed `.test.ts`.
+
 ## [0.26.0] - 2026-08-09
 
 Indexes: UQL could create every kind, but could not read most of them back, so `drift:check` reported healthy schemas as broken and `sync` never created an index on a table that already existed.
 
 ### Features
 
-- **`sync` creates an index added to an existing entity.** Additive only: an index the entities never declared is left alone.
-- **`drift:check` reports an index that no longer matches its entity**, comparing only what an engine can report back, since anything more reports drift no migration can settle.
-- **`generate:from-db` writes expression, partial and covering indexes**, and gives a unique single-column index its own `@Index`, which `@Field({ index })` cannot express.
+- **`sync` creates an index added to an existing entity**, without touching one the entities never declared.
+- **`drift:check` reports an index that no longer matches its entity**, comparing only what each engine can report back.
+- **`generate:from-db` writes expression, partial and covering indexes**, and gives a unique single-column index its own `@Index`.
 
 ### Breaking
 
-- **`IndexSchema.columns` is now `entries`**: an entry need not be a column at all, `raw('lower(email)')` being one.
+- **`IndexSchema.columns` is now `entries`**: an entry need not be a column, `raw('lower(email)')` being one.
 - **`DriftDetector` and `createDriftDetector` are gone**, replaced by `detectDrift()`.
-- **`SchemaIntrospector` requires an `indexFacets` set**, saying what it can report about an index. An empty one keeps the old behaviour.
-- **A naming strategy no longer renames a table or column that was named explicitly**, so `@Entity({ name })` emits the name the query builder already used. Projects with both will see one rename.
+- **`SchemaIntrospector` requires an `indexFacets` set**, saying what it can report about an index; an empty one keeps the old behaviour.
+- **A naming strategy no longer renames a table or column that was named explicitly.**
 
 ### Fixes
 
-- **An expression index was introspected as having no columns at all**, so `drift:check` reported a healthy `lower(email)` index as missing, and a camel-cased column came back quoted and matched nothing.
-- **Every `@Field({ unique })` was reported as an unexpected index on Postgres**, its constraint building an index no entity asked for. Not on CockroachDB, which records the same constraint for a plain `CREATE UNIQUE INDEX`.
-- **`generate:from-db` wrote entities mapping to columns the database has not got**: a derived property carried no `name`, and one already camel-cased came back as `tenantid`.
-- **Every entity's primary key was reported as a nullable mismatch.** `id?: number` is optional because the database assigns it.
+- **An expression index was introspected as having no columns**, so `drift:check` reported a healthy `lower(email)` index as missing, and a camel-cased column matched nothing.
+- **`@Field({ unique })` was reported as an unexpected index on Postgres**, its constraint building an index no entity asked for.
+- **`generate:from-db` wrote entities mapping to columns the database has not got.**
+- **Every entity's primary key was reported as a nullable mismatch.**
 
 ## [0.25.1] - 2026-08-08
 

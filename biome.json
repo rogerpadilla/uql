@@ -38,7 +38,7 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.spec.ts", "**/*-spec.ts", "**/*.test.ts", "**/*-test.ts"],
+      "includes": ["**/*.spec.ts", "**/*-spec.ts", "**/*.test.ts", "**/*-test.ts", "**/*.test-d.ts"],
       "linter": {
         "rules": {
           "suspicious": { "noExplicitAny": "off" },

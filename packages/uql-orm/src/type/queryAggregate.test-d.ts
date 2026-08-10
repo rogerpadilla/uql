@@ -5,7 +5,7 @@
  *
  * Not a runtime test: it has no assertions to execute. It is type-checked by `bun run ts`
  * (tsc over the whole tree), skipped by vitest (which collects only `.test.ts` / `.spec.ts`),
- * and left out of the build (excluded by the `-test.ts` suffix). Each `@ts-expect-error` fails
+ * and left out of the build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails
  * the type-check if the error it guards ever stops happening, keeping the negatives locked in.
  */
 import type { Querier } from '../index.js';

@@ -13,6 +13,7 @@
     "**/*-spec.ts",
     "**/*.test.ts",
     "**/*-test.ts",
+    "**/*.test-d.ts",
     "**/test",
     "**/test-helpers.ts"
   ]

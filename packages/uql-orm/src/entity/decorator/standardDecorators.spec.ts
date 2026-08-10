@@ -154,7 +154,7 @@ describe('standard decorators', () => {
     expect(meta.id).toBe('id');
   });
 
-  // The compile-time guard is covered by `type/entityOptions.type-test.ts`; this is the runtime backstop
+  // The compile-time guard is covered by `type/entityOptions.test-d.ts`; this is the runtime backstop
   // for callers reaching `defineField` from plain JavaScript, where no such guard exists.
   it('refuses a field with no type and nothing to resolve one from', () => {
     class Untyped {

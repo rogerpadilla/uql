@@ -6,10 +6,11 @@
  * default operator class). MongoDB's `vectorSearch` is exempt - its generator emits no metric.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `-test.ts` suffix). Each `@ts-expect-error` fails the type-check if the
+ * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
  * error it guards ever stops happening, keeping the negatives locked in.
  */
 import { Entity, Field, Id, Index, ManyToOne } from '../index.js';
+import { raw } from '../util/index.js';
 
 @Index(['embedding'], { type: 'hnsw', distance: 'cosine', m: 16 })
 @Index(['embedding'], { type: 'ivfflat', distance: 'l2', lists: 100 })
@@ -17,11 +18,27 @@ import { Entity, Field, Id, Index, ManyToOne } from '../index.js';
 @Index(['title'], { unique: true })
 @Index(['title'], { type: 'gin' })
 @Index(['title'], { where: "title <> ''" })
+// Column entry sugar: a raw expression, and the object form's length/order/nulls/opsClass modifiers.
+@Index([raw('lower(title)')], { unique: true })
+@Index([{ column: 'title', length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
 @Entity()
 export class Article {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
   @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+}
+
+/**
+ * `IndexTypeOptions` pairs a vector index `type` with a mandatory `distance` and forbids `distance`
+ * everywhere else (see its doc comment) - without that explicit `never`, `VectorIndexOptions`'
+ * optional `distance` would survive the intersection and silently typecheck this.
+ */
+// @ts-expect-error a non-vector index type cannot declare a distance metric
+@Index(['title'], { type: 'gin', distance: 'cosine' })
+@Entity()
+export class NonVectorIndexWithDistance {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) title?: string;
 }
 
 // @ts-expect-error hnsw needs a distance metric

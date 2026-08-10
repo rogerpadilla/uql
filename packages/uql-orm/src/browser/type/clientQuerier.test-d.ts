@@ -8,7 +8,7 @@
  * drift on any method breaks this file.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `-test.ts` suffix).
+ * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
  */
 import type { Json, UniversalQuerier } from '../../type/index.js';
 import type { ClientQuerier } from './clientQuerier.js';

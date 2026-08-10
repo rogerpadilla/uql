@@ -6,7 +6,7 @@
  * `@ts-expect-error` fails the type-check if the error it guards stops happening.
  *
  * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, and excluded from the build by
- * the `-test.ts` suffix.
+ * the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests.
  */
 import { defineEntity, Field, Id } from '../entity/index.js';
 import type {
