@@ -6,6 +6,10 @@ date format is [yyyy-mm-dd]
 
 ## [0.26.1] - 2026-08-10
 
+### Fixes
+
+- **`deleteMany` spent two statements on one row**, resolving the matching ids first. Now only a cascade or a paged delete does, since nothing else needs them.
+
 ### Internal
 
 - **Expanded the compile-time type-test suite for the query, entity, querier, and pool APIs**, closing gaps like `IdKey` precedence, relation decorators, named filters, and the `$entity` dual-call form.

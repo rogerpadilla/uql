@@ -21,6 +21,7 @@ import type {
 } from '../type/index.js';
 import {
   buildUpdateResult,
+  cascadesOnDelete,
   clone,
   getInsertFieldKeys,
   getRelationRequestSummary,
@@ -307,6 +308,19 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     const meta = getMeta(entity);
+
+    // Resolving the ids first is what makes the two hard cases work at all: a cascade needs its
+    // parents' ids to find their children, and no engine but MySQL accepts `ORDER BY`/`LIMIT` on a
+    // DELETE, so a paged delete has to name the rows it settled on. A plain predicate needs neither,
+    // and there the round trip buys nothing: the statement can say what the caller already said.
+    const hasPagination = q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
+    if (!hasPagination && !cascadesOnDelete(meta)) {
+      const ctx = this.dialect.createContext();
+      this.dialect.delete(ctx, entity, q, opts);
+      const { changes = 0 } = await this.run(ctx.sql, ctx.values);
+      return changes;
+    }
+
     // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
     const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
     const findCtx = this.dialect.createContext();
