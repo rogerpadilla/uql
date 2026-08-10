@@ -4,11 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
-## [0.26.1] - 2026-08-10
+## [0.26.2] - 2026-08-10
 
 ### Fixes
 
 - **`deleteMany` spent two statements on one row**, resolving the matching ids first. Now only a cascade or a paged delete does, since nothing else needs them.
+
+## [0.26.1] - 2026-08-10
 
 ### Internal
 
