@@ -427,7 +427,7 @@ export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V |
  * `type` allowed. A decorator has it the other way round: `@Field({ type: String })` is checked before
  * the class exists, so the only way to reach the property is to state what `type: String` implies and
  * let the decorator's context position compare it against the real field. Neither can be derived from
- * the other by inference, so `entityOptions.type-test.ts` asserts they agree instead.
+ * the other by inference, so `entityOptions.test-d.ts` asserts they agree instead.
  */
 export type TsTypeOf<T> = T extends StringConstructor
   ? string

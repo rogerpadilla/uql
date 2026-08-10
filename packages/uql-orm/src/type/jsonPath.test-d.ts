@@ -8,7 +8,7 @@
  * never dotted keys (matching the runtime, which throws for non-JSON dotted keys).
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `-test.ts` suffix). Each `@ts-expect-error` fails the type-check if the
+ * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
  * error it guards ever stops happening, keeping the negatives locked in.
  */
 import type { Json, Querier } from '../index.js';
