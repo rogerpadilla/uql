@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.26.3] - 2026-08-10
+
+### Documentation
+
+- **README benchmark numbers updated** for the 0.26.2 delete fix.
+
 ## [0.26.2] - 2026-08-10
 
 ### Fixes
