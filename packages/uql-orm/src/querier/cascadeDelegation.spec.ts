@@ -98,10 +98,9 @@ describe('cascade delegation', () => {
     // No statement mentions the children at all: with no `cascade: 'delete'` there is nothing to walk, so
     // the constraint is what removes them.
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]);
-    // The id lookup still happens, even though nothing here consumes its result: `deleteMany` resolves
-    // ids unconditionally. Asserted rather than ignored, so the cost is visible if it is ever revisited.
-    expect(all).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `DelegatedParent` WHERE `id` = ?', [1]);
+    // Nothing needs the ids, so they are never looked up: one statement, the one the caller asked for.
+    expect(all).toHaveBeenCalledTimes(0);
     // The rows are gone regardless of who removed them, which is the part that matters.
     expect(await querier.findMany(DelegatedChild, { $select: { id: true } })).toEqual([]);
   });
@@ -118,11 +117,33 @@ describe('cascade delegation', () => {
     const changes = await querier.deleteMany(WalkedParent, { $where: { id: 1 } });
 
     expect(changes).toBe(1);
-    // The ids are materialized because the children have to be reached while the parent still names them,
-    // and the children go first: the reverse order is what a real constraint rejects.
+    // The parent's ids are materialized because the children have to be reached while it still names
+    // them, and the children go first: the reverse order is what a real constraint rejects. The
+    // children themselves cascade onto nothing, so removing them takes the one statement.
+    expect(all).toHaveBeenCalledTimes(1);
     expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `WalkedParent` WHERE `id` = ?', [1]);
-    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `WalkedChild` WHERE `id` IN (?, ?)', [1, 2]);
+    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `WalkedChild` WHERE `parentId` IN (?)', [1]);
     expect(run).toHaveBeenNthCalledWith(2, 'DELETE FROM `WalkedParent` WHERE `id` IN (?)', [1]);
     expect(await querier.findMany(WalkedChild, { $select: { id: true } })).toEqual([]);
+  });
+
+  /**
+   * Only MySQL takes `ORDER BY`/`LIMIT` on a DELETE, so a paged delete has to resolve the rows it
+   * settled on and name them. Without this the shortcut above would quietly delete everything the
+   * predicate matches on every other engine.
+   */
+  it('should settle a paged delete on its own rows first', async () => {
+    await querier.insertMany(DelegatedParent, [
+      { id: 1, name: 'p' },
+      { id: 2, name: 'p' },
+    ]);
+    const run = vi.spyOn(querier, 'run');
+    const all = vi.spyOn(querier, 'all');
+
+    const changes = await querier.deleteMany(DelegatedParent, { $where: { name: 'p' }, $limit: 1 });
+
+    expect(changes).toBe(1);
+    expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `DelegatedParent` WHERE `name` = ? LIMIT 1', ['p']);
+    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `DelegatedParent` WHERE `id` IN (?)', [1]);
   });
 });

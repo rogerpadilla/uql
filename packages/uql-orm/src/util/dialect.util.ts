@@ -126,6 +126,14 @@ export function filterPersistableRelationKeys<E>(
   }) as RelationKey<E>[];
 }
 
+/**
+ * Whether deleting this entity has to delete anything else, which is the reason a delete resolves the
+ * matching ids before issuing anything: a child is reached through the ids of its parent.
+ */
+export function cascadesOnDelete<E>(meta: EntityMeta<E>): boolean {
+  return filterPersistableRelationKeys(meta, meta.relations, 'delete').length > 0;
+}
+
 export function isCascadable(action: CascadeType, configuration?: boolean | CascadeType): boolean {
   if (typeof configuration === 'boolean') {
     return configuration;
