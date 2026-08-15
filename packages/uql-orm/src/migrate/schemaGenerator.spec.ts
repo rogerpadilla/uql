@@ -4,7 +4,7 @@ import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../d
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
 import { mockTableNode } from '../test/index.js';
-import type { ColumnSchema, IndexSchema } from '../type/index.js';
+import type { ColumnSchema, Except, IndexSchema } from '../type/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -244,7 +244,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       sqlite: new SqliteDialect(),
     } as const;
 
-    const render = (dialect: keyof typeof dialects, index: Omit<IndexSchema, 'name' | 'unique'>) =>
+    const render = (dialect: keyof typeof dialects, index: Except<IndexSchema, 'name' | 'unique'>) =>
       new SqlSchemaGenerator(dialects[dialect]).generateCreateIndex('t', {
         name: 'i',
         unique: false,

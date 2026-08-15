@@ -53,12 +53,14 @@ export interface RawRow {
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 /**
- * `Omit`, but distributed over `T`'s union members before recombining. Plain `Omit<T, K>` computes
- * `keyof T` up front, which for a union takes the intersection of each member's keys and flattens
- * their property types together - collapsing a discriminated union (e.g. `EntityIndexMeta`'s
- * `type`/`distance` pairing) into a single, non-discriminated shape.
+ * `Omit`, fixed on three counts. Its key has to exist, where `Omit<T, K extends keyof any>` lets a
+ * typo or a renamed property silently omit nothing. Being a homomorphic mapped type it distributes
+ * over unions, where `Omit` intersects each member's keys and flattens a discriminated union (e.g.
+ * `EntityIndexMeta`'s `type`/`distance` pairing) into one non-discriminated shape. And it removes
+ * the key from types carrying an index signature, where `Exclude<keyof T, K>` widens back to
+ * `string | number` and leaves the key in place.
  */
-export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? never : P]: T[P] };
 
 export type Unpacked<T> = T extends readonly (infer U)[]
   ? U

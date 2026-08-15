@@ -13,7 +13,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { QueryContext, Type, UpdatePayload } from '../type/index.js';
+import type { Query, QueryContext, QueryLockWait, Type, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -239,6 +239,118 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    */
   protected returningClause<E>(_entity: Type<E>): string {
     return '';
+  }
+
+  /**
+   * The lock fragment this dialect appends, or `undefined` when it has no row locks at all. Driven
+   * by `dialectName` like `neSql`/`likeOp` above, so every dialect spec inherits the same cases and
+   * asserts either the SQL or the rejection.
+   */
+  protected lockClause(wait: QueryLockWait = 'block', of?: string): string | undefined {
+    if (!this.dialect.supportsRowLocks) {
+      return undefined;
+    }
+    const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
+    return ` FOR UPDATE${of ? ` OF ${of}` : ''}${suffix}`;
+  }
+
+  /** Whether this engine has row locks at all; the cases below split on it rather than on a name. */
+  protected get hasRowLocks(): boolean {
+    return this.lockClause() !== undefined;
+  }
+
+  /** Asserts the emitted lock fragment, or the rejection when the dialect has no row locks. */
+  private expectLock<E>(entity: Type<E>, q: Query<E>, expected: string | undefined) {
+    if (expected === undefined) {
+      expect(() => this.exec((ctx) => this.dialect.find(ctx, entity, q))).toThrow(
+        `${this.dialect.dialectName} does not support row-level locking`,
+      );
+      return;
+    }
+    expect(this.exec((ctx) => this.dialect.find(ctx, entity, q)).sql).toContain(expected);
+  }
+
+  shouldFindWithLock() {
+    this.expectLock(User, { $select: { id: true }, $lock: true }, this.lockClause());
+  }
+
+  shouldFindWithLockSkipLocked() {
+    this.expectLock(User, { $select: { id: true }, $lock: { wait: 'skip' } }, this.lockClause('skip'));
+  }
+
+  shouldFindWithLockNoWait() {
+    this.expectLock(User, { $select: { id: true }, $lock: { wait: 'nowait' } }, this.lockClause('nowait'));
+  }
+
+  /** `true` and the defaulted object form are the same lock, so they must emit the same SQL. */
+  shouldAcceptBooleanAndObjectAlike() {
+    if (!this.hasRowLocks) {
+      return;
+    }
+    const boolForm = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: true }));
+    const objForm = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: {} }));
+    expect(boolForm.sql).toBe(objForm.sql);
+  }
+
+  /** `false` is for queries built conditionally: it must emit nothing at all. */
+  shouldEmitNoLockWhenFalse() {
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: false }));
+    expect(sql).not.toContain('FOR UPDATE');
+  }
+
+  /** Regression: every engine wants the lock after LIMIT/OFFSET, which `pager` emits. */
+  shouldPlaceLockAfterLimitAndOffset() {
+    const clause = this.lockClause();
+    if (!clause) {
+      return;
+    }
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $limit: 10, $skip: 5, $lock: true }),
+    );
+    expect(sql.endsWith(clause)).toBe(true);
+    expect(sql.indexOf('LIMIT')).toBeLessThan(sql.indexOf('FOR UPDATE'));
+  }
+
+  /** A lock belongs to a SELECT: `search` is shared, so these must stay clean. */
+  shouldNotEmitLockOnCount() {
+    const q = { $where: { id: 1 }, $lock: true } as never;
+    expect(this.exec((ctx) => this.dialect.count(ctx, User, q)).sql).not.toContain('FOR UPDATE');
+  }
+
+  shouldNotEmitLockOnUpdate() {
+    const q = { $where: { id: 1 }, $lock: true } as never;
+    expect(this.exec((ctx) => this.dialect.update(ctx, User, q, { name: 'x' })).sql).not.toContain('FOR UPDATE');
+  }
+
+  shouldNotEmitLockOnDelete() {
+    const q = { $where: { id: 1 }, $lock: true } as never;
+    expect(this.exec((ctx) => this.dialect.delete(ctx, User, q)).sql).not.toContain('FOR UPDATE');
+  }
+
+  shouldRejectUnknownLockWait() {
+    expect(() =>
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: { wait: 'soon' as never } })),
+    ).toThrow('unknown $lock wait policy: soon');
+  }
+
+  /**
+   * A bare lock over a join is an error on Postgres and over-locks elsewhere, so a joined query
+   * narrows to the root table. MariaDB has no `OF` and rejects the combination instead.
+   */
+  shouldNarrowLockToRootTableWhenPopulating() {
+    const e = this.dialect.escapeIdChar;
+    if (!this.hasRowLocks) {
+      return;
+    }
+    const run = () =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, { $select: { id: true }, $populate: { company: true }, $lock: true }),
+      );
+    if (!this.dialect.supportsLockOf) {
+      expect(run).toThrow('cannot narrow a row lock to one table');
+      return;
+    }
+    expect(run().sql).toContain(this.lockClause('block', `${e}User${e}`));
   }
 
   shouldBeValidEscapeCharacter() {

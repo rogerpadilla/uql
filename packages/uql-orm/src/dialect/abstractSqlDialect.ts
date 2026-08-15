@@ -8,6 +8,7 @@ import {
   type JsonColumnType,
   type JsonUpdateOp,
   type Key,
+  parseQueryLock,
   type Query,
   type QueryAggMap,
   type QueryAggregate,
@@ -1082,6 +1083,49 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
   }
 
+  /** Whether this engine has row locks at all. The SQLite family locks the database instead. */
+  readonly supportsRowLocks: boolean = true;
+
+  /** MariaDB is the one engine here that cannot narrow a lock to one table of a join. */
+  readonly supportsLockOf: boolean = true;
+
+  /** Whether this statement joins, which is what forces the lock to be narrowed to one table. */
+  private joinsRelations<E>(meta: EntityMeta<E>, q: Query<E>): boolean {
+    return getRelationRequestSummary(meta, q.$populate).joinableKeys.length > 0;
+  }
+
+  /** Validated before the querier checks for a transaction, so the clearer error wins. */
+  assertLockSupported<E>(entity: Type<E>, q: Query<E>): void {
+    if (!parseQueryLock(q.$lock)) {
+      return;
+    }
+    if (!this.supportsRowLocks) {
+      throw new TypeError(`${this.dialectName} does not support row-level locking ($lock)`);
+    }
+    if (!this.supportsLockOf && this.joinsRelations(getMeta(entity), q)) {
+      throw new TypeError(
+        `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined $populate`,
+      );
+    }
+  }
+
+  /**
+   * The trailing `FOR UPDATE`. Narrowing to the queried table is not a nicety once a relation is
+   * joined: Postgres refuses a bare `FOR UPDATE` over the nullable side of an outer join outright,
+   * and the other engines quietly widen the lock to the joined rows.
+   */
+  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>): void {
+    const wait = parseQueryLock(q.$lock);
+    if (!wait) {
+      return;
+    }
+    this.assertLockSupported(entity, q);
+    const meta = getMeta(entity);
+    const target = this.joinsRelations(meta, q) ? ` OF ${this.escapeId(this.resolveTableName(entity, meta))}` : '';
+    const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
+    ctx.append(` FOR UPDATE${target}${suffix}`);
+  }
+
   count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void {
     const search: Query<E> = { ...q };
     delete search.$sort;
@@ -1215,6 +1259,9 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
     this.select(ctx, entity, q.$select, q.$exclude, q.$populate, opts, q.$distinct, q.$sort);
     this.search(ctx, entity, q, opts);
+    // Appended here rather than in `search`, which `count`/`update`/`delete` share: a lock belongs
+    // to a SELECT alone. Every engine spells it after LIMIT/OFFSET, so it goes last.
+    this.appendLock(ctx, entity, q);
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {

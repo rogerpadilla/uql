@@ -1,7 +1,7 @@
 import type { ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
-import type { DistributiveOmit, Json, Scalar, Type, Unpacked } from './utility.js';
+import type { Except, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /**
@@ -743,10 +743,10 @@ export type EntityOptions<E = unknown> = {
 
 /**
  * Everything an index carries beyond its columns, shared by `@Index`, `defineEntity` and the
- * migration builder's `table.index(...)`. `DistributiveOmit` (not plain `Omit`) keeps `type`/
- * `distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
+ * migration builder's `table.index(...)`. `Except` (not plain `Omit`) keeps `type`/`distance` a
+ * discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions = DistributiveOmit<EntityIndexMeta, 'columns'>;
+export type IndexOptions = Except<EntityIndexMeta, 'columns'>;
 
 /**
  * An index as authored, before `defineIndex` normalizes its columns.

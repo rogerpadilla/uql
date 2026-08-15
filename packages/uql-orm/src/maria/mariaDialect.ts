@@ -24,6 +24,9 @@ export class MariaDialect extends MysqlLikeSqlDialect {
    */
   protected override readonly indexFeatures = new Set<IndexFeature>(['prefixLength']);
 
+  /** MariaDB has no `FOR ... OF`, so a lock cannot be narrowed to one table of a join. */
+  override readonly supportsLockOf = false;
+
   /** Unlike MySQL: `VECTOR(n)` takes its dimension, and its vector index is declared inline. */
   protected override readonly featureOverrides: Partial<DialectFeatures> = {
     vectorSupportsLength: true,

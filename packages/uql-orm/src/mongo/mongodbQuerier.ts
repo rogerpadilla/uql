@@ -50,6 +50,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+    this.dialect.assertNoLock(q);
     return this.timed('internalFindMany', undefined, async () => {
       const meta = getMeta(entity);
       const vectorSort = this.dialect.extractVectorSort(q.$sort);

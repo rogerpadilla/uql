@@ -333,6 +333,17 @@ export class MongoDialect extends AbstractDialect {
     return at(exclude) === true || at(select) === false;
   }
 
+  /**
+   * MongoDB has no row-level lock to map `$lock` onto: its concurrency control is the transaction
+   * plus atomic document updates. Rejected rather than ignored, like `raw()` below, since a dropped
+   * lock silently removes the mutual exclusion the caller asked for.
+   */
+  assertNoLock<E>(q: Query<E>): void {
+    if (q.$lock !== undefined) {
+      throw new TypeError('$lock (row-level locking) is not supported on MongoDB');
+    }
+  }
+
   /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
   private assertNoRaw(value: unknown): void {
     if (value instanceof QueryRaw) {
