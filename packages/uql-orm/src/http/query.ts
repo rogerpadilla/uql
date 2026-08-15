@@ -23,12 +23,23 @@ const ALLOWED_QUERY_KEYS = new Set<string>([...JSON_QUERY_KEYS, '$skip', '$limit
 )[]);
 
 /**
+ * Keys that mean something locally but that this transport can never honor, so they are rejected
+ * rather than dropped like the rest. Each request runs on its own auto-committing connection, so a
+ * row lock taken here is released before the response is written: honoring `$lock` is impossible,
+ * and ignoring it would hand the caller a read they believe is serialized and is not.
+ */
+const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof Query<unknown>)[]);
+
+/**
  * Parse raw query-string entries (with JSON-stringified values) into a UQL query object.
  * Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
  */
 export function parseQueryParams(params: Record<string, unknown> = {}): Query<unknown> {
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
+    if (REJECTED_QUERY_KEYS.has(key)) {
+      throw Object.assign(new TypeError(`'${key}' is not supported over HTTP`), { status: 400 });
+    }
     if (ALLOWED_QUERY_KEYS.has(key)) {
       query[key] = params[key];
     }

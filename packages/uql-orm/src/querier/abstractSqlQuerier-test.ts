@@ -17,6 +17,53 @@ const EXACT_DECIMAL = '12345678901234567890.99';
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
   /**
+   * Locking outside a transaction is accepted by every engine and then released as the statement
+   * commits, so it silently does nothing. Only the querier can catch it, and this is the one test
+   * that proves the guard fires against a live connection rather than a mocked dialect.
+   */
+  async shouldRejectLockOutsideTransaction() {
+    const expected = this.querier.dialect.supportsRowLocks
+      ? 'requires an open transaction'
+      : 'does not support row-level locking';
+    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow(expected);
+  }
+
+  /**
+   * The case the feature exists for: two workers draw from one queue and must not get the same row.
+   * Needs two real connections, since a lock is only visible to a different transaction, which is
+   * also why no generated-SQL assertion can stand in for it.
+   */
+  async shouldSkipLockedRowsForAQueue() {
+    if (!this.querier.dialect.supportsRowLocks) {
+      return;
+    }
+    for (let i = 0; i < 6; i++) {
+      await this.querier.insertOne(LedgerAccount, { name: `job-${i}` });
+    }
+
+    const other = await this.pool.getQuerier();
+    try {
+      await this.querier.beginTransaction();
+      await other.beginTransaction();
+
+      const lock = { wait: 'skip' } as const;
+      const mine = await this.querier.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
+      const theirs = await other.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
+
+      expect(mine).toHaveLength(3);
+      expect(theirs).toHaveLength(3);
+      const mineIds = mine.map((it) => it.id);
+      const theirsIds = theirs.map((it) => it.id);
+      expect(mineIds.filter((id) => theirsIds.includes(id))).toEqual([]);
+
+      await other.rollbackTransaction();
+      await this.querier.rollbackTransaction();
+    } finally {
+      await other.release();
+    }
+  }
+
+  /**
    * A read returns the JS types the entity declared, for every dialect.
    *
    * The class of bug this exists for is invisible to the compiler and to any mocked test: an engine

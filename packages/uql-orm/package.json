@@ -127,9 +127,9 @@
   "devDependencies": {
     "@libsql/client": "^0.17.4",
     "@neondatabase/serverless": "^1.1.0",
-    "@nestjs/common": "^11.1.29",
-    "@nestjs/core": "^11.1.29",
-    "@nestjs/testing": "^11.1.29",
+    "@nestjs/common": "^11.2.1",
+    "@nestjs/core": "^11.2.1",
+    "@nestjs/testing": "^11.2.1",
     "@tursodatabase/database": "^0.7.2",
     "@tursodatabase/serverless": "^1.4.0",
     "@types/better-sqlite3": "^9.6.0",

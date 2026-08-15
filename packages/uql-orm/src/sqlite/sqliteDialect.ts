@@ -55,6 +55,9 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly alterColumnSyntax = 'none';
 
+  /** SQLite locks the whole database, not rows, so `$lock` has nothing to map onto. */
+  override readonly supportsRowLocks = false;
+
   override readonly booleanLiteral = 'integer';
 
   // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.

@@ -18,6 +18,7 @@ import type {
   DriftStatus,
   SchemaDiffResult,
 } from '../../schema/types.js';
+import type { Except } from '../../type/utility.js';
 
 /**
  * Options for drift detection.
@@ -49,7 +50,7 @@ export interface DriftDetectorOptions {
 }
 
 /** Every option resolved, except the dialect, which is genuinely absent when none was passed. */
-type DriftDetectorSettings = Required<Omit<DriftDetectorOptions, 'dialect'>> & Pick<DriftDetectorOptions, 'dialect'>;
+type DriftDetectorSettings = Required<Except<DriftDetectorOptions, 'dialect'>> & Pick<DriftDetectorOptions, 'dialect'>;
 
 function resolveOptions(options: DriftDetectorOptions): DriftDetectorSettings {
   return {

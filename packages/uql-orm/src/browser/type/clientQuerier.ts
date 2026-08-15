@@ -11,6 +11,7 @@ import type { RequestOptions } from './request.js';
  * higher-kinded type wrappers, so the interfaces are kept in sync by convention.
  * @see UniversalQuerier for the server-side contract with direct return types.
  */
+
 export interface ClientQuerier {
   findOneById<E extends object>(
     entity: Type<E>,

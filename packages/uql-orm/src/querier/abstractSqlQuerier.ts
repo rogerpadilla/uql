@@ -102,7 +102,28 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     });
   }
 
+  /**
+   * `$lock` outside a transaction is always a bug, and a silent one. Every engine accepts
+   * `SELECT ... FOR UPDATE` in autocommit and then releases the lock as the statement commits,
+   * before the caller has seen a row: the SQL is correct, nothing is omitted, and no layer below
+   * this one can tell. The dialect cannot check it either, being stateless and shared by every
+   * connection of the pool, so this is the only place it can be caught.
+   *
+   * The capability check runs first on purpose: "this engine has no row locks" is the more
+   * actionable answer, and on SQLite it is the answer either way.
+   */
+  protected assertLockable<E>(entity: Type<E>, q: Query<E>): void {
+    if (!q.$lock) {
+      return;
+    }
+    this.dialect.assertLockSupported(entity, q);
+    if (!this.hasOpenTransaction) {
+      throw new TypeError('$lock requires an open transaction');
+    }
+  }
+
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+    this.assertLockable(entity, q);
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts);
     const res = await this.all<RawRow>(ctx.sql, ctx.values);
@@ -116,6 +137,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: Query<E>,
     opts?: QueryOptions,
   ) {
+    this.assertLockable(entity, q);
     const meta = getMeta(entity);
     const { toManyKeys } = getRelationRequestSummary(meta, q.$populate);
     if (toManyKeys.length) {

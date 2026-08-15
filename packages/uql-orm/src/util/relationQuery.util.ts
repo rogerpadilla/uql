@@ -1,4 +1,4 @@
-import type { EntityMeta, Query, QueryPopulate, QuerySelect, RelationKey } from '../type/index.js';
+import type { EntityMeta, Except, Query, QueryPopulate, QuerySelect, RelationKey } from '../type/index.js';
 import { getKeys } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
@@ -41,7 +41,9 @@ export function isPopulatingRelations<E>(meta: EntityMeta<E>, populate?: QueryPo
   return getKeys(populate).some((key) => populate[key] && key in meta.relations);
 }
 
-export type RelationQuery<E extends object = object> = Query<E> & { $required?: boolean };
+// `$lock` is statement-level, so it is not part of a relation query: `parseRelationQueryValue`
+// rejects it explicitly rather than letting it fall through as an unrecognized shape.
+export type RelationQuery<E extends object = object> = Except<Query<E>, '$lock'> & { $required?: boolean };
 
 // Keep in sync with `Query`'s own keys (`type/query.ts`); `$where`'s value type is `QueryWhere` (`type/queryWhere.ts`).
 const RELATION_QUERY_BOOLEAN_KEYS = new Set(['$distinct', '$required']);
@@ -66,6 +68,13 @@ export type ParsedRelationQuery<E extends object = object> = {
 };
 
 export function parseRelationQueryValue<E extends object = object>(value: unknown): ParsedRelationQuery<E> {
+  // Caught before the shape check so the message names the key, rather than reporting the whole
+  // object as an unrecognized relation query value.
+  if (isRecord(value) && '$lock' in value) {
+    throw new TypeError(
+      "'$lock' applies to the whole statement, not to a populated relation. Move it to the top level of the query.",
+    );
+  }
   if (isRelationQueryObject(value)) {
     return { query: value, required: value.$required === true, nested: true };
   }

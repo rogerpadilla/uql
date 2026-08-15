@@ -33,6 +33,12 @@ export class CockroachDialect extends PgLikeSqlDialect {
   protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include']);
 
   /**
+   * `noKeyUpdate`/`keyShare` are omitted on purpose, not by oversight: CockroachDB parses both and
+   * treats them as aliases of `FOR UPDATE`/`FOR SHARE`, so offering them would hand back a stronger
+   * lock than was asked for, with nothing signalling it.
+   */
+
+  /**
    * CockroachDB's vector index is native and has its own syntax: `CREATE VECTOR INDEX ... ("col"
    * vector_cosine_ops)`, with no access-method keyword, and tuning knobs of its own names that UQL
    * does not map. `type: 'vector'` is its trigger, the same generic value MariaDB's inline index uses.

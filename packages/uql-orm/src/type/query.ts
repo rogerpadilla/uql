@@ -1,7 +1,8 @@
 import type { FieldKey, JsonFieldPaths, RelationKey } from './entity.js';
+import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { BooleanLike, PrimaryKey, Unpacked } from './utility.js';
+import type { BooleanLike, Except, PrimaryKey, Unpacked } from './utility.js';
 import type { QueryVectorSearch } from './vector.js';
 
 export type QueryOptions = {
@@ -73,7 +74,11 @@ export type QueryConflictPaths<E> = {
 /**
  * options to populate a relation.
  */
-export type QueryPopulateRelationOptions<E> = (E extends unknown[] ? Query<Unpacked<E>> : QueryUnique<Unpacked<E>>) & {
+export type QueryPopulateRelationOptions<E> = (E extends unknown[]
+  ? // `$lock` is statement-level, so it is excluded here rather than being silently ignored per
+    // relation. `QueryUnique` is a `Pick` and already leaves it out.
+    Except<Query<Unpacked<E>>, '$lock'>
+  : QueryUnique<Unpacked<E>>) & {
   $required?: boolean;
 };
 
@@ -204,12 +209,23 @@ export type Query<E> = {
    * whether to return only distinct rows.
    */
   $distinct?: boolean;
+
+  /**
+   * take a row-level lock on the rows this query returns (`SELECT ... FOR UPDATE`). Needs an open
+   * transaction: outside one the statement commits and drops the lock before the caller can act on
+   * the rows, so it is rejected rather than emitted. Locks only the queried entity, never anything
+   * reached through `$populate`. SQL only; MongoDB and the SQLite family reject it.
+   *
+   * Deliberately declared here rather than on `QuerySearch`, which `count`/`update`/`delete` take:
+   * that placement is what keeps the clause off those statements at the type level.
+   */
+  $lock?: QueryLock;
 } & QuerySearch<E>;
 
 /**
  * options to get a single record.
  */
-export type QueryOne<E> = Omit<Query<E>, '$limit'>;
+export type QueryOne<E> = Except<Query<E>, '$limit'>;
 
 /**
  * options to get an unique record.

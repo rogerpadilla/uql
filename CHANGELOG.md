@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.27.0] - 2026-08-15
+
+### Features
+
+- **`$lock`: row-level locking on reads.** `$lock: true` emits `SELECT ... FOR UPDATE`; `{ wait: 'skip' | 'nowait' }` adds `SKIP LOCKED`/`NOWAIT`, which is what makes a work queue on the database possible. Requires an open transaction, and is rejected outside one, where the lock would be released at statement commit. PostgreSQL, CockroachDB, MySQL and MariaDB; the SQLite family and MongoDB reject it.
+
 ## [0.26.3] - 2026-08-10
 
 ### Documentation

@@ -151,6 +151,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'prefixLength']);
 
+  /**
+   * No `FOR NO KEY UPDATE`/`FOR KEY SHARE`: those are PostgreSQL's weaker pair and the family has
+   * no equivalent, so asking for one is rejected rather than served a stronger lock.
+   */
+
   protected override indexAccessMethod(index: IndexSchema): string {
     return index.type && index.type !== 'fulltext' ? ` USING ${index.type}` : '';
   }
