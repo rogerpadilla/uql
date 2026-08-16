@@ -145,7 +145,9 @@ export type QuerySortMap<E> = {
 } & {
   [P in JsonFieldPaths<E>]?: QuerySortDirection;
 } & {
-  [K in RelationKey<E>]?: QuerySortMap<NonNullable<Unpacked<E[K]>>>;
+  // To-one only: a parent holds many rows of a to-many, so there is no single value to order it by,
+  // and joining one in would duplicate the parent instead. Order those inside `$populate`.
+  [K in RelationKey<E> as NonNullable<E[K]> extends readonly unknown[] ? never : K]?: QuerySortMap<NonNullable<E[K]>>;
 };
 
 /**

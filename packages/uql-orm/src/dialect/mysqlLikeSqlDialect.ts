@@ -164,10 +164,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `CAST(${expr} AS DECIMAL)`;
   }
 
-  protected override ilikeExpr(f: string, ph: string): string {
-    return `${f} LIKE ${ph}`;
-  }
-
   protected override neExpr(field: string, ph: string): string {
     // MySQL/MariaDB null-safe inequality: true when values differ or one side is NULL.
     return `NOT (${field} <=> ${ph})`;

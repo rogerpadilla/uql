@@ -86,9 +86,9 @@ export class SqliteDialect extends AbstractSqlDialect {
     }
   }
 
-  protected override ilikeExpr(f: string, ph: string): string {
-    return `${f} LIKE ${ph}`;
-  }
+  // SQLite's `LIKE` already ignores case on both sides, for ASCII - and only ASCII, with or without
+  // `NOCASE`, so folding the pattern here would break the accented text the engine leaves alone.
+  protected override readonly caseInsensitiveMatch = 'native';
 
   protected override get neOp(): string {
     return 'IS NOT';

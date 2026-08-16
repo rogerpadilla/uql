@@ -143,7 +143,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     expect(ctx.sql).toContain('CAST(_uql_elem_1.`c` AS DECIMAL) < ?');
     expect(ctx.sql).toContain('CAST(_uql_elem_1.`d` AS DECIMAL) <= ?');
     expect(ctx.sql).toContain('_uql_elem_1.`e` LIKE ?');
-    expect(ctx.sql).toContain('_uql_elem_1.`f` LIKE ?');
+    // A JSON path folds case exactly as a column does: both sides, never the pattern alone.
+    expect(ctx.sql).toContain('LOWER(_uql_elem_1.`f`) LIKE ?');
+    expect(ctx.values).toContain('hi');
     expect(ctx.sql).toContain('_uql_elem_1.`m` REGEXP ?');
     expect(ctx.sql).toContain('CAST(_uql_elem_1.`n` AS DECIMAL) IN (');
     expect(ctx.sql).toContain('CAST(_uql_elem_1.`o` AS DECIMAL) NOT IN (');

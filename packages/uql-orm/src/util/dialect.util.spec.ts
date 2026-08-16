@@ -6,7 +6,6 @@ import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../
 import {
   applyFilters,
   augmentWhere,
-  buildSortMap,
   fillOnFields,
   filterFieldKeys,
   getFieldCallbackValue,
@@ -226,11 +225,6 @@ it('normalizeScalarFieldSelection allows a falsy $select map alongside $exclude'
 
 it('isCascadable', () => {
   expect(isCascadable('persist', 'delete')).toBe(false);
-});
-
-it('buildSortMap', () => {
-  expect(buildSortMap<User>({ name: 1 })).toEqual({ name: 1 });
-  expect(buildSortMap(undefined)).toEqual({});
 });
 
 it('parseGroupMap keys and fns', () => {

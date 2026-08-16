@@ -1,4 +1,12 @@
-import type { EntityMeta, Except, Query, QueryPopulate, QuerySelect, RelationKey } from '../type/index.js';
+import type {
+  EntityMeta,
+  Except,
+  Query,
+  QueryPopulate,
+  QuerySelect,
+  RelationKey,
+  RelationMeta,
+} from '../type/index.js';
 import { getKeys } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
@@ -6,6 +14,42 @@ export type RelationRequestSummary<E> = {
   readonly joinableKeys: RelationKey<E>[];
   readonly toManyKeys: RelationKey<E>[];
 };
+
+/** Whether a relation holds many rows per parent, so it cannot be joined into the parent's row. */
+export function isToManyRelation(relation: RelationMeta): boolean {
+  return relation.cardinality === '1m' || relation.cardinality === 'mm';
+}
+
+/**
+ * What a joined relation cannot carry, and why. A to-many is loaded by a query of its own, which is
+ * what gives these four a meaning there; a to-one is one row of the parent's, so every backend used
+ * to drop them without a word. `satisfies` ties each key to {@link RelationQuery}, so renaming one
+ * breaks this list at compile time rather than quietly stopping the check.
+ */
+const JOINED_RELATION_REJECTIONS = [
+  ['$sort', 'a join brings one row per parent, so there is nothing to order'],
+  ['$limit', 'a join brings one row per parent, so there is nothing to page'],
+  ['$skip', 'a join brings one row per parent, so there is nothing to page'],
+  ['$distinct', 'it applies to the whole statement, not to one of its joins'],
+] as const satisfies readonly (readonly [keyof RelationQuery, string])[];
+
+/** A key only a to-many's own query can carry, and that a joined relation therefore rejects. */
+export type JoinedRelationRejectedKey = (typeof JOINED_RELATION_REJECTIONS)[number][0];
+
+const JOINED_RELATION_REJECTED_KEYS: ReadonlyMap<JoinedRelationRejectedKey, string> = new Map(
+  JOINED_RELATION_REJECTIONS,
+);
+
+function assertJoinableRelationQuery(relKey: string, value: unknown): void {
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  for (const [key, reason] of JOINED_RELATION_REJECTED_KEYS) {
+    if (key in value) {
+      throw new TypeError(`'${key}' is not supported inside $populate of the to-one relation '${relKey}': ${reason}.`);
+    }
+  }
+}
 
 export function getRelationRequestSummary<E>(
   meta: EntityMeta<E>,
@@ -25,9 +69,12 @@ export function getRelationRequestSummary<E>(
 
     requestedKeys.push(key);
 
-    if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+    if (isToManyRelation(relOpts)) {
       toManyKeys.push(key);
     } else {
+      // Validated where the cardinality is decided, so every backend and every nesting level rejects
+      // the same shapes - the SQL dialects, MongoDB's lookups, and whatever reads this summary next.
+      assertJoinableRelationQuery(key, populate[key]);
       joinableKeys.push(key);
     }
   }
@@ -36,7 +83,7 @@ export function getRelationRequestSummary<E>(
 }
 
 /** True when `$populate` includes at least one relation key. */
-export function isPopulatingRelations<E>(meta: EntityMeta<E>, populate?: QueryPopulate<E>): boolean {
+export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopulate<E>): boolean {
   if (!populate) return false;
   return getKeys(populate).some((key) => populate[key] && key in meta.relations);
 }

@@ -320,10 +320,33 @@ class MongoDialectSpec implements Spec {
     );
   }
 
-  shouldThrowOnRelationInSort() {
-    expect(() => this.dialect.sort(Item, { tax: { name: 1 } } as never)).toThrow(
-      "sorting by relation 'tax' is not supported on MongoDB",
+  /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
+  shouldSortByRelationField() {
+    expect(this.dialect.sort(Item, { tax: { name: -1 } } as never)).toEqual({ 'tax.name': -1 });
+    expect(this.dialect.sort(User, { profile: { picture: 1 } } as never)).toEqual({ 'profile.image': 1 });
+    // As many of its fields as the caller asks for, and alongside the parent's own columns.
+    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 } as never)).toEqual({
+      'tax.name': 1,
+      'tax.percentage': -1,
+      code: -1,
+    });
+  }
+
+  shouldThrowOnUnjoinableRelationInSort() {
+    expect(() => this.dialect.sort(Item, { tags: { name: 1 } } as never)).toThrow("cannot $sort by 'tags'");
+    expect(() => this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never)).toThrow(
+      "cannot $sort by 'tax.category' on MongoDB",
     );
+  }
+
+  /** A `$lookup` for a to-one unwinds one document per parent, so it pages and orders no better than a join. */
+  shouldRejectPagingALookedUpRelation() {
+    expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $limit: 5 } } } as never)).toThrow(
+      "'$limit' is not supported inside $populate of the to-one relation 'tax'",
+    );
+    expect(() =>
+      this.dialect.aggregationPipeline(Item, { $populate: { tax: { $sort: { name: 1 } } } } as never),
+    ).toThrow("'$sort' is not supported inside $populate of the to-one relation 'tax'");
   }
 
   /** An unknown path root is a typo (or an injected key) that would otherwise match nothing. */

@@ -4,9 +4,10 @@ import { User } from '../test/entityMock.js';
 import type { QueryPopulate } from '../type/index.js';
 import {
   getRelationRequestSummary,
-  isPopulatingRelations,
+  type JoinedRelationRejectedKey,
   parseRelationAtKey,
   parseRelationQueryValue,
+  populatesRelations,
 } from './relationQuery.util.js';
 
 it('getRelationRequestSummary', () => {
@@ -18,15 +19,46 @@ it('getRelationRequestSummary', () => {
   expect(getRelationRequestSummary(meta, popProfileTrue).requestedKeys).toEqual(['profile']);
 
   const popNone = {} satisfies QueryPopulate<User>;
-  expect(isPopulatingRelations(meta, popNone)).toBe(false);
+  expect(populatesRelations(meta, popNone)).toBe(false);
 
-  expect(isPopulatingRelations(meta, popProfile)).toBe(true);
+  expect(populatesRelations(meta, popProfile)).toBe(true);
 
   const popBoth = { profile: true, users: true } as QueryPopulate<User>;
   const summary = getRelationRequestSummary(meta, popBoth);
   expect(summary.requestedKeys).toEqual(['profile', 'users']);
   expect(summary.joinableKeys).toEqual(['profile']);
   expect(summary.toManyKeys).toEqual(['users']);
+});
+
+/**
+ * A joined relation brings exactly one row per parent, so ordering, paging and de-duplicating it are
+ * meaningless - and every backend used to drop them silently. A to-many is loaded by a query of its
+ * own, where all four mean what they say.
+ */
+it('a joined relation rejects the keys only its own query can carry', () => {
+  const meta = getMeta(User);
+  // A `Record` of the rejected-key union: adding one to the rule fails this until it is covered here.
+  const rejected = {
+    $sort: { bio: 1 },
+    $limit: 5,
+    $skip: 5,
+    $distinct: true,
+  } as const satisfies Record<JoinedRelationRejectedKey, unknown>;
+
+  for (const [key, value] of Object.entries(rejected)) {
+    expect(() => getRelationRequestSummary(meta, { profile: { [key]: value } } as QueryPopulate<User>)).toThrow(
+      `'${key}' is not supported inside $populate of the to-one relation 'profile'`,
+    );
+  }
+
+  // The very same keys on a to-many are what order and page its second query.
+  expect(getRelationRequestSummary(meta, { users: rejected } as QueryPopulate<User>).toManyKeys).toEqual(['users']);
+
+  // Nothing to inspect in the boolean and array forms.
+  expect(getRelationRequestSummary(meta, { profile: true } as QueryPopulate<User>).joinableKeys).toEqual(['profile']);
+  expect(getRelationRequestSummary(meta, { profile: ['bio'] } as QueryPopulate<User>).joinableKeys).toEqual([
+    'profile',
+  ]);
 });
 
 it('parseRelationAtKey fetches populate properly', () => {

@@ -8,9 +8,11 @@ import type { Type } from './utility.js';
  */
 export type QueryComparisonOptions = QueryOptions & {
   /**
-   * use precedence for the comparison or not.
+   * Whether this fragment is rendered as an operand of an enclosing `AND`/`OR`/`NOT`. An operand
+   * parenthesizes itself when it emits more than one term, so no fragment ever depends on the
+   * engine's operator precedence. Only the `WHERE` clause as a whole is not an operand.
    */
-  usePrecedence?: boolean;
+  operand?: boolean;
 };
 
 /**
@@ -34,6 +36,12 @@ export interface QueryContext {
    * alias would let the inner occurrence shadow the outer one it needs to correlate against.
    */
   nextAlias(prefix: string): string;
+  /**
+   * A context for a fragment of this same statement: it renders its own SQL in isolation while
+   * sharing the bound values and the generated aliases, so both stay unique and correctly numbered
+   * across the statement. See {@link AbstractSqlDialect.buildFragment}.
+   */
+  createFragment(): QueryContext;
   readonly sql: string;
   readonly values: unknown[];
 }
@@ -168,7 +176,7 @@ export interface QueryDialect {
    * @param forbidQualified don't escape dots
    * @param addDot use a dot as suffix
    */
-  escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string;
+  escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
 
   /**
    * escape a value.

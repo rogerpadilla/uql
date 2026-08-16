@@ -29,14 +29,12 @@ import {
   QueryRaw,
   type QueryRawFnOptions,
   type QuerySearch,
-  type QuerySelect,
   type QuerySelectOptions,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
   type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
-  type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOperatorMap,
@@ -44,6 +42,7 @@ import {
   type QueryWhereOptions,
   RAW_ALIAS,
   RAW_VALUE,
+  type RelationKey,
   type RelationMeta,
   type SqlDialectName,
   type SqlQueryDialect,
@@ -53,30 +52,25 @@ import {
 import {
   asSelectMap,
   buildQueryWhereAsMap,
-  buildSortMap,
   escapeSqlId,
   fillOnFields,
   filterFieldKeys,
-  flatObject,
   getInsertFieldKeys,
   getKeys,
-  getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
-  hasMultipleKeys,
   isBooleanType,
   isJsonType,
   isJsonUpdateOp,
   isNumericType,
   isOperatorObject,
   isOperatorOnlyObject,
-  isPopulatingRelations,
+  isToManyRelation,
   isVectorSearch,
   normalizeScalarFieldSelection,
   parseGroupMap,
-  parseRelationAtKey,
   parseRelationSize,
-  type RelationQuery,
+  populatesRelations,
   raw,
   someValue,
   withoutSoftDeleteFilter,
@@ -87,6 +81,14 @@ import { IndexSqlDialect } from './indexSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { isJsonbOp, JSON_ELEM_ALIAS_PREFIX, jsonCompareMode, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
+import {
+  isSortMap,
+  NO_JOINS,
+  type QueryJoin,
+  type QueryJoins,
+  type QuerySortOptions,
+  resolveQueryJoins,
+} from './queryJoins.js';
 import { isVectorFieldType, resolveVectorCast } from './vectorCast.js';
 
 /** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
@@ -99,6 +101,9 @@ type JsonUpdateOperators = {
 
 /** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
 type PersistKind = 'plain' | 'json' | 'vector';
+
+/** One entry of {@link AbstractSqlDialect.LIKE_OPS}: how the pattern is built, and whether it ignores case. */
+type LikeOp = { readonly pattern: (value: string) => string; readonly insensitive: boolean };
 
 /** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
 type HydratableField = readonly [string, HydrateKind];
@@ -159,10 +164,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * straight into `ctx`'s own values array - shared by reference, not copied - so `addValue` numbers
    * its placeholder correctly against the real query from the start; a fresh, empty array would
    * instead number from `1` regardless of how many values `ctx` already has, misnumbering every
-   * bound value on `$n`-placeholder dialects once `ctx` isn't otherwise empty.
+   * bound value on `$n`-placeholder dialects once `ctx` isn't otherwise empty. Generated aliases are
+   * shared for the same reason - see {@link SqlQueryContext}.
    */
   protected buildFragment(ctx: QueryContext, build: (fragmentCtx: QueryContext) => void): string {
-    const fragmentCtx = new SqlQueryContext(this, ctx.values);
+    const fragmentCtx = ctx.createFragment();
     build(fragmentCtx);
     return fragmentCtx.sql;
   }
@@ -209,15 +215,15 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
-  search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}): void {
+  search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, joins = NO_JOINS): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, asSelectMap(q.$select), q.$populate);
+    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$populate, joins);
     if (opts.prefix !== prefix) {
       opts = { ...opts, prefix };
     }
     this.where<E>(ctx, entity, q.$where, opts);
-    this.sort<E>(ctx, entity, q.$sort, opts);
+    this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
     this.pager(ctx, q);
   }
 
@@ -230,7 +236,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   ): void {
     const meta = getMeta(entity);
     const prefix = opts.prefix ? opts.prefix + '.' : '';
-    const escapedPrefix = this.escapeId(opts.prefix as string, true, true);
+    const escapedPrefix = this.escapeId(opts.prefix, true, true);
 
     const scalars: (FieldKey<E> | QueryRaw)[] = Array.isArray(select)
       ? select // raw SQL projections passed as QueryRaw[]
@@ -302,148 +308,79 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 
-  select<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    select: QuerySelectValue<E> | undefined,
-    exclude?: QueryExclude<E>,
-    populate?: QueryPopulate<E>,
-    opts: QueryOptions = {},
-    distinct?: boolean,
-    sort?: QuerySortMap<E>,
-  ): void {
+  select<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QueryOptions = {}, joins = NO_JOINS): void {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(entity, meta);
-    const mapSelect = asSelectMap(select);
-    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, mapSelect, populate);
+    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$populate, joins);
 
-    ctx.append(distinct ? 'SELECT DISTINCT ' : 'SELECT ');
-    this.selectFields(ctx, entity, select, { prefix }, exclude);
+    ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
+    this.selectFields(ctx, entity, q.$select, { prefix }, q.$exclude);
     // Add related fields BEFORE FROM clause
-    this.selectRelationFields(ctx, entity, mapSelect, populate, { prefix });
+    this.selectRelationFields(ctx, joins);
     // Inject vector distance projections when $project is set
-    if (sort) {
-      const sortMap = buildSortMap(sort);
-      for (const [key, val] of Object.entries(sortMap)) {
-        if (isVectorSearch(val) && val.$project) {
-          ctx.append(', ');
-          this.appendVectorProjection(ctx, meta, key, val);
-        }
+    for (const [key, val] of Object.entries(q.$sort ?? {})) {
+      if (isVectorSearch(val) && val.$project) {
+        ctx.append(', ');
+        this.appendVectorProjection(ctx, meta, key, val);
       }
     }
     ctx.append(` FROM ${this.escapeId(tableName)}`);
     // Add JOINs AFTER FROM clause
-    this.selectRelationJoins(ctx, entity, mapSelect, populate, { prefix });
+    this.selectRelationJoins(ctx, meta, tableName, joins);
   }
 
+  /** Columns are alias-qualified once anything else is in play: a join, or a to-many being filled. */
   private resolveRelationAwarePrefix<E>(
     tableName: string,
     meta: EntityMeta<E>,
     opts: QueryOptions,
-    select?: QuerySelect<E>,
-    populate?: QueryPopulate<E>,
+    populate: QueryPopulate<E> | undefined,
+    joins: QueryJoins,
   ): string | undefined {
-    return (opts.prefix ?? (opts.autoPrefix || isPopulatingRelations(meta, populate))) ? tableName : undefined;
+    return (opts.prefix ?? (opts.autoPrefix || joins.size > 0 || populatesRelations(meta, populate)))
+      ? tableName
+      : undefined;
   }
 
-  protected selectRelationFields<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    select: QuerySelect<E> | undefined,
-    populate: QueryPopulate<E> | undefined,
-    opts: { prefix?: string } = {},
-  ): void {
-    this.forEachJoinableRelation(entity, select, populate, opts, (relEntity, relQuery, joinRelAlias) => {
+  protected selectRelationFields(ctx: QueryContext, joins: QueryJoins): void {
+    for (const join of joins.values()) {
+      // A join `$sort` asked for adds no columns: it orders the rows, it does not widen them.
+      if (!join.projected) continue;
       ctx.append(', ');
       this.selectFields(
         ctx,
-        relEntity,
-        relQuery.$select,
-        { prefix: joinRelAlias, autoPrefixAlias: true },
-        relQuery.$exclude,
+        join.entity,
+        join.query.$select,
+        { prefix: join.path, autoPrefixAlias: true },
+        join.query.$exclude,
       );
-      this.selectRelationFields(ctx, relEntity, relQuery.$select, relQuery.$populate, { prefix: joinRelAlias });
-    });
+    }
   }
 
-  protected selectRelationJoins<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    select: QuerySelect<E> | undefined,
-    populate: QueryPopulate<E> | undefined,
-    opts: { prefix?: string } = {},
-  ): void {
-    this.forEachJoinableRelation(
-      entity,
-      select,
-      populate,
-      opts,
-      (relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required) => {
-        const relMeta = getMeta(relEntity);
-        const relTableName = this.resolveTableName(relEntity, relMeta);
-        const relEntityName = this.escapeId(relTableName);
-        const relPath = opts.prefix ? this.escapeId(opts.prefix, true) : this.escapeId(tableName);
-        const joinType = required ? 'INNER' : 'LEFT';
-        const joinAlias = this.escapeId(joinRelAlias, true);
+  protected selectRelationJoins<E>(ctx: QueryContext, meta: EntityMeta<E>, tableName: string, joins: QueryJoins): void {
+    for (const join of joins.values()) {
+      const joinAlias = this.escapeId(join.path, true);
+      const parentAlias = join.parent ? this.escapeId(join.parent.path, true) : this.escapeId(tableName);
 
-        ctx.append(` ${joinType} JOIN ${relEntityName} ${joinAlias} ON `);
-        let refAppended = false;
-        for (const it of relOpts.references) {
-          if (refAppended) ctx.append(' AND ');
-          const relField = relMeta.fields[it.foreign];
-          const field = meta.fields[it.local];
-          const foreignColumnName = this.resolveColumnName(it.foreign, relField);
-          const localColumnName = this.resolveColumnName(it.local, field);
-          ctx.append(`${joinAlias}.${this.escapeId(foreignColumnName)} = ${relPath}.${this.escapeId(localColumnName)}`);
-          refAppended = true;
-        }
+      ctx.append(
+        ` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapeId(this.resolveTableName(join.entity, join.meta))} ${joinAlias} ON `,
+      );
+      join.relation.references.forEach((reference, index) => {
+        if (index > 0) ctx.append(' AND ');
+        const foreign = this.escapeId(this.columnOf(join.meta, reference.foreign));
+        // Two calls rather than one over a union: the parent is either another join's entity or the
+        // queried one, and their metadata types have nothing in common.
+        const local = this.escapeId(
+          join.parent ? this.columnOf(join.parent.meta, reference.local) : this.columnOf(meta, reference.local),
+        );
+        ctx.append(`${joinAlias}.${foreign} = ${parentAlias}.${local}`);
+      });
 
-        // Unconditional, not gated by `relQuery.$where`: a joined relation's own filters (in
-        // particular `security: true` ones) must apply even to a bare `$populate: { rel: true }`
-        // with no explicit `$where`. `where()` -> `renderWhere()` no-ops cleanly (appends nothing)
-        // when there is truly nothing to add, so this is a pure superset of the old behavior.
-        this.where(ctx, relEntity, relQuery.$where ?? {}, { prefix: joinRelAlias, clause: 'AND' });
-
-        this.selectRelationJoins(ctx, relEntity, relQuery.$select, relQuery.$populate, { prefix: joinRelAlias });
-      },
-    );
-  }
-
-  /**
-   * Iterates over joinable (11/m1) relations for a given select, resolving shared metadata.
-   * Used by both `selectRelationFields` and `selectRelationJoins` to avoid duplicated iteration logic.
-   */
-  private forEachJoinableRelation<E>(
-    entity: Type<E>,
-    select: QuerySelect<E> | undefined,
-    populate: QueryPopulate<E> | undefined,
-    opts: { prefix?: string },
-    callback: (
-      relEntity: Type<object>,
-      relQuery: RelationQuery,
-      joinRelAlias: string,
-      relOpts: RelationMeta,
-      meta: EntityMeta<E>,
-      tableName: string,
-      required: boolean,
-    ) => void,
-  ): void {
-    if (!select && !populate) return;
-    const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
-    const relKeys = getRelationRequestSummary(meta, populate).joinableKeys;
-    const prefix = opts.prefix;
-
-    for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
-
-      const isFirstLevel = prefix === tableName;
-      const joinRelAlias = isFirstLevel ? relKey : prefix ? `${prefix}.${relKey}` : relKey;
-      const relEntity = relOpts.entity();
-      const { query: relQuery, required } = parseRelationAtKey<E>(relKey, populate);
-
-      callback(relEntity, relQuery, joinRelAlias, relOpts, meta, tableName, required);
+      // Unconditional, not gated by `join.query.$where`: a joined relation's own filters (in
+      // particular `security: true` ones) must apply even to a bare `$populate: { rel: true }`
+      // with no explicit `$where` - and equally to a join `$sort` brought in on its own.
+      // `where()` -> `renderWhere()` no-ops cleanly (appends nothing) when there is nothing to add.
+      this.where(ctx, join.entity, join.query.$where ?? {}, { prefix: join.path, clause: 'AND' });
     }
   }
 
@@ -461,11 +398,13 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     opts: QueryWhereOptions = {},
   ): void {
     const meta = getMeta(entity);
-    const { usePrecedence, clause = 'WHERE' } = opts;
+    const { clause = 'WHERE' } = opts;
 
     where = buildQueryWhereAsMap(meta, where);
 
-    const whereKeys = getKeys(where);
+    // An `undefined` value emits nothing, so it must not count towards the terms either: it decides
+    // both where the `AND`s go and whether this fragment needs parentheses.
+    const whereKeys = getKeys(where).filter((key) => (where as Record<string, unknown>)[key] !== undefined);
 
     if (!whereKeys.length) {
       return;
@@ -475,26 +414,27 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       ctx.append(` ${clause} `);
     }
 
-    if (usePrecedence) {
+    const multipleKeys = whereKeys.length > 1;
+    // This fragment joins its own keys with `AND`, so appending it after one (a JOIN's `ON`) needs no
+    // parentheses - but anything nested in it is still an operand, since that may be an `OR`.
+    const parenthesize = multipleKeys && opts.operand;
+
+    if (parenthesize) {
       ctx.append('(');
     }
 
-    const multipleKeys = whereKeys.length > 1;
-    // `usePrecedence` is the only field that changes for the children and it is constant across
-    // them, so resolve the child options once instead of spreading `opts` per key.
-    const childOpts = opts.usePrecedence === multipleKeys ? opts : { ...opts, usePrecedence: multipleKeys };
-    let appended = false;
-    whereKeys.forEach((key) => {
-      const val = (where as Record<string, unknown>)[key];
-      if (val === undefined) return;
-      if (appended) {
+    // Each key is an operand of the `AND` joining them; a lone key emits this fragment verbatim, so
+    // it inherits this one's position instead.
+    const childOperand = multipleKeys || opts.operand || clause === 'AND';
+    const childOpts = opts.operand === childOperand ? opts : { ...opts, operand: childOperand };
+    whereKeys.forEach((key, index) => {
+      if (index > 0) {
         ctx.append(' AND ');
       }
-      this.compare(ctx, entity, key, val, childOpts);
-      appended = true;
+      this.compare(ctx, entity, key, (where as Record<string, unknown>)[key], childOpts);
     });
 
-    if (usePrecedence) {
+    if (parenthesize) {
       ctx.append(')');
     }
   }
@@ -592,37 +532,36 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     opts: QueryComparisonOptions,
   ): void {
     const op = AbstractSqlDialect.NEGATE_OP_MAP.get(key as QueryNegateOp) ?? (key as '$and' | '$or');
-    const negate = AbstractSqlDialect.NEGATE_OP_MAP.has(key as QueryNegateOp) ? 'NOT' : '';
+    const negate = AbstractSqlDialect.NEGATE_OP_MAP.has(key as QueryNegateOp);
 
-    const valArr = val ?? [];
-    const hasManyItems = valArr.length > 1;
+    const items = val ?? [];
+    // With more than one item each is an operand of the operator joining them, so a compound item
+    // parenthesizes itself and precedence never applies; a lone item is this group verbatim, so it
+    // inherits the group's own position. A negation always makes its subject an operand.
+    const childOperand = items.length > 1 || negate || opts.operand;
 
-    if ((opts.usePrecedence || negate) && hasManyItems) {
-      ctx.append((negate ? negate + ' ' : '') + '(');
-    } else if (negate) {
-      ctx.append(negate + ' ');
+    // Rendered before anything is appended, because an item that contributes no SQL (`{}`, an
+    // `undefined` entry) must leave no dangling separator behind, and how many terms this fragment
+    // really emits is what decides whether it needs parentheses.
+    const parts = items
+      .map((entry) =>
+        this.buildFragment(ctx, (fragmentCtx) => {
+          if (entry instanceof QueryRaw) {
+            this.getRawValue(fragmentCtx, { value: entry });
+          } else if (entry) {
+            this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
+          }
+        }),
+      )
+      .filter((part) => part !== '');
+
+    if (!parts.length) {
+      return;
     }
 
-    valArr.forEach((whereEntry, index) => {
-      if (index > 0) {
-        ctx.append(op === '$or' ? ' OR ' : ' AND ');
-      }
-      if (whereEntry instanceof QueryRaw) {
-        this.getRawValue(ctx, {
-          value: whereEntry,
-        });
-      } else if (whereEntry) {
-        this.renderWhere(ctx, entity, whereEntry, {
-          prefix: opts.prefix,
-          usePrecedence: hasManyItems && !Array.isArray(whereEntry) && hasMultipleKeys(whereEntry as object),
-          clause: false,
-        });
-      }
-    });
-
-    if ((opts.usePrecedence || negate) && hasManyItems) {
-      ctx.append(')');
-    }
+    const body = parts.join(op === '$or' ? ' OR ' : ' AND ');
+    const parenthesize = parts.length > 1 && (opts.operand || negate);
+    ctx.append((negate ? 'NOT ' : '') + (parenthesize ? `(${body})` : body));
   }
 
   /** Memoizes {@link escapedColumnName}; see there for why it is per dialect instance. */
@@ -640,56 +579,80 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     ['$lte', ' <= '],
   ]);
 
-  private static readonly LIKE_OP_MAP = new Map<QueryLikeOp, (v: string) => string>([
-    ['$startsWith', (v) => `${v}%`],
-    ['$istartsWith', (v) => `${v.toLowerCase()}%`],
-    ['$endsWith', (v) => `%${v}`],
-    ['$iendsWith', (v) => `%${v.toLowerCase()}`],
-    ['$includes', (v) => `%${v}%`],
-    ['$iincludes', (v) => `%${v.toLowerCase()}%`],
-    ['$like', (v) => v],
-    ['$ilike', (v) => v.toLowerCase()],
-  ]);
+  /**
+   * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.
+   * Each case-sensitive operator is paired here with the `$i` twin that shares its pattern, so the
+   * two can never drift apart - and neither one decides case folding, which is
+   * {@link caseInsensitiveMatch}'s single call.
+   */
+  private static readonly LIKE_OPS: ReadonlyMap<string, LikeOp> = new Map(
+    (
+      [
+        ['$like', '$ilike', (v: string) => v],
+        ['$startsWith', '$istartsWith', (v: string) => `${v}%`],
+        ['$endsWith', '$iendsWith', (v: string) => `%${v}`],
+        ['$includes', '$iincludes', (v: string) => `%${v}%`],
+      ] satisfies readonly [QueryLikeOp, QueryLikeOp, (v: string) => string][]
+    ).flatMap(([sensitive, insensitive, pattern]): [string, LikeOp][] => [
+      [sensitive, { pattern, insensitive: false }],
+      [insensitive, { pattern, insensitive: true }],
+    ]),
+  );
 
   /**
-   * The case-insensitive `LIKE_OP_MAP` keys - the value is lowercased, so the comparison must use
-   * `ilikeExpr` (Postgres's `ILIKE`) rather than `LIKE`. `$includes` is deliberately excluded even
-   * though it starts with the substring `$i`: it is case-sensitive, unlike `$iincludes`.
+   * How this engine matches case-insensitively. One decision, not two: folding the pattern while the
+   * comparison leaves the column alone matches neither case, which is what `$istartsWith: 'Some'`
+   * used to do wherever `LIKE` is case-sensitive.
+   *
+   * - `ilike`: the engine has a case-insensitive operator (`ILIKE`), so the pattern goes through as written.
+   * - `native`: plain `LIKE` already ignores case (SQLite, for ASCII). Folding the pattern in JS would
+   *   only break the non-ASCII characters the engine cannot fold anyway - `'É'` would become an `'é'`
+   *   that matches nothing.
+   * - `fold`: nothing ignores case on its own, so both sides are lowered explicitly. Not indexable as
+   *   such; an expression index over `LOWER(column)` is what makes it so.
    */
-  private static readonly LIKE_CASE_INSENSITIVE_OPS = new Set<string>([
-    '$istartsWith',
-    '$iendsWith',
-    '$iincludes',
-    '$ilike',
-  ] satisfies QueryLikeOp[]);
-
-  /** Builds `prefix.column` from an already-resolved field. */
-  private columnWithPrefix(key: string, field: FieldOptions | undefined, prefix: string | undefined): string {
-    const columnName = this.resolveColumnName(key, field);
-    const escapedPrefix = this.escapeId(prefix as string, true, true);
-    return escapedPrefix + this.escapeId(columnName);
-  }
+  protected readonly caseInsensitiveMatch: 'ilike' | 'native' | 'fold' = 'fold';
 
   /**
-   * Resolves the SQL operand for a field comparison.
-   * For QueryRaw virtuals, appends the raw expression to ctx and returns undefined.
+   * A `$like`-family condition, or `undefined` when `op` is not one of them. Shared by columns and
+   * JSON paths, and the only place a pattern is folded - always together with the column it is
+   * compared against.
    */
-  protected resolveOperandField<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    key: string,
-    opts: QueryOptions,
-  ): string | undefined {
-    const col = getMeta(entity).fields[key];
-    if (col?.virtual) {
-      this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
+  protected likeCondition(ctx: QueryContext, operand: string, op: string, val: unknown): string | undefined {
+    const like = AbstractSqlDialect.LIKE_OPS.get(op);
+    if (!like) {
       return undefined;
     }
-    return this.columnWithPrefix(key, col, opts.prefix);
+    const fold = like.insensitive && this.caseInsensitiveMatch === 'fold';
+    const value = String(val);
+    const ph = this.addValue(ctx.values, like.pattern(fold ? value.toLowerCase() : value));
+    const matchOp = like.insensitive && this.caseInsensitiveMatch === 'ilike' ? 'ILIKE' : this.likeFn;
+    return `${fold ? `LOWER(${operand})` : operand} ${matchOp} ${ph}`;
   }
 
-  private appendFieldSql(ctx: QueryContext, field: string | undefined, sql: string): void {
-    ctx.append(field ? `${field}${sql}` : sql);
+  /** Builds `prefix.column` from an already-resolved field, through the same memo writes use. */
+  private columnWithPrefix(key: string, field: FieldOptions | undefined, prefix: string | undefined): string {
+    return this.escapeId(prefix, true, true) + this.escapedColumnOf(key, field);
+  }
+
+  /**
+   * The SQL a field comparison reads its left-hand side from. A virtual field builds its expression
+   * as text rather than appending it, so every operator gets a real operand to wrap - `LOWER(...)`,
+   * `NOT (... <=> ...)` - instead of having to fall back to a form that takes none.
+   */
+  protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryOptions): string {
+    const field = getMeta(entity).fields[key];
+    const virtual = field?.virtual;
+    if (virtual) {
+      return this.buildFragment(ctx, (fragmentCtx) =>
+        this.getRawValue(fragmentCtx, {
+          value: virtual,
+          prefix: opts.prefix,
+          escapedPrefix: this.escapeId(opts.prefix, true, true),
+        }),
+      );
+    }
+    return this.columnWithPrefix(key, field, opts.prefix);
   }
 
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
@@ -713,13 +676,13 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         ctx.append(')');
         break;
       case '$all':
-        ctx.append(this.jsonAll(ctx, field ?? '', val));
+        ctx.append(this.jsonAll(ctx, field, val));
         break;
       case '$size':
-        ctx.append(this.jsonSize(ctx, field ?? '', val as number | QuerySizeComparisonOps));
+        ctx.append(this.jsonSize(ctx, field, val as number | QuerySizeComparisonOps));
         break;
       case '$elemMatch':
-        ctx.append(this.jsonElemMatch(ctx, field ?? '', val as Record<string, unknown>));
+        ctx.append(this.jsonElemMatch(ctx, field, val as Record<string, unknown>));
         break;
       default:
         throw TypeError(`unknown operator: ${op}`);
@@ -727,96 +690,65 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   /**
-   * Render `<operand> <op> <value>` for every operator that needs nothing but its left-hand SQL, and
-   * report whether `op` was one of them.
+   * `<operand> <op> <value>` for every operator that needs nothing but its left-hand SQL, or
+   * `undefined` when `op` is not one of them.
    *
    * One implementation for three callers that each had their own: a WHERE column, a HAVING aggregate
-   * expression, and a `$size` count (which passes no operand, since its expression is already in the
-   * context). They previously disagreed - HAVING carried a second comparison-operator map and threw
-   * `unsupported HAVING operator` on the `$like` that `QueryHavingMap` accepts, and neither of the
-   * other two turned `$eq: null` into `IS NULL` the way the WHERE path does.
+   * expression, and a `$size` count (whose expression is already in the context, so it passes an
+   * empty operand). They previously disagreed - HAVING carried a second comparison-operator map and
+   * threw `unsupported HAVING operator` on the `$like` that `QueryHavingMap` accepts, and neither of
+   * the other two turned `$eq: null` into `IS NULL` the way the WHERE path does.
    *
    * The operators kept out are the ones that need more than an operand: `$not` recurses through the
    * entity, and `$all`/`$size`/`$elemMatch` address a JSON document.
    */
-  protected appendOperatorCondition(ctx: QueryContext, operand: string | undefined, op: string, val: unknown): boolean {
-    const simpleOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
-    if (simpleOp) {
-      this.appendFieldSql(ctx, operand, `${simpleOp}${this.addValue(ctx.values, val)}`);
-      return true;
+  protected operatorCondition(ctx: QueryContext, operand: string, op: string, val: unknown): string | undefined {
+    const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
+    if (compareOp) {
+      return `${operand}${compareOp}${this.addValue(ctx.values, val)}`;
     }
 
-    const likeWrap = AbstractSqlDialect.LIKE_OP_MAP.get(op as QueryLikeOp);
-    if (likeWrap) {
-      this.appendLikeOp(ctx, operand, op, likeWrap(val as string));
-      return true;
+    const like = this.likeCondition(ctx, operand, op, val);
+    if (like) {
+      return like;
     }
 
     switch (op) {
       case '$eq':
+        return val === null ? `${operand} IS NULL` : `${operand} = ${this.addValue(ctx.values, val)}`;
       case '$ne':
-        this.appendEqNe(ctx, operand, op, val);
-        return true;
+        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, this.addValue(ctx.values, val));
       case '$regex':
-        this.appendFieldSql(ctx, operand, ` ${this.regexpOp} ${this.addValue(ctx.values, val)}`);
-        return true;
+        return `${operand} ${this.regexpOp} ${this.addValue(ctx.values, val)}`;
       case '$in':
-      case '$nin':
-        this.appendInNin(ctx, operand, op, val);
-        return true;
+      case '$nin': {
+        if (!Array.isArray(val)) {
+          // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
+          throw TypeError(`${op} expects an array, got ${val === null ? 'null' : typeof val}`);
+        }
+        return operand + this.formatIn(ctx, val, op === '$nin');
+      }
       case '$between': {
         const [min, max] = val as [unknown, unknown];
-        this.appendFieldSql(
-          ctx,
-          operand,
-          ` BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`,
-        );
-        return true;
+        return `${operand} BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`;
       }
       case '$isNull':
-        this.appendFieldSql(ctx, operand, val ? ' IS NULL' : ' IS NOT NULL');
-        return true;
+        return operand + (val ? ' IS NULL' : ' IS NOT NULL');
       case '$isNotNull':
-        this.appendFieldSql(ctx, operand, val ? ' IS NOT NULL' : ' IS NULL');
-        return true;
+        return operand + (val ? ' IS NOT NULL' : ' IS NULL');
       default:
-        return false;
+        return undefined;
     }
   }
 
-  private appendLikeOp(ctx: QueryContext, field: string | undefined, op: string, wrappedVal: string): void {
-    const isIlike = AbstractSqlDialect.LIKE_CASE_INSENSITIVE_OPS.has(op);
-    const ph = this.addValue(ctx.values, wrappedVal);
-    if (isIlike && field) {
-      ctx.append(this.ilikeExpr(field, ph));
-    } else {
-      this.appendFieldSql(ctx, field, ` ${this.likeFn} ${ph}`);
+  /** {@link operatorCondition}, appended; `false` when `op` needs more than an operand. */
+  protected appendOperatorCondition(ctx: QueryContext, operand: string, op: string, val: unknown): boolean {
+    const condition = this.operatorCondition(ctx, operand, op, val);
+    if (condition === undefined) {
+      return false;
     }
-  }
-
-  private appendEqNe(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
-    if (val === null) {
-      this.appendFieldSql(ctx, field, op === '$eq' ? ' IS NULL' : ' IS NOT NULL');
-      return;
-    }
-    const ph = this.addValue(ctx.values, val);
-    if (op === '$eq') {
-      this.appendFieldSql(ctx, field, ` = ${ph}`);
-      return;
-    }
-    if (field) {
-      ctx.append(this.neExpr(field, ph));
-    } else {
-      this.appendFieldSql(ctx, field, ` ${this.neOp} ${ph}`);
-    }
-  }
-
-  private appendInNin(ctx: QueryContext, field: string | undefined, op: string, val: unknown): void {
-    if (!Array.isArray(val)) {
-      // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
-      throw TypeError(`${op} expects an array, got ${val === null ? 'null' : typeof val}`);
-    }
-    this.appendFieldSql(ctx, field, this.formatIn(ctx, val, op === '$nin'));
+    ctx.append(condition);
+    return true;
   }
 
   /**
@@ -833,6 +765,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     asJson = false,
   ): string {
     const jsonField = fieldAccessor(jsonPath);
+    // The `$like` family reads a JSON path exactly as it reads a column, case folding included.
+    const like = this.likeCondition(ctx, jsonField, op, value);
+    if (like) {
+      return like;
+    }
     switch (op) {
       case '$eq':
         if (value === null) return `${jsonField} IS NULL`;
@@ -848,22 +785,6 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         return `${this.numericCast(jsonField)} < ${this.addValue(ctx.values, value)}`;
       case '$lte':
         return `${this.numericCast(jsonField)} <= ${this.addValue(ctx.values, value)}`;
-      case '$like':
-        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, value)}`;
-      case '$ilike':
-        return this.ilikeExpr(jsonField, this.addValue(ctx.values, (value as string).toLowerCase()));
-      case '$startsWith':
-        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `${value}%`)}`;
-      case '$istartsWith':
-        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `${(value as string).toLowerCase()}%`));
-      case '$endsWith':
-        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `%${value}`)}`;
-      case '$iendsWith':
-        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `%${(value as string).toLowerCase()}`));
-      case '$includes':
-        return `${jsonField} ${this.likeFn} ${this.addValue(ctx.values, `%${value}%`)}`;
-      case '$iincludes':
-        return this.ilikeExpr(jsonField, this.addValue(ctx.values, `%${(value as string).toLowerCase()}%`));
       case '$regex':
         return `${jsonField} ${this.regexpOp} ${this.addValue(ctx.values, value)}`;
       case '$in':
@@ -998,80 +919,103 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     return this.jsonCast('?');
   }
 
-  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, { prefix }: QueryOptions = {}): void {
-    const meta = getMeta(entity);
-    const escapedPrefix = this.escapeId(prefix as string, true, true);
-    const field = meta.fields[key];
-
-    if (field?.virtual) {
-      this.getRawValue(ctx, {
-        value: field.virtual,
-        prefix,
-        escapedPrefix,
-      });
-      return;
-    }
-
-    const columnName = this.resolveColumnName(key, field);
-    ctx.append(escapedPrefix + this.escapeId(columnName));
+  /** {@link resolveOperandField}, appended. */
+  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, opts: QueryOptions = {}): void {
+    ctx.append(this.resolveOperandField(ctx, entity, key, opts));
   }
 
-  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, { prefix }: QueryOptions): void {
+  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, opts: QuerySortOptions = {}): void {
     if (!hasKeys(sort)) {
       return;
     }
-    const sortMap = buildSortMap(sort);
-    const meta = getMeta(entity);
+    // Collected before anything is appended so an unorderable key is reported instead of half a
+    // clause, and because a vector distance is the primary ordering wherever it appears in the map.
+    const vectors: string[] = [];
+    const columns: string[] = [];
+    this.collectSortTerms(ctx, getMeta(entity), sort, opts, vectors, columns);
 
-    // Separate vector search entries from direction entries before flattening,
-    // because flatObject recursively destructures objects - it would break QueryVectorSearch.
-    const vectorEntries: [string, QueryVectorSearch][] = [];
-    const directionEntries: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(sortMap)) {
-      if (isVectorSearch(val)) {
-        vectorEntries.push([key, val]);
-      } else {
-        directionEntries[key] = val;
-      }
+    const terms = [...vectors, ...columns];
+    if (terms.length) {
+      ctx.append(` ORDER BY ${terms.join(', ')}`);
     }
+  }
 
-    const flattenedSort = flatObject(directionEntries, prefix);
+  /**
+   * Walks `$sort` against the metadata of the entity each level addresses, rather than flattening it
+   * to dotted strings and reading every key off the root: only that way does a related column resolve
+   * through its own `@Field({ name })`, and only that way is `tax.category` the one alias the join
+   * carries instead of two quoted identifiers.
+   */
+  private collectSortTerms<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    sort: QuerySortMap<E>,
+    opts: QuerySortOptions,
+    vectors: string[],
+    columns: string[],
+    path = '',
+  ): void {
+    // Below the first level the alias a column is qualified by *is* the path walked to reach it.
+    const prefix = path || opts.prefix;
 
-    // Merge: vector entries first (primary ordering), then flattened direction entries.
-    const allEntries: [string, unknown][] = [...vectorEntries, ...Object.entries(flattenedSort)];
-
-    if (!allEntries.length) return;
-
-    ctx.append(' ORDER BY ');
-
-    allEntries.forEach(([key, sort], index) => {
-      if (index > 0) {
-        ctx.append(', ');
-      }
-
-      if (isVectorSearch(sort)) {
-        if (sort.$project) {
-          // Distance already projected in SELECT - reference the alias to avoid recomputation
-          ctx.append(this.escapeId(sort.$project));
-        } else {
-          this.appendVectorSort(ctx, meta, key, sort);
+    for (const [key, value] of Object.entries(sort)) {
+      const relation = meta.relations[key as RelationKey<E>];
+      if (relation) {
+        const relPath = path ? `${path}.${key}` : key;
+        if (!isSortMap(value)) {
+          throw new TypeError(`$sort by relation '${relPath}' expects a map of its fields, got ${String(value)}`);
         }
-        return;
+        const join = this.resolveSortJoin(relation, relPath, opts);
+        this.collectSortTerms(ctx, join.meta, value, opts, vectors, columns, relPath);
+        continue;
       }
-
-      const direction = this.resolveSortDirection(sort);
-
-      // Detect JSONB dot-notation: 'column.path'
-      const jsonDot = this.resolveJsonDotPath(meta, key);
-      if (jsonDot) {
-        ctx.append(jsonDot.accessor() + direction);
-        return;
+      if (isVectorSearch(value)) {
+        if (path) {
+          throw new TypeError(`$vector sort is only supported on the queried entity, not on relation '${path}'`);
+        }
+        // Already projected in the SELECT list: order by that alias rather than recomputing it.
+        vectors.push(
+          value.$project
+            ? this.escapeId(value.$project)
+            : this.buildFragment(ctx, (fragmentCtx) => this.appendVectorSort(fragmentCtx, meta, key, value)),
+        );
+        continue;
       }
+      columns.push(this.sortColumn(meta, key, prefix) + this.resolveSortDirection(value));
+    }
+  }
 
-      const field = meta.fields[key as Key<E>];
-      const name = this.resolveColumnName(key, field);
-      ctx.append(this.escapeId(name) + direction);
-    });
+  /** The join an `ORDER BY` term addresses, or why the statement cannot order by it. */
+  private resolveSortJoin(relation: RelationMeta, path: string, opts: QuerySortOptions): QueryJoin {
+    if (isToManyRelation(relation)) {
+      throw new TypeError(
+        `cannot $sort by '${path}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
+      );
+    }
+    const join = opts.joins?.get(path);
+    if (!join) {
+      throw new TypeError(`cannot $sort by relation '${path}': this statement joins no relations`);
+    }
+    // `SELECT DISTINCT` can only order by what it selected, on every engine here, so a join brought in
+    // for the sort alone has nothing to order by. Populating it puts its columns in the select list.
+    if (opts.distinct && !join.projected) {
+      throw new TypeError(
+        `cannot $sort by relation '${path}' with $distinct unless '${path}' is populated: SELECT DISTINCT orders only by selected columns`,
+      );
+    }
+    return join;
+  }
+
+  /**
+   * The `ORDER BY` operand for one key. A key that is not a column of `meta` - a virtual field, a
+   * `raw()` projection - is an output alias, which is never table-qualified and needs no resolving.
+   */
+  private sortColumn<E>(meta: EntityMeta<E>, key: string, prefix: string | undefined): string {
+    const field = meta.fields[key as FieldKey<E>];
+    if (field) {
+      return field.virtual ? this.escapeId(key) : this.columnWithPrefix(key, field, prefix);
+    }
+    return this.resolveJsonDotPath(meta, key, prefix)?.accessor() ?? this.escapeId(key);
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {
@@ -1089,22 +1033,18 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   /** MariaDB is the one engine here that cannot narrow a lock to one table of a join. */
   readonly supportsLockOf: boolean = true;
 
-  /** Whether this statement joins, which is what forces the lock to be narrowed to one table. */
-  private joinsRelations<E>(meta: EntityMeta<E>, q: Query<E>): boolean {
-    return getRelationRequestSummary(meta, q.$populate).joinableKeys.length > 0;
-  }
-
   /** Validated before the querier checks for a transaction, so the clearer error wins. */
-  assertLockSupported<E>(entity: Type<E>, q: Query<E>): void {
+  assertLockSupported<E>(entity: Type<E>, q: Query<E>, joins?: QueryJoins): void {
     if (!parseQueryLock(q.$lock)) {
       return;
     }
     if (!this.supportsRowLocks) {
       throw new TypeError(`${this.dialectName} does not support row-level locking ($lock)`);
     }
-    if (!this.supportsLockOf && this.joinsRelations(getMeta(entity), q)) {
+    joins ??= resolveQueryJoins(getMeta(entity), q);
+    if (!this.supportsLockOf && joins.size > 0) {
       throw new TypeError(
-        `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined $populate`,
+        `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined relation`,
       );
     }
   }
@@ -1114,22 +1054,23 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * joined: Postgres refuses a bare `FOR UPDATE` over the nullable side of an outer join outright,
    * and the other engines quietly widen the lock to the joined rows.
    */
-  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>): void {
+  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, joins = NO_JOINS): void {
     const wait = parseQueryLock(q.$lock);
     if (!wait) {
       return;
     }
-    this.assertLockSupported(entity, q);
+    this.assertLockSupported(entity, q, joins);
     const meta = getMeta(entity);
-    const target = this.joinsRelations(meta, q) ? ` OF ${this.escapeId(this.resolveTableName(entity, meta))}` : '';
+    const target = joins.size > 0 ? ` OF ${this.escapeId(this.resolveTableName(entity, meta))}` : '';
     const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
     ctx.append(` FOR UPDATE${target}${suffix}`);
   }
 
   count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void {
     const search: Query<E> = { ...q };
+    // A count joins nothing and orders nothing: how many rows match is the same either way.
     delete search.$sort;
-    this.select<E>(ctx, entity, [raw('COUNT(*)', 'count')]);
+    this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', 'count')] });
     this.search(ctx, entity, search, opts);
   }
 
@@ -1190,24 +1131,29 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       this.having(ctx, q.$having, aggregateExpressions);
     }
 
-    this.aggregateSort(ctx, q.$sort, aggregateExpressions);
+    this.aggregateSort(ctx, meta, q.$sort, aggregateExpressions);
     this.pager(ctx, q);
   }
 
   /**
-   * ORDER BY for aggregate queries - handles both entity-field and alias references.
+   * ORDER BY for aggregate queries - handles both entity-field and alias references. A grouped
+   * statement has no joins to address, so a relation key is rejected rather than emitted as an alias
+   * nothing defines.
    */
-  private aggregateSort(
+  private aggregateSort<E>(
     ctx: QueryContext,
+    meta: EntityMeta<E>,
     sort: QuerySortMap<object> | undefined,
     aggregateExpressions: Record<string, string>,
   ): void {
-    const sortMap = buildSortMap(sort);
-    if (!hasKeys(sortMap)) return;
+    if (!hasKeys(sort)) return;
 
     ctx.append(' ORDER BY ');
-    Object.entries(sortMap).forEach(([key, dir], index) => {
+    Object.entries(sort).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
+      if (meta.relations[key as RelationKey<E>]) {
+        throw new TypeError(`cannot $sort by relation '${key}' in an aggregate query: it groups rows, it joins none`);
+      }
       const direction = this.resolveSortDirection(dir);
       const ref = aggregateExpressions[key] ?? this.escapeId(key);
       ctx.append(ref + direction);
@@ -1257,11 +1203,14 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
-    this.select(ctx, entity, q.$select, q.$exclude, q.$populate, opts, q.$distinct, q.$sort);
-    this.search(ctx, entity, q, opts);
+    // The one statement that can join, so the one that resolves the join set; everything else renders
+    // against `NO_JOINS` and rejects a `$sort` that would need one.
+    const joins = resolveQueryJoins(getMeta(entity), q);
+    this.select(ctx, entity, q, opts, joins);
+    this.search(ctx, entity, q, opts, joins);
     // Appended here rather than in `search`, which `count`/`update`/`delete` share: a lock belongs
     // to a SELECT alone. Every engine spells it after LIMIT/OFFSET, so it goes last.
-    this.appendLock(ctx, entity, q);
+    this.appendLock(ctx, entity, q, joins);
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
@@ -1468,7 +1417,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     this.search(ctx, entity, q, meta.softDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts);
   }
 
-  escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string {
+  escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string {
     return escapeSqlId(val, this.escapeIdChar, forbidQualified, addDot);
   }
 
@@ -1818,17 +1767,20 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * metadata is shared between dialects while this result is not, since `escapeIdChar` and the naming
    * strategy differ. Weakly keyed so a transient entity's metadata stays collectable.
    */
-  private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
-    const field = meta.fields[key];
+  private escapedColumnOf(key: string, field: FieldOptions | undefined): string {
     if (!field) {
-      return this.escapeId(this.columnOf(meta, key));
+      return this.escapeId(this.resolveColumnName(key, field));
     }
     let escaped = this.escapedColumns.get(field);
     if (escaped === undefined) {
-      escaped = this.escapeId(this.columnOf(meta, key));
+      escaped = this.escapeId(this.resolveColumnName(key, field));
       this.escapedColumns.set(field, escaped);
     }
     return escaped;
+  }
+
+  private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
+    return this.escapedColumnOf(key, meta.fields[key]);
   }
 
   private escapedColumn<E>(table: string, meta: EntityMeta<E>, key: string): string {
@@ -1991,10 +1943,10 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     // A COUNT is never NULL, so equality stays plain here instead of taking the shared renderer's
     // null-safe `$ne` (`IS DISTINCT FROM` on Postgres, `IS NOT` on SQLite). Same rows, shorter SQL.
     if (op === '$eq' || op === '$ne') {
-      this.appendFieldSql(ctx, undefined, ` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx.values, val)}`);
+      ctx.append(` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx.values, val)}`);
       return;
     }
-    this.appendOperatorCondition(ctx, undefined, op, val);
+    this.appendOperatorCondition(ctx, '', op, val);
   }
 
   /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */
@@ -2020,10 +1972,6 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   protected neExpr(field: string, ph: string): string {
     return `${field} ${this.neOp} ${ph}`;
-  }
-
-  protected ilikeExpr(f: string, ph: string): string {
-    return `LOWER(${f}) LIKE ${ph}`;
   }
 
   /**

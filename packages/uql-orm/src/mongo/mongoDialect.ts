@@ -31,7 +31,6 @@ import { QueryRaw } from '../type/queryRaw.js';
 import {
   asSelectMap,
   buildQueryWhereAsMap,
-  buildSortMap,
   type CallbackKey,
   fillOnFields,
   filterFieldKeys,
@@ -40,6 +39,7 @@ import {
   hasKeys,
   isJsonUpdateOp,
   isOperatorObject,
+  isToManyRelation,
   isVectorSearch,
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
@@ -490,14 +490,45 @@ export class MongoDialect extends AbstractDialect {
     return projection;
   }
 
+  /**
+   * The `$sort` stage. A relation key reads the document a `$lookup` unwound onto the parent, so - as
+   * on the SQL dialects - it is only addressable when the statement joins that relation. Here that
+   * means a *populated* to-one: a lookup adds a field to the result, so one added for the sort alone
+   * would change what the caller gets back, and MongoDB's lookups do not nest.
+   */
   public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>): Sort {
     const meta = getMeta(entity);
-    return this.sortBy(sort, (key) => {
-      if (meta.relations[key]) {
-        throw new TypeError(`sorting by relation '${key}' is not supported on MongoDB`);
+    const normalized: Record<string, 1 | -1> = {};
+
+    for (const [key, value] of Object.entries(sort ?? {})) {
+      const relation = meta.relations[key];
+      if (!relation) {
+        normalized[this.pathOf(meta, key)] = sortDirection(value);
+        continue;
       }
-      return this.pathOf(meta, key);
-    });
+      if (isToManyRelation(relation)) {
+        throw new TypeError(
+          `cannot $sort by '${key}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
+        );
+      }
+      const relMeta = getMeta(relation.entity());
+      for (const [relKey, relValue] of Object.entries(value ?? {})) {
+        if (relMeta.relations[relKey]) {
+          throw new TypeError(
+            `cannot $sort by '${key}.${relKey}' on MongoDB: its lookups reach one level, so a nested relation is not joined`,
+          );
+        }
+        normalized[`${key}.${this.pathOf(relMeta, relKey)}`] = sortDirection(relValue);
+      }
+    }
+
+    return normalized;
+  }
+
+  /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
+  public sortsRelations<E extends Document>(entity: Type<E>, sort: QuerySortMap<E> | undefined): boolean {
+    const meta = getMeta(entity);
+    return Object.keys(sort ?? {}).some((key) => Boolean(meta.relations[key]));
   }
 
   /**
@@ -505,14 +536,9 @@ export class MongoDialect extends AbstractDialect {
    * `$sort` addresses those aliases as-is - the same reason the SQL dialects sort by alias there.
    */
   private aliasSort<E extends Document>(sort: QuerySortMap<E> | undefined): Sort {
-    return this.sortBy(sort, (alias) => alias);
-  }
-
-  /** Shared direction normalization; `mapKey` decides whether keys are columns or aggregate aliases. */
-  private sortBy<E extends Document>(sort: QuerySortMap<E> | undefined, mapKey: (key: string) => string): Sort {
     const normalized: Record<string, 1 | -1> = {};
-    for (const [key, dir] of Object.entries(buildSortMap(sort))) {
-      normalized[mapKey(key)] = dir === 'desc' || dir === -1 ? -1 : 1;
+    for (const [alias, dir] of Object.entries(sort ?? {})) {
+      normalized[alias] = sortDirection(dir);
     }
     return normalized as Sort;
   }
@@ -537,12 +563,16 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<E>[] {
     const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
     const sort = this.sort(entity, q.$sort);
+    // Ordering by a related field reads what the lookups produced, so it cannot ride along with the
+    // `$match` the way an ordering by the parent's own columns does.
+    const sortsRelations = this.sortsRelations(entity, q.$sort);
+    const sortStage: MongoAggregationPipelineEntry<E>[] = hasKeys(sort) ? [{ $sort: sort }] : [];
     const match: MongoAggregationPipelineEntry<E> = {};
 
     if (hasKeys(filter)) {
       match.$match = filter;
     }
-    if (hasKeys(sort)) {
+    if (!sortsRelations && sortStage.length) {
       match.$sort = sort;
     }
 
@@ -562,9 +592,12 @@ export class MongoDialect extends AbstractDialect {
       ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
     ];
     // A `$required` relation drops parents when it unwinds, so paging has to come after it - as it
-    // does after an INNER JOIN. Otherwise paging first is equivalent and spares the lookups.
+    // does after an INNER JOIN. So does a sort that reads one, or a page would be cut from unordered
+    // rows. Otherwise paging first is equivalent and spares the lookups.
     const dropsParents = relStages.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
-    pipeline.push(...(dropsParents ? [...relStages, ...pager] : [...pager, ...relStages]));
+    pipeline.push(
+      ...(dropsParents || sortsRelations ? [...relStages, ...sortStage, ...pager] : [...pager, ...relStages]),
+    );
 
     const projection = this.pipelineProjection(entity, q, relationSummary);
     if (projection) {
@@ -618,7 +651,7 @@ export class MongoDialect extends AbstractDialect {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;
 
-      if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+      if (isToManyRelation(relOpts)) {
         // '1m' and 'mm' are resolved in a higher layer: they need a second query each.
         continue;
       }
@@ -984,12 +1017,11 @@ export class MongoDialect extends AbstractDialect {
    */
   extractVectorSort<E extends Document>(sort: QuerySortMap<E> | undefined): ExtractedVectorSort<E> | undefined {
     if (!sort) return undefined;
-    const raw = buildSortMap(sort);
     let vectorKey: string | undefined;
     let vectorSearch: QueryVectorSearch | undefined;
     const regularSort = {} as QuerySortMap<E>;
 
-    for (const [key, value] of Object.entries(raw)) {
+    for (const [key, value] of Object.entries(sort)) {
       if (isVectorSearch(value)) {
         vectorKey = key;
         vectorSearch = value;
@@ -1089,3 +1121,8 @@ export type ExtractedVectorSort<E> = {
   readonly vectorSearch: QueryVectorSearch;
   readonly regularSort: QuerySortMap<E>;
 };
+
+/** `-1` for the two descending spellings, `1` for everything else - MongoDB knows no other value. */
+function sortDirection(value: unknown): 1 | -1 {
+  return value === 'desc' || value === -1 ? -1 : 1;
+}

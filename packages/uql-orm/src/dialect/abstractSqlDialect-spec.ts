@@ -222,14 +222,21 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     }
   }
 
-  /** The case-insensitive LIKE operator - Postgres has a native `ILIKE`; everyone else's `LIKE` is already case-insensitive by default collation. */
-  protected likeOp(): string {
+  /**
+   * A `$i*` comparison and the pattern it binds, asserted together because they are one decision:
+   * Postgres has a native `ILIKE` and SQLite's `LIKE` already ignores (ASCII) case, so both take the
+   * pattern as written, while the MySQL family lowers the column and so must lower the pattern too.
+   */
+  protected ilikeSql(field: string, pattern: string, n = 1): { sql: string; value: string } {
+    const ph = this.ph(n);
     switch (this.dialect.dialectName) {
       case 'postgres':
       case 'cockroachdb':
-        return 'ILIKE';
+        return { sql: `${field} ILIKE ${ph}`, value: pattern };
+      case 'sqlite':
+        return { sql: `${field} LIKE ${ph}`, value: pattern };
       default:
-        return 'LIKE';
+        return { sql: `LOWER(${field}) LIKE ${ph}`, value: pattern.toLowerCase() };
     }
   }
 
@@ -1580,6 +1587,119 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual(['unidad', 1000, 'A%']);
   }
 
+  /** A `$sort` reaching into a relation joins it, exactly as populating it would - filters included. */
+  shouldSortByRelationWithoutPopulate() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { measureUnit: { name: 1 } } }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}` +
+        ` LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL` +
+        ` ORDER BY ${e}measureUnit${e}.${e}name${e}`,
+    );
+  }
+
+  /** A nested path is one alias (`"tax.category"`), and every level it crosses has to be joined. */
+  shouldSortByNestedRelation() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { tax: { category: { name: -1 } } } }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}` +
+        ` LEFT JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e}` +
+        ` LEFT JOIN ${e}TaxCategory${e} ${e}tax.category${e} ON ${e}tax.category${e}.${e}pk${e} = ${e}tax${e}.${e}categoryId${e}` +
+        ` ORDER BY ${e}tax.category${e}.${e}name${e} DESC`,
+    );
+  }
+
+  /** A related column resolves through its own entity, so `@Field({ name })` is honoured. */
+  shouldSortByRenamedRelationColumn() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $sort: { profile: { picture: 1 } } }),
+    );
+    expect(sql).toContain(` ORDER BY ${e}profile${e}.${e}image${e}`);
+  }
+
+  /** One join, whether `$populate` or `$sort` asked for it first - and it keeps its columns. */
+  shouldReuseThePopulatedJoinWhenSorting() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: { tax: { $select: { name: true }, $required: true } },
+        $sort: { tax: { name: 1 } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}` +
+        ` FROM ${e}Item${e}` +
+        ` INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e}` +
+        ` ORDER BY ${e}tax${e}.${e}name${e}`,
+    );
+  }
+
+  /**
+   * The keys only a to-many's own query can carry. They reach a real `find`, so this covers the
+   * rejection surfacing through the query path rather than only from the parser.
+   */
+  shouldRejectPagingAJoinedRelation() {
+    const e = this.dialect.escapeIdChar;
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $limit: 5 } } as never }),
+      ),
+    ).toThrow("'$limit' is not supported inside $populate of the to-one relation 'tax'");
+
+    // Nested joins are read the same way, so the level it sits at makes no difference.
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, {
+          $select: { id: true },
+          $populate: { tax: { $populate: { category: { $sort: { name: 1 } } } } } as never,
+        }),
+      ),
+    ).toThrow("'$sort' is not supported inside $populate of the to-one relation 'category'");
+
+    // The same keys order and page a to-many's second query, so they stay valid there. That query is
+    // issued by the querier, so the parent statement is simply the unjoined one.
+    expect(
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, {
+          $select: { id: true },
+          $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 5, $skip: 1 } },
+        }),
+      ).sql,
+    ).toBe(`SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}`);
+  }
+
+  /** Every statement that cannot join says so, rather than emitting an alias nothing defines. */
+  shouldRejectAnUnorderableRelationSort() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { tags: { name: 1 } } as never }),
+      ),
+    ).toThrow("cannot $sort by 'tags'");
+
+    expect(() =>
+      this.exec((ctx) => this.dialect.update(ctx, Item, { $sort: { tax: { name: 1 } } }, { name: 'x' })),
+    ).toThrow("cannot $sort by relation 'tax': this statement joins no relations");
+
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $select: { id: true }, $distinct: true, $sort: { tax: { name: 1 } } }),
+      ),
+    ).toThrow("cannot $sort by relation 'tax' with $distinct");
+
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.aggregate(ctx, Item, { $group: { taxId: true }, $sort: { tax: { name: 1 } } as never }),
+      ),
+    ).toThrow("cannot $sort by relation 'tax' in an aggregate query");
+  }
+
   shouldVirtualField() {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
@@ -1777,6 +1897,42 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['something']);
   }
 
+  /**
+   * A group nested in another is parenthesized, so no clause depends on the engine's precedence and
+   * the two spellings of one query - explicit `$and`, or several keys of one object - agree.
+   */
+  shouldGroupNestedLogicalOperators() {
+    const e = this.dialect.escapeIdChar;
+    const or = [{ name: 'a' }, { name: 'b' }];
+    const expected =
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}companyId${e} = ${this.ph(1)}` +
+      ` AND (${e}name${e} = ${this.ph(2)} OR ${e}name${e} = ${this.ph(3)})`;
+
+    const explicit = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $and: [{ companyId: 1 }, { $or: or }] } }),
+    );
+    const implicit = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { companyId: 1, $or: or } }),
+    );
+    expect(explicit.sql).toBe(expected);
+    expect(implicit.sql).toBe(expected);
+    expect(explicit.values).toEqual([1, 'a', 'b']);
+
+    // A negation applies to the whole group, not just to its first term.
+    const negated = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $not: [{ $or: or }] } }),
+    );
+    expect(negated.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT (${e}name${e} = ${this.ph(1)} OR ${e}name${e} = ${this.ph(2)})`,
+    );
+
+    // An entry that renders nothing leaves no dangling operator behind.
+    const empty = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $and: [{}, { name: 'a' }] } }),
+    );
+    expect(empty.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)}`);
+  }
+
   shouldDelete() {
     const e = this.dialect.escapeIdChar;
     // Entity without a soft-delete field: always a plain DELETE.
@@ -1921,7 +2077,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$istartsWith() {
     const e = this.dialect.escapeIdChar;
-    const like = this.likeOp();
+    const one = this.ilikeSql(`${e}name${e}`, 'Some%');
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1932,9 +2088,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['some%']);
+    expect(res.values).toEqual([one.value]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -1946,9 +2102,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['some%', 'Something']);
+    expect(res.values).toEqual([one.value, 'Something']);
   }
 
   shouldFind$endsWith() {
@@ -1984,7 +2140,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$iendsWith() {
     const e = this.dialect.escapeIdChar;
-    const like = this.likeOp();
+    const one = this.ilikeSql(`${e}name${e}`, '%Some');
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1995,9 +2151,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['%some']);
+    expect(res.values).toEqual([one.value]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -2009,9 +2165,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['%some', 'Something']);
+    expect(res.values).toEqual([one.value, 'Something']);
   }
 
   shouldFind$includes() {
@@ -2047,7 +2203,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$iincludes() {
     const e = this.dialect.escapeIdChar;
-    const like = this.likeOp();
+    const one = this.ilikeSql(`${e}name${e}`, '%Some%');
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -2058,9 +2214,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['%some%']);
+    expect(res.values).toEqual([one.value]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -2072,9 +2228,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['%some%', 'Something']);
+    expect(res.values).toEqual([one.value, 'Something']);
   }
 
   shouldFind$like() {
@@ -2110,7 +2266,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldFind$ilike() {
     const e = this.dialect.escapeIdChar;
-    const like = this.likeOp();
+    const one = this.ilikeSql(`${e}name${e}`, 'Some');
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -2121,9 +2277,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} ${like} ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['some']);
+    expect(res.values).toEqual([one.value]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -2135,9 +2291,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} ${like} ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
     );
-    expect(res.values).toEqual(['some', 'Something']);
+    expect(res.values).toEqual([one.value, 'Something']);
   }
 
   shouldFind$regex() {

@@ -1,30 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
-import type { QuerySortMap, RawRow } from '../type/index.js';
+import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
   escapeSqlId,
-  flatObject,
   isPrimaryKey,
   obtainAttrsPaths,
   unflatObject,
   unflatObjects,
 } from './sql.util.js';
-
-it('flatObject', () => {
-  expect(flatObject(undefined as any)).toEqual({});
-  expect(flatObject(null as any)).toEqual({});
-  expect(flatObject({})).toEqual({});
-  const sort: QuerySortMap<Item> = {
-    name: 1,
-    measureUnit: { name: -1, category: { creator: { profile: { picture: 1 } } } },
-  };
-  expect(flatObject(sort)).toEqual<Record<string, number>>({
-    name: 1,
-    'measureUnit.name': -1,
-    'measureUnit.category.creator.profile.picture': 1,
-  });
-});
 
 it('unflatObjects - empty', () => {
   const res1 = unflatObjects(undefined as any);

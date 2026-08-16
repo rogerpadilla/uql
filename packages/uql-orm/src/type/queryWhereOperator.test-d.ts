@@ -28,6 +28,7 @@ class Person {
   addresses?: Json<Address[]>;
   settings?: Json<{ theme?: string }>;
   friends?: Person[];
+  manager?: Person;
 }
 
 declare const querier: Querier;
@@ -119,8 +120,11 @@ export async function whereOperatorGating() {
   // @ts-expect-error $vector requires a number[] field
   await querier.findMany(Person, { $sort: { name: { $vector: [1, 2, 3] } } });
 
-  // Relations sort via a nested map keyed by the related entity's fields.
-  await querier.findMany(Person, { $sort: { friends: { name: -1 } } });
+  // A to-one relation sorts via a nested map keyed by the related entity's fields, at any depth.
+  await querier.findMany(Person, { $sort: { manager: { name: -1 } } });
+  await querier.findMany(Person, { $sort: { manager: { manager: { name: -1 } } } });
   // @ts-expect-error 'nope' is not a field of the related entity
-  await querier.findMany(Person, { $sort: { friends: { nope: 1 } } });
+  await querier.findMany(Person, { $sort: { manager: { nope: 1 } } });
+  // @ts-expect-error a parent has many friends, so there is no single value to order it by
+  await querier.findMany(Person, { $sort: { friends: { name: -1 } } });
 }
