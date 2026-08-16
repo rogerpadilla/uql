@@ -20,7 +20,6 @@ import {
   type QuerySelect,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
-  type QuerySortMap,
   type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereMap,
@@ -190,10 +189,6 @@ export function normalizeScalarFieldSelection<E>(
   }
   const excluded = excludedFields;
   return allFields.filter((it) => !excluded.has(it));
-}
-
-export function buildSortMap<E>(sort: QuerySortMap<E> | undefined): QuerySortMap<E> {
-  return (sort ?? {}) as QuerySortMap<E>;
 }
 
 /** Type guard: checks whether a sort value is a vector similarity search. */

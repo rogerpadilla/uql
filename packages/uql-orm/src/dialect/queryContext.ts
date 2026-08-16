@@ -18,12 +18,19 @@ export class SqlQueryContext implements QueryContext {
    * fragment context built via {@link AbstractSqlDialect.buildFragment}, so a bound value's
    * placeholder is numbered correctly against the real query from the moment it's added, rather
    * than needing to be reconciled after the fact.
+   * @param statement The context this one renders a fragment of, which owns the alias counter: a
+   * fragment is part of one statement, so its aliases have to be unique across the whole of it.
    */
   constructor(
     readonly dialect: QueryDialect,
     params: unknown[] = [],
+    private readonly statement?: SqlQueryContext,
   ) {
     this.params = params;
+  }
+
+  createFragment(): QueryContext {
+    return new SqlQueryContext(this.dialect, this.params, this.statement ?? this);
   }
 
   /**
@@ -64,13 +71,11 @@ export class SqlQueryContext implements QueryContext {
   }
 
   /**
-   * A fresh alias unique within this context, e.g. `nextAlias('_uql_elem')` -> `'_uql_elem_1'`,
-   * `'_uql_elem_2'`, ... A fragment context (see the constructor) counts independently of the `ctx`
-   * it shares values with - fine today since no fragment-building hook also generates aliases, but
-   * worth widening (share this counter too, the same way `params` is shared) if one ever does.
+   * A fresh alias unique within the statement being built, e.g. `nextAlias('_uql_elem')` ->
+   * `'_uql_elem_1'`, `'_uql_elem_2'`, ...
    */
   nextAlias(prefix: string): string {
-    return `${prefix}_${++this.aliasCounter}`;
+    return this.statement ? this.statement.nextAlias(prefix) : `${prefix}_${++this.aliasCounter}`;
   }
 
   /**

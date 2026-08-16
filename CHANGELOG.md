@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.28.0] - 2026-08-16
+
+Correctness release: `$where` grouping, case-insensitive matching, and ordering by a related field.
+
+### Fixes
+
+- **A group nested in `$and`/`$or`/`$not` lost its parentheses**, so `{ $and: [{ companyId: 1 }, { $or: [a, b] }] }` ran as `(companyId = 1 AND a) OR b` and returned wrong rows without an error. `$not` negated only its first term, and a JOIN's `ON` had the same hole. `security: true` filters were never affected.
+- **`$i*` operators lowered the pattern but not the column** on MySQL, MariaDB and SQLite, so `$istartsWith: 'Some'` matched neither `Some` nor `SOME` under a case-sensitive collation. Each dialect now folds both sides or neither.
+- **`$sort` by a relation named a table that was never joined**, and even with `$populate` mis-addressed nested paths and columns renamed through `@Field({ name })`.
+
+### Features
+
+- **Ordering by a related field no longer needs `$populate`.** The join is made for the sort alone, carrying the relation's filters, so an ordering cannot read a row the query itself could not. MongoDB still requires the relation populated.
+
+### Breaking
+
+- **`$sort` on a to-many is rejected**: a parent has many such rows, so there is nothing single to order it by. Sort them inside `$populate`.
+- **`$sort` by a relation is rejected where nothing can join it**: `updateMany`, `deleteMany`, `$group` aggregates, and `$distinct` unless the relation is populated.
+- **`$sort`, `$limit`, `$skip` and `$distinct` inside a to-one `$populate` are rejected** rather than silently dropped. Unchanged on a to-many.
+- **`$i*` on MySQL and MariaDB now emits `LOWER(column)`**, which only a `LOWER(column)` expression index can serve. Under their default case-insensitive collation `$startsWith` already matches either case and keeps the plain index.
+
 ## [0.27.0] - 2026-08-15
 
 ### Features

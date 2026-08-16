@@ -195,9 +195,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return '~';
   }
 
-  protected override ilikeExpr(f: string, ph: string): string {
-    return `${f} ILIKE ${ph}`;
-  }
+  protected override readonly caseInsensitiveMatch = 'ilike';
 
   protected override get neOp(): string {
     return 'IS DISTINCT FROM';

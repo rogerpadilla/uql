@@ -32,7 +32,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   protected readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map();
 
   /** Quotes an identifier; supplied by the SQL dialect built on top of this layer. */
-  abstract escapeId(val: string, forbidQualified?: boolean, addDot?: boolean): string;
+  abstract escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
 
   /**
    * Resolve common parameters for a vector similarity ORDER BY expression.

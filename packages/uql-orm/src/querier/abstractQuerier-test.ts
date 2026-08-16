@@ -10,6 +10,7 @@ import {
   MeasureUnitCategory,
   type Spec,
   Tag,
+  Tax,
   TaxCategory,
   User,
 } from '../test/index.js';
@@ -708,6 +709,55 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const sorted = await this.querier.findMany(Company, { $sort: { 'kind.public': -1 } });
     expect(sorted.map(({ name }) => name)).toEqual(['JSON Scalar One', 'JSON Scalar Zero']);
+  }
+
+  /**
+   * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the second query the
+   * children are loaded with, which is where "each parent with its children in order" lives. The
+   * parent-level `$sort` cannot express it - it orders parents, and a parent has many children.
+   */
+  async shouldPopulateToManySortedByItsOwnField() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Sorted category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'zulu unit', categoryId },
+      { name: 'alpha unit', categoryId },
+    ]);
+
+    const [found] = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $where: { name: 'Sorted category' },
+      $populate: { measureUnits: { $select: { name: true }, $sort: { name: 1 } } },
+    });
+
+    expect(found.measureUnits?.map(({ name }) => name)).toEqual(['alpha unit', 'zulu unit']);
+  }
+
+  /**
+   * Ordering the rows by a field of a related entity, which every backend here can do for a
+   * populated to-one - the SQL dialects by the join `$populate` already put under it, MongoDB by the
+   * document its `$lookup` unwound. Regression: the SQL dialects emitted `ORDER BY "tax"."name"`
+   * against a statement that joined nothing whenever `$populate` was left out, and read the column
+   * name off the *parent* entity, so a related `@Field({ name })` resolved to a column that does not
+   * exist.
+   */
+  async shouldFindManySortedByRelationField() {
+    const [zulu, alpha] = await Promise.all([
+      this.querier.insertOne(Tax, { name: 'Zulu tax', percentage: 1 }),
+      this.querier.insertOne(Tax, { name: 'Alpha tax', percentage: 2 }),
+    ]);
+    await this.querier.insertMany(Item, [
+      { name: 'sorted by zulu', taxId: zulu },
+      { name: 'sorted by alpha', taxId: alpha },
+    ]);
+
+    const founds = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $populate: { tax: { $select: { name: true } } },
+      $where: { name: { $startsWith: 'sorted by ' } },
+      $sort: { tax: { name: 1 } },
+    });
+
+    expect(founds.map(({ name }) => name)).toEqual(['sorted by alpha', 'sorted by zulu']);
   }
 
   /**

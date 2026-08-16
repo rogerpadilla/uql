@@ -1,28 +1,9 @@
-import type { InsertIdSource, Key, QueryUpdateResult, RawRow } from '../type/index.js';
+import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
-import { getKeys, hasKeys } from './object.util.js';
+import { hasKeys } from './object.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
 const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
-
-export function flatObject<E extends object>(obj: E, pre?: string): E {
-  return getKeys(obj).reduce(
-    (acc, key) => flatObjectEntry(acc, key, obj[key as Key<E>], typeof obj[key as Key<E>] === 'object' ? '' : pre),
-    {} as E,
-  );
-}
-
-function flatObjectEntry<E>(map: E, key: string, val: unknown, pre?: string): E {
-  const prefix = pre ? `${pre}.${key}` : key;
-  if (typeof val === 'object' && val !== null) {
-    return getKeys(val).reduce(
-      (acc, prop) => flatObjectEntry(acc, prop, (val as Record<string, unknown>)[prop], prefix),
-      map,
-    );
-  }
-  (map as Record<string, unknown>)[prefix] = val;
-  return map;
-}
 
 export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
   if (!Array.isArray(objects) || !objects.length) {
@@ -86,7 +67,7 @@ export function obtainAttrsPaths<T extends object>(row: T) {
  * @param addDot whether to add a dot suffix
  */
 export function escapeSqlId(
-  val: string,
+  val: string | undefined,
   escapeIdChar: '`' | '"' = '`',
   forbidQualified?: boolean,
   addDot?: boolean,

@@ -66,8 +66,13 @@ export class MongodbQuerier extends AbstractQuerier {
         const relationSummary = getRelationRequestSummary(meta, q.$populate);
 
         // A relation condition needs `$lookup`, so it forces the aggregation path just like populating
-        // one does; a plain `find` cursor cannot express it.
-        if (relationSummary.requestedKeys.length || this.dialect.constrainsRelations(entity, q.$where)) {
+        // one does - and so does ordering by a relation, which reads what a lookup produced. A plain
+        // `find` cursor can express none of the three.
+        if (
+          relationSummary.requestedKeys.length ||
+          this.dialect.constrainsRelations(entity, q.$where) ||
+          this.dialect.sortsRelations(entity, q.$sort)
+        ) {
           const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary, opts);
           documents = await this.runPipeline(entity, meta, pipeline);
           await this.fillToManyRelations(entity, documents, q.$populate);
