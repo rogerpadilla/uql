@@ -14,6 +14,9 @@ import {
  * `$sort` needs - which joins the same way, filters included, but adds nothing to the result.
  */
 export type QueryJoin = {
+  /** The relation key on its parent, which is how MongoDB names the field a `$lookup` adds. */
+  readonly key: string;
+  /** Dotted path from the queried entity, which is how the SQL dialects alias the join. */
   readonly path: string;
   readonly entity: Type<object>;
   readonly meta: EntityMeta<object>;
@@ -76,6 +79,7 @@ function addJoin(
   }
   const entity = relation.entity();
   const join: QueryJoin = {
+    key,
     path,
     entity,
     meta: getMeta(entity),

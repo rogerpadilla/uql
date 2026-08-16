@@ -130,7 +130,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (hasKeys(select)) {
       cursor.project(select);
     }
-    const sort = this.dialect.sort(entity, q.$sort);
+    const sort = this.dialect.sort(entity, q.$sort, q.$populate);
     if (hasKeys(sort)) {
       cursor.sort(sort);
     }
@@ -190,7 +190,7 @@ export class MongodbQuerier extends AbstractQuerier {
       if (scoreAlias) {
         pipeline.push({ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } });
       }
-      pipeline.push(...(this.dialect.relationStages(entity, q, relationSummary) as Record<string, unknown>[]));
+      pipeline.push(...(this.dialect.relationStages(entity, q) as Record<string, unknown>[]));
       const projection = this.dialect.pipelineProjection(entity, q, relationSummary);
       if (projection) {
         // `$addFields` already made the score a real field, so it projects like any other.
@@ -209,7 +209,7 @@ export class MongodbQuerier extends AbstractQuerier {
     }
 
     // Secondary sort for non-vector fields
-    const regularSort = this.dialect.sort(entity, vectorSort.regularSort);
+    const regularSort = this.dialect.sort(entity, vectorSort.regularSort, q.$populate);
     if (hasKeys(regularSort)) {
       pipeline.push({ $sort: regularSort });
     }

@@ -140,14 +140,22 @@ export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
  * like `QueryWhereMap`), relation sort via nested objects, and vector similarity search on
  * `number[]` fields.
  */
-export type QuerySortMap<E> = {
-  [K in FieldKey<E>]?: NonNullable<E[K]> extends readonly number[] ? QuerySortValue : QuerySortDirection;
+export type QuerySortMap<E, Vector extends boolean = true> = {
+  [K in FieldKey<E>]?: Vector extends true
+    ? NonNullable<E[K]> extends readonly number[]
+      ? QuerySortValue
+      : QuerySortDirection
+    : QuerySortDirection;
 } & {
   [P in JsonFieldPaths<E>]?: QuerySortDirection;
 } & {
   // To-one only: a parent holds many rows of a to-many, so there is no single value to order it by,
   // and joining one in would duplicate the parent instead. Order those inside `$populate`.
-  [K in RelationKey<E> as NonNullable<E[K]> extends readonly unknown[] ? never : K]?: QuerySortMap<NonNullable<E[K]>>;
+  // A vector search ranks the queried rows, so it belongs to the statement, not to a relation of it.
+  [K in RelationKey<E> as NonNullable<E[K]> extends readonly unknown[] ? never : K]?: QuerySortMap<
+    NonNullable<E[K]>,
+    false
+  >;
 };
 
 /**

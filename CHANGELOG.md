@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.28.1] - 2026-08-16
+
+### Fixes
+
+- **MongoDB dropped a nested `$populate`.** `{ tax: { $populate: { category: true } } }` looked up `tax` and stopped there, while the projection still asked for `category`, so the nested relation came back empty and the two backends disagreed in silence. A relation's own relations are now looked up inside its `$lookup`, before the projection that reads them.
+- **MongoDB ordered by a relation nothing had looked up.** New in 0.28.0: `$sort` by a relation left out of `$populate` emitted `{ $sort: { 'tax.name': 1 } }` with no `$lookup`, and MongoDB ranks a missing field as all-equal, so the rows came back unordered rather than erroring. It is rejected now, as the documentation already said. The SQL dialects are unaffected: they add the join themselves.
+- **`$vector` inside a relation's `$sort` is now a compile error**, matching the runtime rejection it already had. A vector search ranks the rows the statement returns, so a relation of theirs has nothing to rank.
+- **A logical operator that is not an array says so.** `$and: 'foo'` arriving from `/http`, where client JSON is cast straight to `Query`, failed with `val.map is not a function` instead of naming the key.
+
+### Features
+
+- **MongoDB orders by a nested relation path** (`$sort: { tax: { category: { name: 1 } } }`), now that its lookups nest, as long as every level of the path is populated.
+
 ## [0.28.0] - 2026-08-16
 
 Correctness release: `$where` grouping, case-insensitive matching, and ordering by a related field.

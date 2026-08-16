@@ -1,5 +1,6 @@
 import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
+import { type QueryJoin, type QueryJoins, resolveQueryJoins } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
 import type {
@@ -15,6 +16,7 @@ import type {
   QueryGroupMap,
   QueryLikeOp,
   QueryOptions,
+  QueryPopulate,
   QuerySelect,
   QuerySelectValue,
   QuerySizeComparisonOps,
@@ -496,33 +498,45 @@ export class MongoDialect extends AbstractDialect {
    * means a *populated* to-one: a lookup adds a field to the result, so one added for the sort alone
    * would change what the caller gets back, and MongoDB's lookups do not nest.
    */
-  public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>): Sort {
+  public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>, populate?: QueryPopulate<E>): Sort {
     const meta = getMeta(entity);
     const normalized: Record<string, 1 | -1> = {};
+    // The same join set the lookups are built from, so what an `ORDER BY` may address and what the
+    // pipeline actually produces cannot drift apart.
+    this.collectSort(meta, sort, resolveQueryJoins(meta, { $populate: populate }), '', normalized);
+    return normalized as Sort;
+  }
 
+  /** Walks `$sort` against the metadata of the entity each level addresses, as the SQL dialects do. */
+  private collectSort<E>(
+    meta: EntityMeta<E>,
+    sort: QuerySortMap<E> | undefined,
+    joins: QueryJoins,
+    path: string,
+    out: Record<string, 1 | -1>,
+  ): void {
     for (const [key, value] of Object.entries(sort ?? {})) {
-      const relation = meta.relations[key];
+      const relation = meta.relations[key as RelationKey<E>];
       if (!relation) {
-        normalized[this.pathOf(meta, key)] = sortDirection(value);
+        out[path + this.pathOf(meta, key)] = sortDirection(value);
         continue;
       }
       if (isToManyRelation(relation)) {
         throw new TypeError(
-          `cannot $sort by '${key}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
+          `cannot $sort by '${path}${key}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
         );
       }
-      const relMeta = getMeta(relation.entity());
-      for (const [relKey, relValue] of Object.entries(value ?? {})) {
-        if (relMeta.relations[relKey]) {
-          throw new TypeError(
-            `cannot $sort by '${key}.${relKey}' on MongoDB: its lookups reach one level, so a nested relation is not joined`,
-          );
-        }
-        normalized[`${key}.${this.pathOf(relMeta, relKey)}`] = sortDirection(relValue);
+      // A `$lookup` is what puts the relation's fields on the document, and only `$populate` asks for
+      // one: ordering by a relation nothing looked up reads a field that is not there, which MongoDB
+      // ranks as all-equal rather than rejecting. The SQL dialects can add the join themselves.
+      const join = joins.get(`${path}${key}`);
+      if (!join) {
+        throw new TypeError(
+          `cannot $sort by relation '${path}${key}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
+        );
       }
+      this.collectSort(join.meta, value as QuerySortMap<object>, joins, `${path}${key}.`, out);
     }
-
-    return normalized;
   }
 
   /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
@@ -562,7 +576,7 @@ export class MongoDialect extends AbstractDialect {
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
     const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
-    const sort = this.sort(entity, q.$sort);
+    const sort = this.sort(entity, q.$sort, q.$populate);
     // Ordering by a related field reads what the lookups produced, so it cannot ride along with the
     // `$match` the way an ordering by the parent's own columns does.
     const sortsRelations = this.sortsRelations(entity, q.$sort);
@@ -586,7 +600,7 @@ export class MongoDialect extends AbstractDialect {
       pipeline.push({ $unset: unset });
     }
 
-    const relStages = this.relationStages(entity, q, relationSummary, opts);
+    const relStages = this.relationStages(entity, q, opts);
     const pager: MongoAggregationPipelineEntry<E>[] = [
       ...(q.$skip === undefined ? [] : [{ $skip: q.$skip }]),
       ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
@@ -640,52 +654,62 @@ export class MongoDialect extends AbstractDialect {
   public relationStages<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    relationSummary?: RelationRequestSummary<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
+    // Resolved from `$populate` alone, deliberately: on the SQL dialects a `$sort` can add a join of
+    // its own because a join is invisible in the result, while a `$lookup` puts a field on the
+    // document. Same join model, and this backend takes the part of it that it can carry.
     const meta = getMeta(entity);
-    const pipeline: MongoAggregationPipelineEntry<E>[] = [];
-    const relKeys = (relationSummary ?? getRelationRequestSummary(meta, q.$populate)).joinableKeys;
+    return this.lookupStages(meta, resolveQueryJoins(meta, { $populate: q.$populate }), undefined, opts);
+  }
 
-    for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
+  /**
+   * The `$lookup`/`$unwind` pair for each relation joined below `parent`, its own relations nested
+   * inside its pipeline and resolved before the projection that reads them.
+   */
+  private lookupStages<P>(
+    parentMeta: EntityMeta<P>,
+    joins: QueryJoins,
+    parent: QueryJoin | undefined,
+    opts?: QueryOptions,
+  ): MongoAggregationPipelineEntry<Document>[] {
+    const pipeline: MongoAggregationPipelineEntry<Document>[] = [];
 
-      if (isToManyRelation(relOpts)) {
-        // '1m' and 'mm' are resolved in a higher layer: they need a second query each.
+    // Every join at this level hangs off `parent`, so its metadata is `parentMeta` - no branch, and
+    // no union of two unrelated entity types to resolve the join column through.
+    for (const join of joins.values()) {
+      if (join.parent !== parent) {
         continue;
       }
-
-      const relEntity = relOpts.entity();
-      const relMeta = getMeta(relEntity);
-      const { query: relQuery, required } = parseRelationAtKey<E>(relKey, q.$populate);
       // Unconditional, not gated by an explicit relation-level `$where`: the related entity's own
       // filters (in particular `security: true` ones) must apply even to a bare
       // `$populate: { rel: true }`, exactly like the SQL dialects' JOIN ON-clause filters.
-      const relationFilter = this.where(relEntity, relQuery.$where ?? {}, opts);
+      const relationFilter = this.where(join.entity, join.query.$where ?? {}, opts);
       // The relation's own projection runs inside the lookup, where its keys resolve against the
       // related entity. Left out, `$populate: { rel: { $select } }` returned all of `rel`'s columns.
-      const relationProjection = this.pipelineProjection(relEntity, relQuery);
+      const relationProjection = this.pipelineProjection(join.entity, join.query);
       // MongoDB returns `_id` unless a projection subtracts it, so dropping the key from the map is
       // how a joined document keeps its own id - as it does on the SQL dialects, and as a nested
       // to-many fill needs.
       delete relationProjection?.[MongoDialect.ID_KEY];
+
       const lookupPipeline = [
         ...(hasKeys(relationFilter) ? [{ $match: relationFilter }] : []),
+        ...this.lookupStages(join.meta, joins, join, opts),
         ...(relationProjection ? [{ $project: relationProjection }] : []),
       ];
 
       pipeline.push({
         $lookup: {
-          from: this.resolveTableName(relEntity, relMeta),
-          ...this.joinKeys(meta, relMeta, relOpts),
+          from: this.resolveTableName(join.entity, join.meta),
+          ...this.joinKeys(parentMeta, join.meta, join.relation),
           ...(lookupPipeline.length ? { pipeline: lookupPipeline } : {}),
-          as: relKey,
+          as: join.key,
         },
       });
 
       // `$required` drops parents with no match, the aggregation equivalent of an INNER JOIN.
-      pipeline.push({ $unwind: { path: `$${relKey}`, preserveNullAndEmptyArrays: !required } });
+      pipeline.push({ $unwind: { path: `$${join.key}`, preserveNullAndEmptyArrays: !join.required } });
     }
 
     return pipeline;

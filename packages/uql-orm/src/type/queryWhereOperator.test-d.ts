@@ -115,10 +115,13 @@ export async function whereOperatorGating() {
   // compile time - union excess-property checking accepts keys from either union arm. The
   // dialect's exact-shape runtime check covers it.
 
-  // Vector search sorts only on number[] fields.
+  // Vector search sorts only on number[] fields, and only on the queried entity: it ranks the rows
+  // the statement returns, so a relation of theirs has nothing to rank.
   await querier.findMany(Person, { $sort: { embedding: { $vector: [1, 2, 3] }, name: 'asc' } });
   // @ts-expect-error $vector requires a number[] field
   await querier.findMany(Person, { $sort: { name: { $vector: [1, 2, 3] } } });
+  // @ts-expect-error a vector search ranks the queried rows, not a relation's
+  await querier.findMany(Person, { $sort: { manager: { embedding: { $vector: [1, 2, 3] } } } });
 
   // A to-one relation sorts via a nested map keyed by the related entity's fields, at any depth.
   await querier.findMany(Person, { $sort: { manager: { name: -1 } } });

@@ -1897,6 +1897,19 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['something']);
   }
 
+  /** `/http` casts client JSON straight to `Query`, so a logical operator can arrive as any shape. */
+  shouldRejectANonArrayLogicalOperator() {
+    for (const [where, got] of [
+      [{ $and: 'foo' }, 'string'],
+      [{ $or: { name: 'a' } }, 'object'],
+      [{ $not: null }, 'null'],
+    ] as const) {
+      expect(() =>
+        this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: where as never })),
+      ).toThrow(`expects an array, got ${got}`);
+    }
+  }
+
   /**
    * A group nested in another is parenthesized, so no clause depends on the engine's precedence and
    * the two spellings of one query - explicit `$and`, or several keys of one object - agree.
