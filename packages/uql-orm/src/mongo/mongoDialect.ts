@@ -1,6 +1,6 @@
 import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
-import { type QueryJoin, type QueryJoins, resolveQueryJoins } from '../dialect/queryJoins.js';
+import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
 import type {
@@ -41,14 +41,11 @@ import {
   hasKeys,
   isJsonUpdateOp,
   isOperatorObject,
-  isToManyRelation,
   isVectorSearch,
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
   parseGroupMap,
-  parseRelationAtKey,
   parseRelationSize,
-  type RelationRequestSummary,
 } from '../util/index.js';
 
 /**
@@ -59,6 +56,15 @@ type MongoNativeOp = keyof Pick<
   QueryWhereFieldOperatorMap<unknown>,
   '$all' | '$size' | '$elemMatch' | '$eq' | '$ne' | '$lt' | '$lte' | '$gt' | '$gte' | '$in' | '$nin' | '$regex' | '$not'
 >;
+
+/** What a read pipeline contributes to {@link MongoDialect.readStages} beyond the query itself. */
+type MongoReadStages = {
+  /** Ordering, which runs after the lookups when it reads one of their fields. */
+  readonly sort?: Sort;
+  readonly pager?: MongoAggregationPipelineEntry<Document>[];
+  /** Keys merged into the query's projection, when it has one: a vector search's score. */
+  readonly project?: Record<string, 1>;
+};
 
 /** Accumulator threaded through `$where` rendering: the relation lookups it needs, and their temp fields. */
 type RelationLookups = {
@@ -495,8 +501,8 @@ export class MongoDialect extends AbstractDialect {
   /**
    * The `$sort` stage. A relation key reads the document a `$lookup` unwound onto the parent, so - as
    * on the SQL dialects - it is only addressable when the statement joins that relation. Here that
-   * means a *populated* to-one: a lookup adds a field to the result, so one added for the sort alone
-   * would change what the caller gets back, and MongoDB's lookups do not nest.
+   * means a *populated* one, at every level of the path: a lookup adds a field to the result, so one
+   * added for the sort alone would change what the caller gets back.
    */
   public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>, populate?: QueryPopulate<E>): Sort {
     const meta = getMeta(entity);
@@ -521,21 +527,18 @@ export class MongoDialect extends AbstractDialect {
         out[path + this.pathOf(meta, key)] = sortDirection(value);
         continue;
       }
-      if (isToManyRelation(relation)) {
-        throw new TypeError(
-          `cannot $sort by '${path}${key}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
-        );
-      }
       // A `$lookup` is what puts the relation's fields on the document, and only `$populate` asks for
       // one: ordering by a relation nothing looked up reads a field that is not there, which MongoDB
       // ranks as all-equal rather than rejecting. The SQL dialects can add the join themselves.
-      const join = joins.get(`${path}${key}`);
-      if (!join) {
-        throw new TypeError(
-          `cannot $sort by relation '${path}${key}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
-        );
-      }
-      this.collectSort(join.meta, value as QuerySortMap<object>, joins, `${path}${key}.`, out);
+      const relPath = `${path}${key}`;
+      const { join, sort: relationSort } = resolveSortableJoin(
+        relation,
+        relPath,
+        value,
+        joins,
+        `cannot $sort by relation '${relPath}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
+      );
+      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, out);
     }
   }
 
@@ -572,53 +575,56 @@ export class MongoDialect extends AbstractDialect {
   public aggregationPipeline<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    relationSummary?: RelationRequestSummary<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
-    const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
-    const sort = this.sort(entity, q.$sort, q.$populate);
-    // Ordering by a related field reads what the lookups produced, so it cannot ride along with the
-    // `$match` the way an ordering by the parent's own columns does.
-    const sortsRelations = this.sortsRelations(entity, q.$sort);
-    const sortStage: MongoAggregationPipelineEntry<E>[] = hasKeys(sort) ? [{ $sort: sort }] : [];
-    const match: MongoAggregationPipelineEntry<E> = {};
-
-    if (hasKeys(filter)) {
-      match.$match = filter;
-    }
-    if (!sortsRelations && sortStage.length) {
-      match.$sort = sort;
-    }
-
     // Lookups that a relation condition needs come first, then the match that reads them, then the
     // temporary fields are dropped so they never reach the caller.
-    const pipeline: MongoAggregationPipelineEntry<Document>[] = [...stages];
-    if (hasKeys(match)) {
-      pipeline.push(match);
-    }
-    if (unset.length) {
-      pipeline.push({ $unset: unset });
-    }
-
-    const relStages = this.relationStages(entity, q, opts);
-    const pager: MongoAggregationPipelineEntry<E>[] = [
-      ...(q.$skip === undefined ? [] : [{ $skip: q.$skip }]),
-      ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
+    const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
+    return [
+      ...stages,
+      ...(hasKeys(filter) ? [{ $match: filter }] : []),
+      ...(unset.length ? [{ $unset: unset }] : []),
+      ...this.readStages(entity, q, opts, {
+        sort: this.sort(entity, q.$sort, q.$populate),
+        pager: [
+          ...(q.$skip === undefined ? [] : [{ $skip: q.$skip }]),
+          ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
+        ],
+      }),
     ];
-    // A `$required` relation drops parents when it unwinds, so paging has to come after it - as it
-    // does after an INNER JOIN. So does a sort that reads one, or a page would be cut from unordered
-    // rows. Otherwise paging first is equivalent and spares the lookups.
-    const dropsParents = relStages.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
-    pipeline.push(
-      ...(dropsParents || sortsRelations ? [...relStages, ...sortStage, ...pager] : [...pager, ...relStages]),
-    );
+  }
 
-    const projection = this.pipelineProjection(entity, q, relationSummary);
-    if (projection) {
-      pipeline.push({ $project: projection });
-    }
+  /**
+   * What a read runs after its entry stage, in the one order that works: the lookups its relations
+   * need, the ordering and paging that may read them, and the projection last of all - it names the
+   * fields the lookups add, and no stage after it could read what it dropped.
+   *
+   * Shared by the plain pipeline and the `$vectorSearch` one, which each used to spell the order out
+   * for themselves and each got a different part of it wrong.
+   */
+  public readStages<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+    extra: MongoReadStages = {},
+  ): MongoAggregationPipelineEntry<Document>[] {
+    const lookups = this.relationStages(entity, q, opts);
+    const projection = this.pipelineProjection(entity, q);
+    const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
+    const pager = extra.pager ?? [];
+    // A `$required` relation drops parents when it unwinds, and an ordering may read a field only a
+    // lookup produces: either one puts the lookups first, as an INNER JOIN does. Otherwise paging
+    // first is equivalent and spares the lookups the rows it cuts.
+    const lookupsFirst =
+      this.sortsRelations(entity, q.$sort) ||
+      lookups.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
 
-    return pipeline;
+    return [
+      ...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]),
+      // Merged into the query's own projection rather than standing in for one: a query that asked
+      // for no columns wants the whole document, not just the field this adds to it.
+      ...(projection ? [{ $project: { ...projection, ...extra.project } }] : []),
+    ];
   }
 
   /**
@@ -627,16 +633,12 @@ export class MongoDialect extends AbstractDialect {
    * lookups have read the join keys - projecting any earlier is what used to leave `$populate`
    * empty, and is why the pipeline emitted no projection at all and returned every column.
    */
-  public pipelineProjection<E extends Document>(
-    entity: Type<E>,
-    q: Query<E>,
-    relationSummary?: RelationRequestSummary<E>,
-  ): Record<string, 0 | 1> | undefined {
+  public pipelineProjection<E extends Document>(entity: Type<E>, q: Query<E>): Record<string, 0 | 1> | undefined {
     if (!q.$select && !q.$exclude) {
       return undefined;
     }
     const projection = this.select(entity, q.$select, q.$exclude);
-    const summary = relationSummary ?? getRelationRequestSummary(getMeta(entity), q.$populate);
+    const summary = getRelationRequestSummary(getMeta(entity), q.$populate);
     for (const relKey of summary.joinableKeys) {
       projection[relKey] = 1;
     }

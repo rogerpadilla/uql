@@ -8,14 +8,17 @@ date format is [yyyy-mm-dd]
 
 ### Fixes
 
-- **MongoDB dropped a nested `$populate`.** `{ tax: { $populate: { category: true } } }` looked up `tax` and stopped there, while the projection still asked for `category`, so the nested relation came back empty and the two backends disagreed in silence. A relation's own relations are now looked up inside its `$lookup`, before the projection that reads them.
-- **MongoDB ordered by a relation nothing had looked up.** New in 0.28.0: `$sort` by a relation left out of `$populate` emitted `{ $sort: { 'tax.name': 1 } }` with no `$lookup`, and MongoDB ranks a missing field as all-equal, so the rows came back unordered rather than erroring. It is rejected now, as the documentation already said. The SQL dialects are unaffected: they add the join themselves.
-- **`$vector` inside a relation's `$sort` is now a compile error**, matching the runtime rejection it already had. A vector search ranks the rows the statement returns, so a relation of theirs has nothing to rank.
-- **A logical operator that is not an array says so.** `$and: 'foo'` arriving from `/http`, where client JSON is cast straight to `Query`, failed with `val.map is not a function` instead of naming the key.
+- **MongoDB rejected every query that filtered, ordered and populated at once**: `a pipeline stage specification object must contain exactly one field`.
+- **MongoDB dropped a nested `$populate`**, so `{ tax: { $populate: { category: true } } }` came back without its `category`.
+- **MongoDB ordered by relations it never looked up.** New in 0.28.0: a `$sort` by a relation missing from `$populate` returned the rows unordered. Rejected now.
+- **A vector search with `$project` and no `$select` returned only the score**, not the document.
+- **A secondary `$sort` under a vector search did nothing** when its field lay outside `$select`.
+- **`$vector` inside a relation's `$sort` is a compile error now**, as it already was at runtime.
+- **`$and: 'foo'` names the key** instead of failing with `val.map is not a function`.
 
 ### Features
 
-- **MongoDB orders by a nested relation path** (`$sort: { tax: { category: { name: 1 } } }`), now that its lookups nest, as long as every level of the path is populated.
+- **MongoDB orders by a nested relation path** (`$sort: { tax: { category: { name: 1 } } }`) when every level is populated.
 
 ## [0.28.0] - 2026-08-16
 

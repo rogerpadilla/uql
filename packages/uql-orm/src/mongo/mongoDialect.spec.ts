@@ -3,7 +3,7 @@ import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
 import { Company, createSpec, Item, MeasureUnitCategory, type Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { getRelationRequestSummary, raw } from '../util/index.js';
+import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
 declare module '../type/index.js' {
@@ -467,11 +467,15 @@ class MongoDialectSpec implements Spec {
         $where: { pk: '507f1f77bcf86cd799439011' },
         $sort: { creatorId: -1 },
       }),
+      // One operator per stage: MongoDB rejects a stage object carrying both `$match` and `$sort`,
+      // and the ordering runs before the lookups because it reads none of their fields.
     ).toEqual([
       {
         $match: {
           _id: new ObjectId('507f1f77bcf86cd799439011'),
         },
+      },
+      {
         $sort: {
           creatorId: -1,
         },
@@ -603,6 +607,8 @@ class MongoDialectSpec implements Spec {
         $match: {
           _id: new ObjectId('65496146f8f7899f63768df1'),
         },
+      },
+      {
         $sort: {
           name: 1,
         },
@@ -623,13 +629,6 @@ class MongoDialectSpec implements Spec {
         },
       },
     ]);
-  }
-
-  shouldMatchAggregationPipelineWithPrecomputedRelationSummary() {
-    const meta = getMeta(User);
-    const summary = getRelationRequestSummary(meta, { profile: true });
-    const baseline = this.dialect.aggregationPipeline(User, { $populate: { profile: true } });
-    expect(this.dialect.aggregationPipeline(User, { $populate: { profile: true } }, summary)).toEqual(baseline);
   }
 
   /**

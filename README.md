@@ -7,7 +7,7 @@
   </picture>
 </a>
 
-<h3>The ORM with type-safe JSON queries</h3>
+<h3>The JSON-native TypeScript ORM</h3>
 
 <p>Queries are plain JSON, typed to the leaf. Unified across SQL databases and MongoDB.</p>
 

@@ -131,9 +131,35 @@ function addSortJoins<E>(
 }
 
 /**
- * A nested `$sort` map, as opposed to a direction or a vector search. Shared with the `ORDER BY`
- * renderer so what counts as a relation sort is decided once, not once per side.
+ * The join an ordering may address at `path`, with the relation's own sort map, or why it may not.
+ * Every backend answers this the same way - a to-many has no single value to order by, a relation
+ * sort is a map of that relation's fields, and the path has to be joined - so it is answered once
+ * here rather than per dialect, where the three checks had already drifted apart twice. Only the
+ * remedy for an unjoined path is the dialect's business, which is what `unjoinable` says.
  */
-export function isSortMap(value: unknown): value is QuerySortMap<object> {
+export function resolveSortableJoin(
+  relation: RelationMeta,
+  path: string,
+  value: unknown,
+  joins: QueryJoins,
+  unjoinable: string,
+): { readonly join: QueryJoin; readonly sort: QuerySortMap<object> } {
+  if (isToManyRelation(relation)) {
+    throw new TypeError(
+      `cannot $sort by '${path}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
+    );
+  }
+  if (!isSortMap(value)) {
+    throw new TypeError(`$sort by relation '${path}' expects a map of its fields, got ${String(value)}`);
+  }
+  const join = joins.get(path);
+  if (!join) {
+    throw new TypeError(unjoinable);
+  }
+  return { join, sort: value };
+}
+
+/** A nested `$sort` map, as opposed to a direction or a vector search. */
+function isSortMap(value: unknown): value is QuerySortMap<object> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && !('$vector' in value);
 }
