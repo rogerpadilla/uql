@@ -712,6 +712,29 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
+   * Filtering, ordering and populating in one read. Regression on MongoDB: the `$match` and the
+   * `$sort` were emitted as one stage object, which the server rejects outright ("a pipeline stage
+   * specification object must contain exactly one field"), so any query combining the three failed.
+   */
+  async shouldFindManyFilteredSortedAndPopulated() {
+    const taxId = await this.querier.insertOne(Tax, { name: 'Combined tax', percentage: 1 });
+    await this.querier.insertMany(Item, [
+      { name: 'combined', code: 'b', taxId },
+      { name: 'combined', code: 'a', taxId },
+    ]);
+
+    const founds = await this.querier.findMany(Item, {
+      $select: { code: true },
+      $where: { name: 'combined' },
+      $sort: { code: 1 },
+      $populate: { tax: { $select: { name: true } } },
+    });
+
+    expect(founds.map(({ code }) => code)).toEqual(['a', 'b']);
+    expect(founds[0].tax?.name).toBe('Combined tax');
+  }
+
+  /**
    * A relation of a relation comes back filled, at every level the query asked for. Regression on
    * MongoDB: only the first `$lookup` ran while the projection still asked for the nested key, so
    * `tax.category` arrived empty with no error, and the two backends disagreed in silence.

@@ -14,7 +14,7 @@ import type {
   RelationOptions,
   Type,
 } from '../../type/index.js';
-import { getKeys, hasKeys, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
+import { getKeys, hasKeys, isToManyRelation, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
 // biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry - stores EntityMeta for all entity types
@@ -276,7 +276,7 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
     return;
   }
 
-  if (relOpts.cardinality === '1m' || relOpts.cardinality === 'mm') {
+  if (isToManyRelation(relOpts)) {
     throw new TypeError(
       `${at} is a to-many relation with no way to join: it needs 'mappedBy' (the field on the other side), ` +
         "'through' (a junction entity), or 'references' (the columns).",

@@ -15,8 +15,11 @@ export type RelationRequestSummary<E> = {
   readonly toManyKeys: RelationKey<E>[];
 };
 
-/** Whether a relation holds many rows per parent, so it cannot be joined into the parent's row. */
-export function isToManyRelation(relation: RelationMeta): boolean {
+/**
+ * Whether a relation holds many rows per parent, so it cannot be joined into the parent's row. Takes
+ * the one field it reads, so it answers for a relation being declared as well as for a resolved one.
+ */
+export function isToManyRelation(relation: Pick<RelationMeta, 'cardinality'>): boolean {
   return relation.cardinality === '1m' || relation.cardinality === 'mm';
 }
 

@@ -114,7 +114,11 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline[projectIndex].$project).toEqual({ text: 1, author: 1, score: 1 });
   });
 
-  it('should add $project stage with $meta for score projection', async () => {
+  /**
+   * The score is added to the document, not projected in place of it: a query that named no columns
+   * asked for the whole document plus a score, and `$project` would have narrowed it to the score.
+   */
+  it('adds the score as a field, leaving a query with no projection unnarrowed', async () => {
     const { querier, aggregate } = createMockedQuerier([]);
 
     await querier.findMany(Article, {
@@ -123,10 +127,9 @@ describe('MongodbQuerier vector search', () => {
     });
 
     const pipeline = aggregate.mock.calls[0][0];
-    expect(pipeline.length).toBeGreaterThanOrEqual(2);
-    const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
-    expect(projectStage).toBeDefined();
-    expect(projectStage.$project.similarity).toEqual({ $meta: 'vectorSearchScore' });
+    const addFields = pipeline.find((s: Record<string, unknown>) => '$addFields' in s);
+    expect(addFields.$addFields.similarity).toEqual({ $meta: 'vectorSearchScore' });
+    expect(pipeline.find((s: Record<string, unknown>) => '$project' in s)).toBeUndefined();
   });
 
   it('should add $project with $select and score projection combined', async () => {
@@ -139,11 +142,11 @@ describe('MongodbQuerier vector search', () => {
     });
 
     const pipeline = aggregate.mock.calls[0][0];
+    const addFields = pipeline.find((s: Record<string, unknown>) => '$addFields' in s);
+    expect(addFields.$addFields.score).toEqual({ $meta: 'vectorSearchScore' });
+    // Already a real field by then, so the query's own projection just keeps it.
     const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
-    expect(projectStage).toBeDefined();
-    expect(projectStage.$project.score).toEqual({ $meta: 'vectorSearchScore' });
-    expect(projectStage.$project._id).toBe(1);
-    expect(projectStage.$project.title).toBe(1);
+    expect(projectStage.$project).toEqual({ _id: 1, title: 1, score: 1 });
   });
 
   it('should add $project for $select without score projection', async () => {

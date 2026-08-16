@@ -25,6 +25,7 @@ import {
   getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
+  populatesRelations,
   throwNoPendingTransaction,
   throwPendingTransaction,
   withoutSoftDeleteFilter,
@@ -63,17 +64,15 @@ export class MongodbQuerier extends AbstractQuerier {
         // to-many relations need their own query, exactly as in the non-vector path
         await this.fillToManyRelations(entity, documents, q.$populate);
       } else {
-        const relationSummary = getRelationRequestSummary(meta, q.$populate);
-
         // A relation condition needs `$lookup`, so it forces the aggregation path just like populating
         // one does - and so does ordering by a relation, which reads what a lookup produced. A plain
         // `find` cursor can express none of the three.
         if (
-          relationSummary.requestedKeys.length ||
+          populatesRelations(meta, q.$populate) ||
           this.dialect.constrainsRelations(entity, q.$where) ||
           this.dialect.sortsRelations(entity, q.$sort)
         ) {
-          const pipeline = this.dialect.aggregationPipeline(entity, q, relationSummary, opts);
+          const pipeline = this.dialect.aggregationPipeline(entity, q, opts);
           documents = await this.runPipeline(entity, meta, pipeline);
           await this.fillToManyRelations(entity, documents, q.$populate);
         } else {
@@ -166,9 +165,9 @@ export class MongodbQuerier extends AbstractQuerier {
     vectorSort: ExtractedVectorSort<E>,
     opts?: QueryOptions,
   ): Record<string, unknown>[] {
-    const pipeline: Record<string, unknown>[] = [];
+    const scoreAlias = vectorSort.vectorSearch.$project;
 
-    pipeline.push(
+    return [
       this.dialect.buildVectorSearchStage(
         entity,
         vectorSort.vectorKey,
@@ -177,44 +176,15 @@ export class MongodbQuerier extends AbstractQuerier {
         q.$limit ?? 10,
         opts,
       ),
-    );
-
-    const meta = getMeta(entity);
-    const relationSummary = getRelationRequestSummary(meta, q.$populate);
-    const scoreAlias = vectorSort.vectorSearch.$project;
-
-    // With relations the score is captured with `$addFields` before the lookups, and the scalar
-    // projection waits until after them: projecting any earlier drops the join keys and the joined
-    // documents, which is why `$populate` used to come back empty under a vector sort.
-    if (relationSummary.requestedKeys.length) {
-      if (scoreAlias) {
-        pipeline.push({ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } });
-      }
-      pipeline.push(...(this.dialect.relationStages(entity, q) as Record<string, unknown>[]));
-      const projection = this.dialect.pipelineProjection(entity, q, relationSummary);
-      if (projection) {
-        // `$addFields` already made the score a real field, so it projects like any other.
-        pipeline.push({ $project: scoreAlias ? { ...projection, [scoreAlias]: 1 } : projection });
-      }
-    } else if (scoreAlias) {
-      const select = q.$select || q.$exclude ? this.buildScalarProjection(entity, q) : {};
-      pipeline.push({
-        $project: {
-          ...select,
-          [scoreAlias]: { $meta: 'vectorSearchScore' },
-        },
-      });
-    } else if ((q.$select && hasKeys(q.$select)) || (q.$exclude && hasKeys(q.$exclude))) {
-      pipeline.push({ $project: this.buildScalarProjection(entity, q) });
-    }
-
-    // Secondary sort for non-vector fields
-    const regularSort = this.dialect.sort(entity, vectorSort.regularSort, q.$populate);
-    if (hasKeys(regularSort)) {
-      pipeline.push({ $sort: regularSort });
-    }
-
-    return pipeline;
+      // The score becomes a real field before anything reads it, so the lookups and the projection
+      // that follow treat it like any other - and a query with no projection keeps its own columns.
+      ...(scoreAlias ? [{ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } }] : []),
+      // `$vectorSearch` has already applied `$limit`, so the pager is its own.
+      ...this.dialect.readStages(entity, q, opts, {
+        sort: this.dialect.sort(entity, vectorSort.regularSort, q.$populate),
+        project: scoreAlias ? { [scoreAlias]: 1 } : undefined,
+      }),
+    ] as Record<string, unknown>[];
   }
 
   protected override async internalAggregate<E extends Document, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(

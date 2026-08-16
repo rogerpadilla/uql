@@ -65,7 +65,6 @@ import {
   isNumericType,
   isOperatorObject,
   isOperatorOnlyObject,
-  isToManyRelation,
   isVectorSearch,
   normalizeScalarFieldSelection,
   parseGroupMap,
@@ -82,12 +81,11 @@ import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { isJsonbOp, JSON_ELEM_ALIAS_PREFIX, jsonCompareMode, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
-  isSortMap,
   NO_JOINS,
-  type QueryJoin,
   type QueryJoins,
   type QuerySortOptions,
   resolveQueryJoins,
+  resolveSortableJoin,
 } from './queryJoins.js';
 import { isVectorFieldType, resolveVectorCast } from './vectorCast.js';
 
@@ -967,11 +965,21 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       const relation = meta.relations[key as RelationKey<E>];
       if (relation) {
         const relPath = path ? `${path}.${key}` : key;
-        if (!isSortMap(value)) {
-          throw new TypeError(`$sort by relation '${relPath}' expects a map of its fields, got ${String(value)}`);
+        const { join, sort: relationSort } = resolveSortableJoin(
+          relation,
+          relPath,
+          value,
+          opts.joins ?? NO_JOINS,
+          `cannot $sort by relation '${relPath}': this statement joins no relations`,
+        );
+        // `SELECT DISTINCT` can only order by what it selected, on every engine here, so a join
+        // brought in for the sort alone has nothing to order by. Populating it selects its columns.
+        if (opts.distinct && !join.projected) {
+          throw new TypeError(
+            `cannot $sort by relation '${relPath}' with $distinct unless '${relPath}' is populated: SELECT DISTINCT orders only by selected columns`,
+          );
         }
-        const join = this.resolveSortJoin(relation, relPath, opts);
-        this.collectSortTerms(ctx, join.meta, value, opts, vectors, columns, relPath);
+        this.collectSortTerms(ctx, join.meta, relationSort, opts, vectors, columns, relPath);
         continue;
       }
       if (isVectorSearch(value)) {
@@ -988,27 +996,6 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       }
       columns.push(this.sortColumn(meta, key, prefix) + this.resolveSortDirection(value));
     }
-  }
-
-  /** The join an `ORDER BY` term addresses, or why the statement cannot order by it. */
-  private resolveSortJoin(relation: RelationMeta, path: string, opts: QuerySortOptions): QueryJoin {
-    if (isToManyRelation(relation)) {
-      throw new TypeError(
-        `cannot $sort by '${path}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
-      );
-    }
-    const join = opts.joins?.get(path);
-    if (!join) {
-      throw new TypeError(`cannot $sort by relation '${path}': this statement joins no relations`);
-    }
-    // `SELECT DISTINCT` can only order by what it selected, on every engine here, so a join brought in
-    // for the sort alone has nothing to order by. Populating it puts its columns in the select list.
-    if (opts.distinct && !join.projected) {
-      throw new TypeError(
-        `cannot $sort by relation '${path}' with $distinct unless '${path}' is populated: SELECT DISTINCT orders only by selected columns`,
-      );
-    }
-    return join;
   }
 
   /**
