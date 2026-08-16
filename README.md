@@ -32,9 +32,7 @@
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursodatabase/serverless, @libsql/client
 ```
 
-That is the whole install. Decorators are the standard TC39 ones, so there is no `reflect-metadata`
-and no compiler flag to turn on ([setup](https://uql-orm.dev/getting-started)), and the
-[imperative API](https://uql-orm.dev/entities/imperative) skips decorators altogether.
+That is the whole install ([setup](https://uql-orm.dev/getting-started)), and the [imperative API](https://uql-orm.dev/entities/imperative) skips decorators altogether.
 
 ```ts
 await pool.findMany(User, {
@@ -51,7 +49,7 @@ from the browser to the server. The same object runs on every supported database
 ## Why UQL?
 
 - **Serializable queries (JSON), not method chains.** Plain JSON in, typed rows out. No DSL to learn.
-- **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. Entities are plain classes: no `.prisma` file, no generated client, no build step.
+- **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. Entities are plain classes on the standard TC39 decorators: no `.prisma` file, no generated client, no `reflect-metadata`, no `experimentalDecorators`.
 - **One API, everywhere it runs.** PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
 - **Relations without N+1.** [`$populate`](https://uql-orm.dev/querying/relations) loads a to-many with one query for all parents, not one per parent. Nothing is lazy, so nothing fires behind your back in a serializer.
 - **Migrations you read before they run.** Edit an entity, run `uql-migrate generate:entities`, review the SQL in the PR like any other file. [`drift:check`](https://uql-orm.dev/migrations) catches a database that no longer matches.
