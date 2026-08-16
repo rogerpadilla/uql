@@ -3,7 +3,7 @@
 <a href="https://uql-orm.dev">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rogerpadilla/uql/main/assets/logo-dark.svg">
-    <img src="https://raw.githubusercontent.com/rogerpadilla/uql/main/assets/logo.svg" alt="UQL" width="90">
+    <img src="https://raw.githubusercontent.com/rogerpadilla/uql/main/assets/logo.svg" alt="UQL" width="72" height="72">
   </picture>
 </a>
 
@@ -77,4 +77,4 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 
 Built something? [Open a PR](https://github.com/rogerpadilla/uql/blob/main/CONTRIBUTING.md) and add it here.
 
-[![Made with UQL](https://img.shields.io/badge/made%20with-UQL-4F46E5?style=flat)](https://uql-orm.dev)
+[![Made with UQL](https://img.shields.io/badge/made%20with-UQL-3282b5?style=flat)](https://uql-orm.dev)

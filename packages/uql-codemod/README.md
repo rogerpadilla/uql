@@ -1,3 +1,10 @@
+<a href="https://uql-orm.dev">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rogerpadilla/uql/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/rogerpadilla/uql/main/assets/logo.svg" alt="UQL" width="72" height="72">
+  </picture>
+</a>
+
 # uql-codemod
 
 Migrates [uql-orm](https://uql-orm.dev) entities from the legacy TypeScript decorators to the TC39 standard spec. One command, on your own source, with a dry run first:

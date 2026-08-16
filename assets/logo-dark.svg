@@ -1,32 +1,4 @@
-<svg viewBox="65 75 240 270" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <title>UQL Logo</title>
-    <style>
-        @keyframes draw {
-            from { stroke-dashoffset: 1; }
-            to { stroke-dashoffset: 0; }
-        }
-        @keyframes fade-in {
-            0% { opacity: 0; }
-            8% { opacity: 1; }
-            100% { opacity: 1; }
-        }
-        path {
-            stroke-dasharray: 1;
-            stroke-dashoffset: 1;
-            animation:
-                draw 2.8s cubic-bezier(0.22, 0.61, 0.36, 1) 0.3s forwards,
-                fade-in 2.8s ease-out 0.3s forwards;
-        }
-    </style>
-    <g transform="skewX(-8)">
-        <path pathLength="1"
-              d="M 130 210
-                 C 160 180, 185 105, 160 105
-                 C 135 105, 130 185, 145 245
-                 C 160 315, 215 320, 240 230
-                 C 265 140, 275 100, 250 100
-                 C 225 100, 215 185, 230 255
-                 C 240 310, 275 305, 270 280"
-              fill="none" stroke="#ccc" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-    </g>
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>UQL</title>
+  <path fill="#b8dcee" fill-rule="evenodd" d="M24 6.69Q30.05 4.75 33.01 10.89Q40.65 10.51 41.69 16.45L47 20.91L40.13 26.17Q43.63 32.38 38.42 35.68Q35.85 41.24 28.75 39.12Q24 44.81 18.47 41.61Q12.09 41.33 11.54 34.09Q4.37 32.38 5.3 26.51Q2.19 21.07 8.33 17.31L6.08 9.48L13.59 8.85Q17.51 3.33 24 6.69ZM12.24 24.4A11.76 11.76 0 1 1 35.76 24.4A11.76 11.76 0 1 1 12.24 24.4ZM14.01 24.4A9.99 9.99 0 1 1 33.99 24.4A9.99 9.99 0 1 1 14.01 24.4ZM18.2 21.34 L20.7 22.21 L20.7 23.6 L18.2 23.16ZM29.8 21.34 L27.3 22.21 L27.3 23.6 L29.8 23.16ZM21.91 26.25 L26.09 26.25 L24 28.19ZM23.52 28.03 L24.48 28.03 L24.48 30.28 L23.52 30.28Z"/>
 </svg>
