@@ -9,7 +9,7 @@
 
 <h3>The ORM with type-safe JSON queries</h3>
 
-<p>Queries are plain JSON values, typed to the leaf. Build them, store them, send them from the browser, and run them unchanged on every SQL database and MongoDB. And it is the <a href="https://uql-orm.dev/benchmark">fastest</a>.</p>
+<p>Queries are plain JSON, typed to the leaf. Unified across SQL databases and MongoDB.</p>
 
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
