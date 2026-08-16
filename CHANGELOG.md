@@ -23,7 +23,7 @@ Correctness release: `$where` grouping, case-insensitive matching, and ordering 
 - **`$sort` on a to-many is rejected**: a parent has many such rows, so there is nothing single to order it by. Sort them inside `$populate`.
 - **`$sort` by a relation is rejected where nothing can join it**: `updateMany`, `deleteMany`, `$group` aggregates, and `$distinct` unless the relation is populated.
 - **`$sort`, `$limit`, `$skip` and `$distinct` inside a to-one `$populate` are rejected** rather than silently dropped. Unchanged on a to-many.
-- **`$i*` on MySQL and MariaDB now emits `LOWER(column)`**, which only a `LOWER(column)` expression index can serve. Under their default case-insensitive collation `$startsWith` already matches either case and keeps the plain index.
+- **`$i*` on MySQL and MariaDB now emits `LOWER(column)`**, which only a `LOWER(column)` expression index can serve. Their default collation is case-insensitive anyway, so `$startsWith` matches either case there and keeps its plain index; the other patterns lead with `%`, which no plain index could serve to begin with.
 
 ## [0.27.0] - 2026-08-15
 
