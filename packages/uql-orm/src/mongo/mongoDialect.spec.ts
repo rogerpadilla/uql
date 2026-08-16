@@ -165,6 +165,44 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
+  /**
+   * A relation of a relation is looked up inside the outer lookup's own pipeline, before the
+   * projection that reads it. Regression: only the first level was ever looked up, while the
+   * projection still asked for the nested key, so it came back empty with no error.
+   */
+  shouldNestLookupsForNestedPopulate() {
+    expect(
+      this.dialect.aggregationPipeline(Item, {
+        $select: { id: true },
+        $populate: { tax: { $select: { name: true }, $populate: { category: { $select: { name: true } } } } },
+      }),
+    ).toEqual([
+      {
+        $lookup: {
+          from: 'Tax',
+          localField: 'taxId',
+          foreignField: '_id',
+          pipeline: [
+            {
+              $lookup: {
+                from: 'TaxCategory',
+                localField: 'categoryId',
+                foreignField: '_id',
+                pipeline: [{ $project: { name: 1 } }],
+                as: 'category',
+              },
+            },
+            { $unwind: { path: '$category', preserveNullAndEmptyArrays: true } },
+            { $project: { name: 1, category: 1 } },
+          ],
+          as: 'tax',
+        },
+      },
+      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
+      { $project: { _id: 1, tax: 1 } },
+    ]);
+  }
+
   /** `$required` drops parents with no match - the aggregation equivalent of an INNER JOIN. */
   shouldDropUnmatchedParentsForRequiredPopulate() {
     const [, unwind] = this.dialect.aggregationPipeline(Item, { $populate: { tax: { $required: true } } });
@@ -322,21 +360,46 @@ class MongoDialectSpec implements Spec {
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
   shouldSortByRelationField() {
-    expect(this.dialect.sort(Item, { tax: { name: -1 } } as never)).toEqual({ 'tax.name': -1 });
-    expect(this.dialect.sort(User, { profile: { picture: 1 } } as never)).toEqual({ 'profile.image': 1 });
+    expect(this.dialect.sort(Item, { tax: { name: -1 } } as never, { tax: true })).toEqual({ 'tax.name': -1 });
+    expect(this.dialect.sort(User, { profile: { picture: 1 } } as never, { profile: true })).toEqual({
+      'profile.image': 1,
+    });
     // As many of its fields as the caller asks for, and alongside the parent's own columns.
-    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 } as never)).toEqual({
+    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 } as never, { tax: true })).toEqual({
       'tax.name': 1,
       'tax.percentage': -1,
       code: -1,
     });
   }
 
-  shouldThrowOnUnjoinableRelationInSort() {
-    expect(() => this.dialect.sort(Item, { tags: { name: 1 } } as never)).toThrow("cannot $sort by 'tags'");
-    expect(() => this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never)).toThrow(
-      "cannot $sort by 'tax.category' on MongoDB",
+  /**
+   * Only `$populate` adds a relation's fields to the document, so ordering by one it did not ask for
+   * would rank every row equal instead of failing. The SQL dialects add the join themselves; here
+   * that would change what the caller gets back, so it is refused rather than done quietly.
+   */
+  shouldRequireAPopulatedRelationToSortBy() {
+    expect(() => this.dialect.sort(Item, { tax: { name: 1 } } as never)).toThrow(
+      "cannot $sort by relation 'tax' on MongoDB unless it is populated",
     );
+    expect(() => this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } } as never)).toThrow(
+      "cannot $sort by relation 'tax' on MongoDB unless it is populated",
+    );
+  }
+
+  shouldThrowOnUnjoinableRelationInSort() {
+    expect(() => this.dialect.sort(Item, { tags: { name: 1 } } as never, { tags: true })).toThrow(
+      "cannot $sort by 'tags'",
+    );
+    // Every level of the path needs its own lookup: `tax` alone leaves `tax.category` off the document.
+    expect(() => this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never, { tax: true })).toThrow(
+      "cannot $sort by relation 'tax.category' on MongoDB unless it is populated",
+    );
+    // Populate the whole path and it orders by it, the same nested alias the SQL dialects join to.
+    expect(
+      this.dialect.sort(Item, { tax: { category: { name: -1 } } } as never, {
+        tax: { $populate: { category: true } },
+      }),
+    ).toEqual({ 'tax.category.name': -1 });
   }
 
   /** A `$lookup` for a to-one unwinds one document per parent, so it pages and orders no better than a join. */

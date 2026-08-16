@@ -534,6 +534,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     const op = AbstractSqlDialect.NEGATE_OP_MAP.get(key as QueryNegateOp) ?? (key as '$and' | '$or');
     const negate = AbstractSqlDialect.NEGATE_OP_MAP.has(key as QueryNegateOp);
 
+    if (val !== undefined && !Array.isArray(val)) {
+      // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
+      throw TypeError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
+    }
+
     const items = val ?? [];
     // With more than one item each is an operand of the operator joining them, so a compound item
     // parenthesizes itself and precedence never applies; a lone item is this group verbatim, so it

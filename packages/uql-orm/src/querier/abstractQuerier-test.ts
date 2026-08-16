@@ -712,6 +712,25 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
+   * A relation of a relation comes back filled, at every level the query asked for. Regression on
+   * MongoDB: only the first `$lookup` ran while the projection still asked for the nested key, so
+   * `tax.category` arrived empty with no error, and the two backends disagreed in silence.
+   */
+  async shouldPopulateANestedToOneRelation() {
+    const categoryId = await this.querier.insertOne(TaxCategory, { name: 'Nested category' });
+    const taxId = await this.querier.insertOne(Tax, { name: 'Nested tax', percentage: 1, categoryId });
+    const itemId = await this.querier.insertOne(Item, { name: 'nested item', taxId });
+
+    const found = await this.querier.findOneById(Item, itemId, {
+      $select: { name: true },
+      $populate: { tax: { $select: { name: true }, $populate: { category: { $select: { name: true } } } } },
+    });
+
+    expect(found?.tax?.name).toBe('Nested tax');
+    expect(found?.tax?.category?.name).toBe('Nested category');
+  }
+
+  /**
    * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the second query the
    * children are loaded with, which is where "each parent with its children in order" lives. The
    * parent-level `$sort` cannot express it - it orders parents, and a parent has many children.
