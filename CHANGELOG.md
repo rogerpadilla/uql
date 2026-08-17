@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.28.2] - 2026-08-17
+
+Packaging and metadata only. No runtime changes.
+
+### Fixes
+
+- **The package description and keywords now name what UQL runs on and against.** The description named a single database and no runtime; the keywords were missing `sql`, `postgres`, `node`, and `typescript`, and spent six entries on `<db>-orm` compounds. `uql-codemod` carries the same core set instead of four narrow terms.
+
 ## [0.28.1] - 2026-08-16
 
 ### Fixes

@@ -56,7 +56,7 @@ from the browser to the server. The same object runs on every supported database
 - **Raw SQL when you want it.** [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere in a query, [virtual fields](https://uql-orm.dev/entities/virtual-fields) are sub-queries you can filter on, and a migration can be plain SQL.
 - **Light.** Zero runtime dependencies, under 280 kB on the wire, every dialect included. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
-- **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark): 206µs, against 644µs for the next closest and 2,236µs for the slowest.
+- **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), by roughly 3x over the next closest and an order of magnitude over the slowest.
 
 ## Get started
 
