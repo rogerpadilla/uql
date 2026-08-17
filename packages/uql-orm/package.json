@@ -1,7 +1,7 @@
 {
   "name": "uql-orm",
   "homepage": "https://uql-orm.dev",
-  "description": "JSON-native TypeScript ORM for PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, Turso and MongoDB. Queries are plain JSON, typed to the leaf.",
+  "description": "JSON-native TypeScript ORM for Node.js, Bun and Deno. Supports PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, Turso, Neon, Cloudflare D1 and MongoDB. Queries are plain JSON, typed to the leaf.",
   "license": "MIT",
   "version": "0.28.1",
   "type": "module",

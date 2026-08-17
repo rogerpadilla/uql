@@ -35,9 +35,24 @@
   },
   "keywords": [
     "uql",
+    "uql-orm",
+    "orm",
     "codemod",
     "decorators",
-    "migration"
+    "tc39",
+    "migration",
+    "migrate",
+    "refactor",
+    "typescript",
+    "ts",
+    "javascript",
+    "database",
+    "sql",
+    "postgres",
+    "postgresql",
+    "mysql",
+    "sqlite",
+    "mongodb"
   ],
   "publishConfig": {
     "access": "public"
