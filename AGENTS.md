@@ -4,16 +4,9 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 
 ## Conventions
 
-- Follow high-quality, KISS, clean performant code, and always apply best practices.
-- Do your best to simplify, unify, and reuse always that you change code.
-- Always keep the best type-safety.
-- If you identify code-smells, like duplicated code, ambiguous, etc, do the best, deepest refactors to simplify, reuse, etc. Correct and keep constant self-improvements on the way.
-- Prefer fuctional programming (PURE functions) over OOP.
+- General code quality is assumed and belongs in your tool's user config rather than here: simplify and reuse over adding complexity, pure functions over classes, strict types with no silencing casts, root fixes over patches, and no unnecessary comments.
 - New string-literal union values are camelCase (`'firstId'`, not `'first-id'`). Some older kebab literals predate this; they are public API, so ask before renaming them.
 - Never narrow a find result by `$select`/`$exclude`/`$populate`. `QueryFindResult<E, Q>` stays the full entity, augmented only with vector `$sort` `$project` distance fields.
-- Avoid patches, always correct the root issues, refactor if possible to simplify and keep code as cleanest as it can be.
-- No hacks and no workarounds when refactoring, solving issues or implementing new features.
-- Avoid unnecesary comments.
 
 ## Verifying a change
 
@@ -23,8 +16,7 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 
 ## Tests
 
-- Always add/update/refactor the best, cleanest, real tests without any hacks.
-- No conditionals in a test body. Where a shared suite covers backends with genuinely different specified behaviour, put the expectation in an overridable protected method on the suite (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`), and keep the body linear.
+- Where a shared suite covers backends with genuinely different specified behaviour, keep the body linear by putting the expectation in an overridable protected method on the suite (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`).
 - Shared suites run under **both** vitest and `bun:test`, so only use matchers both have. For "null or undefined" write `expect(x == null).toBe(true)`: vitest has `toBeNullable()`, bun has `toBeNil()`, neither has the other's. A missing SQL column hydrates to `null` while Mongo omits it as `undefined`, so that case is genuinely nullish.
 
 ## Packaging
@@ -40,8 +32,8 @@ Versioning and publishing are two separate steps, deliberately: `lerna publish`'
 and `bun publish` does the actual publish, per package.
 
 - Write the CHANGELOG entry first, with the heading set to the version the bump will produce: nothing checks that the two agree. Keep it to the changes worth a reader's time, not one line per commit.
-- `bun run release.patch` (or `.minor` / `.major`) does `build`, `check.package`, `lerna version`, `git push --follow-tags`, then `release.github`. It does **not** run the tests, so `bun run check` first. `lerna version` prompts, which a non-interactive shell cannot answer: use `bun run release patch --yes` and push the tags separately.
+- `bun run release.patch` (or `.minor` / `.major`) does `check`, `lerna version`, `git push --follow-tags`, then `release.github`. `lerna version` prompts for confirmation, which a non-interactive shell cannot answer: use `bun run release patch --yes` and push the tags separately. The prompt is kept on purpose, since the bump is the point of no return.
 - `release.github` opens a GitHub Release for the `uql-orm` tag with that version's CHANGELOG entry as its notes, because a tag alone notifies nobody and the sidebar reads "No releases published" without one. It is idempotent, so re-running it after a partial release is safe, and it throws if the CHANGELOG has no entry for the version being released. The codemod is deliberately not released: its bumps would notify people who never installed it.
-- Then publish whichever package(s) `lerna version` reported as changed: `bun run publish.orm` / `bun run publish.codemod` (each is just `cd packages/<name> && bun publish`). `bun publish` exits `0` even when the registry rejects a republish of an already-published version, so read its output rather than trust the exit code - a real failure looks the same on the surface as a correct no-op skip.
+- Then publish whichever package(s) `lerna version` reported as changed: `bun run publish.orm` / `bun run publish.codemod` (each is just `cd packages/<name> && bun publish`). Re-publishing a version that is already up exits non-zero with `403 ... cannot publish over the previously published versions`, so the exit code can be trusted.
 - npm auth needs no setup: `.npmrc` holds only the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` has to export it.
 - Because versioning and publishing are separate, a failed publish never leaves the release half-done the way a combined step would: the tag and CHANGELOG are already correct, and re-running `bun run publish.orm` costs nothing.
