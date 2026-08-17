@@ -8,9 +8,9 @@
   "scripts": {
     "release": "bun run build && bun run check.package && lerna version",
     "check.package": "publint packages/uql-orm && attw --pack --profile esm-only packages/uql-orm",
-    "release.patch": "bun run release patch && git push --follow-tags",
-    "release.minor": "bun run release minor && git push --follow-tags",
-    "release.major": "bun run release major && git push --follow-tags",
+    "release.patch": "bun run release patch && git push --follow-tags && bun run release.github",
+    "release.minor": "bun run release minor && git push --follow-tags && bun run release.github",
+    "release.major": "bun run release major && git push --follow-tags && bun run release.github",
     "publish.orm": "cd packages/uql-orm && bun publish",
     "publish.codemod": "cd packages/uql-codemod && bun publish",
     "check": "bun run lint && bun run ts && bun run test && bun run build && bun run check.package",
@@ -22,7 +22,8 @@
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --timeout 10000 --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/ ./packages/uql-orm/src/sqlite/sqliteQuerier.bun.test.ts",
     "test.watch": "vitest",
-    "test.focus": "vitest run -t 'shouldSetJsonBooleanField'"
+    "test.focus": "vitest run -t 'shouldSetJsonBooleanField'",
+    "release.github": "bun scripts/github-release.ts"
   },
   "commitlint": {
     "extends": [
