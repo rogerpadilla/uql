@@ -188,7 +188,7 @@
     "entity",
     "dao",
     "transaction",
-    "repository",
+    "deno",
     "service",
     "migrations",
     "vector-search",
