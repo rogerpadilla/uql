@@ -2,7 +2,7 @@
   "name": "uql-codemod",
   "description": "Migrates uql-orm entities from legacy decorators to the TC39 standard spec",
   "license": "MIT",
-  "version": "0.24.1",
+  "version": "0.24.2",
   "type": "module",
   "engines": {
     "node": ">=24"
