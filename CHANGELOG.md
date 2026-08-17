@@ -6,7 +6,7 @@ date format is [yyyy-mm-dd]
 
 ## [0.28.2] - 2026-08-17
 
-Packaging and metadata only. No runtime changes.
+Improve packaging and metadata only, no runtime changes.
 
 ### Fixes
 
