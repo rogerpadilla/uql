@@ -10,13 +10,13 @@
 Migrates [uql-orm](https://uql-orm.dev) entities from the legacy TypeScript decorators to the TC39 standard spec. One command, on your own source, with a dry run first:
 
 ```sh
-npx uql-codemod --project=tsconfig.json --dry-run
-npx uql-codemod --project=tsconfig.json
+npx uql-codemod --dry-run
+npx uql-codemod
 ```
 
 | Flag | |
 |---|---|
-| `--project=<path>` | `tsconfig.json` to read. Required in practice: the codemod needs a real program, not a parser, because it writes down the types `design:type` used to report at runtime. Defaults to `./tsconfig.json`. |
+| `--project=<path>` | `tsconfig.json` to read, defaulting to `./tsconfig.json`. It is a real program and not a parser, because the codemod writes down the types `design:type` used to report at runtime, so a config that covers your entities is what makes the run work. |
 | `--dry-run` | Report what would change and touch nothing. |
 | `--include=<a,b>` | Only files whose path contains one of these fragments. |
 
