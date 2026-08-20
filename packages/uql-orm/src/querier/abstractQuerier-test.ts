@@ -92,6 +92,52 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(releases).toBe(1);
   }
 
+  /**
+   * Leaving a scope with a transaction still open used to throw `pending transaction` *before* handing
+   * the connection back, so the caller lost the error that got them there and the pool lost a
+   * connection with a live `BEGIN` on it. Releasing rolls the transaction back instead.
+   */
+  async shouldRollBackAnOpenTransactionOnRelease() {
+    const querier = await this.pool.getQuerier();
+    await querier.beginTransaction();
+    await querier.insertOne(User, { name: 'Rolled Back', email: 'rolledback@example.com' });
+
+    await expect(querier.release()).resolves.toBeUndefined();
+    expect(querier.hasOpenTransaction).toBe(false);
+
+    // The write is gone, and the next unit of work is not sitting on someone else's transaction.
+    await expect(this.pool.count(User, { $where: { email: 'rolledback@example.com' } })).resolves.toBe(0);
+  }
+
+  /** The same, through `await using`: the real error must reach the caller unwrapped. */
+  async shouldRollBackAnOpenTransactionOnAsyncDispose() {
+    const failed = await (async () => {
+      await using querier = await this.pool.getQuerier();
+      await querier.beginTransaction();
+      await querier.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
+      throw new Error('the real failure');
+    })().then(
+      () => undefined,
+      // A throwing dispose would arrive as a SuppressedError instead, hiding this behind an empty message.
+      (err: Error) => err.message,
+    );
+
+    expect(failed).toBe('the real failure');
+    await expect(this.pool.count(User, { $where: { email: 'disposed@example.com' } })).resolves.toBe(0);
+  }
+
+  /**
+   * Every backend refuses, not just the pooled ones: a pooled querier that kept working took a second
+   * connection nothing would give back, and whether a released querier still works should not depend on
+   * which database you picked.
+   */
+  async shouldRefuseToWorkAfterBeingReleased() {
+    const querier = await this.pool.getQuerier();
+    await querier.release();
+
+    await expect(querier.count(User)).rejects.toThrow('querier already released');
+  }
+
   /** Each pool call is its own acquire/run/release, which is why the read below sees the write above. */
   async shouldRunOperationsOnThePool() {
     const id = await this.pool.insertOne(User, {
@@ -1084,8 +1130,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
-  async shouldThrowWhenRollbackTransactionWithoutBeginTransaction() {
-    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
+  async shouldIgnoreRollbackTransactionWithoutBeginTransaction() {
+    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
+    expect(this.querier.hasOpenTransaction).toBe(false);
   }
 
   async shouldCommit() {
@@ -1146,7 +1193,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
-    await expect(this.querier.release()).rejects.toThrow('pending transaction');
     await this.querier.rollbackTransaction();
     await this.querier.release();
   }

@@ -5,7 +5,8 @@ import type { ExtraOptions, RawRow } from '../type/index.js';
 export interface PgAnyClient {
   query(text: string, values?: unknown[]): Promise<{ rows: RawRow[]; rowCount: number | null }>;
   query(stream: object): AsyncIterable<RawRow> & { destroy(): void };
-  release(): void | Promise<void>;
+  /** Any truthy argument makes `pg-pool` evict the client instead of returning it to the idle list. */
+  release(discard?: boolean): void | Promise<void>;
 }
 
 /**
@@ -41,7 +42,7 @@ export abstract class AbstractPgQuerier<
     }
   }
 
-  protected override async releaseConn(conn: C) {
-    await conn.release();
+  protected override async releaseConn(conn: C, discard: boolean) {
+    await conn.release(discard);
   }
 }

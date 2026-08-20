@@ -55,9 +55,9 @@ class MockQuerier extends AbstractQuerier {
   }
 
   override async beginTransaction() {}
-  override commitTransaction(): any {}
-  override rollbackTransaction(): any {}
-  protected override internalRelease(): any {}
+  override async commitTransaction() {}
+  override async rollbackTransaction() {}
+  protected override async internalRelease() {}
   hasOpenTransaction = false;
 }
 

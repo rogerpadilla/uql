@@ -103,14 +103,15 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   }
 
-  async shouldThrowOnRollbackWithoutBeginTransaction() {
-    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
+  async shouldIgnoreRollbackWithoutBeginTransaction() {
+    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
+    expect(this.querier.hasOpenTransaction).toBe(false);
   }
 
-  async shouldThrowOnReleaseWithPendingTransaction() {
+  async shouldRollBackOnReleaseWithPendingTransaction() {
     await this.querier.beginTransaction();
-    await expect(this.querier.release()).rejects.toThrow('pending transaction');
-    await this.querier.rollbackTransaction();
+    await expect(this.querier.release()).resolves.toBeUndefined();
+    expect(this.querier.hasOpenTransaction).toBe(false);
   }
 
   async shouldUpsertManyReturnGeneratedIdsOnlyForInsertedDocs() {

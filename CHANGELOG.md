@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.29.0] - 2026-08-20
+
+### `@Transactional()` and `currentQuerier()` are gone (breaking)
+
+Wrap the method body in `pool.transaction(async (querier) => ...)` instead.
+
+- `uql-codemod` reports both rather than rewriting them: it cannot know which pool.
+- The [transactions page](https://uql-orm.dev/querying/transactions) is rewritten.
+
+### Fixes
+
+- **Releasing a querier with a transaction still open rolls it back** instead of throwing `pending transaction` before handing the connection back.
+- **Using a querier after releasing it throws** instead of quietly taking a second connection that nothing would ever give back.
+- **A connection whose rollback failed on the way out is discarded** rather than returned to the pool.
+- **`rollbackTransaction()` does nothing when no transaction is open**, rather than throwing from the `catch` block that called it.
+
 ## [0.28.2] - 2026-08-17
 
 Improve packaging and metadata only, no runtime changes.

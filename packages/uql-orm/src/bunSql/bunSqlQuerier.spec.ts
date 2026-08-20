@@ -119,10 +119,16 @@ describe('BunSqlQuerier', () => {
       await expect(querier.release()).resolves.toBeUndefined();
     });
 
-    it('should throw if releasing with a transaction', async () => {
-      const querier = createQuerier(makeSql({}), new SqliteDialect());
-      Object.defineProperty(querier, 'hasOpenTransaction', { get: () => true });
-      await expect(querier.release()).rejects.toThrow('pending transaction');
+    it('should roll back an open transaction rather than refuse to release', async () => {
+      const sql = makeSql({});
+      const querier = createQuerier(sql, new SqliteDialect());
+      await querier.beginTransaction();
+
+      await expect(querier.release()).resolves.toBeUndefined();
+
+      expect(querier.hasOpenTransaction).toBe(false);
+      expect(sql.conn.unsafe).toHaveBeenCalledWith('ROLLBACK', undefined);
+      expect(sql.conn.release).toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,7 @@
 import { type Mock, vi } from 'vitest';
 import { AbstractQuerier } from '../querier/abstractQuerier.js';
 import type { Querier } from '../type/index.js';
+import { LoggerWrapper } from '../util/index.js';
 
 /** Methods become mocks; plain state (`hasOpenTransaction`) keeps its own type so this is a `Querier`. */
 export type MockedQuerier = {
@@ -21,6 +22,9 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
   const querier = {
     hasOpenTransaction: false,
     transaction: AbstractQuerier.prototype.transaction,
+    // The real `transaction` reports a rollback that fails, so the mock carries a logger for it. `false`
+    // means every level is off, which is what a spec that is not asserting on logs wants.
+    logger: new LoggerWrapper(false),
     findOne: vi.fn(),
     findMany: vi.fn(),
     count: vi.fn(),

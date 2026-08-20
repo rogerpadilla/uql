@@ -6,13 +6,16 @@ const FIELD_DECORATORS = new Set(['Field', 'Id']);
 const RELATION_DECORATORS = new Set(['OneToOne', 'ManyToOne', 'OneToMany', 'ManyToMany']);
 
 /**
- * Decorators that no longer exist, and that the codemod does not remove for you.
- *
- * A standard-spec decorator cannot preserve a generic method's signature, which is why these went. What
- * to do instead is a judgement call - inline the logging, drop the serialisation - so the usage is
- * reported and left in place. Removing only the import would swap a clear error for a puzzling one.
+ * Decorators that no longer exist, mapped to what to do instead. None is removed for you: what to put
+ * in its place is a judgement call, and removing only the import would swap a clear error for a
+ * puzzling one.
  */
-const REMOVED_DECORATORS = new Set(['Log', 'Serialized']);
+const REMOVED_DECORATORS = new Map([
+  ['Log', 'delete it and its import'],
+  ['Serialized', 'delete it and its import'],
+  ['Transactional', 'wrap the body in `pool.transaction(async (querier) => { ... })`'],
+  ['InjectQuerier', 'take the querier from the enclosing `pool.transaction()` callback'],
+]);
 
 export type FileResult = {
   readonly fileName: string;
@@ -89,12 +92,9 @@ type Context = {
   readonly edits: Edit[];
   readonly unresolved: string[];
   readonly notes: string[];
-  /** Named imports from `uql-orm` the rewrites still need. */
-  readonly imports: Set<string>;
   /** `Relation<T>` references seen, and how many were unwrapped, which decides whether its import goes. */
   readonly relationAlias: { seen: number; unwrapped: number };
   readonly describe: (node: ts.Node) => string;
-  readonly lineOf: (node: ts.Node) => number;
 };
 
 /**
@@ -213,39 +213,6 @@ function countRelationAlias(node: ts.Node, ctx: Context): void {
   }
 }
 
-/**
- * Rewrites an `@InjectQuerier()` parameter into a `currentQuerier()` call.
- *
- * The standard spec has no parameter decorators, so the querier travels through async-local storage and
- * is read inside the body. Only the plain shape is rewritten - a named parameter in a method with a body.
- * A default value or a destructured parameter is reported: the author was doing something the codemod
- * would have to guess at.
- */
-function rewriteInjectQuerier(method: ts.MethodDeclaration, ctx: Context): void {
-  for (const parameter of method.parameters) {
-    if (!ts.getDecorators(parameter)?.some((d) => decoratorName(d) === 'InjectQuerier')) {
-      continue;
-    }
-    if (!method.body || !ts.isIdentifier(parameter.name) || parameter.initializer) {
-      ctx.unresolved.push(`${ctx.describe(parameter)}: cannot rewrite this '@InjectQuerier()' parameter`);
-      continue;
-    }
-
-    ctx.edits.push(removeFromList(method.parameters, parameter, method.getSourceFile()));
-
-    // The querier is read at the top of the body, keeping the name the parameter had.
-    const body = method.body;
-    const first = body.statements[0];
-    const indent = first ? ' '.repeat(first.getStart() - body.getSourceFile().getLineStarts()[ctx.lineOf(first)]) : '';
-    ctx.edits.push({
-      start: body.getStart() + 1,
-      end: body.getStart() + 1,
-      text: `\n${indent}const ${parameter.name.text} = currentQuerier();`,
-    });
-    ctx.imports.add('currentQuerier');
-  }
-}
-
 /** Removes a statement together with the rest of its line, so nothing is left blank behind it. */
 function removeStatement(node: ts.Node): Edit {
   const source = node.getSourceFile();
@@ -255,24 +222,10 @@ function removeStatement(node: ts.Node): Edit {
 }
 
 /**
- * Brings the file's imports in line with what the rewrites left behind, in one pass:
- *
- * - `import 'reflect-metadata'` goes, since the polyfill only ever fed `design:type`.
- * - `InjectQuerier` goes with it, and its import would otherwise not compile: the standard spec has no
- *   parameter decorators, so `uql-orm` no longer exports one.
- * - whatever a rewrite needs (`currentQuerier`) is added, extending an existing `uql-orm` import rather
- *   than adding a second one.
- *
- * One function because all three edit the same statements, and doing them separately meant an import
- * could be dropped and re-added, or a name added to a statement another edit had already removed.
+ * Names `uql-orm` no longer exports and that the codemod does remove: only `Relation`, and only once
+ * every usage was unwrapped. A removed *decorator* keeps its import on purpose (see
+ * {@link REMOVED_DECORATORS}).
  */
-function reconcileImports(source: ts.SourceFile, ctx: Context): void {
-  // Dropping runs first and hands over the `uql-orm` import it left standing: adding a name to a
-  // statement the other pass had already removed is the bug that made these one step to begin with.
-  addNeededImports(source, ctx, dropDeadImports(source, ctx));
-}
-
-/** Names `uql-orm` no longer exports. `Relation` joins them only when every usage was rewritten. */
 function deadImportNames(source: ts.SourceFile, ctx: Context): ReadonlySet<string> {
   const { seen, unwrapped } = ctx.relationAlias;
   if (seen > unwrapped) {
@@ -281,23 +234,21 @@ function deadImportNames(source: ts.SourceFile, ctx: Context): ReadonlySet<strin
         'not rewrite; unwrap them and drop the import by hand',
     );
   }
-  return new Set(seen > 0 && seen === unwrapped ? ['InjectQuerier', 'Relation'] : ['InjectQuerier']);
+  return new Set(seen > 0 && seen === unwrapped ? ['Relation'] : []);
 }
 
 /**
- * Removes `import 'reflect-metadata'` and any name that no longer exists, and returns the `uql-orm`
- * named imports still standing - `undefined` when there are none to extend.
+ * Removes `import 'reflect-metadata'`, since the polyfill only ever fed `design:type`, and any name
+ * `uql-orm` no longer exports.
  */
-function dropDeadImports(source: ts.SourceFile, ctx: Context): ts.NamedImports | undefined {
+function dropDeadImports(source: ts.SourceFile, ctx: Context): void {
   const dead = deadImportNames(source, ctx);
-  let host: ts.NamedImports | undefined;
 
   for (const statement of source.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
-    const module = statement.moduleSpecifier.text;
-    if (module === 'reflect-metadata' && !statement.importClause) {
+    if (statement.moduleSpecifier.text === 'reflect-metadata' && !statement.importClause) {
       ctx.edits.push(removeStatement(statement));
       continue;
     }
@@ -314,27 +265,7 @@ function dropDeadImports(source: ts.SourceFile, ctx: Context): ts.NamedImports |
     for (const element of dropped) {
       ctx.edits.push(removeFromList(named.elements, element, source));
     }
-    if (module === 'uql-orm') {
-      host = named;
-    }
   }
-
-  return host;
-}
-
-/** Adds what the rewrites need, extending `host` when there is one rather than adding a second import. */
-function addNeededImports(source: ts.SourceFile, ctx: Context, host: ts.NamedImports | undefined): void {
-  const missing = [...ctx.imports].filter((name) => !host?.elements.some((element) => element.name.text === name));
-  if (!missing.length) {
-    return;
-  }
-  if (host) {
-    const last = host.elements[host.elements.length - 1];
-    ctx.edits.push({ start: last.getEnd(), end: last.getEnd(), text: `, ${missing.join(', ')}` });
-    return;
-  }
-  const position = source.statements[0]?.getStart() ?? 0;
-  ctx.edits.push({ start: position, end: position, text: `import { ${missing.join(', ')} } from 'uql-orm';\n` });
 }
 
 /** Everything the standard spec needs written onto one decorated property. */
@@ -365,8 +296,9 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
   }
   for (const decorator of ts.getDecorators(node) ?? []) {
     const name = decoratorName(decorator);
-    if (name && REMOVED_DECORATORS.has(name)) {
-      ctx.unresolved.push(`${ctx.describe(decorator)}: '@${name}()' was removed; delete it and its import`);
+    const advice = name && REMOVED_DECORATORS.get(name);
+    if (advice) {
+      ctx.unresolved.push(`${ctx.describe(decorator)}: '@${name}()' was removed; ${advice}`);
     }
   }
 }
@@ -378,24 +310,21 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     edits: [],
     unresolved: [],
     notes: [],
-    imports: new Set(),
     relationAlias: { seen: 0, unwrapped: 0 },
-    describe: (node) => `${source.fileName}:${ctx.lineOf(node) + 1}`,
-    lineOf: (node) => source.getLineAndCharacterOfPosition(node.getStart()).line,
+    describe: (node) => `${source.fileName}:${lineOf(node) + 1}`,
   };
+  const lineOf = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart()).line;
 
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
     countRelationAlias(node, ctx);
     if (ts.isPropertyDeclaration(node)) {
       rewriteProperty(node, ctx);
-    } else if (ts.isMethodDeclaration(node)) {
-      rewriteInjectQuerier(node, ctx);
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
-  reconcileImports(source, ctx);
+  dropDeadImports(source, ctx);
 
   return {
     fileName: source.fileName,

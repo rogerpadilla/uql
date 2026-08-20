@@ -43,7 +43,6 @@ const STUBS = `
   declare function Serialized(): PropertyDecorator;
   declare function Transactional(): MethodDecorator;
   declare class Querier {}
-  declare function currentQuerier(): Querier;
   declare function ManyToOne(opts?: { entity?: EntityGetter }): PropertyDecorator;
   declare function OneToMany(opts?: { entity?: EntityGetter; mappedBy?: string }): PropertyDecorator;
   type Relation<T> = T;
@@ -267,53 +266,8 @@ describe('codemod transforms', () => {
     expect(unresolved[0]).toContain("cannot add 'type' because its options object spreads another");
   });
 
-  it("rewrites an '@InjectQuerier()' parameter into a currentQuerier() call", () => {
-    const { text } = codemod(`
-      class Service {
-        @Transactional()
-        async save(name: string, @InjectQuerier() querier?: Querier) {
-          await querier!.insertOne({}, { name });
-        }
-      }
-    `);
-
-    expect(text).toContain('async save(name: string) {');
-    expect(text).toContain('const querier = currentQuerier();');
-    expect(text).toContain("import { currentQuerier } from 'uql-orm';");
-  });
-
-  it('removes the sole parameter and its parentheses stay valid', () => {
-    const { text } = codemod(`
-      class Service {
-        @Transactional()
-        async save(@InjectQuerier() querier?: Querier) {
-          await querier!.insertOne({}, {});
-        }
-      }
-    `);
-
-    expect(text).toContain('async save() {');
-    expect(text).toContain('const querier = currentQuerier();');
-  });
-
-  it("reports an '@InjectQuerier()' parameter it cannot rewrite", () => {
-    const { unresolved } = codemod(`
-      class Service {
-        @Transactional()
-        async save(@InjectQuerier() querier: Querier = currentQuerier()) {
-          await querier.insertOne({}, {});
-        }
-      }
-    `);
-
-    expect(unresolved[0]).toContain("cannot rewrite this '@InjectQuerier()' parameter");
-  });
-
-  /**
-   * The polyfill import goes, and so does `InjectQuerier`: `uql-orm` no longer exports one, so leaving it
-   * imported would turn a working file into a compile error.
-   */
-  it('reconciles the imports the rewrites leave behind', () => {
+  /** The polyfill only ever fed `design:type`, and nothing else in the file needs rewriting. */
+  it('drops the reflect-metadata polyfill and leaves the rest of the imports alone', () => {
     const { text } = codemodFile(`import 'reflect-metadata';
 import { Transactional, InjectQuerier, type Querier } from 'uql-orm';
 
@@ -326,31 +280,23 @@ class Service {
 `);
 
     expect(text).not.toContain('reflect-metadata');
-    expect(text).not.toContain('InjectQuerier');
-    expect(text).toContain("import { Transactional, type Querier, currentQuerier } from 'uql-orm';");
+    expect(text).toContain("import { Transactional, InjectQuerier, type Querier } from 'uql-orm';");
     // Nothing blank left where the polyfill import was.
     expect(text.startsWith('import {')).toBe(true);
   });
 
-  /**
-   * The `uql-orm` import loses every name it had, so the whole statement goes and `currentQuerier` has
-   * nothing to extend. Adding a name to a statement the drop pass had already removed is exactly the bug
-   * the two passes are ordered against.
-   */
-  it('replaces an import that loses every name with the one the rewrite needs', () => {
-    const { text } = codemodFile(`import { InjectQuerier } from 'uql-orm';
+  /** Its only name went, so the statement goes with it rather than being left as `import {} from`. */
+  it('removes an import that loses every name it had', () => {
+    const { text } = codemodFile(`import { type Relation } from 'uql-orm';
+import { ManyToOne } from 'uql-orm';
 
-class Service {
-  async save(@InjectQuerier() querier?: unknown) {
-    return querier;
-  }
+class Item {
+  @ManyToOne({ entity: () => Item }) parent?: Relation<Item>;
 }
 `);
 
-    expect(text).not.toContain('InjectQuerier');
-    expect(text).toContain("import { currentQuerier } from 'uql-orm';");
-    expect(text).toContain('async save() {');
-    expect(text).toContain('const querier = currentQuerier();');
+    expect(text).not.toContain('Relation');
+    expect(text).toContain("import { ManyToOne } from 'uql-orm';");
   });
 
   it('drops the Relation import once every usage is unwrapped', () => {
@@ -395,6 +341,27 @@ type ParentOf<T> = Relation<T>;
     expect(text).toContain('@Log()');
     expect(unresolved[0]).toContain("'@Serialized()' was removed; delete it and its import");
     expect(unresolved[1]).toContain("'@Log()' was removed; delete it and its import");
+  });
+
+  /**
+   * Both go together: a transaction is the caller's `pool.transaction()` now, so the method has to be
+   * rewritten around a pool the codemod cannot name.
+   */
+  it("reports '@Transactional()' and '@InjectQuerier()' rather than rewriting them", () => {
+    const { text, changed, unresolved } = codemod(`
+      class Service {
+        @Transactional()
+        async save(@InjectQuerier() querier?: Querier) {
+          await querier!.insertOne({}, {});
+        }
+      }
+    `);
+
+    expect(changed).toBe(false);
+    expect(text).toContain('@Transactional()');
+    expect(text).toContain('@InjectQuerier() querier?: Querier');
+    expect(unresolved[0]).toContain("'@Transactional()' was removed; wrap the body in `pool.transaction(");
+    expect(unresolved[1]).toContain("'@InjectQuerier()' was removed; take the querier from the enclosing");
   });
 
   it('reports rather than guesses when it cannot resolve a shape', () => {

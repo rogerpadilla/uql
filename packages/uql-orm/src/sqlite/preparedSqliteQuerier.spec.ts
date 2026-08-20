@@ -105,11 +105,12 @@ describe.each(drivers)('$name', (driver) => {
     expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
-  it('should reject release while a transaction is open', async () => {
+  it('should roll back an open transaction on release', async () => {
     use(false);
     await querier.beginTransaction();
 
-    await expect(querier.release()).rejects.toThrow('pending transaction');
+    await expect(querier.release()).resolves.toBeUndefined();
+    expect(querier.hasOpenTransaction).toBe(false);
   });
 
   it('should release cleanly with no open transaction', async () => {

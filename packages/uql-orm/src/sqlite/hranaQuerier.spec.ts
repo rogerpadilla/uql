@@ -85,10 +85,13 @@ describe('HranaQuerier', () => {
     expect(querier.hasOpenTransaction).toBe(false);
   });
 
-  it('should reject internalRelease when a transaction is still open', async () => {
+  it('should roll the open transaction back on release', async () => {
     await querier.beginTransaction();
-    await expect(querier.internalRelease()).rejects.toThrow('pending transaction');
-    expect(mockTx.close).not.toHaveBeenCalled();
+
+    await expect(querier.release()).resolves.toBeUndefined();
+
+    expect(mockTx.rollback).toHaveBeenCalled();
+    expect(querier.hasOpenTransaction).toBe(false);
   });
 
   it('should close client on internalRelease when closeClientOnRelease', async () => {
@@ -110,8 +113,8 @@ describe('HranaQuerier', () => {
     await expect(querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   });
 
-  it('should throw error on rollbackTransaction without transaction', async () => {
-    await expect(querier.rollbackTransaction()).rejects.toThrow(TypeError);
-    await expect(querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
+  it('should ignore rollbackTransaction without transaction', async () => {
+    await expect(querier.rollbackTransaction()).resolves.toBeUndefined();
+    expect(querier.hasOpenTransaction).toBe(false);
   });
 });

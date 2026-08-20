@@ -27,7 +27,6 @@ Only the `--flag=value` form is read, and anything unrecognised is an error: a m
 - `@Field()` and `@Field({ ... })` with no `type`, and `@Id()`: inserts the `type` the property's declared TypeScript type implies. Skipped when `references` is present, because schema generation resolves that column from the referenced primary key.
 - Bare relation decorators: inserts `entity: () => X`, unwrapping arrays and the old `Relation<T>` alias.
 - `Relation<T>` becomes `T`, and its import goes with the last usage - `uql-orm` no longer exports it. A usage somewhere the codemod does not reach, such as a type alias, keeps the import and is reported.
-- `@Transactional()` methods: drops the `@InjectQuerier() querier?: Querier` parameter and rewrites the body to `currentQuerier()`.
 - `import 'reflect-metadata'` goes. Removing the package from your `package.json` is left to you.
 - `tsconfig.json`: removes `experimentalDecorators` and `emitDecoratorMetadata`, keeping the rest of the file - comments and formatting included - exactly as written.
 
@@ -37,7 +36,7 @@ It reports rather than guesses, and exits non-zero when anything is left for you
 
 - **`target: esnext`** is reported, not changed. Removing the line falls back to the compiler default (`es5` for `tsc`), and choosing a replacement means guessing which era the project targets. Any dated target works; `esnext` is the one where TypeScript emits decorator syntax untransformed.
 - **A value inherited through `extends`** cannot be edited here, so the base config is reported instead.
-- **`@Log()` and `@Serialized()`** are reported and left in place. They no longer exist, and what to do instead is a judgement call.
+- **`@Log()`, `@Serialized()`, `@Transactional()` and `@InjectQuerier()`** are reported and left in place. They no longer exist, and what to do instead is a judgement call - a `@Transactional()` method becomes a `pool.transaction(async (querier) => { ... })` around its body, and the codemod cannot know which pool.
 - **Options it cannot read** (`@Field(sharedOptions)`, a spread, or a `@Field` never called at all) are left exactly as written. Replacing an argument it cannot parse would silently drop the options.
 - **A property whose type it cannot map to a column** (a `Json<T>`, a vector, a union that disagrees with itself) is reported as `needs a decision`. Those always had to declare `type` by hand anyway, because `design:type` reported the useless `Object`/`Array` for them.
 - **A branded string id**, e.g. `type UUID = \`${string}-${string}\``, gets `type: String` plus a `worth a look` note. That is a real fork: `String` generates a text column, `'uuid'` generates a native one, and only you know which the database has.

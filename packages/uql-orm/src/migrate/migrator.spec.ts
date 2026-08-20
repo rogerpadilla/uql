@@ -590,14 +590,14 @@ describe('Migrator Core Methods', () => {
 
     /**
      * `beginTransaction` connects before it begins, so a refused connection lands in the catch with no
-     * transaction open. Rolling back regardless threw `not a pending transaction`, and that replaced the
-     * real cause: a wrong password surfaced as a transaction-state error.
+     * transaction open. The rollback is a no-op there, and must stay one: it used to throw
+     * `not a pending transaction`, which replaced the real cause and reported a wrong password as a
+     * transaction-state error.
      */
     it('syncForce reports why the transaction never started, not that it is missing', async () => {
       (querier.beginTransaction as Mock).mockRejectedValueOnce(new Error('password authentication failed'));
 
       await expect(migrator.syncForce()).rejects.toThrow('password authentication failed');
-      expect(querier.rollbackTransaction).not.toHaveBeenCalled();
       expect(querier.release).toHaveBeenCalled();
     });
 

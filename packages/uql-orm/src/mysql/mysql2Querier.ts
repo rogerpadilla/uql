@@ -35,7 +35,13 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
     }
   }
 
-  protected override async releaseConn(conn: PoolConnection) {
+  protected override async releaseConn(conn: PoolConnection, discard: boolean) {
+    // mysql2 resets nothing on release, so a connection the pool takes back after a failed rollback
+    // hands the next caller someone else's open transaction. `destroy` drops it from the pool instead.
+    if (discard) {
+      conn.destroy();
+      return;
+    }
     await conn.release();
   }
 }
