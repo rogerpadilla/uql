@@ -1,1 +1,2 @@
+import './bunSql';
 import './jest';

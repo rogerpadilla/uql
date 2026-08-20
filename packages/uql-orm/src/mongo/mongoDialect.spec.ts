@@ -782,6 +782,27 @@ class MongoDialectSpec implements Spec {
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
   }
 
+  /**
+   * A `$having` value that is not an operator map is a value to compare against, exactly as on the
+   * SQL side. Keeping only numbers and objects dropped a string or boolean without a word, so the
+   * caller got every group back instead of the filtered ones.
+   */
+  shouldBuildAggregate$havingByBareValue() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { n: { $count: '*' } },
+      $having: { code: 'abc' } as never,
+    });
+    expect(stages.at(-1)).toEqual({ $match: { code: 'abc' } });
+
+    const byList = this.dialect.buildAggregateStages(Item, {
+      $group: { code: true },
+      $agg: { n: { $count: '*' } },
+      $having: { code: ['a', 'b'] } as never,
+    });
+    expect(byList.at(-1)).toEqual({ $match: { code: { $in: ['a', 'b'] } } });
+  }
+
   shouldThrowOnEmptyAggregate() {
     expect(() => this.dialect.buildAggregateStages(Item, {})).toThrow(
       'aggregate requires at least one $group column or $agg function',

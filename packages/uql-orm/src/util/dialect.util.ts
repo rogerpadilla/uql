@@ -1,6 +1,7 @@
 import { getContext, UqlSecurityError } from '../context/context.js';
 import {
   type CascadeType,
+  type EntityData,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -31,7 +32,11 @@ import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
-export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): FieldKey<E>[] {
+export function filterFieldKeys<E>(
+  meta: EntityMeta<E>,
+  payload: EntityData<E>,
+  callbackKey: CallbackKey,
+): FieldKey<E>[] {
   return getKeys(payload as object).filter((key) => {
     const fieldOpts = meta.fields[key];
     return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
@@ -39,13 +44,18 @@ export function filterFieldKeys<E>(meta: EntityMeta<E>, payload: E, callbackKey:
 }
 
 /** Whether `key` is a real, non-virtual field that `record` provides a defined value for. */
-function isInsertableField<E>(meta: EntityMeta<E>, record: E, key: FieldKey<E>): boolean {
+function isInsertableField<E>(meta: EntityMeta<E>, record: EntityData<E>, key: FieldKey<E>): boolean {
   const field = meta.fields[key];
   return !!field && !field.virtual && record[key] !== undefined;
 }
 
 /** Appends `record`'s not-yet-`seen` insertable keys (real, non-virtual, defined value) to `keys`. */
-function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKey<E>>, keys: FieldKey<E>[]): void {
+function addInsertFieldKeys<E>(
+  meta: EntityMeta<E>,
+  record: EntityData<E>,
+  seen: Set<FieldKey<E>>,
+  keys: FieldKey<E>[],
+): void {
   for (const key of getKeys(record as object) as FieldKey<E>[]) {
     if (!seen.has(key) && isInsertableField(meta, record, key)) {
       seen.add(key);
@@ -66,7 +76,7 @@ function addInsertFieldKeys<E>(meta: EntityMeta<E>, record: E, seen: Set<FieldKe
  * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
  * chunk-size estimate inspects the raw payload).
  */
-export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: E[]): FieldKey<E>[] {
+export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: EntityData<E>[]): FieldKey<E>[] {
   const seen = new Set<FieldKey<E>>();
   const keys: FieldKey<E>[] = [];
   for (const record of payloads) {
@@ -92,7 +102,11 @@ export function getSoftDeleteValue(field: FieldOptions) {
   return field.softDelete === true ? new Date() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
 }
 
-export function fillOnFields<E>(meta: EntityMeta<E>, payload: E | E[], callbackKey: CallbackKey): E[] {
+export function fillOnFields<E>(
+  meta: EntityMeta<E>,
+  payload: EntityData<E> | EntityData<E>[],
+  callbackKey: CallbackKey,
+): EntityData<E>[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];
   if (keys.length === 0) {
@@ -387,4 +401,56 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, agg?: QueryAggMap<E>)
     entries.push({ kind: 'fn', alias, op, fieldRef, distinct });
   }
   return entries;
+}
+
+/**
+ * Whether `value` is a map of comparison operators rather than a value to compare against. Only a
+ * plain object qualifies: `Date`, `QueryRaw`, `Uint8Array` and arrays are all `typeof 'object'`, and
+ * reading their keys as operators drops the condition (a `Date` has none) or throws on an array's
+ * indices. Shared by the SQL and MongoDB builders, whose `$where` and `$having` all face this.
+ */
+export function isOperatorMap(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    !(value instanceof Date) &&
+    !(value instanceof Uint8Array) &&
+    !(value instanceof QueryRaw)
+  );
+}
+
+/**
+ * A page operand, checked before it reaches an engine. These arrive from page arithmetic and from
+ * REST query strings (`parseQueryParams` yields `NaN` for a non-numeric one), and each engine's own
+ * complaint names neither the clause nor the value - or, for `$limit: 0`, quietly means something
+ * else. Shared so every backend rejects the same input.
+ */
+export function assertNonNegativeInteger(value: number, clause: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new TypeError(`${clause} must be a non-negative integer, got ${value}`);
+  }
+  return value;
+}
+
+/**
+ * Rejects a `$having`/`$sort` key naming something an aggregate does not emit. Its rows are its
+ * `$group` columns and its `$agg` aliases; anything else is a value that is not there. Shared so
+ * SQL and MongoDB refuse the same query with the same words.
+ */
+export function throwUnknownAggregateColumn(key: string, clause: string): never {
+  throw new TypeError(`cannot ${clause} by '${key}': it is neither a $group column nor an $agg alias`);
+}
+
+/** {@link throwUnknownAggregateColumn} over every key of a clause, for backends that check up front. */
+export function assertAggregateColumns(
+  clauseMap: object | undefined,
+  emitted: ReadonlySet<string>,
+  clause: string,
+): void {
+  for (const key of getKeys(clauseMap ?? {})) {
+    if (!emitted.has(key)) {
+      throwUnknownAggregateColumn(key, clause);
+    }
+  }
 }

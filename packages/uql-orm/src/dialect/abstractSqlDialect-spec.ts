@@ -1089,6 +1089,28 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual(['some']);
   }
 
+  /**
+   * A bare `Date` is a value to compare against, not a map of operators to iterate. Reading its
+   * (nonexistent) own keys as operators emitted `WHERE ` and dropped the condition entirely.
+   */
+  shouldFind$whereByBareDate() {
+    const e = this.dialect.escapeIdChar;
+    const date = new Date('2020-01-01T00:00:00.000Z');
+    const byDate = this.exec((ctx) =>
+      this.dialect.find(ctx, InventoryAdjustment, { $select: { id: true }, $where: { date } }),
+    );
+    expect(byDate.sql).toBe(`SELECT ${e}id${e} FROM ${e}InventoryAdjustment${e} WHERE ${e}date${e} = ${this.ph(1)}`);
+    // the bound representation is the dialect's own (SQLite stores epoch millis); that it bound at
+    // all is the point, since the condition used to vanish.
+    expect(byDate.values).toHaveLength(1);
+
+    // and the same value under an explicit `$eq` renders identically
+    const byEq = this.exec((ctx) =>
+      this.dialect.find(ctx, InventoryAdjustment, { $select: { id: true }, $where: { date: { $eq: date } } }),
+    );
+    expect(byEq.sql).toBe(byDate.sql);
+  }
+
   shouldFindMultipleComparisonOperators() {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
@@ -1693,11 +1715,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     ).toThrow("cannot $sort by relation 'tax' with $distinct");
 
-    expect(() =>
-      this.exec((ctx) =>
-        this.dialect.aggregate(ctx, Item, { $group: { taxId: true }, $sort: { tax: { name: 1 } } as never }),
-      ),
-    ).toThrow("cannot $sort by relation 'tax' in an aggregate query");
+    expect(
+      () =>
+        this.exec((ctx) =>
+          this.dialect.aggregate(ctx, Item, { $group: { taxId: true }, $sort: { tax: { name: 1 } } as never }),
+        ),
+      // a relation is not a column the aggregate emits, so the general rule already covers it
+    ).toThrow("cannot $sort by 'tax': it is neither a $group column nor an $agg alias");
   }
 
   shouldVirtualField() {
@@ -1856,6 +1880,33 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(`SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} LIMIT 25`);
   }
 
+  /** Zero rows is a page like any other; read as "unset" it returned the whole table instead. */
+  shouldFind$limitZero() {
+    const e = this.dialect.escapeIdChar;
+    const res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $limit: 0 }));
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} LIMIT 0`);
+  }
+
+  /** A page arrives from arithmetic and from REST query strings, so it is checked before it is emitted. */
+  shouldRejectAnUnusablePage() {
+    for (const $limit of [-1, 1.5, Number.NaN]) {
+      expect(() => this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $limit }))).toThrow(
+        `$limit must be a non-negative integer, got ${$limit}`,
+      );
+    }
+    expect(() => this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $skip: -2 }))).toThrow(
+      '$skip must be a non-negative integer, got -2',
+    );
+  }
+
+  /**
+   * The `OFFSET` clause a bare `$skip` produces. The MySQL family has no standalone `OFFSET` - it is
+   * only legal after a `LIMIT` - so those dialects precede it with their "all remaining rows" count.
+   */
+  protected expected$skipClause(): string {
+    return 'OFFSET 30';
+  }
+
   shouldFind$skip() {
     const e = this.dialect.escapeIdChar;
     const res = this.exec((ctx) =>
@@ -1864,7 +1915,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $skip: 30,
       }),
     );
-    expect(res.sql).toBe(`SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} OFFSET 30`);
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} ${this.expected$skipClause()}`,
+    );
   }
 
   shouldFind$select() {
@@ -2396,6 +2449,68 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toBe(`SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e}`);
     expect(values).toEqual([]);
+  }
+
+  /**
+   * A `$having` value that is not an operator map is a value to compare against. Iterating its own
+   * keys as operators emitted a dangling `HAVING ` for a `Date` (it has none) and threw on an
+   * array's indices.
+   */
+  shouldAggregate$havingByBareValue() {
+    const e = this.dialect.escapeIdChar;
+    const byDate = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, InventoryAdjustment, {
+        $agg: { oldest: { $min: 'date' } },
+        $having: { oldest: new Date('2020-01-01T00:00:00.000Z') },
+      }),
+    );
+    expect(byDate.sql).toBe(
+      `SELECT MIN(${e}date${e}) ${e}oldest${e} FROM ${e}InventoryAdjustment${e} HAVING MIN(${e}date${e}) = ${this.ph(1)}`,
+    );
+    expect(byDate.values).toHaveLength(1);
+
+    // an array is the implicit `$in` it is everywhere else, not a map keyed by its indices. How the
+    // membership renders is the dialect's own (`IN (?, ?)` against `= ANY($1)`), so only the
+    // comparison it hangs off is asserted here.
+    const byList = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, { $agg: { n: { $count: '*' } }, $having: { n: [1, 2] } }),
+    );
+    expect(byList.sql).toContain('HAVING COUNT(*) ');
+  }
+
+  /**
+   * An aggregate emits its `$group` columns and its `$agg` aliases, and `$having`/`$sort` may name
+   * those and nothing else. Falling back to the bare key emitted `HAVING "status" = ?` with no
+   * GROUP BY, and an ORDER BY over a column the statement never produced.
+   */
+  shouldRejectAggregateClausesNamingAColumnItDoesNotEmit() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.aggregate(ctx, User, { $agg: { total: { $count: '*' } }, $having: { name: 'x' } as never }),
+      ),
+    ).toThrow("cannot $having by 'name': it is neither a $group column nor an $agg alias");
+
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.aggregate(ctx, User, {
+          $group: { name: true },
+          $agg: { total: { $count: '*' } },
+          $sort: { createdAt: -1 } as never,
+        }),
+      ),
+    ).toThrow("cannot $sort by 'createdAt': it is neither a $group column nor an $agg alias");
+
+    // a grouped column and an alias are both legal in either clause
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $agg: { total: { $count: '*' } },
+        $having: { total: { $gt: 1 } },
+        $sort: { name: 1, total: -1 },
+      }),
+    );
+    expect(sql).toContain('HAVING COUNT(*) >');
+    expect(sql).toContain('ORDER BY');
   }
 
   shouldAggregateCountDistinct() {

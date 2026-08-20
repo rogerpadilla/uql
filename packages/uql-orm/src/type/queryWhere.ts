@@ -286,9 +286,13 @@ export type QueryWhereFieldOperators<T> = unknown extends T
  * Value for a field comparison. A bare array is an implicit `$in` for scalar fields only:
  * on array-typed fields (e.g. a vector `number[]`) an array of arrays is ambiguous, so
  * membership there requires an explicit operator.
+ *
+ * `null` is accepted on a nullable field (an optional property is a nullable column), matching what
+ * `$eq: null` already took.
  */
 export type QueryWhereFieldValue<T> =
   | T
+  | (undefined extends T ? null : never)
   | ([NonNullable<T>] extends [readonly unknown[]] ? never : T[])
   | QueryWhereFieldOperators<T>
   | QueryRaw;

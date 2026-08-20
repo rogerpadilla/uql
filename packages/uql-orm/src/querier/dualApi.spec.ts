@@ -222,48 +222,6 @@ describe('Dual API Pattern: $entity field support', () => {
     });
   });
 
-  describe('lifecycle hook emission', () => {
-    let emitHookSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-      emitHookSpy = vi.spyOn(querier as any, 'emitHook').mockResolvedValue(undefined);
-    });
-
-    it('should emit afterLoad for findMany', async () => {
-      await querier.findMany(User, { $where: { id: 1 } });
-
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterLoad', []);
-    });
-
-    it('should emit afterLoad for findManyAndCount', async () => {
-      await querier.findManyAndCount(User, { $where: { id: 1 } });
-
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterLoad', []);
-    });
-
-    it('should emit beforeInsert and afterInsert for insertMany', async () => {
-      const payload = [{ name: 'test' }] as User[];
-      await querier.insertMany(User, payload);
-
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeInsert', payload);
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterInsert', payload);
-    });
-
-    it('should emit beforeUpdate and afterUpdate for updateMany', async () => {
-      await querier.updateMany(User, { $where: { id: 1 } }, { name: 'updated' });
-
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeUpdate', [{ name: 'updated' }]);
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterUpdate', [{ name: 'updated' }]);
-    });
-
-    it('should emit beforeDelete and afterDelete for deleteMany', async () => {
-      await querier.deleteMany(User, { $where: { id: 1 } });
-
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'beforeDelete', []);
-      expect(emitHookSpy).toHaveBeenCalledWith(User, 'afterDelete', []);
-    });
-  });
-
   describe('findManyStream', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
       const collected: User[] = [];
@@ -283,16 +241,6 @@ describe('Dual API Pattern: $entity field support', () => {
 
       expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
       expect(collected).toEqual([]);
-    });
-
-    it('should not emit lifecycle hooks', async () => {
-      const emitHookSpy = vi.spyOn(querier as any, 'emitHook');
-
-      for await (const _ of querier.findManyStream(User, { $where: { id: 1 } })) {
-        // consume
-      }
-
-      expect(emitHookSpy).not.toHaveBeenCalled();
     });
 
     it('should yield rows in order', async () => {

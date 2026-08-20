@@ -1,6 +1,7 @@
 import { withContext } from '../context/context.js';
 import type { AbstractDialect } from '../dialect/index.js';
 import type {
+  EntityData,
   ExtraOptions,
   IdValue,
   PoolRunOptions,
@@ -105,11 +106,11 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.aggregate(entity, q, opts));
   }
 
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined> {
+  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
     return this.withQuerier((querier) => querier.insertOne(entity, payload));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]> {
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
     return this.withQuerier((querier) => querier.insertMany(entity, payload));
   }
 
@@ -134,7 +135,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
   upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E,
+    payload: EntityData<E>,
   ): Promise<QueryUpdateResult> {
     return this.withQuerier((querier) => querier.upsertOne(entity, conflictPaths, payload));
   }
@@ -142,16 +143,16 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
+    payload: EntityData<E>[],
   ): Promise<QueryUpdateResult> {
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>> {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E>> {
     return this.withQuerier((querier) => querier.saveOne(entity, payload));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]> {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
     return this.withQuerier((querier) => querier.saveMany(entity, payload));
   }
 

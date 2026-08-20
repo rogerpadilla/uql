@@ -10,6 +10,11 @@ import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   protected abstract jsonCastText(operand: string): string;
 
+  /** 2^64-1, the count MySQL's manual gives for "every row from the offset on". */
+  protected override expected$skipClause(): string {
+    return 'LIMIT 18446744073709551615 OFFSET 30';
+  }
+
   shouldHandleDate() {
     const values: unknown[] = [];
     expect(this.dialect.addValue(values, new Date())).toBe('?');

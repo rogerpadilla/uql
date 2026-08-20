@@ -2,6 +2,7 @@ import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequir
 import { getMeta } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
+  EntityData,
   EntityMeta,
   ExtraOptions,
   IdValue,
@@ -238,7 +239,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id]);
   }
 
-  override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: E[]) {
+  override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: EntityData<E>[]) {
     return this.timed('internalInsertMany', undefined, async () => {
       if (!payloads?.length) {
         return [];
@@ -294,7 +295,11 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
-  private buildConflictFilter<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, item: E) {
+  private buildConflictFilter<E extends Document>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    item: EntityData<E>,
+  ) {
     const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
       acc[key] = item[key];
       return acc;
@@ -302,7 +307,11 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.dialect.where(entity, where);
   }
 
-  override async upsertOne<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+  override async upsertOne<E extends Document>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>,
+  ) {
     return this.timed('upsertOne', undefined, async () => {
       payload = clone(payload);
 
@@ -328,7 +337,11 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
-  override async upsertMany<E extends Document>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]) {
+  override async upsertMany<E extends Document>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>[],
+  ) {
     return this.timed('upsertMany', undefined, async () => {
       if (!payload?.length) {
         return { changes: 0 };

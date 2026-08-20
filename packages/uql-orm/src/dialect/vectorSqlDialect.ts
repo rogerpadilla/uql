@@ -95,8 +95,15 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     key: string,
     search: QueryVectorSearch,
   ): void {
+    const alias = search.$project!;
+    // `$project` names a new column, so it cannot be one the entity already has: both come back
+    // under that name and the driver keeps whichever it read last. Checked here rather than in the
+    // type because TypeScript cannot say "any string except these".
+    if (meta.fields[alias as FieldKey<E>]) {
+      throw new TypeError(`$project '${alias}' collides with a field of '${meta.name ?? String(meta.entity.name)}'`);
+    }
     this.appendVectorSort(ctx, meta, key, search);
-    ctx.append(` AS ${this.escapeId(search.$project!)}`);
+    ctx.append(` AS ${this.escapeId(alias)}`);
   }
 
   /**

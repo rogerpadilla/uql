@@ -119,10 +119,12 @@ function checkBrowserGraph(): number {
 // `.` and `./postgres` carry ~+500 each for read-side decoding, ~+370/+350 for `$lock`, and ~+210/+200
 // for the query's join set (`dialect/queryJoins.ts`, which `$sort` by a relation needs); `./postgres`
 // carries another ~+40 for the connection lifecycle (rolling back at release, discarding a connection
-// whose rollback failed, refusing a released querier). See the CHANGELOG entries for each.
+// whose rollback failed, refusing a released querier), and ~+130 for the query-API guards (nullish id,
+// pager operand, operator-map classification, settling a paged write on its own rows). See the
+// CHANGELOG entries for each.
 const BUDGETS: Record<string, number> = {
   '.': 26_000,
-  './postgres': 21_550,
+  './postgres': 21_700,
   './migrate': 43_000,
   './browser': 1_700,
 };

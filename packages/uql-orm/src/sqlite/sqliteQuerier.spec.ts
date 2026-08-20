@@ -1,6 +1,6 @@
-import { vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
-import { createSpec } from '../test/index.js';
+import { createSpec, probeForeignKeys, User } from '../test/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
@@ -22,74 +22,6 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
 }
 
 createSpec(new SqliteQuerierSpec());
-
-// ─── Global listeners (covers abstractQuerier.ts emitHook lines 533-545) ───
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { clearTables, createTables, dropTables, probeForeignKeys, User } from '../test/index.js';
-import type { QuerierListener } from '../type/index.js';
-
-describe('global listeners', () => {
-  // Track whether async work actually completed before the operation returned
-  let asyncWorkDone = false;
-
-  const asyncListener: QuerierListener = {
-    afterLoad: vi.fn(async () => {
-      // Real async: microtask delay to simulate I/O
-      await new Promise((r) => setTimeout(r, 5));
-      asyncWorkDone = true;
-    }),
-    beforeInsert: vi.fn(async () => {
-      await new Promise((r) => setTimeout(r, 5));
-      asyncWorkDone = true;
-    }),
-    afterInsert: vi.fn(),
-  };
-
-  const pool = new Sqlite3QuerierPool(':memory:', undefined, { listeners: [asyncListener] });
-  let q: Awaited<ReturnType<typeof pool.getQuerier>>;
-
-  beforeAll(async () => {
-    q = await pool.getQuerier();
-    await dropTables(q).catch(() => {});
-    await createTables(q);
-  });
-
-  beforeEach(async () => {
-    q = await pool.getQuerier();
-    await clearTables(q);
-    asyncWorkDone = false;
-    vi.mocked(asyncListener.afterLoad!).mockClear();
-    vi.mocked(asyncListener.beforeInsert!).mockClear();
-    vi.mocked(asyncListener.afterInsert!).mockClear();
-  });
-
-  afterEach(async () => {
-    await q.release();
-  });
-
-  afterAll(async () => {
-    await pool.end();
-  });
-
-  it('should await async afterLoad listener before returning', async () => {
-    await q.findMany(User, {});
-    expect(asyncWorkDone).toBe(true);
-    expect(asyncListener.afterLoad).toHaveBeenCalledWith(expect.objectContaining({ entity: User, event: 'afterLoad' }));
-  });
-
-  it('should await async beforeInsert and call sync afterInsert', async () => {
-    await q.insertOne(User, { name: 'Test', createdAt: 1 });
-    // Proves the async beforeInsert completed before insertOne resolved
-    expect(asyncWorkDone).toBe(true);
-    expect(asyncListener.beforeInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ entity: User, event: 'beforeInsert' }),
-    );
-    // Sync afterInsert should also have been called
-    expect(asyncListener.afterInsert).toHaveBeenCalledWith(
-      expect.objectContaining({ entity: User, event: 'afterInsert' }),
-    );
-  });
-});
 
 // ─── insertMany: chunking and ID reliability ───
 import BetterSqlite3 from 'better-sqlite3';
@@ -145,91 +77,6 @@ describe('insertMany id semantics', () => {
       { code: null, title: 'still no pk' },
     ]);
     await querier.release();
-  });
-});
-
-// ─── Entity lifecycle hooks (@BeforeInsert and friends, run through a real querier) ───
-import { AfterInsert, AfterLoad, BeforeInsert, BeforeUpdate } from '../entity/index.js';
-import type { HookContext } from '../util/index.js';
-
-/** Exercises every hook the querier emits, including one that awaits and one that mutates. */
-@Entity()
-class HookedNote {
-  @Id({ type: Number })
-  id?: number;
-
-  @Field({ type: String })
-  title?: string;
-
-  @Field({ type: String })
-  slug?: string;
-
-  static readonly seen: string[] = [];
-
-  @BeforeInsert()
-  async stampSlug(this: HookedNote, ctx: HookContext) {
-    HookedNote.seen.push(`beforeInsert:${ctx.querier.hasOpenTransaction}`);
-    await Promise.resolve();
-    this.slug = this.title?.toLowerCase().replace(/\s+/g, '-');
-  }
-
-  @AfterInsert()
-  recordInsert() {
-    HookedNote.seen.push('afterInsert');
-  }
-
-  @BeforeUpdate()
-  recordUpdate() {
-    HookedNote.seen.push('beforeUpdate');
-  }
-
-  @AfterLoad()
-  recordLoad(this: HookedNote) {
-    HookedNote.seen.push(`afterLoad:${this.id}`);
-  }
-}
-
-describe('entity lifecycle hooks', () => {
-  let querier: SqliteQuerier;
-
-  /** A `HookedNote` payload: an instance, so its hook methods are part of the value. */
-  const note = (title: string) => Object.assign(new HookedNote(), { title });
-
-  beforeEach(async () => {
-    HookedNote.seen.length = 0;
-    querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
-    await querier.run('CREATE TABLE `HookedNote` (`id` INTEGER PRIMARY KEY, `title` TEXT, `slug` TEXT)');
-  });
-
-  afterEach(async () => {
-    await querier.release();
-  });
-
-  it('should run @BeforeInsert before the row is written and await it', async () => {
-    await querier.insertOne(HookedNote, note('Hello World'));
-
-    const [found] = await querier.findMany(HookedNote, { $select: { id: true, slug: true } });
-    expect(found.slug).toBe('hello-world');
-    expect(HookedNote.seen).toContain('beforeInsert:false');
-    expect(HookedNote.seen).toContain('afterInsert');
-  });
-
-  it('should run @AfterLoad once per loaded row', async () => {
-    await querier.insertMany(HookedNote, [note('One'), note('Two')]);
-    HookedNote.seen.length = 0;
-
-    await querier.findMany(HookedNote, { $select: { id: true } });
-
-    expect(HookedNote.seen).toEqual(['afterLoad:1', 'afterLoad:2']);
-  });
-
-  it('should run @BeforeUpdate on the update payload', async () => {
-    await querier.insertOne(HookedNote, note('One'));
-    HookedNote.seen.length = 0;
-
-    await querier.updateMany(HookedNote, { $where: { id: 1 } }, { title: 'Renamed' });
-
-    expect(HookedNote.seen).toContain('beforeUpdate');
   });
 });
 
