@@ -376,10 +376,17 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number> {
     const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, qOrOpts, maybeOpts);
     const doomed = await this.findDoomed(entity, q, opts);
+    if (doomed?.length === 0) {
+      return 0;
+    }
 
-    await this.emitHook(entity, 'beforeDelete', doomed);
-    const changes = await this.internalDeleteMany(entity, q, opts);
-    await this.emitHook(entity, 'afterDelete', doomed);
+    // Where a snapshot was taken, the statement names those rows rather than resolving `q` a second
+    // time. Two reads of one `$limit` with no total order are free to disagree, which would fire the
+    // hooks for one row and delete another; naming them also spares the second read.
+    const target: QuerySearch<E> = doomed ? { $where: doomed.map((it) => it[getMeta(entity).id]) } : q;
+    await this.emitHook(entity, 'beforeDelete', doomed ?? []);
+    const changes = await this.internalDeleteMany(entity, target, opts);
+    await this.emitHook(entity, 'afterDelete', doomed ?? []);
     return changes;
   }
 
@@ -387,10 +394,17 @@ export abstract class AbstractQuerier implements Querier {
    * The rows a delete is about to take, loaded only when a hook or listener is there to receive
    * them: the round trip is pure overhead for the (common) delete nobody is watching, and
    * `internalDeleteMany` has its own fast path that never reads the rows at all.
+   *
+   * `undefined` means nobody was watching, which is not the same as the empty array meaning nothing
+   * matched - the caller deletes by `q` for the first and skips the statement entirely for the second.
    */
-  private async findDoomed<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<E[]> {
+  private async findDoomed<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions,
+  ): Promise<E[] | undefined> {
     if (!this.hasHook(entity, 'beforeDelete') && !this.hasHook(entity, 'afterDelete')) {
-      return [];
+      return undefined;
     }
     // A hard delete takes already-soft-deleted rows too, so reading them back has to see them.
     const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
