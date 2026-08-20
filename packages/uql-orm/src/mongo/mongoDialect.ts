@@ -5,6 +5,7 @@ import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
 import type {
   DialectFeatures,
+  EntityData,
   EntityMeta,
   FieldValue,
   JsonUpdateOp,
@@ -32,6 +33,8 @@ import type {
 import { QueryRaw } from '../type/queryRaw.js';
 import {
   asSelectMap,
+  assertAggregateColumns,
+  assertNonNegativeInteger,
   buildQueryWhereAsMap,
   type CallbackKey,
   fillOnFields,
@@ -40,6 +43,7 @@ import {
   getRelationRequestSummary,
   hasKeys,
   isJsonUpdateOp,
+  isOperatorMap,
   isOperatorObject,
   isVectorSearch,
   normalizeScalarFieldSelection,
@@ -552,7 +556,7 @@ export class MongoDialect extends AbstractDialect {
    * Aggregate results are keyed by `$group`/`$agg` alias rather than by column, so an aggregate
    * `$sort` addresses those aliases as-is - the same reason the SQL dialects sort by alias there.
    */
-  private aliasSort<E extends Document>(sort: QuerySortMap<E> | undefined): Sort {
+  private aliasSort(sort: Record<string, unknown> | undefined): Sort {
     const normalized: Record<string, 1 | -1> = {};
     for (const [alias, dir] of Object.entries(sort ?? {})) {
       normalized[alias] = sortDirection(dir);
@@ -587,8 +591,8 @@ export class MongoDialect extends AbstractDialect {
       ...this.readStages(entity, q, opts, {
         sort: this.sort(entity, q.$sort, q.$populate),
         pager: [
-          ...(q.$skip === undefined ? [] : [{ $skip: q.$skip }]),
-          ...(q.$limit === undefined ? [] : [{ $limit: q.$limit }]),
+          ...(q.$skip === undefined ? [] : [{ $skip: assertNonNegativeInteger(q.$skip, '$skip') }]),
+          ...(q.$limit === undefined ? [] : [{ $limit: assertNonNegativeInteger(q.$limit, '$limit') }]),
         ],
       }),
     ];
@@ -801,7 +805,11 @@ export class MongoDialect extends AbstractDialect {
     }
   }
 
-  public getPersistable<E extends Document>(meta: EntityMeta<E>, payload: E, callbackKey: CallbackKey): Partial<E> {
+  public getPersistable<E extends Document>(
+    meta: EntityMeta<E>,
+    payload: EntityData<E>,
+    callbackKey: CallbackKey,
+  ): Partial<E> {
     return this.getPersistables(meta, payload, callbackKey)[0];
   }
 
@@ -894,7 +902,7 @@ export class MongoDialect extends AbstractDialect {
 
   public getPersistables<E extends Document>(
     meta: EntityMeta<E>,
-    payload: E | E[],
+    payload: EntityData<E> | EntityData<E>[],
     callbackKey: CallbackKey,
   ): Partial<E>[] {
     const payloads = fillOnFields(meta, payload, callbackKey);
@@ -951,8 +959,13 @@ export class MongoDialect extends AbstractDialect {
       pipeline.push({ $project: project });
     }
 
+    // Everything the pipeline emits, which is all `$having` and `$sort` may name. The `$project`
+    // above has already dropped the rest, so an unchecked key matched nothing or ordered by nothing.
+    const emitted = new Set([...Object.keys(groupId), ...Object.keys(groupAccumulators)]);
+
     // $match stage for HAVING (post-group filtering)
     if (q.$having) {
+      assertAggregateColumns(q.$having, emitted, '$having');
       const havingFilter = this.buildHavingFilter(q.$having);
       if (hasKeys(havingFilter)) {
         pipeline.push({ $match: havingFilter });
@@ -961,6 +974,7 @@ export class MongoDialect extends AbstractDialect {
 
     // $sort stage - by alias, since $group/$project already renamed everything
     if (q.$sort) {
+      assertAggregateColumns(q.$sort, emitted, '$sort');
       const sort = this.aliasSort(q.$sort);
       if (hasKeys(sort)) {
         pipeline.push({ $sort: sort });
@@ -969,10 +983,10 @@ export class MongoDialect extends AbstractDialect {
 
     // $skip and $limit stages
     if (q.$skip !== undefined) {
-      pipeline.push({ $skip: q.$skip });
+      pipeline.push({ $skip: assertNonNegativeInteger(q.$skip, '$skip') });
     }
     if (q.$limit !== undefined) {
-      pipeline.push({ $limit: q.$limit });
+      pipeline.push({ $limit: assertNonNegativeInteger(q.$limit, '$limit') });
     }
 
     return pipeline;
@@ -1028,10 +1042,13 @@ export class MongoDialect extends AbstractDialect {
     const filter: Record<string, unknown> = {};
     for (const [alias, condition] of Object.entries(having)) {
       if (condition === undefined) continue;
-      if (typeof condition === 'number') {
-        filter[alias] = condition;
-      } else if (typeof condition === 'object' && condition !== null) {
-        filter[alias] = this.transformOperators(condition as Record<string, unknown>);
+      // Classified exactly as the SQL side classifies a `$where`/`$having` value, so the two agree
+      // on identical input. Keeping only numbers and objects dropped a string or boolean without a
+      // word, handing back every group instead of the filtered ones.
+      if (isOperatorMap(condition)) {
+        filter[alias] = this.transformOperators(condition);
+      } else {
+        filter[alias] = Array.isArray(condition) ? { $in: condition } : condition;
       }
     }
     return filter;

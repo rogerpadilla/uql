@@ -9,6 +9,7 @@ import type {
   InsertIdSource,
   QueryConflictPaths,
   QueryContext,
+  QueryPager,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
   Type,
@@ -17,6 +18,9 @@ import { getFieldKeys } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
+
+/** The row count MySQL's manual gives for "all rows from the offset on": the largest `BIGINT UNSIGNED`. */
+const MAX_LIMIT = BigInt.asUintN(64, -1n);
 
 /**
  * Shared JSON-array / JSON-object operator implementation between MySQL and MariaDB.
@@ -45,6 +49,14 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     defaultStringAsText: false,
   };
+
+  /** `OFFSET` is only legal after a `LIMIT` here, so a bare `$skip` needs one. */
+  override pager(ctx: QueryContext, opts: QueryPager): void {
+    if (opts.$limit === undefined && opts.$skip !== undefined) {
+      ctx.append(` LIMIT ${MAX_LIMIT}`);
+    }
+    super.pager(ctx, opts);
+  }
 
   override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
 

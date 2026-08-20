@@ -19,17 +19,21 @@ export type Key<E> = keyof E & string;
  * Includes scalar fields, JSON fields, and scalar arrays (e.g. vector `number[]`).
  * The `-?` modifier strips optionality so the indexed access yields clean key unions
  * (without it, optional properties leak `undefined` into the union).
+ *
+ * The check is bracketed so `any` resolves once rather than matching both this and
+ * {@link RelationKey}: an unbracketed `any extends X` satisfies either branch.
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]-?: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? K : never;
+  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | Scalar[] | Json] ? K : never;
 }[Key<E>];
 
 /**
- * Infers the relation names of an entity
+ * Infers the relation names of an entity: whatever is left once its fields and its methods are
+ * taken out. Stated as the complement rather than as {@link FieldKey}'s test negated, so the two
+ * cannot drift; methods are subtracted because one is not a `Scalar` and would otherwise read as a
+ * relation.
  */
-export type RelationKey<E> = {
-  readonly [K in keyof E]-?: NonNullable<E[K]> extends Scalar | Scalar[] | Json ? never : K;
-}[Key<E>];
+export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
 
 /**
  * Whether `T` carries the `Json` brand. Checks for the `__json` marker key explicitly:
@@ -162,15 +166,31 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
     : JsonUpdateOp<T>;
 
 /**
- * Accepted value for a single field in an update payload: the value itself, `QueryRaw` for a raw SQL
- * expression (e.g. `raw('NOW()')`), and - for JSON object fields - the JSON operators.
+ * Accepted value for a single field in an update payload: the value itself, `null` where the column
+ * is nullable, `QueryRaw` for a raw SQL expression (e.g. `raw('NOW()')`), and - for JSON object
+ * fields - the JSON operators.
+ *
+ * An optional property is a nullable column, and clearing one is what an update is for, so `null`
+ * belongs in the declared type rather than behind a cast.
  */
-type UpdateFieldValue<V> = V | QueryRaw | JsonUpdateOpFor<V>;
+type UpdateFieldValue<V> = V | (undefined extends V ? null : never) | QueryRaw | JsonUpdateOpFor<V>;
 
 /**
- * Payload type for update operations.
- * Widens each field to additionally accept `QueryRaw` or `JsonUpdateOp` (for JSON fields),
- * providing IDE autocomplete for `$set`/`$push`/`$pull` keys via `Json<infer T>`.
+ * An entity's fields and relations, each keeping its declared optionality: what the whole-record
+ * writes (`insertOne`, `saveOne`, `upsertOne`, and their `*Many`) persist.
+ *
+ * Not `E`: that *demands* back every method the class declares, so on an entity carrying a
+ * lifecycle hook - `@BeforeInsert() generateSlug()` - a plain `{ title: 'Hello' }` was rejected as
+ * "missing the following properties". Method-free entities were unaffected, which is why the other
+ * examples worked. No runtime filter can help; the call never gets that far. `Pick` because it
+ * stays indexable by `IdKey<E>`, which the write path needs.
+ */
+export type EntityData<E> = Pick<E, FieldKey<E> | RelationKey<E>>;
+
+/**
+ * Payload type for update operations: {@link EntityData} made partial, and widened per field to
+ * accept `QueryRaw` or `JsonUpdateOp` (for JSON fields), which gives IDE autocomplete for
+ * `$set`/`$push`/`$pull` keys via `Json<infer T>`.
  */
 export type UpdatePayload<E> = {
   [K in FieldKey<E>]?: UpdateFieldValue<E[K]>;
@@ -198,6 +218,10 @@ export type IdKey<E> = E extends { [idKey]?: infer K }
 
 /**
  * Infers the value of the key identifier on an entity.
+ *
+ * Nullable, because an entity declares its id optional - nothing has assigned one before the
+ * insert. That puts `undefined` inside every by-id method's parameter, where it would mean "no
+ * filter"; `assertIdValue` is what rejects it.
  */
 export type IdValue<E> = E[IdKey<E>];
 

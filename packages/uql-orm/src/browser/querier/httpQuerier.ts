@@ -6,7 +6,16 @@ import {
   type RequestSuccessResponse,
 } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
+import type {
+  EntityData,
+  IdValue,
+  Query,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  Type,
+  UpdatePayload,
+} from '../../type/index.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
 import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
 
@@ -77,12 +86,12 @@ export class HttpQuerier implements ClientQuerier {
     return this.read<number>(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
   }
 
-  insertOne<E extends object>(entity: Type<E>, payload: E, opts?: RequestOptions) {
+  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<IdValue<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.insertMany.path}`, payload, this.buildOptions(opts));
   }
@@ -98,12 +107,12 @@ export class HttpQuerier implements ClientQuerier {
     return patch<number>(`${basePath}${qs}`, payload, this.buildOptions(opts));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: E, opts?: RequestOptions) {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<IdValue<E>>(basePath, payload, this.buildOptions(opts));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: E[], opts?: RequestOptions) {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.saveMany.path}`, payload, this.buildOptions(opts));
   }

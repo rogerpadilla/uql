@@ -19,6 +19,7 @@ import {
   type QueryContext,
   type QueryDialect,
   type QueryExclude,
+  type QueryFilter,
   type QueryGroupMap,
   type QueryHavingMap,
   type QueryLikeOp,
@@ -51,6 +52,7 @@ import {
 } from '../type/index.js';
 import {
   asSelectMap,
+  assertNonNegativeInteger,
   buildQueryWhereAsMap,
   escapeSqlId,
   fillOnFields,
@@ -63,6 +65,7 @@ import {
   isJsonType,
   isJsonUpdateOp,
   isNumericType,
+  isOperatorMap,
   isOperatorObject,
   isOperatorOnlyObject,
   isVectorSearch,
@@ -72,6 +75,7 @@ import {
   populatesRelations,
   raw,
   someValue,
+  throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
@@ -1011,11 +1015,12 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {
-    if (opts.$limit) {
-      ctx.append(` LIMIT ${Number(opts.$limit)}`);
+    // `!== undefined`, not truthiness: `$limit: 0` asks for no rows, where "unset" means every row.
+    if (opts.$limit !== undefined) {
+      ctx.append(` LIMIT ${assertNonNegativeInteger(opts.$limit, '$limit')}`);
     }
     if (opts.$skip !== undefined) {
-      ctx.append(` OFFSET ${Number(opts.$skip)}`);
+      ctx.append(` OFFSET ${assertNonNegativeInteger(opts.$skip, '$skip')}`);
     }
   }
 
@@ -1058,12 +1063,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     ctx.append(` FOR UPDATE${target}${suffix}`);
   }
 
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void {
-    const search: Query<E> = { ...q };
-    // A count joins nothing and orders nothing: how many rows match is the same either way.
-    delete search.$sort;
+  // `QueryFilter`, not `QuerySearch`: a count orders nothing and pages nothing, and an `OFFSET`
+  // would push its single row out of the result set. The parameter type is what keeps them away.
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryFilter<E>, opts?: QueryOptions): void {
     this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', 'count')] });
-    this.search(ctx, entity, search, opts);
+    this.search(ctx, entity, q, opts);
   }
 
   /** `$group` aggregate operator → SQL function name. An allowlist, not a formatter: the op key
@@ -1087,7 +1091,10 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     const tableName = this.resolveTableName(entity, meta);
     const groupKeys: string[] = [];
     const selectParts: string[] = [];
-    const aggregateExpressions: Record<string, string> = {};
+    // Every column the statement emits, mapped to the SQL that references it. `$having` and `$sort`
+    // may name these and nothing else, so one map answers both "is this legal?" and "what do I
+    // emit for it?".
+    const emittedColumns: Record<string, string> = {};
 
     for (const entry of parseGroupMap(q.$group, q.$agg)) {
       if (entry.kind === 'key') {
@@ -1095,6 +1102,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         const columnName = this.resolveColumnName(entry.alias, field);
         const escaped = this.escapeId(columnName);
         groupKeys.push(escaped);
+        emittedColumns[entry.alias] = escaped;
         selectParts.push(columnName !== entry.alias ? `${escaped} ${this.escapeId(entry.alias)}` : escaped);
       } else {
         const sqlFn = AbstractSqlDialect.AGGREGATE_FN_MAP.get(entry.op);
@@ -1103,7 +1111,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         }
         const sqlArg = entry.fieldRef === '*' ? '*' : this.escapeId(this.columnOf(meta, entry.fieldRef));
         const expr = `${sqlFn}(${entry.distinct ? 'DISTINCT ' : ''}${sqlArg})`;
-        aggregateExpressions[entry.alias] = expr;
+        emittedColumns[entry.alias] = expr;
         selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
       }
     }
@@ -1120,10 +1128,10 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
 
     if (q.$having) {
-      this.having(ctx, q.$having, aggregateExpressions);
+      this.having(ctx, q.$having, emittedColumns);
     }
 
-    this.aggregateSort(ctx, meta, q.$sort, aggregateExpressions);
+    this.aggregateSort(ctx, q.$sort, emittedColumns);
     this.pager(ctx, q);
   }
 
@@ -1132,35 +1140,35 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * statement has no joins to address, so a relation key is rejected rather than emitted as an alias
    * nothing defines.
    */
-  private aggregateSort<E>(
+  private aggregateSort(
     ctx: QueryContext,
-    meta: EntityMeta<E>,
     sort: QuerySortMap<object> | undefined,
-    aggregateExpressions: Record<string, string>,
+    emittedColumns: Record<string, string>,
   ): void {
     if (!hasKeys(sort)) return;
 
     ctx.append(' ORDER BY ');
     Object.entries(sort).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
-      if (meta.relations[key as RelationKey<E>]) {
-        throw new TypeError(`cannot $sort by relation '${key}' in an aggregate query: it groups rows, it joins none`);
-      }
-      const direction = this.resolveSortDirection(dir);
-      const ref = aggregateExpressions[key] ?? this.escapeId(key);
-      ctx.append(ref + direction);
+      ctx.append(this.aggregateRef(emittedColumns, key, '$sort') + this.resolveSortDirection(dir));
     });
   }
 
-  protected having(ctx: QueryContext, having: QueryHavingMap, aggregateExpressions: Record<string, string>): void {
+  /** The SQL referencing one of an aggregate's emitted columns, rejecting any other name. */
+  private aggregateRef(emittedColumns: Record<string, string>, key: string, clause: string): string {
+    return emittedColumns[key] ?? throwUnknownAggregateColumn(key, clause);
+  }
+
+  protected having(ctx: QueryContext, having: QueryHavingMap, emittedColumns: Record<string, string>): void {
     const entries = Object.entries(having).filter(([, v]) => v !== undefined);
     if (!entries.length) return;
 
     ctx.append(' HAVING ');
     entries.forEach(([alias, condition], index) => {
       if (index > 0) ctx.append(' AND ');
-      const expr = aggregateExpressions[alias] ?? this.escapeId(alias);
-      this.havingCondition(ctx, expr, condition);
+      // A HAVING may only name a column the statement emits. Falling back to the bare key produced
+      // `HAVING "status" = ?` over an ungrouped column, which every engine rejects.
+      this.havingCondition(ctx, this.aggregateRef(emittedColumns, alias, '$having'), condition);
     });
   }
 
@@ -1181,11 +1189,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   /** Scalar comparison operators shared by `HAVING` conditions and `$size` comparisons. */
   protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
-    if (typeof condition !== 'object' || condition === null) {
-      this.appendOperatorCondition(ctx, expr, '$eq', condition);
-      return;
-    }
-    const ops = condition as QueryWhereFieldOperatorMap<number>;
+    const ops = this.normalizeWhereValue(condition) as QueryWhereFieldOperatorMap<number>;
     getKeys(ops).forEach((op, i) => {
       if (i > 0) ctx.append(' AND ');
       if (!this.appendOperatorCondition(ctx, expr, op, ops[op])) {
@@ -1746,11 +1750,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   /**
    * Normalizes a raw WHERE value into an operator map.
-   * Arrays become `$in`, scalars/null become `$eq`, objects pass through.
+   * Arrays become `$in`, operator maps pass through, everything else becomes `$eq`.
    */
   private normalizeWhereValue(val: unknown): Record<string, unknown> {
     if (Array.isArray(val)) return { $in: val };
-    if (typeof val === 'object' && val !== null) return val as Record<string, unknown>;
+    if (isOperatorMap(val)) return val;
     return { $eq: val };
   }
 

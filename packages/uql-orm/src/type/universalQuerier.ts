@@ -1,5 +1,13 @@
-import type { IdValue, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type { EntityData, IdValue, UpdatePayload } from './entity.js';
+import type {
+  Query,
+  QueryConflictPaths,
+  QueryFilter,
+  QueryOne,
+  QueryOptions,
+  QuerySearch,
+  QueryUpdateResult,
+} from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 
 import type { Type } from './utility.js';
@@ -58,12 +66,12 @@ export interface UniversalQuerier {
   findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
 
   /**
-   * counts the number of records matching the given search parameters.
+   * counts the number of records matching the given filter.
    * @param entity the target entity
-   * @param q the search options
+   * @param q the filter
    * @return the count
    */
-  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * Insert a single record and return its ID (provided, `onInsert`-generated, or
@@ -74,7 +82,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the ID
    */
-  insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined>;
+  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined>;
 
   /**
    * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
@@ -89,7 +97,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the IDs
    */
-  insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]>;
 
   /**
    * updates a record partially.
@@ -129,7 +137,7 @@ export interface UniversalQuerier {
   upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E,
+    payload: EntityData<E>,
   ): Promise<QueryUpdateResult>;
 
   /**
@@ -142,7 +150,7 @@ export interface UniversalQuerier {
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
+    payload: EntityData<E>[],
   ): Promise<QueryUpdateResult>;
 
   /**
@@ -151,7 +159,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the ID
    */
-  saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>>;
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E>>;
 
   /**
    * Insert or update records.
@@ -159,7 +167,7 @@ export interface UniversalQuerier {
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]>;
 
   /**
    * delete or SoftDelete a record.

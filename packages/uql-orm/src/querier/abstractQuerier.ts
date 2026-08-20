@@ -1,6 +1,7 @@
 import { getMeta } from '../entity/index.js';
 
 import type {
+  EntityData,
   EntityMeta,
   ExtraOptions,
   HookEvent,
@@ -41,8 +42,24 @@ import {
   parseRelationQueryValue,
   type RelationQuery,
   runHooks,
+  withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
+
+/**
+ * Rejects a nullish primary key before it reaches a statement. The by-id methods reduce to
+ * `{ $where: id }`, and a nullish `$where` is *no filter*, so an unchecked one addresses the whole
+ * table. An entity declares its id optional, which puts `undefined` inside `IdValue<E>`, and the
+ * HTTP layer reaches these methods with parsed JSON regardless, so the guard belongs at runtime.
+ *
+ * Its callers are all `async` so this surfaces as a rejection on every one of them: a guard that
+ * threw synchronously from some and rejected from others would escape a caller's `.catch()`.
+ */
+function assertIdValue<E>(entity: Type<E>, id: IdValue<E>): void {
+  if (id === undefined || id === null) {
+    throw new TypeError(`'${entity.name}' was addressed by id, but the id is ${String(id)}`);
+  }
+}
 
 /**
  * Base class for all database queriers.
@@ -133,6 +150,7 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryOne<E> = {},
     opts?: QueryOptions,
   ): Promise<E | undefined> {
+    assertIdValue(entity, id);
     return this.findOne(entity, { ...q, $where: augmentWhere(getMeta(entity), q.$where, id) }, opts);
   }
 
@@ -266,21 +284,30 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]>;
 
-  async insertOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E> | undefined> {
+  async insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);
     return id;
   }
 
-  async insertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]> {
+  async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
     await this.emitHook(entity, 'beforeInsert', payload);
     const ids = await this.internalInsertMany(entity, payload);
     await this.emitHook(entity, 'afterInsert', payload);
     return ids;
   }
 
-  protected abstract internalInsertMany<E extends object>(entity: Type<E>, payload: E[]): Promise<IdValue<E>[]>;
+  protected abstract internalInsertMany<E extends object>(
+    entity: Type<E>,
+    payload: EntityData<E>[],
+  ): Promise<IdValue<E>[]>;
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: QueryOptions) {
+  async updateOneById<E extends object>(
+    entity: Type<E>,
+    id: IdValue<E>,
+    payload: UpdatePayload<E>,
+    opts?: QueryOptions,
+  ) {
+    assertIdValue(entity, id);
     return this.updateMany(entity, { $where: id }, payload, opts);
   }
 
@@ -303,7 +330,8 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number> {
+  async restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number> {
+    assertIdValue(entity, id);
     return this.restoreMany(entity, { $where: id });
   }
 
@@ -321,16 +349,17 @@ export abstract class AbstractQuerier implements Querier {
   abstract upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E,
+    payload: EntityData<E>,
   ): Promise<QueryUpdateResult>;
 
   abstract upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
+    payload: EntityData<E>[],
   ): Promise<QueryUpdateResult>;
 
-  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
+  async deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
+    assertIdValue(entity, id);
     return this.deleteMany(entity, { $where: id }, opts);
   }
 
@@ -346,11 +375,26 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<number> {
     const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, qOrOpts, maybeOpts);
+    const doomed = await this.findDoomed(entity, q, opts);
 
-    await this.emitHook(entity, 'beforeDelete', []);
+    await this.emitHook(entity, 'beforeDelete', doomed);
     const changes = await this.internalDeleteMany(entity, q, opts);
-    await this.emitHook(entity, 'afterDelete', []);
+    await this.emitHook(entity, 'afterDelete', doomed);
     return changes;
+  }
+
+  /**
+   * The rows a delete is about to take, loaded only when a hook or listener is there to receive
+   * them: the round trip is pure overhead for the (common) delete nobody is watching, and
+   * `internalDeleteMany` has its own fast path that never reads the rows at all.
+   */
+  private async findDoomed<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<E[]> {
+    if (!this.hasHook(entity, 'beforeDelete') && !this.hasHook(entity, 'afterDelete')) {
+      return [];
+    }
+    // A hard delete takes already-soft-deleted rows too, so reading them back has to see them.
+    const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
+    return this.internalFindMany(entity, q, findOpts);
   }
 
   protected abstract internalDeleteMany<E extends object>(
@@ -359,15 +403,15 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async saveOne<E extends object>(entity: Type<E>, payload: E): Promise<IdValue<E>> {
+  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E>> {
     const [id] = await this.saveMany(entity, [payload]);
     return id;
   }
 
-  async saveMany<E extends object>(entity: Type<E>, payload: E[]) {
+  async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]) {
     const meta = getMeta(entity);
-    const toInsert: E[] = [];
-    const toUpdate: E[] = [];
+    const toInsert: EntityData<E>[] = [];
+    const toUpdate: EntityData<E>[] = [];
     const existingIds: IdValue<E>[] = [];
 
     const idKey = (meta.id ?? 'id') as IdKey<E>;
@@ -681,33 +725,29 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
+  /** Whether anything at all - a global listener or the entity itself - handles `event`. */
+  private hasHook<E extends object>(entity: Type<E>, event: HookEvent): boolean {
+    return (
+      this.extra?.listeners?.some((listener) => listener[event]) || (getMeta(entity).hooks?.[event]?.length ?? 0) > 0
+    );
+  }
+
   /**
    * Emit a lifecycle hook event for the given entity.
    * Fires global listeners first, then entity-level hooks.
    */
   private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: E[]): Promise<void> {
-    const listeners = this.extra?.listeners;
-    const meta = getMeta(entity);
-    const registrations = meta.hooks?.[event];
+    if (!this.hasHook(entity, event)) return;
 
-    // Fast bail-out: skip if no listeners and no entity hooks
-    if (!listeners?.length && !registrations?.length) return;
-
-    // Fire global listeners first
-    if (listeners?.length) {
-      for (const listener of listeners) {
-        const fn = listener[event];
-        if (fn) {
-          const result = fn({ entity, querier: this, payloads, event });
-          if (result instanceof Promise) await result;
-        }
+    for (const listener of this.extra?.listeners ?? []) {
+      const fn = listener[event];
+      if (fn) {
+        const result = fn({ entity, querier: this, payloads, event });
+        if (result instanceof Promise) await result;
       }
     }
 
-    // Fire entity-level hooks
-    if (registrations?.length) {
-      await runHooks(entity, event, payloads, { querier: this });
-    }
+    await runHooks(entity, event, payloads, { querier: this });
   }
 
   /**

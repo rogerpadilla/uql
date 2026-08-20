@@ -174,23 +174,30 @@ export type QueryPager = {
 };
 
 /**
- * search options.
+ * Which rows a statement addresses. `count` takes exactly this: how many rows match is all a count
+ * can answer, so an ordering or a page on it is a clause it could only drop or choke on.
  */
-export type QuerySearch<E> = {
+export type QueryFilter<E> = {
   /**
    * filtering options.
    */
   $where?: QueryWhere<E>;
+};
 
+/**
+ * A filter plus the ordering and page `updateMany`/`deleteMany` take. Both settle the rows they
+ * picked before writing, so the page is portable rather than MySQL-only.
+ *
+ * `$sort` excludes vector search here for the reason `$lock` is declared on {@link Query} instead:
+ * a vector search ranks rows into a projected distance column, and only a SELECT has a projection
+ * list to hold one. Passing `QuerySortMap` its `Vector = false` is what keeps it off these.
+ */
+export type QuerySearch<E> = QueryFilter<E> & {
   /**
    * sorting options.
    */
-  $sort?: QuerySortMap<E>;
+  $sort?: QuerySortMap<E, false>;
 } & QueryPager;
-
-/**
- * criteria one options.
- */
 
 /**
  * query options.
@@ -216,6 +223,12 @@ export type Query<E> = {
   $exclude?: QueryExclude<E>;
 
   /**
+   * sorting options, vector similarity search included: a SELECT is the one statement with a
+   * projection list to hold the distance such a search computes.
+   */
+  $sort?: QuerySortMap<E>;
+
+  /**
    * whether to return only distinct rows.
    */
   $distinct?: boolean;
@@ -226,11 +239,12 @@ export type Query<E> = {
    * the rows, so it is rejected rather than emitted. Locks only the queried entity, never anything
    * reached through `$populate`. SQL only; MongoDB and the SQLite family reject it.
    *
-   * Deliberately declared here rather than on `QuerySearch`, which `count`/`update`/`delete` take:
-   * that placement is what keeps the clause off those statements at the type level.
+   * Declared here rather than on {@link QuerySearch}, which `update`/`delete` take: that placement
+   * is what keeps the clause off those statements at the type level.
    */
   $lock?: QueryLock;
-} & QuerySearch<E>;
+} & QueryFilter<E> &
+  QueryPager;
 
 /**
  * options to get a single record.

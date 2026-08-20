@@ -4,7 +4,7 @@ import type { SqlDialectName } from './dialect.js';
 import type { HookEvent } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type { Query, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
+import type { Query, QueryFilter, QueryOne, QueryOptions, QuerySearch, QueryUpdateResult } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
 
@@ -29,44 +29,50 @@ export type TransactionOptions = {
 
 export type DialectName = SqlDialectName | 'mongodb';
 
+/**
+ * The read and delete methods below take the entity as an argument or as the query's `$entity` key.
+ * In each pair the `$entity` overload comes **first** on purpose: when no overload matches,
+ * TypeScript reports the error from the *last* one, so keeping the entity-argument form last is
+ * what makes a typo'd query key report as itself rather than as a missing `$entity`.
+ */
 export interface Querier extends UniversalQuerier {
   /**
    * Find one record. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
   findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E | undefined>;
+  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
   findMany<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E[]>;
+  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
 
   /**
    * Stream records as an async iterable. Supports both patterns.
    * Does not fill relations or fire lifecycle hooks.
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
   findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
 
   /**
    * Find many records and count. Supports both patterns.
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
   findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
 
   /**
    * Count records. Supports both patterns.
    */
-  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 
   /**
    * whether this querier is in a transaction or not.

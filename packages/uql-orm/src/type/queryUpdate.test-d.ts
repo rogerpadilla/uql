@@ -49,3 +49,45 @@ export async function conflictPathSafety() {
   // @ts-expect-error 'ide' is not a field of Employee
   await querier.upsertMany(Employee, { ide: true }, [{ id: 1, name: 'x', salary: 1 }]);
 }
+
+/**
+ * An entity carrying a lifecycle hook carries a method, and the whole-record writes used to take
+ * `E`, which demanded that method back in the payload: the documented
+ * `insertOne(Article, { title: 'Hello' })` did not compile. They take {@link EntityData} now, which
+ * is the entity's fields and relations and none of its behaviour.
+ */
+class Hooked {
+  id?: number;
+  title?: string;
+  slug?: string;
+  tags?: Company[];
+
+  // stands in for `@BeforeInsert() generateSlug()`
+  generateSlug() {
+    this.slug = this.title?.toLowerCase();
+  }
+}
+
+/** A column the entity declares as required stays required in a write payload. */
+class Required {
+  id?: number;
+  name!: string;
+  audit() {}
+}
+
+export async function writePayloadsExcludeBehaviour(querier: Querier) {
+  await querier.insertOne(Hooked, { title: 'Hello' });
+  await querier.insertMany(Hooked, [{ title: 'a' }, { title: 'b' }]);
+  await querier.saveOne(Hooked, { title: 'Hello' });
+  await querier.upsertOne(Hooked, { title: true }, { title: 'Hello' });
+  // relations are persistable data, so they stay in the payload
+  await querier.insertOne(Hooked, { title: 'Hello', tags: [{ id: 1, name: 'x' }] });
+
+  await querier.insertOne(Required, { name: 'ok' });
+  // @ts-expect-error 'name' is declared required, so the payload has to carry it
+  await querier.insertOne(Required, { id: 1 });
+  // @ts-expect-error a typo'd column is still caught
+  await querier.insertOne(Required, { namo: 'abc' });
+  // @ts-expect-error a method is behaviour, not data to persist
+  await querier.insertOne(Hooked, { title: 'x', generateSlug: () => {} });
+}

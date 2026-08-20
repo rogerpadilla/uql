@@ -27,11 +27,16 @@ export async function aggregateTyping() {
     $sort: { avgAge: -1, status: 1 },
   });
   const status: string = rows[0].status;
+  // `$count` answers 0 over an empty group; every other op answers NULL, so only this one is
+  // non-nullable.
   const count: number = rows[0].count;
-  const avgAge: number = rows[0].avgAge;
+  const avgAge: number | null = rows[0].avgAge;
   void status;
   void count;
   void avgAge;
+  // @ts-expect-error an average over no rows is NULL, so the result is not a bare number
+  const avgAgeNotNullable: number = rows[0].avgAge;
+  void avgAgeNotNullable;
 
   // Aggregate-only query (no grouping) is valid.
   await querier.aggregate(User, { $agg: { total: { $count: '*' } } });
@@ -95,8 +100,8 @@ export async function aggregateTyping() {
     },
   });
   const uniqueAges: number = distinctRows[0].uniqueAges;
-  const distinctAgeSum: number = distinctRows[0].distinctAgeSum;
-  const distinctAgeAvg: number = distinctRows[0].distinctAgeAvg;
+  const distinctAgeSum: number | null = distinctRows[0].distinctAgeSum;
+  const distinctAgeAvg: number | null = distinctRows[0].distinctAgeAvg;
   void uniqueAges;
   void distinctAgeSum;
   void distinctAgeAvg;
@@ -136,4 +141,45 @@ export async function aggregateTyping() {
     // @ts-expect-error 'total' has two aggregate ops; exactly one is allowed
     $agg: { total: { $count: '*', $sum: 'age' } },
   });
+}
+
+/**
+ * The result row carries exactly the columns the statement emits. It used to carry every field of
+ * the entity whenever the compiler could not read `$group` - omitted, hoisted, or annotated - so
+ * `rows[0].status` type-checked on a query whose SELECT never mentioned `status`.
+ */
+export async function resultRowCarriesOnlyEmittedColumns() {
+  const aggOnly = await querier.aggregate(User, { $agg: { total: { $sum: 'age' } } });
+  const total: number | null = aggOnly[0].total;
+  void total;
+  // @ts-expect-error `status` was never grouped, so no such column comes back
+  void aggOnly[0].status;
+
+  const grouped = await querier.aggregate(User, { $group: { status: true }, $agg: { n: { $count: '*' } } });
+  const status: string = grouped[0].status;
+  void status;
+  // @ts-expect-error `age` was not grouped either
+  void grouped[0].age;
+}
+
+export async function aggregateArgumentsAreChecked() {
+  // @ts-expect-error a SUM over a text column cannot be the `number` the result type promises
+  await querier.aggregate(User, { $agg: { s: { $sum: 'status' } } });
+  // @ts-expect-error nor can an AVG over one
+  await querier.aggregate(User, { $agg: { a: { $avg: 'status' } } });
+  // $min/$max keep the column's own type, so any column will do.
+  const rows = await querier.aggregate(User, { $agg: { first: { $min: 'status' } } });
+  const first: string | null = rows[0].first;
+  void first;
+}
+
+/**
+ * Both would be emitted under the one name (`SELECT "age", COUNT(*) "age" ... GROUP BY "age"`),
+ * leaving the driver to keep whichever column it read last.
+ */
+export async function anAliasMayNotShadowAGroupedColumn() {
+  // @ts-expect-error 'age' is already a grouped column
+  await querier.aggregate(User, { $group: { age: true }, $agg: { age: { $count: '*' } } });
+  // a different alias over the same column is fine
+  await querier.aggregate(User, { $group: { age: true }, $agg: { ageCount: { $count: '*' } } });
 }

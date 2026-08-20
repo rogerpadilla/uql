@@ -1,144 +1,66 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-  AfterDelete,
-  AfterInsert,
-  AfterLoad,
-  BeforeDelete,
-  BeforeInsert,
-  BeforeUpdate,
-  Entity,
-  Field,
-  Id,
-} from '../entity/index.js';
-import type { Querier } from '../type/index.js';
+import { describe, expect, it } from 'vitest';
+import { BeforeInsert, Entity, Field, Id } from '../entity/index.js';
+import { createMockQuerier } from '../test/index.js';
 import { type HookContext, runHooks } from './hook.util.js';
 
-// Minimal mock querier for HookContext
-const mockQuerier = {} as Querier;
-const ctx: HookContext = { querier: mockQuerier };
+/**
+ * `runHooks`' own contract: how a registered method is dispatched. Which events a querier emits, and
+ * what each one does to the database, is behaviour rather than dispatch - see `lifecycleHooks.spec.ts`.
+ * The event named here is incidental; nothing in `runHooks` branches on it.
+ */
+
+const ctx: HookContext = { querier: createMockQuerier() };
+
+@Entity()
+class Article {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  title?: string;
+
+  @Field({ type: String })
+  slug?: string;
+
+  @BeforeInsert()
+  async slugify(this: Article) {
+    await Promise.resolve();
+    this.slug = this.title?.toLowerCase().replace(/\s+/g, '-');
+  }
+}
+
+/** Its hook is the assertion: reaching it at all fails the test that says it must not run. */
+@Entity()
+class Unhooked {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  title?: string;
+
+  @BeforeInsert()
+  reject() {
+    throw new Error('a payload-less event has nothing to bind `this` to');
+  }
+}
 
 describe('runHooks', () => {
-  it('should call the hook method for each payload', async () => {
-    const spy = vi.fn();
+  it('should bind `this` to each payload, so an awaited mutation reaches the original object', async () => {
+    const payloads = [{ title: 'Hello World' }, { title: 'Second One' }] as Article[];
 
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
+    await runHooks(Article, 'beforeInsert', payloads, ctx);
 
-      @Field({ type: String })
-      name?: string;
-
-      @BeforeInsert()
-      hook() {
-        spy(this.name);
-      }
-    }
-
-    const payloads = [{ name: 'Alice' } as TestEntity, { name: 'Bob' } as TestEntity];
-    await runHooks(TestEntity, 'beforeInsert', payloads, ctx);
-
-    expect(spy).toHaveBeenCalledTimes(2);
-    expect(spy).toHaveBeenCalledWith('Alice');
-    expect(spy).toHaveBeenCalledWith('Bob');
+    expect(payloads).toEqual([
+      { title: 'Hello World', slug: 'hello-world' },
+      { title: 'Second One', slug: 'second-one' },
+    ]);
   });
 
-  it('should mutate payload via `this` in Before* hooks', async () => {
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @Field({ type: String })
-      name?: string;
-
-      @Field({ type: String })
-      slug?: string;
-
-      @BeforeInsert()
-      generateSlug() {
-        this.slug = this.name?.toLowerCase().replace(/\s+/g, '-');
-      }
-    }
-
-    const payloads = [{ name: 'Hello World' } as TestEntity];
-    await runHooks(TestEntity, 'beforeInsert', payloads, ctx);
-
-    expect(payloads[0].slug).toBe('hello-world');
-  });
-
-  it('should await async hooks', async () => {
+  it('should run every method registered for the event, in registration order', async () => {
     const order: string[] = [];
 
     @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @BeforeInsert()
-      async asyncHook() {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        order.push('async');
-      }
-    }
-
-    await runHooks(TestEntity, 'beforeInsert', [{} as TestEntity], ctx);
-    expect(order).toEqual(['async']);
-  });
-
-  it('should pass HookContext with querier to hooks', async () => {
-    const receivedCtx = vi.fn();
-
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @AfterInsert()
-      hook(hookCtx: HookContext) {
-        receivedCtx(hookCtx);
-      }
-    }
-
-    await runHooks(TestEntity, 'afterInsert', [{} as TestEntity], ctx);
-    expect(receivedCtx).toHaveBeenCalledWith({ querier: mockQuerier });
-  });
-
-  it('should be a no-op when entity has no hooks registered', async () => {
-    @Entity()
-    class PlainEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @Field({ type: String })
-      name?: string;
-    }
-
-    const payloads = [{ name: 'test' } as PlainEntity];
-    // Should not throw
-    await runHooks(PlainEntity, 'beforeInsert', payloads, ctx);
-    expect(payloads[0].name).toBe('test');
-  });
-
-  it('should be a no-op when event has no hooks', async () => {
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @BeforeInsert()
-      onInsert() {}
-    }
-
-    // beforeUpdate has no hooks registered
-    await runHooks(TestEntity, 'beforeUpdate', [{} as TestEntity], ctx);
-  });
-
-  it('should execute multiple hooks in registration order', async () => {
-    const order: string[] = [];
-
-    @Entity()
-    class TestEntity {
+    class Ordered {
       @Id({ type: Number })
       id?: number;
 
@@ -153,86 +75,21 @@ describe('runHooks', () => {
       }
     }
 
-    await runHooks(TestEntity, 'beforeInsert', [{} as TestEntity], ctx);
-    expect(order).toEqual(['first', 'second']);
+    await runHooks(Ordered, 'beforeInsert', [{}, {}] as Ordered[], ctx);
+
+    // Per payload, not per hook: a payload is fully processed before the next one starts.
+    expect(order).toEqual(['first', 'second', 'first', 'second']);
   });
 
-  it('should support @BeforeUpdate mutating payload', async () => {
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
+  it('should do nothing when the entity registers nothing for the event', async () => {
+    const payloads = [{ title: 'untouched' }] as Article[];
 
-      @Field({ type: String })
-      email?: string;
+    await runHooks(Article, 'beforeUpdate', payloads, ctx);
 
-      @BeforeUpdate()
-      normalizeEmail() {
-        if (this.email) {
-          this.email = this.email.toLowerCase();
-        }
-      }
-    }
-
-    const payloads = [{ email: 'USER@EXAMPLE.COM' } as TestEntity];
-    await runHooks(TestEntity, 'beforeUpdate', payloads, ctx);
-    expect(payloads[0].email).toBe('user@example.com');
+    expect(payloads).toEqual([{ title: 'untouched' }]);
   });
 
-  it('should support @AfterLoad with mutation propagation (transforms loaded data)', async () => {
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @Field({ type: String })
-      password?: string;
-
-      @AfterLoad()
-      maskPassword() {
-        this.password = '***';
-      }
-    }
-
-    const payloads = [{ password: 'secret123' } as TestEntity];
-    await runHooks(TestEntity, 'afterLoad', payloads, ctx);
-    // afterLoad IS mutating - its purpose is to transform loaded data
-    expect(payloads[0].password).toBe('***');
-  });
-
-  it('should support @BeforeDelete hook', async () => {
-    const spy = vi.fn();
-
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @BeforeDelete()
-      onDelete() {
-        spy('beforeDelete');
-      }
-    }
-
-    await runHooks(TestEntity, 'beforeDelete', [{} as TestEntity], ctx);
-    expect(spy).toHaveBeenCalledWith('beforeDelete');
-  });
-
-  it('should support @AfterDelete hook', async () => {
-    const spy = vi.fn();
-
-    @Entity()
-    class TestEntity {
-      @Id({ type: Number })
-      id?: number;
-
-      @AfterDelete()
-      onDelete() {
-        spy('afterDelete');
-      }
-    }
-
-    await runHooks(TestEntity, 'afterDelete', [{} as TestEntity], ctx);
-    expect(spy).toHaveBeenCalledWith('afterDelete');
+  it('should do nothing when there are no payloads', async () => {
+    await expect(runHooks(Unhooked, 'beforeInsert', [], ctx)).resolves.toBeUndefined();
   });
 });

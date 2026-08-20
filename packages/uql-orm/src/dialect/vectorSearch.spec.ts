@@ -229,3 +229,25 @@ describe('parseVectorLiteral', () => {
     expect(parseVectorLiteral('{9:1}/3', 'sparsevec')).toBeUndefined(); // index past the dimension
   });
 });
+
+/**
+ * `$project` names a new column, and the entity's own names are taken: both would come back under
+ * the one name, so the distance would silently stand in for the real value.
+ */
+describe('vector $project', () => {
+  const dialect = new PostgresDialect();
+  const exec = (project: string) => {
+    const ctx = dialect.createContext();
+    dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $project: project } } });
+    return ctx.sql;
+  };
+
+  it('rejects a name the entity already uses', () => {
+    expect(() => exec('name')).toThrow("$project 'name' collides with a field of 'VectorItem'");
+    expect(() => exec('id')).toThrow("$project 'id' collides with a field of 'VectorItem'");
+  });
+
+  it('accepts a name of its own', () => {
+    expect(exec('score')).toContain('AS "score"');
+  });
+});

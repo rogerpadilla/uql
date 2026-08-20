@@ -2,6 +2,7 @@ import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import type {
+  EntityData,
   ExtraOptions,
   IdValue,
   Query,
@@ -37,6 +38,15 @@ import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 import { enrichError } from './queryError.js';
+
+/**
+ * Whether `q` picks a specific slice of the matching rows rather than all of them. A write that
+ * does has to settle those rows and name them: `ORDER BY`/`LIMIT` on an UPDATE or DELETE is MySQL's
+ * alone.
+ */
+function isPaged<E>(q: QuerySearch<E>): boolean {
+  return q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
+}
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -252,7 +262,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return res;
   }
 
-  override async internalInsertMany<E extends object>(entity: Type<E>, payload: E[]) {
+  override async internalInsertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]) {
     if (!payload?.length) {
       return [];
     }
@@ -299,18 +309,45 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     payload = clone(payload);
+    // Settled first for the reason `internalDeleteMany` settles: `ORDER BY`/`LIMIT` on an UPDATE is
+    // MySQL's alone, so a paged update has to name the rows it picked.
+    let target = q;
+    if (isPaged(q)) {
+      const ids = await this.settleIds(entity, q, opts);
+      if (!ids.length) {
+        return 0;
+      }
+      target = { $where: ids };
+    }
     const ctx = this.dialect.createContext();
-    this.dialect.update(ctx, entity, q, payload, opts);
+    this.dialect.update(ctx, entity, target, payload, opts);
     const { changes = 0 } = await this.run(ctx.sql, ctx.values);
-    await this.updateRelations(entity, q, payload, opts);
+    await this.updateRelations(entity, target, payload, opts);
     return changes;
   }
 
-  override async upsertOne<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E) {
+  /** The ids matching `q`, in `q`'s own order and page, so a write can name the rows it settled on. */
+  private async settleIds<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
+    const meta = getMeta(entity);
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, opts);
+    const founds = await this.all<E>(ctx.sql, ctx.values);
+    return founds.map((it) => it[meta.id]);
+  }
+
+  override async upsertOne<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>,
+  ) {
     return this.upsertMany(entity, conflictPaths, [payload]);
   }
 
-  override async upsertMany<E extends object>(entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E[]) {
+  override async upsertMany<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>[],
+  ) {
     if (!payload?.length) {
       return { changes: 0 };
     }
@@ -340,8 +377,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // parents' ids to find their children, and no engine but MySQL accepts `ORDER BY`/`LIMIT` on a
     // DELETE, so a paged delete has to name the rows it settled on. A plain predicate needs neither,
     // and there the round trip buys nothing: the statement can say what the caller already said.
-    const hasPagination = q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
-    if (!hasPagination && !cascadesOnDelete(meta)) {
+    if (!isPaged(q) && !cascadesOnDelete(meta)) {
       const ctx = this.dialect.createContext();
       this.dialect.delete(ctx, entity, q, opts);
       const { changes = 0 } = await this.run(ctx.sql, ctx.values);
@@ -350,13 +386,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
     // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
     const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
-    const findCtx = this.dialect.createContext();
-    this.dialect.find(findCtx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, findOpts);
-    const founds = await this.all<E>(findCtx.sql, findCtx.values);
-    if (!founds.length) {
+    const ids = await this.settleIds(entity, q, findOpts);
+    if (!ids.length) {
       return 0;
     }
-    const ids = founds.map((it) => it[meta.id]);
     // Children first: they hold the foreign key, so deleting the parent ahead of them is rejected
     // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
     await this.deleteRelations(entity, ids, opts);
