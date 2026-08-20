@@ -10,24 +10,20 @@ date format is [yyyy-mm-dd]
 
 - **`count()` takes a filter only.** Its `$skip` became an `OFFSET` that pushed the one result row away.
 - **`$limit: 0` returns zero rows**, not the whole table. A negative, fractional or `NaN` page now throws.
-- **`$sum`/`$avg`/`$min`/`$max` are `| null`**, since an empty group aggregates to NULL. `$count` stays a `number`.
-- **`$sum`/`$avg` take numeric columns only**, and an `$agg` alias may not repeat a `$group` column.
-- **Vector `$sort` is rejected on `updateMany`/`deleteMany`/`aggregate`**, which project no distance column.
+- **`$sum`/`$avg`/`$min`/`$max` are `| null`**, and take numeric columns only. `$count` stays a `number`.
+- **An aggregate's `$having`/`$sort` may only name a column it emits**, and an `$agg` alias may not repeat a `$group` column.
+- **Vector `$sort` is rejected on `updateMany`/`deleteMany`/`aggregate`**, and its `$project` may not take a field's name.
 
 ### Fixes
 
-- **`@BeforeDelete` and `@AfterDelete` actually run**, and receive the rows being deleted: they were emitted with an empty payload, so the decorated method was never called. Both see the same snapshot taken before the delete, cascaded children included, and the extra read happens only for an entity that declares a delete hook.
-- **An entity with a lifecycle hook can be written again.** The hook is a method, and `insertOne`/`saveOne`/`upsertOne` demanded it back in the payload, so `insertOne(Article, { title: 'Hello' })` did not compile. They take the entity's fields and relations now.
+- **`@BeforeDelete` and `@AfterDelete` run.** They were emitted with an empty payload, so the decorated method was never called. Both now receive the rows being deleted.
+- **An entity with a lifecycle hook can be written again.** `insertOne(Article, { title })` demanded the hook method back in the payload.
 - **Query errors name the mistake**, not `Property '$entity' is missing in type 'typeof Post'`.
 - **A nullish id throws** instead of addressing every row: `deleteOneById(User, undefined)` emptied the table.
 - **`$where: { at: someDate }` filters** instead of dropping the condition. Same for `Uint8Array`, and in `$having`.
-- **`null` compares and assigns without a cast.**
-- **An aggregate row carries only the columns it emits.** Omitting `$group` used to claim every field.
+- **`null` compares and assigns without a cast**, and an aggregate row carries only the columns it emits.
 - **A paged `updateMany` works on every engine**, and `$skip` without `$limit` on MySQL and MariaDB.
 - **Methods are no longer populatable relations**, and an `any` field is no longer both field and relation.
-- **`$having` and `$sort` on an aggregate may only name a column it emits**, rather than emitting SQL over one that is neither grouped nor aggregated.
-- **MongoDB `$having` no longer drops a string or boolean**, which silently returned every group.
-- **A vector `$sort`'s `$project` may not take a field's name**, which replaced that field's value with the distance.
 
 ## [0.29.0] - 2026-08-20
 

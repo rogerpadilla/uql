@@ -232,6 +232,26 @@ function checkDeclarationsStandalone(): void {
   }
 }
 
+/**
+ * `src/@types/bunSql.d.ts` declares an option the Bun runtime has and `@types/bun` does not. Once the
+ * types catch up, the two declarations merge silently rather than clashing, so the stopgap would sit
+ * there forever unnoticed. This is what notices.
+ */
+function checkBunTypesStopgap(): void {
+  // Hoisted to the workspace root, and this runs from the package directory.
+  const manifest = Bun.resolveSync('@types/bun/package.json', pkgDir);
+  const types = JSON.parse(readFileSync(manifest, 'utf8')) as { version: string };
+  const [major, minor] = types.version.split('.').map(Number);
+  if (major! > 1 || (major === 1 && minor! >= 4)) {
+    refuse(
+      `@types/bun ${types.version} is out`,
+      ['src/@types/bunSql.d.ts declares `allowPublicKeyRetrieval` because @types/bun 1.3 lacked it'],
+      'Check whether the published types declare it now, and delete the stopgap (and this check) if so.',
+    );
+  }
+}
+
+checkBunTypesStopgap();
 const declaredPaths = checkDeclaredPaths();
 const browserModules = checkBrowserGraph();
 await checkSizeBudgets();
