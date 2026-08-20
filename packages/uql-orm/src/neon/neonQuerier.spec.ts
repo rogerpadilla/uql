@@ -54,19 +54,37 @@ describe('NeonQuerier', () => {
   });
 
   it('should release connection', async () => {
-    await (querier as any).lazyConnect();
-    await querier.internalRelease();
-    expect(mockConn.release).toHaveBeenCalled();
+    await querier.all('SELECT 1');
+    await querier.release();
+    expect(mockConn.release).toHaveBeenCalledWith(false);
   });
 
   it('should not release if not connected', async () => {
-    await querier.internalRelease();
+    await querier.release();
     expect(mockConn.release).not.toHaveBeenCalled();
   });
 
-  it('should throw if releasing with pending transaction', async () => {
+  it('should roll back a pending transaction on release', async () => {
     await querier.beginTransaction();
-    await expect(querier.internalRelease()).rejects.toThrow('pending transaction');
+
+    await expect(querier.release()).resolves.toBeUndefined();
+
+    expect(querier.hasOpenTransaction).toBe(false);
+    // The rollback succeeded, so the connection round-trips and goes back on the idle list.
+    expect(mockConn.release).toHaveBeenCalledWith(false);
+  });
+
+  /**
+   * A rollback that fails leaves a session state nothing here can name, so the connection must not be
+   * reused. Handing pg any truthy argument is the only channel a driver has for saying so.
+   */
+  it('should discard the connection when the rollback fails', async () => {
+    await querier.beginTransaction();
+    mockConn.query.mockRejectedValueOnce(new Error('server went away mid-rollback'));
+
+    await expect(querier.release()).resolves.toBeUndefined();
+
+    expect(mockConn.release).toHaveBeenCalledWith(true);
   });
 
   it('should handle null rowCount gracefully', async () => {

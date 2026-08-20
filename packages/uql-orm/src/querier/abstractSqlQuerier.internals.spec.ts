@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryUpdateResult, RawRow } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
@@ -34,6 +35,8 @@ class StubSqlQuerier extends AbstractSqlQuerier {
   rows: RawRow[] = [];
   failOn?: string;
   failure: unknown = new Error('driver rejected the statement');
+  releases = 0;
+  handedBackWithOpenTransaction = false;
 
   constructor(extra?: ExtraOptions) {
     super(new SqliteDialect({}), extra);
@@ -55,7 +58,11 @@ class StubSqlQuerier extends AbstractSqlQuerier {
     return { changes: 0 };
   }
 
-  protected override async internalRelease(): Promise<void> {}
+  /** Records the transaction state at hand-back, which is what `release` is responsible for. */
+  protected override async internalRelease(): Promise<void> {
+    this.handedBackWithOpenTransaction = this.hasOpenTransaction;
+    this.releases += 1;
+  }
 }
 
 describe('AbstractSqlQuerier JSON hydration', () => {
@@ -156,7 +163,59 @@ describe('AbstractSqlQuerier error context', () => {
     querier.failOn = statement;
 
     await expect(act(querier)).rejects.toMatchObject({ query: statement });
+    // Still open, because the statement that would have ended it failed: a COMMIT can be refused with
+    // the transaction left running, and something still has to roll that back.
     expect(querier.hasOpenTransaction).toBe(true);
+  });
+
+  /** The rollback a refused COMMIT still needs, which `release()` reaches on the way out. */
+  it('should roll back a transaction whose COMMIT was refused', async () => {
+    const querier = new StubSqlQuerier();
+    await querier.beginTransaction();
+    querier.failOn = 'COMMIT';
+
+    await expect(querier.commitTransaction()).rejects.toMatchObject({ query: 'COMMIT' });
+    querier.failOn = undefined;
+    await querier.release();
+
+    expect(querier.handedBackWithOpenTransaction).toBe(false);
+    expect(querier.releases).toBe(1);
+  });
+
+  /**
+   * The rollback failure is a consequence of the original error, so it must neither replace it nor
+   * strand the connection. It used to do both: the flag stayed set, so `withQuerier`'s `finally` hit
+   * `release()`, which threw `pending transaction` over the real error and returned nothing to the pool.
+   */
+  it('should keep the original error and still release when the ROLLBACK fails too', async () => {
+    const querier = new StubSqlQuerier();
+    const pool = createMockQuerierPool(new SqliteDialect({}), async () => querier);
+
+    await expect(
+      pool.transaction(async () => {
+        querier.failOn = 'ROLLBACK';
+        throw new Error('what actually went wrong');
+      }),
+    ).rejects.toThrow('what actually went wrong');
+
+    expect(querier.releases).toBe(1);
+  });
+
+  /**
+   * Handing the connection back is the whole job of `release`, so a rollback that fails on the way
+   * cannot be allowed to skip it. Reported through the logger rather than thrown, since the caller is
+   * usually already unwinding the error that left the transaction open.
+   */
+  it('should still release when the rollback it does on the way out fails', async () => {
+    const logError = vi.fn();
+    const querier = new StubSqlQuerier({ logger: { logError } });
+    await querier.beginTransaction();
+    querier.failOn = 'ROLLBACK';
+
+    await expect(querier.release()).resolves.toBeUndefined();
+
+    expect(querier.releases).toBe(1);
+    expect(logError).toHaveBeenCalled();
   });
 
   it('should attach the query of a failed stream', async () => {

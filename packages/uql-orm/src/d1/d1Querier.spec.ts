@@ -110,11 +110,12 @@ describe('D1Querier', () => {
     expect(mockDb.prepare).not.toHaveBeenCalled();
   });
 
-  it('should reject release while a transaction is still open', async () => {
+  it('should roll back an open transaction on release', async () => {
     mockStmt.run.mockResolvedValue({ results: [], success: true, meta: {} });
     await querier.beginTransaction();
 
-    await expect(querier.release()).rejects.toThrow('pending transaction');
+    await expect(querier.release()).resolves.toBeUndefined();
+    expect(querier.hasOpenTransaction).toBe(false);
   });
 
   it('should execute internalRun without values', async () => {

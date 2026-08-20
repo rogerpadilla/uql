@@ -55,6 +55,12 @@ export abstract class AbstractQuerier implements Querier {
    * and ensuring that the database connection is used safely across concurrent calls.
    */
   private taskQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * A querier is one unit of work, so releasing ends it. Checked where each backend reaches for its
+   * connection, on every driver and not just the pooled ones.
+   */
+  protected released = false;
   protected readonly logger: LoggerWrapper;
 
   constructor(readonly extra?: ExtraOptions) {
@@ -645,8 +651,8 @@ export abstract class AbstractQuerier implements Querier {
    * below were got wrong by code that hand-rolled it:
    *
    * - `beginTransaction` connects before it begins, so a refused connection lands in the catch with no
-   *   transaction open. Rolling back regardless threw `not a pending transaction`, and that replaced the
-   *   real cause: a wrong password surfaced as a transaction-state error.
+   *   transaction open. `rollbackTransaction` is a no-op there rather than an error, which is why a
+   *   wrong password no longer surfaces as a transaction-state error.
    * - A rollback that fails too is a consequence of the original failure, not news, so it must not
    *   replace it either.
    *
@@ -665,9 +671,12 @@ export abstract class AbstractQuerier implements Querier {
       await this.commitTransaction();
       return res;
     } catch (err) {
-      if (this.hasOpenTransaction) {
-        await this.rollbackTransaction().catch(() => {});
-      }
+      // Reported rather than thrown: the error being unwound is the useful one. Inline rather than
+      // shared with `release` below, because this method is grafted onto plain objects in tests and
+      // every `this.x` it reaches for has to exist there too.
+      await this.rollbackTransaction().catch((rollbackErr: unknown) => {
+        this.logger.logError('rollback failed', rollbackErr);
+      });
       throw err;
     }
   }
@@ -701,18 +710,12 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  async releaseIfFree() {
-    if (!this.hasOpenTransaction) {
-      await this.internalRelease();
-    }
-  }
-
   /**
-   * Schedules a task to be executed serially in the querier instance.
-   * This is used by the @Serialized decorator to protect database-level operations.
+   * Runs `task` after everything already queued on this querier, one at a time.
    *
-   * @param task - The async task to execute.
-   * @returns A promise that resolves with the task's result.
+   * @remarks Not re-entrant: only one task runs at a time, so a serialized method awaited from inside
+   * another one would wait for a task queued behind itself. Callers below keep their `serialize` calls
+   * sequential rather than nested.
    */
   protected async serialize<T>(task: () => Promise<T>): Promise<T> {
     const res = this.taskQueue.then(task);
@@ -742,17 +745,43 @@ export abstract class AbstractQuerier implements Querier {
 
   abstract beginTransaction(opts?: TransactionOptions): Promise<void>;
 
+  /** Strict: this is the check that catches a forgotten `beginTransaction`. */
   abstract commitTransaction(): Promise<void>;
 
+  /**
+   * Rolls the open transaction back, or does nothing when there is none: it is called from `catch` and
+   * `finally`, where the caller cannot know whether `beginTransaction` got far enough to open one.
+   */
   abstract rollbackTransaction(): Promise<void>;
 
-  protected abstract internalRelease(): Promise<void>;
-
+  /**
+   * Rolls back an unfinished transaction, then hands the connection back.
+   *
+   * @remarks Refusing to release was the opposite of safe: the throw came *before* the connection went
+   * back, so it destroyed the error that got here and cost the pool a connection with a live `BEGIN` on
+   * it. It is also the only option `await using` can reach, which calls `Symbol.asyncDispose` with no
+   * arguments and discards what it returns.
+   */
   async release(): Promise<void> {
-    return this.serialize(() => this.internalRelease());
+    let discard = false;
+    if (this.hasOpenTransaction) {
+      this.logger.logWarn('rolling back a transaction left open at release');
+      // The rollback doubles as a health check. One that succeeds proves the connection round-trips and
+      // left no transaction behind, so it is safe to reuse. One that fails leaves a session state
+      // nothing here can name, and the next borrower would inherit it.
+      await this.rollbackTransaction().catch((err: unknown) => {
+        this.logger.logError('rollback failed; discarding the connection', err);
+        discard = true;
+      });
+    }
+    this.released = true;
+    return this.serialize(() => this.internalRelease(discard));
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
     return this.release();
   }
+
+  /** `discard` means the connection must not be reused; backends with a pool evict it instead. */
+  protected abstract internalRelease(discard: boolean): Promise<void>;
 }

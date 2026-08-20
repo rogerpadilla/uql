@@ -117,11 +117,12 @@ function checkBrowserGraph(): number {
 // moves with them. Deliberately per-entry and not a `dist` total: a total also counts declarations, so
 // JSDoc spends it and it has to be raised for documentation alone, which is noise these budgets aren't.
 // `.` and `./postgres` carry ~+500 each for read-side decoding, ~+370/+350 for `$lock`, and ~+210/+200
-// for the query's join set (`dialect/queryJoins.ts`, which `$sort` by a relation needs); see the
-// CHANGELOG entries for each.
+// for the query's join set (`dialect/queryJoins.ts`, which `$sort` by a relation needs); `./postgres`
+// carries another ~+40 for the connection lifecycle (rolling back at release, discarding a connection
+// whose rollback failed, refusing a released querier). See the CHANGELOG entries for each.
 const BUDGETS: Record<string, number> = {
   '.': 26_000,
-  './postgres': 21_500,
+  './postgres': 21_550,
   './migrate': 43_000,
   './browser': 1_700,
 };

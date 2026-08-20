@@ -85,23 +85,27 @@ export class HranaQuerier extends AbstractSqliteQuerier {
     });
   }
 
+  /**
+   * Both drop the handle before the call, not after: one that outlived a failed commit or rollback left
+   * the querier unreleasable. The optional call in the rollback is also what makes it a no-op when
+   * there is nothing open.
+   */
   override async commitTransaction() {
     return this.serialize(async () => {
-      if (!this.tx) {
+      const tx = this.tx;
+      if (!tx) {
         throwNoPendingTransaction();
       }
-      await this.tx.commit();
       this.tx = undefined;
+      await tx.commit();
     });
   }
 
   override async rollbackTransaction() {
     return this.serialize(async () => {
-      if (!this.tx) {
-        throwNoPendingTransaction();
-      }
-      await this.tx.rollback();
+      const tx = this.tx;
       this.tx = undefined;
+      await tx?.rollback();
     });
   }
 

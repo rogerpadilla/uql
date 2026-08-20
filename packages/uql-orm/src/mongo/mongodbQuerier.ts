@@ -412,7 +412,11 @@ export class MongodbQuerier extends AbstractQuerier {
     return !!this.session?.inTransaction();
   }
 
+  /** Every read and write goes through here, which makes it where a released querier is caught. */
   collection<E extends Document>(entity: Type<E>) {
+    if (this.released) {
+      throw new TypeError('querier already released');
+    }
     const { name } = getMeta(entity);
     return this.db.collection<E>(name!);
   }
@@ -433,31 +437,35 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
+  /**
+   * The driver owns the transaction state here and settles it in its own `finally`, so a failed commit
+   * or abort still leaves `inTransaction()` false and the querier releasable.
+   */
   override async commitTransaction() {
     return this.serialize(async () => {
       if (!this.hasOpenTransaction) {
         throwNoPendingTransaction();
       }
       this.logger.logInfo('commitTransaction');
-      await this.session!.commitTransaction();
+      await this.session?.commitTransaction();
     });
   }
 
   override async rollbackTransaction() {
     return this.serialize(async () => {
       if (!this.hasOpenTransaction) {
-        throwNoPendingTransaction();
+        return;
       }
       this.logger.logInfo('rollbackTransaction');
-      await this.session!.abortTransaction();
+      await this.session?.abortTransaction();
     });
   }
 
   override async internalRelease() {
-    if (this.hasOpenTransaction) {
-      throwPendingTransaction();
-    }
-    await this.session?.endSession();
+    const session = this.session;
+    // Cleared first, so a failing `endSession` cannot leave the querier holding a session it already
+    // tried to end.
     this.session = undefined;
+    await session?.endSession();
   }
 }

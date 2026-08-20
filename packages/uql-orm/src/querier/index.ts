@@ -2,6 +2,4 @@ export * from './abstractQuerier.js';
 export * from './abstractQuerierPool.js';
 export * from './abstractSqlQuerier.js';
 export * from './abstractSqlQuerierPool.js';
-export * from './querierContext.js';
 export * from './queryError.js';
-export * from './transactional.js';

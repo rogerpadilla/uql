@@ -17,6 +17,13 @@ export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable
  * Options for starting a transaction.
  */
 export type TransactionOptions = {
+  /**
+   * Applies to this transaction only.
+   *
+   * @remarks MySQL and MariaDB set it as a statement of its own ahead of `START TRANSACTION`, so a
+   * `START TRANSACTION` that then fails leaves the level applied to whatever the pooled connection
+   * runs next. Set it per transaction that needs it rather than relying on what a connection carries.
+   */
   readonly isolationLevel?: IsolationLevel;
 };
 
@@ -82,12 +89,15 @@ export interface Querier extends UniversalQuerier {
   commitTransaction(): Promise<void>;
 
   /**
-   * aborts the currently active transaction in this querier.
+   * aborts the currently active transaction, or does nothing when there is none, so it is safe from a
+   * `catch` / `finally` without checking {@link hasOpenTransaction} first. `commitTransaction` is strict
+   * instead: a caller who believes their work was committed has to hear that it was not.
    */
   rollbackTransaction(): Promise<void>;
 
   /**
-   * release the querier to the pool.
+   * rolls back any unfinished transaction and releases the querier to the pool. A pooled querier is
+   * finished afterwards: using it again throws rather than taking a second connection nothing owns.
    */
   release(): Promise<void>;
 

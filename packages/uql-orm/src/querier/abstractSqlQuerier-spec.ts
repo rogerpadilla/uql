@@ -1239,55 +1239,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
-  async shouldThrowIfRollbackWithNoPendingTransaction() {
+  /** No `ROLLBACK` reaches the driver either: there is nothing on the wire to roll back. */
+  async shouldIgnoreRollbackWithNoPendingTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
-    await expect(this.querier.rollbackTransaction()).rejects.toThrow('not a pending transaction');
+    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     expect(this.querier.run).toHaveBeenCalledTimes(0);
     expect(this.querier.all).toHaveBeenCalledTimes(0);
-  }
-
-  async shouldThrowIfReleaseWithPendingTransaction() {
-    expect(this.querier.hasOpenTransaction).toBeFalsy();
-    await this.querier.beginTransaction();
-    expect(this.querier.hasOpenTransaction).toBe(true);
-    await this.querier.updateOneById(User, 5, { name: 'some name' });
-    expect(this.querier.hasOpenTransaction).toBe(true);
-    await expect(this.querier.release()).rejects.toThrow('pending transaction');
-    expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(this.querier.run).toHaveBeenCalledTimes(1);
-    expect(this.querier.all).toHaveBeenCalledTimes(0);
-    await this.querier.rollbackTransaction();
-    await this.querier.release();
   }
 
   async shouldBeIdempotentRelease() {
     await this.querier.release();
     await expect(this.querier.release()).resolves.toBeUndefined();
-  }
-
-  async shouldReleaseIfFreeWithoutTransaction() {
-    // Release should work when no transaction is open
-    await (this.querier as any).releaseIfFree();
-    // Should not throw, just release
-    expect(this.querier.all).toHaveBeenCalledTimes(0);
-    expect(this.querier.run).toHaveBeenCalledTimes(0);
-  }
-
-  async shouldNotReleaseIfFreeWithOpenTransaction() {
-    // Begin a transaction
-    await this.querier.beginTransaction();
-    expect(this.querier.hasOpenTransaction).toBe(true);
-
-    // releaseIfFree should NOT release when transaction is open
-    await this.querier.releaseIfFree();
-
-    // Transaction should still be open
-    expect(this.querier.hasOpenTransaction).toBe(true);
-
-    // Clean up - rollback the transaction
-    await this.querier.rollbackTransaction();
-    expect(this.querier.hasOpenTransaction).toBeFalsy();
   }
 
   async shouldFindOneAndSelectOneToManyWithObjectSelect() {

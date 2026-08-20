@@ -1,6 +1,5 @@
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { RawRow } from '../type/index.js';
-import { throwPendingTransaction } from '../util/index.js';
 
 /**
  * Values every SQLite driver accepts as a bound parameter.
@@ -39,14 +38,9 @@ export type SqlitePreparedStatement = {
 export abstract class AbstractSqliteQuerier extends AbstractSqlQuerier {
   /**
    * SQLite drivers hold a single shared handle rather than a connection from a pool, so releasing
-   * a querier returns nothing; it only asserts the unit of work was finished. Drivers owning a
-   * closable per-querier connection override this.
+   * a querier returns nothing at all. Drivers owning a closable per-querier connection override this.
    */
-  override async internalRelease() {
-    if (this.hasOpenTransaction) {
-      throwPendingTransaction();
-    }
-  }
+  override async internalRelease() {}
 }
 
 /**

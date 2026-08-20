@@ -12,9 +12,9 @@ import { UqlContextInterceptor } from './uqlContextInterceptor.js';
 
 /**
  * Injection token for the configured {@link QuerierPool} - for injecting into your own
- * providers. UQL's own machinery (`getQuerier`, `querierMiddleware`, `createFetchHandler`,
- * `@Transactional`) reads the default pool set by {@link UqlModule.forRoot}, not this token,
- * so overriding the provider does not redirect UQL internals.
+ * providers. UQL's own machinery (`getQuerier`, `querierMiddleware`, `createFetchHandler`) reads
+ * the default pool set by {@link UqlModule.forRoot}, not this token, so overriding the provider
+ * does not redirect UQL internals.
  */
 export const UQL_QUERIER_POOL = Symbol('UQL_QUERIER_POOL');
 
@@ -46,9 +46,8 @@ export type UqlModuleAsyncOptions<Req = unknown> = UqlModuleCommon<Req> & {
 
 /**
  * NestJS integration: provides the pool via DI, sets it as UQL's default pool (so `getQuerier()`,
- * `querierMiddleware` (express platform), `createFetchHandler`, and `@Transactional` work unchanged),
- * optionally scopes every request to a {@link UqlContext} (multi-tenancy), and ends the pool on
- * application shutdown.
+ * `querierMiddleware` (express platform) and `createFetchHandler` work unchanged), optionally scopes
+ * every request to a {@link UqlContext} (multi-tenancy), and ends the pool on application shutdown.
  */
 /**
  * Ends the pool when Nest shuts down.

@@ -12,8 +12,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "browser": {
-    "./dist/context/context.js": "./dist/context/context.browser.js",
-    "./dist/querier/querierContext.js": "./dist/querier/querierContext.browser.js"
+    "./dist/context/context.js": "./dist/context/context.browser.js"
   },
   "bin": {
     "uql-migrate": "./dist/migrate/bin.js"

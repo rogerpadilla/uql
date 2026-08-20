@@ -83,10 +83,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Hook for subclasses (e.g. pool queriers) to establish a connection.
-   * Called before every query but outside the timing window.
+   * Hook for subclasses (e.g. pool queriers) to establish a connection. Called before every query and
+   * before `BEGIN`, outside the timing window, which makes it the one place a released querier is
+   * caught for every SQL backend.
    */
-  protected async lazyConnect(): Promise<void> {}
+  protected async lazyConnect(): Promise<void> {
+    if (this.released) {
+      throw new TypeError('querier already released');
+    }
+  }
 
   async all<T>(query: string, values?: unknown[]): Promise<T[]> {
     return this.serialize(async () => {
@@ -372,11 +377,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       }
       await this.lazyConnect();
       for (const sql of this.dialect.getBeginTransactionStatements(opts?.isolationLevel)) {
-        try {
-          await this.internalRun(sql);
-        } catch (err) {
-          throw enrichError(err, this.logger, sql);
-        }
+        await this.runTransactionCommand(sql);
       }
       this.hasPendingTransaction = true;
     });
@@ -387,26 +388,34 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       if (!this.hasPendingTransaction) {
         throwNoPendingTransaction();
       }
-      try {
-        await this.internalRun(this.dialect.commitTransactionCommand);
-      } catch (err) {
-        throw enrichError(err, this.logger, this.dialect.commitTransactionCommand);
-      }
-      this.hasPendingTransaction = false;
+      await this.endTransactionWith(this.dialect.commitTransactionCommand);
     });
   }
 
   override async rollbackTransaction() {
     return this.serialize(async () => {
-      if (!this.hasPendingTransaction) {
-        throwNoPendingTransaction();
+      if (this.hasPendingTransaction) {
+        await this.endTransactionWith(this.dialect.rollbackTransactionCommand);
       }
-      try {
-        await this.internalRun(this.dialect.rollbackTransactionCommand);
-      } catch (err) {
-        throw enrichError(err, this.logger, this.dialect.rollbackTransactionCommand);
-      }
-      this.hasPendingTransaction = false;
     });
+  }
+
+  /**
+   * Only a statement that succeeded ends the transaction. A `COMMIT` that fails can leave it open
+   * (SQLite answers `SQLITE_BUSY` and keeps it), so the flag has to stay set for the `catch` in
+   * {@link AbstractQuerier.transaction} or {@link AbstractQuerier.release} to roll it back.
+   */
+  private async endTransactionWith(command: string) {
+    await this.runTransactionCommand(command);
+    this.hasPendingTransaction = false;
+  }
+
+  /** Transaction statements skip `timed()`, so they attach their own query context to a failure. */
+  private async runTransactionCommand(sql: string) {
+    try {
+      await this.internalRun(sql);
+    } catch (err) {
+      throw enrichError(err, this.logger, sql);
+    }
   }
 }
