@@ -1,20 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "files": {
-    "includes": [
-      "**",
-      "!coverage",
-      "!data",
-      "!node_modules",
-      "!dist",
-      "!config",
-      "!packages/**/node_modules",
-      "!packages/**/dist"
-    ]
-  },
   "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
+    "useEditorconfig": true,
     "lineWidth": 120
   },
   "javascript": {
@@ -22,11 +9,7 @@
       "unsafeParameterDecoratorsEnabled": true
     },
     "formatter": {
-      "enabled": true,
-      "quoteStyle": "single",
-      "jsxQuoteStyle": "double",
-      "lineWidth": 120,
-      "trailingCommas": "all"
+      "quoteStyle": "single"
     }
   },
   "assist": {
@@ -41,8 +24,12 @@
       "includes": ["**/*.spec.ts", "**/*-spec.ts", "**/*.test.ts", "**/*-test.ts", "**/*.test-d.ts"],
       "linter": {
         "rules": {
-          "suspicious": { "noExplicitAny": "off" },
-          "style": { "noNonNullAssertion": "off" }
+          "suspicious": {
+            "noExplicitAny": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          }
         }
       }
     }
@@ -100,9 +87,13 @@
         "useIterableCallbackReturn": "off"
       },
       "security": {
-        "noDangerouslySetInnerHtmlWithChildren": "error",
-        "noBlankTarget": "error"
+        "noDangerouslySetInnerHtmlWithChildren": "error"
       }
     }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
   }
 }
