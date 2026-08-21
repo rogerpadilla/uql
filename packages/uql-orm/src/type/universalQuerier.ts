@@ -76,8 +76,10 @@ export interface UniversalQuerier {
   /**
    * Insert a single record and return its ID (provided, `onInsert`-generated, or
    * database-generated - see {@link UniversalQuerier.insertMany} for the exact semantics).
-   * Returns `undefined` when the ID cannot be determined (e.g. MySQL/SQLite non-auto-increment
-   * keys in batches without explicit IDs).
+   * Returns `undefined` only where the database cannot report one: MySQL, whose `LAST_INSERT_ID()`
+   * speaks for `AUTO_INCREMENT` columns alone and is left *stale* rather than cleared otherwise, so
+   * a non-auto-increment key the caller did not supply has no id to give and a header read would
+   * hand back an earlier row's. Every other backend uses `RETURNING` and is exact, SQLite included.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    * @return the ID
