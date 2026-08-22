@@ -76,3 +76,11 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 Built something? [Open a PR](https://github.com/rogerpadilla/uql/blob/main/CONTRIBUTING.md) and add it here.
 
 [![Made with UQL](https://img.shields.io/badge/made%20with-UQL-3282b5?style=flat)](https://uql-orm.dev)
+
+---
+
+## ⭐ Like what we're doing? Give us a star
+
+It is how other people find the project.
+
+[![Star UQL on GitHub](https://img.shields.io/github/stars/rogerpadilla/uql?style=flat&label=stars&color=3282b5)](https://github.com/rogerpadilla/uql)
