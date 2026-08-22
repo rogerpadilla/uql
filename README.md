@@ -71,7 +71,7 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 
 ## Made with UQL
 
-**[Variability.ai](https://variability.ai)** - AI meeting recorder and video summarizer for Zoom, Meet, and Teams. Instant summaries with action items in 45+ languages.
+**[Variability.ai](https://variability.ai)** - AI meeting recorder and video summarizer for Zoom, Meet, and Teams. Instant summaries with action items in 35+ languages.
 
 Built something? [Open a PR](https://github.com/rogerpadilla/uql/blob/main/CONTRIBUTING.md) and add it here.
 
