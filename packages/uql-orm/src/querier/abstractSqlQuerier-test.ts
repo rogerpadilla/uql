@@ -32,9 +32,10 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /**
    * The case the feature exists for: two workers draw from one queue and must not get the same row.
    * Needs two real connections, since a lock is only visible to a different transaction, which is
-   * also why no generated-SQL assertion can stand in for it. A shared-handle pool has one connection
-   * under every querier, so the second `BEGIN` joins the first transaction and there is no second
-   * transaction for a lock to be visible to, however correct the SQL the dialect emits.
+   * also why no generated-SQL assertion can stand in for it. Skipped on a shared-handle pool, which has
+   * one connection under every querier and so cannot produce a second transaction for a lock to be
+   * visible to, however correct the SQL the dialect emits: see {@link AbstractSharedHandleQuerierPool}
+   * for what each engine does instead.
    */
   async shouldSkipLockedRowsForAQueue() {
     if (!this.querier.dialect.supportsRowLocks || this.pool instanceof AbstractSharedHandleQuerierPool) {
