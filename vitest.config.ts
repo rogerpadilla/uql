@@ -41,6 +41,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // The same 10s `bunfig.toml` settled on, and for the same reason: these suites drive the Docker
+    // databases, and on a cold CI runner the slowest of them lands on vitest's 5s default rather than
+    // past it. One CockroachDB drift check failed at 5007ms while the other two matrix legs passed the
+    // same commit, which is a timeout to raise and not a test to annotate.
+    testTimeout: 10_000,
+    hookTimeout: 10_000,
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
     // `*.bun.test.ts` files assert Bun-only driver behavior and import `bun:test`; see `test:bun`.
     exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],

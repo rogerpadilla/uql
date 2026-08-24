@@ -34,18 +34,6 @@ npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @tursoda
 
 That is the whole install ([setup](https://uql-orm.dev/getting-started)), and the [imperative API](https://uql-orm.dev/entities/imperative) skips decorators altogether.
 
-```ts
-await pool.findMany(User, {
-  $select: { id: true, email: true },
-  $populate: { posts: { $select: { title: true } } },
-  $where: { email: { $endsWith: "@uql-orm.dev" } },
-  $limit: 10,
-});
-```
-
-That query is a serializable value. Build it dynamically, store it, diff it, or send it
-from the browser to the server. The same object runs on every supported database.
-
 <a href="https://uql-orm.dev">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://uql-orm.dev/demo-dark.webp">
@@ -54,6 +42,8 @@ from the browser to the server. The same object runs on every supported database
 </a>
 
 Our type-safety automatically prevents the bugs above, without codegen: the entity classes are the schema, pure TypeScript power. That demo editor is [on the home page](https://uql-orm.dev).
+
+The query is just JSON: build it dynamically, store it, diff it, or send it from the browser to the server. The same object runs on every supported database.
 
 ## Why UQL?
 
