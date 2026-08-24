@@ -176,7 +176,17 @@ async function checkSizeBudgets(): Promise<void> {
 function checkDeclarationsStandalone(): void {
   const { checkDir, installed } = writeConsumerProject();
   try {
-    const unresolved = ownUnresolvedNames(typeCheck(checkDir), checkDir, installed);
+    const output = typeCheck(checkDir);
+    const inConsumer = consumerErrors(output, checkDir, installed);
+    if (inConsumer.length) {
+      refuse(
+        'a consumer cannot use the published surface',
+        inConsumer,
+        'The entity in `entity.ts` is written the way the README says one is written. If the decorators ' +
+          'now need `experimentalDecorators`, or a name moved off the root entry, that promise is broken.',
+      );
+    }
+    const unresolved = ownUnresolvedNames(output, checkDir, installed);
     if (unresolved.length) {
       refuse(
         'the published types do not stand on their own in a consumer project',
@@ -203,6 +213,29 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
   for (const [index, entry] of entries.entries()) {
     writeFileSync(join(checkDir, `entry${index}.ts`), `export * from '${specifierOf(entry)}';\n`);
   }
+  // Re-exporting every entry proves the declarations resolve, but never applies one. The README
+  // promises entities are "plain classes on the standard TC39 decorators: no `reflect-metadata`, no
+  // `experimentalDecorators`", and the tsconfig below sets neither - so this file is that promise,
+  // compiled. Without it the first thing to find out would be a consumer, or the docs build.
+  writeFileSync(
+    join(checkDir, 'entity.ts'),
+    `import { Entity, Field, Id, ManyToOne, OneToMany } from '${pkg.name}';
+
+@Entity()
+export class Post {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) title?: string;
+  @ManyToOne({ entity: () => User }) author?: User;
+}
+
+@Entity()
+export class User {
+  @Id({ type: 'uuid' }) id?: string;
+  @Field({ type: String }) email?: string;
+  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
+}
+`,
+  );
   writeFileSync(
     join(checkDir, 'tsconfig.json'),
     JSON.stringify({
@@ -235,6 +268,24 @@ function typeCheck(checkDir: string): string {
 }
 
 /** The diagnostics that are this package's problem: our own `dist`, minus what an absent peer explains. */
+/**
+ * Diagnostics in the consumer's own files rather than in `dist`. {@link ownUnresolvedNames} discards
+ * these deliberately - another package's declarations are that package's problem - which would also
+ * discard the entity that exercises the decorators, so it is read separately.
+ */
+function consumerErrors(output: string, checkDir: string, installed: string): string[] {
+  const problems: string[] = [];
+  for (const line of output.split('\n')) {
+    const match = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line);
+    if (!match) continue;
+    const [, reported, row, , code, message] = match;
+    const file = resolve(checkDir, reported);
+    if (file.startsWith(join(installed, 'dist'))) continue;
+    problems.push(`${relative(checkDir, file)}(${row}): ${code}: ${message}`);
+  }
+  return problems;
+}
+
 function ownUnresolvedNames(output: string, checkDir: string, installed: string): string[] {
   /** `mysql2/promise` is the `mysql2` peer dependency, imported at a subpath. */
   const packageOf = (specifier: string) =>

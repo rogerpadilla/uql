@@ -38,13 +38,22 @@ That is the whole install ([setup](https://uql-orm.dev/getting-started)), and th
 await pool.findMany(User, {
   $select: { id: true, email: true },
   $populate: { posts: { $select: { title: true } } },
-  $where: { email: { $endsWith: '@uql-orm.dev' } },
+  $where: { email: { $endsWith: "@uql-orm.dev" } },
   $limit: 10,
 });
 ```
 
 That query is a serializable value. Build it dynamically, store it, diff it, or send it
 from the browser to the server. The same object runs on every supported database.
+
+<a href="https://uql-orm.dev">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://uql-orm.dev/demo-dark.webp">
+    <img src="https://uql-orm.dev/demo-light.webp" alt="A UQL query being typed: the compiler underlines the misspelled 'emial', then 'titel' three levels deep inside $populate">
+  </picture>
+</a>
+
+Our type-safety automatically prevents the bugs above, without codegen: the entity classes are the schema, pure TypeScript power. That demo editor is [on the home page](https://uql-orm.dev).
 
 ## Why UQL?
 
