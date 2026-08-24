@@ -18,24 +18,25 @@ import { join, relative, resolve } from 'node:path';
 const pkgDir = import.meta.dirname;
 const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
 const entries: string[] = Object.keys(pkg.exports).filter((entry) => entry !== './package.json');
-const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
-/** `mysql2/promise` is the `mysql2` peer dependency, imported at a subpath. */
-const packageOf = (specifier: string) =>
-  specifier
-    .split('/')
-    .slice(0, specifier.startsWith('@') ? 2 : 1)
-    .join('/');
-/** Declared optional, so a consumer who does not use that driver does not have its types either. */
-const isPeer = (specifier: string) => {
-  const name = packageOf(specifier);
-  return name in (pkg.peerDependencies ?? {}) || name === 'bun';
-};
 
-function refuse(reason: string, problems: string[], hint: string): never {
-  console.error(`verify-dist: refusing to pack - ${reason}:`);
-  for (const problem of problems) console.error(`  ${problem}`);
-  console.error(`\n${hint}`);
-  process.exit(1);
+const refusals: string[] = [];
+
+/**
+ * Records a refusal rather than exiting on it, so one failing check cannot hide the others. It used to
+ * exit: a since-deleted `@types/bun` check then ran ahead of the size budgets and exited for two
+ * releases, and `.` was over budget for both without a build ever saying so.
+ */
+function refuse(reason: string, problems: string[], hint: string): void {
+  const lines = [`verify-dist: refusing to pack - ${reason}:`, ...problems.map((problem) => `  ${problem}`), '', hint];
+  refusals.push(lines.join('\n'));
+}
+
+/** Exits on whatever has been recorded so far. Called once the checks that can still run have run. */
+function settle(): void {
+  if (refusals.length) {
+    console.error(refusals.join('\n\n'));
+    process.exit(1);
+  }
 }
 
 /** Every `dist` path the manifest promises a consumer, present and non-empty. */
@@ -53,20 +54,19 @@ function checkDeclaredPaths(): number {
   const paths = new Set<string>();
   for (const field of [pkg.main, pkg.types, pkg.bin, pkg.exports, pkg.browser]) collect(field, paths);
 
-  const missing: string[] = [];
-  const empty: string[] = [];
+  const problems: string[] = [];
   for (const relPath of paths) {
     try {
-      if (statSync(join(pkgDir, relPath)).size === 0) empty.push(relPath);
+      if (statSync(join(pkgDir, relPath)).size === 0) problems.push(`EMPTY:   ${relPath}`);
     } catch {
-      missing.push(relPath);
+      problems.push(`MISSING: ${relPath}`);
     }
   }
 
-  if (missing.length || empty.length) {
+  if (problems.length) {
     refuse(
       `${paths.size} paths are declared in package.json, but`,
-      [...missing.map((path) => `MISSING: ${path}`), ...empty.map((path) => `EMPTY:   ${path}`)],
+      problems,
       'Run `bun run build` (not just `tsc`) and retry.',
     );
   }
@@ -120,11 +120,12 @@ function checkBrowserGraph(): number {
 // for the query's join set (`dialect/queryJoins.ts`, which `$sort` by a relation needs); `./postgres`
 // carries another ~+40 for the connection lifecycle (rolling back at release, discarding a connection
 // whose rollback failed, refusing a released querier), and ~+130 for the query-API guards (nullish id,
-// pager operand, operator-map classification, settling a paged write on its own rows). See the
-// CHANGELOG entries for each.
+// pager operand, operator-map classification, settling a paged write on its own rows). The last raise
+// re-baselines both on 0.30.0's delete hooks and their single-read settle, which landed ~+140/~+150
+// over the budget of the day while the check above was being skipped. See the CHANGELOG entries for each.
 const BUDGETS: Record<string, number> = {
-  '.': 26_000,
-  './postgres': 21_700,
+  '.': 26_300,
+  './postgres': 22_000,
   './migrate': 43_000,
   './browser': 1_700,
 };
@@ -142,7 +143,13 @@ async function checkSizeBudgets(): Promise<void> {
       format: 'esm',
       external,
     });
-    const gzipped = Bun.gzipSync(await built.outputs[0].text(), { level: 9 }).length;
+    const output = built.outputs[0];
+    if (!output) {
+      // Without this the failure surfaces as `undefined.text()`, naming neither the entry nor the cause.
+      refuse(`${subpath} does not bundle`, built.logs.map(String), 'Fix the entry point and retry.');
+      continue;
+    }
+    const gzipped = Bun.gzipSync(await output.text(), { level: 9 }).length;
     if (gzipped > budget) {
       oversized.push(`${subpath}: ${gzipped} > ${budget} gzipped bytes (+${gzipped - budget})`);
     }
@@ -167,8 +174,28 @@ async function checkSizeBudgets(): Promise<void> {
  * to hold is the case of a consumer who installed `uql-orm` and no driver.
  */
 function checkDeclarationsStandalone(): void {
+  const { checkDir, installed } = writeConsumerProject();
+  try {
+    const unresolved = ownUnresolvedNames(typeCheck(checkDir), checkDir, installed);
+    if (unresolved.length) {
+      refuse(
+        'the published types do not stand on their own in a consumer project',
+        unresolved,
+        'A public type is naming something only this repo has in scope. Prefer a structural type a consumer ' +
+          'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
+      );
+    }
+  } finally {
+    rmSync(checkDir, { recursive: true, force: true });
+  }
+}
+
+/** The temp project the check runs in: `dist` installed as the only package, one entry file per export. */
+function writeConsumerProject(): { checkDir: string; installed: string } {
+  const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
   const checkDir = mkdtempSync(join(tmpdir(), 'uql-dts-'));
   const installed = join(checkDir, 'node_modules', pkg.name);
+
   mkdirSync(installed, { recursive: true });
   cpSync(join(pkgDir, 'dist'), join(installed, 'dist'), { recursive: true });
   writeFileSync(join(installed, 'package.json'), JSON.stringify(pkg));
@@ -193,15 +220,33 @@ function checkDeclarationsStandalone(): void {
       include: ['*.ts'],
     }),
   );
+  return { checkDir, installed };
+}
 
-  let output = '';
+/** tsc's diagnostics for that project, empty when it is clean. */
+function typeCheck(checkDir: string): string {
   try {
     // `cwd` pins what the reported paths are relative to, which is how they are matched against `dist`.
     execFileSync(join(pkgDir, '../../node_modules/.bin/tsc'), ['-p', checkDir], { encoding: 'utf8', cwd: checkDir });
+    return '';
   } catch (error) {
-    output = (error as { stdout?: string }).stdout ?? '';
+    return (error as { stdout?: string }).stdout ?? '';
   }
+}
 
+/** The diagnostics that are this package's problem: our own `dist`, minus what an absent peer explains. */
+function ownUnresolvedNames(output: string, checkDir: string, installed: string): string[] {
+  /** `mysql2/promise` is the `mysql2` peer dependency, imported at a subpath. */
+  const packageOf = (specifier: string) =>
+    specifier
+      .split('/')
+      .slice(0, specifier.startsWith('@') ? 2 : 1)
+      .join('/');
+  /** Declared optional, so a consumer who does not use that driver does not have its types either. */
+  const isPeer = (specifier: string) => {
+    const name = packageOf(specifier);
+    return name in (pkg.peerDependencies ?? {}) || name === 'bun';
+  };
   /** A declaration file that imports a Node-only driver is Node-only, and its consumer has `@types/node`. */
   const driverBound = (file: string) =>
     [...readFileSync(file, 'utf8').matchAll(/from '([^']+)'/g)].some(([, specifier]) => isPeer(specifier));
@@ -219,23 +264,17 @@ function checkDeclarationsStandalone(): void {
     if (code === 'TS2591' && driverBound(file)) continue;
     unresolved.push(`${relative(installed, file)}(${row}): ${code}: ${message}`);
   }
-
-  rmSync(checkDir, { recursive: true, force: true });
-
-  if (unresolved.length) {
-    refuse(
-      'the published types do not stand on their own in a consumer project',
-      unresolved,
-      'A public type is naming something only this repo has in scope. Prefer a structural type a consumer ' +
-        'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
-    );
-  }
+  return unresolved;
 }
 
+// The only fatal one: the three below all read `dist`, so a missing path there makes them meaningless.
 const declaredPaths = checkDeclaredPaths();
+settle();
+
 const browserModules = checkBrowserGraph();
 await checkSizeBudgets();
 checkDeclarationsStandalone();
+settle();
 
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
