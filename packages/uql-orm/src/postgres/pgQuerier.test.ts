@@ -1,9 +1,8 @@
-import { expect } from 'vitest';
-import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
+import { PostgresQuerierIt } from '../querier/postgresQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
-export class PostgresQuerierIt extends PgLikeQuerierIt {
+class PgQuerierIt extends PostgresQuerierIt {
   constructor() {
     super(
       new PgQuerierPool({
@@ -15,26 +14,6 @@ export class PostgresQuerierIt extends PgLikeQuerierIt {
       }),
     );
   }
-
-  override async beforeAll() {
-    const querier = await this.pool.getQuerier();
-    try {
-      // pgvector extension must exist before any vector column can be created
-      await querier.run('CREATE EXTENSION IF NOT EXISTS vector');
-    } finally {
-      await querier.release();
-    }
-    await super.beforeAll();
-  }
-
-  /** Postgres's `xmax` system column exposes the `created` flag on upsert. */
-  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBe(true);
-  }
-
-  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBe(false);
-  }
 }
 
-createSpec(new PostgresQuerierIt());
+createSpec(new PgQuerierIt());

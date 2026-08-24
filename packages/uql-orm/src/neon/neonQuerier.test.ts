@@ -1,7 +1,6 @@
 import { neonConfig } from '@neondatabase/serverless';
-import { expect } from 'vitest';
 import ws from 'ws';
-import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
+import { PostgresQuerierIt } from '../querier/postgresQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { NeonQuerierPool } from './neonQuerierPool.js';
 
@@ -17,7 +16,8 @@ neonConfig.wsProxy = (host, port) => `localhost:5443/v1?address=${host}:${port}`
 neonConfig.pipelineConnect = false;
 neonConfig.pipelineTLS = false;
 
-export class NeonQuerierIt extends PgLikeQuerierIt {
+/** The same Postgres the `postgres` suite runs, just tunneled through wsproxy, so it expects the same. */
+export class NeonQuerierIt extends PostgresQuerierIt {
   constructor() {
     super(
       new NeonQuerierPool({
@@ -28,26 +28,6 @@ export class NeonQuerierIt extends PgLikeQuerierIt {
         database: 'test_neon',
       }),
     );
-  }
-
-  override async beforeAll() {
-    const querier = await this.pool.getQuerier();
-    try {
-      // pgvector extension must exist before any vector column can be created
-      await querier.run('CREATE EXTENSION IF NOT EXISTS vector');
-    } finally {
-      await querier.release();
-    }
-    await super.beforeAll();
-  }
-
-  /** Same Postgres backend as `pgQuerier.test.ts` (just tunneled through wsproxy), so `xmax` still works. */
-  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBe(true);
-  }
-
-  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBe(false);
   }
 }
 

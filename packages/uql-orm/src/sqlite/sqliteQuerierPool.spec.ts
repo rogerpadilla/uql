@@ -73,6 +73,16 @@ describe('Sqlite3QuerierPool', () => {
     expect(querier1.db).toBe(querier2.db);
   });
 
+  it('should open one database when acquisitions race', async () => {
+    vi.stubGlobal('Bun', undefined);
+    const pool = new Sqlite3QuerierPool(':memory:');
+    // The open is awaited, so callers arriving during the first one used to each start one of their own.
+    // The extras are unreachable and never closed, and `:memory:` makes each of them a database of its own.
+    const [querier1, querier2] = await Promise.all([pool.getQuerier(), pool.getQuerier()]);
+    expect(betterDatabaseCtor).toHaveBeenCalledTimes(1);
+    expect(querier1.db).toBe(querier2.db);
+  });
+
   it('should load the requested extensions on better-sqlite3, without passing them to the driver', async () => {
     vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:', { extensions: ['/vec0.dylib'], readonly: false });

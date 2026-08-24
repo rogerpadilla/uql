@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.31.0] - 2026-08-23
+
+### PGlite: Postgres in process, no server
+
+`uql-orm/pglite` runs your queries against [PGlite](https://pglite.dev), Postgres compiled to WASM. No container to start:
+
+```ts
+import { PgliteQuerierPool } from 'uql-orm/pglite';
+
+const pool = new PgliteQuerierPool(); // in memory; pass 'file://./pgdata' to persist
+```
+
+Same dialect as `uql-orm/postgres`, so JSONB, full-text search, `RETURNING`, upsert `created` and pgvector behave as on a real server. Vector columns need the extension handed in: `new PgliteQuerierPool('memory://', { extensions: { vector } })`, with `vector` from `@electric-sql/pglite-pgvector`.
+
+It has a single connection, so queriers from one pool share a transaction: give work that needs its own transaction its own pool. And `findManyStream` buffers, having no cursor to stream from.
+
+### Fixes
+
+- **A pool sharing one connection opens it once, even when acquisitions race.** Local SQLite, embedded Turso and PGlite opened one per racing caller and leaked all but the last, which on an in-memory database meant separate databases.
+
 ## [0.30.0] - 2026-08-20
 
 ### Breaking

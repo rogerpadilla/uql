@@ -10,6 +10,7 @@ import {
 } from '../test/index.js';
 import type { IdValue, PrimaryKey } from '../type/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
+import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
 /** Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. */
@@ -31,10 +32,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /**
    * The case the feature exists for: two workers draw from one queue and must not get the same row.
    * Needs two real connections, since a lock is only visible to a different transaction, which is
-   * also why no generated-SQL assertion can stand in for it.
+   * also why no generated-SQL assertion can stand in for it. A shared-handle pool has one connection
+   * under every querier, so the second `BEGIN` joins the first transaction and there is no second
+   * transaction for a lock to be visible to, however correct the SQL the dialect emits.
    */
   async shouldSkipLockedRowsForAQueue() {
-    if (!this.querier.dialect.supportsRowLocks) {
+    if (!this.querier.dialect.supportsRowLocks || this.pool instanceof AbstractSharedHandleQuerierPool) {
       return;
     }
     for (let i = 0; i < 6; i++) {

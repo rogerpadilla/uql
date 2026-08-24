@@ -1,4 +1,4 @@
-import { AbstractSqlQuerierPool } from '../querier/index.js';
+import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { type SqliteDatabase, SqliteQuerier } from './sqliteQuerier.js';
@@ -14,19 +14,15 @@ export type LocalSqlitePoolOptions = {
 };
 
 /**
- * Pool for a SQLite database opened in this process, whichever driver provides it.
+ * Pool for a SQLite database opened in this process, whichever driver provides it. SQLite gives one
+ * connection per file, so the shared-handle lifecycle is {@link AbstractSharedHandleQuerierPool}'s.
  *
- * The handle is shared - SQLite gives one connection per file - but each acquisition gets its own
- * querier, so transaction state stays per unit of work. Subclasses supply only {@link createDb}: the
- * lifecycle, and loading the extensions on the way up, are the same for `better-sqlite3`, `bun:sqlite`
- * and `node:sqlite`, and were written out once per pool before.
+ * Subclasses supply only {@link createDb}: loading the extensions on the way up is the same for
+ * `better-sqlite3`, `bun:sqlite` and `node:sqlite`, and was written out once per pool before.
  */
-export abstract class AbstractLocalSqliteQuerierPool<O extends LocalSqlitePoolOptions> extends AbstractSqlQuerierPool<
-  SqliteQuerier,
-  SqliteDialect
-> {
-  private db?: SqliteDatabase;
-
+export abstract class AbstractLocalSqliteQuerierPool<
+  O extends LocalSqlitePoolOptions,
+> extends AbstractSharedHandleQuerierPool<SqliteDatabase, SqliteQuerier, SqliteDialect> {
   constructor(
     readonly opts?: O,
     extra?: ExtraOptions,
@@ -37,12 +33,7 @@ export abstract class AbstractLocalSqliteQuerierPool<O extends LocalSqlitePoolOp
   /** Opens the driver's database. Extensions are loaded by the caller, not here. */
   protected abstract createDb(): Promise<SqliteDatabase>;
 
-  async getQuerier() {
-    this.db ??= await this.openDb();
-    return new SqliteQuerier(this.db, this.dialect, this.extra);
-  }
-
-  private async openDb(): Promise<SqliteDatabase> {
+  protected override async openDb(): Promise<SqliteDatabase> {
     const db = await this.createDb();
     for (const extension of this.opts?.extensions ?? []) {
       db.loadExtension(extension);
@@ -50,8 +41,7 @@ export abstract class AbstractLocalSqliteQuerierPool<O extends LocalSqlitePoolOp
     return db;
   }
 
-  async end() {
-    await this.db?.close();
-    this.db = undefined;
+  protected override buildQuerier(db: SqliteDatabase) {
+    return new SqliteQuerier(db, this.dialect, this.extra);
   }
 }
