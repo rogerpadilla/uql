@@ -18,11 +18,9 @@ const pool = new PgliteQuerierPool(); // in memory; pass 'file://./pgdata' to pe
 
 Same dialect as `uql-orm/postgres`, so JSONB, full-text search, `RETURNING`, upsert `created` and pgvector behave as on a real server. Vector columns need the extension handed in: `new PgliteQuerierPool('memory://', { extensions: { vector } })`, with `vector` from `@electric-sql/pglite-pgvector`.
 
-It has a single connection, so queriers from one pool share a transaction: give work that needs its own transaction its own pool. And `findManyStream` buffers, having no cursor to stream from.
-
 ### Fixes
 
-- **A pool sharing one connection opens it once, even when acquisitions race.** Local SQLite, embedded Turso and PGlite opened one per racing caller and leaked all but the last, which on an in-memory database meant separate databases.
+- **A pool sharing one connection opens it once, even when acquisitions race.** Local SQLite, embedded Turso and PGlite opened one per racing caller and leaked all but the last (which on an in-memory database meant separate databases).
 - **`$populate` checks a relation's clauses against its own fields.** A typo in a nested `$select`, `$exclude` or `$sort` used to compile clean.
 - **`readonly` relations and arrays behave like their mutable form.** `readonly Comment[]` keeps the to-many `$populate` shape; `readonly string[]` and `readonly number[]` count as fields again.
 
