@@ -1,7 +1,7 @@
 import type { ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
-import type { Except, Json, Scalar, Type, Unpacked } from './utility.js';
+import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /**
@@ -21,10 +21,12 @@ export type Key<E> = keyof E & string;
  * (without it, optional properties leak `undefined` into the union).
  *
  * The check is bracketed so `any` resolves once rather than matching both this and
- * {@link RelationKey}: an unbracketed `any extends X` satisfies either branch.
+ * {@link RelationKey}: an unbracketed `any extends X` satisfies either branch. It reads
+ * `readonly Scalar[]`, which every mutable one satisfies too, so declaring a vector or a scalar
+ * array `readonly` does not push the field over into {@link RelationKey}.
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | Scalar[] | Json] ? K : never;
+  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | Json] ? K : never;
 }[Key<E>];
 
 /**
@@ -117,7 +119,7 @@ export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${in
  * Used by `$push` and `$pull` to provide type-safe element targets.
  */
 export type JsonArrayFields<T> = {
-  [K in keyof T as NonNullable<T[K]> extends readonly unknown[] ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
+  [K in keyof T as IsMany<T[K]> extends true ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
 };
 
 /**
@@ -161,7 +163,7 @@ export type JsonUpdateOp<T = unknown> = {
  */
 type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
   ? never
-  : T extends readonly unknown[]
+  : IsMany<T> extends true
     ? never
     : JsonUpdateOp<T>;
 
@@ -507,8 +509,8 @@ export type RelationTarget<V> = NonNullable<Unpacked<NonNullable<V>>>;
  */
 export type RelationOptionsFor<V> = Omit<RelationOptions<RelationTarget<V>>, 'entity' | 'cardinality'> & {
   readonly entity: EntityGetter<RelationTarget<V>>;
-  readonly cardinality: NonNullable<V> extends readonly unknown[] ? '1m' | 'mm' : '11' | 'm1';
-} & (NonNullable<V> extends readonly unknown[] ? RelationJoin<RelationTarget<V>> : unknown);
+  readonly cardinality: IsMany<V> extends true ? '1m' | 'mm' : '11' | 'm1';
+} & (IsMany<V> extends true ? RelationJoin<RelationTarget<V>> : unknown);
 
 /**
  * The method names of an entity, so hook registrations name a method that exists.

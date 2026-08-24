@@ -69,3 +69,11 @@ export type Unpacked<T> = T extends readonly (infer U)[]
     : T extends Promise<infer U>
       ? U
       : T;
+
+/**
+ * Whether the value a property holds is many rather than one: a to-many relation, a scalar array, a
+ * vector. Every array test in the type layer goes through this, because writing one by hand gets some
+ * part of it wrong in ways nothing reports. `isMany.test-d.ts` has one case per part, and says what
+ * each is load-bearing for.
+ */
+export type IsMany<V> = [NonNullable<V>] extends [readonly unknown[]] ? true : false;

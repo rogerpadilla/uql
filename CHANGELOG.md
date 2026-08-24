@@ -23,6 +23,8 @@ It has a single connection, so queriers from one pool share a transaction: give 
 ### Fixes
 
 - **A pool sharing one connection opens it once, even when acquisitions race.** Local SQLite, embedded Turso and PGlite opened one per racing caller and leaked all but the last, which on an in-memory database meant separate databases.
+- **`$populate` checks a relation's clauses against its own fields.** A typo in a nested `$select`, `$exclude` or `$sort` used to compile clean.
+- **`readonly` relations and arrays behave like their mutable form.** `readonly Comment[]` keeps the to-many `$populate` shape; `readonly string[]` and `readonly number[]` count as fields again.
 
 ## [0.30.0] - 2026-08-20
 

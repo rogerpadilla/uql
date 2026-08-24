@@ -1,8 +1,8 @@
-import type { FieldKey, JsonFieldPaths, RelationKey } from './entity.js';
+import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { BooleanLike, Except, PrimaryKey, Unpacked } from './utility.js';
+import type { BooleanLike, Except, IsMany, PrimaryKey } from './utility.js';
 import type { QueryVectorSearch } from './vector.js';
 
 export type QueryOptions = {
@@ -72,13 +72,13 @@ export type QueryConflictPaths<E> = {
 };
 
 /**
- * options to populate a relation.
+ * Options to populate a relation declared as `V`, by its cardinality.
  */
-export type QueryPopulateRelationOptions<E> = (E extends unknown[]
+export type QueryPopulateRelationOptions<V> = (IsMany<V> extends true
   ? // `$lock` is statement-level, so it is excluded here rather than being silently ignored per
     // relation. `QueryUnique` is a `Pick` and already leaves it out.
-    Except<Query<Unpacked<E>>, '$lock'>
-  : QueryUnique<Unpacked<E>>) & {
+    Except<Query<RelationTarget<V>>, '$lock'>
+  : QueryUnique<RelationTarget<V>>) & {
   $required?: boolean;
 };
 
@@ -152,10 +152,7 @@ export type QuerySortMap<E, Vector extends boolean = true> = {
   // To-one only: a parent holds many rows of a to-many, so there is no single value to order it by,
   // and joining one in would duplicate the parent instead. Order those inside `$populate`.
   // A vector search ranks the queried rows, so it belongs to the statement, not to a relation of it.
-  [K in RelationKey<E> as NonNullable<E[K]> extends readonly unknown[] ? never : K]?: QuerySortMap<
-    NonNullable<E[K]>,
-    false
-  >;
+  [K in RelationKey<E> as IsMany<E[K]> extends true ? never : K]?: QuerySortMap<RelationTarget<E[K]>, false>;
 };
 
 /**

@@ -1,6 +1,6 @@
-import type { FieldKey, IdValue, JsonFieldPaths, JsonFieldPathValue, RelationKey } from './entity.js';
+import type { FieldKey, IdValue, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QueryRaw } from './queryRaw.js';
-import type { ExpandScalar, QueryComparableScalar, Scalar, Unpacked } from './utility.js';
+import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 
 /**
  * options for full-text-search operator.
@@ -36,7 +36,7 @@ export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<
 export type QueryWhereMap<E> = QueryWhereFieldMap<E> &
   QueryWhereRootOperator<E> & {
     [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>>;
-  } & { [K in RelationKey<E>]?: QueryWhereMap<Unpacked<NonNullable<E[K]>>> | QueryRelationSizeFilter };
+  } & { [K in RelationKey<E>]?: QueryWhereMap<RelationTarget<E[K]>> | QueryRelationSizeFilter };
 
 /**
  * Filter a to-many relation by its row count.
@@ -271,7 +271,7 @@ type QueryAllowedOp<T> =
   | QueryCommonOp
   | ([NonNullable<T>] extends [QueryComparableScalar] ? QueryOrderedOp : never)
   | ([NonNullable<T>] extends [string] ? QueryStringOp : never)
-  | ([NonNullable<T>] extends [readonly unknown[]] ? QueryArrayOp : never);
+  | (IsMany<T> extends true ? QueryArrayOp : never);
 
 /**
  * Operators applicable to a field of type `T`: string operators require string fields, ordering
@@ -293,7 +293,7 @@ export type QueryWhereFieldOperators<T> = unknown extends T
 export type QueryWhereFieldValue<T> =
   | T
   | (undefined extends T ? null : never)
-  | ([NonNullable<T>] extends [readonly unknown[]] ? never : T[])
+  | (IsMany<T> extends true ? never : T[])
   | QueryWhereFieldOperators<T>
   | QueryRaw;
 
