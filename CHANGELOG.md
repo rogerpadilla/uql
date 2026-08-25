@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.31.1] - 2026-08-24
+
+- **Docs only.** The README leads with the type-safety demo from the home page.
+
 ## [0.31.0] - 2026-08-23
 
 ### PGlite: Postgres in process, no server
