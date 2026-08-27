@@ -45,11 +45,6 @@ export type UqlModuleAsyncOptions<Req = unknown> = UqlModuleCommon<Req> & {
 };
 
 /**
- * NestJS integration: provides the pool via DI, sets it as UQL's default pool (so `getQuerier()`,
- * `querierMiddleware` (express platform) and `createFetchHandler` work unchanged), optionally scopes
- * every request to a {@link UqlContext} (multi-tenancy), and ends the pool on application shutdown.
- */
-/**
  * Ends the pool when Nest shuts down.
  *
  * @remarks A provider rather than a hook on the module class, and built through `useFactory` with an
@@ -66,6 +61,11 @@ class UqlPoolLifecycle implements OnApplicationShutdown {
   }
 }
 
+/**
+ * NestJS integration: provides the pool via DI, sets it as UQL's default pool (so `getQuerier()`,
+ * `querierMiddleware` (express platform) and `createFetchHandler` work unchanged), optionally scopes
+ * every request to a {@link UqlContext} (multi-tenancy), and ends the pool on application shutdown.
+ */
 @Module({})
 // biome-ignore lint/complexity/noStaticOnlyClass: NestJS needs a decorated class as the module token; the shutdown hook that once made this an instance now lives on its own provider.
 export class UqlModule {
