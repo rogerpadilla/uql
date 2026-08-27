@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.31.2] - 2026-08-27
+
+### Fixes
+
+- Type-safety for JSON fields: **a `Json<T>[]` column is a field, not a relation.** An array of JSON documents was classified as a to-many relation, so it could not be declared under `defineEntity({ fields })` and its dot-paths were unavailable. It now behaves like every other JSON column, e.g. `lines?: Json<{ sku: string }>[]` now gives a typed `'lines.sku'` path in `$where` and `$sort`.
+- **NestJS 12** is covered by the test suite. The peer range was already open (`>=10.0.0`), so nothing to change on your side.
+
 ## [0.31.1] - 2026-08-24
 
 - **Docs only.** The README leads with the type-safety demo from the home page.

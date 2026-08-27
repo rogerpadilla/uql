@@ -31,7 +31,8 @@ export type PrimaryKey = string | number | bigint;
 /**
  * Marker type for JSON/JSONB fields.
  * Wrapping a field's TypeScript type with `Json<T>` ensures it is classified as a `FieldKey`
- * (not a `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`.
+ * (not a `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`. A column
+ * holding a list of documents is `Json<T>[]`, also a field, whose dot-paths address the element.
  *
  * @example
  * ```ts

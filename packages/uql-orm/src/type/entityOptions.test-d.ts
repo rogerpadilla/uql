@@ -10,9 +10,11 @@
  */
 import { defineEntity, Field, Id } from '../entity/index.js';
 import type {
+  FieldKey,
   FieldOptionsFor,
   Json,
   MethodKey,
+  RelationKey,
   RelationOptionsFor,
   RelationTarget,
   TsTypeOf,
@@ -179,6 +181,28 @@ expectType<RelationOptionsFor<Company[]>>({
   entity: () => Company,
   cardinality: 'mm',
   through: () => EmployeeProject,
+});
+
+// ─── FieldKey / RelationKey: an array of Json is a column, an array of entities is a relation ───
+// The two are told apart by the weak-type check: `Json<unknown>` is all-optional, so an entity class
+// with named properties is not assignable to it. Get this wrong and every to-many silently becomes a
+// column, so both directions are pinned here.
+class WithJsonArray {
+  id?: number;
+  items?: Json<{ a: string }>[];
+  employees?: Employee[];
+}
+expectType<FieldKey<WithJsonArray>>('items');
+expectType<RelationKey<WithJsonArray>>('employees');
+// @ts-expect-error an array of entities stays a relation, not a column
+expectType<FieldKey<WithJsonArray>>('employees');
+// @ts-expect-error an array of Json is a column, so it is not a relation
+expectType<RelationKey<WithJsonArray>>('items');
+
+// And it is declarable as one, with the `json` column type `TypeFor` already allows for the shape.
+defineEntity(WithJsonArray, {
+  fields: { id: { type: Number, isId: true }, items: { type: 'jsonb' } },
+  relations: { employees: { cardinality: '1m', entity: () => Employee, mappedBy: 'companyId' } },
 });
 
 // ─── MethodKey ───

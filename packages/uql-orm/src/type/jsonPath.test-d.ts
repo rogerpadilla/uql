@@ -24,6 +24,7 @@ class Post {
   kind?: Json<{ public?: 0 | 1; theme?: { color?: string }; labels?: string[] }>;
   data?: Json<unknown>;
   attachments?: Json<unknown[]>;
+  items?: Json<{ id: string; count: number; tags: string[] }>[];
   writer?: Writer;
 }
 
@@ -46,6 +47,26 @@ export async function jsonDotPathSafety() {
   await querier.findMany(Post, { $where: { 'data.anything.deep': { $like: '%x%' } } });
   await querier.findMany(Post, { $where: { 'data.list': { $all: [1, 'x'] } } });
   await querier.findMany(Post, { $where: { 'data.list': { $elemMatch: { anyKey: { $gt: 1 } } } } });
+
+  // A column holding a list of documents paths through its element type, each path typed by the
+  // element's own key.
+  await querier.findMany(Post, {
+    $where: {
+      'items.id': { $startsWith: 'a' },
+      'items.count': { $gte: 2 },
+      'items.tags': { $size: 3 },
+    },
+    $sort: { 'items.count': 1 },
+  });
+  // @ts-expect-error 'items.id' holds a string, not a number
+  await querier.findMany(Post, { $where: { 'items.id': 7 } });
+  // @ts-expect-error $startsWith (string-only) is not applicable to a number-typed path
+  await querier.findMany(Post, { $where: { 'items.count': { $startsWith: 'a' } } });
+  // @ts-expect-error 'nope' is not a key of Post.items' element
+  await querier.findMany(Post, { $where: { 'items.nope': 1 } });
+
+  // @ts-expect-error an array of Json takes no JSON update operators; replace the whole value
+  await querier.updateOneById(Post, 1, { items: { $set: { id: 'a' } } });
 
   // Untyped array elements accept any keys, but $elemMatch still requires an object of conditions.
   await querier.findMany(Post, { $where: { attachments: { $elemMatch: { anyKey: 'x' } } } });
@@ -83,6 +104,13 @@ export async function jsonDotPathSafety() {
   // Unknown path on a typed JSON payload is a compile error.
   // @ts-expect-error 'nope' is not a key of Post.kind
   await querier.findMany(Post, { $where: { 'kind.nope': 1 } });
+
+  // The `Json` brand is not a path: `Json<P>`'s payload infers as `P` alone, so the marker key
+  // never reaches the key derivation in the first place.
+  // @ts-expect-error '__json' is a brand, not a key of the payload
+  await querier.findMany(Post, { $where: { 'kind.__json': 1 } });
+  // @ts-expect-error and it is not a key of an array payload's element either
+  await querier.findMany(Post, { $where: { 'items.__json': 1 } });
 
   // Dot-paths on non-JSON scalar fields are compile errors.
   // @ts-expect-error 'title' is not a JSON field

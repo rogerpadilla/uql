@@ -16,9 +16,13 @@ export type Key<E> = keyof E & string;
 
 /**
  * Infers the field names of an entity.
- * Includes scalar fields, JSON fields, and scalar arrays (e.g. vector `number[]`).
+ * Includes scalar fields, JSON fields, scalar arrays (e.g. vector `number[]`) and arrays of JSON.
  * The `-?` modifier strips optionality so the indexed access yields clean key unions
  * (without it, optional properties leak `undefined` into the union).
+ *
+ * `readonly Json[]` is its own arm because the brand sits on the element, so the `Json` arm cannot
+ * see it. What keeps a to-many relation out of that arm is the weak-type check: `Json<unknown>` is
+ * all-optional, which a class with named properties is not assignable to.
  *
  * The check is bracketed so `any` resolves once rather than matching both this and
  * {@link RelationKey}: an unbracketed `any extends X` satisfies either branch. It reads
@@ -26,7 +30,9 @@ export type Key<E> = keyof E & string;
  * array `readonly` does not push the field over into {@link RelationKey}.
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | Json] ? K : never;
+  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | Json | readonly Json[]]
+    ? K
+    : never;
 }[Key<E>];
 
 /**
@@ -48,10 +54,23 @@ type IsJson<T> = '__json' extends keyof T ? true : false;
 type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
 
 /**
- * The `Json` payload of a field value `V`: both `Json<T>` and `Json<T>[]` yield `T` (via
- * `Unpacked`, a no-op for the non-array case); `never` when `V` is not a JSON field.
+ * The one branded value a field value `V` holds: `Json<T>` for both `Json<T>` and `Json<T>[]`, via
+ * `Unpacked`, a no-op for the non-array case.
  */
-type JsonPayload<V> = UnwrapJson<NonNullable<Unpacked<NonNullable<V>>>>;
+type JsonElement<V> = NonNullable<Unpacked<NonNullable<V>>>;
+
+/** The `Json` payload of a field value `V`; `never` when `V` is not a JSON field. */
+type JsonPayload<V> = UnwrapJson<JsonElement<V>>;
+
+/**
+ * The fields carrying the `Json` brand, `never` on an entity with none - which is most of them, and
+ * what makes {@link JsonFieldPaths} collapse to `never` without deriving a path for anything. Tests
+ * the brand rather than the payload, whose extra `Json<infer P>` inference is only worth doing once
+ * a field is known to be JSON.
+ */
+type JsonFieldKey<E> = {
+  readonly [K in keyof E]-?: IsJson<JsonElement<E[K]>> extends true ? K : never;
+}[Key<E>];
 
 /**
  * Recursively derives dot-notation key paths from a JSON payload type. Handles every shape at
@@ -74,17 +93,15 @@ type DeepJsonKeys<T, D extends unknown[] = []> = unknown extends T
 
 /**
  * Extracts dot-notation paths from `Json<T>` values, handling both scalar JSON
- * and arrays of JSON (e.g., `Json<{foo: string}>[]` in MongoDB).
+ * and arrays of JSON (`Json<{foo: string}>[]`, a column holding a list of documents).
  * For `kind?: Json<{ public: number; theme: { color: string } }>`,
  * produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
  * For `items?: Json<{id: string}>[]`, produces `'items.id'`.
  * An untyped `Json<unknown>` field yields the scoped pattern `` `${K}.${string}` ``.
  */
 export type JsonFieldPaths<E> = {
-  readonly [K in FieldKey<E>]: [JsonPayload<E[K]>] extends [never]
-    ? never
-    : `${K & string}.${Exclude<DeepJsonKeys<JsonPayload<E[K]>>, '__json'>}`;
-}[FieldKey<E>];
+  readonly [K in JsonFieldKey<E>]: `${K & string}.${DeepJsonKeys<JsonPayload<E[K]>>}`;
+}[JsonFieldKey<E>];
 
 /**
  * The value type inside `T` at dot-path `P`; `unknown` when unresolvable (e.g. through a
@@ -104,13 +121,12 @@ type PathValue<T, P extends string> = unknown extends T
 
 /**
  * The value type at a JSON dot-path `P` of entity `E`; `unknown` when unresolvable, which keeps
- * untyped paths fully permissive in `$where`.
+ * untyped paths fully permissive in `$where`. Gated on {@link JsonFieldKey}, the same predicate
+ * {@link JsonFieldPaths} derives its keys from, so a path that is offered always resolves a value.
  */
 export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${infer Rest}`
-  ? F extends FieldKey<E>
-    ? [JsonPayload<E[F]>] extends [never]
-      ? unknown
-      : PathValue<JsonPayload<E[F]>, Rest>
+  ? F extends JsonFieldKey<E>
+    ? PathValue<JsonPayload<E[F]>, Rest>
     : unknown
   : unknown;
 
