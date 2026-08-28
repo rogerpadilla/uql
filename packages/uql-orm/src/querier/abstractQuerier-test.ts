@@ -454,7 +454,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.updateMany(
       InventoryAdjustment,
       { $where: { description: 'batch' } },
-      { itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] as ItemAdjustment[] },
+      { itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] },
     );
 
     for (const id of [first, second]) {
