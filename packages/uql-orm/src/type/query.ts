@@ -39,7 +39,9 @@ export type QuerySelectOptions = {
 };
 
 /**
- * Query field selection - `{ name: true }` whitelists specific fields.
+ * Query field selection - `{ name: true }` whitelists specific fields. Fields only: a relation is a
+ * sub-query rather than a projection flag, and a whitelist naming one could not say whether the
+ * scalars come with it. Relations go in `$populate`.
  */
 export type QuerySelect<E> = {
   [K in FieldKey<E>]?: BooleanLike;

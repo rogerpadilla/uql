@@ -18,6 +18,7 @@ Canonical, tool-neutral instructions for this repo, read directly by Cursor and 
 
 - Where a shared suite covers backends with genuinely different specified behaviour, keep the body linear by putting the expectation in an overridable protected method on the suite (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`).
 - Shared suites run under **both** vitest and `bun:test`, so only use matchers both have. For "null or undefined" write `expect(x == null).toBe(true)`: vitest has `toBeNullable()`, bun has `toBeNil()`, neither has the other's. A missing SQL column hydrates to `null` while Mongo omits it as `undefined`, so that case is genuinely nullish.
+- An integration suite acquires per test (`beforeEach`/`afterEach`, or `pool.run`/`pool.withQuerier` per statement) and `end()`s its pool in `afterAll`. Never pin one querier for a whole suite: a pool can hand out a connection the server has already closed.
 
 ## Packaging
 
