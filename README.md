@@ -37,7 +37,7 @@ That is the whole install ([setup](https://uql-orm.dev/getting-started)), and th
 <a href="https://uql-orm.dev">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://uql-orm.dev/demo-dark.webp">
-    <img src="https://uql-orm.dev/demo-light.webp" alt="A UQL query being typed: the compiler underlines the misspelled 'emial', then 'titel' three levels deep inside $populate">
+    <img src="https://uql-orm.dev/demo-light.webp" alt="A UQL query being typed: the compiler underlines the misspelled 'emial', then 'titel' three levels deep inside $populate, then '$like' on a numeric column">
   </picture>
 </a>
 
