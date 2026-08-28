@@ -442,6 +442,30 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(0);
   }
 
+  /**
+   * The rows an `updateMany` settles all take the same relation payload, so the cascade runs per
+   * relation rather than per row. Asserted here rather than only where the statements are counted:
+   * that spec is SQL-only, and the code deciding it is the shared querier both backends inherit.
+   */
+  async shouldUpdateManyAndCascadeOneToManyOverEveryMatchedRow() {
+    const first = await this.querier.insertOne(InventoryAdjustment, { description: 'batch', itemAdjustments: [{}] });
+    const second = await this.querier.insertOne(InventoryAdjustment, { description: 'batch', itemAdjustments: [{}] });
+
+    await this.querier.updateMany(
+      InventoryAdjustment,
+      { $where: { description: 'batch' } },
+      { itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] as ItemAdjustment[] },
+    );
+
+    for (const id of [first, second]) {
+      const found = await this.querier.findOneById(InventoryAdjustment, id, {
+        $populate: { itemAdjustments: { $select: { buyPrice: true } } },
+      });
+      expect(found?.itemAdjustments?.map(({ buyPrice }) => buyPrice).sort()).toEqual([7, 9]);
+    }
+    await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(4);
+  }
+
   async shouldUpdateManyAndCascadeOneToManyNull() {
     await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
 
