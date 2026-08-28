@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
-import { User } from '../test/entityMock.js';
+import { Item, User } from '../test/entityMock.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -50,14 +50,42 @@ class Chunk {
 function createMockedQuerier(aggregateResults: unknown[] = []) {
   const toArray = vi.fn().mockResolvedValue(aggregateResults);
   const aggregate = vi.fn().mockReturnValue({ toArray });
+  // Every cursor method chains, so one self-returning stub stands in for the whole builder.
+  const cursor: Record<string, unknown> = { toArray };
+  for (const method of ['filter', 'project', 'sort', 'skip', 'limit', 'map']) {
+    cursor[method] = () => cursor;
+  }
+  const find = vi.fn().mockReturnValue(cursor);
 
   const dialect = new MongoDialect();
   const querier = new MongodbQuerier(dialect, {} as any);
 
-  vi.spyOn(querier, 'collection').mockReturnValue({ aggregate } as any);
+  vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, find } as any);
 
-  return { querier, aggregate };
+  return { querier, aggregate, find };
 }
+
+/**
+ * Which of the two read paths a query takes: the cheap plain `find` cursor, or the aggregation
+ * pipeline for the clauses a cursor cannot express. `$distinct` was missing from that list and got
+ * dropped silently for want of this test. Both directions are pinned - the fast path staying fast
+ * matters as much as an unexpressible clause reaching the pipeline.
+ */
+describe('MongodbQuerier read routing', () => {
+  it('serves a plain query from the find cursor', async () => {
+    const { querier, aggregate, find } = createMockedQuerier();
+    await querier.findMany(Item, { $select: { name: true }, $where: { name: 'x' }, $limit: 2 });
+    expect(find).toHaveBeenCalled();
+    expect(aggregate).not.toHaveBeenCalled();
+  });
+
+  it('sends a clause the cursor cannot express to the pipeline', async () => {
+    const { querier, aggregate, find } = createMockedQuerier();
+    await querier.findMany(Item, { $select: { name: true }, $distinct: true });
+    expect(aggregate).toHaveBeenCalled();
+    expect(find).not.toHaveBeenCalled();
+  });
+});
 
 describe('MongodbQuerier vector search', () => {
   it('should route vector sort through $vectorSearch pipeline', async () => {

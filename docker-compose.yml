@@ -77,7 +77,9 @@ services:
     image: cockroachdb/cockroach:latest-v26.2
     restart: always
     container_name: uql-cockroachdb-26
-    command: start-single-node --insecure
+    # `--cache` and `--max-sql-memory` default to a quarter of visible RAM *each*, so left alone this
+    # claims up to ~8GB of a CI runner it shares with three other engines. It holds 20 tiny tables.
+    command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB
     ports:
       - "26257:26257"
     healthcheck:

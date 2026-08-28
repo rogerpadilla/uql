@@ -26,6 +26,8 @@ import {
   getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
+  idOnlyQuery,
+  isPagedQuery,
   populatesRelations,
   throwNoPendingTransaction,
   throwPendingTransaction,
@@ -66,9 +68,10 @@ export class MongodbQuerier extends AbstractQuerier {
         await this.fillToManyRelations(entity, documents, q.$populate);
       } else {
         // A relation condition needs `$lookup`, so it forces the aggregation path just like populating
-        // one does - and so does ordering by a relation, which reads what a lookup produced. A plain
-        // `find` cursor can express none of the three.
+        // one does - and so does ordering by a relation, which reads what a lookup produced, and
+        // `$distinct`, which is a `$group`. A plain `find` cursor can express none of the four.
         if (
+          q.$distinct ||
           populatesRelations(meta, q.$populate) ||
           this.dialect.constrainsRelations(entity, q.$where) ||
           this.dialect.sortsRelations(entity, q.$sort)
@@ -225,16 +228,15 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   /**
-   * The `_id`s a search matches. Writes need this whenever the `$where` constrains a relation, since a
-   * MongoDB `updateMany`/`deleteMany` filter cannot host a `$lookup` - reads never pay this cost.
+   * The ids matching `q`, in `q`'s own order and page, so a write can name the rows it settled on.
+   * Built from the read pipeline rather than stages assembled here: that dropped `$sort`/`$limit` on
+   * the floor, and skipped the relation-sort rejection {@link MongoDialect.sort} raises.
    */
-  private async matchedIds<E extends Document>(entity: Type<E>, where: QueryWhere<E> | undefined, opts?: QueryOptions) {
+  private async settleIds<E extends Document>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
-    const { stages, filter } = this.dialect.whereWithRelations(entity, where, opts);
+    const pipeline = this.dialect.aggregationPipeline(entity, idOnlyQuery(meta, q), opts);
     const founds = await this.execute((session) =>
-      this.collection(entity)
-        .aggregate<Document>([...stages, { $match: filter }, { $project: { _id: true } }], { session })
-        .toArray(),
+      this.collection(entity).aggregate<Document>(pipeline, { session }).toArray(),
     );
     return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id]);
   }
@@ -276,10 +278,13 @@ export class MongodbQuerier extends AbstractQuerier {
       payload = clone(payload);
       const meta = getMeta(entity);
       const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
-      // An `updateMany` filter cannot host a `$lookup`, so a relation condition is resolved to ids first.
-      const where = this.dialect.constrainsRelations(entity, qm.$where)
-        ? ({ _id: { $in: await this.matchedIds(entity, qm.$where, opts) } } as Filter<E>)
-        : this.dialect.where(entity, qm.$where, opts);
+      // Settled to ids first in two cases: an `updateMany` filter cannot host a `$lookup`, so a
+      // relation condition has nowhere to go, and MongoDB takes no page on a write, so a paged one
+      // has to name the rows it picked rather than touching every match.
+      const where =
+        this.dialect.constrainsRelations(entity, qm.$where) || isPagedQuery(qm)
+          ? ({ _id: { $in: await this.settleIds(entity, qm, opts) } } as Filter<E>)
+          : this.dialect.where(entity, qm.$where, opts);
       // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
       const update = this.dialect.getUpdateFilter<E>(persistable);
 
@@ -390,8 +395,8 @@ export class MongodbQuerier extends AbstractQuerier {
       // Hard delete targets matching rows regardless of soft-delete state (keeps other filters).
       const findOpts = field ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
       // Delete has always resolved its ids first (it stamps or removes them by `_id`), so a relation
-      // condition needs nothing extra here.
-      const ids = await this.matchedIds(entity, qm.$where, findOpts);
+      // condition needs nothing extra here - and passing the whole query is what makes its page apply.
+      const ids = await this.settleIds(entity, qm, findOpts);
       if (!ids.length) {
         return 0;
       }

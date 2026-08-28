@@ -619,16 +619,44 @@ export class MongoDialect extends AbstractDialect {
     // A `$required` relation drops parents when it unwinds, and an ordering may read a field only a
     // lookup produces: either one puts the lookups first, as an INNER JOIN does. Otherwise paging
     // first is equivalent and spares the lookups the rows it cuts.
+    // Merged into the query's own projection rather than standing in for one: a query that asked
+    // for no columns wants the whole document, not just the field this adds to it.
+    const projected = projection ? { ...projection, ...extra.project } : undefined;
+    const project = projected ? [{ $project: projected }] : [];
+
+    // `$distinct` inverts the usual order twice over: the projection decides which columns make two
+    // rows the same, so it has to run *before* the grouping, and the grouping collapses rows, so the
+    // ordering and the page have to run after it to address the set the caller actually receives.
+    const dedup = q.$distinct ? this.distinctStages(projected) : [];
+    if (dedup.length) {
+      return [...lookups, ...project, ...dedup, ...sort, ...pager];
+    }
+
+    // A `$required` relation drops parents when it unwinds, and an ordering may read a field only a
+    // lookup produces: either one puts the lookups first, as an INNER JOIN does. Otherwise paging
+    // first is equivalent and spares the lookups the rows it cuts.
     const lookupsFirst =
       this.sortsRelations(entity, q.$sort) ||
       lookups.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
+    return [...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]), ...project];
+  }
 
-    return [
-      ...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]),
-      // Merged into the query's own projection rather than standing in for one: a query that asked
-      // for no columns wants the whole document, not just the field this adds to it.
-      ...(projection ? [{ $project: { ...projection, ...extra.project } }] : []),
-    ];
+  /**
+   * `$distinct` as a `$group` on the columns the query projects - the same set a SQL dialect puts
+   * after `SELECT DISTINCT` - and the `$replaceRoot` that lifts the grouped key back to the top
+   * level. A query that projects nothing selects every column, primary key included, so there is
+   * nothing to collapse: `SELECT DISTINCT *` collapses nothing either.
+   */
+  private distinctStages(projection?: Record<string, 0 | 1>): MongoAggregationPipelineEntry<Document>[] {
+    if (!projection) {
+      return [];
+    }
+    const keys = getKeys(projection).filter((key) => projection[key] === 1);
+    if (!keys.length) {
+      return [];
+    }
+    const groupId = Object.fromEntries(keys.map((key) => [key, `$${key}`]));
+    return [{ $group: { _id: groupId } }, { $replaceRoot: { newRoot: '$_id' } }];
   }
 
   /**
@@ -1135,6 +1163,7 @@ export type MongoAggregationPipelineEntry<E extends Document> = {
   $unwind?: MongoAggregationUnwind;
   $group?: Record<string, unknown>;
   $project?: Record<string, unknown>;
+  $replaceRoot?: { readonly newRoot: string | Record<string, unknown> };
   $addFields?: Record<string, unknown>;
   $vectorSearch?: Record<string, unknown>;
   $count?: string;

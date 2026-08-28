@@ -25,20 +25,11 @@ export function hasKeys<T>(obj: T): obj is NonNullable<T> {
   return false;
 }
 
-/** Whether `obj` has at least two enumerable keys. */
-export function hasMultipleKeys(obj: object): boolean {
-  let count = 0;
-  for (const _ in obj) {
-    if (++count > 1) return true;
-  }
-  return false;
-}
-
 /**
  * Whether any enumerable key of `obj` satisfies `pred`, short-circuiting on the first match
  * without materializing a key array (unlike `Object.keys(obj).some(pred)`).
  */
-export function someKey(obj: object, pred: (key: string) => boolean): boolean {
+export function someKey<T extends object>(obj: T, pred: (key: keyof T & string) => boolean): boolean {
   for (const key in obj) {
     if (pred(key)) return true;
   }

@@ -3,7 +3,6 @@
 lockfile = true
 
 [test]
-# Tests only: hooks are capped at 5s whatever this says, which the `beforeAll` creating the fixture
-# tables exceeded on a cold CI runner. `test:bun` passes the same 10s as `--timeout`, which does cover
-# hooks, so both budgets are this number.
+# Tests only: a hook still capped at bun's 5s default with this set to 10s, which is why `test:bun`
+# repeats it as `--timeout`. Setup and teardown take `provisioningTimeout` from `test/spec.util.ts`.
 timeout = 10000

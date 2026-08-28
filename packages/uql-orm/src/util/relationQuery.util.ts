@@ -7,7 +7,7 @@ import type {
   RelationKey,
   RelationMeta,
 } from '../type/index.js';
-import { getKeys } from './object.util.js';
+import { getKeys, someKey } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
   readonly requestedKeys: RelationKey<E>[];
@@ -88,7 +88,7 @@ export function getRelationRequestSummary<E>(
 /** True when `$populate` includes at least one relation key. */
 export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopulate<E>): boolean {
   if (!populate) return false;
-  return getKeys(populate).some((key) => populate[key] && key in meta.relations);
+  return someKey(populate, (key) => !!populate[key] && key in meta.relations);
 }
 
 // `$lock` is statement-level, so it is not part of a relation query: `parseRelationQueryValue`

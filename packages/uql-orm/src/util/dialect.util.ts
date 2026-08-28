@@ -10,6 +10,7 @@ import {
   type JsonUpdateOp,
   type MongoId,
   type OnFieldCallback,
+  type Query,
   type QueryAggMap,
   type QueryAggregateArg,
   type QueryAggregateDistinctOp,
@@ -18,6 +19,7 @@ import {
   type QueryGroupMap,
   type QueryOptions,
   QueryRaw,
+  type QuerySearch,
   type QuerySelect,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
@@ -152,6 +154,25 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
     return configuration;
   }
   return configuration === action;
+}
+
+/**
+ * Whether `q` carries an ordering or a page, so a write has to settle its rows with a read and name
+ * them by id. `$sort` counts even without a page: the SQL dialects emit it from the same `search()`
+ * that `find` uses, and SQLite rejects `ORDER BY` on an UPDATE that has no `LIMIT`. MongoDB takes
+ * neither clause on a write at all.
+ */
+export function isPagedQuery<E>(q: QuerySearch<E>): boolean {
+  return q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
+}
+
+/**
+ * `q` selecting nothing but the id: what a write hands its backend's own read builder to settle the
+ * rows it will name. The cast is unavoidable - a computed key is not a `QuerySelect` key to the
+ * compiler - so it is spelled once here rather than in each querier.
+ */
+export function idOnlyQuery<E>(meta: EntityMeta<E>, q: QuerySearch<E>): Query<E> {
+  return { ...q, $select: { [meta.id]: true } } as Query<E>;
 }
 
 /**

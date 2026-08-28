@@ -98,13 +98,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runtime: bun
-            version: latest
-          - runtime: node
-            version: lts/*
-          - runtime: node
-            version: latest
-    name: Test (${{ matrix.runtime }} ${{ matrix.version }})
+          # The axis is the suite, not a label: `test:bun` drives Bun's own drivers and never touches
+          # node, so pairing it with each node version ran identical work three times. One suite per leg
+          # also keeps two of them off these shared databases at once, as `bun run test` does by chaining.
+          - suite: bun
+            node: lts/*
+          - suite: vitest
+            node: lts/*
+          - suite: vitest
+            node: latest
+    name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
@@ -112,7 +115,7 @@ jobs:
           bun-version: latest
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.version }}
+          node-version: ${{ matrix.node }}
       - name: Install OS dependencies
         run: |
           sudo apt-get update
@@ -122,9 +125,16 @@ jobs:
       - name: Start services
         run: docker compose up -d --wait
       - name: Run tests
-        run: bun run test
+        run: bun run test:${{ matrix.suite }}
+      # A hook that times out reports only `(unnamed)`, so a database that stalled or was silently
+      # restarted (every service is `restart: always`) reads as a test bug. These logs say which it was.
+      - name: Dump service state on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=200
       - name: Submit coverage
-        if: matrix.runtime == 'node' && matrix.version == 'lts/*'
+        if: matrix.suite == 'vitest' && matrix.node == 'lts/*'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

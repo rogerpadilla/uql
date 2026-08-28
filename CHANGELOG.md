@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.31.4] - 2026-08-28
+
+### Fixes
+
+- **MongoDB honors `$distinct`.** The clause was dropped, so `findMany` returned the duplicates every SQL backend collapses.
+- **MongoDB honors `$sort`/`$limit`/`$skip` on `updateMany`/`deleteMany`.** The page was dropped, so `deleteMany(User, { $where, $limit: 1 })` removed every match instead of one row.
+
+### Improvements
+
+- **Cascading a relation over many rows now only costs two statements.** An `updateMany` carrying a relation payload issued a `DELETE` and an `INSERT` for each matched row.
+
 ## [0.31.3] - 2026-08-27
 
 ### Fixes

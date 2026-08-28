@@ -1,6 +1,7 @@
 import { transform } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
+import { provisioningTimeout } from '../../test/index.js';
 import { PostgresSchemaIntrospector } from '../introspection/postgresIntrospector.js';
 import { EntityCodeGenerator } from './entityCodeGenerator.js';
 
@@ -33,12 +34,12 @@ describe('generate:from-db (PostgreSQL)', () => {
 
     const ast = await new PostgresSchemaIntrospector(pool).introspect();
     code = new EntityCodeGenerator(ast).generateForTable(TABLE)!.code;
-  });
+  }, provisioningTimeout);
 
   afterAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
     await pool.end();
-  });
+  }, provisioningTimeout);
 
   it('should generate source that parses as TypeScript', async () => {
     await expect(transform(code, { loader: 'ts' })).resolves.toBeDefined();

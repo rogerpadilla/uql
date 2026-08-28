@@ -26,7 +26,10 @@ import {
   clone,
   getInsertFieldKeys,
   getRelationRequestSummary,
+  hasKeys,
+  idOnlyQuery,
   isAutoIncrement,
+  isPagedQuery,
   obtainAttrsPaths,
   throwNoPendingTransaction,
   throwPendingTransaction,
@@ -38,15 +41,6 @@ import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 import { enrichError } from './queryError.js';
-
-/**
- * Whether `q` picks a specific slice of the matching rows rather than all of them. A write that
- * does has to settle those rows and name them: `ORDER BY`/`LIMIT` on an UPDATE or DELETE is MySQL's
- * alone.
- */
-function isPaged<E>(q: QuerySearch<E>): boolean {
-  return q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
-}
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -192,14 +186,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * populated under it. Which columns, and as what, is `hydratableFields`; the per-cell decode is
    * `decodeColumn`. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
    *
-   * `visited` guards a populated graph that points back at itself; it defaults rather than living in
-   * a separate entry-point wrapper, because the wrapper's whole body was seeding it.
+   * `visited` guards a populated graph that points back at itself, and makes a node two paths reach
+   * decode once. Only a relation can lead the walk back somewhere it has been, so an entity that
+   * declares none skips the guard rather than allocating a set per row to hold a single object -
+   * which cost more than the decoding it guards, on a flat read.
    */
-  private hydrateFields<E extends object>(entity: Type<E>, dto: E, visited = new WeakSet<object>()): E {
-    if (!dto || typeof dto !== 'object' || visited.has(dto)) {
+  private hydrateFields<E extends object>(entity: Type<E>, dto: E, visited?: WeakSet<object>): E {
+    if (!dto || typeof dto !== 'object' || visited?.has(dto)) {
       return dto;
     }
-    visited.add(dto);
 
     const meta = getMeta(entity);
     const row = dto as Record<string, unknown>;
@@ -211,20 +206,29 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       }
     }
 
+    // Allocated only where the walk can continue: an entity declaring no relation cannot lead back
+    // to a node already decoded, and the loop below is a no-op for it anyway.
+    if (hasKeys(meta.relations)) {
+      visited ??= new WeakSet();
+    }
+    visited?.add(dto);
+
+    // The value is read before the relation's target is resolved: a query that populated nothing
+    // still walks every relation the entity declares, and `rel.entity()` is a call per row per
+    // relation that only the populated ones need.
     for (const key in meta.relations) {
+      const value = row[key];
+      if (!value || typeof value !== 'object') continue;
       const rel = meta.relations[key];
       if (!rel) continue;
       const relEntity = rel.entity();
-      const value = row[key];
       if (Array.isArray(value)) {
         for (const it of value) {
           this.hydrateFields(relEntity, it, visited);
         }
         continue;
       }
-      if (value && typeof value === 'object') {
-        this.hydrateFields(relEntity, value, visited);
-      }
+      this.hydrateFields(relEntity, value, visited);
     }
     return dto;
   }
@@ -312,7 +316,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // Settled first for the reason `internalDeleteMany` settles: `ORDER BY`/`LIMIT` on an UPDATE is
     // MySQL's alone, so a paged update has to name the rows it picked.
     let target = q;
-    if (isPaged(q)) {
+    if (isPagedQuery(q)) {
       const ids = await this.settleIds(entity, q, opts);
       if (!ids.length) {
         return 0;
@@ -330,7 +334,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   private async settleIds<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
     const meta = getMeta(entity);
     const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, { ...q, $select: { [meta.id]: true } } as Query<E>, opts);
+    this.dialect.find(ctx, entity, idOnlyQuery(meta, q), opts);
     const founds = await this.all<E>(ctx.sql, ctx.values);
     return founds.map((it) => it[meta.id]);
   }
@@ -377,7 +381,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // parents' ids to find their children, and no engine but MySQL accepts `ORDER BY`/`LIMIT` on a
     // DELETE, so a paged delete has to name the rows it settled on. A plain predicate needs neither,
     // and there the round trip buys nothing: the statement can say what the caller already said.
-    if (!isPaged(q) && !cascadesOnDelete(meta)) {
+    if (!isPagedQuery(q) && !cascadesOnDelete(meta)) {
       const ctx = this.dialect.createContext();
       this.dialect.delete(ctx, entity, q, opts);
       const { changes = 0 } = await this.run(ctx.sql, ctx.values);

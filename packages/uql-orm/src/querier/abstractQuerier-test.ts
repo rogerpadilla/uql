@@ -821,6 +821,93 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
+   * `$distinct` collapses rows that agree on every projected column - the set a SQL dialect names
+   * after `SELECT DISTINCT`. MongoDB dropped the clause outright and returned the duplicates, so
+   * this is shared rather than per-backend: the whole point of the clause is the same answer anywhere.
+   */
+  async shouldFindDistinctRows() {
+    await this.querier.insertMany(Item, [
+      { name: 'dup', code: 'd1' },
+      { name: 'dup', code: 'd2' },
+      { name: 'uniq', code: 'u1' },
+    ]);
+
+    const founds = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { name: { $in: ['dup', 'uniq'] } },
+      $distinct: true,
+      $sort: { name: 1 },
+    });
+
+    expect(founds.map(({ name }) => name)).toEqual(['dup', 'uniq']);
+  }
+
+  /**
+   * A page on a write picks which rows it touches, so it has to settle them with a read first: no
+   * engine but MySQL takes `LIMIT` on an UPDATE or a DELETE, and MongoDB takes neither. MongoDB
+   * resolved ids from `$where` alone and dropped the page, so a write meant for one row hit every
+   * match - a shared expectation is what keeps the two backends answering the same way.
+   */
+  async shouldUpdateOnlyThePagedRows() {
+    await this.querier.insertMany(Item, [
+      { name: 'paged c', code: '3' },
+      { name: 'paged a', code: '1' },
+      { name: 'paged b', code: '2' },
+    ]);
+
+    const changes = await this.querier.updateMany(
+      Item,
+      { $where: { name: { $startsWith: 'paged ' } }, $sort: { code: 1 }, $limit: 1 },
+      { name: 'touched' },
+    );
+
+    expect(changes).toBe(1);
+    const founds = await this.querier.findMany(Item, { $select: { name: true }, $sort: { code: 1 } });
+    expect(founds.map(({ name }) => name)).toEqual(['touched', 'paged b', 'paged c']);
+  }
+
+  /**
+   * An ordering with no page reorders the same set, so the write still touches every match. It is
+   * the reason `isPagedQuery` counts a bare `$sort`: the SQL dialects emit it on the UPDATE
+   * itself, and SQLite rejects an `ORDER BY` there without a `LIMIT`, so the rows have to be settled
+   * and named instead.
+   */
+  async shouldUpdateEveryMatchWhenOnlySorted() {
+    await this.querier.insertMany(Item, [
+      { name: 'sorted c', code: '3' },
+      { name: 'sorted a', code: '1' },
+    ]);
+
+    const changes = await this.querier.updateMany(
+      Item,
+      { $where: { name: { $startsWith: 'sorted ' } }, $sort: { code: 1 } },
+      { name: 'touched' },
+    );
+
+    expect(changes).toBe(2);
+    const founds = await this.querier.findMany(Item, { $select: { name: true } });
+    expect(founds.map(({ name }) => name)).toEqual(['touched', 'touched']);
+  }
+
+  async shouldDeleteOnlyThePagedRows() {
+    await this.querier.insertMany(Item, [
+      { name: 'paged c', code: '3' },
+      { name: 'paged a', code: '1' },
+      { name: 'paged b', code: '2' },
+    ]);
+
+    const changes = await this.querier.deleteMany(Item, {
+      $where: { name: { $startsWith: 'paged ' } },
+      $sort: { code: 1 },
+      $limit: 1,
+    });
+
+    expect(changes).toBe(1);
+    const founds = await this.querier.findMany(Item, { $select: { name: true }, $sort: { code: 1 } });
+    expect(founds.map(({ name }) => name)).toEqual(['paged b', 'paged c']);
+  }
+
+  /**
    * Ordering the rows by a field of a related entity, which every backend here can do for a
    * populated to-one - the SQL dialects by the join `$populate` already put under it, MongoDB by the
    * document its `$lookup` unwound. Regression: the SQL dialects emitted `ORDER BY "tax"."name"`

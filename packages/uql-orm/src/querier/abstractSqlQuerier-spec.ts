@@ -692,7 +692,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['something', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `id` = ?', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `creatorId` = ?', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `user_profile` WHERE `creatorId` IN (?)', [1]);
 
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(3);
@@ -724,13 +724,44 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
       [1],
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       4,
       'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
       [50, 1, 1, 300, 1, 1],
+    );
+
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(4);
+  }
+
+  /**
+   * Two matched rows share one relation payload, so the counts are the assertion: naming each parent in
+   * a `DELETE` and an `INSERT` of its own is what made this two statements per matched row.
+   */
+  async shouldUpdateManyAndCascadeOneToManyInOneStatementEach() {
+    await this.querier.insertMany(InventoryAdjustment, [
+      { companyId: 1, createdAt: 1 },
+      { companyId: 1, createdAt: 1 },
+    ]);
+
+    await this.querier.updateMany(
+      InventoryAdjustment,
+      { $where: { companyId: 1 } },
+      { description: 'some description', updatedAt: 1, itemAdjustments: [{ buyPrice: 50, createdAt: 1 }] },
+    );
+
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      3,
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?, ?)',
+      [1, 2],
+    );
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      4,
+      'INSERT INTO `ItemAdjustment` (`buyPrice`, `createdAt`, `inventoryAdjustmentId`) VALUES (?, ?, ?), (?, ?, ?) RETURNING `id` `id`',
+      [50, 1, 1, 50, 1, 2],
     );
 
     expect(this.querier.all).toHaveBeenCalledTimes(1);
@@ -760,7 +791,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `InventoryAdjustment` WHERE `id` = ?', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
       [1],
     );
 
@@ -799,7 +830,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.run).toHaveBeenNthCalledWith(
       3,
-      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ?',
+      'DELETE FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
       [1],
     );
 
@@ -873,7 +904,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
     // The links go before the tags they would point at, since replacing them means clearing them first.
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` = ?', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` IN (?)', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       4,
       'INSERT INTO `Tag` (`name`, `createdAt`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',
@@ -910,7 +941,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       ['item one', 1, 1],
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `Item` WHERE `id` = ?', [1]);
-    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` = ?', [1]);
+    expect(this.querier.run).toHaveBeenNthCalledWith(3, 'DELETE FROM `ItemTag` WHERE `itemId` IN (?)', [1]);
     expect(this.querier.run).toHaveBeenNthCalledWith(
       4,
       'INSERT INTO `ItemTag` (`itemId`, `tagId`) VALUES (?, ?), (?, ?) RETURNING `id` `id`',

@@ -37,6 +37,7 @@ import {
   forEachRequestedRelation,
   getKeys,
   getRelationRequestSummary,
+  idOnlyQuery,
   LoggerWrapper,
   parseRelationAtKey,
   parseRelationQueryValue,
@@ -573,7 +574,9 @@ export abstract class AbstractQuerier implements Querier {
     }, []);
     if (!entries.length) return;
     await Promise.all(
-      entries.map(({ it, relKeys }) => Promise.all(relKeys.map((relKey) => this.saveRelation(entity, it, relKey)))),
+      entries.map(({ it, relKeys }) =>
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, [it[meta.id]], it[relKey], relKey))),
+      ),
     );
   }
 
@@ -590,16 +593,16 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
-    const founds = await this.findMany(entity, { ...q, $select: { [meta.id]: true } } as Query<E>, opts);
+    const founds = await this.findMany(entity, idOnlyQuery(meta, q), opts);
     const ids = founds.map((found) => found[meta.id]);
 
-    await Promise.all(
-      ids.map((id) =>
-        Promise.all(
-          relKeys.map((relKey) => this.saveRelation(entity, { ...payload, [meta.id]: id } as E, relKey, true)),
-        ),
-      ),
-    );
+    if (!ids.length) {
+      return;
+    }
+
+    for (const relKey of relKeys) {
+      await this.saveRelation(entity, ids, payload[relKey], relKey, true);
+    }
   }
 
   protected async deleteRelations<E extends object>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
@@ -621,34 +624,39 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
+  /**
+   * Persists `relValue` against every id in `ids`, which an update hands the whole page of rows it
+   * settled: the value is the same for all of them, so the statements are per relation rather than per
+   * row wherever the cardinality allows it.
+   */
   protected async saveRelation<E extends object>(
     entity: Type<E>,
-    payload: E,
+    ids: IdValue<E>[],
+    relValue: unknown,
     relKey: RelationKey<E>,
     isUpdate?: boolean,
   ) {
     const meta = getMeta(entity);
-    const id = payload[meta.id] as IdValue<E>;
     const relOpts = meta.relations[relKey];
     if (!relOpts) return;
     const relEntity = relOpts.entity();
-    const relPayload = payload[relKey] as unknown as RelationValue<E>[];
+    const relPayload = relValue as RelationValue<E>[];
 
     switch (relOpts.cardinality) {
       case '1m':
       case 'mm':
-        return this.saveToMany(relOpts, relEntity, id, relPayload as unknown as object[], isUpdate);
+        return this.saveToMany(relOpts, relEntity, ids, relPayload as unknown as object[], isUpdate);
       case '11':
-        return this.saveOneToOne(relEntity, relOpts, id, relPayload as unknown as object);
+        return this.saveOneToOne(relEntity, relOpts, ids, relPayload as unknown as object);
       case 'm1':
-        if (relPayload) return this.saveManyToOne(entity, relEntity, relOpts, id, relPayload as unknown as object);
+        if (relPayload) return this.saveManyToOne(entity, relEntity, relOpts, ids, relPayload as unknown as object);
     }
   }
 
   private async saveToMany(
     relOpts: RelationMeta,
     relEntity: Type<object>,
-    id: unknown,
+    ids: unknown[],
     relPayload: object[],
     isUpdate?: boolean,
   ) {
@@ -657,49 +665,58 @@ export abstract class AbstractQuerier implements Querier {
       const localField = references[0].local;
       const throughEntity = through();
       if (isUpdate) {
-        await this.deleteMany(throughEntity, { $where: { [localField]: id } as QueryWhere<object> });
+        await this.deleteMany(throughEntity, { $where: { [localField]: ids } as QueryWhere<object> });
       }
       if (relPayload) {
-        const savedIds = await this.saveMany(relEntity, relPayload);
-        const throughBodies = savedIds.map((relId) => ({
-          [references[0].local]: id,
-          [references[1].local]: relId,
-        }));
-        await this.insertMany(throughEntity, throughBodies);
+        // Saved per parent on purpose: each one owns its copies of the children, and saving them once
+        // would link every parent to a single shared row instead.
+        for (const id of ids) {
+          const savedIds = await this.saveMany(relEntity, relPayload);
+          await this.insertMany(
+            throughEntity,
+            savedIds.map((relId) => ({ [references[0].local]: id, [references[1].local]: relId })),
+          );
+        }
       }
       return;
     }
     const foreignField = references[0].foreign;
     if (isUpdate) {
-      await this.deleteMany(relEntity, { $where: { [foreignField]: id } as QueryWhere<object> });
+      await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
     }
     if (relPayload) {
-      for (const it of relPayload) {
-        (it as RawRow)[foreignField] = id;
-      }
-      await this.saveMany(relEntity, relPayload);
+      await this.saveMany(
+        relEntity,
+        ids.flatMap((id) => relPayload.map((it) => ({ ...it, [foreignField]: id }))),
+      );
     }
   }
 
-  private async saveOneToOne(relEntity: Type<object>, relOpts: RelationMeta, id: unknown, relPayload: object) {
+  private async saveOneToOne(relEntity: Type<object>, relOpts: RelationMeta, ids: unknown[], relPayload: object) {
     const foreignField = relOpts.references[0].foreign;
     if (relPayload === null) {
-      await this.deleteMany(relEntity, { $where: { [foreignField]: id } as QueryWhere<object> });
+      await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
       return;
     }
-    await this.saveOne(relEntity, { ...relPayload, [foreignField]: id });
+    await this.saveMany(
+      relEntity,
+      ids.map((id) => ({ ...relPayload, [foreignField]: id })),
+    );
   }
 
   private async saveManyToOne<E extends object>(
     entity: Type<E>,
     relEntity: Type<object>,
     relOpts: RelationMeta,
-    id: IdValue<E>,
+    ids: IdValue<E>[],
     relPayload: object,
   ) {
     const localField = relOpts.references[0].local;
-    const referenceId = await this.insertOne(relEntity, relPayload);
-    await this.updateOneById(entity, id, { [localField]: referenceId } as UpdatePayload<E>);
+    // Per parent: each gets its own reference row, so each `SET` carries a different value.
+    for (const id of ids) {
+      const referenceId = await this.insertOne(relEntity, relPayload);
+      await this.updateOneById(entity, id, { [localField]: referenceId } as UpdatePayload<E>);
+    }
   }
 
   abstract readonly hasOpenTransaction: boolean;

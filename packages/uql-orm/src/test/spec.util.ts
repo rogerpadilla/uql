@@ -29,7 +29,7 @@ function createTestCases(spec: Record<string, unknown>) {
       if (isProcessed || key === 'constructor' || typeof method !== 'function') {
         continue;
       }
-      const callback = (method as () => void | Promise<void>).bind(spec);
+      const callback = (method as SpecHook).bind(spec);
       const hookFn = hooks[key as keyof typeof hooks];
       if (hookFn) {
         hookFn(callback);
@@ -45,16 +45,25 @@ function createTestCases(spec: Record<string, unknown>) {
   }
 }
 
+/**
+ * Budget for a suite's setup and teardown, which drop and create every fixture table over the wire: a
+ * contended CI database can take seconds to serve that, so holding it to a test's budget turns a slow
+ * database into a red build. Exported for the few such hooks written by hand rather than through
+ * {@link createSpec}. Both runners honour it as a hook's second argument.
+ */
+export const provisioningTimeout = 60_000;
+
+/** Per-test hooks are left on the runner's default, so a genuinely hung connection still fails fast. */
 const hooks = {
-  beforeAll,
+  beforeAll: (fn: SpecHook) => beforeAll(fn, provisioningTimeout),
+  afterAll: (fn: SpecHook) => afterAll(fn, provisioningTimeout),
   beforeEach,
   afterEach,
-  afterAll,
 } as const;
 
-type SpecHooks = Partial<typeof hooks>;
+type SpecHook = () => void | Promise<void>;
 
-export type Spec = SpecHooks & {
+export type Spec = Partial<typeof hooks> & {
   // biome-ignore lint/suspicious/noExplicitAny: `any` is required - `unknown` makes index signature incompatible with concrete spec classes
-  readonly [k: string]: (() => void | Promise<void>) | any;
+  readonly [k: string]: SpecHook | any;
 };
