@@ -1,16 +1,7 @@
 import { withContext } from '../context/context.js';
 import { getEntities, getMeta } from '../entity/index.js';
 import { getQuerierPool } from '../options.js';
-import type {
-  EntityMeta,
-  IdValue,
-  Querier,
-  Query,
-  QuerySearch,
-  Type,
-  UpdatePayload,
-  UqlContext,
-} from '../type/index.js';
+import type { EntityMeta, IdValue, Querier, Query, Type, UpdatePayload, UqlContext } from '../type/index.js';
 import {
   type CrudOperation,
   entityPath,
@@ -244,7 +235,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
           });
         case 'updateMany':
           return withTransaction(async (querier) => {
-            const count = await querier.updateMany(entity, query as QuerySearch<E>, hookCtx.body as UpdatePayload<E>);
+            const count = await querier.updateMany(entity, query, hookCtx.body as UpdatePayload<E>);
             return ok({ data: count, count });
           });
         case 'deleteOneById':

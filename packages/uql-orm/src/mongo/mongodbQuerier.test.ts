@@ -138,6 +138,41 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     expect(String(result.firstId)).toBe(String(inserted!.id));
   }
 
+  /**
+   * Pins a divergence rather than endorsing it. The SQL backends settle a write's rows with a
+   * `SELECT`, so `$sort`/`$limit` pick which rows it touches; MongoDB resolves ids from `$where`
+   * alone and both clauses fall on the floor, so a write meant for one row hits every match. Left
+   * as-is here because it predates the vector-sort work, but the day it is fixed this test is what
+   * says so out loud instead of the behaviour changing unnoticed.
+   */
+  async shouldIgnoreSortAndLimitOnAnUpdate() {
+    await this.querier.insertMany(User, [
+      { name: 'Charlie', createdAt: 3 },
+      { name: 'Alice', createdAt: 1 },
+      { name: 'Bob', createdAt: 2 },
+    ]);
+
+    const changes = await this.querier.updateMany(User, { $sort: { createdAt: 1 }, $limit: 1 }, { name: 'Touched' });
+
+    expect(changes).toBe(3);
+    const found = await this.querier.findMany(User, { $select: { name: true } });
+    expect(found.map(({ name }) => name)).toEqual(['Touched', 'Touched', 'Touched']);
+  }
+
+  async shouldIgnoreSortAndLimitOnADelete() {
+    await this.querier.insertMany(User, [
+      { name: 'Charlie', createdAt: 3 },
+      { name: 'Alice', createdAt: 1 },
+      { name: 'Bob', createdAt: 2 },
+    ]);
+
+    const changes = await this.querier.deleteMany(User, { $sort: { createdAt: 1 }, $limit: 1 });
+
+    expect(changes).toBe(3);
+    const found = await this.querier.findMany(User, { $select: { name: true } });
+    expect(found).toHaveLength(0);
+  }
+
   async shouldFindManyWithSortAndLimit() {
     await this.querier.insertMany(User, [
       { name: 'Charlie', createdAt: 3 },

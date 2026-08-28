@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Please add 
 
 date format is [yyyy-mm-dd]
 
+## [0.31.3] - 2026-08-27
+
+### Fixes
+
+- **A vector `$sort` is no longer rejected on `updateMany`/`deleteMany`** (SQL dialects), so "update the 10 rows closest to this vector" compiles. Writes settle their rows with a `SELECT` first, which has the projection list the distance needs. Still rejected on a populated relation, where a join brings one row per parent and there is nothing to rank.
+
+### Improvements
+
+- **Type-checking** a project that uses UQL is about twice as fast.
+
 ## [0.31.2] - 2026-08-27
 
 ### Fixes

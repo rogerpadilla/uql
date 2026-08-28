@@ -138,23 +138,33 @@ export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
 export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
 
 /**
+ * To-one relations only: a parent holds many rows of a to-many, so there is no single value to order
+ * it by, and joining one in would duplicate the parent instead. Order those inside `$populate`.
+ */
+type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends true ? never : K }[RelationKey<E>];
+
+/**
  * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
  * like `QueryWhereMap`), relation sort via nested objects, and vector similarity search on
- * `number[]` fields.
+ * `number[]` fields. `Vector` is what confines a vector search to the level the statement ranks:
+ * the queried entity. A relation of it is joined in one row at a time, so there is nothing to rank
+ * there - the SQL dialects throw, and MongoDB would quietly drop it, so this is its only guard.
+ *
+ * One mapped type over the three key sets rather than three intersected. The sets are disjoint - a
+ * JSON path is dotted, and a field key cannot also be a relation key - and an assignability check
+ * against an intersection is repeated per constituent, which made this the single most expensive
+ * type in the package to check.
  */
 export type QuerySortMap<E, Vector extends boolean = true> = {
-  [K in FieldKey<E>]?: Vector extends true
-    ? NonNullable<E[K]> extends readonly number[]
-      ? QuerySortValue
-      : QuerySortDirection
-    : QuerySortDirection;
-} & {
-  [P in JsonFieldPaths<E>]?: QuerySortDirection;
-} & {
-  // To-one only: a parent holds many rows of a to-many, so there is no single value to order it by,
-  // and joining one in would duplicate the parent instead. Order those inside `$populate`.
-  // A vector search ranks the queried rows, so it belongs to the statement, not to a relation of it.
-  [K in RelationKey<E> as IsMany<E[K]> extends true ? never : K]?: QuerySortMap<RelationTarget<E[K]>, false>;
+  [K in FieldKey<E> | JsonFieldPaths<E> | ToOneRelationKey<E>]?: K extends RelationKey<E>
+    ? QuerySortMap<RelationTarget<E[K]>, false>
+    : K extends FieldKey<E>
+      ? Vector extends true
+        ? NonNullable<E[K]> extends readonly number[]
+          ? QuerySortValue
+          : QuerySortDirection
+        : QuerySortDirection
+      : QuerySortDirection;
 };
 
 /**
@@ -185,17 +195,16 @@ export type QueryFilter<E> = {
 
 /**
  * A filter plus the ordering and page `updateMany`/`deleteMany` take. Both settle the rows they
- * picked before writing, so the page is portable rather than MySQL-only.
- *
- * `$sort` excludes vector search here for the reason `$lock` is declared on {@link Query} instead:
- * a vector search ranks rows into a projected distance column, and only a SELECT has a projection
- * list to hold one. Passing `QuerySortMap` its `Vector = false` is what keeps it off these.
+ * picked with a SELECT before writing, so the page is portable rather than MySQL-only - and so a
+ * vector `$sort` is as valid here as on a read: it ranks the settle query's rows, which has the
+ * projection list to hold the distance. `$lock` is the clause that stays off these, declared on
+ * {@link Query} instead.
  */
 export type QuerySearch<E> = QueryFilter<E> & {
   /**
    * sorting options.
    */
-  $sort?: QuerySortMap<E, false>;
+  $sort?: QuerySortMap<E>;
 } & QueryPager;
 
 /**

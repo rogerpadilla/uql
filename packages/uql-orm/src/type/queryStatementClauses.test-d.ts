@@ -2,8 +2,8 @@
  * Type-level regression tests for which clauses each statement accepts, and for the values a column
  * accepts. Every negative here compiled once and produced a wrong statement at runtime:
  * a pager on `count` emitted `SELECT COUNT(*) ... OFFSET n` (zero rows back, then a crash reading
- * `res[0].count`), a vector `$sort` on a write emitted `ORDER BY` over a column no statement
- * projected, and a method was offered as a populatable relation.
+ * `res[0].count`) and a method was offered as a populatable relation. The positives matter too: a
+ * clause wrongly rejected is as much a regression as one wrongly accepted.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
  * build. Each `@ts-expect-error` fails the type-check if the error it guards ever stops happening.
@@ -40,14 +40,14 @@ export async function countTakesAFilterOnly(querier: Querier) {
   await querier.count(Member, { $sort: { score: -1 } });
 }
 
-export async function vectorSearchIsSelectOnly(querier: Querier) {
+export async function writesTakeTheSameOrderingAsReads(querier: Querier) {
   await querier.findMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } } });
   await querier.findMany(Member, { $sort: { embedding: { $vector: [1, 2, 3], $project: 'score' } } });
 
-  // @ts-expect-error an UPDATE has no projection list to hold the distance
-  await querier.updateMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } } }, { name: 'x' });
-  // @ts-expect-error nor does a DELETE
-  await querier.deleteMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } } });
+  // A write settles its rows with a SELECT before writing, and that SELECT has the projection list
+  // to hold the distance, so ranking the rows a write picks is as valid as ranking a read's.
+  await querier.updateMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } }, $limit: 10 }, { name: 'x' });
+  await querier.deleteMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } }, $limit: 10 });
 
   // a plain ordering and page on a write stays legal: both settle their rows before writing.
   await querier.updateMany(Member, { $sort: { score: -1 }, $limit: 1 }, { name: 'x' });

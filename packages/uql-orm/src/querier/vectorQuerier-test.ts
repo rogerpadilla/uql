@@ -102,6 +102,51 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     expect(results).toHaveLength(0);
   }
 
+  /**
+   * A write settles its rows with a `SELECT` before writing, so it can rank them the way a read
+   * does. The point of executing it is that the settle query is the only thing making this work: a
+   * write that stopped going through it would still type-check and would silently touch every row.
+   */
+  async shouldUpdateOnlyTheRowsClosestToAVector() {
+    // Inserted farthest-first on purpose: were the closest rows also the first ones, a settle query
+    // that dropped the `$sort` would pick the same ids and this would pass without proving anything.
+    await this.querier.insertMany(VectorItem, [
+      { name: 'far', vec: [0, 1, 0] },
+      { name: 'b', vec: [0.9, 0.1, 0] },
+      { name: 'a', vec: [1, 0, 0] },
+    ]);
+
+    const count = await this.querier.updateMany(
+      VectorItem,
+      { $sort: { vec: { $vector: [1, 0, 0] } }, $limit: 2 },
+      { name: 'closest' },
+    );
+
+    expect(count).toBe(2);
+    const results = await this.querier.findMany(VectorItem, {
+      $select: { name: true },
+      $sort: { vec: { $vector: [1, 0, 0] } },
+    });
+    expect(results.map((r) => r.name)).toEqual(['closest', 'closest', 'far']);
+  }
+
+  async shouldDeleteOnlyTheRowsClosestToAVector() {
+    await this.querier.insertMany(VectorItem, [
+      { name: 'far', vec: [0, 1, 0] },
+      { name: 'b', vec: [0.9, 0.1, 0] },
+      { name: 'a', vec: [1, 0, 0] },
+    ]);
+
+    const count = await this.querier.deleteMany(VectorItem, {
+      $sort: { vec: { $vector: [1, 0, 0] } },
+      $limit: 2,
+    });
+
+    expect(count).toBe(2);
+    const results = await this.querier.findMany(VectorItem, { $select: { name: true } });
+    expect(results.map((r) => r.name)).toEqual(['far']);
+  }
+
   async shouldSortByL2Distance() {
     await this.querier.insertMany(VectorItem, [
       { name: 'near', vec: [1, 0, 0] },

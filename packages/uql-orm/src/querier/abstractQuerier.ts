@@ -120,22 +120,24 @@ export abstract class AbstractQuerier implements Querier {
 
   /**
    * Resolves `[entity, query, opts]` for the dual call pattern: `(entity, q, opts)` (entity argument)
-   * vs `(query, opts)` (entity via the query's `$entity` field).
+   * vs `(query, opts)` (entity via the query's `$entity` field). Generic in the query `Q` because it
+   * only ever reads `$entity`: pinning it to one statement's shape made every caller launder its own
+   * through a cast, which is how a read query's `$sort` used to reach a write's.
    */
-  protected resolveEntityQuery<E extends object>(
-    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: QuerySearch<E> | QueryOptions,
+  protected resolveEntityQuery<E extends object, Q extends object>(
+    entityOrQuery: Type<E> | (Q & { $entity: Type<E> }),
+    maybeQueryOrOpts?: Q | QueryOptions,
     maybeOpts?: QueryOptions,
-  ): [Type<E>, QuerySearch<E>, QueryOptions | undefined] {
+  ): [Type<E>, Q, QueryOptions | undefined] {
     if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      return [entityOrQuery as Type<E>, (maybeQueryOrOpts as QuerySearch<E>) ?? {}, maybeOpts];
+      return [entityOrQuery as Type<E>, (maybeQueryOrOpts as Q) ?? ({} as Q), maybeOpts];
     }
-    const q = entityOrQuery as QuerySearch<E> & { $entity: Type<E> };
+    const q = entityOrQuery as Q & { $entity: Type<E> };
     if (!q.$entity) {
       throw new TypeError('$entity is required when using query-object syntax');
     }
     const { $entity, ...query } = q;
-    return [$entity, query as QuerySearch<E>, maybeQueryOrOpts as QueryOptions | undefined];
+    return [$entity, query as Q, maybeQueryOrOpts as QueryOptions | undefined];
   }
 
   findOneById<E extends object>(
@@ -165,7 +167,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQueryOrOpts?: QueryOne<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<E | undefined> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     const rows = await this.findMany(entity, { ...q, $limit: 1 }, opts);
     return rows[0];
   }
@@ -181,7 +183,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQueryOrOpts?: Query<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<E[]> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
     const founds = await this.internalFindMany(entity, q, opts);
     await this.emitHook(entity, 'afterLoad', founds);
@@ -213,7 +215,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQueryOrOpts?: Query<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): AsyncIterable<E> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
     return this.internalFindManyStream(entity, q, opts);
   }
@@ -235,7 +237,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQueryOrOpts?: Query<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<[E[], number]> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
     const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q;
     const [founds, count] = await Promise.all([
@@ -257,7 +259,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeQueryOrOpts?: QuerySearch<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     return this.internalCount(entity, q, opts);
   }
 
@@ -374,7 +376,7 @@ export abstract class AbstractQuerier implements Querier {
     qOrOpts?: QuerySearch<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
-    const [entity, q, opts] = this.resolveEntityQuery<E>(entityOrQuery, qOrOpts, maybeOpts);
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, qOrOpts, maybeOpts);
     const doomed = await this.findDoomed(entity, q, opts);
     if (doomed?.length === 0) {
       return 0;
