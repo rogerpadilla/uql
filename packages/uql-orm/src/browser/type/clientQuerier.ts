@@ -1,5 +1,16 @@
 import type { CrudOperation, RequestCountedSuccessResponse, RequestSuccessResponse } from '../../http/contract.js';
-import type { IdValue, Query, QueryOne, QueryOptions, QuerySearch, Type, UpdatePayload } from '../../type/index.js';
+import type {
+  FieldKey,
+  IdValue,
+  QueryFindResult,
+  QueryOneProjected,
+  QueryOptions,
+  QueryProjected,
+  QuerySearch,
+  RelationKey,
+  Type,
+  UpdatePayload,
+} from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -13,26 +24,54 @@ import type { RequestOptions } from './request.js';
  */
 
 export interface ClientQuerier {
-  findOneById<E extends object>(
+  findOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: QueryOneProjected<E, S, V, X, P>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E | undefined>>;
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>>;
 
-  findOne<E extends object>(
+  findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
-    q: QueryOne<E>,
+    q: QueryOneProjected<E, S, V, X, P>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E | undefined>>;
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>>;
 
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: RequestOptions): Promise<RequestSuccessResponse<E[]>>;
-
-  findManyAndCount<E extends object>(
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
-    q: Query<E>,
+    q: QueryProjected<E, S, V, X, P>,
     opts?: RequestOptions,
-  ): Promise<RequestCountedSuccessResponse<E[]>>;
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P>[]>>;
+
+  findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: RequestOptions,
+  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P>[]>>;
 
   count<E extends object>(
     entity: Type<E>,

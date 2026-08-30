@@ -1,38 +1,26 @@
 # Agent instructions
 
-Canonical, tool-neutral instructions for this repo, read directly by Cursor and through `CLAUDE.md`. Repo-specific rules only: general coding preferences belong in each tool's user config.
+Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. General coding preferences belong in your tool's user config, not here.
 
 ## Conventions
 
-- General code quality is assumed and belongs in your tool's user config rather than here: simplify and reuse over adding complexity, pure functions over classes, strict types with no silencing casts, root fixes over patches, and no unnecessary comments.
-- New string-literal union values are camelCase (`'firstId'`, not `'first-id'`). Some older kebab literals predate this; they are public API, so ask before renaming them.
+- New string-literal union values are camelCase (`'firstId'`). Older kebab ones are public API - ask before renaming.
+- **A find result is narrowed to what the query projected** (`QueryFindResult`), and the projection is captured as *key sets* - `$select`/`$exclude` field names plus the map's value, `$populate` relation names - never as the maps themselves. TypeScript skips excess-property checking on a naked type parameter, so a captured map would swallow a typo'd key inside it, where a captured key set fails its own `FieldKey`/`RelationKey` constraint. Never capture `$where`, `$sort` or a relation's own query. Shape pinned in `queryFindResult.test-d.ts`; the typo'd-key errors it must not cost, in `queryInput.test-d.ts` and `queryPopulate.test-d.ts`.
+- A vector `$sort` `$project` distance field is not inferred - annotate with `WithDistance<E, K>`.
 
 ## Verifying a change
 
-- `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` belongs in it because `check.package` inspects `dist`, so without one the gate validates the previous release's output and passes. `bun run lint.fix` fixes formatting instead of only reporting it.
-- `build` ends with `verify-dist.ts`: every path `package.json` promises is present, browser entry graphs stay free of Node builtins, every entry point's types resolve with `types: []`, and no entry exceeds its gzipped size budget. A budget moving is the leaked-module case they exist to catch, so raise one only once you know which module became reachable.
-- `bun run ts.perf` reports what the types cost a *consuming* project: the fixed cost of the querier's signatures, and what each query adds. Instantiations are deterministic and comparable across runs; the wall clock is not. Run it on both sides of a change to the query types - a worktree of the other ref, measured in the same session.
-- `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases through the same fixture tables. Anything else touching them concurrently corrupts them, including an orphaned worker from an earlier run, so never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive. Redirect to a file and read that.
+- `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` is in it because `check.package` inspects `dist`, so without one the gate passes on the previous release's output. `bun run lint.fix` fixes instead of reporting.
+- `build` ends with `verify-dist.ts`: declared paths present, browser entries free of Node builtins, types resolving with `types: []`, gzipped size budgets. A budget moving is the leaked-module case it exists to catch - raise one only once you know which module became reachable.
+- `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases. Never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive, corrupting the next run. Redirect to a file.
+- `bun run ts.perf` reports what the types cost a consuming project, split into fixed and per-query. Instantiations compare across runs; the wall clock does not. Measure both sides of a query-type change in one session.
 
 ## Tests
 
-- Where a shared suite covers backends with genuinely different specified behaviour, keep the body linear by putting the expectation in an overridable protected method on the suite (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`).
-- Shared suites run under **both** vitest and `bun:test`, so only use matchers both have. For "null or undefined" write `expect(x == null).toBe(true)`: vitest has `toBeNullable()`, bun has `toBeNil()`, neither has the other's. A missing SQL column hydrates to `null` while Mongo omits it as `undefined`, so that case is genuinely nullish.
-- An integration suite acquires per test (`beforeEach`/`afterEach`, or `pool.run`/`pool.withQuerier` per statement) and `end()`s its pool in `afterAll`. Never pin one querier for a whole suite: a pool can hand out a connection the server has already closed.
+- Where a shared suite covers backends with different specified behaviour, keep the body linear: put the expectation in an overridable method (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`).
+- Shared suites run under **both** vitest and `bun:test`, so use only matchers both have. For "null or undefined" write `expect(x == null).toBe(true)` - vitest has `toBeNullable()`, bun has `toBeNil()`, neither has the other's. A missing SQL column hydrates to `null`, Mongo omits it as `undefined`.
+- An integration suite acquires per test and `end()`s its pool in `afterAll`. Never pin one querier for a whole suite: a pool can hand out a connection the server already closed.
 
-## Packaging
+## Elsewhere
 
-- ESM-only with **zero runtime dependencies**; adding one is a deliberate decision, not a convenience.
-- Decorators need no polyfill from the consumer. `Symbol.metadata` is the one thing missing from the runtimes we support, and `entity/decorator/bag.ts` fills it in with `Symbol.for('Symbol.metadata')`.
-- The CLI bundles **no transpiler**. `uql.config.ts` is loaded with a plain `import()`, so whoever runs the CLI supplies TypeScript support (`bun`, or `node --import tsx`). That is deliberate: the config imports the entity classes, so the loader decides which decorator spec their decorators are called with, and only the runtime knows the project's `tsconfig.json`.
-
-## Releasing
-
-Versioning and publishing are two separate steps, deliberately: `lerna publish`'s own npm-publish step 404s unreliably against the registry here regardless of `npmClient`, so `lerna` only bumps/tags/pushes and `bun publish` does the actual publish, per package.
-
-- Write the CHANGELOG entry first, with the heading set to the version the bump will produce: nothing checks that the two agree. Keep it to the changes worth a reader's time, not one line per commit. Changelog has to be pretty concise, human friendly, only mention what worth it for end-users.
-- `bun run release.patch` (or `.minor` / `.major`) does `check`, `lerna version`, `git push --follow-tags`, then `release.github`. `lerna version` prompts for confirmation, which a non-interactive shell cannot answer: use `bun run release patch --yes` and push the tags separately. The prompt is kept on purpose, since the bump is the point of no return.
-- `release.github` opens a GitHub Release for the `uql-orm` tag with that version's CHANGELOG entry as its notes, because a tag alone notifies nobody and the sidebar reads "No releases published" without one. It is idempotent, so re-running it after a partial release is safe, and it throws if the CHANGELOG has no entry for the version being released. The codemod is deliberately not released: its bumps would notify people who never installed it.
-- Then publish whichever package(s) `lerna version` reported as changed: `bun run publish.orm` / `bun run publish.codemod` (each is just `cd packages/<name> && bun publish`). Re-publishing a version that is already up exits non-zero with `403 ... cannot publish over the previously published versions`, so the exit code can be trusted.
-- npm auth needs no setup: `.npmrc` holds only the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` has to export it.
-- Because versioning and publishing are separate, a failed publish never leaves the release half-done the way a combined step would: the tag and CHANGELOG are already correct, and re-running `bun run publish.orm` costs nothing.
+[CONTRIBUTING.md](CONTRIBUTING.md#packaging) holds the packaging constraints (ESM-only, **zero runtime dependencies**, no transpiler in the CLI) and the release runbook - versioning and publishing are two separate steps on purpose, so never reach for `lerna publish`.

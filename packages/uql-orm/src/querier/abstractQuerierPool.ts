@@ -3,20 +3,23 @@ import type { AbstractDialect } from '../dialect/index.js';
 import type {
   EntityData,
   ExtraOptions,
+  FieldKey,
   IdValue,
   PoolRunOptions,
   Querier,
   QuerierPool,
-  Query,
   QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFindResult,
   QueryGroupMap,
-  QueryOne,
+  QueryOneProjected,
   QueryOptions,
+  QueryProjected,
   QuerySearch,
   QueryUpdateResult,
+  RelationKey,
   TransactionOptions,
   Type,
   UpdatePayload,
@@ -64,20 +67,42 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return context ? withContext(context, fn) : fn();
   }
 
-  findOneById<E extends object>(
+  findOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: QueryOneProjected<E, S, V, X, P>,
     opts?: QueryOptions,
-  ): Promise<E | undefined> {
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined> {
     return this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
   }
 
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined> {
+  findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryOneProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined> {
     return this.withQuerier((querier) => querier.findOne(entity, q, opts));
   }
 
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]> {
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]> {
     return this.withQuerier((querier) => querier.findMany(entity, q, opts));
   }
 
@@ -85,12 +110,32 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
    * The connection outlives the call here: it is held until the iterator is drained or closed by a
    * `break`/`throw`. Abandoning the iterator instead leaks it until GC, so consume it in a `for await`.
    */
-  async *findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncGenerator<E> {
+  async *findManyStream<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): AsyncGenerator<QueryFindResult<E, S, V, X, P>> {
     await using querier = await this.getQuerier();
     yield* querier.findManyStream(entity, q, opts);
   }
 
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]> {
+  findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]> {
     return this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
   }
 

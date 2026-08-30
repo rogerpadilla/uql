@@ -1,9 +1,9 @@
 /**
  * Type-level regression tests for find-query input safety.
  *
- * Find methods take a concrete `Query<E>` parameter, so TypeScript's native excess-property
- * checking rejects a typo'd key in any clause. Vector-search distance projection is not auto-typed;
- * annotate the result with `WithDistance` when a `$sort` `$project` is used.
+ * A typo'd key is rejected in every clause: natively for the ones typed against `Query<E>`, and by
+ * its own `FieldKey`/`RelationKey` constraint for the projection clauses the result type captures.
+ * Vector-search distance projection is not auto-typed; annotate with `WithDistance`.
  *
  * Not a runtime test: it has no assertions to execute. It is type-checked by `bun run ts`
  * (tsc over the whole tree), skipped by vitest (which collects only `.test.ts` / `.spec.ts`),

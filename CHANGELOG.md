@@ -2,6 +2,18 @@
 
 What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
 
+## [0.32.0] - 2026-08-30
+
+**Find results are narrowed to what the query projected.** `$select` and `$exclude` shape the row type:
+
+```ts
+const user = await querier.findOne(User, { $select: { name: true } });
+user.name; // string
+user.email; // compile error: not selected
+```
+
+Breaking only in that sense: code reading an unprojected field stops compiling. Add the field to the projection, or drop the projection. A narrowed row is not the entity, so where a helper has to take one, name it: `QueryFindResult<User, 'name'>`.
+
 ## [0.31.5] - 2026-08-30
 
 - **MongoDB orders by a relation you did not populate**, as the SQL dialects always have. It used to refuse.

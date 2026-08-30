@@ -1,4 +1,4 @@
-import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget } from './entity.js';
+import type { FieldKey, IdKey, JsonFieldPaths, RelationKey, RelationTarget } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -303,6 +303,96 @@ export type QueryOne<E> = Except<Query<E>, '$limit'>;
  * options to get an unique record.
  */
 export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$populate' | '$where'>;
+
+/**
+ * The clauses that decide a row's shape, captured from the query as written: the field names
+ * `$select` and `$exclude` list, the value those maps carry (a falsy one subtracts instead of
+ * selecting, as it does at runtime, and a widened map is how a projection that is not statically
+ * known announces itself), and the relation names `$populate` lists.
+ *
+ * Each is captured as a *key set* rather than as the map itself, which is what keeps the checks
+ * intact: TypeScript skips excess-property checking on a naked type parameter, so a captured map
+ * would take a typo'd key without a word, while a captured key set makes that typo fail its own
+ * `FieldKey<E>` / `RelationKey<E>` constraint. Every other clause - `$where`, `$sort`, and each
+ * populated relation's own query - stays the concrete {@link Query} it is today.
+ * @internal
+ */
+type QueryProjection<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = {
+  $select?: { [K in S]?: V } | readonly QueryRaw[];
+  $exclude?: { [K in X]?: V };
+  $populate?: { [K in P]?: QueryPopulate<E>[K] };
+};
+
+/**
+ * A {@link Query} whose projection is captured, so {@link QueryFindResult} can shape the row.
+ */
+export type QueryProjected<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = Query<E> &
+  QueryProjection<E, S, V, X, P>;
+
+/**
+ * A {@link QueryOne} whose projection is captured, so {@link QueryFindResult} can shape the row.
+ */
+export type QueryOneProjected<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+> = QueryOne<E> & QueryProjection<E, S, V, X, P>;
+
+/**
+ * The keys a query comes back with, mirroring what the runtime projects: the fields a positive
+ * `$select` names, or every field minus what a falsy `$select` entry or a truthy `$exclude` entry
+ * subtracts, plus the relations `$populate` asked for. A positive `$select` wins outright, which is
+ * why `$exclude` is only read on the branch where there is none.
+ * @internal
+ */
+type ProjectedKeys<E, S, V, X, P> =
+  | ([V] extends [false | 0] ? Exclude<FieldKey<E>, S> : [S] extends [never] ? Exclude<FieldKey<E>, X> : S)
+  | P
+  // Populating a relation keeps the id whatever the projection says, since the rows are assembled
+  // by it (`selectFields` puts it back, as does MongoDB's `pipelineProjection`).
+  | ([P] extends [never] ? never : NamedIdKey<E>);
+
+/**
+ * The id key when it can be named, and nothing when it cannot: {@link IdKey} widens to *every* field
+ * for an entity whose id is neither branded nor called `id`/`_id`/`uuid`, and adding that back would
+ * hand the caller a row claiming fields the query never fetched. Missing an id costs a `$select`
+ * entry; promising absent fields is the bug this type exists to prevent.
+ * @internal
+ */
+type NamedIdKey<E> = [FieldKey<E>] extends [IdKey<E>] ? never : IdKey<E>;
+
+/**
+ * Whether every entry of the captured map says the same thing: all selected, or all subtracted.
+ * @internal
+ */
+type IsUniform<V> = [V] extends [true | 1] ? true : [V] extends [false | 0] ? true : false;
+
+/**
+ * A row of a find result: the entity narrowed to the fields the query projected, plus the relations
+ * it populated - reading anything the query left out is a compile error rather than a silent
+ * `undefined`. Modifiers are preserved, so an optional field stays optional. Name a projected row
+ * with it where a helper has to take one: `QueryFindResult<User, 'id' | 'name'>`.
+ *
+ * The entity itself when the query projects nothing, when it uses a raw-projection array (columns,
+ * not fields), and when the projection is not uniform - a `Query<E>` built elsewhere, or a map
+ * mixing selected and subtracted entries, whose positive keys inference cannot recover. Relations
+ * keep their declared type: narrowing them means capturing their queries as maps, which costs those
+ * queries their own checks.
+ */
+export type QueryFindResult<
+  E,
+  S extends FieldKey<E> = never,
+  // A whitelist by default, so the hand-written form reads `QueryFindResult<User, 'id' | 'name'>`.
+  V = true,
+  X extends FieldKey<E> = never,
+  P extends RelationKey<E> = never,
+> = [S | X] extends [never]
+  ? E
+  : IsUniform<V> extends true
+    ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P> ? K : never]: E[K] }
+    : E;
 
 /**
  * stringified query.

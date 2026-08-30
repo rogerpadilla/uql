@@ -34,8 +34,8 @@ export interface QueryVectorSearch {
 }
 
 /**
- * Augments an entity with the distance field projected by a vector-search `$sort.$project`. The
- * find methods return the plain entity, so annotate the result with this when you project a score:
+ * Augments a row with the distance a vector-search `$sort.$project` computes, which is not
+ * inferred. Wrap whatever the query returns - the entity, or a projected row:
  * ```ts
  * const results = (await querier.findMany(Article, {
  *   $sort: { embedding: { $vector: queryVec, $project: 'similarity' } },

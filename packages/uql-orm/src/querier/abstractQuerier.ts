@@ -4,6 +4,7 @@ import type {
   EntityData,
   EntityMeta,
   ExtraOptions,
+  FieldKey,
   HookEvent,
   IdKey,
   IdValue,
@@ -14,10 +15,13 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFindResult,
   QueryGroupMap,
   QueryOne,
+  QueryOneProjected,
   QueryOptions,
   QueryPopulate,
+  QueryProjected,
   QuerySearch,
   QueryUpdateResult,
   QueryWhere,
@@ -142,12 +146,18 @@ export abstract class AbstractQuerier implements Querier {
     return [$entity, query as Q, maybeQueryOrOpts as QueryOptions | undefined];
   }
 
-  findOneById<E extends object>(
+  findOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: QueryOneProjected<E, S, V, X, P>,
     opts?: QueryOptions,
-  ): Promise<E | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
   async findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
@@ -162,8 +172,27 @@ export abstract class AbstractQuerier implements Querier {
    * Find a single record matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  async findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
-  async findOne<E extends object>(q: QueryOne<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E | undefined>;
+  async findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    q: QueryOneProjected<E, S, V, X, P> & { $entity: Type<E> },
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  async findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryOneProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
   async findOne<E extends object>(
     entityOrQuery: Type<E> | (QueryOne<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: QueryOne<E> | QueryOptions,
@@ -178,8 +207,23 @@ export abstract class AbstractQuerier implements Querier {
    * Find multiple records matching the query.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
-  findMany<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<E[]>;
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P>[]>;
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]>;
   async findMany<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,
@@ -210,8 +254,27 @@ export abstract class AbstractQuerier implements Querier {
    *
    * No `afterLoad` hooks on streamed rows.
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
-  findManyStream<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    opts?: QueryOptions,
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  findManyStream<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
   findManyStream<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,
@@ -232,8 +295,27 @@ export abstract class AbstractQuerier implements Querier {
    * Find multiple records and return both the records and total count.
    * Supports both entity-as-argument and entity-as-field patterns.
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
-  findManyAndCount<E extends object>(q: Query<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
+  findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
   async findManyAndCount<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,

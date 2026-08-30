@@ -1,10 +1,11 @@
-import type { EntityData, IdValue, UpdatePayload } from './entity.js';
+import type { EntityData, FieldKey, IdValue, RelationKey, UpdatePayload } from './entity.js';
 import type {
-  Query,
   QueryConflictPaths,
   QueryFilter,
-  QueryOne,
+  QueryFindResult,
+  QueryOneProjected,
   QueryOptions,
+  QueryProjected,
   QuerySearch,
   QueryUpdateResult,
 } from './query.js';
@@ -23,12 +24,18 @@ export interface UniversalQuerier {
    * @param q the additional criteria options
    * @return the record
    */
-  findOneById<E extends object>(
+  findOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: QueryOneProjected<E, S, V, X, P>,
     opts?: QueryOptions,
-  ): Promise<E | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
 
   /**
    * obtains the first record matching the given search parameters.
@@ -36,7 +43,17 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the record
    */
-  findOne<E extends object>(entity: Type<E>, q: QueryOne<E>, opts?: QueryOptions): Promise<E | undefined>;
+  findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryOneProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -44,7 +61,13 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records
    */
-  findMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<E[]>;
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]>;
 
   /**
    * streams the records matching the given search parameters as an async iterable.
@@ -54,7 +77,17 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return an async iterable of records
    */
-  findManyStream<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): AsyncIterable<E>;
+  findManyStream<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
 
   /**
    * obtains the records matching the given search parameters,
@@ -63,7 +96,17 @@ export interface UniversalQuerier {
    * @param q the criteria options
    * @return the records and the count
    */
-  findManyAndCount<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<[E[], number]>;
+  findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P>,
+    opts?: QueryOptions,
+  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
 
   /**
    * counts the number of records matching the given filter.

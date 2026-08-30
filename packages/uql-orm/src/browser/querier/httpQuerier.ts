@@ -8,11 +8,15 @@ import {
 import { stringifyQuery } from '../../http/query.js';
 import type {
   EntityData,
+  FieldKey,
   IdValue,
   Query,
-  QueryOne,
+  QueryFindResult,
+  QueryOneProjected,
   QueryOptions,
+  QueryProjected,
   QuerySearch,
+  RelationKey,
   Type,
   UpdatePayload,
 } from '../../type/index.js';
@@ -39,42 +43,70 @@ export class HttpQuerier implements ClientQuerier {
     readonly defaults: HttpQuerierDefaults = {},
   ) {}
 
-  findOneById<E extends object>(
+  findOneById<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOne<E>,
+    q?: QueryOneProjected<E, S, V, X, P>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E | undefined>> {
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<E | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
+    return get<QueryFindResult<E, S, V, X, P> | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
   }
 
-  findOne<E extends object>(
+  findOne<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
-    q: QueryOne<E>,
+    q: QueryOneProjected<E, S, V, X, P>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<E | undefined>> {
-    return this.read<E | undefined>(`${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`, q, opts);
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>> {
+    return this.read<QueryFindResult<E, S, V, X, P> | undefined>(
+      `${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`,
+      q,
+      opts,
+    );
   }
 
-  findMany<E extends object>(
+  findMany<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
-    q: Query<E>,
+    q: QueryProjected<E, S, V, X, P>,
     opts?: RequestFindOptions,
-  ): Promise<RequestSuccessResponse<E[]>> {
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P>[]>> {
     const data: Query<E> & { count?: boolean } = { ...q };
     if (opts?.count) {
       data.count = true;
     }
-    return this.read<E[]>(this.getBasePath(entity), data, opts);
+    return this.read<QueryFindResult<E, S, V, X, P>[]>(this.getBasePath(entity), data, opts);
   }
 
-  async findManyAndCount<E extends object>(
+  async findManyAndCount<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+  >(
     entity: Type<E>,
-    q: Query<E>,
+    q: QueryProjected<E, S, V, X, P>,
     opts?: RequestFindOptions,
-  ): Promise<RequestCountedSuccessResponse<E[]>> {
+  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P>[]>> {
     const response = await this.findMany(entity, q, { ...opts, count: true });
     if (typeof response.count !== 'number') {
       throw new TypeError('findManyAndCount response has an invalid count');
