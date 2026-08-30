@@ -2,6 +2,17 @@
 
 What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
 
+## [0.33.0] - 2026-08-30
+
+**The HTTP handler takes its pool as an option**, and a function picks one per request, so one deployment can serve a database per tenant:
+
+```ts
+createFetchHandler({ pool, include: [User] });
+createFetchHandler({ include: [User], pool: (_request, { tenantId }) => poolFor(tenantId) });
+```
+
+`setQuerierPool`, `getQuerierPool` and `getQuerier` are gone with it: pass the pool where it is used, and `pool.withQuerier(...)` / `pool.transaction(...)` where you need a querier. `npx uql-codemod` points at every call site. `UqlModule` provides the pool through Nest DI under `UQL_QUERIER_POOL`.
+
 ## [0.32.1] - 2026-08-30
 
 - **A populated to-many comes back as a list**, empty where the parent has no children, so it maps and counts without a guard and its type no longer needs `!`.

@@ -17,6 +17,16 @@ const REMOVED_DECORATORS = new Map([
   ['InjectQuerier', 'take the querier from the enclosing `pool.transaction()` callback'],
 ]);
 
+/**
+ * Exports that no longer exist, mapped to what to do instead. Reported rather than rewritten, for the
+ * same reason as the decorators: which pool belongs at a given call site is a judgement call.
+ */
+const REMOVED_EXPORTS = new Map([
+  ['setQuerierPool', 'pass the pool where it is used: `createFetchHandler({ pool })`, `querierMiddleware({ pool })`'],
+  ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
+  ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
+]);
+
 export type FileResult = {
   readonly fileName: string;
   readonly text: string;
@@ -303,6 +313,27 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
   }
 }
 
+/** Names an export that no longer exists, where it is imported from the package. */
+function reportRemovedExports(node: ts.Node, ctx: Context): void {
+  if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) {
+    return;
+  }
+  if (node.moduleSpecifier.text !== 'uql-orm') {
+    return;
+  }
+  const bindings = node.importClause?.namedBindings;
+  if (!bindings || !ts.isNamedImports(bindings)) {
+    return;
+  }
+  for (const element of bindings.elements) {
+    const name = (element.propertyName ?? element.name).text;
+    const advice = REMOVED_EXPORTS.get(name);
+    if (advice) {
+      ctx.unresolved.push(`${ctx.describe(element)}: '${name}' was removed; ${advice}`);
+    }
+  }
+}
+
 /** Rewrites one source file for the standard decorator spec. */
 export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): FileResult {
   const ctx: Context = {
@@ -317,6 +348,7 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
 
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
+    reportRemovedExports(node, ctx);
     countRelationAlias(node, ctx);
     if (ts.isPropertyDeclaration(node)) {
       rewriteProperty(node, ctx);

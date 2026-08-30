@@ -1,12 +1,10 @@
 import express from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import * as options from '../options.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
+import type { QuerierPool } from '../type/index.js';
 import { errorHandler, querierMiddleware } from './querierMiddleware.js';
-
-vi.mock('../options.js');
 
 /**
  * The handler logic (operations, hooks, transactions, envelopes) is covered by
@@ -15,18 +13,17 @@ vi.mock('../options.js');
 describe('querierMiddleware', () => {
   let app: express.Express;
   let mockQuerier: MockedQuerier;
+  let pool: QuerierPool;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuerier = createMockQuerier();
-    (options.getQuerierPool as Mock).mockReturnValue(
-      createMockQuerierPool(new PostgresDialect(), async () => mockQuerier),
-    );
+    pool = createMockQuerierPool(new PostgresDialect(), async () => mockQuerier);
 
     app = express();
     app.use(express.json());
     app.set('query parser', 'extended');
-    app.use('/api', querierMiddleware({ include: [User] }));
+    app.use('/api', querierMiddleware({ pool, include: [User] }));
 
     app.use(errorHandler);
   });
@@ -112,12 +109,12 @@ describe('querierMiddleware', () => {
   it('unknown methods fall through to 404', async () => {
     const res = await request(app).options('/api/user/1');
     expect(res.status).toBe(404);
-    expect(options.getQuerierPool).not.toHaveBeenCalled();
+    expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
   it('unknown entities fall through to 404 (respects exclude)', async () => {
     class OtherEntity {}
-    const router = querierMiddleware({ include: [User, OtherEntity], exclude: [OtherEntity] });
+    const router = querierMiddleware({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
     app = express();
     app.use('/api', router);
     const res = await request(app).get('/api/other-entity');
@@ -139,11 +136,11 @@ describe('querierMiddleware', () => {
   });
 
   it('throws if no entities are provided', () => {
-    expect(() => querierMiddleware({ include: [] })).toThrow('no entities for the uql middleware');
+    expect(() => querierMiddleware({ pool, include: [] })).toThrow('no entities for the uql middleware');
   });
 
   it('uses getEntities when include is omitted', () => {
-    expect(querierMiddleware()).toBeDefined();
+    expect(querierMiddleware({ pool })).toBeDefined();
   });
 
   it('hooks receive the express req as context', async () => {
@@ -153,6 +150,7 @@ describe('querierMiddleware', () => {
     app.use(
       '/api',
       querierMiddleware({
+        pool,
         include: [User],
         preFilter: ({ query, context }) => {
           query.$where ??= {};

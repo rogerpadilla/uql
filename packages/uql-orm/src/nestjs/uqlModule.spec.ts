@@ -4,12 +4,9 @@ import { Test } from '@nestjs/testing';
 import { firstValueFrom, Observable } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
-import * as options from '../options.js';
 import type { Querier, QuerierPool } from '../type/index.js';
 import { UqlContextInterceptor } from './uqlContextInterceptor.js';
 import { UQL_QUERIER_POOL, UqlModule } from './uqlModule.js';
-
-vi.mock('../options.js');
 
 describe('UqlModule', () => {
   const pool = {
@@ -23,7 +20,6 @@ describe('UqlModule', () => {
     }).compile();
 
     expect(moduleRef.get<QuerierPool>(UQL_QUERIER_POOL)).toBe(pool);
-    expect(options.setQuerierPool).toHaveBeenCalledWith(pool);
   });
 
   it('registers globally by default and honors global: false', () => {
@@ -64,7 +60,6 @@ describe('UqlModule', () => {
     }).compile();
 
     expect(moduleRef.get<QuerierPool>(UQL_QUERIER_POOL)).toBe(pool);
-    expect(options.setQuerierPool).toHaveBeenCalledWith(pool);
   });
 });
 

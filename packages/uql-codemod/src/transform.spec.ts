@@ -327,6 +327,18 @@ type ParentOf<T> = Relation<T>;
     expect(unresolved[0]).toContain("1 'Relation<T>' reference(s)");
   });
 
+  it('reports an export that no longer exists rather than rewriting the call', () => {
+    const { text, changed, unresolved } = codemod(`
+      import { setQuerierPool, getQuerier } from 'uql-orm';
+      setQuerierPool(pool);
+    `);
+
+    expect(changed).toBe(false);
+    expect(text).toContain('setQuerierPool(pool)');
+    expect(unresolved[0]).toContain("'setQuerierPool' was removed; pass the pool where it is used");
+    expect(unresolved[1]).toContain("'getQuerier' was removed; use `pool.withQuerier(...)`");
+  });
+
   it('reports a decorator that no longer exists rather than removing it', () => {
     const { text, changed, unresolved } = codemod(`
       class Service {

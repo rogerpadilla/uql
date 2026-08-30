@@ -27,7 +27,6 @@
     "./util": "./dist/util/index.js",
     "./namingStrategy": "./dist/namingStrategy/index.js",
     "./migrate": "./dist/migrate/index.js",
-    "./options": "./dist/options.js",
     "./mysql": "./dist/mysql/index.js",
     "./postgres": "./dist/postgres/index.js",
     "./postgres/wireCapabilities": "./dist/postgres/postgresWireDriverCapabilities.js",

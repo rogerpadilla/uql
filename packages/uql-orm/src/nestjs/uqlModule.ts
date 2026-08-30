@@ -6,7 +6,6 @@ import {
   type Provider,
 } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-import { setQuerierPool } from '../options.js';
 import type { QuerierPool, UqlContext } from '../type/index.js';
 import { UqlContextInterceptor } from './uqlContextInterceptor.js';
 
@@ -62,16 +61,16 @@ class UqlPoolLifecycle implements OnApplicationShutdown {
 }
 
 /**
- * NestJS integration: provides the pool via DI, sets it as UQL's default pool (so `getQuerier()`,
- * `querierMiddleware` (express platform) and `createFetchHandler` work unchanged), optionally scopes
+ * NestJS integration: provides the pool via DI under {@link UQL_QUERIER_POOL}, optionally scopes
  * every request to a {@link UqlContext} (multi-tenancy), and ends the pool on application shutdown.
+ * Inject the pool where you need it, `querierMiddleware`/`createFetchHandler` included: those take
+ * it as an option rather than reading a process-wide default.
  */
 @Module({})
 // biome-ignore lint/complexity/noStaticOnlyClass: NestJS needs a decorated class as the module token; the shutdown hook that once made this an instance now lives on its own provider.
 export class UqlModule {
   /** Configure with an already-built pool. */
   static forRoot<Req = unknown>({ pool, global = true, getContext }: UqlModuleOptions<Req>): DynamicModule {
-    setQuerierPool(pool);
     return UqlModule.build(global, { provide: UQL_QUERIER_POOL, useValue: pool }, getContext);
   }
 
@@ -85,11 +84,7 @@ export class UqlModule {
   }: UqlModuleAsyncOptions<Req>): DynamicModule {
     const poolProvider: FactoryProvider<QuerierPool> = {
       provide: UQL_QUERIER_POOL,
-      useFactory: async (...args) => {
-        const pool = await useFactory(...args);
-        setQuerierPool(pool); // register as UQL's default once the pool is resolved
-        return pool;
-      },
+      useFactory,
       inject,
     };
     return UqlModule.build(global, poolProvider, getContext, imports);

@@ -1,14 +1,13 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
-import * as options from '../options.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
+import type { QuerierPool } from '../type/index.js';
 import { createRequestHandler, type HandlerRequest } from './handler.js';
-
-vi.mock('../options.js');
 
 describe('createRequestHandler', () => {
   let mockQuerier: MockedQuerier;
+  let pool: QuerierPool;
 
   const req = (partial: Partial<HandlerRequest> & Pick<HandlerRequest, 'method' | 'entityPath'>): HandlerRequest => ({
     context: undefined,
@@ -18,17 +17,46 @@ describe('createRequestHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockQuerier = createMockQuerier();
-    (options.getQuerierPool as Mock).mockReturnValue(
-      createMockQuerierPool(new PostgresDialect(), async () => mockQuerier),
-    );
+    pool = createMockQuerierPool(new PostgresDialect(), async () => mockQuerier);
+  });
+
+  it('runs on the pool it is given', async () => {
+    const ownQuerier = createMockQuerier();
+    const handle = createRequestHandler({
+      include: [User],
+      pool: createMockQuerierPool(new PostgresDialect(), async () => ownQuerier),
+    });
+
+    await handle(req({ method: 'GET', entityPath: 'user' }));
+
+    expect(ownQuerier.findMany).toHaveBeenCalled();
+    expect(mockQuerier.findMany).not.toHaveBeenCalled();
+  });
+
+  it('picks the pool per request, after the context it resolved', async () => {
+    const tenantQuerier = createMockQuerier();
+    const seen: unknown[] = [];
+    const handle = createRequestHandler<{ tenantId: number }>({
+      include: [User],
+      getContext: (context) => ({ tenantId: context.tenantId }),
+      pool: (context, appContext) => {
+        seen.push([context.tenantId, appContext['tenantId']]);
+        return createMockQuerierPool(new PostgresDialect(), async () => tenantQuerier);
+      },
+    });
+
+    await handle({ method: 'GET', entityPath: 'user', context: { tenantId: 7 } });
+
+    expect(seen).toEqual([[7, 7]]);
+    expect(tenantQuerier.findMany).toHaveBeenCalled();
   });
 
   it('throws if no entities are provided', () => {
-    expect(() => createRequestHandler({ include: [] })).toThrow('no entities for the uql middleware');
+    expect(() => createRequestHandler({ pool, include: [] })).toThrow('no entities for the uql middleware');
   });
 
   it('returns undefined for unknown entity or route', () => {
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'unknown-entity' }))).toBeUndefined();
     expect(handle(req({ method: 'OPTIONS', entityPath: 'user' }))).toBeUndefined();
     expect(handle(req({ method: 'POST', entityPath: 'user', subPath: 'one' }))).toBeUndefined();
@@ -36,13 +64,13 @@ describe('createRequestHandler', () => {
 
   it('respects exclude', () => {
     class OtherEntity {}
-    const handle = createRequestHandler({ include: [User, OtherEntity], exclude: [OtherEntity] });
+    const handle = createRequestHandler({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
     expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
   });
 
   it('findOne', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
       req({ method: 'GET', entityPath: 'user', subPath: 'one', query: { $where: JSON.stringify({ name: 'John' }) } }),
     );
@@ -58,6 +86,7 @@ describe('createRequestHandler', () => {
       return { id: 1 };
     });
     const handle = createRequestHandler<{ tid: number }>({
+      pool,
       include: [User],
       getContext: (ctx) => ({ tenantId: ctx?.tid }),
     });
@@ -71,21 +100,21 @@ describe('createRequestHandler', () => {
 
   it('findOne returns null', async () => {
     mockQuerier.findOne.mockResolvedValue(null);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }));
     expect(resp).toEqual({ status: 200, body: { data: null, count: 0 } });
   });
 
   it('count', async () => {
     mockQuerier.count.mockResolvedValue(5);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count' }));
     expect(resp).toEqual({ status: 200, body: { data: 5, count: 5 } });
   });
 
   it('findOneById', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
     expect(resp).toEqual({ status: 200, body: { data: { id: 123 }, count: 1 } });
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
@@ -93,7 +122,7 @@ describe('createRequestHandler', () => {
 
   it('findOneById merges an object $where', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await handle(req({ method: 'GET', entityPath: 'user', subPath: '123', query: { $where: '{"name":"John"}' } }));
     expect(mockQuerier.findOne).toHaveBeenCalledWith(
       User,
@@ -103,7 +132,7 @@ describe('createRequestHandler', () => {
 
   it('findOneById preserves an array $where via $and (no silent overwrite)', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await handle(req({ method: 'GET', entityPath: 'user', subPath: '123', query: { $where: '[1, 2]' } }));
     expect(mockQuerier.findOne).toHaveBeenCalledWith(
       User,
@@ -113,7 +142,7 @@ describe('createRequestHandler', () => {
 
   it('findMany', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user' }));
     expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: undefined } });
     expect(mockQuerier.count).not.toHaveBeenCalled();
@@ -122,7 +151,7 @@ describe('createRequestHandler', () => {
   it('findMany with count', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     mockQuerier.count.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', query: { count: 'true' } }));
     expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
   });
@@ -132,7 +161,7 @@ describe('createRequestHandler', () => {
     mockQuerier.count.mockResolvedValue(1);
     const preFilter = vi.fn();
     const preSave = vi.fn();
-    const handle = createRequestHandler({ include: [User], preFilter, preSave });
+    const handle = createRequestHandler({ pool, include: [User], preFilter, preSave });
     const resp = await handle(
       req({ method: 'QUERY', entityPath: 'user', body: { $where: { name: 'John' }, $limit: 5, count: true } }),
     );
@@ -149,7 +178,7 @@ describe('createRequestHandler', () => {
 
   it('insertOne runs in a transaction', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'John' } }));
     expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
     expect(mockQuerier.beginTransaction).toHaveBeenCalled();
@@ -160,7 +189,7 @@ describe('createRequestHandler', () => {
 
   it('insertMany', async () => {
     mockQuerier.insertMany.mockResolvedValue([1, 2]);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
       req({ method: 'POST', entityPath: 'user', subPath: 'many', body: [{ name: 'a' }, { name: 'b' }] }),
     );
@@ -170,7 +199,7 @@ describe('createRequestHandler', () => {
 
   it('saveOne', async () => {
     mockQuerier.saveOne.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'PUT', entityPath: 'user', body: { id: 1, name: 'John' } }));
     expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
     expect(mockQuerier.saveOne).toHaveBeenCalledWith(User, { id: 1, name: 'John' });
@@ -178,7 +207,7 @@ describe('createRequestHandler', () => {
 
   it('saveMany', async () => {
     mockQuerier.saveMany.mockResolvedValue([1, 2]);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
       req({ method: 'PUT', entityPath: 'user', subPath: 'many', body: [{ id: 1 }, { name: 'new' }] }),
     );
@@ -187,7 +216,7 @@ describe('createRequestHandler', () => {
 
   it('updateOneById', async () => {
     mockQuerier.updateMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'PATCH', entityPath: 'user', subPath: '1', body: { name: 'John' } }));
     expect(resp).toEqual({ status: 200, body: { data: '1', count: 1 } });
     expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
@@ -197,7 +226,7 @@ describe('createRequestHandler', () => {
 
   it('updateOneById preserves an array $where via $and', async () => {
     mockQuerier.updateMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await handle(
       req({ method: 'PATCH', entityPath: 'user', subPath: '9', query: { $where: '[1, 9]' }, body: { name: 'x' } }),
     );
@@ -210,7 +239,7 @@ describe('createRequestHandler', () => {
 
   it('updateMany (bulk)', async () => {
     mockQuerier.updateMany.mockResolvedValue(3);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
       req({ method: 'PATCH', entityPath: 'user', query: { $where: '{"status":1}' }, body: { status: 2 } }),
     );
@@ -222,7 +251,7 @@ describe('createRequestHandler', () => {
 
   it('deleteOneById with ?hardDelete', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
       req({ method: 'DELETE', entityPath: 'user', subPath: '1', query: { hardDelete: 'true' } }),
     );
@@ -234,7 +263,7 @@ describe('createRequestHandler', () => {
 
   it('deleteOneById preserves an array $where via $and (soft by default)', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await handle(req({ method: 'DELETE', entityPath: 'user', subPath: '9', query: { $where: '[1, 9]' } }));
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(
       User,
@@ -246,7 +275,7 @@ describe('createRequestHandler', () => {
   it('deleteMany deletes by found ids (soft by default)', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
     mockQuerier.deleteMany.mockResolvedValue(2);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
     expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: [1, 2] }, { hardDelete: false });
@@ -254,7 +283,7 @@ describe('createRequestHandler', () => {
 
   it('deleteMany when nothing found', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
     expect(resp).toEqual({ status: 200, body: { data: [], count: 0 } });
     expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
@@ -262,14 +291,14 @@ describe('createRequestHandler', () => {
 
   it('read errors release the querier and propagate', async () => {
     mockQuerier.findOne.mockRejectedValue(new Error('One error'));
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }))).rejects.toThrow('One error');
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
   it('write errors rollback, release, and propagate', async () => {
     mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
     expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
     expect(mockQuerier.commitTransaction).not.toHaveBeenCalled();
@@ -279,7 +308,7 @@ describe('createRequestHandler', () => {
   it('swallows rollback errors and keeps the original one', async () => {
     mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
     mockQuerier.rollbackTransaction.mockRejectedValue(new Error('Rollback error'));
-    const handle = createRequestHandler({ include: [User] });
+    const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
     expect(mockQuerier.release).toHaveBeenCalled();
   });
@@ -290,7 +319,7 @@ describe('createRequestHandler', () => {
       const pre = vi.fn();
       const preFilter = vi.fn();
       const preSave = vi.fn();
-      const handle = createRequestHandler({ include: [User], pre, preFilter, preSave });
+      const handle = createRequestHandler({ pool, include: [User], pre, preFilter, preSave });
       await handle(req({ method: 'GET', entityPath: 'user' }));
       expect(pre).toHaveBeenCalledTimes(1);
       expect(preFilter).toHaveBeenCalledTimes(1);
@@ -305,7 +334,7 @@ describe('createRequestHandler', () => {
       mockQuerier.insertOne.mockResolvedValue(1);
       const preFilter = vi.fn();
       const preSave = vi.fn();
-      const handle = createRequestHandler({ include: [User], preFilter, preSave });
+      const handle = createRequestHandler({ pool, include: [User], preFilter, preSave });
       await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'a' } }));
       expect(preSave).toHaveBeenCalledTimes(1);
       expect(preFilter).not.toHaveBeenCalled();
@@ -323,6 +352,7 @@ describe('createRequestHandler', () => {
     it('hook mutations of the query reach the querier', async () => {
       mockQuerier.findMany.mockResolvedValue([]);
       const handle = createRequestHandler<{ companyId: number }>({
+        pool,
         include: [User],
         preFilter: async ({ query, context }) => {
           query.$where ??= {};
@@ -336,6 +366,7 @@ describe('createRequestHandler', () => {
     it('hook reassignment of the body reaches the querier', async () => {
       mockQuerier.insertOne.mockResolvedValue(1);
       const handle = createRequestHandler({
+        pool,
         include: [User],
         preSave: (ctx) => {
           ctx.body = { ...(ctx.body as object), creatorId: 7 };
@@ -348,6 +379,7 @@ describe('createRequestHandler', () => {
     it('post can strip and derive response fields (SafeIntegration pattern)', async () => {
       mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'slack', accessToken: 'secret' }]);
       const handle = createRequestHandler({
+        pool,
         include: [User],
         post: (_ctx, envelope) => {
           envelope.data = (envelope.data as Array<{ accessToken?: string }>).map(({ accessToken, ...rest }) => ({
@@ -367,6 +399,7 @@ describe('createRequestHandler', () => {
       mockQuerier.findOne.mockResolvedValue(null);
       const events: string[] = [];
       const handle = createRequestHandler({
+        pool,
         include: [User],
         post: async ({ op }, envelope) => {
           events.push(op);
@@ -385,6 +418,7 @@ describe('createRequestHandler', () => {
     it('hooks can enforce hardDelete (flags are resolved after hooks run)', async () => {
       mockQuerier.deleteMany.mockResolvedValue(1);
       const handle = createRequestHandler({
+        pool,
         include: [User],
         preFilter: ({ query }) => {
           Object.assign(query, { hardDelete: true });
@@ -397,13 +431,14 @@ describe('createRequestHandler', () => {
     it('an async hook that throws aborts before touching the pool', async () => {
       const err = Object.assign(new Error('forbidden'), { status: 403 });
       const handle = createRequestHandler({
+        pool,
         include: [User],
         pre: async () => {
           throw err;
         },
       });
       await expect(handle(req({ method: 'GET', entityPath: 'user' }))).rejects.toBe(err);
-      expect(options.getQuerierPool).not.toHaveBeenCalled();
+      expect(mockQuerier.findMany).not.toHaveBeenCalled();
     });
   });
 });

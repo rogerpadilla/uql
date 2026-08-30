@@ -1,7 +1,15 @@
 import { withContext } from '../context/context.js';
 import { getEntities, getMeta } from '../entity/index.js';
-import { getQuerierPool } from '../options.js';
-import type { EntityMeta, IdValue, Querier, Query, Type, UpdatePayload, UqlContext } from '../type/index.js';
+import type {
+  EntityMeta,
+  IdValue,
+  Querier,
+  QuerierPool,
+  Query,
+  Type,
+  UpdatePayload,
+  UqlContext,
+} from '../type/index.js';
 import {
   type CrudOperation,
   entityPath,
@@ -107,6 +115,12 @@ export type RequestHandlerOptions<Ctx = unknown> = {
    * automatically. Derive tenant/auth from a verified source (session, JWT) - never trust the client.
    */
   getContext?: (context: Ctx) => UqlContext | undefined | Promise<UqlContext | undefined>;
+  /**
+   * The pool this handler runs on. A function is called per request, after `getContext`, with the
+   * adapter's request and the context that resolved from it - which is what lets one deployment
+   * serve a database per tenant, where a process-wide default could only serve one.
+   */
+  pool: QuerierPool | ((context: Ctx, appContext: UqlContext) => QuerierPool | Promise<QuerierPool>);
 };
 
 /**
@@ -116,8 +130,8 @@ export type RequestHandlerOptions<Ctx = unknown> = {
  */
 export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse> | undefined;
 
-export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx> = {}): RequestHandler<Ctx> {
-  const { include, exclude, pre, preSave, preFilter, post, getContext } = opts;
+export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx>): RequestHandler<Ctx> {
+  const { include, exclude, pre, preSave, preFilter, post, getContext, pool } = opts;
 
   let entities = include ?? getEntities();
   if (exclude) {
@@ -160,6 +174,15 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
       context: req.context,
     };
     const appContext = (await getContext?.(req.context)) ?? {};
+    // Resolved where the statement runs, not up front: a hook that aborts the request must not reach
+    // the pool at all, and picking one per request may cost a lookup this request will never use.
+    const resolvePool = async () => (typeof pool === 'function' ? pool(req.context, appContext) : pool);
+    /** Read paths: the pool acquires and releases; nothing here owns a connection. */
+    const withQuerier = async (fn: (querier: Querier) => Promise<HandlerResponse>) =>
+      (await resolvePool()).withQuerier(fn);
+    /** Write paths: one transaction per request, so a cascade that fails takes its parent with it. */
+    const withTransaction = async (fn: (querier: Querier) => Promise<HandlerResponse>) =>
+      (await resolvePool()).transaction(fn);
     // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
     return withContext(appContext, async () => {
       await pre?.(hookCtx);
@@ -263,12 +286,6 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
 function ok(body: unknown): HandlerResponse {
   return { status: 200, body };
 }
-
-/** Read paths: the pool acquires and releases; nothing here owns a connection. */
-const withQuerier = (fn: (querier: Querier) => Promise<HandlerResponse>) => getQuerierPool().withQuerier(fn);
-
-/** Write paths: same, plus commit on success and rollback on failure. */
-const withTransaction = (fn: (querier: Querier) => Promise<HandlerResponse>) => getQuerierPool().transaction(fn);
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
   const idKey = meta.id as string;

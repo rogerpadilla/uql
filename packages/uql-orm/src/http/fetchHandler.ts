@@ -13,7 +13,7 @@ export type FetchHandlerOptions = RequestHandlerOptions<Request> & {
  * `(request: Request) => Promise<Response>` in any fetch-native runtime
  * (Hono, Next.js route handlers, Bun.serve, Deno.serve, Cloudflare Workers, SvelteKit).
  */
-export function createFetchHandler(opts: FetchHandlerOptions = {}): (request: Request) => Promise<Response> {
+export function createFetchHandler(opts: FetchHandlerOptions): (request: Request) => Promise<Response> {
   const { basePath = '', ...handlerOpts } = opts;
   const handle = createRequestHandler<Request>(handlerOpts);
 

@@ -10,7 +10,7 @@ export type MiddlewareOptions = RequestHandlerOptions<Request>;
  * composes with custom routes; errors go to `next(err)` so user error
  * middleware (e.g. {@link errorHandler}) keeps working.
  */
-export function querierMiddleware(opts: MiddlewareOptions = {}): Router {
+export function querierMiddleware(opts: MiddlewareOptions): Router {
   const handle = createRequestHandler<Request>(opts);
   const router = expressRouter();
 
