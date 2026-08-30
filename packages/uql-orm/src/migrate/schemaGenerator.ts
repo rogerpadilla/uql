@@ -341,7 +341,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const colName = this.escapeId(column.name);
 
     if (this.dialect.alterColumnSyntax === 'none') {
-      throw new Error(
+      throw new TypeError(
         `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
           `This database does not support ALTER COLUMN.`,
       );
@@ -702,7 +702,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       : this.escapeId(`fk_${tableName}_${foreignKey.columns.join('_')}`);
 
     if (!this.features.foreignKeyAlter) {
-      throw new Error(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
+      throw new TypeError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
     }
 
     return (

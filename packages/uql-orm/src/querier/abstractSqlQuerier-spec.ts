@@ -1146,7 +1146,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {
       expect(this.querier.hasOpenTransaction).toBe(true);
-      throw new Error('some error');
+      throw new TypeError('some error');
     });
     await expect(prom).rejects.toThrow('some error');
     expect(this.querier.hasOpenTransaction).toBeFalsy();
@@ -1198,7 +1198,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       expect(this.querier.hasOpenTransaction).toBe(true);
 
       await this.querier.transaction(async () => {
-        throw new Error('inner error');
+        throw new TypeError('inner error');
       });
     });
 

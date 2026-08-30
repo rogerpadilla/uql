@@ -373,28 +373,51 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * Only `$populate` adds a relation's fields to the document, so ordering by one it did not ask for
-   * would rank every row equal instead of failing. The SQL dialects add the join themselves; here
-   * that would change what the caller gets back, so it is refused rather than done quietly.
+   * Ordering by a relation `$populate` did not ask for adds the `$lookup` itself, as the SQL dialects
+   * add the join. A lookup does put a field on the document where a join is invisible, so the stage
+   * that brought it in is followed by the `$unset` that takes it back out - the caller gets the rows
+   * it asked for, in the order it asked for.
    */
-  shouldRequireAPopulatedRelationToSortBy() {
-    expect(() => this.dialect.sort(Item, { tax: { name: 1 } } as never)).toThrow(
-      "cannot $sort by relation 'tax' on MongoDB unless it is populated",
-    );
-    expect(() => this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } } as never)).toThrow(
-      "cannot $sort by relation 'tax' on MongoDB unless it is populated",
-    );
+  shouldSortByAnUnpopulatedRelation() {
+    expect(this.dialect.sort(Item, { tax: { name: 1 } } as never)).toEqual({ 'tax.name': 1 });
+
+    const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } } as never);
+    expect(pipeline.map((stage) => Object.keys(stage)[0])).toEqual(['$lookup', '$unwind', '$sort', '$unset']);
+    expect(pipeline.at(-1)).toEqual({ $unset: ['tax'] });
+  }
+
+  /**
+   * The grouping keeps only the columns it projects, so an ordering reading a lookup they do not
+   * carry has nothing left to read. Refused in the same terms `SELECT DISTINCT` refuses it.
+   */
+  shouldRejectDistinctSortedByAnUnpopulatedRelation() {
+    expect(() =>
+      this.dialect.aggregationPipeline(Item, {
+        $select: { name: true },
+        $distinct: true,
+        $sort: { tax: { name: 1 } },
+      } as never),
+    ).toThrow("cannot $sort by relation 'tax' with $distinct unless 'tax' is populated");
+  }
+
+  /** A relation `$populate` asked for stays on the document; only the ordering's own lookups are undone. */
+  shouldKeepAPopulatedRelationItAlsoSortsBy() {
+    const pipeline = this.dialect.aggregationPipeline(Item, {
+      $populate: { tax: true },
+      $sort: { tax: { name: 1 } },
+    });
+    expect(pipeline.some((stage) => '$unset' in stage)).toBe(false);
   }
 
   shouldThrowOnUnjoinableRelationInSort() {
     expect(() => this.dialect.sort(Item, { tags: { name: 1 } } as never, { tags: true })).toThrow(
       "cannot $sort by 'tags'",
     );
-    // Every level of the path needs its own lookup: `tax` alone leaves `tax.category` off the document.
-    expect(() => this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never, { tax: true })).toThrow(
-      "cannot $sort by relation 'tax.category' on MongoDB unless it is populated",
-    );
-    // Populate the whole path and it orders by it, the same nested alias the SQL dialects join to.
+    // Every level of the path gets its own lookup, so a nested ordering resolves without populating.
+    expect(this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never)).toEqual({
+      'tax.category.name': 1,
+    });
+    // Populating the whole path orders by the same nested alias the SQL dialects join to.
     expect(
       this.dialect.sort(Item, { tax: { category: { name: -1 } } } as never, {
         tax: { $populate: { category: true } },

@@ -7,6 +7,7 @@ import type {
   RelationKey,
   RelationMeta,
 } from '../type/index.js';
+import { QUERY_BOOLEAN_CLAUSES, QUERY_NUMBER_CLAUSES, QUERY_OBJECT_CLAUSES } from '../type/query.js';
 import { getKeys, someKey } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
@@ -95,15 +96,16 @@ export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopul
 // rejects it explicitly rather than letting it fall through as an unrecognized shape.
 export type RelationQuery<E extends object = object> = Except<Query<E>, '$lock'> & { $required?: boolean };
 
-// Keep in sync with `Query`'s own keys (`type/query.ts`); `$where`'s value type is `QueryWhere` (`type/queryWhere.ts`).
-const RELATION_QUERY_BOOLEAN_KEYS = new Set(['$distinct', '$required']);
-const RELATION_QUERY_OBJECT_KEYS = new Set(['$select', '$populate', '$exclude', '$sort']);
-const RELATION_QUERY_NUMBER_KEYS = new Set(['$limit', '$skip']);
-const RELATION_QUERY_ALLOWED_KEYS = new Set([
+// Taken from the clause groups declared beside `Query` itself, so a renamed clause fails to compile
+// here instead of quietly narrowing what a relation query accepts. `$required` is the one key that
+// is not a `Query` clause at all - it says how the relation joins, not what it selects.
+const RELATION_QUERY_BOOLEAN_KEYS = new Set<string>([...QUERY_BOOLEAN_CLAUSES, '$required']);
+const RELATION_QUERY_OBJECT_KEYS = new Set<string>(QUERY_OBJECT_CLAUSES);
+const RELATION_QUERY_NUMBER_KEYS = new Set<string>(QUERY_NUMBER_CLAUSES);
+const RELATION_QUERY_ALLOWED_KEYS = new Set<string>([
   ...RELATION_QUERY_BOOLEAN_KEYS,
   ...RELATION_QUERY_OBJECT_KEYS,
   ...RELATION_QUERY_NUMBER_KEYS,
-  '$where',
 ]);
 
 function isRelationQueryObject<E extends object = object>(value: unknown): value is RelationQuery<E> {
@@ -180,9 +182,6 @@ function isValidRelationQueryShape(query: Record<string, unknown>): boolean {
       return false;
     }
     if (RELATION_QUERY_NUMBER_KEYS.has(key) && (typeof value !== 'number' || !Number.isFinite(value))) {
-      return false;
-    }
-    if (key === '$where' && !isRecord(value)) {
       return false;
     }
   }

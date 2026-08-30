@@ -24,7 +24,7 @@ class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
 
   protected override async releaseConn(conn: Conn) {
     if (this.releaseFails) {
-      throw new Error('pool refused the connection');
+      throw new TypeError('pool refused the connection');
     }
     this.handedBack.push(conn.id);
   }

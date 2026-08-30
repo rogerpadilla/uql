@@ -50,6 +50,7 @@ import {
   type ParsedGroupEntry,
   parseGroupMap,
   parseRelationSize,
+  someKey,
 } from '../util/index.js';
 
 /**
@@ -168,10 +169,10 @@ export class MongoDialect extends AbstractDialect {
     }
     const meta = getMeta(entity);
     const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
-    return Object.entries(whereMap).some(([key, val]) =>
+    return someKey(whereMap, (key) =>
       key === '$and' || key === '$or'
-        ? (val as QueryWhere<E>[]).some((it) => this.constrainsRelations(entity, it))
-        : Boolean(meta.relations[key]),
+        ? (whereMap[key] as QueryWhere<E>[]).some((it) => this.constrainsRelations(entity, it))
+        : Boolean(meta.relations[key as RelationKey<E>]),
     );
   }
 
@@ -258,7 +259,7 @@ export class MongoDialect extends AbstractDialect {
     lookups.temps.push(temp);
     lookups.stages.push(
       relOpts.cardinality === 'mm' && relOpts.through
-        ? this.junctionLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
+        ? this.junctionLookup(relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
         : {
             $lookup: {
               from: this.resolveTableName(relEntity, relMeta),
@@ -278,8 +279,7 @@ export class MongoDialect extends AbstractDialect {
    * ManyToMany counts/tests junction rows, so the target is reached from inside the junction's own
    * lookup - the junction's filters apply too, since a soft-deleted link is not a link.
    */
-  private junctionLookup<E>(
-    meta: EntityMeta<E>,
+  private junctionLookup(
     relOpts: RelationMeta,
     relMeta: EntityMeta<Document>,
     relEntity: Type<Document>,
@@ -511,9 +511,10 @@ export class MongoDialect extends AbstractDialect {
   public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>, populate?: QueryPopulate<E>): Sort {
     const meta = getMeta(entity);
     const normalized: Record<string, 1 | -1> = {};
-    // The same join set the lookups are built from, so what an `ORDER BY` may address and what the
-    // pipeline actually produces cannot drift apart.
-    this.collectSort(meta, sort, resolveQueryJoins(meta, { $populate: populate }), '', normalized);
+    // The same join set the lookups are built from, so what an ordering may address and what the
+    // pipeline actually produces cannot drift apart - `$sort` contributes its own to-one joins here
+    // exactly as it does on the SQL dialects.
+    this.collectSort(meta, sort, resolveQueryJoins(meta, { $populate: populate, $sort: sort }), '', normalized);
     return normalized as Sort;
   }
 
@@ -528,6 +529,15 @@ export class MongoDialect extends AbstractDialect {
     for (const [key, value] of Object.entries(sort ?? {})) {
       const relation = meta.relations[key as RelationKey<E>];
       if (!relation) {
+        // The queried entity's own vector search is lifted out before this walk, so one reaching it
+        // sits under a relation, which a `$lookup` brings in one row at a time - there is nothing to
+        // rank. `sortDirection` would read the operator object as "ascending" and order by the raw
+        // vector column instead, which is the SQL dialects' rejection turned into a silent answer.
+        if (isVectorSearch(value)) {
+          throw new TypeError(
+            `$vector sort is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
+          );
+        }
         out[path + this.pathOf(meta, key)] = sortDirection(value);
         continue;
       }
@@ -548,8 +558,11 @@ export class MongoDialect extends AbstractDialect {
 
   /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
   public sortsRelations<E extends Document>(entity: Type<E>, sort: QuerySortMap<E> | undefined): boolean {
+    if (!sort) {
+      return false;
+    }
     const meta = getMeta(entity);
-    return Object.keys(sort ?? {}).some((key) => Boolean(meta.relations[key]));
+    return someKey(sort, (key) => Boolean(meta.relations[key as RelationKey<E>]));
   }
 
   /**
@@ -612,17 +625,32 @@ export class MongoDialect extends AbstractDialect {
     opts?: QueryOptions,
     extra: MongoReadStages = {},
   ): MongoAggregationPipelineEntry<Document>[] {
-    const lookups = this.relationStages(entity, q, opts);
-    const projection = this.pipelineProjection(entity, q);
+    const meta = getMeta(entity);
+    const joins = resolveQueryJoins(meta, q);
+    const lookups = this.lookupStages(meta, joins, undefined, opts);
     const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
     const pager = extra.pager ?? [];
-    // A `$required` relation drops parents when it unwinds, and an ordering may read a field only a
-    // lookup produces: either one puts the lookups first, as an INNER JOIN does. Otherwise paging
-    // first is equivalent and spares the lookups the rows it cuts.
+
     // Merged into the query's own projection rather than standing in for one: a query that asked
     // for no columns wants the whole document, not just the field this adds to it.
+    const projection = this.pipelineProjection(entity, q);
     const projected = projection ? { ...projection, ...extra.project } : undefined;
     const project = projected ? [{ $project: projected }] : [];
+
+    // A `$lookup` the ordering asked for puts a field on the document the caller never requested,
+    // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
+    // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
+    const sortOnly = [...joins.values()].filter((join) => !join.projected).map((join) => join.path);
+    const unset = sortOnly.length ? [{ $unset: sortOnly }] : [];
+
+    // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
+    // that reads a lookup those columns do not carry. Refused rather than answered all-equal, and in
+    // the same terms the SQL dialects refuse `SELECT DISTINCT` ordered by an unselected column.
+    if (q.$distinct && sortOnly.length) {
+      throw new TypeError(
+        `cannot $sort by relation '${sortOnly[0]}' with $distinct unless '${sortOnly[0]}' is populated: the grouping keeps only the columns it projects`,
+      );
+    }
 
     // `$distinct` inverts the usual order twice over: the projection decides which columns make two
     // rows the same, so it has to run *before* the grouping, and the grouping collapses rows, so the
@@ -638,7 +666,11 @@ export class MongoDialect extends AbstractDialect {
     const lookupsFirst =
       this.sortsRelations(entity, q.$sort) ||
       lookups.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
-    return [...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]), ...project];
+    return [
+      ...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]),
+      ...unset,
+      ...project,
+    ];
   }
 
   /**
@@ -690,11 +722,12 @@ export class MongoDialect extends AbstractDialect {
     q: Query<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
-    // Resolved from `$populate` alone, deliberately: on the SQL dialects a `$sort` can add a join of
-    // its own because a join is invisible in the result, while a `$lookup` puts a field on the
-    // document. Same join model, and this backend takes the part of it that it can carry.
+    // The whole query, not `$populate` alone: an ordering by a related field needs that relation
+    // looked up just as much as selecting it does. A `$lookup` does put a field on the document
+    // where a SQL join is invisible, so the ones only the ordering asked for are unset again by
+    // {@link readStages} before the caller sees the row.
     const meta = getMeta(entity);
-    return this.lookupStages(meta, resolveQueryJoins(meta, { $populate: q.$populate }), undefined, opts);
+    return this.lookupStages(meta, resolveQueryJoins(meta, q), undefined, opts);
   }
 
   /**

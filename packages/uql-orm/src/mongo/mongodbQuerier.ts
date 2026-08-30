@@ -105,6 +105,14 @@ export class MongodbQuerier extends AbstractQuerier {
         `findManyStream does not load relations on MongoDB (${parts.join('; ')}). Use findMany with $populate (or legacy relation keys in $select) so aggregation and fill logic can run.`,
       );
     }
+    // An ordering that names a relation reads a field only a `$lookup` produces, and a stream has no
+    // pipeline to add one: MongoDB ranks every document equal and hands back natural order. `findMany`
+    // takes the aggregation path for exactly this case, so it is the one that can honor the clause.
+    if (this.dialect.sortsRelations(entity, q.$sort)) {
+      throw new TypeError(
+        'findManyStream does not order by a relation on MongoDB. Use findMany, whose aggregation pipeline adds the $lookup the ordering reads.',
+      );
+    }
     const cursor = this.buildFindCursor(entity, q, opts);
 
     try {

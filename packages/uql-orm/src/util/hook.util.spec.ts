@@ -40,7 +40,7 @@ class Unhooked {
 
   @BeforeInsert()
   reject() {
-    throw new Error('a payload-less event has nothing to bind `this` to');
+    throw new TypeError('a payload-less event has nothing to bind `this` to');
   }
 }
 

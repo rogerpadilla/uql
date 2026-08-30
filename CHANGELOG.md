@@ -1,1769 +1,398 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. Please add new changes to the top, be clear and concise.
+What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
 
-date format is [yyyy-mm-dd]
+## [0.31.5] - 2026-08-30
+
+- **MongoDB orders by a relation you did not populate**, as the SQL dialects always have. It used to refuse.
+- MongoDB throws on a `$vector` sort under a relation, and `findManyStream` refuses a relation `$sort`, instead of returning rows in no order. Use `findMany`.
+- Over HTTP, `$limit=0`/`$skip=0` are honored and `$distinct` is accepted.
+- **Type-checking is about a quarter cheaper**: `$where` and `Query` are no longer intersections, which TypeScript re-checks per constituent. `bun run ts.perf` measures it.
+- `AbstractSqlDialect.appendInsertValues` dropped an unused parameter, which a subclass overriding it must match.
 
 ## [0.31.4] - 2026-08-28
 
-### Fixes
-
-- **MongoDB honors `$distinct`.** The clause was dropped, so `findMany` returned the duplicates every SQL backend collapses.
-- **MongoDB honors `$sort`/`$limit`/`$skip` on `updateMany`/`deleteMany`.** The page was dropped, so `deleteMany(User, { $where, $limit: 1 })` removed every match instead of one row.
-
-### Improvements
-
-- **Cascading a relation over many rows now only costs two statements.** An `updateMany` carrying a relation payload issued a `DELETE` and an `INSERT` for each matched row.
+- **MongoDB honors `$distinct`**, and `$sort`/`$limit`/`$skip` on `updateMany`/`deleteMany`. Both were dropped, so `deleteMany(User, { $where, $limit: 1 })` removed every match.
+- Cascading a relation across many rows costs two statements, not two per matched row.
 
 ## [0.31.3] - 2026-08-27
 
-### Fixes
-
-- **A vector `$sort` is no longer rejected on `updateMany`/`deleteMany`** (SQL dialects), so "update the 10 rows closest to this vector" compiles. Writes settle their rows with a `SELECT` first, which has the projection list the distance needs. Still rejected on a populated relation, where a join brings one row per parent and there is nothing to rank.
-
-### Improvements
-
-- **Type-checking** a project that uses UQL is about twice as fast.
+- A vector `$sort` works on `updateMany`/`deleteMany` (SQL), so "update the 10 rows closest to this vector" compiles. Still rejected on a populated relation.
+- Type-checking a project that uses UQL is about twice as fast.
 
 ## [0.31.2] - 2026-08-27
 
-### Fixes
-
-- Type-safety for JSON fields: **a `Json<T>[]` column is a field, not a relation.** An array of JSON documents was classified as a to-many relation, so it could not be declared under `defineEntity({ fields })` and its dot-paths were unavailable. It now behaves like every other JSON column, e.g. `lines?: Json<{ sku: string }>[]` now gives a typed `'lines.sku'` path in `$where` and `$sort`.
-- **NestJS 12** is covered by the test suite. The peer range was already open (`>=10.0.0`), so nothing to change on your side.
-
-## [0.31.1] - 2026-08-24
-
-- **Docs only.** The README leads with the type-safety demo from the home page.
+- **`Json<T>[]` is a field, not a relation.** An array of JSON documents can be declared under `defineEntity({ fields })`, and `lines?: Json<{ sku: string }>[]` gives a typed `'lines.sku'` path in `$where` and `$sort`.
 
 ## [0.31.0] - 2026-08-23
 
-### PGlite: Postgres in process, no server
+- **PGlite: Postgres in-process, no server.** `uql-orm/pglite` runs the Postgres dialect against WASM Postgres - JSONB, full-text, `RETURNING`, upsert `created` and pgvector all behave as on a server.
 
-`uql-orm/pglite` runs your queries against [PGlite](https://pglite.dev), Postgres compiled to WASM. No container to start:
+  ```ts
+  const pool = new PgliteQuerierPool(); // in memory; 'file://./pgdata' to persist
+  ```
 
-```ts
-import { PgliteQuerierPool } from 'uql-orm/pglite';
+  Vector columns need the extension passed in: `new PgliteQuerierPool('memory://', { extensions: { vector } })`.
 
-const pool = new PgliteQuerierPool(); // in memory; pass 'file://./pgdata' to persist
-```
-
-Same dialect as `uql-orm/postgres`, so JSONB, full-text search, `RETURNING`, upsert `created` and pgvector behave as on a real server. Vector columns need the extension handed in: `new PgliteQuerierPool('memory://', { extensions: { vector } })`, with `vector` from `@electric-sql/pglite-pgvector`.
-
-### Fixes
-
-- **A pool sharing one connection opens it once, even when acquisitions race.** Local SQLite, embedded Turso and PGlite opened one per racing caller and leaked all but the last (which on an in-memory database meant separate databases).
-- **`$populate` checks a relation's clauses against its own fields.** A typo in a nested `$select`, `$exclude` or `$sort` used to compile clean.
-- **`readonly` relations and arrays behave like their mutable form.** `readonly Comment[]` keeps the to-many `$populate` shape; `readonly string[]` and `readonly number[]` count as fields again.
+- A pool sharing one connection opens it once when acquisitions race. Local SQLite, embedded Turso and PGlite opened one per caller and leaked all but the last - separate databases, in memory.
+- `$populate` checks a relation's own `$select`/`$exclude`/`$sort` against its fields; a typo there used to compile.
+- `readonly` relations and arrays behave like their mutable form.
 
 ## [0.30.0] - 2026-08-20
 
 ### Breaking
 
-- **`count()` takes a filter only.** Its `$skip` became an `OFFSET` that pushed the one result row away.
-- **`$limit: 0` returns zero rows**, not the whole table. A negative, fractional or `NaN` page now throws.
-- **`$sum`/`$avg`/`$min`/`$max` are `| null`**, and take numeric columns only. `$count` stays a `number`.
-- **An aggregate's `$having`/`$sort` may only name a column it emits**, and an `$agg` alias may not repeat a `$group` column.
-- **Vector `$sort` is rejected on `updateMany`/`deleteMany`/`aggregate`**, and its `$project` may not take a field's name.
+- `count()` takes a filter only: its `$skip` became an `OFFSET` that pushed the one result row away.
+- `$limit: 0` returns zero rows, not the whole table. Negative, fractional and `NaN` pages throw.
+- `$sum`/`$avg`/`$min`/`$max` are `| null` and take numeric columns only; `$count` stays `number`.
+- An aggregate's `$having`/`$sort` may only name a column it emits, and an `$agg` alias may not repeat a `$group` column.
+- Vector `$sort` is rejected on `updateMany`/`deleteMany`/`aggregate`.
 
 ### Fixes
 
-- **`@BeforeDelete` and `@AfterDelete` run.** They were emitted with an empty payload, so the decorated method was never called. Both now receive the rows being deleted.
-- **An entity with a lifecycle hook can be written again.** `insertOne(Article, { title })` demanded the hook method back in the payload.
-- **Query errors name the mistake**, not `Property '$entity' is missing in type 'typeof Post'`.
-- **A nullish id throws** instead of addressing every row: `deleteOneById(User, undefined)` emptied the table.
-- **`$where: { at: someDate }` filters** instead of dropping the condition. Same for `Uint8Array`, and in `$having`.
-- **`null` compares and assigns without a cast**, and an aggregate row carries only the columns it emits.
-- **A paged `updateMany` works on every engine**, and `$skip` without `$limit` on MySQL and MariaDB.
-- **Methods are no longer populatable relations**, and an `any` field is no longer both field and relation.
+- `@BeforeDelete`/`@AfterDelete` run at all - they were emitted with an empty payload - and now receive the rows being deleted.
+- A nullish id throws instead of addressing every row: `deleteOneById(User, undefined)` emptied the table.
+- `$where: { at: someDate }` filters instead of dropping the condition; same for `Uint8Array` and in `$having`.
+- An entity with a lifecycle hook can be written again, methods are no longer populatable relations, and query errors name the actual mistake.
 
 ## [0.29.0] - 2026-08-20
 
-### `@Transactional()` and `currentQuerier()` are gone (breaking)
+### Breaking
 
-Wrap the method body in `pool.transaction(async (querier) => ...)` instead.
-
-- `uql-codemod` reports both rather than rewriting them: it cannot know which pool.
-- The [transactions page](https://uql-orm.dev/querying/transactions) is rewritten.
+- **`@Transactional()` and `currentQuerier()` are gone.** Wrap the body in `pool.transaction(async (querier) => ...)`. `uql-codemod` reports both rather than rewriting them: it cannot know which pool.
 
 ### Fixes
 
-- **Releasing a querier with a transaction still open rolls it back** instead of throwing `pending transaction` before handing the connection back.
-- **Using a querier after releasing it throws** instead of quietly taking a second connection that nothing would ever give back.
-- **A connection whose rollback failed on the way out is discarded** rather than returned to the pool.
-- **`rollbackTransaction()` does nothing when no transaction is open**, rather than throwing from the `catch` block that called it.
-
-## [0.28.2] - 2026-08-17
-
-Improve packaging and metadata only, no runtime changes.
-
-### Fixes
-
-- **The package description and keywords now name what UQL runs on and against.** The description named a single database and no runtime; the keywords were missing `sql`, `postgres`, `node`, and `typescript`, and spent six entries on `<db>-orm` compounds. `uql-codemod` carries the same core set instead of four narrow terms.
+- Releasing a querier with a transaction open rolls it back instead of throwing.
+- Using a querier after releasing it throws instead of quietly taking a second connection nothing would return.
+- A connection whose rollback failed is discarded rather than returned to the pool.
+- `rollbackTransaction()` is a no-op when no transaction is open, so it is safe from a `catch`.
 
 ## [0.28.1] - 2026-08-16
 
-### Fixes
-
-- **MongoDB rejected every query that filtered, ordered and populated at once**: `a pipeline stage specification object must contain exactly one field`.
-- **MongoDB dropped a nested `$populate`**, so `{ tax: { $populate: { category: true } } }` came back without its `category`.
-- **MongoDB ordered by relations it never looked up.** New in 0.28.0: a `$sort` by a relation missing from `$populate` returned the rows unordered. Rejected now.
-- **A vector search with `$project` and no `$select` returned only the score**, not the document.
-- **A secondary `$sort` under a vector search did nothing** when its field lay outside `$select`.
-- **`$vector` inside a relation's `$sort` is a compile error now**, as it already was at runtime.
-- **`$and: 'foo'` names the key** instead of failing with `val.map is not a function`.
-
-### Features
-
-- **MongoDB orders by a nested relation path** (`$sort: { tax: { category: { name: 1 } } }`) when every level is populated.
+- MongoDB rejected every query that filtered, ordered and populated at once (`a pipeline stage specification object must contain exactly one field`), and dropped a nested `$populate`.
+- A vector search with `$project` and no `$select` returned only the score, not the document.
+- MongoDB orders by a nested relation path (`$sort: { tax: { category: { name: 1 } } }`) when every level is populated.
 
 ## [0.28.0] - 2026-08-16
 
-Correctness release: `$where` grouping, case-insensitive matching, and ordering by a related field.
-
 ### Fixes
 
-- **A group nested in `$and`/`$or`/`$not` lost its parentheses**, so `{ $and: [{ companyId: 1 }, { $or: [a, b] }] }` ran as `(companyId = 1 AND a) OR b` and returned wrong rows without an error. `$not` negated only its first term, and a JOIN's `ON` had the same hole. `security: true` filters were never affected.
-- **`$i*` operators lowered the pattern but not the column** on MySQL, MariaDB and SQLite, so `$istartsWith: 'Some'` matched neither `Some` nor `SOME` under a case-sensitive collation. Each dialect now folds both sides or neither.
-- **`$sort` by a relation named a table that was never joined**, and even with `$populate` mis-addressed nested paths and columns renamed through `@Field({ name })`.
-
-### Features
-
-- **Ordering by a related field no longer needs `$populate`.** The join is made for the sort alone, carrying the relation's filters, so an ordering cannot read a row the query itself could not. MongoDB still requires the relation populated.
+- **A group nested in `$and`/`$or`/`$not` lost its parentheses**, so `{ $and: [{ companyId: 1 }, { $or: [a, b] }] }` ran as `(companyId = 1 AND a) OR b` and returned wrong rows silently. `$not` negated only its first term. `security: true` filters were never affected.
+- **`$i*` operators lowered the pattern but not the column** on MySQL, MariaDB and SQLite, so `$istartsWith: 'Some'` matched neither `Some` nor `SOME` under a case-sensitive collation.
+- `$sort` by a relation named a table that was never joined, and mis-addressed nested paths and `@Field({ name })` columns.
 
 ### Breaking
 
-- **`$sort` on a to-many is rejected**: a parent has many such rows, so there is nothing single to order it by. Sort them inside `$populate`.
-- **`$sort` by a relation is rejected where nothing can join it**: `updateMany`, `deleteMany`, `$group` aggregates, and `$distinct` unless the relation is populated.
-- **`$sort`, `$limit`, `$skip` and `$distinct` inside a to-one `$populate` are rejected** rather than silently dropped. Unchanged on a to-many.
-- **`$i*` on MySQL and MariaDB now emits `LOWER(column)`**, which only a `LOWER(column)` expression index can serve. Their default collation is case-insensitive anyway, so `$startsWith` matches either case there and keeps its plain index; the other patterns lead with `%`, which no plain index could serve to begin with.
+- Ordering by a related field no longer needs `$populate` - the join is made for the sort, carrying the relation's filters. MongoDB still requires it populated.
+- `$sort` on a to-many is rejected (sort inside `$populate` instead), as is a relation `$sort` where nothing can join it: `updateMany`, `deleteMany`, `$group`, and `$distinct` unless populated.
+- `$sort`/`$limit`/`$skip`/`$distinct` inside a to-one `$populate` are rejected rather than silently dropped.
+- `$i*` on MySQL and MariaDB emits `LOWER(column)`, which only a `LOWER(column)` expression index can serve.
 
 ## [0.27.0] - 2026-08-15
 
-### Features
-
-- **`$lock`: row-level locking on reads.** `$lock: true` emits `SELECT ... FOR UPDATE`; `{ wait: 'skip' | 'nowait' }` adds `SKIP LOCKED`/`NOWAIT`, which is what makes a work queue on the database possible. Requires an open transaction, and is rejected outside one, where the lock would be released at statement commit. PostgreSQL, CockroachDB, MySQL and MariaDB; the SQLite family and MongoDB reject it.
-
-## [0.26.3] - 2026-08-10
-
-### Documentation
-
-- **README benchmark numbers updated** for the 0.26.2 delete fix.
+- **`$lock`: row-level locking on reads.** `$lock: true` emits `SELECT ... FOR UPDATE`; `{ wait: 'skip' | 'nowait' }` adds `SKIP LOCKED`/`NOWAIT`, which is what makes a work queue on the database possible. Needs an open transaction. PostgreSQL, CockroachDB, MySQL, MariaDB.
 
 ## [0.26.2] - 2026-08-10
 
-### Fixes
-
-- **`deleteMany` spent two statements on one row**, resolving the matching ids first. Now only a cascade or a paged delete does, since nothing else needs them.
-
-## [0.26.1] - 2026-08-10
-
-### Internal
-
-- **Expanded the compile-time type-test suite for the query, entity, querier, and pool APIs**, closing gaps like `IdKey` precedence, relation decorators, named filters, and the `$entity` dual-call form.
-- **Renamed `*.type-test.ts` to `*.test-d.ts`**, Vitest's and `tsd`'s own convention for type-only tests, and fixed two mocked test files misnamed `.test.ts`.
+- `deleteMany` spent two statements on one row. Only a cascade or a paged delete resolves ids first now.
 
 ## [0.26.0] - 2026-08-09
 
-Indexes: UQL could create every kind, but could not read most of them back, so `drift:check` reported healthy schemas as broken and `sync` never created an index on a table that already existed.
+UQL could create every kind of index but not read most of them back, so `drift:check` called healthy schemas broken and `sync` never added an index to an existing table.
 
-### Features
-
-- **`sync` creates an index added to an existing entity**, without touching one the entities never declared.
-- **`drift:check` reports an index that no longer matches its entity**, comparing only what each engine can report back.
-- **`generate:from-db` writes expression, partial and covering indexes**, and gives a unique single-column index its own `@Index`.
-
-### Breaking
-
-- **`IndexSchema.columns` is now `entries`**: an entry need not be a column, `raw('lower(email)')` being one.
-- **`DriftDetector` and `createDriftDetector` are gone**, replaced by `detectDrift()`.
-- **`SchemaIntrospector` requires an `indexFacets` set**, saying what it can report about an index; an empty one keeps the old behaviour.
-- **A naming strategy no longer renames a table or column that was named explicitly.**
-
-### Fixes
-
-- **An expression index was introspected as having no columns**, so `drift:check` reported a healthy `lower(email)` index as missing, and a camel-cased column matched nothing.
-- **`@Field({ unique })` was reported as an unexpected index on Postgres**, its constraint building an index no entity asked for.
-- **`generate:from-db` wrote entities mapping to columns the database has not got.**
-- **Every entity's primary key was reported as a nullable mismatch.**
+- `sync` creates an index added to an existing entity; `drift:check` reports one that no longer matches; `generate:from-db` writes expression, partial and covering indexes.
+- **Breaking:** `IndexSchema.columns` is now `entries` (an entry need not be a column - `raw('lower(email)')` is one); `DriftDetector`/`createDriftDetector` are replaced by `detectDrift()`; `SchemaIntrospector` requires an `indexFacets` set; a naming strategy no longer renames anything named explicitly.
+- An expression index introspected as having no columns, `@Field({ unique })` reported as an unexpected index on Postgres, and every primary key reported as a nullable mismatch.
 
 ## [0.25.1] - 2026-08-08
 
-### Fixes
-
-- **A bare `@Field({ references, onDelete })` silently dropped `onDelete`; prev release put the option only on `RelationOptions`, so a foreign key with no need for a populate-able relation had no way to cascade short of adding a `@ManyToOne` just to carry it. `FieldOptions` now accepts `onDelete` directly; a relation's own `onDelete` still wins when both are declared on the same column.
+- `FieldOptions` accepts `onDelete` directly, so a bare `@Field({ references, onDelete })` cascades without inventing a `@ManyToOne` to carry it.
 
 ## [0.25.0] - 2026-08-08
 
-Foreign keys: UQL declared them, but did not reliably create or enforce them.
+Foreign keys: UQL declared them but did not reliably create or enforce them.
 
-### Features
-
-- **`onDelete` and `onUpdate` per relation.** `@ManyToOne({ entity: () => Company, onDelete: 'CASCADE' })` lets the database cascade in one statement, where `cascade: 'delete'` walks the graph in JS. Until now the only control was the migrator's `defaultForeignKeyAction`, which applies to every key at once. Declared on the side that owns the key, as in TypeORM, Prisma and Drizzle.
-
-### Breaking
-
-- **`generateCreateTable` is gone**, from `SqlSchemaGenerator` and from the `SchemaGenerator` interface. A single-entity AST cannot resolve a relation to another entity, so it dropped those foreign keys and there was no correct way to call it. Use `generateCreateSchema(entities, { only })`, or `generateCreateTableFromNode` if you already hold an AST. `MongoSchemaGenerator` keeps its own, since collections have no cross-collection constraints.
-
-### Fixes
-
-- **`sync`, `sync --dry-run` and `generate:entities` left out most foreign keys.** Each built one table at a time, so only self-references survived: 38 constraints became 1 on the test schema. All three now emit every table first and the constraints after, which is also the only way a cyclic relation graph can be created at all. SQLite keeps them inline, since it cannot alter one in.
-- **Cascade delete removed the parent before its children**, so it failed with `violates foreign key constraint` against any schema with real constraints. Children go first now.
-- **`bun:sqlite` and Turso did not enforce foreign keys.** SQLite leaves enforcement off per connection, and the drivers disagree: `better-sqlite3`, `node:sqlite` and libSQL switch it on themselves, those two do not. `PRAGMA foreign_keys = ON` is now set on connect for all of them, so enforcement no longer depends on a driver default. Existing Bun or Turso databases holding rows that violate their own constraints will start reporting them.
-- **`sync --force` dropped tables in declaration order**, which says nothing about what references what. It drops dependents first now, with `CASCADE` where the dialect has it.
-- **A non-array `$in`/`$nin` matched nothing instead of failing.** It throws now. The types forbid it, but `/http` casts client JSON straight to `Query`.
+- **`onDelete`/`onUpdate` per relation**, so the database cascades in one statement where `cascade: 'delete'` walks the graph in JS.
+- `sync`, `sync --dry-run` and `generate:entities` left out most foreign keys - 38 constraints became 1 on the test schema. All three emit tables first, constraints after, which is also the only way a cyclic graph can be created.
+- Cascade delete removed the parent before its children, failing against any schema with real constraints.
+- **`bun:sqlite` and Turso did not enforce foreign keys** (SQLite leaves it off per connection and those drivers do not switch it on). `PRAGMA foreign_keys = ON` is set on connect now, so existing databases holding violating rows will start reporting them.
+- **Breaking:** `generateCreateTable` is gone - a single-entity AST cannot resolve a relation, so it dropped those foreign keys. Use `generateCreateSchema(entities, { only })`.
 
 ## [0.24.7] - 2026-08-07
 
-### Fixes
-
-- **A read returned whatever the driver returned, not the type the field declares.** A `vector` column arrived as pgvector's text, `type: Boolean` as `1` on every engine with no boolean type, and `type: Number` as `'9'` from node-postgres, auto-increment ids included. All of them type-check and survive a mocked test, so they surfaced only as arithmetic on real rows going quietly wrong. Reads, streams and `aggregate()` now decode by the entity's declaration, and the pg-family and MariaDB pools decode wide integers at the wire. A column declared by its SQL type (`type: 'decimal'`, `type: 'boolean'`) is covered too, and `type: BigInt` stays a `bigint` instead of being widened to a number.
-- **`aggregate()` returned a `$sum` as a string.** Postgres widens a sum over BIGINT to NUMERIC, which no driver can know was meant as a JS number. `$count`/`$sum`/`$avg` now come back as numbers, and `$min`/`$max` as the aggregated field's own type, matching what the result type already claimed.
-- **`$having` threw on operators its own type accepts.** It carried a partial copy of the WHERE operator dispatch, so a text operator on a `$min`/`$max` (`$having: { biggest: { $startsWith: 'A' } }`) type-checked and then failed with `unsupported HAVING operator`. Both paths now share one renderer, which also makes `$having: { alias: { $eq: null } }` emit `IS NULL` instead of a never-true `= NULL`.
+- **A read returned whatever the driver returned, not the type the field declares.** A `vector` arrived as pgvector's text, `type: Boolean` as `1`, `type: Number` as `'9'` from node-postgres - auto-increment ids included. Reads, streams and `aggregate()` decode by the entity's declaration now.
+- `aggregate()` returned `$sum` as a string; `$count`/`$sum`/`$avg` are numbers and `$min`/`$max` the field's own type.
+- `$having` threw on operators its own type accepts; it shares the `WHERE` renderer now, which also makes `$having: { alias: { $eq: null } }` emit `IS NULL`.
 
 ## [0.24.6] - 2026-08-05
 
-### Fixes
-
-- **`$exclude` could subtract the keys a relation is assembled from**, leaving `$populate` unfilled. A joined row's primary key and a to-many's foreign key now outlive the projection, as they already did under a falsy `$select`.
-- **MongoDB ignored `$select` and `$exclude` whenever a relation was populated or filtered on**, returning every column. The aggregation pipeline now projects after its lookups, at the top level and inside each `$lookup`; same for `$vectorSearch`.
-- **A many-to-many `$populate` sent the target's relation query to the join table**, so `$exclude` threw and `$where` failed with "no such column". Both resolve against the target now. `$sort` on a many-to-many is still unsupported.
-
-## [0.24.5] - 2026-08-03
-
-### Fixes
-
-- **`RelationOptions.entity` was optional**, so a hand-built relation could omit the one thing every path needs and only find out when `defineRelation` threw. It is required now, which is also what `RelationMeta` and the three `Required<Pick<>>` wrappers around it had been re-stating.
-
-## [0.24.4] - 2026-08-03
-
-### Fixes
-
-- **`defaultValue` rejected a JSONB column's default.** 0.24.3 pinned it to the field's declared type along with the generators, but it is the DDL literal: a JSONB column defaults with the string it stores, `defaultValue: '{}'`, whatever the property's TypeScript type is. `onInsert`, `onUpdate` and `softDelete` do stamp the property, so they keep the check.
+- `$exclude` could subtract the keys a relation is assembled from, leaving `$populate` unfilled.
+- MongoDB ignored `$select`/`$exclude` whenever a relation was populated or filtered on, returning every column.
+- A many-to-many `$populate` sent the target's relation query to the join table.
 
 ## [0.24.3] - 2026-08-03
 
-### Fixes
-
-- **`@Field({ references })` with no `type` left the property unchecked**, so a `string` foreign key to a numeric primary key compiled into a column that disagreed with it. It has to hold the referenced key's type now; declaring a `type` still opts out, being what the column is resolved from instead.
-- **`onInsert`, `onUpdate`, `defaultValue` and `softDelete` took any value**, so `@Id({ type: 'uuid', onInsert: () => 42 })` compiled and stamped a number into a uuid column. They produce what the field declares now, on `defineEntity` as well as the decorators.
+- `@Field({ references })` with no `type` left the property unchecked, so a `string` foreign key to a numeric primary key compiled.
+- `onInsert`/`onUpdate`/`defaultValue`/`softDelete` produce what the field declares, so `@Id({ type: 'uuid', onInsert: () => 42 })` no longer compiles.
 
 ## [0.24.2] - 2026-08-03
 
-### Fixes
-
-- **Field names went unchecked in any project without `@types/node`.** `Scalar` named `Buffer`, an ambient Node global, so where nothing declares it - a browser or edge project - it resolved to nothing and collapsed `Scalar`, then `FieldKey`, to `any`: `$select`, `$where`, `$sort`, `@Index`, `mappedBy` and `defineEntity({ fields })` took any string at all, and said nothing. `Scalar` says `Uint8Array` now, which every `Buffer` satisfies.
-- **A `raw` callback needed `= {}`, a `!` on each option and a `void` on its body.** Its options were typed optional and its return `void | Scalar`, and the one caller does neither. `virtual: raw(({ ctx }) => ctx.append('1'))` compiles as written now.
-- **A to-many relation with no `mappedBy`, `through` or `references`, or a `mappedBy` naming nothing on the target, failed mid-query** against columns nobody has. The first is a compile error now; both throw when the entity is first resolved.
-- **`@OneToMany({ entity, through })` derived a foreign key on the owner** - a spurious column in its DDL - **instead of the junction's pair.** It joins through the junction now.
-- **A `@Field({ references })` column got the relation it describes only when some *other* entity pointed `through` at its table**, so a junction written as two plain columns was `$populate`-able and carried foreign-key constraints in one graph and not in another. Every such column now gets its many-to-one, and a junction that declares its own relations keeps them - `cascade` included, where they used to be discarded and rebuilt.
-- **A to-many mapped by the other side's inverse** - neither side owning the foreign key - **produced a relation with no join columns**, then read column `undefined` at query time. It throws when the entity resolves, like the other two join errors above.
-- **`references` skipped the junction check** it points into, and left a `mappedBy` callback unresolved. Both now happen whether or not the columns were named by hand.
+- **Field names went unchecked in any project without `@types/node`.** `Scalar` named `Buffer`, an ambient Node global, so in a browser or edge project it collapsed `Scalar` and then `FieldKey` to `any`: `$select`, `$where`, `$sort`, `@Index` and `mappedBy` took any string at all, silently. `Scalar` says `Uint8Array` now.
+- A to-many with no `mappedBy`/`through`/`references`, or a `mappedBy` naming nothing on the target, failed mid-query against columns nobody has. The first is a compile error, both throw when the entity resolves.
+- `@OneToMany({ entity, through })` derived a foreign key on the owner - a spurious column in its DDL - instead of the junction's pair.
+- A `@Field({ references })` column now always gets its many-to-one, so a junction written as two plain columns behaves the same in every graph.
 
 ## [0.24.1] - 2026-08-02
 
-### Relations: two types that rejected correct code
-
-```ts
-@OneToMany({ entity: () => Post, mappedBy: (post) => post.author })  // no `!` needed now
-@ManyToMany({ entity: () => Tag, through: () => PostTag })           // compiles now
-```
-
-- **`mappedBy` callbacks needed a `!`.** `RelationKeyMap` mapped over `keyof E`, inheriting the entity's optional modifiers, so a key read off it was `'author' | undefined`. It maps over `Key<E>` now, matching the metadata it is built from. A misspelled key is still rejected, at the property access instead of the return type.
-- **`through` was typed against the target**, and collapsed to `never` for any target with no relations of its own. A pivot is not a relation value of the target and nothing about it is derivable from `E`. What the compiler cannot check, the metadata does: a pivot missing a derived join column now throws when the entity is first resolved, instead of emitting SQL for a column that is not there.
+- `mappedBy` callbacks no longer need a `!`, and `@ManyToMany({ through })` compiles for a target with no relations of its own. A pivot missing a derived join column throws when the entity resolves.
 
 ## [0.24.0] - 2026-08-02
 
-### The pool runs every operation
+- **The pool runs every operation.** `QuerierPool` implements the whole `UniversalQuerier`, so a helper can take "a querier, or the pool" and the caller decides whether it is atomic:
 
-The pool had six read methods and nothing else, so a function that writes could not take "a querier, or the pool". `QuerierPool` now implements the whole `UniversalQuerier`, which makes that interface the useful thing to accept:
+  ```ts
+  async function markPaid(db: UniversalQuerier, id: string) {
+    await db.updateOneById(Invoice, id, { status: 'paid' });
+  }
 
-```ts
-async function markPaid(db: UniversalQuerier, invoiceId: string) {
-  await db.updateOneById(Invoice, invoiceId, { status: 'paid' });
-}
+  await markPaid(pool, id); // its own unit of work
+  await pool.transaction((querier) => markPaid(querier, id)); // one step of a larger one
+  ```
 
-// On its own: the pool lends it a connection and commits.
-await markPaid(pool, invoiceId);
-
-// As one step of something larger, with nothing changed in the helper.
-await pool.transaction(async (querier) => {
-  await markPaid(querier, invoiceId);
-  await querier.insertOne(Payment, payment);
-});
-```
-
-Atomicity is the caller's decision, not a property baked into each helper.
-
-`pool.op(...)` is still exactly `pool.withQuerier((querier) => querier.op(...))`. Two pool calls are two units of work; when they have to commit together, that is a transaction. `findManyStream` works on the pool too, and holds its connection until the loop ends.
-
-### Fixes
-
-- Streaming as the first operation on a freshly acquired querier threw `pool querier not connected` on every pooled driver. It was the one query path that never connected on its own.
+- Streaming as the first operation on a freshly acquired querier threw `pool querier not connected` on every pooled driver.
 
 ## [0.23.0] - 2026-08-01
 
-### Decorators are now the standard TC39 ones (breaking)
+### Breaking: decorators are the standard TC39 ones
 
-`experimentalDecorators` and `emitDecoratorMetadata` are gone; no compiler flags, no `reflect-metadata`.
+No `experimentalDecorators`, no `emitDecoratorMetadata`, no `reflect-metadata`. A codemod does most of the migration: `npx uql-codemod --project=tsconfig.json --dry-run`. See the [upgrade guide](https://uql-orm.dev/upgrade-guide).
 
-A codemod does most of the migration, including the `@InjectQuerier()` rewrite:
+- **`type` is required on every `@Field`/`@Id`** and `entity` on every relation, since nothing reflects any more. In exchange the annotation is checked against the property: `@Field({ type: String })` on a `number` is a compile error instead of a wrong column.
+- `@InjectQuerier()` and `Relation<T>` are gone; `@Log()` and `@Serialized()` with them.
+- `target` must not be `esnext`, the one target where TypeScript emits decorator syntax untransformed.
+- NestJS projects must use `defineEntity`: Nest's DI needs parameter decorators, and one `tsconfig.json` cannot mix specs.
+- `uql.config.ts` needs a runtime that transforms TypeScript (`bun`, or `node --import tsx`). The `jiti` peer is gone.
+- **Node 24 is the minimum** (`>=20` is end of life).
 
-```sh
-npx uql-codemod --project=tsconfig.json --dry-run
-```
+### Also
 
-See the [upgrade guide](https://uql-orm.dev/upgrade-guide) for the rest. What changes:
-
-- **`type` is required on every `@Field`/`@Id`**, and `entity` on every relation, since nothing reflects any more. In exchange the annotation is now *checked against the property*: `@Field({ type: String })` on a `number` is a compile error instead of a silently wrong column.
-- **`@InjectQuerier()` is gone**; the standard spec has no parameter decorators. A `@Transactional()` method reads its querier with `currentQuerier()`.
-- **`Relation<T>` is gone.** It only existed to work around circular imports that reflection itself caused.
-- **`target` must not be `esnext`**, the one target where TypeScript emits decorator syntax untransformed.
-- **NestJS projects must define entities with `defineEntity`.** Nest's DI needs parameter decorators, so those projects keep `experimentalDecorators` on, and one `tsconfig.json` cannot mix specs.
-- **`uql.config.ts` needs a runtime that transforms TypeScript** (`bun`, or `node --import tsx`) when it imports entity classes. The `jiti` peer dependency is gone.
-- `@Log()` and `@Serialized()` were removed; a standard-spec decorator cannot preserve a generic method's signature.
-
-### SQLite with no native dependency
-
-`NodeSqliteQuerierPool` runs on Node's built-in `node:sqlite`, so SQLite no longer needs a `better-sqlite3` native build. `better-sqlite3` stays supported and remains the faster choice for read-heavy work.
-
-```ts
-import { NodeSqliteQuerierPool } from 'uql-orm/sqlite';
-
-const pool = new NodeSqliteQuerierPool('app.db');
-```
-
-### `await using` releases the querier
-
-Every querier now implements `Symbol.asyncDispose`, so a unit of work cannot leak a connection on an early return or a throw.
-
-```ts
-await using querier = await pool.getQuerier();
-```
-
-### Node 24 is the minimum
-
-`engines.node` moves from `>=20` (end of life since April 2026) to `>=24`, the active LTS.
-
-### Transactions have one owner
-
-`querier.transaction()` no longer releases the connection, as the docs always said it didn't. It released early inside `pool.withQuerier()`, so anything after the transactional section ran on a connection already back in the pool. `pool.transaction()` and `@Transactional()` are unchanged.
-
-Two failures went with it: a connection error while *starting* a transaction was reported as `not a pending transaction` instead of the real cause, and a failing rollback replaced the error that caused it.
-
-### Fixes
-
-- `drift:check` reported the migrations table itself as an unexpected table. It is excluded now, and `DriftDetectorOptions.excludeTables` lets you exclude more.
-- `DriftDetectorOptions.checkDefaults` was declared and never read, so asking for default mismatches reported nothing.
-
+- **`NodeSqliteQuerierPool`** runs on `node:sqlite`, so SQLite needs no native build. `better-sqlite3` stays supported and faster for read-heavy work.
+- **`await using querier = await pool.getQuerier()`** releases on scope exit, so an early return or a throw cannot leak a connection.
+- `querier.transaction()` no longer releases the connection, as the docs always said. It released early inside `pool.withQuerier()`, so anything after the transactional section ran on a connection already back in the pool.
 
 ## [0.22.0] - 2026-07-31
 
-### Vector search works on every engine that has it
-
-It had only ever been exercised on Postgres. Verified live on pgvector 0.8.2, CockroachDB 26.2, MariaDB 12.3, MySQL 9.7, sqlite-vec, libSQL and Turso.
-
-### Index entries take expressions, prefix lengths, order, `INCLUDE` and operator classes
-
-```ts
-@Index(['tenantId', { column: 'createdAt', order: 'desc' }])
-@Index([raw('lower("email")')], { unique: true })
-@Index([{ column: 'body', length: 64 }])
-```
-
-`table.index(...)` and `builder.createIndex(...)` take the same entries and options. What an engine cannot express is refused when the migration is generated, naming the index.
-
-### Turso: `uql-orm/turso` and `uql-orm/turso/local`
-
-Turso Cloud over `fetch()` alone (edge-safe), and the embedded Rust engine with native streaming. Both report the SQLite dialect, so entities, queries and migrations are unchanged; both peers are optional.
-
-### Fixes
-
-
-- `uql sync` printed a plan and applied nothing unless `--force`. `--dry-run` now prints the statements it would run, `--unsafe` allows drops.
-- `addColumn`/`alterColumn` created a `VARCHAR` whatever type the migration declared.
-- Partial indexes (`where`) were silently widened to the whole table; `type` made `CREATE INDEX` invalid on the SQLite family; `type: 'fulltext'` produced an index MySQL and MariaDB reject, so `$text` could not work there.
-- Inverse one-to-one relations emitted a reversed foreign key.
-- SQLite under Bun lost every inserted id. Turso lost every `$push` onto a non-empty array.
-- MongoDB `$text` never reached the driver; `$vectorSearch` now requires `$limit` and caps `numCandidates`.
-- SQLite introspection sent 10 statements per table where 7 suffice, and described an expression index as a column named `null`.
-- Cloudflare D1 released silently with an open transaction, reporting an abandoned unit of work as clean.
-
-### Breaking
-
-- `addColumn(table, cb)` and `alterColumn(table, cb)` - the callback declares the column: `(c) => c.timestamp('createdAt')`.
-- `IndexDecoratorOptions` is now `IndexOptions`.
-- `namingStrategy` gone from `MigratorOptions` and the migrate config (it never reached a SQL generator - set it on the pool); `MigrationBuilderOptions` gone.
+- **Vector search verified on every engine that has it** - pgvector, CockroachDB, MariaDB, MySQL, sqlite-vec, libSQL, Turso. It had only ever been exercised on Postgres.
+- **Index entries take expressions, prefix lengths, order, `INCLUDE` and operator classes**: `@Index([raw('lower("email")')], { unique: true })`. What an engine cannot express is refused when the migration is generated.
+- **Turso**: `uql-orm/turso` (Cloud over `fetch`, edge-safe) and `uql-orm/turso/local` (embedded, native streaming).
+- `uql sync` printed a plan and applied nothing unless `--force`; `--dry-run` prints statements, `--unsafe` allows drops.
+- `addColumn`/`alterColumn` created a `VARCHAR` whatever the migration declared; partial indexes were widened to the whole table; inverse one-to-one emitted a reversed foreign key; SQLite under Bun lost every inserted id.
+- **Breaking:** `addColumn(table, cb)`/`alterColumn(table, cb)` take a callback declaring the column; `IndexDecoratorOptions` is `IndexOptions`; `namingStrategy` is gone from `MigratorOptions` (set it on the pool).
 
 ## [0.21.0] - 2026-07-30
 
-### `reflect-metadata` and `jiti` are now optional peer dependencies (breaking)
-
-Both were mandatory for a single use each: `reflect-metadata` (264 KB) for one `Reflect.getMetadata('design:type', ...)` call, `jiti` (1.8 MB) for loading a TypeScript `uql.config.ts`. `npm i uql-orm` installs neither now.
-
-- `@Field()` with no explicit `type` (or `@Relation()` with no `entity`) needs `reflect-metadata` installed and imported once before any entity; without it the field throws, naming both remedies. Entities that always declare types are unaffected.
-- `uql-migrate` with a `uql.config.ts` needs `npm i -D jiti`; passing config inline does not. `uql-orm/migrate` dropped from ~99 KB to 35 KB gzip.
-
-### MySQL/MariaDB inline literals no longer go through `sqlstring` (behavior change)
-
-`Dialect.escape` now shares the Postgres/SQLite value handling: byte-for-byte identical across 29 value shapes, diverging only where `sqlstring` emitted broken SQL. `Uint8Array` rendered `` `0` = 255 `` instead of `X'ff00'`; plain objects, `Set`, `Map` and class instances rendered assignment fragments or `'[object Object]'` and now throw; `NaN`/`Infinity` now render `NULL`; `bigint` is no longer quoted.
-
-### Relation filtering and `$size` on MongoDB
-
-`$where: { comments: { text: 'hi' } }` and `{ comments: { $size: { $gte: 2 } } }` now work on MongoDB, so the same serializable query runs on every driver. Each condition compiles to one correlated `$lookup` scoped by the target's own filters - no id lists are materialized - and composes inside `$or`.
-
-### Fixes
-
-- **Relation subqueries applied none of the target's filters, bypassing `security: true` (behavior change).** A client-supplied `$size` could count rows it cannot read, and a relation filter matched parents through soft-deleted children that `$populate` excluded. To match trashed rows, constrain the field: `{ comments: { deletedAt: { $ne: null } } }`.
-- **Relation subqueries correlated on field keys instead of mapped column names**, so a renamed PK/FK referenced a column that does not exist; `$size` on a m1/11 relation also used the parent's PK rather than its FK. Combining `$size` with other conditions on one relation now throws instead of emitting a `$size` column.
-- **MongoDB addressed property names where the document stores something else.** `$select` returned a renamed field as `undefined`, `$sort` did not order, `$group` collapsed every row into one bucket, and `deleteOneById` stamped the property name while reads filtered the column - reporting a successful soft delete and leaving the document visible.
-- **MongoDB: `$populate` of an inverse one-to-one relation only worked when the query filtered by primary key**, was dropped entirely under a vector search, ignored its own `$where` and `$required`, and discarded `$limit`/`$skip`.
-- **MongoDB: `raw()` in `$where` crashed with a stack overflow or matched everything.** It throws now, as does a dotted path whose root is not a declared field.
-
-## [0.20.2] - 2026-07-29
-
-### Fixes
-
-- **`uql drift:check` reported column type drift as "in sync".** The report compares each type rendered as the dialect's SQL, but the CLI built it without passing the dialect, so every type formatted as `unknown` and compared equal to every other one. A column that is `VARCHAR(50)` in the entity and `INTEGER` in the database now reports a critical type mismatch and exits `1`, instead of passing silently.
+- **Breaking: `reflect-metadata` and `jiti` are optional peers.** Both were mandatory for one use each - 264 KB and 1.8 MB. `@Field()` with no explicit `type` needs `reflect-metadata` installed and imported once; `uql-migrate` with a TypeScript config needs `jiti`. `uql-orm/migrate` dropped from ~99 KB to 35 KB gzip.
+- **Relation filtering and `$size` on MongoDB**: `$where: { comments: { text: 'hi' } }` compiles to one correlated `$lookup` per condition, so the same query runs on every driver.
+- **Relation subqueries applied none of the target's filters, bypassing `security: true`.** A client-supplied `$size` could count rows it cannot read, and a relation filter matched parents through soft-deleted children.
+- MongoDB addressed property names where the document stores something else: `$select` returned a renamed field as `undefined`, `$sort` did not order, and `deleteOneById` reported success while leaving the document visible.
+- MySQL/MariaDB inline literals no longer go through `sqlstring`, which emitted `` `0` = 255 `` for a `Uint8Array` and `'[object Object]'` for a plain object.
 
 ## [0.20.1] - 2026-07-27
 
-### Fixes
-
-- **A `security: true` filter on a joined (m1/11) relation was skipped by `$populate` with no explicit `$where` on it, on every driver. ** Now we enforced unconditionally, same as an explicit `$where` already was.
-- **PostgreSQL/CockroachDB: `$size` misbound its value when it wasn't the first condition in `$where`.** `{ name: 'Acme', tags: { $size: 3 } }` reused placeholder `$1` for both conditions.
-- **PostgreSQL/CockroachDB: `upsertOne`/`upsertMany` bound the wrong value to the 2nd+ auto-filled `onUpdate` column omitted from the payload.**
-- **SQLite/MySQL/MariaDB: a nested `$elemMatch` on an array-of-arrays field could return zero rows instead of the matching ones** (only reachable by bypassing the type system - no typed query is affected).
+- A `security: true` filter on a joined relation was skipped by a `$populate` with no explicit `$where` on it, on every driver.
+- PostgreSQL/CockroachDB: `$size` misbound its value when it was not the first condition, and upserts bound the wrong value to the 2nd+ auto-filled `onUpdate` column.
 
 ## [0.20.0] - 2026-07-26
 
-### `$merge` renamed to `$set` (breaking)
-
-"Merge" was misleading: the operator is a *shallow*, non-recursive key assignment (`null` stores a null, unlike RFC 7396 merge patch), and UQL already used an actual merge function - `JSON_MERGE_PRESERVE` - for `$push`. `$set` now matches MongoDB's own update `$set` and the `$unset`/`$push`/`$pull` vocabulary around it. `JsonPushFields` is renamed `JsonArrayFields` to match.
-
-```ts
-querier.updateOneById(Company, id, { kind: { $merge: { public: 1 } } }); // before
-querier.updateOneById(Company, id, { kind: { $set: { public: 1 } } }); //   after
-```
-
-### `$pull`: remove elements from a JSON array
-
-The counterpart to `$push` - removes every element equal to the given value, on PostgreSQL, CockroachDB, MySQL, MariaDB, SQLite and MongoDB. A `$pull` on an absent key (or `NULL` column) is a no-op: it never creates the key or nulls the document. Operators apply in a fixed order - `$pull` -> `$set` -> `$push` -> `$unset` - so `$pull` and `$push` on the same key atomically replace an element:
-
-```ts
-await querier.updateOneById(Company, id, { kind: { $pull: { tags: 'old' }, $push: { tags: 'new' } } });
-```
-
-### `$push` semantics unified (breaking)
-
-Appending to a missing key now creates the array on every dialect. Previously MariaDB's `JSON_ARRAY_APPEND` returned `NULL` for a missing path and **wrote that `NULL` back, destroying the document**; MySQL silently no-opped. Both now use `JSON_MERGE_PRESERVE`, matching PostgreSQL and SQLite's existing behavior.
-
-### MongoDB JSON operators (breaking)
-
-`$set`/`$unset`/`$push`/`$pull` now map onto MongoDB's own update operators. Previously they were **written into the document as literal data** - `{ kind: { $push: { tags: 'x' } } }` stored the operator object itself. MongoDB rejects two operators on one path in a single update document, so a payload that needs it is emitted as an aggregation-pipeline update instead, composed in the same `$pull -> $set -> $push -> $unset` order the SQL dialects apply.
-
-### Vector indexes must declare their metric (breaking)
-
-`distance` is now required for `hnsw`/`ivfflat`/`vector` index types, and rejected for every other type:
-
-```ts
-@Index(['embedding'], { type: 'hnsw' })                       // compile error: missing distance
-@Index(['embedding'], { type: 'btree', distance: 'cosine' })  // compile error: distance on a non-vector index
-@Index(['embedding'], { type: 'hnsw', distance: 'cosine' })   // ok
-```
-
-Omitting it silently changed the generated DDL: MariaDB's `DISTANCE=` defaults to euclidean (a cosine query full-scans instead of using the index) and pgvector has no default operator class. MongoDB's `vectorSearch` is exempt (its generator emits no metric).
-
-### JSON dot-path and `$elemMatch` querying (fixes)
-
-Filtering/sorting by a JSON dot-path (`{ 'kind.tags': { $size: 2 } }`) and matching array elements (`$elemMatch`) now behave consistently across all 8 drivers:
-
-- **MySQL/MariaDB dot-paths.** MySQL's `->`/`->>` need a full `'$.path'`, not a bare key (`` `kind`->>'public' `` raised "Invalid JSON path expression"). MariaDB's `$all`/`$size`/`$elemMatch` need `JSON_EXTRACT`, not `->` (a syntax error there).
-- **Typed comparisons.** A JSON scalar now compares in the representation every engine agrees on: numbers numerically, booleans as JSON, strings as text - fixes silent MySQL boolean mismatches (`'true'` vs `1`) and `operator does not exist: text = integer` on typed-parameter drivers. Applies to `$eq`/`$ne`/`$in`/`$nin`, both on dot-paths and inside `$elemMatch`.
-- **`$elemMatch: { count: 5 }` and `$elemMatch: { count: { $eq: 5 } }` are now identical.** The plain-value form used to skip the numeric cast and turn `{ field: null }` into `= NULL` (which never matches).
-- **MongoDB's `$elemMatch`** now translates its inner UQL operators (`$startsWith`, `$ilike`, `$between`, ...) instead of passing them straight to the server, which rejected them as unknown.
-
-### Fixes
-
-- **`$includes` was case-insensitive on PostgreSQL and CockroachDB** - it rendered as `ILIKE` instead of `LIKE`, because the operator name happens to start with `$i`. `$iincludes` (the actually-case-insensitive one) is unaffected; MySQL/MariaDB/SQLite were never affected, since their `LIKE`/`ILIKE` render identically there.
-- **PostgreSQL full-text search on multi-word queries**: `$text` now uses `websearch_to_tsquery` instead of `to_tsquery`, which raised `syntax error in tsquery` for input it couldn't parse (including a plain two-word search). `$text` also accepts an optional `$config` (e.g. `'english'`).
-- **JSON operators on a `NOT NULL` column** no longer wrap it in `COALESCE`, keeping MySQL 9's partial in-place JSON update applicable.
-- **`$unset` on PostgreSQL** removes all keys with one `- $N::text[]` (one bound parameter) instead of chaining one `-` per key.
-- **`$unset` on an untyped `Json<unknown>` field** was typed `never[]` (no key could be named); it's now `string[]`.
-- **JSON operators on an array payload** (`Json<T[]>`) are now a compile error - none of the four operators is meaningful on an array column (PostgreSQL's `||` would concatenate arrays, `JSON_SET(arr, '$.k', v)` is a no-op on MySQL/SQLite); replace the whole value instead.
+- **Breaking: `$merge` is `$set`.** The operator is a shallow key assignment, not an RFC 7396 merge patch, and now matches MongoDB's own vocabulary. `JsonPushFields` is `JsonArrayFields`.
+- **`$pull`** removes every element equal to a value, on every SQL dialect and MongoDB. Operators apply in a fixed order - `$pull` → `$set` → `$push` → `$unset` - so `$pull` and `$push` on one key atomically replace an element.
+- **Breaking: `$push` onto a missing key creates the array everywhere.** MariaDB's `JSON_ARRAY_APPEND` returned `NULL` for a missing path and **wrote that `NULL` back, destroying the document**; MySQL silently no-opped.
+- **Breaking: MongoDB JSON operators map onto MongoDB's own.** They used to be written into the document as literal data - `{ kind: { $push: { tags: 'x' } } }` stored the operator object itself.
+- **Breaking: vector indexes must declare `distance`.** Omitting it silently changed the DDL: MariaDB defaults to euclidean, so a cosine query full-scanned.
+- JSON dot-paths and `$elemMatch` now behave the same on all 8 drivers - MySQL's `->>` needed a full `'$.path'`, MariaDB's `$size` needed `JSON_EXTRACT`, and a JSON scalar now compares in the representation every engine agrees on.
+- `$includes` was case-insensitive on PostgreSQL and CockroachDB, rendering as `ILIKE` because the operator name starts with `$i`.
+- PostgreSQL `$text` uses `websearch_to_tsquery`, which no longer raises `syntax error in tsquery` on a plain two-word search.
 
 ## [0.19.0] - 2026-07-24
 
-### Operators typed per field (breaking)
-
-`$where` operators are now gated by field type: string ops (`$like`, `$regex`, `$startsWith`, ...) on strings, ordering ops (`$lt`, `$gt`, `$between`) on comparable types, array ops (`$all`, `$size`, `$elemMatch`) on arrays. Mismatches are compile errors:
-
-```ts
-{ age: { $like: '3%' } }         // string op on a number
-{ active: { $between: [0, 1] } } // ordering op on a boolean
-{ name: { $size: 3 } }           // array op on a string
-```
-
-### Typed JSON dot-paths (breaking)
-
-`$where`/`$sort` dot-paths are restricted to real `Json<T>` fields and resolve each path's value type, so a typo'd path (`'settings.thme'`) or a mismatched value/operator is a compile error. `Json<unknown>` fields stay permissive. Previously any dotted key compiled with an `unknown` value.
-
-### New
-
-- **Raw `$select` projections** for computed columns (SQL dialects only): `$select: [raw('*'), raw('LOG10("votes" + 1)', 'hotness')]`.
+- **Breaking: operators are typed per field.** String ops on strings, ordering ops on comparable types, array ops on arrays - `{ age: { $like: '3%' } }` is a compile error now.
+- **Breaking: JSON dot-paths are restricted to real `Json<T>` fields** and resolve each path's value type, so a typo'd path is a compile error. `Json<unknown>` stays permissive.
+- Raw `$select` projections for computed columns: `$select: [raw('*'), raw('LOG10("votes" + 1)', 'hotness')]`.
 
 ## [0.18.0] - 2026-07-23
 
-### DISTINCT aggregates
-
-- **New `$countDistinct` / `$sumDistinct` / `$avgDistinct` aggregate ops**, e.g. `$agg: { uniques: { $countDistinct: 'email' } }` → `COUNT(DISTINCT "email")`. Identical across all SQL dialects and MongoDB (compiled to `$addToSet` + a `$project` reducer).
-
-### Fixes
-
-- **`$count: 'field'` now counts non-null values on MongoDB**, matching SQL `COUNT("field")`. Previously MongoDB counted every row regardless of the field.
-
-### Stricter aggregate types
-
-- `'*'` is accepted only by `$count` (not `$sum`/`$avg`/etc.), and each `$agg` entry must hold exactly one operation - both are now compile errors.
+- `$countDistinct`/`$sumDistinct`/`$avgDistinct`, identical on every SQL dialect and MongoDB.
+- `$count: 'field'` counts non-null values on MongoDB, matching SQL.
+- `'*'` is accepted only by `$count`, and each `$agg` entry must hold exactly one operation.
 
 ## [0.17.1] - 2026-07-20
 
-### Simpler, more consistent logging options (breaking)
-
-- **`slowQuery` is now a plain number**, not a wrapper object: `slowQuery: { threshold: 200 }` becomes `slowQuery: 200`.
-- **`logParams` is renamed `logValues` and moved out of `slowQuery`.** It's a top-level option (`ExtraOptions`/`MigratorOptions`) that now applies to regular query logging too, not just slow-query alerts - previously there was no way to redact bound values from regular `query`-level logs at all.
-- **`logValues` now defaults to `false`.** Bound values may hold PII, so they're no longer logged unless you opt in with `logValues: true`.
-- **`QueryError.values` can now be attached too.** With `logValues: true`, a failing query's error carries its bound values, not just `.query` - 0.17.0 attached `.query` only, unconditionally never `.values`.
-
-```ts
-// before
-{ logger: true, slowQuery: { threshold: 200, logParams: false } }
-// after (values already omitted by default; only needed if you want them back)
-{ logger: true, slowQuery: 200 }
-```
-
-### Fixes
-
-- **`findManyStream` errors now carry the failing SQL too.** The `.query` enrichment added in 0.17.0 covered `all()`/`run()`/`findMany()`/etc., but streamed queries slipped through since they don't go through the same code path - a bad column or missing table in `findManyStream` now surfaces `.query` on the error just like every other method.
-- **Transaction statements (`BEGIN`/`COMMIT`/`ROLLBACK`) also carry `.query` now.** Same gap as `findManyStream` - they call the driver directly rather than through `all()`/`run()`, so a failed isolation level or commit previously threw with no query context at all.
+- **Breaking: simpler logging options.** `slowQuery: { threshold: 200 }` is `slowQuery: 200`; `logParams` is `logValues`, top-level, and applies to regular query logging too.
+- **`logValues` defaults to `false`**, since bound values may hold PII.
+- `findManyStream` and transaction statements carry the failing SQL on `.query` like every other method.
 
 ## [0.17.0] - 2026-07-19
 
-### Stricter, simpler query types (breaking)
-
-- **Typo'd query keys are now compile errors.** Find methods take a concrete query type, so an unknown key in `$select`/`$where`/`$populate`/`$sort` fails to compile - previously a typo sitting next to a valid field slipped through.
-- **Find results are the plain entity.** `findMany`/`findOne`/etc. no longer auto-type the vector-search distance field; annotate the result with the exported `WithDistance<Article, 'distance'>` when you `$project` a score.
-- **`$having` values are typed per column.** A `$min`/`$max` over a non-numeric column now compares against that column's own type instead of `number`, and a computed aggregate wrongly placed in `$group` (it belongs in `$agg`) is a compile error.
-
-SQLite (and LibSQL/Turso, Cloudflare D1, Bun's native SQLite) now use `RETURNING` too, so `insertMany`/`upsertOne`/`upsertMany` return exact IDs there instead of guessed rowids or nothing at all. Also fixes a MySQL bug where `upsertMany` could return IDs that don't exist.
-
-### Improvements
-
-- **SQLite family native `RETURNING`** - better-sqlite3, LibSQL/Turso, Cloudflare D1, and Bun SQL's SQLite mode all get exact per-row IDs on `insertOne`/`insertMany`, and `upsertOne`/`upsertMany` now return real IDs where they previously returned nothing.
-- **MongoDB `upsertMany` returns IDs** - `ids`/`firstId` now cover newly-inserted documents, matching `insertOne`/`insertMany`/`upsertOne`.
-
-### Fixes
-
-- **MySQL `upsertMany` could return IDs that don't exist.** A batch mixing an insert and an update reports `changes` as a weighted sum (1 for the insert, 2 for the update), which the old code mistook for a row count and used to guess sequential IDs - some of which were never real rows. `upsertMany` now reports only `changes` for a multi-row batch on MySQL; a single-row `upsertOne` is unaffected.
-- **LibSQL: releasing with an open transaction now throws** instead of silently discarding it, matching every other SQL adapter.
-- **Query errors now carry the failing SQL.** A thrown error from `all()`/`run()`/`findMany()`/etc. now has `.query` attached (the SQL text, or method name for non-SQL calls), even without a logger configured. Bound values are intentionally never attached, to avoid leaking sensitive parameters into error trackers.
+- **Breaking: typo'd query keys are compile errors.** A bad key in `$select`/`$where`/`$populate`/`$sort` used to slip through when it sat next to a valid one.
+- **Breaking: find results are the plain entity.** Annotate with `WithDistance<Article, 'distance'>` when you `$project` a vector score.
+- **The SQLite family uses `RETURNING`**, so `insertMany`/`upsertOne`/`upsertMany` return exact ids there instead of guessed rowids or nothing.
+- MySQL `upsertMany` could return ids that were never real rows: a mixed batch reports `changes` as a weighted sum, which the old code read as a row count.
 
 ## [0.16.0] - 2026-07-19
 
-### Type-safe aggregate API: `$group` + `$agg` (breaking)
+- **Breaking: `$group` and `$agg` are separate.** `$group` lists columns to group by, `$agg` holds the functions, and `$having`/`$sort` may only name what the query emits:
 
-`aggregate()` now separates grouping from computed columns. `$group` lists the columns to group by (typed against the entity, like `$select`); `$agg` holds the aggregate functions. This makes the whole query typo-proof - a bad group-by column, aggregated field, or `$having`/`$sort` alias is a compile error instead of a runtime SQL failure.
-
-```ts
-// before
-$group: { status: true, count: { $count: '*' } }
-// after
-$group: { status: true },
-$agg: { count: { $count: '*' } }
-```
-
-`$having` and `$sort` keys are now restricted to the grouped columns and computed aliases. An aggregate with neither `$group` nor `$agg` throws a clear error instead of emitting invalid SQL.
-
-## [0.15.6] - 2026-07-12
-
-### Improvements in type-safety
-
-- **`findOneById` result inference** - now infers projected vector-distance fields from `$sort`/`$project`, matching `findOne`/`findMany` (e.g. `$project: 'distance'` → `Entity & { distance: number }`).
-
-### Fixes in types
-
-- **`findOneById` no longer mutates the passed query object.**
-- **Browser client `findManyAndCount`** - the response now guarantees a numeric `count`.
-
-## [0.15.5] - 2026-07-12
-
-### Performance
-
-Query building is leaner on the paths that run for every query. Same SQL out, no behavior change, just pure optimizations while keeping code lean and maintainable.
-
-## [0.15.4] - 2026-07-11
-
-### Fixes
-
-- **Stricter operator/sort/aggregate validation** - an unrecognized `$where`/`$having` operator or `$group` aggregate function now always throws a clear error instead of silently being ignored (or, for `$group`, ending up in the generated SQL). Affects all SQL dialects and MongoDB. Breaking: `$sort` direction must be the number `-1`/`1` or the string `'asc'`/`'desc'` - a numeric string like `'-1'` happened to work before and now throws.
-- **MariaDB vector index distance** - creating a vector index with a distance metric MariaDB doesn't support silently built the index with `euclidean` instead of erroring. Now throws a clear error instead.
-
-## [0.15.3] - 2026-07-11
-
-CockroachDB integration tests added, fixing upsert, ID generation, and `$text` search, and adding full vector search support. Two related Bun SQL driver bugs (CockroachDB JSON updates, MariaDB upsert `created`) are also fixed.
-
-### Features
-
-- **CockroachDB vector search** - `$sort`/`$vector` uses the same pgvector-compatible distance operators as Postgres for `cosine`/`l2`/`inner` (`<=>`/`<->`/`<#>`), and schema generation emits CockroachDB's native `CREATE VECTOR INDEX` syntax. `l1`/`hamming` and the `halfvec`/`sparsevec` types aren't implemented by CockroachDB itself, so those now throw a clear error instead of failing at the database.
-
-### Fixes
-
-- **CockroachDB `upsertOne` / `upsertMany`** - previously errored with `column "xmax" does not exist`; now works, with `created` always `undefined` (CockroachDB has no insert-vs-update signal).
-- **CockroachDB auto-generated IDs** - the default primary key used `SERIAL` (CockroachDB's `unique_rowid()`), producing values beyond `Number.MAX_SAFE_INTEGER` that get corrupted as JS numbers. Now uses a sequential `IDENTITY` column instead.
-- **CockroachDB `$text` search** - now generates `to_tsvector`/`to_tsquery`, which CockroachDB supports.
-- **CockroachDB via Bun SQL** - `$merge`/`$push` on a JSONB column could silently corrupt the value or throw, since it didn't get the same wire-encoding fix Postgres has on the Bun driver. Fixed.
-- **MariaDB via Bun SQL** - upsert's `created` could report `false` on a fresh insert; now correctly `undefined`.
+  ```ts
+  $group: { status: true }, $agg: { count: { $count: '*' } }
+  ```
 
 ## [0.15.2] - 2026-07-10
 
-`insertOne` / `insertMany` now return the right IDs on every database (and `undefined` instead of a made-up one when the driver reports none), a batch may mix records with different columns, and oversized batches are split automatically to stay under the driver's bind-parameter limit.
-
-### Improvements / unifications
-
-- **Heterogeneous batch inserts** - records may carry different columns; UQL inserts the union and fills each gap with the column default (`DEFAULT`, or `NULL` on SQLite). An explicit id is kept; an omitted one takes the default:
-
-  ```ts
-  await querier.insertMany(User, [{ name: 'Ada', email: 'ada@uql-orm.dev' }, { name: 'Alan' }]);
-  // one INSERT; Alan's missing email uses its default → ids [1, 2]
-  ```
-
-- **Automatic chunking** - batches past the driver's bind limit (PostgreSQL/MySQL 65535, SQLite 32766, D1 100) split into several `INSERT`s, IDs still in input order. Wrap in a transaction for all-or-nothing across splits.
-
-- **MariaDB native `INSERT ... RETURNING`** - an exact id per row, not the first-id-plus-offset guess other tools use on MariaDB.
-
-- **Clustered MySQL `auto_increment_increment` detected automatically** - a stride > 1 stays correct (`[10, 12, 14]`, not `[10, 11, 12]`); probed once per connection, only when inferring batch IDs.
-
-### Fixes
-
-- **No fabricated IDs** - a DB-generated key with no `onInsert` (e.g. a `@Id()` string/UUID column) now returns `undefined` instead of invented `0, 1, 2…` / SQLite rowids. Supplied IDs and `@Id({ onInsert })` values are unchanged.
-- **Mixed batches** - explicit and auto-increment IDs in one batch: provided IDs return as-is, generated ones exact on `RETURNING` dialects, `undefined` (never misaligned) elsewhere:
-
-  ```ts
-  await querier.insertMany(User, [{ name: 'a' }, { id: 5000, name: 'b' }, { name: 'c' }]);
-  // PostgreSQL/MariaDB → [1, 5000, 2]   ·   MySQL/SQLite → [undefined, 5000, undefined]
-  ```
-
-## [0.15.1] - 2026-07-09
-
-Semantic-search reads no longer need a cast: the read methods now infer the distance field you project with `$sort` and hand it back on the result type.
-
-### Features
-
-- **`$project` distance is inferred into the result** - a vector `$sort` with `$project: 'distance'` now types the rows as `(Article & { distance: number })[]` straight from the call, so the old `as WithDistance<...>` cast is gone:
-
-  ```ts
-  const results = await pool.findMany(Article, {
-    $sort: { embedding: { $vector: queryEmbedding, $project: 'distance' } },
-  });
-  results[0].distance; // number, inferred - no cast
-  ```
-
-  This works on `findMany`, `findOne`, `findManyStream`, and `findManyAndCount`, on both the querier and the pool. It reads the `$project` string literal off the query with a `const` type parameter - the same trick `aggregate` already uses - so queries that don't project are untouched and still return plain `E[]`. Only top-level `$sort` projections are inferred, which is exactly what the SQL and Atlas builders emit. `WithDistance<E, K>` is still exported for the rare query whose `$project` key is computed at runtime instead of written as a literal.
+- `insertOne`/`insertMany` return the right ids on every database, and `undefined` rather than a made-up one where the driver reports none.
+- A batch may mix records with different columns (the union is inserted, each gap taking the column default), and a batch past the driver's bind limit splits automatically with ids still in input order.
+- MariaDB uses native `INSERT ... RETURNING`; clustered MySQL's `auto_increment_increment` stride is detected instead of assumed to be 1.
 
 ## [0.15.0] - 2026-07-09
 
-Pool-level query methods: each call acquires its own querier, runs the single operation, and releases it, so `Promise.all` fans out across connections without ceremony - the same default as Sequelize/TypeORM/Prisma. (Single-connection backends - better-sqlite3, Bun sqlite, D1 - stay correct but serialize on their one connection.)
-
-### Breaking
-
-- **Pool base-class generics are now querier-first**, matching the `QuerierPool<Q, D>` interface they implement: `AbstractQuerierPool<Q, D>` (was `<D, Q>`), `AbstractSqlQuerierPool<Q, D>`, and `AbstractPgQuerierPool<C, Q, D>` (was `<C, D, Q>`). Only custom pool subclasses and explicit type annotations are affected - swap the two arguments; runtime behavior is unchanged.
-
-### Features
-
-- **Read helpers on the pool** - `pool.findMany` / `pool.findOne` / `pool.findOneById` / `pool.findManyAndCount` / `pool.count` / `pool.aggregate`:
-
-  ```ts
-  // Two connections, in parallel:
-  const [invoices, total] = await Promise.all([pool.findMany(Invoice, { $where: { paid: false } }), pool.count(Invoice, {})]);
-
-  // vs. one pinned connection (queries queue) - still the right tool for a unit of work:
-  await pool.withQuerier((q) => Promise.all([q.findMany(Invoice, {}), q.count(Invoice, {})]));
-  ```
-
-  The ambient `withContext` still scopes these (so `security` filters apply). They take the entity-as-argument form; for the `{ $entity }` form, multi-statement work, or streaming, use `withQuerier` / `transaction`.
-
-- **Raw SQL on SQL pools** - `pool.all(sql, values)` / `pool.run(sql, values)`, with the same connection-per-call semantics. Raw SQL bypasses query generation, so it is not scoped by `security` filters.
-
-- **Types** - the pool surfaces are *derived* from the querier contracts (`QuerierPool extends Pick<UniversalQuerier, ...reads>`, `SqlQuerierPool extends Pick<SqlQuerier, 'all' | 'run'>`), so they cannot drift. To support this, `UniversalQuerier`'s read and update signatures gained the trailing `opts?: QueryOptions` that `Querier` already declared - a non-breaking widening.
-
-### Fixes
-
-- **`Sqlite3QuerierPool` hands out a querier per acquisition** (sharing the single database handle) instead of one memoized querier, so transaction state is per unit of work like every other pool. Previously, a pool-level unit of work started while a transaction was open (e.g. a pool read inside `pool.transaction(...)`) received the *same* querier, and its `release()` threw `pending transaction`, rolling back the outer transaction. Covered by new pool integration tests across all backends.
+- **Read helpers on the pool.** `pool.findMany`/`findOne`/`count`/`aggregate` each acquire a connection, run one operation and release it, so `Promise.all` fans out across connections. `pool.withQuerier` remains the tool for a unit of work.
+- **Breaking:** pool base-class generics are querier-first (`AbstractQuerierPool<Q, D>`), matching the interface they implement.
+- `Sqlite3QuerierPool` hands out a querier per acquisition, so a pool read inside `pool.transaction(...)` no longer rolls back the outer transaction.
 
 ## [0.14.1] - 2026-07-09
 
-Context ergonomics for event-driven apps (background pipelines, queue consumers, webhooks) - shaped by adopting the multi-tenancy filters in a real multimedia app.
-
-### Features
-
-- **`captureContext()`** - carry the ambient context across event boundaries. `AsyncLocalStorage` does not propagate into emitter callbacks, timers, or queued work, so capture it once and replay it where the callback fires:
-
-  ```ts
-  const scoped = captureContext(); // e.g. when a session/queue item is created inside a scoped request
-  emitter.on('chunk', (chunk) => scoped(() => saveChunk(chunk))); // runs with the captured context
-  ```
-
-- **Context per unit of work** - `pool.withQuerier(callback, { context })` and `pool.transaction(callback, { context })` run one unit of work under the given context. Same mechanism as `withContext`, picked by scope: `withContext` scopes a span (a request, a whole job); `{ context }` scopes a single pool call - flat and explicit for pipeline code that knows its tenant locally:
-
-  ```ts
-  await pool.withQuerier((q) => q.findMany(Invoice, {}), { context: { tenantId } });
-  ```
-
-- **Trusted cross-tenant work with security filters** - a filter condition may now return `{}` to mean "resolved: no restriction", so maintenance jobs that must span all tenants (startup recovery, cleanup sweeps) can run under an explicit system context. A missing context still fails closed, and previously a `{}` condition generated broken SQL:
-
-  ```ts
-  condition: (ctx) => (ctx?.system ? {} : ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined),
-
-  await withContext({ system: true }, () => recoverStaleJobs()); // spans every tenant, deliberately
-  ```
-
-- **Auto-fill the tenant column on insert** (documented pattern, works out of the box): `@Field({ onInsert: () => getContext()?.tenantId })` fills the field from the ambient context when the payload does not provide it - explicit values still win.
+- **`captureContext()`** carries the ambient context across event boundaries - `AsyncLocalStorage` does not propagate into emitter callbacks, timers or queued work.
+- **`pool.withQuerier(cb, { context })`** scopes one unit of work, where `withContext` scopes a span.
+- A security filter's condition may return `{}` to mean "resolved, no restriction", so a maintenance job can span tenants deliberately. A missing context still fails closed.
 
 ## [0.14.0] - 2026-07-08
 
-Query filters, multi-tenancy / row-level security, and soft-delete restore. Upgrade straight from 0.12.0 - 0.13.0 was pulled before anyone could install it (its root import dragged `node:async_hooks` into browser bundles), so 0.14.0 is the first published build of these features and bundles cleanly on the client again.
-
-### Features
-
-- **Query filters** - attach a named condition to an entity and it applies to every query automatically until you turn it off. Great for "active only" or visibility rules:
+- **Query filters**: a named condition attached to an entity, applied to every query until you turn it off.
 
   ```ts
   @Filter('active', { condition: { status: 'active' }, default: false })
-  @Entity()
-  class Task {}
-
-  querier.findMany(Task, {}, { filters: { active: true } }); // on for this call
-  querier.findMany(Task, {}, { filters: false }); // all filters off
+  querier.findMany(Task, {}, { filters: { active: true } });
   ```
 
-- **Multi-tenancy / row-level security** - mark a filter `security` and resolve it from a per-request context. It applies to every query (relations and cascades included), can't be turned off, and a client can't widen it with their own `$where`:
-
-  ```ts
-  @Filter('tenant', {
-    // no tenant in context -> the query throws instead of running unscoped
-    condition: (ctx) => (ctx?.tenantId != null ? { companyId: ctx.tenantId } : undefined),
-    security: true,
-  })
-  @Entity()
-  class Invoice {}
-
-  await withContext({ tenantId }, () => querier.findMany(Invoice, {}));
-  ```
-
-  Set the context once at the HTTP boundary and every request is scoped automatically:
-
-  ```ts
-  createRequestHandler({ getContext: (req) => ({ tenantId: req.user.tenantId }) });
-  // NestJS: UqlModule.forRoot({ pool, getContext: (req) => ({ tenantId: req.user.tenantId }) })
-  ```
-
-- **Restore soft-deleted rows** - `restoreOneById` / `restoreMany` bring rows back. Include trashed rows in any read with `withDeleted()`, or list only trashed ones with a plain query (`{ $where: { deletedAt: { $ne: null } } }`). Reads and updates take an options argument now too, so these toggles work on every operation, not just delete.
-
-- **NestJS `forRootAsync`** - build the pool from injected providers such as `ConfigService`.
-
-### Breaking Changes
-
-- **Permanent deletes now use `hardDelete`** (was `{ softDelete: false }`). With a soft-delete field, delete soft-deletes by default; pass `{ hardDelete: true }` to remove rows for good. Over HTTP, `DELETE ?hardDelete=true` (was `?softDelete=true`):
-
-  ```ts
-  await querier.deleteOneById(User, id); // soft delete
-  await querier.deleteOneById(User, id, { hardDelete: true }); // permanent
-  ```
-
-### Bug Fixes
-
-- Soft-delete now works on **subclasses** that inherit the soft-delete field from a base entity.
-- A cascading delete no longer throws when a related entity isn't soft-deletable - it's removed instead; MongoDB delete behavior now matches SQL.
+- **Multi-tenancy / row-level security**: mark a filter `security` and resolve it from a per-request context. It applies to relations and cascades, cannot be turned off, and a client cannot widen it with their own `$where`. With no tenant in context the query throws rather than running unscoped.
+- **`restoreOneById`/`restoreMany`**, and `withDeleted()` to include trashed rows in any read.
+- **Breaking: permanent deletes use `hardDelete`** (was `{ softDelete: false }`); over HTTP, `DELETE ?hardDelete=true`.
 
 ## [0.12.0] - 2026-07-06
 
-### Breaking Changes
-
-- **`softDelete` moves from `@Entity` to `@Field`.** Mark the field itself - `@Field({ softDelete: true })` - instead of naming it on the entity (`@Entity({ softDelete: 'deletedAt' })`). This makes the field reference typo-proof (it's the decorated property, not a string) and lets the marker carry the value stamped on delete: `true` stamps the current timestamp (`new Date()`), or pass a callback for anything else, e.g. `@Field({ softDelete: () => Date.now() })` for an epoch-millis column. The stamp goes through the same value formatter as `onInsert`/`onUpdate`, so a `QueryRaw` (e.g. `() => raw(() => 'NOW()')`) is emitted inline. At most one field per entity may be marked. Reads still filter deleted rows via `<field> IS NULL`, and the `deleteMany(..., { softDelete })` query option is unchanged.
+- **Breaking: `softDelete` moves from `@Entity` to `@Field`.** `@Field({ softDelete: true })` marks the property itself, so the reference cannot be typo'd, and the marker carries the value stamped on delete (`true` for `new Date()`, or a callback).
 
 ## [0.11.0] - 2026-07-06
 
-### Breaking Changes
-
-- **`softDelete` is configured by field name instead of `boolean`**: use `@Entity({ softDelete: 'deletedAt' })` - naming the timestamp field - instead of `@Entity({ softDelete: true })` paired with `@Field({ onDelete: Date.now })`. On delete, the named field is stamped with `Date.now()`.
-- **Removed `onDelete` and `foreignKey` from `@Field` options** (`FieldOptions`). `onDelete` was only a soft-delete marker, now superseded by the entity-level `softDelete` above; `foreignKey` was non-functional (never read) - foreign keys are derived from `references`/relations.
-
-### Features
-
-- **Foreign-key columns are auto-created from relations**: declaring an owning relation (e.g. `@ManyToOne({ entity: () => Company })`) without an explicit `@Field({ references })` now auto-generates the `<relation>Id` column in metadata, inheriting the referenced primary key's type (e.g. `UUID`) rather than defaulting to an integer. Declaring the FK field explicitly (needed to query/read it by name in typed code) still works and takes precedence.
-
-## [0.10.2] - 2026-07-05
-
-### Bug Fixes
-
-- **Dropped idle connections no longer crash the process**: `pg`-based pools (Postgres, CockroachDB, Neon) now handle the pool's `'error'` event instead of leaving it unhandled. Postgres and CockroachDB also default to `keepAlive: true`, so idle connections drop less often to begin with.
-- **Foreign key columns now match their referenced primary key type**: `@Field({ references: () => User })` with no explicit `type` fell back to the TypeScript property type (e.g. `string` -> TEXT) instead of `User`'s actual primary key type (e.g. `UUID`), which could fail inserts and joins. Explicit types are still respected.
+- Foreign-key columns are created from relations: an owning `@ManyToOne` with no explicit `@Field({ references })` generates the `<relation>Id` column, inheriting the referenced key's type instead of defaulting to an integer.
+- **Breaking:** `softDelete` is configured by field name; `onDelete` and `foreignKey` are gone from `FieldOptions`.
 
 ## [0.10.1] - 2026-07-03
 
-### Features
-
-- **`UqlModule` ends the pool on application shutdown** (`onApplicationShutdown`), so Nest testing modules and SIGTERM-driven shutdowns release database connections; call `app.enableShutdownHooks()` to wire signals.
-
-### Bug Fixes
-
-- **`uql-orm@0.10.0` on npm shipped only the browser bundle** (5 files; `dist/index.js` missing, so every server-side import failed). The package build shared the repo root's `tsBuildInfoFile` (introduced 2026-06-29 in an unrelated config cleanup): after `clean` wiped `dist`, `tsc -b` trusted the stale build info and emitted nothing, and the release published the partial `dist`. The build info is now package-local and the errant root-level one has been removed entirely, restoring the isolation each package had before that cleanup. `prepack` no longer checks two hardcoded files (which would have missed this exact failure - neither covered `uql-orm/migrate`); it now verifies every path declared in `main`, `types`, `bin`, and `exports` exists in `dist` before packing, derived straight from `package.json` so the check can't go stale as exports are added. Use 0.10.1 instead of 0.10.0.
+- **`uql-orm@0.10.0` shipped only the browser bundle** - every server-side import failed. `prepack` now verifies every path declared in `main`, `types`, `bin` and `exports` before packing. Use 0.10.1.
+- `UqlModule` ends the pool on application shutdown.
 
 ## [0.10.0] - 2026-07-02
 
-### Breaking Changes
-
-- **HTTP transport redesigned around a framework-agnostic core (`uql-orm/http`)**: the wire contract (routes, envelopes, query serialization) is defined once and shared by the server adapters and the browser client; `uql-orm/express` is now a thin adapter over it.
-  - **Hooks**: `pre`/`preSave`/`preFilter` receive a single `HookContext` (`{ meta, op, method, query, body, context }`) instead of `(req, meta)`, may be `async`, and abort by throwing (a numeric `status` on the error becomes the HTTP status). Migration is mechanical: `req.query` becomes `ctx.query`, `req.body` becomes `ctx.body`.
-  - **Error responses** are now `{ error: { message, code } }` (was `{ error: string }`).
-  - **`HttpQuerier.saveOne`** issues `PUT /<entity>` (server-side upsert) instead of client-side POST/PATCH branching.
-  - **Removed**: `buildQuerierRouter`, express `parseQuery` (use `parseQueryParams` from `uql-orm/http`), the `express.Request.query` type augmentation, and the browser re-exports of `stringifyQuery` and the envelope types (import them from `uql-orm/http`).
-  - **`uql-orm/browser` no longer loads `reflect-metadata`**: import it (or `uql-orm`) directly if you relied on that side effect.
-
-### Features
-
-- **`uql-orm/http`**: `createFetchHandler` mounts natively on Hono, Next.js route handlers, Bun.serve, Deno.serve, Cloudflare Workers, and SvelteKit; `createRequestHandler` bridges any other framework.
-- **Extended wire protocol**: new routes for `insertMany`, `saveOne` (upsert), `saveMany`, and bulk `updateMany`, with matching `HttpQuerier` methods.
-- **`uql-orm/nestjs`**: `UqlModule.forRoot({ pool })` registers the pool with Nest DI and as UQL's default pool.
-- **HTTP QUERY method (RFC 10008)**: reads can send the JSON query in the request body, avoiding URL-length limits; the client opts in via `new HttpQuerier('/api', { readMethod: 'QUERY' })`.
-- **Better client ergonomics**: per-call and per-instance `headers`, `AbortSignal` support, and non-2xx responses throw `RequestError` carrying the HTTP `status`.
-- **`post` hook**: shape the success envelope before it is sent (strip secrets, derive presentation fields).
-
-### Bug Fixes
-
-- **The published browser bundle was broken** (it contained test helpers instead of the client); it is now a 4 KB bundle with no `reflect-metadata`.
-- **The express middleware falls through** (`next()`) on unknown routes, so it composes with custom routes on the same prefix.
-- Hooks can now enforce `softDelete`; malformed JSON returns `400` instead of `500`; `HEAD` is served as `GET`; query strings are percent-encoded; `GET /<entity>/:id` merges an array `$where` via `$and` instead of overwriting it.
-
-## [0.9.5] - 2026-07-02
-
-### Documentation
-
-- **README**: Slimmed from 336 to 127 lines as a marketing quick-reference. Added "Why UQL" section, dark mode logo, value proposition, and a minimal 4-line query example aligned to the querier API. Completed the database support list, updated benchmark claims to July 2026, and cleaned up writing style. Updated and simplified entry example of the ORM.
-- **Contributing**: Added `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
+- **`uql-orm/http`**: one framework-agnostic wire contract. `createFetchHandler` mounts on Hono, Next.js, Bun.serve, Deno.serve, Cloudflare Workers and SvelteKit; `createRequestHandler` bridges anything else. `uql-orm/express` is a thin adapter over it.
+- **`uql-orm/nestjs`**: `UqlModule.forRoot({ pool })`.
+- Reads can send the query in the body via the HTTP QUERY method (RFC 10008), avoiding URL-length limits.
+- **Breaking:** hooks receive one `HookContext` instead of `(req, meta)` and abort by throwing; error responses are `{ error: { message, code } }`; `buildQuerierRouter` and express `parseQuery` are gone; `uql-orm/browser` no longer loads `reflect-metadata`.
 
 ## [0.9.4] - 2026-06-29
 
-### Bug Fixes
-
-- **`$entity` dual-API restored**: Querier read/delete methods (`findOne`, `findMany`, `findManyAndCount`, `count`, `deleteMany`, `findManyStream`) now use TypeScript overloads instead of union types, enabling correct entity inference for both `(Entity, query)` and `({ $entity: Entity, ...query })` call patterns.
-- **`$select` / `$exclude` overlap resolved**: Both are now structurally identical map types (`{ [K in FieldKey<E>]?: BooleanLike }`) - whitelist (`$select`) vs. blacklist (`$exclude`). `$exclude` reverted to map form (was incorrectly changed to array), matching runtime `Object.entries()` usage.
-- **`$exclude` JSDoc**: Updated comment from "array of field names" to map syntax `{ name: true }`.
-
-### Security
-
-- **Comprehensive security tests** (`querySecurity.spec.ts`): 33+ tests covering prototype pollution via `$where`/`$select`/`$exclude`/`$populate`, SQL injection in WHERE values and identifiers, `$skip`/`$limit` coercion edge cases, `$ne`/`$or`/`$in` operator safety, relation field safety, and field validation across all entity types.
-
-### [0.9.3] - 2026-06-26
-
-### Bug Fixes
-
-- **`snakeCase` null pass-through**: Restored `null`/`undefined` passthrough (was collapsed to `''`). `upperFirst`/`lowerFirst` now also guard early on falsy input.
-
-### Improvements
-
-- **`QueryPopulateRelationOptions` nullable fix**: Uses `NonNullable<E>` so nullable relations (`Profile | null`) correctly infer `QueryUnique<Profile>` rather than `QueryUnique<Profile | null>`.
-- **`JsonFieldPaths` array support**: Now handles arrays of JSON (`Json<T>[]`) for MongoDB.
+- The `$entity` dual API is restored with overloads, so both `(Entity, query)` and `({ $entity, ...query })` infer correctly.
 
 ## [0.9.2] - 2026-06-10
 
-### Bug Fixes
-
-- **Express middleware**: `parseQuery` now correctly coerces `$limit` and `$skip` to numbers and parses JSON-encoded `$where` strings before route handlers run. Previously, Express's lazy `req.query` getter re-parsed the URL on every access, silently discarding the middleware's mutations.
-
-### Dependencies
-
-- Updated dev and prod dependencies.
-- Docker images bumped: MySQL `9.6` -> `9.7`, MariaDB `12.3-rc` -> `12.3` (now stable).
-
-## [0.8.5] - 2026-05-24
-
-### Improvements
-
-- **`tsconfig.json`**: Added `"strict": true` to the compiler options.
-- **SQLite module**: Re-exported `AbstractSqliteQuerier` from the `uql-orm/sqlite` entry point (`abstractSqliteQuerier.js`).
-
-### Dependencies
-
-- Updated dev and prod dependencies and fully tested.
+- Express's lazy `req.query` getter re-parsed the URL on every access, silently discarding the middleware's coercion of `$limit`/`$skip` and its JSON parse of `$where`.
 
 ## [0.8.4] - 2026-04-11
 
-### Features
-
-- Added first-class `$populate` (relations) and `$exclude` (subtractive scalar projection), while keeping backward compatibility for legacy relation keys in `$select`.
-
-### Breaking Changes (Public util surface)
-
-- Removed support for specifying relations in `$select`; use `$populate` instead.
-
-### Improvements
-
-- Populate-only relation loading now works consistently in SQL dialects.
-- Relation keys in `$select` now emit a deduplicated deprecation warning (use `$populate`).
-- `$select` and `$exclude` conflicts are validated recursively, including nested relation queries.
-- `findManyStream` now rejects unsupported relation loading early: **MongoDB** throws if any relation is requested in `$select` / `$populate` (streams use `find` only). **SQL** throws if **to-many** relations are requested (they are filled only after `findMany`, not while streaming).
-
-### Documentation
-
-- README and docs site clarify projection keys (`$select` / `$exclude` / `$populate`) and streaming behavior across SQL vs MongoDB.
-
-## [0.8.3] - 2026-04-04
-
-### Improvements
-
-- **Robust SQL Statement Splitting**: Refactored the `splitSqlStatements` utility with a high-performance, declarative Master-Regex scanner. This production-grade implementation correctly handles complex SQL syntax across all supported dialects, including nested string literals, escaped quotes (`''`, `\'`), double-quoted identifiers, MySQL backticks, and PostgreSQL dollar-quoting (`$$` and `$tag$`). It also correctly preserves semicolons within single-line (`--`) and multi-line (`/* ... */`) comments while ensuring $O(n)$ performance and full backward compatibility. Covered with full test suite.
+- **`$populate` for relations and `$exclude` for subtractive projection.** Relations in `$select` are deprecated (warned once per key) and unsupported.
+- `findManyStream` rejects unsupported relation loading up front: MongoDB for any relation, SQL for to-many ones.
 
 ## [0.8.2] - 2026-04-04
 
-### Bug Fixes
-
-- **[#86](https://github.com/rogerpadilla/uql/issues/86) - Invalid generated migration TypeScript with LibSQL**: `uql-migrate generate:entities` embedded SQL inside a JS **template literal**; SQLite/LibSQL identifier quotes use **backticks**, which **terminated** the outer literal and produced invalid `.ts` (so `uql-migrate up` could not even load the migration). Generated files now use **`JSON.stringify`** for each `querier.run(...)` argument (double-quoted string literals), so SQL may contain backticks, `"`, newlines, `${` inside string data, etc., without breaking TypeScript.
-
-- **[#87](https://github.com/rogerpadilla/uql/issues/87) - `uql-migrate` against libsql + sqld (HTTP) with multiple statements in one `run`**: **sqld** does not accept **multiple SQL statements** in a single `execute` / `run` call; a migration that bundled `CREATE TABLE ...;` and `CREATE INDEX ...;` in one string failed at runtime even when the TypeScript was valid. **Entity-generated migrations** now emit **one `await querier.run("...")` per statement**, and **`Migrator` / `syncForce` / `autoSync` / `MigrationBuilder`** apply create-table DDL **statement-by-statement**, matching sqld's behavior.
-
-### Breaking Changes
-
-- **`SchemaGenerator` create-table DDL** (supports the [#87](https://github.com/rogerpadilla/uql/issues/87) fix end-to-end): **`generateCreateTable`**, **`generateCreateTableFromNode`**, and **`generateCreateTableFromDefinition`** now return **`string[]`** - one string per logical statement (`CREATE EXTENSION` if needed, `CREATE TABLE`, each separate `CREATE INDEX`, ...). They used to return a **single** newline-joined `string`. **Migrate custom code** by taking the array and either calling `querier.run(stmt)` for each element or using **`.join('\n')`** when you need one script blob. **`MongoSchemaGenerator`** uses the same signatures; each method returns a **one-element** array containing the JSON sync command string.
+- **Generated migrations were invalid TypeScript with LibSQL** ([#86](https://github.com/rogerpadilla/uql/issues/86)): SQLite identifier backticks terminated the template literal the SQL was embedded in. Each `querier.run(...)` argument is `JSON.stringify`d now.
+- **sqld rejects multiple statements in one `execute`** ([#87](https://github.com/rogerpadilla/uql/issues/87)), so entity-generated migrations emit one `run` per statement.
+- **Breaking:** the `generateCreateTable*` methods return `string[]`, one entry per statement.
 
 ## [0.8.0] - 2026-04-03
 
-### Features
-
-- **Decorator-free entities**: `defineEntity` accepts optional bulk `fields`, `relations`, `indexes`, and `hooks` on `EntityOptions` (same shapes as `@Field` / relations / `@Index` / hook decorators). Exported `defineEntity`, `defineField`, `defineId`, and `defineRelation` from `uql-orm` for imperative registration. Clarified `Config.entities` discovery comment and README guidance for non-decorator usage. **`EntityIndexMeta.unique`** is optional (omit = non-unique); schema building still normalizes with `?? false` where a strict boolean is required.
-
-### Breaking Changes (Internal API)
-
-- **Entity metadata registry**: Runtime storage uses `Symbol.for('uql-orm/entity/metadata')` (replaces `uql-orm/entity/decorator`). Code that reached into `globalThis` with the old symbol will not see entities registered under the new key. Deep imports of `.../entity/decorator/definition.js` should use `.../entity/metadata/definition.js`. **`getOrCreateMeta` removed** - use **`ensureMeta`** from the same module if you need imperative "get or init" behavior.
+- **Decorator-free entities**: `defineEntity` takes bulk `fields`, `relations`, `indexes` and `hooks`; `defineField`, `defineId` and `defineRelation` are exported for imperative registration.
+- **Breaking (internal):** the metadata registry key is `Symbol.for('uql-orm/entity/metadata')`, and `getOrCreateMeta` is `ensureMeta`.
 
 ## [0.7.10] - 2026-04-02
 
-### Bug Fixes
-
-- **SQL JSON / JSONB read hydration**: `AbstractSqlQuerier` now parses string values for fields declared as `json` or `jsonb` after `find` results are unflattened, so drivers that return JSON columns as text (e.g. SQLite, some Bun SQL stacks) yield plain objects again. Already-parsed values are left unchanged; invalid JSON strings are kept as-is. Hydration runs for `findMany` / `findOne` paths and for streamed rows, and recurses into loaded relation objects with cycle protection (`WeakSet`).
-
-### Tests
-
-- **Regression**: JSONB `$merge` with boolean `true` and `false` on `Company.kind` (integration suite); Postgres dialect expectation for `$merge` with `isArchived: false`.
+- JSON/JSONB columns returned as text by some drivers (SQLite, some Bun SQL stacks) are parsed back into objects, in reads, streams and loaded relations.
 
 ## [0.7.9] - 2026-03-31
 
-### Breaking Changes
-- **Dialect barrel**: **`MongoDialect`** is no longer re-exported from **`uql-orm/dialect`** or the root **`uql-orm`** package (it previously pulled the Mongo dialect graph into SQL-only apps). Import it from **`uql-orm/mongo`**.
-- **Migrate and optional `mongodb` peer**: `createSchemaGenerator` is **SQL-only** (returns `undefined` for non-`AbstractSqlDialect`). For MongoDB use **`createSchemaGeneratorAsync`** from `uql-orm/migrate` (or the CLI re-export). **`MongoSchemaGenerator`** is exported from **`uql-orm/mongo`**, not from the `uql-orm/migrate` barrel, so importing migrate alone does not evaluate the Mongo generator graph. **`Migrator.findEntityForTable`** is now **async**. **`getSchemaGenerator`** (CLI) returns **`undefined`** for MongoDB; `uql-migrate` resolves the generator with **`createSchemaGeneratorAsync`**.
+- **Breaking:** `MongoDialect` is no longer re-exported from `uql-orm` or `uql-orm/dialect` (it pulled the Mongo graph into SQL-only apps) - import from `uql-orm/mongo`. `createSchemaGenerator` is SQL-only; MongoDB uses `createSchemaGeneratorAsync`.
 
 ## [0.7.7] - 2026-03-31
 
-### Breaking Changes (Internal API)
-- **Pools and config**: `QuerierPool` exposes `dialect` (renamed from `dialectInstance`). The engine id string is `dialect.dialectName` (replacing the old `dialect` property on the dialect instance). Removed top-level `dialect` from `Config` and `MigratorOptions`-migrations and `uql-migrate` use **`pool.dialect.dialectName`** only.
-- **Dialect API**: Removed `dialectConfig` / `DialectConfig` from the public dialect barrel. Configure behavior with `DialectOptions`, `DialectFeatures` on `AbstractDialect.features`, and **per-driver dialect classes** attached to each pool.
-
-### Improvements
-
-- **Per-driver dialect classes**: Pools use explicit dialect types (e.g. `PgDialect`, `NeonDialect`, `MySql2Dialect`, `BetterSqlite3Dialect`, `LibsqlDialect`, `D1SqliteDialect`, `MongodbNativeDialect`, `BunSqlPostgresDialect`). Migrator and schema generation read **`pool.dialect.dialectName`** instead of a separate config field.
-- **PostgreSQL (`pg` vs Bun SQL)**: `PgDialect` uses base Postgres defaults (native JS arrays for `ANY`/`ALL`, `$n::jsonb` for JSON). Bun SQL Postgres uses `BunSqlPostgresDialect` with `POSTGRES_WIRE_DRIVER_CAPABILITIES` from `uql-orm/postgres/wireCapabilities` plus `explicitJsonCast` where Bun's bindings require `( $n::text )::jsonb` and array literal encoding.
-- **Migrations CLI**: Exported **`assertCliConfig`** (`uql-orm/migrate`) validates the default-exported config shape before commands run.
-- **Escaping**: Inlined **`escapeAnsiSqlLiteral`** for Postgres/SQLite literal escaping; dropped **`sqlstring-sqlite`** from those code paths. Prefer bound parameters for user input in production.
-- **Types and tests**: `Config.pool` is typed as `QuerierPool<Querier, AbstractDialect>`. **`createMockQuerierPool`** is available from `uql-orm/test`.
-
-## [0.7.6] - 2026-03-31
-### Improvements
-- **Bulletproof Postgres JSONB Serialization**: We've standardized how JSONB data travels to the database to ensure absolute reliability. By handling stringification at the ORM level and using explicit Postgres casts (`::text::jsonb`), we've eliminated subtle ambiguities between JSON arrays and native Postgres arrays. This ensures your data always arrives exactly as intended.
-- **Unified Driver Experience**: Whether you're running on `node-postgres` or the high-performance `bun:sql`, the behavior is now identical. This refactor definitively resolves "double-stringification" and "invalid syntax" edge cases, providing a truly seamless experience across all supported environments.
-- **Internal Architectural Polish**: Simplified the core normalization logic in the base SQL dialect, keeping the ORM engine lean while making the Postgres-specific implementation more declarative and easier to maintain.
-
-## [0.7.5] - 2026-03-29
-### New Features
-- **Type-Safe Aggregate Inference**: Enhanced `querier.aggregate()` to automatically infer return types from the `$group` definition. Aggregate results (e.g. `$sum`, `$avg`, `$max`) are now precisely typed without requiring manual casts or `any`.
-- **Centralized Dialect Features**: Introduced a declarative `DialectFeatures` system to manage database capabilities (e.g. `supportsJsonb`, `returning`, `ifNotExists`).
-
-### Improvements
-- **Dialect Architecture Hardening**: Replaced brittle runtime dialect-name checks with formal feature flags across the codebase.
-- **Immutability**: Marked all dialect configuration and feature properties as `readonly` for increased runtime stability.
-
-## [0.7.4] - 2026-03-28
-### Bug Fixes
-- **Module Imports**: Fixed an issue where the `index.js` barrels incorrectly exported driver-specific querier pools (like `mariadbQuerierPool`), which caused the module bundler/runtime to attempt to load optional peer dependencies (like `mariadb`) when importing unrelated modules from `uql-orm`.
-
-## [0.7.3] - 2026-03-26
-### Bug Fixes
-- **Bun SQL Dialect Inference**: Improved logic for detecting `sqlite` from URLs and handling custom schemes in `SQL.Options`.
-- **Schema Synchronization**: Added null-safety check in `formatType` to prevent crashes when encountering specific user-defined column types.
-
-## [0.7.2] - 2026-03-22
-### Bug Fixes
-- **MySQL/MariaDB Upsert Detection**: Fine-tuned the `created` flag detection by correctly interpreting the MySQL `affectedRows` convention (1 for insert, 2 for update, 0 for no-op).
-- **Express Route ID Resolution**: Removed rigid `req.params.id` string-bindings in autogenerated API endpoints. Routes now correctly infer and map dynamic parameters utilizing the `meta.id` schema definition, increasing type-safety drastically.
-
-## [0.7.1] - 2026-03-21
-### Improvements
-- **Standardized Architecture**: Unified `PrimaryKey` type and improved `buildUpdateResult` for precise batch-insert ID mapping.
-- **Dialect parameter normalization**: `QueryDialect.normalizeValue` / `normalizeValues` centralize bound-parameter shaping (e.g. Postgres array literals and booleans, JSON stringify for text-JSON columns on SQLite/MySQL-like dialects, `Date` preserved for driver binding). Applied at the querier boundary and in `SqlQueryContext.pushValue` for consistency with Bun SQL and other drivers.
-- **SQL dialect simplification**: Consolidated `$in` / `$nin` formatting via `formatIn` (including empty-array `IN (NULL)` handling), streamlined JSON field conditions (removed redundant config indirection), and unified null-safe `$ne` through `neExpr` / `havingCondition`.
-- **Bun SQL Resilience**: SQLite uses an unpooled handle when Bun does not support `reserve()`; reserved connections use `await release()` where required.
-- **Dialect inference**: Improved Bun URL handling (`:memory:`, `mysql2://`, `sqlite3://`, `postgresql://`, etc.).
+- **Breaking (internal):** `QuerierPool` exposes `dialect` (was `dialectInstance`), the engine id is `dialect.dialectName`, and `dialect` is gone from `Config`/`MigratorOptions`. `dialectConfig`/`DialectConfig` are replaced by `DialectOptions` and per-driver dialect classes.
 
 ## [0.7.0] - 2026-03-19
-### New Features
-- **Bun SQL Support**: Added a first-class adapter for Bun's unified `sql` driver (`uql-orm/bunSql`). A single `BunSqlQuerierPool` infers the UQL dialect from `SQL.Options` (URL, `adapter`, or `filename`) and routes SQL generation to PostgreSQL, MySQL, MariaDB, SQLite, or CockroachDB ASTs. Includes dialect-aware option normalization (`inferDialect`, `normalizeBunOpts`), row/insert-id normalization for Bun result shapes, and a minimal `pool.query` shim for pg-compatible consumers.
 
-### Breaking Changes
-- **`$ne` is null-safe everywhere**: Non-null `$ne` now uses dialect-native null-safe inequality so rows with `NULL` in the compared column are included when they differ from the bound value (PostgreSQL/CockroachDB: `IS DISTINCT FROM`; SQLite: `IS NOT`; MySQL/MariaDB: `NOT (col <=> ?)`). This matches typical ORM expectations and fixes subtle "missing rows" bugs versus plain `<>` SQL. Queries that relied on SQL's three-valued logic excluding `NULL` from `$ne` matches may return more rows; use `{$ne: null}` / `$isNull` / `$isNotNull` explicitly for null-only filters.
-
-### Security
-- **SQL Injection Prevention for JSON**: Hardened JSON-path operators across all SQL dialects with strict identifier and key escaping.
-
-## [0.6.1] - 2026-03-18
-### Chore
-- **Documentation**: Improve intro of readme.md
+- **Bun SQL support** (`uql-orm/bunSql`): one `BunSqlQuerierPool` infers the dialect from `SQL.Options` and routes to the Postgres, MySQL, MariaDB, SQLite or CockroachDB builder.
+- **Breaking: `$ne` is null-safe everywhere.** Rows with `NULL` in the compared column are included when they differ from the bound value (`IS DISTINCT FROM`, `IS NOT`, `NOT (col <=> ?)`), matching what every other ORM does. Queries relying on SQL's three-valued logic may return more rows.
 
 ## [0.6.0] - 2026-03-18
-### Features
-- **JSON update operators expanded**: Added `$push` for atomic JSON array append in update payloads across SQL dialects.
-- **Unified JSON update API type**: Introduced `JsonUpdateOp` with type-safe `$merge`, `$unset`, and `$push` support for `Json<T>` fields.
 
-### Bug Fixes
-- **MariaDB JSON dot-notation correctness**: Fixed JSON path extraction for MariaDB by using `JSON_VALUE(...)` instead of MySQL-style `->` / `->>` operators.
-- **PostgreSQL operator chaining semantics**: Fixed `$merge + $push` evaluation when targeting the same key so `$push` reads from the current intermediate expression (not stale column state).
-
-### Testing
-- Added multi-dialect regression tests for JSON update chaining (`$merge`, `$push`, `$unset`), including same-key `$merge + $push` behavior.
-- Added MariaDB-specific regression tests for dot-notation filtering/sorting SQL generation (`JSON_VALUE` paths).
-
-## [0.5.2] - 2026-03-17
-### Testing
-- **Suite reliability**: Ensured the full test suite runs without runtime errors across all dialects with coverage thresholds still met (>97% statements, >90% branches).
-
-## [0.5.1] - 2026-03-15
-### Chore
-- **Documentation**: Unified documentation strategy using NPM lifecycle scripts across subpackages.
-- **Maintenance**: Removed redundant `copyfiles` dependency and cleaned up build scripts.
-- **README**: Refined technical copy and visual feedback sections for a better developer documentation experience.
+- `$push` appends to a JSON array atomically, and `JsonUpdateOp` types `$merge`/`$unset`/`$push` for `Json<T>` fields.
+- MariaDB extracted JSON paths with MySQL-style `->`/`->>`, which it does not support; it uses `JSON_VALUE(...)` now.
 
 ## [0.5.0] - 2026-03-15
-### Features
-- **CockroachDB Support**: Full integration with a new dialect, querier, and Docker Compose configuration. Supports native upsert and mapped driver execution.
-### New Features
-- **CockroachDB Support**: Added first-class support for `cockroachdb` dialect, leveraging its PostgreSQL wire-compatibility. Includes native `upsert` support and seamlessly mapped driver execution.
 
-### Testing
-- **Vector search integration tests**: Added 7 end-to-end tests for `findMany` with `$sort: { $vector }` against a real Postgres+pgvector database - covers cosine/L2 similarity ordering, `$project` distance projection, filter+sort combo, `$limit`, and empty-table edge case.
-- Docker Postgres image switched to `pgvector/pgvector:pg18` for pgvector extension support.
-- Test DDL generator now handles `vector`, `halfvec`, and `sparsevec` column types.
-
-## [0.4.4] - 2026-03-14
-### Dependencies
-- **Vite 7 -> 8**: Upgraded to Vite 8 (powered by Rolldown), replacing the `vite-tsconfig-paths` plugin with Vite's built-in `resolve.tsconfigPaths` option.
-- **TypeScript 5.9 -> 6.0**: Upgraded to TypeScript 6.0.1-rc. Removed 6 redundant compiler options now default in TS6: `strict`, `strictNullChecks`, `noImplicitAny`, `esModuleInterop`, `allowSyntheticDefaultImports`, `useDefineForClassFields`.
-- Removed `vite-tsconfig-paths` (replaced by built-in Vite 8 feature).
-
-## [0.4.1] - 2026-03-13
-### Documentation
-- Removed Discord badge from README temporarily.
+- **CockroachDB support**: its own dialect and querier, with native upsert.
 
 ## [0.4.0] - 2026-03-13
-### New Features
-- **`findManyStream()` - Cursor-Based Async Iteration**: Stream query results row-by-row via `for await...of`. No relation-filling or lifecycle hooks - optimized for raw throughput on large result sets.
-  ```ts
-  for await (const user of querier.findManyStream(User, { $where: { active: true } })) {
-    process.stdout.write(user.name + '\n');
-  }
-  ```
-  Supports both the classic `(Entity, query)` and `$entity`-field dual-API patterns.
-- **Native Streaming for All Major Drivers**: Each driver now uses its optimal streaming API instead of falling back to `internalAll()`:
-  - **SQLite** (`better-sqlite3`): `.iterate()` - sync, zero-copy row iteration.
-  - **MongoDB**: `FindCursor` async iterable - native driver cursor with `buildFindCursor` helper (extracted from `findMany` for DRY reuse).
-  - **MariaDB**: `queryStream()` - first-class streaming API since v3.0, with backpressure.
-  - **PostgreSQL**: `pg-query-stream` - server-side cursors via optional peer dependency.
-  - **MySQL2**: `Connection.query().stream()` - Readable stream from non-promise connection.
-  - **LibSQL / D1 / Neon**: Graceful fallback to `internalAll()` (HTTP-based, no streaming API).
 
-### Breaking Changes
-- **Removed deprecated `reference` field option**: Use `references` instead. The deprecated `FieldOptions.reference` property and its internal usage in `definition.ts` have been removed.
-
-## [0.3.3] - 2026-03-12
-### Bug Fixes
-- **Upsert `onUpdate` Semantics**: `onUpdate`-only fields (e.g. `updatedAt`) are no longer included in the `INSERT VALUES` clause of upserts. They now use direct parameter values in the `UPDATE SET` clause, giving correct semantics: newly inserted rows have `updatedAt = NULL`, updated rows get a fresh timestamp.
-
-### Improvements
-- **Variadic `pushValue`**: `QueryContext.pushValue()` now accepts multiple values (`...values`), simplifying internal param collection and eliminating `forEach` loops.
-
-## [0.3.2] - 2026-03-12
-### Improvements
-- **Upsert `created` Flag**: added `created?: boolean` to `QueryUpdateResult` - `true` when the record was inserted, `false` when updated. Supported on PostgreSQL, MySQL, and MongoDB. Returns `undefined` on SQLite and MariaDB where the driver cannot determine this.
-
-### Bug Fixes
-- **MongoDB `upsertOne`**: Fixed `firstId` always being `undefined` on insert by switching from `returnDocument: 'before'` to `returnDocument: 'after'`.
-
-### Test Coverage
-- Added dialect-specific `shouldUpsertOne` overrides for all 5 dialects asserting `created` and `firstId` behavior.
+- **`findManyStream()`**: cursor-based `for await...of` over large result sets, on each driver's own streaming API (`better-sqlite3` `.iterate()`, MongoDB cursors, MariaDB `queryStream()`, `pg-query-stream`, MySQL2 streams). No relation-filling and no hooks.
+- **Breaking:** the deprecated `reference` field option is gone; use `references`.
 
 ## [0.3.1] - 2026-03-12
-### New Features
-- **MongoDB Atlas Vector Search**: Semantic search now supports MongoDB via the [`$vectorSearch`](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/) aggregation pipeline stage. Same `$sort` API - UQL internally translates to Atlas's native vector search with optimal pre-filtering (`$where` -> `$vectorSearch.filter`), score projection via `$meta: 'vectorSearchScore'`, and secondary sort support. Configure with `@Index(['embedding'], { type: 'vectorSearch', name: 'my_index' })`.
+
+- **MongoDB Atlas vector search** via `$vectorSearch`, behind the same `$sort` API, with `$where` pushed down as a pre-filter.
 
 ## [0.3.0] - 2026-03-12
-### New Features
-- **Semantic Search**: First-class vector similarity search across PostgreSQL (pgvector), MariaDB, and SQLite. Query via `$sort` on vector fields:
+
+- **Semantic search**: vector similarity through `$sort`, on pgvector, MariaDB and SQLite, with five distance metrics and a projected score.
+
   ```ts
-  const results = await querier.findMany(Article, {
+  await querier.findMany(Article, {
     $sort: { embedding: { $vector: queryVec, $distance: 'cosine' } },
     $limit: 10,
   });
   ```
-  Supports 5 distance metrics (`cosine`, `l2`, `inner`, `l1`, `hamming`), distance projection via `$project`, and the `WithDistance<E>` utility type. Each dialect generates native SQL: Postgres operators (`<=>`, `<->`), MariaDB (`VEC_DISTANCE_COSINE()`), SQLite (`vec_distance_cosine()`).
-- **Vector Field Types**: `@Field({ type: 'vector', dimensions: 1536 })` for standard 32-bit embeddings, plus Postgres-specific `'halfvec'` (16-bit, 50% storage savings) and `'sparsevec'` (for SPLADE-style sparse embeddings). Automatic SQL mapping across dialects.
-- **Vector Indexes**: `@Index()` supports HNSW and IVFFlat index types with `distance`, `m`, `efConstruction`, and `lists` options. Generates pgvector operator classes for Postgres, inline `VECTOR INDEX` for MariaDB, and standard indexes for SQLite.
-- **Auto Extension Creation**: Schema generator automatically emits `CREATE EXTENSION IF NOT EXISTS vector` for Postgres tables containing vector columns.
 
-### Architecture
-- **Schema Generator Dialect Config Refactor**: Eliminated all `this.dialect ===` branches from `schemaGenerator.ts` by adding new declarative `dialectConfig` properties (`columnComment`, `vectorIndexStyle`, `dropIndexSyntax`, `renameTableSyntax`, `booleanLiteral`, `alterColumnStrategy`, `vectorOpsClass`, `vectorExtension`). All dialect-specific behavior is now config-driven.
-- **Unified CREATE INDEX**: `generateCreateIndexFromNode` now delegates to `generateCreateIndex`, eliminating duplicated SQL assembly and ensuring consistent vector index handling across both code paths.
+- **Vector columns and indexes**: `@Field({ type: 'vector', dimensions: 1536 })` plus Postgres `halfvec`/`sparsevec`, and HNSW/IVFFlat via `@Index`. `CREATE EXTENSION IF NOT EXISTS vector` is emitted where needed.
 
 ## [0.2.7] - 2026-03-11
-### New Features
-- **More `$size` Comparison Operators**: `$size` now accepts comparison operator objects in addition to exact numbers - e.g. `{ $size: { $gte: 2 } }`, `{ $size: { $gt: 0, $lte: 5 } }`, `{ $size: { $between: [1, 10] } }`. Supported operators: `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$between`.
-- **Relation Count Filtering**: `$size` on to-many relations (OneToMany, ManyToMany) now generates efficient `COUNT(*)` subqueries. E.g. `{ tags: { $size: { $gte: 2 } } }` produces `WHERE (SELECT COUNT(*) FROM ...) >= $1`.
 
-### Test Coverage
-- Added 22 new test cases across all SQL dialects: exact match, every comparison operator, multi-op ranges, `$between`, error paths (unsupported operator, missing references). All coverage thresholds met.
-
-## [0.2.6] - 2026-03-11
-### Documentation
-- **README - Migrations & Synchronization**: Rewrote the section with an entity-first intro explaining that UQL auto-generates migrations from entities. Reordered CLI commands to lead with `generate:entities`, renumbered usage examples, and added a concrete quick-start snippet.
-
-## [0.2.5] - 2026-03-11
-### Branding
-- **New Logo**: Introduced a new cursive "U" logo in indigo (`#4F46E5`). Available in SVG, PNG, and JPG formats under `assets/`.
-
-## [0.2.4] - 2026-03-10
-### Bug Fixes
-- **ManyToOne / OneToOne relation filtering**: `$where` clauses referencing `m1` or `11` relations (e.g., `{ item: { name: 'Widget' } }`) now correctly generate `EXISTS` subqueries. Previously, these cardinalities were unhandled and fell through to `compareFieldOperator`, throwing an "unknown operator" error. The `compareRelation` method now supports all four cardinalities (`mm`, `1m`, `m1`, `11`) with direction-aware join resolution.
-
-### Test Coverage
-- Added tests for ManyToOne relation filtering: simple equality, operator filter (`$like`), and combined with regular fields.
-
-## [0.2.3] - 2026-03-09
-### Documentation
-- **Aggregate Queries guide**: Added dedicated [aggregate documentation page](https://uql-orm.dev/querying/aggregate) covering `$group`, `$having`, `$where` vs `$having`, sorting/pagination, and `$distinct`.
-- **README**: Added Aggregate Queries to features table, new §4 subsection with code examples and generated SQL, and "Learn more" link.
-- **Querier methods table**: Added `aggregate()` to the website's querier reference.
-- **Simplified tsconfig**: Removed `module`/`target` from recommended config - only decorator flags are UQL-specific. Added Pure ESM note.
+- `$size` takes comparison operators (`{ $size: { $gte: 2 } }`), and on a to-many relation it becomes a `COUNT(*)` subquery.
 
 ## [0.2.2] - 2026-03-09
-### New Features
-- **Aggregate Query API**: Added `querier.aggregate()` with full support across all SQL dialects and MongoDB. Includes typed `QueryAggregate<E>`, `QueryGroupMap`, `QueryHavingMap`, and `QueryAggregateOp` types. Supports `$group` (with `$count`, `$sum`, `$avg`, `$min`, `$max`), `$having` (post-aggregation filtering with operator support), `$where` (pre-aggregation filtering), `$sort`, `$skip`, and `$limit`.
-  ```ts
-  const results = await querier.aggregate(Order, {
-    $group: { status: true, total: { $sum: 'amount' }, count: { $count: '*' } },
-    $having: { count: { $gt: 5 } },
-    $sort: { total: -1 },
-  });
-  ```
-  - **SQL**: Generates `SELECT ... GROUP BY ... HAVING ... ORDER BY` with proper escaping and parameterization.
-  - **MongoDB**: Generates a full aggregation pipeline (`$match -> $group -> $project -> $match -> $sort -> $skip -> $limit`).
-- **`$distinct` support**: Added `$distinct` option to `Query<E>` for `SELECT DISTINCT` queries.
 
-### Bug Fixes
-- **Sort direction with numeric `-1`**: `SORT_DIRECTION_MAP` only had the string key `'-1'`, not the numeric `-1` from `QuerySortDirection`. Queries using `$sort: { field: -1 }` silently produced ascending order. Now both numeric and string forms work correctly.
-- **MongoDB sort normalization**: Unified sort direction normalization into `sort()` method, ensuring all callers (find queries and aggregate pipelines) normalize string directions (`'asc'`/`'desc'`) to numeric `1`/`-1` for the MongoDB server.
-
-### Type Safety
-- **`QueryAggregateFn` enforces single operation**: Changed from a mapped type (which allowed invalid `{ $count: '*', $sum: 'amount' }`) to a discriminated union that enforces exactly one aggregate op per entry.
-- **HAVING `$in`/`$nin` support**: `havingCondition` now supports `$in` and `$nin` operators (e.g., `HAVING COUNT(*) IN (5, 10)`).
-- **HAVING `$isNull`/`$isNotNull` support**: `havingCondition` now supports null-checking operators (e.g., `HAVING MAX(score) IS NULL`).
-
-### Code Quality
-- **`compareFieldOperator` compaction**: Reduced from 142 to 85 lines (−40%) by extracting `COMPARE_OP_MAP` (simple comparison operators), `LIKE_OP_MAP` (8 string/LIKE operators), and unifying `$in`/`$nin` into a single code path.
-- **`saveRelation` split**: Decomposed the 61-line monolith into a dispatcher + 3 focused helpers by cardinality: `saveToMany` (1:M + M:M), `saveOneToOne` (1:1), `saveManyToOne` (M:1).
-- **`buildAggregateStages` complexity reduction**: Extracted `buildHavingFilter()` helper from the MongoDB aggregation pipeline builder, bringing cognitive complexity under the linter threshold.
-- **`deleteMany` DRY**: Eliminated duplicated `emitHook -> internalDeleteMany -> deleteRelations` logic by reusing the `resolveEntityAndQuery()` pattern.
-- **`directionMap` deduplication**: Extracted the `asc/desc -> 1/-1` mapping into a static `SORT_DIRECTION_MAP` constant shared by `sort()` and `aggregateSort()`.
-- **`parseGroupMap` shared utility**: Eliminated `$group` parsing duplication between SQL and MongoDB dialects with a single generator function in `dialect.util.ts`.
-- **`transformOperators` compaction**: Replaced verbose `if/else if` chains with a static `MONGO_COMPARISON_OP_MAP` lookup, and absorbed `$like`/`$ilike` into `REGEX_OP_MAP`.
-- **`putChildrenInParents` simplification**: Simplified child-grouping loop using explicit initialization pattern.
-- **`findManyAndCount` cleanup**: Replaced spread + triple-delete mutation with clean destructuring.
-- **`insertRelations` cleanup**: Replaced `.map()` with implicit undefined return with `.filter().map()` pattern.
-- **Dead code removal**: Removed dead `Array.isArray` branch in `fillToManyRelations` (array-based `$select` was removed in 3.14.0), dead `Promise.resolve()` in async context, unused generic type parameter.
-- **`havingCondition` visibility**: Changed from `private` to `protected` to allow dialect subclass overrides.
-- **`insertRelations` DRY**: Eliminated double `filterPersistableRelationKeys` call per item using a single `.reduce()` pass.
-- **`where()` loop**: Replaced `.reduce()` accumulator in MongoDB `where()` with a cleaner `for...of` loop.
-- **`_id` constant**: Extracted repeated `'_id'` string literal to `MongoDialect.ID_KEY` class constant.
-- **`negateOperatorMap` static**: Promoted per-call `negateOperatorMap` allocation in `compareLogicalOperator` to `static readonly NEGATE_OP_MAP`.
-- **`AGGREGATE_OP_MAP` class-level**: Moved module-level `MONGO_AGGREGATE_OP_MAP` to `MongoDialect.AGGREGATE_OP_MAP` static, consistent with `REGEX_OP_MAP` and `NATIVE_OPS`.
-
-### Test Coverage
-- Added comprehensive tests for `aggregate()` (all SQL dialects + MongoDB pipeline stages), HAVING `$in`/`$nin`/`$isNull`/`$isNotNull`, sort with numeric `-1`, mixed sort directions, MongoDB string-to-numeric sort normalization, aggregate pagination, `parseGroupMap` (edge cases), and `deleteMany` dual-API pattern. All coverage thresholds met.
-
-## [0.2.1] - 2026-03-08
-### New Features
-- **`@Transactional({ isolationLevel })` support**: The decorator now accepts an `isolationLevel` option, forwarded to `beginTransaction()`.
-- **`pool.transaction(callback, opts?)` support**: `TransactionOptions` (including `isolationLevel`) are now forwarded through the pool to `querier.transaction()`.
-- **Transaction reuse (nesting)**: `querier.transaction()` and `@Transactional()` now reuse the active transaction when called inside an existing one, enabling composable service methods. `beginTransaction()` remains strict (throws if already in a transaction).
+- **`querier.aggregate()`** across every SQL dialect and MongoDB: `$group`, `$having`, `$where`, `$sort`, `$skip`, `$limit`, and `$distinct` on `Query<E>`.
+- `$sort: { field: -1 }` sorted ascending: the direction map only had the string `'-1'`.
 
 ## [0.2.0] - 2026-03-08
-### New Features
-- **Transaction Isolation Levels**: `beginTransaction()` and `transaction()` now accept an optional `TransactionOptions` object with an `isolationLevel` property. Supports all standard SQL isolation levels: `read uncommitted`, `read committed`, `repeatable read`, and `serializable`.
-  - **PostgreSQL**: Uses inline syntax (`BEGIN TRANSACTION ISOLATION LEVEL ...`).
-  - **MySQL / MariaDB**: Uses the `SET TRANSACTION ISOLATION LEVEL` + `START TRANSACTION` two-statement pattern.
-  - **SQLite / LibSQL / MongoDB**: Isolation level is silently ignored (these databases do not support configurable isolation levels).
-  ```ts
-  await querier.beginTransaction({ isolationLevel: 'serializable' });
-  // or with the callback API
-  const result = await querier.transaction(async () => {
-    return querier.findMany(User, {});
-  }, { isolationLevel: 'read committed' });
-  ```
-- **Config-Driven Dialect Strategy**: Added `isolationLevelStrategy` to `DialectConfig` (`'inline'` | `'set-before'` | `'none'`), enabling declarative per-dialect SQL generation without dialect-name branching.
 
-## [0.1.5] - 2026-03-08
-### Type Safety
-- **Eliminated `any` Types**: Replaced `any` with proper types across decorators (`serialized.ts`, `log.ts`, `transactional.ts`), Express middleware (`querierMiddleware.ts`), MongoDB dialect pipeline types, SQLite querier pool, and migrator. Remaining `any` usages are documented and justified (generic variance, `Reflect.getMetadata`).
-- **Typed `raw()` Return**: `raw()` now returns `QueryRaw` instead of `any`, enabling IDE autocompletion and compile-time validation.
-
-### Bug Fixes
-- **Fixed `IsolationLevel` Typo**: Corrected `'repeteable read'` -> `'repeatable read'` in the `IsolationLevel` type.
-
-### Security
-- **`raw()` Safety Documentation**: Added JSDoc warning that `raw()` bypasses SQL parameterization, with guidance to use `$where` operators for user-supplied data.
-
-## [0.1.4] - 2026-03-08
-### Bug Fixes
-- **Fixed Virtual Field Alias in Relations**: `getRawValue` was missing a dot separator in prefixed aliases and had a stale dot->underscore replacement from the old convention. Added tests to prevent regressions.
-
-## [0.1.3] - 2026-03-08
-### Code Quality
-- **Internal Code Cleanup**: Eliminated unnecessary allocations and simplified utility functions across the codebase. Removed dead code and redundant variables.
+- **Transaction isolation levels** on `beginTransaction()`/`transaction()`, inline on PostgreSQL, `SET TRANSACTION` on MySQL/MariaDB, ignored where the engine has none.
+- `@Transactional({ isolationLevel })`, and a nested `transaction()` reuses the active one instead of failing.
 
 ## [0.1.1] - 2026-03-08
-### Bug Fixes
-- **Fixed Row Parsing for Underscore Columns**: Columns containing underscores (e.g., `user_id`) were incorrectly unflattened into nested objects (`{ user: { id: value } }`). SQL JOIN aliases now use quoted dot-notation (e.g., `` `profile.pk` `` instead of `` `profile_pk` ``), eliminating the ambiguity. Dot-delimited aliases are safe because they are always quoted identifiers. Updated tests to prevent regressions.
 
-### Performance
-- **Faster SQL Query Generation**: Optimized the internal SQL generation pipeline to reduce overhead on every query. Identifier escaping now reuses pre-compiled regex patterns instead of creating new ones per call. Relation detection short-circuits without intermediate array allocations. The query context tracks SQL length incrementally, avoiding repeated string joins. These changes reduce per-query CPU and memory cost, improving throughput for high-volume workloads.
-- **Zero-Allocation Row Parsing**: `unflatObjects` now uses index-based path traversal instead of `slice().reduce()`, eliminating an array allocation per nested column per row.
+- Columns containing underscores (`user_id`) were unflattened into nested objects. JOIN aliases use quoted dot-notation now.
 
 ## [0.1.0] - 2026-03-08
-### Package Rename
-- **Renamed `@uql/core` -> `uql-orm`**: The package is now published as an unscoped name for better SEO, discoverability, and simpler install commands (`npm install uql-orm`).
-- **Version Reset to `0.1.0`**: Fresh start to reflect UQL's modern, fast-moving nature. All functionality from `@uql/core@3.15.0` is preserved - this is a rename, not a rewrite.
-- **New Homepage**: [uql-orm.dev](https://uql-orm.dev)
-- **Migration**: Update your imports from `@uql/core` -> `uql-orm` (e.g., `import { Entity } from 'uql-orm'`). Sub-path imports follow the same pattern (e.g., `uql-orm/postgres`, `uql-orm/migrate`).
 
-## [3.15.0] - 2026-03-07
-### New Features
-- **Lifecycle Hooks**: Added entity-level lifecycle hook decorators for domain-specific logic. Seven decorators are available: `@BeforeInsert()`, `@AfterInsert()`, `@BeforeUpdate()`, `@AfterUpdate()`, `@BeforeDelete()`, `@AfterDelete()`, and `@AfterLoad()`. Hooks receive a `HookContext` with access to the active `querier` for transactional DB operations.
-  ```ts
-  @Entity()
-  class Article {
-    @BeforeInsert()
-    generateSlug() {
-      this.slug = this.title.toLowerCase().replace(/\s+/g, '-');
-    }
+**Renamed `@uql/core` to `uql-orm`**, published unscoped, and reset to `0.1.0`. A rename, not a rewrite: everything from `@uql/core@3.15.0` is preserved. Update imports (`uql-orm`, `uql-orm/postgres`, `uql-orm/migrate`). New home: [uql-orm.dev](https://uql-orm.dev).
 
-    @AfterLoad()
-    maskSensitiveData() {
-      this.internalCode = '***';
-    }
-  }
-  ```
-- **Global Querier Listeners**: Added `QuerierListener` interface and `listeners` option on `ExtraOptions` for cross-cutting concerns (audit logging, automatic timestamps, cache invalidation). Listeners fire before entity-level hooks.
-  ```ts
-  const pool = new PgQuerierPool(connectionConfig, {
-    listeners: [{
-      beforeInsert: ({ entity, payloads }) => { /* audit log */ },
-      afterUpdate: ({ entity, querier }) => { /* invalidate cache */ },
-    }],
-  });
-  ```
+---
 
-### Architecture
-- **Renamed Internal Methods**: `insertMany`/`updateMany` in `AbstractSqlQuerier` and `MongodbQuerier` are now `internalInsertMany`/`internalUpdateMany` (protected). Public `insertMany`/`updateMany` in `AbstractQuerier` wrap them with hook emission.
-- **New Utility**: `runHooks()` in `util/hook.util.ts` - lightweight hook invocation engine using `entity.prototype[method].call(payload, ctx)`.
-- **Hook Inheritance**: Entity hooks are inherited from parent classes (parent hooks execute first).
-
-### Test Coverage
-- **22 new tests** (11 for decorators, 11 for `runHooks`). Total: **1602 tests passing**. Coverage: Statements 97.2%, Branches 90.1%, Functions 98.4%, Lines 98.0%.
-
-## [3.14.0] - 2026-03-07
-### Type Safety
-- **Map-Only `$select`**: `$select` now only accepts the map form (e.g., `{ id: true, name: true }`), removing the less type-safe array form. Relation selections are now additive in map form.
-- **Stricter `$and`/`$or`/`$not`/`$nor`**: Logical operators now only accept `QueryWhereMap | QueryRaw` elements - bare ID values (e.g., `$or: [5]`) must use the explicit form `$or: [{ id: 5 }]`. This restores TypeScript's excess property checking inside logical clauses.
-- **Wider JSON Array Operators**: `$elemMatch` and `$all` now accept JSON fields without requiring `as any` casts, thanks to widened fallback types for non-array field types. Removed 6 unnecessary `as any` casts from tests.
-
-### Refactoring
-- **Simplified Express Middleware**: `$where` ID injection in `querierMiddleware` now always uses map form, properly converting array `$where` from query strings to `{ id: { $in: [...] } }`.
-- **Removed `QueryWhereSingle`**: Consolidated into a flattened `QueryWhere<E>` union. Introduced reusable `QueryWhereArray<E>` type alias.
-
-## [3.13.1] - 2026-03-07
-### Type Safety
-- **Fully Typed Querier Returns**: Remaining querier methods now return proper types instead of `unknown`, enabling IDE autocompletion and compile-time validation on query results for all methods.
-- **Semantic `RawRow` Type**: Introduced `RawRow` as a reusable semantic alias for raw database result rows, replacing scattered `Record<string, unknown>` and `any` across queriers, introspection, and SQL utilities.
-- **Typed MySQL Driver**: Replaced `any` in MySQL2 querier with proper `ResultSetHeader` type from the driver.
-- **Smarter `$select` Validation**: Field and relation selections are now validated simultaneously, catching invalid property names at compile time.
-- **Stricter Null Comparisons**: `null` is now only accepted in `$eq` and `$ne` operators - invalid comparisons like `$gt: null` are caught at compile time.
-- **Typed `defaultValue`**: Entity field defaults are now type-checked instead of accepting `any`.
-
-### API Surface & DX
-- **Cleaner Querier Interfaces**: `ClientQuerier` and `UniversalQuerier` are now properly separated with documented contracts, preventing confusing type mismatches.
-- **Reduced Public API**: Removed unused/redundant type exports (`QuerySearchOne`, `QueryConflictPathsMap`), making the API surface smaller and easier to navigate.
-- **Improved JSDoc**: Added cross-references between related operators (`$not` root vs field) for better discoverability.
-
-### Refactoring
-- **DRY Relation Iteration**: Consolidated duplicated relation iteration logic into `forEachJoinableRelation`, eliminating ~35 duplicated lines.
-- **DRY `compareJsonPath`**: Simplified from 6 parameters to 3, removing redundant internal calls.
-- **DRY `extractInsertResult`**: Shared utility for INSERT result ID extraction across all RETURNING-based drivers (pg, neon, maria), eliminating duplicated logic.
-- **Eliminated Type Casts**: Replaced `Record<string, unknown>` casts with proper type guards across the dialect layer.
-- **Typo Fix**: Renamed `buldQueryWhereAsMap` -> `buildQueryWhereAsMap`.
-
-## [3.13.0] - 2026-03-07
-### New Features
-- **`QueryRaw` Class Refactoring**: Replaced the opaque type + type-guard pattern with a proper `class` using `Symbol`-keyed properties (`RAW_VALUE`, `RAW_ALIAS`). Enables `instanceof QueryRaw` checks, eliminates autocomplete pollution, and prevents accidental structural matches.
-- **JSON `$merge`/`$unset` Operators**: Restored type-safe partial update of JSONB fields via `$merge` (shallow merge) and `$unset` (key removal) in `update()` payloads. Works across PostgreSQL (`||`/`-`), MySQL (`JSON_MERGE_PATCH`/`JSON_REMOVE`), and SQLite (`json_patch`/`json_remove`).
-  ```ts
-  await querier.updateMany(Company, { $where: { id: 1 } }, {
-    kind: { $merge: { theme: 'dark' }, $unset: ['deprecated'] },
-  });
-  ```
-- **JSON Dot-Notation Sorting**: `$sort` now supports JSONB dot-notation paths (e.g. `{ 'kind.priority': 'desc' }`), sharing the `resolveJsonDotPath` helper with `$where` for DRY consistency.
-
-## [3.12.1] - 2026-03-05
-### Bug Fixes
-- **Null-Safe JSONB `$ne`**: JSONB dot-notation `$ne` now uses null-safe operators (`IS DISTINCT FROM` on PostgreSQL, `IS NOT` on SQLite) so that absent keys (which return SQL `NULL`) are correctly included in results. Previously, `{ 'settings.isArchived': { $ne: true } }` would silently exclude rows where the key didn't exist.
-- **JSONB `$eq`/`$ne` with `null`**: `$eq: null` and `$ne: null` on JSONB paths now correctly generate `IS NULL` / `IS NOT NULL` instead of `= NULL` / `<> NULL`.
-
-### Improvements & Refactoring
-- **`QueryWhereMap` Type Safety**: Replaced the overly permissive `Record<string, ...>` catch-all with explicit typed unions: template literal `` `${string}.${string}` `` for dot-paths, `RelationKey<E>` for relation filtering, and `JsonFieldPaths<E>` for IDE autocompletion.
-- **`DeepJsonKeys` Recursive Type**: `JsonFieldPaths<E>` now derives dot-notation paths up to 5 levels deep (previously only 1 level), enabling autocompletion for nested JSONB structures like `'kind.theme.color'`.
-- **DRY `compare()` Signature**: Simplified `compare()` from `<E, K extends keyof QueryWhereMap<E>>(key: K, val: QueryWhereMap<E>[K])` to `<E>(key: string, val: unknown)` across all dialect overrides, removing redundant generic constraints.
-- **DRY SQLite Config**: SQLite's `getBaseJsonConfig()` now spreads from `super` instead of duplicating 4 identical fields.
-
-### Test Coverage
-- Removed ~20 `as any` casts from tests (now unnecessary with improved types). Added null-safe `$ne` tests across all dialects. Total: **1,563 tests passing**.
-
-## [3.12.0] - 2026-03-05
-### New Features
-- **JSONB Dot-Notation Operators**: Filter by nested JSON field paths directly in `$where` with full operator support (`$eq`, `$ne`, `$gt`, `$lt`, `$like`, `$ilike`, `$in`, `$nin`, `$regex`, etc.). Works across PostgreSQL, MySQL, and SQLite.
-  ```ts
-  await querier.findMany(User, {
-    $where: { 'settings.isArchived': { $ne: true } },
-  });
-  ```
-- **Relation Filtering**: Filter by ManyToMany and OneToMany relations using automatic EXISTS subqueries. No more manual `raw()` joins.
-  ```ts
-  await querier.findMany(Item, {
-    $where: { tags: { name: 'important' } },
-  });
-  ```
-- **`Json<T>` Marker Type**: Wrap JSONB field types with `Json<T>` to ensure they are classified as `FieldKey` (not `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`.
-  ```ts
-  @Field({ type: 'jsonb' })
-  settings?: Json<{ isArchived?: boolean }>;
-  ```
-- **`JsonFieldPaths<E>` Autocompletion**: Template literal type that derives valid dot-notation paths from `Json<T>` fields (e.g., `'kind.public' | 'kind.private'`). Provides IDE autocompletion for JSONB `$where` queries without restricting arbitrary string paths.
-
-### Bug Fixes
-- **raw() String Prefix Fix**: String-based `raw()` values in `$and`/`$or` are no longer incorrectly table-prefixed (e.g., `raw("kind IS NOT NULL")` previously produced `resource.kind IS NOT NULL` instead of `kind IS NOT NULL`).
-
-### Improvements & Refactoring
-- **DRY JSON Config**: Extracted `getBaseJsonConfig()` in each dialect - `$elemMatch` and dot-notation now compose from a single config source, eliminating ~20 lines of duplication.
-- **Extracted `normalizeWhereValue()`**: Deduplicated the `Array->$in / object->passthrough / scalar->$eq` normalization used by both regular field and JSON path comparisons.
-- **Cleaner Dot-Notation Detection**: Uses `indexOf`+`slice` instead of two `split('.')` calls for efficient dot-path parsing.
-- **Relation Safety Guard**: `compareRelation()` now throws a descriptive `TypeError` if `rel.references` is missing, instead of a cryptic undefined crash.
-- **TypeScript 6 Compatibility**: Fixed `QueryWhereMap` circular type reference and expanded `QueryWhereOptions.clause` union.
-
-### Test Coverage
-- **46 new tests** across 3 dialects (base, PostgreSQL, SQLite) covering all new features and edge cases. Total: **1561 tests passing**.
-
-## [3.11.1] - 2026-02-26
-### Improvements
-- **Expanded ColumnType Aliases**: Added `integer`, `tinyint`, `bool`, `datetime`, and `smallserial` as first-class `ColumnType` values (aliases for `int`, `boolean`, `timestamp`, `smallserial`, and `serial` respectively). Users can now use standard SQL keywords interchangeably (e.g., `integer` or `int`, `bool` or `boolean`, `datetime` or `timestamp`).
-- **Auto-Increment Fix**: `smallserial` columns are now correctly detected as auto-incrementing, consistent with `serial` and `bigserial`.
-
-## [3.11.0] - 2026-02-21
-### New Features
-- **Scoped Querier**: Added `pool.withQuerier(callback)` - the non-transactional counterpart to `pool.transaction()`. Acquires a querier, runs the callback, and guarantees release via `try/finally`. Useful for scoping connection lifetime without transaction overhead.
-
-  ```ts
-  const users = await pool.withQuerier(async (querier) => {
-    return querier.findMany(User, { $limit: 10 });
-  });
-  // querier is automatically released here
-  ```
-
-## [3.10.0] - 2026-02-18
-### New Features
-- **Bulk Upsert**: Added `upsertMany` operation to the `Querier` and `UniversalQuerier` interfaces, enabling efficient bulk insert-or-update across all supported databases.
-  - **SQL** (PostgreSQL, MySQL, MariaDB, SQLite): Uses a single `INSERT ... ON CONFLICT/ON DUPLICATE KEY UPDATE` statement with array payloads.
-  - **MongoDB**: Uses `bulkWrite` with `updateOne` + `upsert: true` operations.
-  - `upsertOne` now delegates to `upsertMany` in SQL dialects for DRY internals; MongoDB retains independent `findOneAndUpdate` for optimal single-document behavior.
-
-### Test Coverage
-- **Branch coverage improved from ~88% to 90%** with targeted tests across `schemaAST`, `entityMerger`, `driftDetector`, `canonicalType`, and `tableBuilder`.
-
-### Dependencies
-- `@biomejs/biome` 2.3.15 -> 2.4.2
-- `rimraf` 6.1.2 -> 6.1.3
-- `mariadb` 3.4.5 -> 3.5.1
-- `mysql2` 3.17.1 -> 3.17.2
-
-## [3.9.2] - 2026-02-13
-### Improvements & Refactoring
-- **Reduced Cognitive Complexity**: Extracted `compareLogicalOperator` from `AbstractSqlDialect.compare` and `countBraces` helper from `EntityMerger.findInsertPosition`, bringing both functions under the biome complexity threshold.
-- **Tighter Type Safety**: Replaced `any` with `unknown` across the logger interface, field utilities, and D1 bindings. Typed all DB querier constructors with `ExtraOptions` instead of `any`.
-
-## [3.9.1] - 2026-02-13
-### Improvements & Refactoring
-- **TypeScript Upgrade**: Upgraded to TypeScript ^5.9.3 and hardened `tsconfig.json` with strict flags (`noPropertyAccessFromIndexSignature`, `verbatimModuleSyntax`, etc.).
-- **Type Safety Polish**: Propagated `E extends object` constraint across the `Querier` hierarchy and refined driver signatures to eliminate type casts (`as any`).
-
-### Bug Fixes
-- **MySQL Introspection Fix**: Fixed a bug where string default values were returned with surrounding quotes (e.g., `'active'`) during schema discovery in MySQL and MariaDB.
-
-## [3.9.0] - 2026-02-13
-### New Features
-- **New Query Operators**: Added `$between`, `$isNull`, `$isNotNull`, `$all`, `$size`, and `$elemMatch` operators with full support across PostgreSQL, MySQL, SQLite, and MongoDB.
-- **Dual-API Pattern**: Querier read and delete methods (`findOne`, `findMany`, `findManyAndCount`, `count`, `deleteMany`) now accept either the classic `(Entity, query)` call or an RPC-friendly `({ $entity: Entity, ...query })` call. This enables cleaner serialization for RPC/REST endpoints.
-
-### Improvements & Refactoring
-- **Structured Slow-Query Config**: Replaced flat `slowQueryThreshold: number` with a `slowQuery: { threshold, logParams? }` object. Use `logParams: false` to suppress sensitive query parameters from slow-query logs.
-- **DRY Dialect Refactor**: Extracted shared `$elemMatch` field-condition logic into `buildJsonFieldCondition` in `AbstractSqlDialect` with a `JsonFieldConfig` type. Each SQL dialect now passes a small config object (~10 lines) instead of duplicating a ~60-line switch across MySQL, PostgreSQL, and SQLite.
-- **Safer Abstract Base**: `$all`, `$size`, and `$elemMatch` now throw in the abstract SQL dialect base class, forcing each dialect subclass to provide its own implementation. This prevents silent inheritance of dialect-specific syntax.
-
-### Bug Fixes
-- **SQLite `$in`/`$nin` Fix**: Fixed a critical bug where `buildJsonFieldOperator` used `vals.shift()` inside `.map()`, mutating the input array and only processing half the values.
-- **Accurate Slow-Query Logging**: The `@Log()` timer now excludes connection establishment (TCP/SSL handshake) time. Previously, the first query on a new connection could trigger false slow-query alerts. Connection setup (`lazyConnect()`) is now centralized in `all()`/`run()` outside the `@Log()` scope.
-
-## [3.8.4] - 2026-01-09
-### Improvements
-- **Strict Type Polish**: Replaced remaining `any` type usage with `unknown` in the SQL introspection layer for improved safety. Refactored `toNumber` to handle more robustly various database numeric results during schema crawling.
-
-## [3.8.3] - 2026-01-09
-### Improvements & Refactoring
-- **Unified SQL Introspectors**: Refactored the database introspection layer using a template-method pattern via `AbstractSqlSchemaIntrospector`. This consolidated shared logic for **PostgreSQL**, **MySQL**, **MariaDB**, and **SQLite**, reducing code duplication by ~280 lines while ensuring consistent behavior across all SQL dialects.
-- **Enhanced `@Index` Decorator**: Completed the implementation for composite and customized indexes. Developers can now define multi-column indexes with support for custom `name`, `unique` constraints, and dialect-specific `type` (e.g., `btree`, `hash`, `gin`, `gist`) and `where` clauses.
-- **Reliable Schema Generation**: Synced `SqlSchemaGenerator` with the **Schema AST** for initial `CREATE TABLE` operations. This ensures that manually defined composite indexes and complex constraints are automatically included in new migrations and `autoSync` actions.
-- **Robust SQLite Introspection**: Optimized SQLite-specific PRAGMA handling to correctly manage non-standard placeholder support, resolving "Too many parameters" errors and improving stability for **LibSQL** and **Cloudflare D1**.
-- **Refined Type Safety**: Fixed TypeScript compilation issues related to `override` modifiers and corrected internal type mismatches in `SchemaASTBuilder`, achieving a perfectly clean `tsc` output and 100% test coverage for all introspector modules.
-
-## [3.8.2] - 2026-01-08
-### Improvements & Refactoring
-- **Refactored Dialect Configuration**: Grouped dialect-specific flags into a cohesive `features` object within `DialectConfig`. Introduced a new `foreignKeyAlter` flag to explicitly manage support for post-creation foreign key constraints, improving architectural clarity.
-- **Enhanced Table Builder**: Foreign key definitions created via the fluent `.references()` API are now automatically promoted to table-level constraints during the build process. This ensures full compatibility with **SQLite** and other dialects that require foreign keys to be defined within the `CREATE TABLE` statement.
-- **Predictable SQL Expressions**: Removed brittle string auto-detection in `formatDefaultValue`. Developers are now encouraged to use the explicit `raw()` helper or the `t.now()` shortcut for SQL expressions like `CURRENT_TIMESTAMP`, ensuring deterministic behavior across all databases.
-- **Robust Introspection Tests**: Refactored the integration test suite to use explicit SQL expression helpers and non-shadowed callback parameters. Standardized timestamp type assertions for MySQL and MariaDB, achieving 100% pass rate across the entire test suite (1,383 tests).
-
-## [3.8.0] - 2026-01-08
-### Schema Sync System & AST Engine
-- **Schema AST Feature**: Introduced a revolutionary **Schema AST (Abstract Syntax Tree)** engine that treats the database schema as a graph. This enables features like **Circular Dependency Detection** and automatic topological sorting for `CREATE`/`DROP` operations, solving complex schema edge cases that simple list-based approaches cannot handle.
-- **Smart Relation Detection**: When scaffolding entities from an existing database (`generate:from-db`), UQL now automatically infers **OneToOne** and **ManyToMany** relationships by analyzing foreign key structures and naming conventions (e.g., `user_id` -> `User` entity), significantly reducing manual boilerplate.
-- **Drift Detection**: Added the `drift:check` command to detect discrepancies between your TypeScript entities and the actual database schema. It reports critical issues (missing tables, risk of data truncation) and warnings (missing indexes) to ensure production safety.
-- **Bidirectional Index Sync**: Indexes are now fully synchronized in both directions. `@Field({ index: true })` definitions are pushed to the database, and existing database indexes are reflected in generated entity files.
-- **Unified Migration Builder API**: Refactored the migration builder to use a cohesive **Options Object** API (e.g., `t.string('email', { length: 255, unique: true })`). This replaces the old positional argument style, aligning strictly with the `@Field` decorator options for a consistent developer experience.
-- **Refactored Generators**: Consolidated `SqlSchemaGenerator` and `MongoSchemaGenerator` into a unified architecture, sharing core logic for simpler maintenance and better type safety.
-
-## [3.7.14] - 2026-01-06
-### Documentation
-- **README Refinement**: Improved docs about new Migrations feature.
-
-## [3.7.12] - 2026-01-06
-### Improvements
-- **Expanded Float Support**: Added `float4`, `float8`, and `double precision` to `ColumnType`, with proper mapping across PostgreSQL, MySQL, and SQLite.
-- **Type Grouping & Safety**: Introduced specialized union types (`NumericColumnType`, `StringColumnType`, `DateColumnType`, etc.) for better internal organization and exhaustive type checking.
-- **Optimized Type Helpers**: Refactored `field.util.ts` to use `as const satisfies Record<T, true>` for all column type groups, ensuring compile-time verification when adding new types.
-- **Dialect Refactoring**: Standardized SQL dialects to use centralized type helpers (`isNumericType`, `isJsonType`), improving code reuse and consistency.
-
-## [3.7.11] - 2026-01-04
-### Improvements
-- **Enhanced Down Migrations**: `generateAlterTableDown` now generates complete reversals for column alterations (restores original type) and index additions (drops them). For dropped columns/indexes, a TODO comment is added since the original schema isn't stored.
-- **Bun Documentation**: Added note in README for Bun users with TypeScript path aliases to use `--bun` flag for proper resolution.
-
-## [3.7.10] - 2026-01-04
-### Improvements
-- **Robust Config Loading**: Integrated `jiti` into the CLI configuration loader. This allows `uql-migrate` to natively support TypeScript configuration files (`uql.config.ts`) and properly resolve ESM/CJS interop logic across all node environments (Node.js, Bun, etc.) without requiring custom runtime flags.
-
-## [3.7.9] - 2026-01-04
-- **Manual Migrations**: Updated the root README to explicitly document the `generate` command for creating manual incremental migrations (`npx uql-migrate generate <name>`), ensuring developers know how to create empty migration files efficiently.
-
-### Bug Fixes
-- **CLI Entry Point**: Fixed a critical issue where the `uql-migrate` command would silently fail in certain environments (e.g., when run via `npx` or symlinks) due to brittle entry point detection. The CLI now reliably executes regardless of how it is invoked.
-
- ## [3.7.7] - 2026-01-04
- ### Refined Foreign Key Handling & Control
- - **Recursive Type Inheritance**: Foreign key columns now automatically inherit the exact SQL type of their referenced primary keys (e.g., `UUID` -> `UUID`), ensuring perfect compatibility even in complex inheritance or self-referencing relationships.
- - **Custom Foreign Key Control**: Introduced the `foreignKey` option in `@Field` and `@Id` to allow specifying custom semantic names for constraints or disabling physical constraints (`false`) while maintaining logical references.
- - **Deterministic Constraint Naming**: Standardized default foreign key naming to `` `fk_${tableName}_${columnName}` ``, ensuring uniqueness and predictability across the database.
- - **Enhanced Schema Robustness**: Improved the schema generator's resilience against entities using circular dependencies or deep inheritance chains.
- - **Express Middleware Fix**: Resolved an issue in `query.util.ts` where the query parser could crash when receiving array-based query parameters (e.g., `$where[]=1`), preventing correct filtering in Express applications.
- - **Field Utility Optimization**: Refactored `isNumericType` to use a `Set` for O(1) lookups and resolved strict type checking issues in `field.util.ts`.
-
- ## [3.7.5] - 2026-01-04
- ### Enhanced Type Inference & Default Value Comparison
- - **Strict Field Type Safety**: Standardized the `type` property in `@Field` and `@Id` to use a strict union of global constructors (`String`, `Number`, etc.) and verified `ColumnType` strings.
- - **Removed String Aliases**: Deprecated and removed support for informal string aliases like `'string'`, `'number'`, `'boolean'`, and `'date'` in the `type` property. Developers should use the corresponding TypeScript constructors for logical mapping.
- - **Semantic Type Inference**: Added robust support for `'uuid'`, `'json'`, `'jsonb'`, and `'vector'` as valid semantic values for the `type` property. This ensures correct cross-database SQL mapping even when specified as semantic strings.
-
- ## [3.7.4] - 2026-01-04
- ### Enhanced Schema Generation & Type Safety
- - **Fixed Foreign Key Type Mismatch**: Resolved an issue where foreign key columns could default to incompatible types (e.g., `TEXT`) when referencing primary keys of a different type (e.g., `UUID`). Foreign keys now automatically inherit the exact SQL type of the column they reference.
- - **Improved Default Value Comparison**: Standardized default value normalization to handle complex PostgreSQL type casts (e.g., `'[]'::jsonb[]`) and accurately compare object/array defaults using `JSON.stringify`, effectively eliminating "phantom diffs."
- - **Improved Primary Key Inference**: String-based primary keys (including UUIDs) no longer incorrectly default to `BIGINT` auto-incrementing serials. The ORM now only applies auto-increment logic to numeric types (`number`, `BigInt`) unless explicitly configured via `@Id({ autoIncrement: true })`.
- - **Architectural Refactor**: Consolidated schema generation to use a unified `fieldToColumnSchema` path for both initial creation and synchronization, ensuring perfect structural consistency and eliminating "phantom diffs".
- - **Reusable Field Utilities**: Created `field.util.ts` for centralized logic regarding auto-increment and numeric type checks, improving maintainability across the ORM.
- - **Safety Fix**: Refined `generateColumnDefinitionFromSchema` to safely strip redundant `PRIMARY KEY` constraints during `ALTER TABLE` operations, avoiding "Duplicate Primary Key" errors while maintaining auto-incrementing properties.
- - **Expanded Unit Tests**: Added comprehensive branch testing for field properties and type inference to ensure long-term stability across all 8 supported databases.
-
- ## [3.7.3] - 2026-01-04
-### Robust Schema Synchronization
-- **Safe AutoSync**: Primary keys are now immune to automated alterations, preventing dangerous schema changes and ensuring database stability.
-- **Modern Primary Keys**: Standardized on **64-bit** auto-increment primary keys across all SQL dialects to align with TypeScript's `number` type:
-  - **PostgreSQL**: Now uses `BIGINT GENERATED BY DEFAULT AS IDENTITY` (SQL Standard).
-  - **MySQL / MariaDB**: Now uses `BIGINT UNSIGNED AUTO_INCREMENT`.
-  - **SQLite / LibSQL / D1**: Consistently uses 64-bit `INTEGER PRIMARY KEY`.
-- **SQLite `STRICT` Mode**: Tables generated for SQLite, LibSQL, and Cloudflare D1 now use **`STRICT` mode** by default, enforcing type integrity at the database level.
-- **Polymorphic Type Resolution**: Refactored `getSqlType` to be dialect-aware for all core types (Numbers, Strings, Booleans, Dates), preventing dialect-specific types from leaking into incompatible databases.
-- **Semantic Type Comparison**: Implemented intelligent type normalization that understands dialect-specific aliases (e.g., `INTEGER` vs `INT`) and ignores implementation details like MySQL display widths (`BIGINT(20)`).
-- **Fixed ALTER Syntax**: Resolved "Duplicate primary key" errors in MySQL/MariaDB by ensuring `MODIFY COLUMN` statements omit existing constraints during type or nullability updates.
-- **Improved Postgres Introspection**: Enhanced default value comparison to correctly handle complex Postgres type casts (e.g., `::timestamp without time zone`) and quoted strings.
-- **Expanded Testing**: Added **SQLite**, **LibSQL**, and **Cloudflare D1** scenarios to the integration test suite, ensuring 100% behavioral consistency across all 8 supported databases.
-- **Predictable Test Assertions**: Refactored all schema synchronization and introspection tests to use direct, non-conditional assertions, improving test reliability and failure clarity by removing optional chaining and non-null assertions.
-- **Clean Test Logic**: Removed imperative conditionals from test generators, replacing them with declarative mapping objects for dialect-specific type verification.
-
-## [3.7.2] - 2026-01-04
-### Improve documentation
-- **AutoSync**: Clarified that entities must be imported/loaded before calling `autoSync()`. Added examples for both explicit entity passing (recommended) and auto-discovery approaches, plus debugging tips
-
-## [3.7.1] - 2026-01-04
-### Improve documentation
-- Update examples in docs and improve formatting of README
-
-## [3.7.0] - 2026-01-04
-### Improvements
-- **Repository Pattern Removal**: Removed the built-in Repository pattern implementation (`GenericRepository`, etc.) to simplify the framework architecture (KISS). Users should rely on the `Querier` interface or implement custom layers if needed.
-- **Testing**: Added comprehensive tests for `HttpQuerier` and integration tests for the CLI entry point (`bin.ts`), achieving >99% code coverage.
-
-## [3.6.1] - 2026-01-04
-### New Features
-- **CLI**: Added `--config` / `-c` flag to `uql-migrate` to load a custom configuration file.
-- **CLI**: Improved error handling when loading configuration files (syntax errors are no longer swallowed).
-
-## [3.6.0] - 2026-01-04
-### New Features
-- **CLI**: Added default logger, support to log slow-queries in a parameterized way, and ability to define custom loggers.
-
-## [3.5.0] - 2026-01-03
-### Refactor
-- **Dialect-Aware String Defaults**: Optimized default column types for TypeScript `string` fields across all supported databases.
-  - **PostgreSQL**: Defaults to `TEXT` (idiomatic, no length limits, slightly faster).
-  - **SQLite**: Defaults to `TEXT` (matches internal type affinity).
-  - **MySQL / MariaDB**: Defaults to `VARCHAR(255)` (ensures out-of-the-box compatibility for indices and unique constraints).
-  - Automatically transitions to `VARCHAR(n)` when an explicit `length` is provided in the `@Field()` decorator.
-
-## [3.4.1]
-### Improve documentation
-
-- Update examples in docs
-
-## [3.1.1](https://github.com/rogerpadilla/uql/compare/uql-orm@3.1.0...uql-orm@3.1.1) (2025-12-30)
-### Bug Fixes
-* adjust relative paths for README and CHANGELOG in copyfiles script ([741c2ee](https://github.com/rogerpadilla/uql/commit/741c2ee8839376ca89a860a53950ef6b6d234596))
-
-## [3.1.0](https://github.com/rogerpadilla/uql/compare/uql-orm@3.0.0...uql-orm@3.1.0) (2025-12-30)
-### Bug Fixes
-
-* adjust relative paths for README and CHANGELOG in copyfiles script ([7a61a01](https://github.com/rogerpadilla/uql/commit/7a61a0135da2d0459e588cda7d94f324bb9eebca))
-
-## [3.0.0](https://github.com/rogerpadilla/uql/compare/uql-orm@2.0.0...uql-orm@3.0.0) (2025-12-30)
-Reflect major changes in the package structure and dependencies.
-
-## [2.0.0] - 2025-12-29
-- **Major Rebranding**: Rebranded the project from **Nukak** to **UQL** (Universal Query Language - back to its original name!).
-  - New Slogan: **"One Language. Frontend to Backend."**
-  - Project homepage: [uql-orm.dev](https://uql-orm.dev).
-- **Package Unification**: Unified all database adapters (`mysql`, `postgres`, `maria`, `sqlite`, `mongo`) and `express` middleware into a single core package: `uql-orm`.
-- **Scoped Naming**:
-  - `uql-orm`: The main ORM engine and all database adapters.
-  - `uql-orm/migrate`: The database migration system (formerly `nukak-migrate`).
-- **Improved API Surface**:
-  - Database-specific logic is now accessible via sub-paths (e.g., `import { ... } from 'uql-orm/postgres'`).
-  - Unified `NamingStrategy` and `QueryContext` across all unified adapters.
-- **Build & Distribution**:
-  - Integrated `bunchee` for high-performance browser bundle generation (`uql-orm/browser`).
-  - Minimized core dependency footprint by moving database drivers to optional `peerDependencies`.
-- **Enhanced Type Safety**: Fully updated internal type resolution to support the unified package structure.
-
-## [1.8.0] - 2025-12-29
-- **New Feature**: Added support for **Naming Strategies**.
-  - Automatically translate TypeScript entity and property names to database-specific identifiers (e.g., camelCase to snake_case).
-  - Built-in `DefaultNamingStrategy` and `SnakeCaseNamingStrategy`.
-  - Comprehensive support across all SQL dialects and MongoDB.
-- **Refactoring**:
-  - Unified naming and metadata resolution logic into a new `AbstractDialect` base class shared by both DML (Dialects) and DDL (Schema Generators).
-  - Improved `MongoDialect` to respect naming strategies for collection and field names on both read and write operations.
-
-## [1.7.0] - 2025-12-29
-- **New Package**: Introduced `nukak-migrate` for database migrations.
-  - Supports version-controlled schema changes via local migration files.
-  - Automatic migration generation from entity definitions using schema introspection.
-  - Full support for PostgreSQL, MySQL, MariaDB, and SQLite.
-  - CLI tool for managing migrations (`up`, `down`, `status`, `generate`, `sync`).
-  - Database-backed migration tracking (Database or JSON storage).
-- **Core Improvements**:
-  - Expanded `@Field()` decorator with schema metadata: `length`, `precision`, `scale`, `unique`, `index`, `columnType`, `defaultValue`, and `comment`.
-  - Added schema generation and introspection capabilities to SQL dialects.
-
-## [1.6.0] - 2025-12-28
-- **Architectural Change**: Migrated from "Values as Parameter" to "Context Object" pattern for SQL generation.
-  - This pattern centralizes query parameters and SQL fragments into a `QueryContext`, ensuring robust placeholder management and preventing out-of-sync parameter indices.
-  - Improved compatibility with PostgreSQL's indexed placeholders ($1, $2, etc.) and complex sub-queries.
-  - Standardized dialect interfaces to operate directly on the `QueryContext` for higher performance and cleaner code.
-- Fixed linter issues and unified type safety for `raw()` SQL snippets across all drivers.
-
-## [1.5.0] - 2025-12-28
-- **BREAKING CHANGE**: Implemented "Sticky Connections" for performance. `Querier` instances now hold their connection until `release()` is explicitly called.
-  - If you manually retrieve a querier via `pool.getQuerier()`, you **MUST** call `await querier.release()` when finished, otherwise connections will leak.
-  - `Repositories` and `pool.transaction(...)` callbacks automatically handle this, so high-level usage remains unchanged.
-- Unified serialization logic: `@Serialized()` decorator is now centralized in `AbstractSqlQuerier`, removing redundant overrides in drivers.
-- Fixed MongoDB consistency: `beginTransaction`, `commitTransaction`, and `rollbackTransaction` are now serialized to prevent race conditions.
-- Fix Cross-Dialect SQL JSON bug by moving PostgreSQL-specific casts to the appropriate dialect.
-- Fix transaction race conditions by serializing transaction lifecycle methods and implementing an internal execution pattern.
-
-## [1.4.16] - 2025-12-28
-
-- Implement a "Serialized Task Queue" at the core of the framework to ensure database connections are thread-safe and race-condition free.
-- Introduce `@Serialized()` decorator to simplify the serialization of database operations across all drivers.
-
-## [1.4.14] - 2025-12-28
-
-- Robust `upsert` implementation across all SQL dialects (PostgreSQL, MySQL, MariaDB, SQLite).
-
-## [1.4.10] - 2025-12-27
-
-- Improve types, tests, migrate from EsLint/Prettier to Biome, and update dependencies.
-
-## [1.4.6] - 2024-11-06
-
-- Update dependencies and improve readme.
-
-## [1.4.5] - 2024-09-26
-
-- Imperative transactions have to be closed manually.
-
-## [1.4.4] - 2024-09-26
-
-- Ensure own connection is always released even if exception occurs.
-- Correct issue when empty or null list is passed to `insertMany` operations.
-
-## [1.4.3] - 2024-09-25
-
-- Ensure the connection is auto-released after `commit` or `rollback` runs.
-- Update dependencies.
-
-## [1.4.2] - 2024-09-20
-
-- Fix projection of `@OneToMany` field when the 'one' side produces empty result.
-- Update dependencies.
-
-## [1.4.1] - 2024-08-21
-
-- Add nukak-maku logo.
-- Update dependencies (functionality keeps the same in this release).
-
-## [1.4.0] - 2024-08-15
-
-- Automatically release the querier unless it is inside a current transaction.
-- Remove unnecessary wrapper for transactions from `AbstractQuerierPool` class.
-
-## [1.3.3] - 2024-08-13
-
-- Improve typings of first inserted ID.
-
-## [1.3.2] - 2024-08-13
-
-- Return the inserted IDs in the response of the queriers' `run` function.
-
-## [1.3.1] - 2024-08-13
-
-- Fix an issue related to the `$where` condition of selected relations missed in the final criteria for `@OneToMany` and `@ManyToMany` relationships.
-
-## [1.3.0] - 2024-08-13
-
-- Add support for `json` and `jsonb` fields. Automatically parse the JSON values when persisting with `JSON.parse` function.
-- Improve type-safety in general.
-- Move `getPersistables` inside dialect for higher reusability.
-- Add support for `vector` fields.
-
-## [1.2.0] - 2024-08-12
-
-- Add support for `raw` in values (previously, it was only supported by `$select` and `$where` operators). Allows safe use of any SQL query/clause as the value in an insert or update operation that shouldn't be automatically escaped by the ORM.
-
-## [1.1.0] - 2024-08-11
-
-- Add support for `upsert` operations.
-- Migrate SQLite package driver from `sqlite3` to `better-sqlite3` for better performance.
-- Make Maria package to use the `RETURNING id` clause to get the inserted IDs.
-
-## [1.0.1] - 2024-08-10
-
-- Rename `$project` operator to `$select` for consistency with most established frameworks so far.
-- Rename `$filter` operator to `$where` for consistency with most established frameworks so far.
-
-## [1.0.0] - 2024-08-10
-
-- Allow to set a field as non-eager (i.e. lazy) with `eager: false` (by default fields are `eager: true`).
-- Allow to set a field as non-updatable (i.e. insertable and read-only) with `updatable: false` (by default fields are `updatable: true`).
-
-## [0.4.0] - 2023-11-06
-
-- Move project inside query parameter [#63](https://github.com/rogerpadilla/nukak/pull/63)
-
-## [0.3.3] - 2023-10-25
-
-- Update usage example in the README.md.
-
-## [0.3.2] - 2023-10-24
-
-- Improve usage examples in the README.md, and make the overview section more concise.
-
-## [0.3.1] - 2023-10-19
-
-1. Remove `$group` and `$having` as they detriment type safety as currently implemented (support may be redesigned later if required).
-2. Improve type safety of `$project` operator.
-3. Improve type safety of `$filter` operator.
-4. Remove projection operators (`$count`, `$min`, `$max`, `$min`, and `$sum`) as they detriment type safety as currently implemented. This can be done via Virtual fields instead as currently supported for better type safety.
-
-## [0.3.0] - 2023-10-18
-
-- Add support for `transaction` operations using a QuerierPool.
-  Automatically wraps the code of the callback inside a transaction, and auto-releases the querier after running.
-- Update dependencies.
-
-  ```ts
-  const ids = await pool.transaction(async (querier) => {
-    const data = await querier.findMany(...);
-    const ids = await querier.insertMany(...);
-    return ids;
-  });
-  ```
-
-## [0.2.21] 2023-04-15
-
-- fix(nukak-browser): check if ids are returned before use $in to delete them.
-
-- Reuse community open-source npm packages to escape literal-values according to each DB vendor.
-
-## [0.2.0] 2023-01-02
-
-- Move projection to a new parameter to improve type inference of the results.
-
-- Support dynamic operations while projecting fields, and move `$project` as an independent parameter in the `find*` functions [#55](https://github.com/rogerpadilla/nukak/pull/55).
+Releases before the rename were published as `@uql/core` (`3.15.0` and earlier, 2023-2026). Their notes are in this file's git history; the features they introduced - lifecycle hooks, the schema AST and drift detection, JSON dot-path querying, relation filtering, `upsertMany`, `withQuerier`, the query operator set - are all documented at [uql-orm.dev](https://uql-orm.dev).

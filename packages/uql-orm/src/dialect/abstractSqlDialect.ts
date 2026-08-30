@@ -1210,7 +1210,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
-    this.appendInsertValues(ctx, entity, payload, opts);
+    this.appendInsertValues(ctx, entity, payload);
 
     // Every engine whose ids come back from the statement itself wants the same clause, so it is
     // appended once here instead of in an identical `insert` override per dialect.
@@ -1223,7 +1223,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than
    * {@link insert}: their own clause has to come before the `RETURNING`, not after it.
    */
-  protected appendInsertValues<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+  protected appendInsertValues<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = getInsertFieldKeys(meta, payloads);

@@ -4,10 +4,9 @@ import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 
 /**
  * Maps the offending keys to `never`, turning an excess key into a compile error; resolves to
- * `unknown` (an inert intersection member) when there are none. Used by `aggregate`'s `$group`,
- * which is captured as a generic (a bare generic skips excess-property checking). The find methods
- * don't need this: they take concrete `Query<E>` params, so TypeScript's native excess-property
- * checking rejects stray keys directly.
+ * `unknown` (an inert intersection member) when there are none. Needed because `$group`/`$agg` are
+ * captured as whole maps, and TypeScript skips excess-property checking on a naked type parameter.
+ * The find methods take concrete `Query<E>` params, so the native check rejects a stray key there.
  * @internal
  */
 type Reject<K> = [K] extends [never] ? unknown : Record<K & string, never>;

@@ -316,11 +316,16 @@ describe('MongodbQuerier findManyStream', () => {
         }
       })(),
     ).rejects.toThrow('findManyStream does not load relations on MongoDB');
+  });
+
+  /** The cursor has no `$lookup`, so the ordering would read a field that is not on the document. */
+  it('throws when the ordering names a relation', async () => {
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any, {});
     await expect(
       (async () => {
-        for await (const _ of querier.findManyStream(User, { $populate: { profile: true } })) {
+        for await (const _ of querier.findManyStream(User, { $sort: { profile: { picture: 1 } } } as never)) {
         }
       })(),
-    ).rejects.toThrow('findManyStream does not load relations on MongoDB');
+    ).rejects.toThrow('findManyStream does not order by a relation on MongoDB');
   });
 });

@@ -1,5 +1,6 @@
 import type { Options } from 'better-sqlite3';
 import type { ExtraOptions } from '../type/index.js';
+import { hasKeys } from '../util/object.util.js';
 import { AbstractLocalSqliteQuerierPool, type LocalSqlitePoolOptions } from './localSqliteQuerierPool.js';
 import type { SqliteDatabase } from './sqliteQuerier.js';
 
@@ -28,7 +29,7 @@ export class Sqlite3QuerierPool extends AbstractLocalSqliteQuerierPool<Sqlite3Po
     // `bun:sqlite` rejects option keys it does not know, and rejects an options object carrying no
     // open flags, so `extensions` is stripped out and what remains of it collapses back to nothing.
     const { extensions, ...driverOpts } = this.opts ?? {};
-    const opts = Object.keys(driverOpts).length > 0 ? driverOpts : undefined;
+    const opts = hasKeys(driverOpts) ? driverOpts : undefined;
 
     if (typeof Bun !== 'undefined') {
       const { Database: BunDatabase } = await import('bun:sqlite');

@@ -9,6 +9,7 @@
  * build. Each `@ts-expect-error` fails the type-check if the error it guards ever stops happening.
  */
 import type { Querier } from '../index.js';
+import type { Query, QueryFilter, QueryPager } from './query.js';
 
 class Team {
   id!: number;
@@ -75,3 +76,18 @@ export async function nullIsAValueOfANullableColumn(querier: Querier) {
   // @ts-expect-error `name` is declared non-optional, so it is a NOT NULL column
   await querier.updateMany(Member, { $where: { id: 1 } }, { name: null });
 }
+
+/**
+ * `Query` declares `$where`, `$skip` and `$limit` itself rather than intersecting {@link QueryFilter}
+ * and {@link QueryPager}, because an assignability check against an intersection is repeated per
+ * constituent and every query in a codebase pays it. These pin the two shapes together, so the
+ * inlined copies cannot drift from the types `count`, `updateMany` and `deleteMany` still take.
+ * `false`, not `never`, is the failure value: `never` satisfies any constraint, so the assertion
+ * would pass on a broken shape.
+ */
+type AssertTrue<T extends true> = T;
+type Mutual<A, B> = A extends B ? (B extends A ? true : false) : false;
+
+export type QueryKeepsFilterAndPagerInSync = AssertTrue<
+  Mutual<Pick<Query<Member>, '$where' | '$skip' | '$limit'>, QueryFilter<Member> & QueryPager>
+>;

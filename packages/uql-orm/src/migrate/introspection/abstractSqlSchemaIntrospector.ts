@@ -96,7 +96,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
     return this.pool.withQuerier((querier) => {
       if (!isSqlQuerier(querier)) {
-        throw new Error(`${this.constructor.name} requires a SQL-based querier`);
+        throw new TypeError(`${this.constructor.name} requires a SQL-based querier`);
       }
       return task(querier);
     });

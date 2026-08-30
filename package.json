@@ -16,6 +16,7 @@
     "publish.codemod": "cd packages/uql-codemod && bun publish",
     "check": "bun run lint && bun run ts && bun run test && bun run build && bun run check.package",
     "ts": "tsc --noEmit",
+    "ts.perf": "bun scripts/type-perf.ts",
     "build": "bun run --filter '*' build",
     "lint": "biome check .",
     "lint.fix": "biome check . --fix",

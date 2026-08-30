@@ -210,7 +210,7 @@ export class Migrator {
     if (options.to) {
       const toIndex = selected.findIndex((m) => m.name === options.to);
       if (toIndex === -1) {
-        throw new Error(`Migration '${options.to}' not found`);
+        throw new TypeError(`Migration '${options.to}' not found`);
       }
       selected = selected.slice(0, toIndex + 1);
     }
@@ -353,7 +353,7 @@ export class Migrator {
   async getDiffs(): Promise<SchemaDiff[]> {
     await this.ensureSchemaGenerator();
     if (!this.schemaGenerator || !this.schemaIntrospector) {
-      throw new Error('Schema generator and introspector must be set');
+      throw new TypeError('Schema generator and introspector must be set');
     }
 
     const ast = await introspectSchema(this.schemaIntrospector);
@@ -491,7 +491,7 @@ export class Migrator {
    */
   private get generator(): SchemaGenerator {
     if (!this.schemaGenerator) {
-      throw new Error('Schema generator not set. Call setSchemaGenerator() first.');
+      throw new TypeError('Schema generator not set. Call setSchemaGenerator() first.');
     }
     return this.schemaGenerator;
   }
@@ -557,7 +557,7 @@ export class Migrator {
     querier: Querier,
   ): Promise<void> {
     if (!isSqlQuerier(querier)) {
-      throw new Error('Migrator requires a SQL-based querier for this dialect');
+      throw new TypeError('Migrator requires a SQL-based querier for this dialect');
     }
     for (const sql of statements) {
       if (options.logging) this.logger.logSchema(`Executing: ${sql}`);

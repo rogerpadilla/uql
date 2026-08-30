@@ -64,7 +64,7 @@ it('withQuerier releases the querier even when the callback throws under a conte
   await expect(
     pool.withQuerier(
       async () => {
-        throw new Error('boom');
+        throw new TypeError('boom');
       },
       { context: { tenantId: 5 } },
     ),

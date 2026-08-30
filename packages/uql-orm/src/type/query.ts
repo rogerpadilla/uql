@@ -251,8 +251,48 @@ export type Query<E> = {
    * is what keeps the clause off those statements at the type level.
    */
   $lock?: QueryLock;
-} & QueryFilter<E> &
-  QueryPager;
+
+  // `$where`, `$skip` and `$limit` are declared here rather than intersected in from
+  // {@link QueryFilter} and {@link QueryPager}: an assignability check against an intersection is
+  // repeated per constituent, and every query in a consuming codebase pays that. The two shapes are
+  // pinned together in `queryStatementClauses.test-d.ts` so the copies cannot drift.
+
+  /**
+   * filtering options.
+   */
+  $where?: QueryWhere<E>;
+
+  /**
+   * Index from where start the search
+   */
+  $skip?: number;
+
+  /**
+   * Max number of records to retrieve
+   */
+  $limit?: number;
+};
+
+/**
+ * `Query`'s clauses grouped by the shape of their value - what a parser reading one off the wire and
+ * a validator checking a relation's own query both need, and what each used to enumerate for itself.
+ * Declared beside the type they describe so the two cannot drift, and `satisfies` fails the build
+ * rather than the runtime if a clause is ever renamed.
+ *
+ * `$lock` belongs to no group on purpose: it is the one clause neither a wire query nor a relation's
+ * query accepts, so leaving it out is what excludes it from both.
+ */
+export const QUERY_OBJECT_CLAUSES = [
+  '$select',
+  '$populate',
+  '$exclude',
+  '$where',
+  '$sort',
+] as const satisfies readonly (keyof Query<unknown>)[];
+
+export const QUERY_NUMBER_CLAUSES = ['$skip', '$limit'] as const satisfies readonly (keyof Query<unknown>)[];
+
+export const QUERY_BOOLEAN_CLAUSES = ['$distinct'] as const satisfies readonly (keyof Query<unknown>)[];
 
 /**
  * options to get a single record.

@@ -43,6 +43,7 @@ import {
   parseRelationQueryValue,
   type RelationQuery,
   runHooks,
+  someKey,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
@@ -437,7 +438,7 @@ export abstract class AbstractQuerier implements Querier {
       const id = it[idKey];
       if (!id) {
         toInsert.push(it);
-      } else if (Object.keys(it).length === 1) {
+      } else if (!someKey(it, (key) => key !== idKey)) {
         existingIds.push(id);
       } else {
         toUpdate.push(it);

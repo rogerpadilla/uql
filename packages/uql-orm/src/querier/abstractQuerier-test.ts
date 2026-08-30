@@ -82,7 +82,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const failed = await (async () => {
       await using scoped = querier;
       await scoped.count(User);
-      throw new Error('boom');
+      throw new TypeError('boom');
     })().then(
       () => undefined,
       (err: Error) => err.message,
@@ -115,7 +115,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       await using querier = await this.pool.getQuerier();
       await querier.beginTransaction();
       await querier.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
-      throw new Error('the real failure');
+      throw new TypeError('the real failure');
     })().then(
       () => undefined,
       // A throwing dispose would arrive as a SuppressedError instead, hiding this behind an empty message.
@@ -939,6 +939,33 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
    * name off the *parent* entity, so a related `@Field({ name })` resolved to a column that does not
    * exist.
    */
+  /**
+   * The same ordering with no `$populate`. Both backends bring the relation in themselves - a join on
+   * SQL, a `$lookup` that is unset again on MongoDB - so the rows come back ordered and unwidened.
+   * MongoDB used to refuse this outright, which made the clause mean two different things.
+   */
+  async shouldFindManySortedByAnUnpopulatedRelationField() {
+    const [zulu, alpha] = await Promise.all([
+      this.querier.insertOne(Tax, { name: 'Zulu tax', percentage: 1 }),
+      this.querier.insertOne(Tax, { name: 'Alpha tax', percentage: 2 }),
+    ]);
+    await this.querier.insertMany(Item, [
+      { name: 'by zulu', taxId: zulu },
+      { name: 'by alpha', taxId: alpha },
+    ]);
+
+    const founds = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { name: { $startsWith: 'by ' } },
+      $sort: { tax: { name: 1 } },
+    });
+
+    expect(founds.map(({ name }) => name)).toEqual(['by alpha', 'by zulu']);
+    // The ordering brought the relation in; it must not have widened the row it returns - which the
+    // row's own type now says too, so the key is tested by name rather than read.
+    expect(founds.every((found) => !('tax' in found))).toBe(true);
+  }
+
   async shouldFindManySortedByRelationField() {
     const [zulu, alpha] = await Promise.all([
       this.querier.insertOne(Tax, { name: 'Zulu tax', percentage: 1 }),
@@ -1346,7 +1373,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         await this.querier.insertOne(User, { name: 'outer' });
         await this.querier.transaction(async () => {
           await this.querier.insertOne(User, { name: 'inner' });
-          throw new Error('inner error');
+          throw new TypeError('inner error');
         });
       }),
     ).rejects.toThrow('inner error');

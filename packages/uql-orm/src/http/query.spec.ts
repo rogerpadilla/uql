@@ -96,6 +96,17 @@ describe('parseQueryParams', () => {
     });
   });
 
+  describe('boolean coercion defense', () => {
+    it('honors $distinct from the wire', () => {
+      expect(parseQueryParams({ $distinct: 'true' })).toEqual({ $where: {}, $distinct: true });
+      expect(parseQueryParams({ $distinct: true })).toEqual({ $where: {}, $distinct: true });
+    });
+
+    it("reads 'false' as false, not as a non-empty string", () => {
+      expect(parseQueryParams({ $distinct: 'false' })).toEqual({ $where: {}, $distinct: false });
+    });
+  });
+
   it('throws a 400-status error on malformed JSON', () => {
     expect(() => parseQueryParams({ $where: '{bad' })).toThrow(
       expect.objectContaining({ message: "invalid JSON in '$where'", status: 400 }),

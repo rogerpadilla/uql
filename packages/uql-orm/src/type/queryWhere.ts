@@ -32,11 +32,19 @@ export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<
  * (untyped `Json` payloads accept any `field.suffix` path with a permissive value). Relations are
  * filtered via nested typed objects; dotted relation paths are not supported (the dialects throw
  * for non-JSON dotted keys).
+ *
+ * One mapped type over the three key sets rather than three intersected, for the reason
+ * {@link QuerySortMap} is: the sets are disjoint, and an assignability check against an
+ * intersection is repeated per constituent, which every `$where` in a codebase pays. The root
+ * operators stay a separate member - they are a fixed shape, not keyed off the entity.
  */
-export type QueryWhereMap<E> = QueryWhereFieldMap<E> &
-  QueryWhereRootOperator<E> & {
-    [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>>;
-  } & { [K in RelationKey<E>]?: QueryWhereMap<RelationTarget<E[K]>> | QueryRelationSizeFilter };
+export type QueryWhereMap<E> = QueryWhereRootOperator<E> & {
+  [K in FieldKey<E> | RelationKey<E> | JsonFieldPaths<E>]?: K extends FieldKey<E>
+    ? QueryWhereFieldValue<E[K]>
+    : K extends RelationKey<E>
+      ? QueryWhereMap<RelationTarget<E[K]>> | QueryRelationSizeFilter
+      : QueryWhereFieldValue<JsonFieldPathValue<E, K & string>>;
+};
 
 /**
  * Filter a to-many relation by its row count.

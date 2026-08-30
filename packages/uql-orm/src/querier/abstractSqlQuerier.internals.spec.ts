@@ -48,7 +48,7 @@ class StubSqlQuerier extends AbstractSqlQuerier {
 
   protected override async *internalStream<T>(): AsyncIterable<T> {
     yield* this.rows as T[];
-    throw new Error('driver stream failed');
+    throw new TypeError('driver stream failed');
   }
 
   protected override async internalRun(query: string): Promise<QueryUpdateResult> {
@@ -194,7 +194,7 @@ describe('AbstractSqlQuerier error context', () => {
     await expect(
       pool.transaction(async () => {
         querier.failOn = 'ROLLBACK';
-        throw new Error('what actually went wrong');
+        throw new TypeError('what actually went wrong');
       }),
     ).rejects.toThrow('what actually went wrong');
 

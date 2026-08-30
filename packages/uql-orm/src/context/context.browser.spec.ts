@@ -27,7 +27,7 @@ it('withContext scopes and restores the context for sync callbacks (nesting incl
 it('restores the context even when the callback throws', () => {
   expect(() =>
     browserContext.withContext({ tenantId: 1 }, () => {
-      throw new Error('boom');
+      throw new TypeError('boom');
     }),
   ).toThrow('boom');
   expect(browserContext.getContext()).toBeUndefined();

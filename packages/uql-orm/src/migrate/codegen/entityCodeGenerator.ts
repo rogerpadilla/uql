@@ -269,7 +269,7 @@ export class EntityCodeGenerator {
 
     // Outgoing relations (this table has FK)
     for (const rel of table.outgoingRelations) {
-      const relCode = this.buildOutgoingRelation(rel, table);
+      const relCode = this.buildOutgoingRelation(rel);
       lines.push(relCode);
     }
 
@@ -289,7 +289,7 @@ export class EntityCodeGenerator {
   /**
    * Build outgoing relation (ManyToOne or OneToOne where this table has FK).
    */
-  private buildOutgoingRelation(rel: RelationshipNode, table: TableNode): string {
+  private buildOutgoingRelation(rel: RelationshipNode): string {
     const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.to.table.name);
 

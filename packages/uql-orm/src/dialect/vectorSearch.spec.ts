@@ -103,7 +103,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
   const ph = (index: number) => dialect.placeholder(index);
   const find = <E>(entity: typeof VectorItem | typeof L2Item, query: object) => {
     const ctx = dialect.createContext();
-    dialect.find(ctx, entity as never, query as never);
+    dialect.find(ctx, entity, query);
     return { sql: ctx.sql, values: ctx.values };
   };
 

@@ -1,14 +1,8 @@
 import type { Query, QueryOptions } from '../type/index.js';
+// the clause lists themselves, not the barrel: this module is in the browser bundle's graph
+import { QUERY_BOOLEAN_CLAUSES, QUERY_NUMBER_CLAUSES, QUERY_OBJECT_CLAUSES } from '../type/query.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
-
-const JSON_QUERY_KEYS = [
-  '$select',
-  '$populate',
-  '$exclude',
-  '$where',
-  '$sort',
-] as const satisfies readonly (keyof Query<unknown>)[];
 
 /**
  * Keys accepted from the wire - query structure ({@link Query}) plus the `hardDelete`/`count` scalar
@@ -16,11 +10,13 @@ const JSON_QUERY_KEYS = [
  * bypass a security filter or inject ambient context - those are server-only. The `satisfies` ties
  * every entry to a real query/option key, so a typo or a renamed option fails to compile.
  */
-const ALLOWED_QUERY_KEYS = new Set<string>([...JSON_QUERY_KEYS, '$skip', '$limit', 'hardDelete', 'count'] satisfies (
-  | keyof Query<unknown>
-  | keyof Pick<QueryOptions, 'hardDelete'>
-  | 'count'
-)[]);
+const ALLOWED_QUERY_KEYS = new Set<string>([
+  ...QUERY_OBJECT_CLAUSES,
+  ...QUERY_NUMBER_CLAUSES,
+  ...QUERY_BOOLEAN_CLAUSES,
+  'hardDelete',
+  'count',
+] satisfies (keyof Query<unknown> | keyof Pick<QueryOptions, 'hardDelete'> | 'count')[]);
 
 /**
  * Keys that mean something locally but that this transport can never honor, so they are rejected
@@ -45,7 +41,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
     }
   }
 
-  for (const key of JSON_QUERY_KEYS) {
+  for (const key of QUERY_OBJECT_CLAUSES) {
     const value = query[key];
     if (typeof value === 'string') {
       try {
@@ -58,11 +54,18 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
 
   query['$where'] ??= {};
 
-  if (query['$skip']) {
-    query['$skip'] = Number(query['$skip']);
+  // A query string carries every value as text, so what decodes a clause is the shape its group
+  // declares. `'false'` is the reason the boolean pass exists rather than the raw value being taken:
+  // it is a non-empty string, so a `$distinct=false` would otherwise read as asking for one.
+  for (const key of QUERY_NUMBER_CLAUSES) {
+    if (query[key] !== undefined) {
+      query[key] = Number(query[key]);
+    }
   }
-  if (query['$limit']) {
-    query['$limit'] = Number(query['$limit']);
+  for (const key of QUERY_BOOLEAN_CLAUSES) {
+    if (query[key] !== undefined) {
+      query[key] = query[key] === true || query[key] === 'true';
+    }
   }
 
   return query as Query<unknown>;
