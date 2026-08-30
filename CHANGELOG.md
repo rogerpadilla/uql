@@ -2,6 +2,10 @@
 
 What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
 
+## [0.32.1] - 2026-08-30
+
+- **A populated to-many comes back as a list**, empty where the parent has no children, so it maps and counts without a guard and its type no longer needs `!`.
+
 ## [0.32.0] - 2026-08-30
 
 **Find results are narrowed to what the query projected.** `$select` and `$exclude` shape the row type:

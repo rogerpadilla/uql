@@ -430,6 +430,44 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
   }
 
+  /**
+   * The row's type says a populated to-many is a list, so the runtime has to hand back one even for a
+   * parent with no children. An *unpopulated* relation stays absent, which is what tells the two apart.
+   */
+  async shouldPopulateAToManyWithNoChildrenAsAnEmptyList() {
+    await this.querier.insertOne(InventoryAdjustment, { description: 'childless' });
+
+    const [found] = await this.querier.findMany(InventoryAdjustment, {
+      $where: { description: 'childless' },
+      $populate: { itemAdjustments: true },
+    });
+
+    expect(found.itemAdjustments).toEqual([]);
+
+    const [unpopulated] = await this.querier.findMany(InventoryAdjustment, {
+      $where: { description: 'childless' },
+    });
+
+    expect('itemAdjustments' in unpopulated).toBe(false);
+  }
+
+  /**
+   * The other half of the asymmetry: a to-one joins with a LEFT JOIN, so populating one whose key is
+   * null leaves it absent rather than empty. That is why a populated to-one stays optional in the
+   * row's type where a to-many does not.
+   */
+  async shouldPopulateAToOneWithNoRowAsAbsent() {
+    await this.querier.insertOne(Item, { name: 'untaxed', taxId: null as never });
+
+    const [found] = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { name: 'untaxed' },
+      $populate: { tax: true },
+    });
+
+    expect(found.tax == null).toBe(true);
+  }
+
   async shouldUpdateOneByIdAndCascadeOneToManyNull() {
     const id = await this.querier.insertOne(InventoryAdjustment, { itemAdjustments: [{}, {}] });
 

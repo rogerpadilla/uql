@@ -644,7 +644,10 @@ export abstract class AbstractQuerier implements Querier {
       childrenByParentId[parentId].push(child);
     }
     for (const parent of parents) {
-      parent[relKey] = childrenByParentId[String(parent[parentIdKey])] as E[keyof E & string];
+      // `[]` rather than nothing for a parent with no children: a populated to-many is a list the
+      // caller asked for, so it maps and counts without a guard, and its type can say so. An
+      // unpopulated one stays absent, which is what tells the two apart.
+      parent[relKey] = (childrenByParentId[String(parent[parentIdKey])] ?? []) as E[keyof E & string];
     }
   }
 

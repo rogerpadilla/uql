@@ -143,6 +143,9 @@ export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
  */
 type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends true ? never : K }[RelationKey<E>];
 
+/** The relation names a parent holds many rows of, which a populated query fills with a list. */
+type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
+
 /**
  * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
  * like `QueryWhereMap`), relation sort via nested objects, and vector similarity search on
@@ -391,8 +394,21 @@ export type QueryFindResult<
 > = [S | X] extends [never]
   ? E
   : IsUniform<V> extends true
-    ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P> ? K : never]: E[K] }
+    ? [PopulatedToMany<E, P>] extends [never]
+      ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P> ? K : never]: E[K] }
+      : // A populated to-many is always a list, empty where the parent has no children, so it maps
+        // and counts without a guard. Only that promotion needs a second member, and only a query
+        // that populates one pays for it; every other key keeps the modifier the entity declared,
+        // a to-one relation included, since a join that finds no row leaves it absent.
+        {
+          [K in keyof E as K extends Exclude<ProjectedKeys<E, S, V, X, P>, PopulatedToMany<E, P>> ? K : never]: E[K];
+        } & {
+          [K in PopulatedToMany<E, P>]-?: NonNullable<E[K]>;
+        }
     : E;
+
+/** The to-many relations a query populated, which come back as lists rather than as optional ones. */
+type PopulatedToMany<E, P> = Extract<P, ToManyRelationKey<E>>;
 
 /**
  * stringified query.

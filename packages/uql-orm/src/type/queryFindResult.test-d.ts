@@ -59,11 +59,13 @@ export async function projectedRows() {
     $populate: { writers: { $select: { name: true } } },
   });
   populated.id.toFixed();
-  populated.writers?.[0].name.trim();
+  // A populated to-many is a list, empty at worst, so it needs no `!` and no guard.
+  populated.writers[0].name.trim();
+  populated.writers.map((it) => it.name);
   // @ts-expect-error a relation the query did not populate
   populated.writer;
   // @ts-expect-error misspelled column off a loaded relation
-  populated.writers?.[0].nmae;
+  populated.writers[0].nmae;
 
   // A falsy `$select` entry subtracts, like `$exclude`, rather than selecting.
   const [subtracted] = await querier.findMany(Story, { $select: { points: false } });
@@ -98,7 +100,7 @@ export async function unnameableId() {
   // claim the whole entity came back.
   const [tag] = await querier.findMany(Tag, { $select: { label: true }, $populate: { stories: true } });
   tag.label.trim();
-  tag.stories?.[0].title.trim();
+  tag.stories[0].title.trim();
   // @ts-expect-error a field the projection left out, even though the row carries an unnameable id
   tag.weight;
 }
