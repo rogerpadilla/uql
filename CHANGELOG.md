@@ -1,6 +1,6 @@
 # Changelog
 
-What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
+What changed and worth it documenting here. Newest first, `[yyyy-mm-dd]`.
 
 ## [0.33.0] - 2026-08-30
 
@@ -8,10 +8,13 @@ What changed and what you have to do about it. Newest first, `[yyyy-mm-dd]`.
 
 ```ts
 createFetchHandler({ pool, include: [User] });
-createFetchHandler({ include: [User], pool: (_request, { tenantId }) => poolFor(tenantId) });
+createFetchHandler({
+  include: [User],
+  pool: (_request, { tenantId }) => poolFor(tenantId),
+});
 ```
 
-`setQuerierPool`, `getQuerierPool` and `getQuerier` are gone with it: pass the pool where it is used, and `pool.withQuerier(...)` / `pool.transaction(...)` where you need a querier. `npx uql-codemod` points at every call site. `UqlModule` provides the pool through Nest DI under `UQL_QUERIER_POOL`.
+`setQuerierPool`, `getQuerierPool` and `getQuerier` are gone with it: pass the pool where it is used, and `pool.withQuerier(...)` / `pool.transaction(...)` where you need a querier. `npx uql-codemod` points at every call site.
 
 ## [0.32.1] - 2026-08-30
 
@@ -27,14 +30,14 @@ user.name; // string
 user.email; // compile error: not selected
 ```
 
-Breaking only in that sense: code reading an unprojected field stops compiling. Add the field to the projection, or drop the projection. A narrowed row is not the entity, so where a helper has to take one, name it: `QueryFindResult<User, 'name'>`.
+Breaking only in that sense: code reading an unprojected field stops compiling. Add the field to the projection, or drop the projection entirely.
 
 ## [0.31.5] - 2026-08-30
 
 - **MongoDB orders by a relation you did not populate**, as the SQL dialects always have. It used to refuse.
 - MongoDB throws on a `$vector` sort under a relation, and `findManyStream` refuses a relation `$sort`, instead of returning rows in no order. Use `findMany`.
 - Over HTTP, `$limit=0`/`$skip=0` are honored and `$distinct` is accepted.
-- **Type-checking is about a quarter cheaper**: `$where` and `Query` are no longer intersections, which TypeScript re-checks per constituent. `bun run ts.perf` measures it.
+- **Type-checking is about a quarter cheaper**: `$where` and `Query` are no longer intersections.
 - `AbstractSqlDialect.appendInsertValues` dropped an unused parameter, which a subclass overriding it must match.
 
 ## [0.31.4] - 2026-08-28
@@ -180,7 +183,7 @@ Foreign keys: UQL declared them but did not reliably create or enforce them.
 
   ```ts
   async function markPaid(db: UniversalQuerier, id: string) {
-    await db.updateOneById(Invoice, id, { status: 'paid' });
+    await db.updateOneById(Invoice, id, { status: "paid" });
   }
 
   await markPaid(pool, id); // its own unit of work
@@ -391,7 +394,7 @@ No `experimentalDecorators`, no `emitDecoratorMetadata`, no `reflect-metadata`. 
 
   ```ts
   await querier.findMany(Article, {
-    $sort: { embedding: { $vector: queryVec, $distance: 'cosine' } },
+    $sort: { embedding: { $vector: queryVec, $distance: "cosine" } },
     $limit: 10,
   });
   ```
