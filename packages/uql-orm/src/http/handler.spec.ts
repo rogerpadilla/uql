@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
+import { defineEntity } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
@@ -53,6 +54,23 @@ describe('createRequestHandler', () => {
 
   it('throws if no entities are provided', () => {
     expect(() => createRequestHandler({ pool, include: [] })).toThrow('no entities for the uql middleware');
+  });
+
+  // The path comes from the class name, so two entities mapping the same table in different schemas
+  // land on it together. Before this the second silently replaced the first and one was unreachable.
+  it('throws when two entities claim the same path', () => {
+    class Company {
+      id?: number;
+    }
+    defineEntity(Company, { schema: 'crm', fields: { id: { isId: true, type: Number } } });
+    const Shadow = class Company {
+      id?: number;
+    };
+    defineEntity(Shadow, { schema: 'billing', name: 'Company', fields: { id: { isId: true, type: Number } } });
+
+    expect(() => createRequestHandler({ pool, include: [Company, Shadow] })).toThrow(
+      '/company <- Company (crm.Company), Company (billing.Company)',
+    );
   });
 
   it('returns undefined for unknown entity or route', () => {

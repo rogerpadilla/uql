@@ -42,9 +42,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   }
 
   generateDropSchema(entities: readonly Type<unknown>[]): string[] {
-    return this.selected(entities).map((entity) =>
-      this.generateDropTable(this.resolveTableName(entity, getMeta(entity))),
-    );
+    return this.selected(entities).map((entity) => this.generateDropTable(this.resolveTableName(getMeta(entity))));
   }
 
   private selected(entities: readonly Type<unknown>[], only?: readonly string[]): readonly Type<unknown>[] {
@@ -52,12 +50,12 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       return entities;
     }
     const wanted = new Set(only);
-    return entities.filter((entity) => wanted.has(this.resolveTableName(entity, getMeta(entity))));
+    return entities.filter((entity) => wanted.has(this.resolveTableName(getMeta(entity))));
   }
 
   generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
     const meta = getMeta(entity);
-    const collectionName = this.resolveTableName(entity, meta);
+    const collectionName = this.resolveTableName(meta);
     const indexes: IndexSchema[] = [];
 
     for (const key of getKeys(meta.fields)) {
@@ -169,7 +167,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
 
   diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
-    const collectionName = this.resolveTableName(entity, meta);
+    const collectionName = this.resolveTableName(meta);
 
     if (!currentTable) {
       return { tableName: collectionName, type: 'create' };

@@ -20,7 +20,7 @@ import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
  */
 export interface BuildSchemaASTOptions {
   /** Custom table name resolver */
-  resolveTableName?: (entity: Type<unknown>, meta: EntityMeta<unknown>) => string;
+  resolveTableName?: (meta: EntityMeta<unknown>) => string;
   /** Custom column name resolver */
   resolveColumnName?: (key: string, field: FieldOptions) => string;
   /** Naming strategy to use */
@@ -32,7 +32,7 @@ export interface BuildSchemaASTOptions {
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
 type BuildContext = {
   readonly ast: SchemaAST;
-  readonly resolveTableName: (entity: Type<unknown>, meta: EntityMeta<unknown>) => string;
+  readonly resolveTableName: (meta: EntityMeta<unknown>) => string;
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
   readonly defaultForeignKeyAction: ForeignKeyAction;
 };
@@ -48,14 +48,15 @@ export function buildSchemaAST(entities: readonly Type<unknown>[], options: Buil
   const ctx: BuildContext = {
     ast: new SchemaAST(),
     resolveTableName:
-      options.resolveTableName ?? ((e, m) => namingStrategy?.tableName(m.name ?? e.name) ?? m.name ?? e.name),
+      options.resolveTableName ??
+      ((m) => namingStrategy?.tableName(m.name ?? m.entity.name) ?? m.name ?? m.entity.name),
     resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
   };
 
   for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
     for (const entity of entities) {
-      pass(ctx, entity, getMeta(entity));
+      pass(ctx, getMeta(entity));
     }
   }
 
@@ -97,8 +98,8 @@ function resolveColumnCanonicalType(field: FieldOptions, seen: Set<EntityGetter>
 /**
  * Add a table from entity metadata.
  */
-function addTableFromEntity(ctx: BuildContext, entity: Type<unknown>, meta: EntityMeta<unknown>): void {
-  const tableName = ctx.resolveTableName(entity, meta);
+function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+  const tableName = ctx.resolveTableName(meta);
 
   const columns = new Map<string, ColumnNode>();
   const primaryKey: ColumnNode[] = [];
@@ -156,8 +157,8 @@ function addTableFromEntity(ctx: BuildContext, entity: Type<unknown>, meta: Enti
 /**
  * Add relationships from entity relation decorators.
  */
-function addRelationshipsFromEntity(ctx: BuildContext, entity: Type<unknown>, meta: EntityMeta<unknown>): void {
-  const tableName = ctx.resolveTableName(entity, meta);
+function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+  const tableName = ctx.resolveTableName(meta);
   const table = ctx.ast.getTable(tableName);
   if (!table) return;
 
@@ -168,7 +169,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, entity: Type<unknown>, me
 
     const relatedEntity = relation.entity();
     const relatedMeta = getMeta(relatedEntity);
-    const relatedTableName = ctx.resolveTableName(relatedEntity, relatedMeta);
+    const relatedTableName = ctx.resolveTableName(relatedMeta);
     const relatedTable = ctx.ast.getTable(relatedTableName);
     if (!relatedTable) continue;
 
@@ -217,8 +218,8 @@ function addRelationshipsFromEntity(ctx: BuildContext, entity: Type<unknown>, me
  * Add indexes from field options (`@Field({ index })`) and from `@Index([...])`, which have nothing
  * in common beyond their target table.
  */
-function addIndexesFromEntity(ctx: BuildContext, entity: Type<unknown>, meta: EntityMeta<unknown>): void {
-  const tableName = ctx.resolveTableName(entity, meta);
+function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+  const tableName = ctx.resolveTableName(meta);
   const table = ctx.ast.getTable(tableName);
   if (!table) return;
 

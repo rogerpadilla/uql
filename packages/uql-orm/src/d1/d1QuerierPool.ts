@@ -1,3 +1,4 @@
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { type D1Database, D1Querier } from './d1Querier.js';
@@ -7,7 +8,7 @@ export class D1QuerierPool extends AbstractSqlQuerierPool<D1Querier, D1SqliteDia
   readonly db: D1Database;
 
   constructor(db: D1Database, extra?: ExtraOptions) {
-    super(new D1SqliteDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new D1SqliteDialect(dialectOptionsFrom(extra)), extra);
     this.db = db;
   }
 

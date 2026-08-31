@@ -1,3 +1,4 @@
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { TursoDialect } from './tursoDialect.js';
@@ -29,7 +30,7 @@ export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
     readonly opts?: TursoLocalOptions,
     extra?: ExtraOptions,
   ) {
-    super(new TursoDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new TursoDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override async openDb(): Promise<TursoDatabase> {

@@ -130,6 +130,12 @@ export type RequestHandlerOptions<Ctx = unknown> = {
  */
 export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse> | undefined;
 
+/** `Company (crm.Company)`: the class, and the table it maps, which is what tells two apart. */
+function tableOf(entity: Type<unknown>): string {
+  const meta = getMeta(entity);
+  return `${entity.name} (${meta.schema ? `${meta.schema}.${meta.name}` : meta.name})`;
+}
+
 export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx>): RequestHandler<Ctx> {
   const { include, exclude, pre, preSave, preFilter, post, getContext, pool } = opts;
 
@@ -141,8 +147,20 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     throw new TypeError('no entities for the uql middleware');
   }
 
+  // The route is the class name, so two entities mapping one table in different schemas collide here
+  // even though nothing else about them does. All of them at once, so fixing the first collision
+  // does not just reveal the next.
+  const byPath = Map.groupBy(entities, entityPath);
+  const collisions = [...byPath].filter(([, clashing]) => clashing.length > 1);
+  if (collisions.length) {
+    const lines = collisions.map(([path, clashing]) => `  /${path} <- ${clashing.map(tableOf).join(', ')}`);
+    throw new TypeError(
+      `every entity below shares a route with another, so all but the first are unreachable:\n${lines.join('\n')}\n` +
+        "A route is the kebab-cased class name. Rename a class, or pass only one of them in 'include'.",
+    );
+  }
   // biome-ignore lint/suspicious/noExplicitAny: heterogeneous entity map
-  const entityByPath = new Map<string, Type<any>>(entities.map((entity) => [entityPath(entity), entity]));
+  const entityByPath = new Map<string, Type<any>>([...byPath].map(([path, [entity]]) => [path, entity]));
 
   return (req) => {
     const entity = entityByPath.get(req.entityPath);

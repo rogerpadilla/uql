@@ -1,4 +1,5 @@
 import { createPool, type Pool } from 'mariadb';
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { attachPoolErrorHandler, type ErrorEmittingPool } from '../util/index.js';
@@ -11,7 +12,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
   readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
-    super(new MariaDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new MariaDialect(dialectOptionsFrom(extra)), extra);
     // `mariadb` defaults to handing BIGINT back as a BigInt, and uql maps `type: Number` to BIGINT
     // (see `schema/canonicalType.ts`), so every auto-increment id reached a field declared `number`
     // as `9n` without this. Same trade as the pg pools: exact to 2^53, and `...opts` wins for a

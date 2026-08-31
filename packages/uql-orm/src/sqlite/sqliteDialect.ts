@@ -27,6 +27,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     supportsJsonb: false,
     ifNotExists: true,
     indexIfNotExists: true,
+    schemas: false, // SQLite's namespaces are attached database files, not declared objects
     dropTableCascade: false,
     renameColumn: true,
     foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
@@ -110,7 +111,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     search: QueryTextSearchOptions<E>,
   ): void {
     const columns = search.$fields!.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
-    ctx.append(`${this.escapeId(this.resolveTableName(entity, meta))} MATCH {${columns.join(' ')}} : `);
+    ctx.append(`${this.escapedTableName(meta)} MATCH {${columns.join(' ')}} : `);
     ctx.addValue(search.$value);
   }
 

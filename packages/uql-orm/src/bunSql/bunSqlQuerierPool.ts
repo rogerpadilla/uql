@@ -1,5 +1,5 @@
 import { type ReservedSQL, SQL } from 'bun';
-import type { DialectOptions } from '../dialect/abstractDialect.js';
+import { type DialectOptions, dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -37,7 +37,7 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
     extra?: ExtraOptions,
   ) {
     const dialectName = inferDialectName(config);
-    super(new DialectMap[dialectName]({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new DialectMap[dialectName](dialectOptionsFrom(extra)), extra);
     this.sqlDialectName = dialectName;
 
     const opts = normalizeBunOpts(config, dialectName);

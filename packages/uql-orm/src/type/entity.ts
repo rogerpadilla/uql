@@ -748,6 +748,8 @@ export type EntityIndexMeta = {
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
   name?: string;
+  /** Set only when the entity named one; unset defers to the pool where it is used. See `AbstractDialect.resolveSchema`. */
+  schema?: string;
   id: IdKey<E>;
   softDelete?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
@@ -773,6 +775,11 @@ export type EntityMeta<E> = {
  */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
+  /**
+   * The schema (in MySQL terms, database) this table lives in, pinning it whichever pool reads it;
+   * unset follows the pool's own. Not in `name`: a dotted `name` is rejected.
+   */
+  readonly schema?: string;
   /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
   readonly filters?: Record<string, FilterOptions<E>>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */

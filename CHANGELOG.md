@@ -2,6 +2,22 @@
 
 What changed and worth it documenting here. Newest first, `[yyyy-mm-dd]`.
 
+## [0.34.0] - 2026-08-31
+
+**An entity can name the schema it lives in**, and a pool can set a default for the rest:
+
+```ts
+@Entity({ schema: 'crm' }) class Customer {}
+@Entity({ schema: 'sales' }) class Order {} // joins Customer in one statement
+
+new PgQuerierPool({ connectionString }, { schema: 'tenant_a' }); // a schema per tenant
+```
+
+The entity's `schema` takes priority over the pool's; with neither, nothing changes. SQLite and MongoDB ignore schema. Migrations create each schema, but the diff still matches on unqualified names, so a qualified entity always looks new to `drift:check` and `autoSync`.
+
+- A dotted `name` now throws and points at `schema` attribute.
+- The HTTP middleware refuses to start when two entities claim the same route.
+
 ## [0.33.0] - 2026-08-30
 
 **The HTTP handler takes its pool as an option**, and a function picks one per request, so one deployment can serve a database per tenant:

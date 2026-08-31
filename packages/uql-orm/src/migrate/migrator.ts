@@ -361,7 +361,7 @@ export class Migrator {
 
     for (const entity of this.entities) {
       const meta = getMeta(entity);
-      const tableName = this.schemaGenerator.resolveTableName(entity, meta);
+      const tableName = this.schemaGenerator.resolveTableName(meta);
       const currentTable = ast.getTable(tableName);
       const diff = this.schemaGenerator.diffSchema(entity, currentTable);
       if (diff) {
@@ -379,7 +379,7 @@ export class Migrator {
     }
     for (const entity of this.entities) {
       const meta = getMeta(entity);
-      const name = this.schemaGenerator.resolveTableName(entity, meta);
+      const name = this.schemaGenerator.resolveTableName(meta);
       if (name === tableName) {
         return entity;
       }

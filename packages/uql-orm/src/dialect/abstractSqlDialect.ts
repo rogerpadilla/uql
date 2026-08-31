@@ -123,6 +123,15 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   abstract readonly commitTransactionCommand: string;
   abstract readonly rollbackTransactionCommand: string;
 
+  /**
+   * How this engine declares a namespace, so a generated migration creates the schemas its tables
+   * need before creating them. Only reached where {@link DialectFeatures.schemas} is on. MySQL and
+   * MariaDB accept the same statement, where it means a database.
+   */
+  createSchemaSql(schema: string): string {
+    return `CREATE SCHEMA IF NOT EXISTS ${this.escapeId(schema, true)}`;
+  }
+
   readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
 
   readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
@@ -219,8 +228,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, joins = NO_JOINS): void {
     const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
-    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$populate, joins);
+    const prefix = this.resolveRelationAwarePrefix(this.resolveTableAlias(meta), meta, opts, q.$populate, joins);
     if (opts.prefix !== prefix) {
       opts = { ...opts, prefix };
     }
@@ -312,8 +320,8 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   select<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QueryOptions = {}, joins = NO_JOINS): void {
     const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
-    const prefix = this.resolveRelationAwarePrefix(tableName, meta, opts, q.$populate, joins);
+    const { alias, ref } = this.tableRef(meta);
+    const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
 
     ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
     this.selectFields(ctx, entity, q.$select, { prefix }, q.$exclude);
@@ -326,9 +334,31 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         this.appendVectorProjection(ctx, meta, key, val);
       }
     }
-    ctx.append(` FROM ${this.escapeId(tableName)}`);
+    ctx.append(` FROM ${ref}`);
     // Add JOINs AFTER FROM clause
-    this.selectRelationJoins(ctx, meta, tableName, joins);
+    this.selectRelationJoins(ctx, meta, alias, joins);
+  }
+
+  /**
+   * The table as a statement writes it, each part escaped on its own rather than as one dotted
+   * string taken apart again by {@link escapeId}.
+   */
+  protected escapedTableName<E>(meta: EntityMeta<E>): string {
+    const alias = this.escapeId(this.resolveTableAlias(meta), true);
+    const schema = this.resolveSchema(meta);
+    return schema ? `${this.escapeId(schema, true)}.${alias}` : alias;
+  }
+
+  /**
+   * A FROM or JOIN operand plus the alias to prefix its columns by, aliased only once a schema puts
+   * something in front of the name. See {@link resolveTableAlias} for why the prefix cannot be the
+   * qualified path.
+   */
+  protected tableRef<E>(meta: EntityMeta<E>): { alias: string; ref: string } {
+    const alias = this.resolveTableAlias(meta);
+    const name = this.escapedTableName(meta);
+    const schema = this.resolveSchema(meta);
+    return { alias, ref: schema ? `${name} ${this.escapeId(alias, true)}` : name };
   }
 
   /** Columns are alias-qualified once anything else is in play: a join, or a to-many being filled. */
@@ -359,14 +389,12 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
   }
 
-  protected selectRelationJoins<E>(ctx: QueryContext, meta: EntityMeta<E>, tableName: string, joins: QueryJoins): void {
+  protected selectRelationJoins<E>(ctx: QueryContext, meta: EntityMeta<E>, rootAlias: string, joins: QueryJoins): void {
     for (const join of joins.values()) {
       const joinAlias = this.escapeId(join.path, true);
-      const parentAlias = join.parent ? this.escapeId(join.parent.path, true) : this.escapeId(tableName);
+      const parentAlias = join.parent ? this.escapeId(join.parent.path, true) : this.escapeId(rootAlias, true);
 
-      ctx.append(
-        ` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapeId(this.resolveTableName(join.entity, join.meta))} ${joinAlias} ON `,
-      );
+      ctx.append(` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapedTableName(join.meta)} ${joinAlias} ON `);
       join.relation.references.forEach((reference, index) => {
         if (index > 0) ctx.append(' AND ');
         const foreign = this.escapeId(this.columnOf(join.meta, reference.foreign));
@@ -447,11 +475,13 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
         ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
-        const tableName = this.resolveTableName(entity, meta);
+        // The alias: the enclosing statement declares one, and Postgres forbids reaching past it
+        // to the qualified name it aliased.
+        const alias = this.resolveTableAlias(meta);
         this.getRawValue(ctx, {
           value: val,
-          prefix: tableName,
-          escapedPrefix: this.escapeId(tableName, false, true),
+          prefix: alias,
+          escapedPrefix: this.escapeId(alias, true, true),
         });
         ctx.append(')');
         return;
@@ -1058,7 +1088,8 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
     this.assertLockSupported(entity, q, joins);
     const meta = getMeta(entity);
-    const target = joins.size > 0 ? ` OF ${this.escapeId(this.resolveTableName(entity, meta))}` : '';
+    // `OF` names the alias in the FROM, never the schema-qualified path it was aliased from.
+    const target = joins.size > 0 ? ` OF ${this.escapeId(this.resolveTableAlias(meta), true)}` : '';
     const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
     ctx.append(` FOR UPDATE${target}${suffix}`);
   }
@@ -1088,7 +1119,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     opts: QueryOptions = {},
   ): void {
     const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
+    const tableName = this.escapedTableName(meta);
     const groupKeys: string[] = [];
     const selectParts: string[] = [];
     // Every column the statement emits, mapped to the SQL that references it. `$having` and `$sort`
@@ -1120,7 +1151,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       throw new TypeError('aggregate requires at least one $group column or $agg function');
     }
 
-    ctx.append(`SELECT ${selectParts.join(', ')} FROM ${this.escapeId(tableName)}`);
+    ctx.append(`SELECT ${selectParts.join(', ')} FROM ${tableName}`);
     this.where<E>(ctx, entity, q.$where, opts);
 
     if (groupKeys.length) {
@@ -1242,8 +1273,8 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       kinds[i] = this.persistKind(field);
     }
 
-    const tableName = this.resolveTableName(entity, meta);
-    ctx.append(`INSERT INTO ${this.escapeId(tableName)} (${columns.join(', ')}) VALUES (`);
+    const tableName = this.escapedTableName(meta);
+    ctx.append(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (`);
 
     for (let r = 0; r < payloads.length; r++) {
       if (r > 0) {
@@ -1288,8 +1319,8 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     const [filledPayload] = fillOnFields(meta, payload as E, 'onUpdate');
     const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
 
-    const tableName = this.resolveTableName(entity, meta);
-    ctx.append(`UPDATE ${this.escapeId(tableName)} SET `);
+    const tableName = this.escapedTableName(meta);
+    ctx.append(`UPDATE ${tableName} SET `);
     for (let i = 0; i < keys.length; i++) {
       if (i > 0) {
         ctx.append(', ');
@@ -1392,7 +1423,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): void {
     const meta = getMeta(entity);
-    const tableName = this.resolveTableName(entity, meta);
+    const tableName = this.escapedTableName(meta);
 
     // Soft-delete (stamp only live rows) unless `hardDelete` is requested or the entity has no
     // soft-delete field (e.g. a cascade onto a non-soft-deletable child).
@@ -1400,7 +1431,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       const field = meta.fields[meta.softDelete];
       if (field) {
         const columnName = this.resolveColumnName(meta.softDelete, field);
-        ctx.append(`UPDATE ${this.escapeId(tableName)} SET ${this.escapeId(columnName)} = `);
+        ctx.append(`UPDATE ${tableName} SET ${this.escapeId(columnName)} = `);
         this.formatPersistableValue(ctx, field, getSoftDeleteValue(field));
         this.search(ctx, entity, q, opts);
         return;
@@ -1409,7 +1440,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
     // Hard delete removes matching rows regardless of soft-delete state (keeps other filters, e.g. tenant).
     // Only rewrite the filters when there is a soft-delete filter to disable.
-    ctx.append(`DELETE FROM ${this.escapeId(tableName)}`);
+    ctx.append(`DELETE FROM ${tableName}`);
     this.search(ctx, entity, q, meta.softDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts);
   }
 
@@ -1810,12 +1841,13 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     val: QueryWhereMap<unknown>,
   ): void {
     const meta = getMeta(entity);
-    const parentTable = this.resolveTableName(entity, meta);
+    // Aliases, not paths, everywhere a column is prefixed; `tableRef` declares them in the FROM.
+    const parentAlias = this.resolveTableAlias(meta);
     const references = rel.references;
-    const escapedParentId = this.escapedParentColumn(parentTable, meta, opts, meta.id);
+    const escapedParentId = this.escapedParentColumn(parentAlias, meta, opts, meta.id);
     const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
-    const relatedTable = this.resolveTableName(relatedEntity, relatedMeta);
+    const { alias: relatedAlias, ref: relatedRef } = this.tableRef(relatedMeta);
     // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
     const targetWhere = this.scopedWhereMap(relatedMeta, val);
 
@@ -1824,31 +1856,29 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     if (rel.cardinality === 'mm' && rel.through) {
       const throughEntity = rel.through();
       const throughMeta = getMeta(throughEntity);
-      const throughTable = this.resolveTableName(throughEntity, throughMeta);
+      const { alias: throughAlias, ref: throughRef } = this.tableRef(throughMeta);
 
-      ctx.append(this.escapeId(throughTable));
-      ctx.append(` WHERE ${this.escapedColumn(throughTable, throughMeta, references[0].local)} = ${escapedParentId}`);
+      ctx.append(throughRef);
+      ctx.append(` WHERE ${this.escapedColumn(throughAlias, throughMeta, references[0].local)} = ${escapedParentId}`);
       // The junction is a row being read too: a soft-deleted link is not a link.
-      this.where(ctx, throughEntity, {}, { prefix: throughTable, clause: 'AND' });
+      this.where(ctx, throughEntity, {}, { prefix: throughAlias, clause: 'AND' });
 
       if (hasKeys(targetWhere)) {
-        ctx.append(` AND ${this.escapedColumn(throughTable, throughMeta, references[1].local)} IN (`);
-        ctx.append(
-          `SELECT ${this.escapedColumn(relatedTable, relatedMeta, relatedMeta.id)} FROM ${this.escapeId(relatedTable)}`,
-        );
-        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedTable, clause: 'WHERE' });
+        ctx.append(` AND ${this.escapedColumn(throughAlias, throughMeta, references[1].local)} IN (`);
+        ctx.append(`SELECT ${this.escapedColumn(relatedAlias, relatedMeta, relatedMeta.id)} FROM ${relatedRef}`);
+        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'WHERE' });
         ctx.append(')');
       }
     } else {
-      const joinLeft = this.escapedColumn(relatedTable, relatedMeta, references[0].foreign);
+      const joinLeft = this.escapedColumn(relatedAlias, relatedMeta, references[0].foreign);
       const joinRight =
         rel.cardinality === '1m'
           ? escapedParentId
-          : this.escapedParentColumn(parentTable, meta, opts, references[0].local);
+          : this.escapedParentColumn(parentAlias, meta, opts, references[0].local);
 
-      ctx.append(this.escapeId(relatedTable));
+      ctx.append(relatedRef);
       ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
-      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedTable, clause: 'AND' });
+      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'AND' });
     }
 
     ctx.append(')');

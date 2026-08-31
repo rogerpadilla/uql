@@ -141,6 +141,17 @@ export function applyMembers<E>(entity: Type<E>, specs: MemberSpecs | undefined)
 }
 
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
+  // Ahead of any registration, so a rejected definition leaves nothing half-written in the registry.
+  // A dotted name reads like a schema and is not one: it escapes as a single identifier, so the
+  // statement builds and then fails at the database. `schema` is the way to say it.
+  if (opts.name?.includes('.')) {
+    const [schema, ...rest] = opts.name.split('.');
+    throw new TypeError(
+      `'${entity.name}' has a dotted name '${opts.name}'. Name the schema separately as ` +
+        `{ schema: '${schema}', name: '${rest.join('.')}' }.`,
+    );
+  }
+
   const meta = ensureMeta(entity);
   // Covers `defineEntity(Decorated)` called on a class whose members carry decorators. `@Entity()`
   // drains `context.metadata` itself, because TypeScript only attaches `Symbol.metadata` to the class
@@ -159,6 +170,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   }
 
   meta.name = opts.name ?? entity.name;
+  meta.schema = opts.schema;
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
   while (proto.constructor !== Object) {

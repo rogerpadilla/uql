@@ -1,4 +1,5 @@
 import type { PGliteOptions } from '@electric-sql/pglite';
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { PgliteDialect } from './pgliteDialect.js';
@@ -35,7 +36,7 @@ export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDat
     readonly opts?: PglitePoolOptions,
     extra?: ExtraOptions,
   ) {
-    super(new PgliteDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new PgliteDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override async openDb(): Promise<PgliteDatabase> {

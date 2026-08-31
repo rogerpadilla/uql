@@ -36,6 +36,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     supportsJsonb: true,
     ifNotExists: true,
     indexIfNotExists: true,
+    schemas: true,
     dropTableCascade: true,
     renameColumn: true,
     foreignKeyAlter: true,

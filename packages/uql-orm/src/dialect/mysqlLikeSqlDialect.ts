@@ -40,6 +40,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     supportsJsonb: false,
     ifNotExists: true,
     indexIfNotExists: false,
+    schemas: true,
     dropTableCascade: false,
     renameColumn: true,
     foreignKeyAlter: true,

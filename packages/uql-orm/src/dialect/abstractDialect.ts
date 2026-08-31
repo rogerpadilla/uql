@@ -2,6 +2,7 @@ import type {
   DialectFeatures,
   DialectName,
   EntityMeta,
+  ExtraOptions,
   FieldKey,
   FieldOptions,
   InsertIdSource,
@@ -9,7 +10,6 @@ import type {
   QueryOptions,
   QueryWhere,
   QueryWhereMap,
-  Type,
 } from '../type/index.js';
 import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
 
@@ -18,7 +18,18 @@ import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
  */
 export interface DialectOptions {
   readonly namingStrategy?: NamingStrategy;
+  /** Default schema for entities naming none; unset leaves them unqualified. See {@link AbstractDialect.resolveSchema}. */
+  readonly schema?: string;
   readonly driverCapabilities?: Partial<DialectFeatures>;
+}
+
+/**
+ * The dialect's share of a pool's {@link ExtraOptions}: what changes the SQL rather than the
+ * connection. Every pool builds its dialect through this, so a new option lands here instead of in
+ * each of the thirteen constructors.
+ */
+export function dialectOptionsFrom(extra: ExtraOptions | undefined): DialectOptions {
+  return { namingStrategy: extra?.namingStrategy, schema: extra?.schema };
 }
 
 /**
@@ -60,14 +71,39 @@ export abstract class AbstractDialect {
   }
 
   /**
-   * Resolve the table name for an entity, applying naming strategy if necessary.
+   * The table's own name, unqualified, applying naming strategy if necessary. Also the alias the
+   * root table gets once {@link resolveTableName} qualifies it, so it has to stay a single
+   * identifier: columns are prefixed with it, and a dotted prefix escapes as one identifier that
+   * nothing declared.
    */
-  resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string {
-    const name = meta.name ?? entity.name;
-    if (name !== entity.name || !this.namingStrategy) {
+  resolveTableAlias<E>(meta: EntityMeta<E>): string {
+    const className = meta.entity.name;
+    const name = meta.name ?? className;
+    if (name !== className || !this.namingStrategy) {
       return name;
     }
     return this.namingStrategy.tableName(name);
+  }
+
+  /**
+   * Where the table lives: {@link resolveTableAlias} behind its schema, when one applies. The schema
+   * skips the naming strategy - it names an object the author wrote out, and snake_casing `myCrm`
+   * would point at one that does not exist.
+   */
+  resolveTableName<E>(meta: EntityMeta<E>): string {
+    const name = this.resolveTableAlias(meta);
+    const schema = this.resolveSchema(meta);
+    return schema ? `${schema}.${name}` : name;
+  }
+
+  /**
+   * Which schema an entity is read from: its own wins over the pool's default, the way its `name`
+   * wins over the naming strategy. `undefined` is an answer, not a gap - the table stays unqualified
+   * and resolves through the connection's `search_path`, which is what every deployment predating
+   * this option relies on.
+   */
+  resolveSchema<E>(meta: EntityMeta<E>): string | undefined {
+    return this.features.schemas ? (meta.schema ?? this.options.schema) : undefined;
   }
 
   /**

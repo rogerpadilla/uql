@@ -84,6 +84,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   supportsJsonb: false,
   ifNotExists: false,
   indexIfNotExists: false,
+  schemas: false, // the connection picks the database, and a collection name takes no dot
   dropTableCascade: false,
   renameColumn: false,
   foreignKeyAlter: false,
@@ -262,7 +263,7 @@ export class MongoDialect extends AbstractDialect {
         ? this.junctionLookup(relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
         : {
             $lookup: {
-              from: this.resolveTableName(relEntity, relMeta),
+              from: this.resolveTableName(relMeta),
               ...this.joinKeys(meta, relMeta, relOpts),
               pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), ...tail],
               as: temp,
@@ -295,14 +296,14 @@ export class MongoDialect extends AbstractDialect {
 
     return {
       $lookup: {
-        from: this.resolveTableName(throughEntity, throughMeta),
+        from: this.resolveTableName(throughMeta),
         localField: MongoDialect.ID_KEY,
         foreignField: this.columnOf(throughMeta, relOpts.references[0].local),
         pipeline: [
           ...(hasKeys(junctionScope) ? [{ $match: junctionScope }] : []),
           {
             $lookup: {
-              from: this.resolveTableName(relEntity, relMeta),
+              from: this.resolveTableName(relMeta),
               localField: this.columnOf(throughMeta, relOpts.references[1].local),
               foreignField: MongoDialect.ID_KEY,
               pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), { $limit: 1 }],
@@ -768,7 +769,7 @@ export class MongoDialect extends AbstractDialect {
 
       pipeline.push({
         $lookup: {
-          from: this.resolveTableName(join.entity, join.meta),
+          from: this.resolveTableName(join.meta),
           ...this.joinKeys(parentMeta, join.meta, join.relation),
           ...(lookupPipeline.length ? { pipeline: lookupPipeline } : {}),
           as: join.key,

@@ -82,6 +82,12 @@ export type InsertIdSource = 'returning' | 'firstId' | 'lastId';
 export interface EngineFeatures {
   readonly ifNotExists: boolean;
   readonly indexIfNotExists: boolean;
+  /**
+   * Whether the engine has namespaces a table can sit behind. `false` leaves every table
+   * unqualified, whatever `schema` an entity or pool named: SQLite attaches database files and
+   * MongoDB takes its database from the connection, so neither has one to name.
+   */
+  readonly schemas: boolean;
   readonly dropTableCascade: boolean;
   readonly renameColumn: boolean;
   readonly foreignKeyAlter: boolean;

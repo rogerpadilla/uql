@@ -264,5 +264,10 @@ export type ExtraOptions = {
   /** Threshold in milliseconds - queries exceeding this are logged as slow. */
   readonly slowQuery?: number;
   readonly namingStrategy?: NamingStrategy;
+  /**
+   * Default schema (in MySQL terms, database) for entities naming none; unset leaves them
+   * unqualified. `@Entity({ schema })` overrides it.
+   */
+  readonly schema?: string;
   readonly listeners?: readonly QuerierListener[];
 };

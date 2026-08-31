@@ -283,7 +283,7 @@ export interface SchemaGenerator {
   /**
    * Resolve table name using entity and naming strategy
    */
-  resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string;
+  resolveTableName<E>(meta: EntityMeta<E>): string;
 
   /**
    * Resolve column name using field options and naming strategy

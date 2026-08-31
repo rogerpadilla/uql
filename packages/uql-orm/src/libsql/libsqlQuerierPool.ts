@@ -1,4 +1,5 @@
 import type { Config } from '@libsql/client';
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { HranaClient, HranaQuerierConnectionOptions } from '../sqlite/hranaQuerier.js';
 import { AbstractHranaQuerierPool } from '../sqlite/hranaQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
@@ -21,7 +22,7 @@ export class LibsqlQuerierPool extends AbstractHranaQuerierPool<LibsqlQuerier, L
     private readonly conf: Config,
     extra?: ExtraOptions,
   ) {
-    super(new LibsqlDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new LibsqlDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override openClient() {

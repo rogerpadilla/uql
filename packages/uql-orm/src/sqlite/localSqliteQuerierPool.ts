@@ -1,3 +1,4 @@
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
@@ -27,7 +28,7 @@ export abstract class AbstractLocalSqliteQuerierPool<
     readonly opts?: O,
     extra?: ExtraOptions,
   ) {
-    super(new SqliteDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new SqliteDialect(dialectOptionsFrom(extra)), extra);
   }
 
   /** Opens the driver's database. Extensions are loaded by the caller, not here. */

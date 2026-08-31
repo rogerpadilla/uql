@@ -331,7 +331,7 @@ describe('SchemaASTBuilder', () => {
 
     it('should use custom naming strategy options overriding constructor', () => {
       const ast = buildSchemaAST([User], {
-        resolveTableName: (_entity, meta) => `tbl_${meta.name?.toLowerCase() ?? _entity.name.toLowerCase()}`,
+        resolveTableName: (meta) => `tbl_${(meta.name ?? meta.entity.name).toLowerCase()}`,
         resolveColumnName: (key) => `col_${key}`,
       });
 

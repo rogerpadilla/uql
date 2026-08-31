@@ -1,3 +1,4 @@
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { HranaClient } from '../sqlite/hranaQuerier.js';
 import { AbstractHranaQuerierPool } from '../sqlite/hranaQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
@@ -41,7 +42,7 @@ export class TursoQuerierPool extends AbstractHranaQuerierPool<TursoQuerier, Tur
    * with the same shape: `@libsql/client/web`, `@libsql/client-wasm`, or a test double.
    */
   constructor(conf: TursoConfig | HranaClient, extra?: ExtraOptions) {
-    super(new TursoDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new TursoDialect(dialectOptionsFrom(extra)), extra);
     this.conf = conf;
     this.ownsClient = !isClient(conf);
   }

@@ -1,4 +1,5 @@
 import { createPool, type Pool, type PoolOptions } from 'mysql2/promise';
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { MySql2Dialect } from './mysql2Dialect.js';
@@ -8,7 +9,7 @@ export class MySql2QuerierPool extends AbstractSqlQuerierPool<MySql2Querier, MyS
   readonly pool: Pool;
 
   constructor(opts: PoolOptions, extra?: ExtraOptions) {
-    super(new MySql2Dialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new MySql2Dialect(dialectOptionsFrom(extra)), extra);
     this.pool = createPool(opts);
   }
 

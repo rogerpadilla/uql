@@ -1,4 +1,5 @@
 import { MongoClient, type MongoClientOptions } from 'mongodb';
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { MongodbNativeDialect } from './mongodbNativeDialect.js';
@@ -8,7 +9,7 @@ export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, Mong
   private readonly client: MongoClient;
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
-    super(new MongodbNativeDialect({ namingStrategy: extra?.namingStrategy }), extra);
+    super(new MongodbNativeDialect(dialectOptionsFrom(extra)), extra);
     this.client = new MongoClient(uri, opts);
   }
 

@@ -12,6 +12,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     explicitJsonCast: false,
     nativeArrays: false,
     supportsJsonb: false,
+    schemas: true,
     ifNotExists: true,
     indexIfNotExists: false,
     dropTableCascade: false,

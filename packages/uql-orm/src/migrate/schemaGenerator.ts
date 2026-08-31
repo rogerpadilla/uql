@@ -49,8 +49,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.dialect.features;
   }
 
-  resolveTableName<E>(entity: Type<E>, meta: EntityMeta<E>): string {
-    return this.dialect.resolveTableName(entity, meta);
+  resolveTableName<E>(meta: EntityMeta<E>): string {
+    return this.dialect.resolveTableName(meta);
   }
 
   resolveColumnName(key: string, field: FieldOptions): string {
@@ -98,8 +98,14 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // work everywhere else.
     const inline = withForeignKeys && !this.features.foreignKeyAlter;
 
-    const statements = tables.flatMap((table) =>
-      this.generateCreateTableFromNode(inline ? table : { ...table, outgoingRelations: [] }, options),
+    // Namespaces first: a qualified `CREATE TABLE` fails against a schema nobody created, and the
+    // schema is the one part of the layout a migration cannot infer from the table it is making.
+    const statements = this.generateCreateSchemas(entities);
+
+    statements.push(
+      ...tables.flatMap((table) =>
+        this.generateCreateTableFromNode(inline ? table : { ...table, outgoingRelations: [] }, options),
+      ),
     );
 
     if (withForeignKeys && !inline) {
@@ -120,6 +126,18 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     }
 
     return statements;
+  }
+
+  /**
+   * One statement per distinct schema the entities name, in first-seen order. `resolveSchema` is
+   * already `undefined` on an engine without schemas, so this is empty there, and empty in the
+   * ordinary case where nothing named one.
+   */
+  private generateCreateSchemas(entities: readonly Type<unknown>[]): string[] {
+    const named = entities
+      .map((entity) => this.dialect.resolveSchema(getMeta(entity)))
+      .filter((it) => it !== undefined);
+    return [...new Set(named)].map((schema) => this.dialect.createSchemaSql(schema));
   }
 
   generateDropSchema(entities: readonly Type<unknown>[], options: DropSchemaOptions = {}): string[] {
@@ -400,7 +418,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     if (!currentTable) {
       return {
-        tableName: this.dialect.resolveTableName(entity, meta),
+        tableName: this.dialect.resolveTableName(meta),
         type: 'create',
       };
     }
@@ -447,7 +465,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     }
 
     return {
-      tableName: this.dialect.resolveTableName(entity, meta),
+      tableName: this.dialect.resolveTableName(meta),
       type: 'alter',
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
@@ -731,7 +749,7 @@ export function buildEntityAST(
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaAST {
   return buildSchemaAST(entities, {
-    resolveTableName: (entity, meta) => generator.resolveTableName(entity, meta),
+    resolveTableName: (meta) => generator.resolveTableName(meta),
     resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
     defaultForeignKeyAction,
   });
