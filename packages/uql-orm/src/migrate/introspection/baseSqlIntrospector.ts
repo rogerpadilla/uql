@@ -1,7 +1,7 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { canonicalColumnType } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { SchemaAST } from '../../schema/schemaAST.js';
+import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
@@ -13,7 +13,15 @@ export abstract class BaseSqlIntrospector {
   /** Columns and uniqueness only; each introspector opts in to what its catalogue queries report. */
   readonly indexFacets: ReadonlySet<IndexFacet> = new Set();
 
-  constructor(protected readonly dialect: AbstractSqlDialect) {}
+  /**
+   * The one schema these queries read, `undefined` for the connection's own default. Every table
+   * reported is stamped with it, so a diff compares like with like: entity and database both say
+   * `undefined` for "wherever the connection points", and name a schema only when one was asked for.
+   */
+  constructor(
+    protected readonly dialect: AbstractSqlDialect,
+    readonly schema?: string,
+  ) {}
 
   protected escapeId(identifier: string): string {
     return escapeSqlId(identifier, this.dialect.escapeIdChar);
@@ -54,16 +62,8 @@ export abstract class BaseSqlIntrospector {
 
   private buildTables(ast: SchemaAST, tableNodes: Map<string, TableNode>, tableSchemas: TableSchema[]) {
     for (const schema of tableSchemas) {
-      const columns = new Map<string, ColumnNode>();
-      const table: TableNode = {
-        name: schema.name,
-        columns,
-        primaryKey: [],
-        indexes: [],
-        schema: ast,
-        incomingRelations: [],
-        outgoingRelations: [],
-      };
+      const table = createTableNode(schema.name, this.schema);
+      const { columns } = table;
 
       for (const col of schema.columns) {
         const column: ColumnNode = {

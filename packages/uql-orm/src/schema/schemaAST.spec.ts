@@ -529,7 +529,6 @@ function createTable(name: string, columnCount = 2): TableNode {
     columns,
     primaryKey: [],
     indexes: [],
-    schema: undefined as unknown as SchemaAST,
     incomingRelations: [],
     outgoingRelations: [],
   };

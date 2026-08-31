@@ -12,6 +12,7 @@ import type {
   QueryWhereMap,
 } from '../type/index.js';
 import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
+import { qualifyName } from '../util/sql.util.js';
 
 /**
  * Options for initializing a dialect.
@@ -91,9 +92,7 @@ export abstract class AbstractDialect {
    * would point at one that does not exist.
    */
   resolveTableName<E>(meta: EntityMeta<E>): string {
-    const name = this.resolveTableAlias(meta);
-    const schema = this.resolveSchema(meta);
-    return schema ? `${schema}.${name}` : name;
+    return qualifyName(this.resolveTableAlias(meta), this.resolveSchema(meta));
   }
 
   /**

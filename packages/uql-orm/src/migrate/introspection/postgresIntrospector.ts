@@ -7,6 +7,8 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  protected override readonly defaultSchemaExpr = 'current_schema()';
+
   /**
    * Expressions and predicates are read back too, for `generate:from-db`, but they are text the
    * database reprints in its own words, so they are not comparable and are not claimed here.
@@ -23,7 +25,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT table_name
       FROM information_schema.tables
-      WHERE table_schema = 'public'
+      WHERE table_schema = ${this.schemaExpr}
         AND table_type = 'BASE TABLE'
       ORDER BY table_name
     `;
@@ -33,7 +35,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT EXISTS (
         SELECT FROM information_schema.tables
-        WHERE table_schema = 'public'
+        WHERE table_schema = ${this.schemaExpr}
           AND table_name = $1
       ) AS exists
     `;
@@ -81,7 +83,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
           c.ordinal_position
         ) AS column_comment
       FROM information_schema.columns c
-      WHERE c.table_schema = 'public'
+      WHERE c.table_schema = ${this.schemaExpr}
         AND c.table_name = $1
       ORDER BY c.ordinal_position
     `;
@@ -162,7 +164,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND rc.constraint_schema = tc.table_schema
       WHERE tc.constraint_type = 'FOREIGN KEY'
         AND tc.table_name = $1
-        AND tc.table_schema = 'public'
+        AND tc.table_schema = ${this.schemaExpr}
       GROUP BY tc.constraint_name, ccu.table_name, rc.delete_rule, rc.update_rule
       ORDER BY tc.constraint_name
     `;
@@ -177,7 +179,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND tc.table_schema = kcu.table_schema
       WHERE tc.constraint_type = 'PRIMARY KEY'
         AND tc.table_name = $1
-        AND tc.table_schema = 'public'
+        AND tc.table_schema = ${this.schemaExpr}
       ORDER BY kcu.ordinal_position
     `;
   }

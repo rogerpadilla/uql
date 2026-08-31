@@ -27,7 +27,6 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
       columns: new Map(),
       primaryKey: [],
       indexes: [],
-      schema: ast,
       incomingRelations: [],
       outgoingRelations: [],
     };

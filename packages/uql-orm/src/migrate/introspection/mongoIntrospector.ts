@@ -29,7 +29,6 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
           columns,
           primaryKey: [],
           indexes: [],
-          schema: ast,
           incomingRelations: [],
           outgoingRelations: [],
         };

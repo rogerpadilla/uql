@@ -344,9 +344,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * string taken apart again by {@link escapeId}.
    */
   protected escapedTableName<E>(meta: EntityMeta<E>): string {
-    const alias = this.escapeId(this.resolveTableAlias(meta), true);
-    const schema = this.resolveSchema(meta);
-    return schema ? `${this.escapeId(schema, true)}.${alias}` : alias;
+    return this.escapeQualifiedId(this.resolveTableAlias(meta), this.resolveSchema(meta));
   }
 
   /**
@@ -1446,6 +1444,16 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string {
     return escapeSqlId(val, this.escapeIdChar, forbidQualified, addDot);
+  }
+
+  /**
+   * A name behind its schema, each part escaped on its own rather than as one dotted string taken
+   * apart again by {@link escapeId}. Tables and their indexes both use it, since an index lives in
+   * the schema of the table it is on.
+   */
+  escapeQualifiedId(name: string, schema: string | undefined): string {
+    const escaped = this.escapeId(name, true);
+    return schema ? `${this.escapeId(schema, true)}.${escaped}` : escaped;
   }
 
   /**

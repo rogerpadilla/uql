@@ -50,6 +50,18 @@ describe('MysqlSchemaIntrospector', () => {
     expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('information_schema.TABLES'));
   });
 
+  // A MySQL schema is a database, so the connection's own is `DATABASE()` rather than Postgres's
+  // `current_schema()`; naming one reads that database instead.
+  it("reads the connection's own database when no schema was asked for", async () => {
+    await introspector.getTableNames();
+    expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('TABLE_SCHEMA = DATABASE()'));
+  });
+
+  it('reads the schema it was constructed with', async () => {
+    await new TestMysqlIntrospector(pool, 'crm').getTableNames();
+    expect(querier.all).toHaveBeenCalledWith(expect.stringContaining("TABLE_SCHEMA = 'crm'"));
+  });
+
   it('getTableSchema should return table details', async () => {
     // 1. tableExists check
     mockAll.mockResolvedValueOnce([{ count: 1 }]);

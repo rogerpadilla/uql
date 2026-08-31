@@ -3,6 +3,9 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineEntity } from '../entity/index.js';
+import { Migrator } from '../migrate/migrator.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
+import { PgliteDialect } from './pgliteDialect.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
 import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
@@ -22,6 +25,7 @@ class Order {
 class Ledger {
   id?: number;
   total?: number;
+  label?: string;
 }
 
 defineEntity(Customer, {
@@ -39,7 +43,21 @@ defineEntity(Order, {
     customer: { entity: () => Customer, cardinality: 'm1', references: [{ local: 'customerId', foreign: 'id' }] },
   },
 });
-defineEntity(Ledger, { fields: { id: { isId: true, type: Number }, total: { type: Number } } });
+defineEntity(Ledger, {
+  fields: { id: { isId: true, type: Number }, total: { type: Number }, label: { type: String, index: true } },
+});
+
+/** The same `crm.Customer` table, plus a column, so the diff has something to find. */
+class Drifted {
+  id?: number;
+  name?: string;
+  age?: number;
+}
+defineEntity(Drifted, {
+  schema: 'crm',
+  name: 'Customer',
+  fields: { id: { isId: true, type: Number }, name: { type: String }, age: { type: Number } },
+});
 
 const TENANTS = [
   ['tenant_a', 10],
@@ -53,11 +71,12 @@ describe('schema against postgres', () => {
   beforeAll(async () => {
     pool = new PgliteQuerierPool('memory://');
     querier = await pool.getQuerier();
-    for (const schema of ['crm', 'sales']) {
-      await querier.run(`CREATE SCHEMA ${schema}`);
+    // The generated DDL, not a hand-written equivalent: the schema statements, the qualified
+    // `CREATE TABLE`s and the derived index and constraint names are exactly what this feature
+    // emits, and a name that escapes into two identifiers only fails against a real server.
+    for (const sql of new SqlSchemaGenerator(pool.dialect).generateCreateSchema([Customer, Order])) {
+      await querier.run(sql);
     }
-    await querier.run('CREATE TABLE crm."Customer" (id serial primary key, name text)');
-    await querier.run('CREATE TABLE sales."Order" (id serial primary key, total int, "customerId" int)');
     await querier.insertOne(Customer, { name: 'acme' });
     await querier.insertOne(Order, { total: 42, customerId: 1 });
   });
@@ -95,8 +114,11 @@ describe('schema against postgres', () => {
     const scoped = new PgliteQuerierPool('memory://', undefined, { schema });
     const tenant = await scoped.getQuerier();
     for (const [other, total] of TENANTS) {
-      await tenant.run(`CREATE SCHEMA ${other}`);
-      await tenant.run(`CREATE TABLE ${other}."Ledger" (id serial primary key, total int)`);
+      // Each tenant's DDL comes from a generator scoped to that schema, the same way its pool is.
+      const scopedDialect = new PgliteDialect({ schema: other });
+      for (const sql of new SqlSchemaGenerator(scopedDialect).generateCreateSchema([Ledger])) {
+        await tenant.run(sql);
+      }
       await tenant.run(`INSERT INTO ${other}."Ledger" (total) VALUES (${total})`);
     }
 
@@ -104,5 +126,41 @@ describe('schema against postgres', () => {
 
     await tenant.release();
     await scoped.end();
+  });
+
+  // Introspection only ever read `table_schema = 'public'`, so a qualified entity matched nothing and
+  // diffed as `create` forever: `drift:check` called an existing table missing, and `autoSync` reran
+  // `CREATE TABLE` instead of altering it. A column added to the entity is the case that exposes it.
+  describe('drift against a qualified table', () => {
+    let driftPool: PgliteQuerierPool;
+
+    beforeAll(async () => {
+      driftPool = new PgliteQuerierPool('memory://');
+      const querier = await driftPool.getQuerier();
+      for (const sql of new SqlSchemaGenerator(driftPool.dialect).generateCreateSchema([Customer])) {
+        await querier.run(sql);
+      }
+      await querier.release();
+    });
+
+    afterAll(async () => {
+      await driftPool.end();
+    });
+
+    it('reports no drift for a table it just created', async () => {
+      await expect(new Migrator(driftPool, { entities: [Customer] }).getDiffs()).resolves.toEqual([]);
+    });
+
+    it('alters a qualified table rather than creating it again', async () => {
+      const [diff] = await new Migrator(driftPool, { entities: [Drifted] }).getDiffs();
+      expect(diff?.type).toBe('alter');
+      expect(diff?.tableName).toBe('crm.Customer');
+      expect(diff?.columnsToAdd?.map((column) => column.name)).toEqual(['age']);
+    });
+
+    it('emits the ALTER against the qualified table', async () => {
+      const sql = await new Migrator(driftPool, { entities: [Drifted] }).planSync();
+      expect(sql).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
+    });
   });
 });

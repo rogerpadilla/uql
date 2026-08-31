@@ -144,8 +144,17 @@ export interface ColumnNode {
  * Represents a database table with all its columns, indexes, and relationships.
  */
 export interface TableNode {
-  /** Table name in the database */
+  /**
+   * The table's own name, never qualified. Everything derived from a table reads this: an index or
+   * constraint name is a single identifier, and `idx_sales.Order_total` is a syntax error.
+   */
   readonly name: string;
+  /**
+   * The namespace the table lives in, absent where nothing named one and it resolves through the
+   * connection's own default. Joined onto {@link name} by `qualifyName`, which is the key a
+   * `SchemaAST` stores the table under and the operand a statement names it by.
+   */
+  readonly schema?: string;
   /** Map of column name to column node */
   readonly columns: Map<string, ColumnNode>;
   /** Primary key columns (supports composite keys) */
@@ -156,8 +165,6 @@ export interface TableNode {
   readonly comment?: string;
 
   // === Graph Links ===
-  /** Reference to the parent schema */
-  schema: SchemaAST;
   /** Relationships pointing TO this table (other tables referencing this one) */
   incomingRelations: RelationshipNode[];
   /** Relationships pointing FROM this table (this table referencing others) */

@@ -213,7 +213,6 @@ function createTableNode(
     columns,
     primaryKey: [],
     indexes: [],
-    schema: ast,
     incomingRelations: [],
     outgoingRelations: [],
   };

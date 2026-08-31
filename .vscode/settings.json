@@ -8,5 +8,8 @@
   "editor.codeActionsOnSave": {
     "source.organizeImports.biome": "explicit",
     "source.fixAll.biome": "explicit"
+  },
+  "terminal.integrated.env.osx": {
+    "CLAUDE_CONFIG_DIR": "${env:HOME}/.claude-personal"
   }
 }

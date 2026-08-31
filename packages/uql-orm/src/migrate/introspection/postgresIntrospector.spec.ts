@@ -56,6 +56,25 @@ describe('PostgresSchemaIntrospector', () => {
     expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('information_schema.tables'));
   });
 
+  // The schema is the one value in these queries that is text rather than a bind parameter, because
+  // they are assembled as strings and several use it more than once.
+  describe('which schema it reads', () => {
+    it("reads the connection's own when none was asked for", async () => {
+      await introspector.getTableNames();
+      expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('table_schema = current_schema()'));
+    });
+
+    it('reads the one it was constructed with', async () => {
+      await new TestPostgresIntrospector(pool, 'crm').getTableNames();
+      expect(querier.all).toHaveBeenCalledWith(expect.stringContaining("table_schema = 'crm'"));
+    });
+
+    it('escapes the name rather than pasting it in', async () => {
+      await new TestPostgresIntrospector(pool, "cr'm").getTableNames();
+      expect(querier.all).toHaveBeenCalledWith(expect.stringContaining("table_schema = 'cr''m'"));
+    });
+  });
+
   it('getTableSchema should return table details', async () => {
     mockAll.mockImplementation((sql: string) => {
       if (sql.includes('information_schema.tables')) {

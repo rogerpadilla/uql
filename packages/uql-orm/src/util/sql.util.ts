@@ -60,6 +60,32 @@ export function obtainAttrsPaths<T extends object>(row: T) {
 }
 
 /**
+ * A name behind its namespace, or bare where there is none: the one place the two are joined, so a
+ * table's key, its statement operand and its escaped form cannot spell it differently. Never the
+ * seed for a derived identifier - an index or constraint name is a single identifier, and
+ * `idx_sales.Order_total` is a syntax error.
+ */
+export function qualifyName(name: string, schema?: string): string {
+  return schema ? `${schema}.${name}` : name;
+}
+
+/**
+ * The name a derived index or constraint gets when nothing named it: `idx_Order_total`.
+ *
+ * One owner, because it is a rule two layers apply and a third has to match: the entity AST derives
+ * it, the DDL generator falls back to it, and a diff compares what the database reports against it.
+ * `table` is the table's own name, never qualified - the result is a single identifier.
+ */
+export function derivedIndexName(table: string, columns: readonly string[]): string {
+  return `idx_${table}_${columns.join('_')}`;
+}
+
+/** The constraint name a foreign key gets when nothing named it: `fk_Order_customerId`. */
+export function derivedForeignKeyName(table: string, columns: readonly string[]): string {
+  return `fk_${table}_${columns.join('_')}`;
+}
+
+/**
  * Escape a SQL identifier (table name, column name, etc.)
  * @param val the identifier to escape
  * @param escapeIdChar the escape character to use (e.g. ` or ")

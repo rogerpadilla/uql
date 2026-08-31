@@ -1,4 +1,5 @@
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import { derivedForeignKeyName } from '../../util/sql.util.js';
 import type { FullColumnDefinition, TableDefinition } from '../builder/types.js';
 
 /**
@@ -15,7 +16,6 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
     columns,
     primaryKey: [], // placeholder
     indexes: [],
-    schema: { tables: new Map(), relationships: [], indexes: [] },
     incomingRelations: [],
     outgoingRelations: [],
     comment: def.comment,
@@ -42,7 +42,7 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
 
   for (const fkDef of def.foreignKeys) {
     const relNode: RelationshipNode = {
-      name: fkDef.name ?? `fk_${def.name}_${fkDef.columns.join('_')}`,
+      name: fkDef.name ?? derivedForeignKeyName(def.name, fkDef.columns),
       type: 'ManyToOne', // Builder default
       from: {
         table,
@@ -75,7 +75,7 @@ export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName:
     referencedBy: [],
     references: col.foreignKey
       ? {
-          name: `fk_${tableName}_${col.name}`,
+          name: derivedForeignKeyName(tableName, [col.name]),
           type: 'ManyToOne',
           from: { table: { name: tableName } as TableNode, columns: [] },
           to: {

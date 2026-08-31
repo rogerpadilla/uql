@@ -10,17 +10,26 @@ import { getMeta } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
+import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
-import { SchemaAST } from './schemaAST.js';
-import type { CanonicalType, ColumnNode, ForeignKeyAction, RelationshipNode, TableNode } from './types.js';
-import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
+import { createTableNode, SchemaAST } from './schemaAST.js';
+import {
+  type CanonicalType,
+  type ColumnNode,
+  DEFAULT_FOREIGN_KEY_ACTION,
+  type ForeignKeyAction,
+  type RelationshipNode,
+  type TableNode,
+} from './types.js';
 
 /**
  * Options for building SchemaAST from entities.
  */
 export interface BuildSchemaASTOptions {
-  /** Custom table name resolver */
+  /** Custom resolver for a table's own name, unqualified. */
   resolveTableName?: (meta: EntityMeta<unknown>) => string;
+  /** Custom resolver for the schema a table lives in; `undefined` leaves it unqualified. */
+  resolveSchema?: (meta: EntityMeta<unknown>) => string | undefined;
   /** Custom column name resolver */
   resolveColumnName?: (key: string, field: FieldOptions) => string;
   /** Naming strategy to use */
@@ -33,6 +42,7 @@ export interface BuildSchemaASTOptions {
 type BuildContext = {
   readonly ast: SchemaAST;
   readonly resolveTableName: (meta: EntityMeta<unknown>) => string;
+  readonly resolveSchema: (meta: EntityMeta<unknown>) => string | undefined;
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
   readonly defaultForeignKeyAction: ForeignKeyAction;
 };
@@ -50,6 +60,7 @@ export function buildSchemaAST(entities: readonly Type<unknown>[], options: Buil
     resolveTableName:
       options.resolveTableName ??
       ((m) => namingStrategy?.tableName(m.name ?? m.entity.name) ?? m.name ?? m.entity.name),
+    resolveSchema: options.resolveSchema ?? ((m) => m.schema),
     resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
   };
@@ -101,19 +112,8 @@ function resolveColumnCanonicalType(field: FieldOptions, seen: Set<EntityGetter>
 function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
   const tableName = ctx.resolveTableName(meta);
 
-  const columns = new Map<string, ColumnNode>();
-  const primaryKey: ColumnNode[] = [];
-
-  // Create placeholder table (will be fully initialized below)
-  const table: TableNode = {
-    name: tableName,
-    columns,
-    primaryKey,
-    indexes: [],
-    schema: ctx.ast,
-    incomingRelations: [],
-    outgoingRelations: [],
-  };
+  const table = createTableNode(tableName, ctx.resolveSchema(meta));
+  const { columns, primaryKey } = table;
 
   // Add columns from fields
   const fields = meta.fields;
@@ -154,12 +154,16 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
   ctx.ast.addTable(table);
 }
 
+/** The node an entity maps to, found under the key {@link SchemaAST} stores it by. */
+function tableOf(ctx: BuildContext, meta: EntityMeta<unknown>): TableNode | undefined {
+  return ctx.ast.getTable(qualifyName(ctx.resolveTableName(meta), ctx.resolveSchema(meta)));
+}
+
 /**
  * Add relationships from entity relation decorators.
  */
 function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
-  const tableName = ctx.resolveTableName(meta);
-  const table = ctx.ast.getTable(tableName);
+  const table = tableOf(ctx, meta);
   if (!table) return;
 
   const relations = meta.relations;
@@ -167,10 +171,8 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
     const relation = relations[key];
     if (!relation) continue;
 
-    const relatedEntity = relation.entity();
-    const relatedMeta = getMeta(relatedEntity);
-    const relatedTableName = ctx.resolveTableName(relatedMeta);
-    const relatedTable = ctx.ast.getTable(relatedTableName);
+    const relatedMeta = getMeta(relation.entity());
+    const relatedTable = tableOf(ctx, relatedMeta);
     if (!relatedTable) continue;
 
     // Only the owning side gets the FK. `mappedBy` marks the inverse side of a one-to-one, whose
@@ -196,7 +198,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
 
       if (localColumn && foreignColumn) {
         const relNode: RelationshipNode = {
-          name: `fk_${tableName}_${localColName}`,
+          name: derivedForeignKeyName(table.name, [localColName]),
           type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
           from: { table, columns: [localColumn] },
           to: { table: relatedTable, columns: [foreignColumn] },
@@ -219,8 +221,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
  * in common beyond their target table.
  */
 function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
-  const tableName = ctx.resolveTableName(meta);
-  const table = ctx.ast.getTable(tableName);
+  const table = tableOf(ctx, meta);
   if (!table) return;
 
   for (const key of Object.keys(meta.fields)) {
@@ -229,7 +230,7 @@ function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): voi
     const column = table.columns.get(ctx.resolveColumnName(key, field));
     if (!column) continue;
     ctx.ast.addIndex({
-      name: typeof field.index === 'string' ? field.index : `idx_${tableName}_${column.name}`,
+      name: typeof field.index === 'string' ? field.index : derivedIndexName(table.name, [column.name]),
       table,
       entries: [{ column: column.name }],
       unique: field.unique ?? false,
@@ -276,7 +277,7 @@ function addCompositeIndex(
   const named = entries.map((entry, at) => (entry.expression ? `expr${at}` : entry.column));
 
   ctx.ast.addIndex({
-    name: idxMeta.name ?? `idx_${table.name}_${named.join('_')}`,
+    name: idxMeta.name ?? derivedIndexName(table.name, named),
     table,
     entries,
     include: idxMeta.include?.map((column) => resolveIncludeColumn(ctx, meta, column)),

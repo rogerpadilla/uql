@@ -2,6 +2,12 @@
 
 What changed and worth it documenting here. Newest first, `[yyyy-mm-dd]`.
 
+## [0.34.1] - 2026-08-31
+
+**Migrations understand `schema` now.** In 0.34.0 only queries did, so `migration:generate`, `drift:check` and `autoSync` still treated every table as unqualified. They now write and read one the way a query does.
+
+`SchemaGenerator` gained `resolveTableAlias` and `resolveSchema`, and a `TableNode` carries its `schema` beside an unqualified `name`. Both only matter if you implement one yourself.
+
 ## [0.34.0] - 2026-08-31
 
 **An entity can name the schema it lives in**, and a pool can set a default for the rest:

@@ -25,7 +25,8 @@ import type {
   SqlDdlGenerator,
   Type,
 } from '../type/index.js';
-import { escapeSqlId, getKeys, isAutoIncrement } from '../util/index.js';
+import { getKeys, isAutoIncrement, qualifyName } from '../util/index.js';
+import { derivedForeignKeyName } from '../util/sql.util.js';
 import { formatDefaultValue } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
@@ -53,15 +54,21 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.dialect.resolveTableName(meta);
   }
 
+  resolveTableAlias<E>(meta: EntityMeta<E>): string {
+    return this.dialect.resolveTableAlias(meta);
+  }
+
+  resolveSchema<E>(meta: EntityMeta<E>): string | undefined {
+    return this.dialect.resolveSchema(meta);
+  }
+
   resolveColumnName(key: string, field: FieldOptions): string {
     return this.dialect.resolveColumnName(key, field);
   }
 
-  /**
-   * Escape an identifier (table name, column name, etc.)
-   */
+  /** Escape an identifier (table name, column name, etc.) */
   protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.dialect.escapeIdChar);
+    return this.dialect.escapeId(identifier);
   }
 
   /**
@@ -100,7 +107,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     // Namespaces first: a qualified `CREATE TABLE` fails against a schema nobody created, and the
     // schema is the one part of the layout a migration cannot infer from the table it is making.
-    const statements = this.generateCreateSchemas(entities);
+    const statements = this.generateCreateSchemas(tables);
 
     statements.push(
       ...tables.flatMap((table) =>
@@ -112,10 +119,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       for (const table of tables) {
         for (const rel of table.outgoingRelations) {
           statements.push(
-            this.generateAddForeignKeySql(table.name, {
+            this.generateAddForeignKeySql(qualifyName(table.name, table.schema), {
               name: rel.name,
               columns: rel.from.columns.map((c) => c.name),
-              referencesTable: rel.to.table.name,
+              referencesTable: qualifyName(rel.to.table.name, rel.to.table.schema),
               referencesColumns: rel.to.columns.map((c) => c.name),
               onDelete: rel.onDelete ?? this.defaultForeignKeyAction,
               onUpdate: rel.onUpdate ?? this.defaultForeignKeyAction,
@@ -129,19 +136,19 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /**
-   * One statement per distinct schema the entities name, in first-seen order. `resolveSchema` is
-   * already `undefined` on an engine without schemas, so this is empty there, and empty in the
-   * ordinary case where nothing named one.
+   * One statement per distinct schema the tables being created live in, in first-seen order. Only
+   * the tables actually being created, so a narrowed `only` does not declare namespaces it is not
+   * about to fill. Empty on an engine without schemas, whose tables are never qualified.
    */
-  private generateCreateSchemas(entities: readonly Type<unknown>[]): string[] {
-    const named = entities
-      .map((entity) => this.dialect.resolveSchema(getMeta(entity)))
-      .filter((it) => it !== undefined);
+  private generateCreateSchemas(tables: readonly TableNode[]): string[] {
+    const named = tables.map((table) => table.schema).filter((it) => it !== undefined);
     return [...new Set(named)].map((schema) => this.dialect.createSchemaSql(schema));
   }
 
   generateDropSchema(entities: readonly Type<unknown>[], options: DropSchemaOptions = {}): string[] {
-    return this.orderedTables(entities, 'drop').map((table) => this.generateDropTable(table.name, options));
+    return this.orderedTables(entities, 'drop').map((table) =>
+      this.generateDropTable(qualifyName(table.name, table.schema), options),
+    );
   }
 
   /**
@@ -160,7 +167,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       return tables;
     }
     const wanted = new Set(only);
-    return tables.filter((table) => wanted.has(table.name));
+    return tables.filter((table) => wanted.has(qualifyName(table.name, table.schema)));
   }
 
   generateDropTable(tableName: string, options: DropSchemaOptions = {}): string {
@@ -207,7 +214,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Drop indexes
     if (diff.indexesToDrop?.length) {
       for (const indexName of diff.indexesToDrop) {
-        statements.push(this.generateDropIndex(diff.tableName, indexName));
+        statements.push(this.generateDropIndex(diff.tableName, indexName, diff.schema));
       }
     }
 
@@ -237,7 +244,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Reverse index additions by dropping them
     if (diff.indexesToAdd?.length) {
       for (const index of diff.indexesToAdd) {
-        statements.push(this.generateDropIndex(diff.tableName, index.name));
+        statements.push(this.generateDropIndex(diff.tableName, index.name, diff.schema));
       }
     }
 
@@ -252,11 +259,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.dialect.getCreateIndexStatement(tableName, index, options);
   }
 
-  generateDropIndex(tableName: string, indexName: string): string {
+  /**
+   * `schema` is the table's, because that is where its indexes live. MySQL takes it from the table
+   * operand instead, which is already qualified.
+   */
+  generateDropIndex(tableName: string, indexName: string, schema?: string): string {
     if (this.dialect.dropIndexSyntax === 'on-table') {
       return `DROP INDEX ${this.escapeId(indexName)} ON ${this.escapeId(tableName)};`;
     }
-    return `DROP INDEX IF EXISTS ${this.escapeId(indexName)};`;
+    return `DROP INDEX IF EXISTS ${this.dialect.escapeQualifiedId(indexName, schema)};`;
   }
 
   /**
@@ -418,7 +429,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     if (!currentTable) {
       return {
-        tableName: this.dialect.resolveTableName(meta),
+        tableName: this.resolveTableName(meta),
+        schema: this.resolveSchema(meta),
         type: 'create',
       };
     }
@@ -465,7 +477,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     }
 
     return {
-      tableName: this.dialect.resolveTableName(meta),
+      tableName: this.resolveTableName(meta),
+      schema: this.resolveSchema(meta),
       type: 'alter',
       columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
       columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
@@ -483,7 +496,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * created deliberately outside the ORM, and dropping it is a decision for a reviewed migration.
    */
   private missingIndexes<E>(entity: Type<E>, currentTable: TableNode): IndexSchema[] {
-    const desired = buildEntityAST(this, [entity]).getTable(currentTable.name)?.indexes ?? [];
+    // Keyed by the qualified name, so a table in a schema finds itself rather than reporting that
+    // the entity declares no indexes at all.
+    const desired =
+      buildEntityAST(this, [entity]).getTable(qualifyName(currentTable.name, currentTable.schema))?.indexes ?? [];
     const present = new Set(currentTable.indexes.map((index) => index.name));
     return desired
       .filter((index) => !present.has(index.name) && !this.isInlineVectorIndex(index))
@@ -614,14 +630,14 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
         const toCols = rel.to.columns.map((c) => this.escapeId(c.name)).join(', ');
         const constraintName = rel.name ? `CONSTRAINT ${this.escapeId(rel.name)} ` : '';
         constraints.push(
-          `${constraintName}FOREIGN KEY (${fromCols}) REFERENCES ${this.escapeId(rel.to.table.name)} (${toCols})` +
+          `${constraintName}FOREIGN KEY (${fromCols}) REFERENCES ${this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema)} (${toCols})` +
             ` ON DELETE ${rel.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${rel.onUpdate ?? this.defaultForeignKeyAction}`,
         );
       }
     }
 
     const ifNotExists = options.ifNotExists && this.features.ifNotExists ? 'IF NOT EXISTS ' : '';
-    let createSql = `CREATE TABLE ${ifNotExists}${this.escapeId(table.name)} (\n`;
+    let createSql = `CREATE TABLE ${ifNotExists}${this.dialect.escapeQualifiedId(table.name, table.schema)} (\n`;
     createSql += columns.map((col) => `  ${col}`).join(',\n');
 
     if (constraints.length > 0) {
@@ -675,7 +691,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * Delegates to `generateCreateIndex` for unified SQL assembly.
    */
   generateCreateIndexFromNode(index: IndexNode, options: { ifNotExists: boolean } = { ifNotExists: false }): string {
-    return this.generateCreateIndex(index.table.name, indexNodeToSchema(index), options);
+    // The index's own name stays unqualified: it is created in the schema of the table it is on.
+    return this.generateCreateIndex(
+      qualifyName(index.table.name, index.table.schema),
+      indexNodeToSchema(index),
+      options,
+    );
   }
 
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
@@ -717,7 +738,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const refCols = foreignKey.referencesColumns.map((c) => this.escapeId(c)).join(', ');
     const constraintName = foreignKey.name
       ? this.escapeId(foreignKey.name)
-      : this.escapeId(`fk_${tableName}_${foreignKey.columns.join('_')}`);
+      : this.escapeId(derivedForeignKeyName(tableName, foreignKey.columns));
 
     if (!this.features.foreignKeyAlter) {
       throw new TypeError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
@@ -744,12 +765,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
  * table of a project using a naming strategy as both missing and unexpected.
  */
 export function buildEntityAST(
-  generator: Pick<SchemaGenerator, 'resolveTableName' | 'resolveColumnName'>,
+  generator: Pick<SchemaGenerator, 'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName'>,
   entities: readonly Type<unknown>[],
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaAST {
   return buildSchemaAST(entities, {
-    resolveTableName: (meta) => generator.resolveTableName(meta),
+    // The alias, not `resolveTableName`: a node holds its schema separately, so that a name derived
+    // from it stays a single identifier.
+    resolveTableName: (meta) => generator.resolveTableAlias(meta),
+    resolveSchema: (meta) => generator.resolveSchema(meta),
     resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
     defaultForeignKeyAction,
   });

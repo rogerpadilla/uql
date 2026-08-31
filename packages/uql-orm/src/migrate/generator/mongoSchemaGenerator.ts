@@ -14,6 +14,7 @@ import type {
   Type,
 } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
+import { derivedIndexName } from '../../util/sql.util.js';
 import type { TableDefinition } from '../builder/types.js';
 import { indexNodeToSchema } from './indexNodeToSchema.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
@@ -62,7 +63,8 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       const field = meta.fields[key];
       if (field?.index) {
         const columnName = this.resolveColumnName(key, field);
-        const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
+        const indexName =
+          typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]);
         indexes.push({
           name: indexName,
           entries: [{ column: columnName }],
@@ -180,7 +182,8 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       const field = meta.fields[key];
       if (field?.index) {
         const columnName = this.resolveColumnName(key, field);
-        const indexName = typeof field.index === 'string' ? field.index : `idx_${collectionName}_${columnName}`;
+        const indexName =
+          typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]);
         if (!existingIndexes.has(indexName)) {
           indexesToAdd.push({
             name: indexName,

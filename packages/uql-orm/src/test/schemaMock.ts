@@ -1,21 +1,12 @@
-import { SchemaAST } from '../schema/schemaAST.js';
+import { createTableNode } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
 
 /**
- * A table node built from the little each test cares about, with the rest defaulted. Its `schema` is
- * an empty AST rather than a stand-in: a test that needs the graph adds the table to one of its own,
- * and `addTable` reassigns it.
+ * A table node built from the little each test cares about, with the rest defaulted. `schema` is the
+ * namespace it sits in, left out for the ordinary unqualified table.
  */
-export function mockTableNode(name: string, columns: Partial<ColumnNode>[]): TableNode {
-  const table: TableNode = {
-    name,
-    columns: new Map(),
-    primaryKey: [],
-    indexes: [],
-    incomingRelations: [],
-    outgoingRelations: [],
-    schema: new SchemaAST(),
-  };
+export function mockTableNode(name: string, columns: Partial<ColumnNode>[], schema?: string): TableNode {
+  const table = createTableNode(name, schema);
 
   for (const col of columns) {
     const column: ColumnNode = {

@@ -7,6 +7,7 @@
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 import { normalizeIndexColumn } from '../../util/index.js';
+import { derivedIndexName } from '../../util/sql.util.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { t } from './expressions.js';
 import type {
@@ -250,7 +251,7 @@ export class TableBuilder implements ITableBuilder {
     // Collect column-level indexes
     for (const col of columns) {
       if (col.index) {
-        const indexName = typeof col.index === 'string' ? col.index : `idx_${this._name}_${col.name}`;
+        const indexName = typeof col.index === 'string' ? col.index : derivedIndexName(this._name, [col.name]);
 
         // Only add if not already in table-level indexes
         if (!this._indexes.some((idx) => idx.name === indexName)) {

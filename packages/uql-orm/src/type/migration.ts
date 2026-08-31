@@ -197,7 +197,13 @@ export interface ForeignKeySchema {
  * Represents a difference between current and desired schema
  */
 export interface SchemaDiff {
+  /** Qualified where the table has a schema, since it is also the key the table is found under. */
   readonly tableName: string;
+  /**
+   * The schema {@link tableName} is in, carried separately for the identifiers that live in it
+   * rather than name it: a Postgres index is dropped as `schema.index`, never `schema.table`.
+   */
+  readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
   readonly columnsToAdd?: ColumnSchema[];
   readonly columnsToAlter?: { from: ColumnSchema; to: ColumnSchema }[];
@@ -281,9 +287,19 @@ export interface SchemaGenerator {
   diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined;
 
   /**
-   * Resolve table name using entity and naming strategy
+   * The table's key: {@link resolveTableAlias} behind {@link resolveSchema}, which is how a
+   * `SchemaAST` stores it and how a diff finds it again.
    */
   resolveTableName<E>(meta: EntityMeta<E>): string;
+
+  /**
+   * The table's own name, unqualified. What a derived index or constraint name is built from, since
+   * those are single identifiers.
+   */
+  resolveTableAlias<E>(meta: EntityMeta<E>): string;
+
+  /** The schema the table lives in, `undefined` where nothing named one. */
+  resolveSchema<E>(meta: EntityMeta<E>): string | undefined;
 
   /**
    * Resolve column name using field options and naming strategy

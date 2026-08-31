@@ -5,6 +5,7 @@
  * Provides graph operations like navigation, validation, and topological sorting.
  */
 
+import { qualifyName } from '../util/sql.util.js';
 import type {
   ColumnNode,
   IndexNode,
@@ -14,6 +15,24 @@ import type {
   TableNode,
   ValidationError,
 } from './types.js';
+
+/**
+ * A table node with its collections empty, ready to be filled. Six places build one, and the fields
+ * that are pure boilerplate are exactly the ones a new field gets forgotten in: {@link TableNode.schema}
+ * was added and `SchemaAST.clone` kept rebuilding nodes without it.
+ */
+export function createTableNode(name: string, schema?: string, comment?: string): TableNode {
+  return {
+    name,
+    schema,
+    comment,
+    columns: new Map(),
+    primaryKey: [],
+    indexes: [],
+    incomingRelations: [],
+    outgoingRelations: [],
+  };
+}
 
 /**
  * Schema AST - A graph representation of a database schema.
@@ -31,7 +50,8 @@ export class SchemaAST implements ISchemaAST {
   readonly indexes: IndexNode[] = [];
 
   /**
-   * Get a table by name.
+   * Get a table by the name it is keyed under: schema-qualified where it has one, so two tables of
+   * the same name in different schemas stay distinct. Build the key with `qualifyName`.
    */
   getTable(name: string): TableNode | undefined {
     return this.tables.get(name);
@@ -41,8 +61,7 @@ export class SchemaAST implements ISchemaAST {
    * Add a table to the schema.
    */
   addTable(table: TableNode): void {
-    table.schema = this;
-    this.tables.set(table.name, table);
+    this.tables.set(qualifyName(table.name, table.schema), table);
   }
 
   /**
@@ -419,16 +438,7 @@ export class SchemaAST implements ISchemaAST {
     // back to it on creation - `columns` and `primaryKey` are readonly properties holding mutable
     // containers, so they are filled in afterwards without reassigning anything.
     for (const [name, table] of this.tables) {
-      const clonedTable: TableNode = {
-        name,
-        columns: new Map<string, ColumnNode>(),
-        primaryKey: [],
-        indexes: [],
-        comment: table.comment,
-        schema: clone,
-        incomingRelations: [],
-        outgoingRelations: [],
-      };
+      const clonedTable = createTableNode(table.name, table.schema, table.comment);
 
       for (const [colName, col] of table.columns) {
         clonedTable.columns.set(colName, { ...col, table: clonedTable, referencedBy: [], references: undefined });

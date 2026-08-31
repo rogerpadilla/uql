@@ -11,8 +11,8 @@ import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
 import type { SqlDdlGenerator } from '../../type/migration.js';
 import type { SqlQuerier } from '../../type/querier.js';
 import { normalizeIndexColumn } from '../../util/index.js';
+import { derivedIndexName } from '../../util/sql.util.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
-
 import { splitSqlStatements } from './splitSqlStatements.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
@@ -48,7 +48,12 @@ function createIndexOperation(
     tableName,
     index: {
       ...index,
-      name: name ?? `idx_${tableName}_${entries.map((entry) => entry.column).join('_')}`,
+      name:
+        name ??
+        derivedIndexName(
+          tableName,
+          entries.map((entry) => entry.column),
+        ),
       entries,
       unique: unique ?? false,
     },

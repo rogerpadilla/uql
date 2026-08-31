@@ -10,6 +10,7 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { escapeAnsiSqlLiteral } from '../../util/sqlLiteral.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -49,9 +50,27 @@ export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[])
  * - `mapPrimaryKeyRow()` - Extract column name from a PK row
  */
 export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
-  constructor(protected readonly pool: QuerierPool) {
-    super(pool.dialect as AbstractSqlDialect);
+  constructor(
+    protected readonly pool: QuerierPool,
+    schema?: string,
+  ) {
+    super(pool.dialect as AbstractSqlDialect, schema);
   }
+
+  /**
+   * The schema every catalogue query filters on, as SQL: the one that was asked for, or the engine's
+   * expression for the connection's default. A literal rather than a bind parameter because these
+   * queries are assembled as text and several use it more than once.
+   */
+  protected get schemaExpr(): string {
+    return this.schema === undefined ? this.defaultSchemaExpr : escapeAnsiSqlLiteral(this.schema);
+  }
+
+  /**
+   * How this engine names the connection's current schema (Postgres) or database (MySQL). Empty on
+   * an engine with no schemas, whose catalogue queries never reference one.
+   */
+  protected readonly defaultSchemaExpr: string = '';
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     return this.withSqlQuerier(async (querier) => {

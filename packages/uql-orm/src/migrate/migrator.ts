@@ -2,7 +2,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
-import { introspectSchema } from '../schema/index.js';
+import { introspectSchema, SchemaAST } from '../schema/index.js';
 import type { ForeignKeyAction } from '../schema/types.js';
 import type {
   DialectName,
@@ -110,19 +110,20 @@ export class Migrator {
     this.schemaGenerator = generator;
   }
 
-  protected createIntrospector(): SchemaIntrospector | undefined {
+  /** `schema` reads one namespace instead of the connection's own; see {@link BaseSqlIntrospector.schema}. */
+  protected createIntrospector(schema?: string): SchemaIntrospector | undefined {
     const d = this.dialectName;
     if (!isKnownMigratorDialect(d)) {
       return undefined;
     }
     switch (d) {
       case 'postgres':
-        return new PostgresSchemaIntrospector(this.pool);
+        return new PostgresSchemaIntrospector(this.pool, schema);
       case 'cockroachdb':
-        return new CockroachSchemaIntrospector(this.pool);
+        return new CockroachSchemaIntrospector(this.pool, schema);
       case 'mysql':
       case 'mariadb':
-        return new MysqlSchemaIntrospector(this.pool);
+        return new MysqlSchemaIntrospector(this.pool, schema);
       case 'sqlite':
         return new SqliteSchemaIntrospector(this.pool);
       case 'mongodb':
@@ -356,7 +357,7 @@ export class Migrator {
       throw new TypeError('Schema generator and introspector must be set');
     }
 
-    const ast = await introspectSchema(this.schemaIntrospector);
+    const ast = await this.introspectClaimedSchemas();
     const diffs: SchemaDiff[] = [];
 
     for (const entity of this.entities) {
@@ -370,6 +371,28 @@ export class Migrator {
     }
 
     return diffs;
+  }
+
+  /**
+   * One AST spanning every schema the entities claim, each table stamped with the schema it was read
+   * from. Read per schema rather than all at once, so a table comes back keyed exactly as the entity
+   * that wants it spells the key: `undefined` on both sides for the connection's default, a name on
+   * both sides otherwise. Ordinarily that is one schema and one pass, as before, and that pass keeps
+   * {@link schemaIntrospector} so a caller that replaced it still wins.
+   */
+  private async introspectClaimedSchemas(): Promise<SchemaAST> {
+    const claimed = new Set(this.entities.map((entity) => this.pool.dialect.resolveSchema(getMeta(entity))));
+    const merged = new SchemaAST();
+    for (const schema of claimed) {
+      const introspector = schema === undefined ? this.schemaIntrospector : this.createIntrospector(schema);
+      if (!introspector) {
+        continue;
+      }
+      for (const table of (await introspectSchema(introspector)).getTables()) {
+        merged.addTable(table);
+      }
+    }
+    return merged;
   }
 
   public async findEntityForTable(tableName: string): Promise<Type<unknown> | undefined> {

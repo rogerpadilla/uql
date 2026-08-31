@@ -6,11 +6,14 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * Works with both MySQL and MariaDB as they share the same information_schema structure.
  */
 export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  // A MySQL "schema" is a database, so the connection's own is what `DATABASE()` reports.
+  protected override readonly defaultSchemaExpr = 'DATABASE()';
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT TABLE_NAME as table_name
       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_TYPE = 'BASE TABLE'
       ORDER BY TABLE_NAME
     `;
@@ -20,7 +23,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT COUNT(*) as count
       FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
     `;
   }
@@ -48,7 +51,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         EXTRA as extra,
         COLUMN_COMMENT as column_comment
       FROM information_schema.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
       ORDER BY ORDINAL_POSITION
     `;
@@ -61,7 +64,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) as columns,
         NOT NON_UNIQUE as is_unique
       FROM information_schema.STATISTICS
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
         AND INDEX_NAME != 'PRIMARY'
       GROUP BY INDEX_NAME, NON_UNIQUE
@@ -82,7 +85,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
         ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
         AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-      WHERE kcu.TABLE_SCHEMA = DATABASE()
+      WHERE kcu.TABLE_SCHEMA = ${this.schemaExpr}
         AND kcu.TABLE_NAME = ?
         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
       GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
@@ -94,7 +97,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
-      WHERE TABLE_SCHEMA = DATABASE()
+      WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
         AND CONSTRAINT_NAME = 'PRIMARY'
       ORDER BY ORDINAL_POSITION
