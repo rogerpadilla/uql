@@ -4,9 +4,9 @@ What changed and worth it documenting here concisely and straight to the point. 
 
 ## [0.35.0] - 2026-09-01
 
-- **The migration expression helper is renamed to `expr` from `t`**, which frees `t` for the table callback: `createTable('articles', (t) => t.timestamp('at', { defaultValue: expr.now() }))`. Rename the import; there is no `t` alias, which would let the callback shadow it silently.
+- **The migration expression helper is renamed to `expr` from `t`**, which frees `t` for the table callback: `createTable('articles', (t) => t.timestamp('at', { defaultValue: expr.now() }))`.
 - `expr.literal()`, `expr.number()` and `expr.null()` are gone: `defaultValue` already formats strings, numbers and `null` into the same SQL. Pass the value.
-- `expr.true()` and `expr.false()` are gone, and were worse than redundant: they emitted `DEFAULT TRUE` where MySQL, MariaDB and SQLite want `DEFAULT 1`. `defaultValue: true` gets this right.
+- `expr.true()` and `expr.false()` are gone as well.
 - `expr.uuid()`, `expr.emptyObject()` and `expr.emptyArray()` are documented as Postgres-only, which is what they always were - `DEFAULT gen_random_uuid()` is invalid on MySQL. Use `expr.mysqlUuid()` there.
 
 ## [0.34.1] - 2026-08-31
