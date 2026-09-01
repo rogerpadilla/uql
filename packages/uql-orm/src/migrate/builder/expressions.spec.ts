@@ -51,6 +51,16 @@ describe('expr helper', () => {
   it('should create onUpdateNow() expression for MySQL', () => {
     expect(expr.onUpdateNow().sql).toBe('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
   });
+
+  /** The namespace holds only what `defaultValue` cannot express as a literal. `raw()` is exempt, being the escape hatch. */
+  it('should build nothing formatDefaultValue already produces from a plain value', () => {
+    const { raw: _raw, ...nullary } = expr;
+    const built = Object.values(nullary).map((build) => build().sql);
+
+    expect(built.filter((sql) => ['NULL', 'TRUE', 'FALSE'].includes(sql))).toEqual([]);
+    expect(built.filter((sql) => /^'[^']*'$/.test(sql))).toEqual([]);
+    expect(built.filter((sql) => /^-?\d+(\.\d+)?$/.test(sql))).toEqual([]);
+  });
 });
 
 describe('formatDefaultValue', () => {
