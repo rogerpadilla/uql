@@ -10,7 +10,7 @@ import type {
   SqlQuerier,
   TableSchema,
 } from '../../type/index.js';
-import { t } from '../builder/expressions.js';
+import { expr } from '../builder/expressions.js';
 import { MigrationBuilder } from '../builder/migrationBuilder.js';
 
 /** Test table names shared across every dialect's introspection suite. */
@@ -62,67 +62,61 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const builder = new MigrationBuilder(querier);
 
     // Table A: Base table with various column types
-    await builder.createTable(INTROSPECT_TABLES.A, (tab) => {
-      tab.id();
-      tab.text('name').nullable();
-      tab.string('status', { length: 50 }).defaultValue('active');
-      tab.boolean('is_enabled').defaultValue(true);
-      tab.integer('score').defaultValue(0);
-      tab.timestamp('created_at').defaultValue(t.now());
-      tab.decimal('amount', { precision: 10, scale: 2 }).nullable();
+    await builder.createTable(INTROSPECT_TABLES.A, (t) => {
+      t.id();
+      t.text('name').nullable();
+      t.string('status', { length: 50 }).defaultValue('active');
+      t.boolean('is_enabled').defaultValue(true);
+      t.integer('score').defaultValue(0);
+      t.timestamp('created_at').defaultValue(expr.now());
+      t.decimal('amount', { precision: 10, scale: 2 }).nullable();
     });
 
     // Hook for dialect-specific columns on table A (e.g., PostgreSQL arrays)
     await this.addDialectSpecificColumnsA(querier);
 
     // Table B: FK to A with CASCADE actions
-    await builder.createTable(INTROSPECT_TABLES.B, (tab) => {
-      tab.id();
-      tab
-        .bigint('a_id')
-        .unsigned()
-        .nullable()
-        .references(INTROSPECT_TABLES.A)
-        .onDelete('CASCADE')
-        .onUpdate('NO ACTION');
-      tab.string('col1', { length: 100 }).nullable();
-      tab.string('col2', { length: 100 }).nullable();
-      tab.string('unique_code', { length: 50 }).unique();
+    await builder.createTable(INTROSPECT_TABLES.B, (t) => {
+      t.id();
+      t.bigint('a_id').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('CASCADE').onUpdate('NO ACTION');
+      t.string('col1', { length: 100 }).nullable();
+      t.string('col2', { length: 100 }).nullable();
+      t.string('unique_code', { length: 50 }).unique();
     });
 
     // Table C: FK to B with SET NULL / CASCADE
-    await builder.createTable(INTROSPECT_TABLES.C, (tab) => {
-      tab.id();
-      tab.bigint('b_id').unsigned().nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
-      tab.integer('priority').notNullable();
+    await builder.createTable(INTROSPECT_TABLES.C, (t) => {
+      t.id();
+      t.bigint('b_id').unsigned().nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
+      t.integer('priority').notNullable();
     });
 
     // Composite primary key table
-    await builder.createTable(INTROSPECT_TABLES.COMPOSITE_PK, (tab) => {
-      tab.integer('tenant_id').notNullable().primaryKey();
-      tab.integer('entity_id').notNullable().primaryKey();
-      tab.text('data').nullable();
+    await builder.createTable(INTROSPECT_TABLES.COMPOSITE_PK, (t) => {
+      t.integer('tenant_id').notNullable().primaryKey();
+      t.integer('entity_id').notNullable().primaryKey();
+      t.text('data').nullable();
     });
 
     // Self-referencing table
-    await builder.createTable(INTROSPECT_TABLES.SELF_REF, (tab) => {
-      tab.id();
-      tab.bigint('parent_id').unsigned().nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete('SET NULL');
-      tab.string('name', { length: 255 }).notNullable();
+    await builder.createTable(INTROSPECT_TABLES.SELF_REF, (t) => {
+      t.id();
+      t.bigint('parent_id').unsigned().nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete('SET NULL');
+      t.string('name', { length: 255 }).notNullable();
     });
 
     // Multiple FKs to same table
-    await builder.createTable(INTROSPECT_TABLES.MULTI_FK, (tab) => {
-      tab.id();
-      tab.bigint('created_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
-      tab.bigint('updated_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
+    await builder.createTable(INTROSPECT_TABLES.MULTI_FK, (t) => {
+      t.id();
+      t.bigint('created_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
+      t.bigint('updated_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
     });
 
     // Composite unique constraint
-    await builder.createTable(INTROSPECT_TABLES.COMPOSITE_UNIQUE, (tab) => {
-      tab.id();
-      tab.string('code', { length: 100 }).notNullable();
-      tab.string('region', { length: 100 }).notNullable();
+    await builder.createTable(INTROSPECT_TABLES.COMPOSITE_UNIQUE, (t) => {
+      t.id();
+      t.string('code', { length: 100 }).notNullable();
+      t.string('region', { length: 100 }).notNullable();
     });
     await builder.createIndex(INTROSPECT_TABLES.COMPOSITE_UNIQUE, ['code', 'region'], {
       name: 'uq_code_region',
@@ -130,9 +124,9 @@ export abstract class AbstractIntrospectorIt implements Spec {
     });
 
     // Table with no FKs (edge case)
-    await builder.createTable(INTROSPECT_TABLES.NO_FK, (tab) => {
-      tab.id();
-      tab.text('value').nullable();
+    await builder.createTable(INTROSPECT_TABLES.NO_FK, (t) => {
+      t.id();
+      t.text('value').nullable();
     });
 
     // Indexes

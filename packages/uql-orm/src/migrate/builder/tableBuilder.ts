@@ -9,7 +9,7 @@ import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/ind
 import { normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { ColumnBuilder } from './columnBuilder.js';
-import { t } from './expressions.js';
+import { expr } from './expressions.js';
 import type {
   BaseColumnOptions,
   DecimalColumnOptions,
@@ -182,11 +182,11 @@ export class TableBuilder implements ITableBuilder {
   }
 
   createdAt(): IColumnBuilder {
-    return this.add('createdAt', { category: 'timestamp' }, { defaultValue: t.now() });
+    return this.add('createdAt', { category: 'timestamp' }, { defaultValue: expr.now() });
   }
 
   updatedAt(): IColumnBuilder {
-    return this.add('updatedAt', { category: 'timestamp' }, { defaultValue: t.now() });
+    return this.add('updatedAt', { category: 'timestamp' }, { defaultValue: expr.now() });
   }
 
   timestamps(): void {

@@ -1,90 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import { formatDefaultValue, SqlExpression, t } from './expressions.js';
+import { expr, formatDefaultValue, SqlExpression } from './expressions.js';
 
 describe('SqlExpression', () => {
   it('should create an expression with SQL string', () => {
-    const expr = new SqlExpression('CURRENT_TIMESTAMP');
-    expect(expr.sql).toBe('CURRENT_TIMESTAMP');
-    expect(expr.toString()).toBe('CURRENT_TIMESTAMP');
+    const timestamp = new SqlExpression('CURRENT_TIMESTAMP');
+    expect(timestamp.sql).toBe('CURRENT_TIMESTAMP');
+    expect(timestamp.toString()).toBe('CURRENT_TIMESTAMP');
   });
 
   it('should detect expressions', () => {
-    const expr = new SqlExpression('NOW()');
-    expect(SqlExpression.isExpression(expr)).toBe(true);
+    expect(SqlExpression.isExpression(new SqlExpression('NOW()'))).toBe(true);
     expect(SqlExpression.isExpression('string')).toBe(false);
     expect(SqlExpression.isExpression(123)).toBe(false);
   });
 });
 
-describe('t helper', () => {
+describe('expr helper', () => {
   it('should create now() expression', () => {
-    const expr = t.now();
-    expect(expr.sql).toBe('CURRENT_TIMESTAMP');
+    expect(expr.now().sql).toBe('CURRENT_TIMESTAMP');
   });
 
   it('should create currentDate() expression', () => {
-    const expr = t.currentDate();
-    expect(expr.sql).toBe('CURRENT_DATE');
+    expect(expr.currentDate().sql).toBe('CURRENT_DATE');
   });
 
   it('should create currentTime() expression', () => {
-    const expr = t.currentTime();
-    expect(expr.sql).toBe('CURRENT_TIME');
-  });
-
-  it('should create null() expression', () => {
-    const expr = t.null();
-    expect(expr.sql).toBe('NULL');
-  });
-
-  it('should create true() expression', () => {
-    const expr = t.true();
-    expect(expr.sql).toBe('TRUE');
-  });
-
-  it('should create false() expression', () => {
-    const expr = t.false();
-    expect(expr.sql).toBe('FALSE');
+    expect(expr.currentTime().sql).toBe('CURRENT_TIME');
   });
 
   it('should create uuid() expression for postgres', () => {
-    const expr = t.uuid();
-    expect(expr.sql).toBe('gen_random_uuid()');
+    expect(expr.uuid().sql).toBe('gen_random_uuid()');
   });
 
   it('should create mysqlUuid() expression', () => {
-    const expr = t.mysqlUuid();
-    expect(expr.sql).toBe('UUID()');
+    expect(expr.mysqlUuid().sql).toBe('UUID()');
   });
 
   it('should create raw() expression', () => {
-    const expr = t.raw('CUSTOM_FUNCTION()');
-    expect(expr.sql).toBe('CUSTOM_FUNCTION()');
-  });
-
-  it('should create literal() with escaped quotes', () => {
-    const expr = t.literal("O'Brien");
-    expect(expr.sql).toBe("'O''Brien'");
-  });
-
-  it('should create number() expression', () => {
-    const expr = t.number(42);
-    expect(expr.sql).toBe('42');
+    expect(expr.raw('CUSTOM_FUNCTION()').sql).toBe('CUSTOM_FUNCTION()');
   });
 
   it('should create emptyObject() expression', () => {
-    const expr = t.emptyObject();
-    expect(expr.sql).toBe("'{}'::jsonb");
+    expect(expr.emptyObject().sql).toBe("'{}'::jsonb");
   });
 
   it('should create emptyArray() expression', () => {
-    const expr = t.emptyArray();
-    expect(expr.sql).toBe("'[]'::jsonb");
+    expect(expr.emptyArray().sql).toBe("'[]'::jsonb");
   });
 
   it('should create onUpdateNow() expression for MySQL', () => {
-    const expr = t.onUpdateNow();
-    expect(expr.sql).toBe('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+    expect(expr.onUpdateNow().sql).toBe('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
   });
 });
 
@@ -98,8 +63,7 @@ describe('formatDefaultValue', () => {
   });
 
   it('should format SqlExpression', () => {
-    const expr = t.now();
-    expect(formatDefaultValue(expr)).toBe('CURRENT_TIMESTAMP');
+    expect(formatDefaultValue(expr.now())).toBe('CURRENT_TIMESTAMP');
   });
 
   it('should format string with escaped quotes', () => {

@@ -2,7 +2,7 @@
  * SQL Expressions
  *
  * Type-safe SQL expressions for default values and other uses.
- * Provides a `t` helper with common expressions.
+ * Provides an `expr` helper with common expressions.
  */
 
 /**
@@ -25,11 +25,11 @@ export class SqlExpression {
 
 /**
  * Helper object for common SQL expressions.
- * Use in migrations: `table.timestamp('createdAt').defaultValue(t.now())`
+ * Use in migrations: `t.timestamp('createdAt').defaultValue(expr.now())`
  */
-export const t = {
+export const expr = {
   /**
-   * Current timestamp (NOW() or CURRENT_TIMESTAMP depending on dialect).
+   * Current timestamp (CURRENT_TIMESTAMP).
    */
   now(): SqlExpression {
     return new SqlExpression('CURRENT_TIMESTAMP');
@@ -50,35 +50,14 @@ export const t = {
   },
 
   /**
-   * NULL value.
-   */
-  null(): SqlExpression {
-    return new SqlExpression('NULL');
-  },
-
-  /**
-   * Boolean true.
-   */
-  true(): SqlExpression {
-    return new SqlExpression('TRUE');
-  },
-
-  /**
-   * Boolean false.
-   */
-  false(): SqlExpression {
-    return new SqlExpression('FALSE');
-  },
-
-  /**
-   * Generate UUID (Postgres: gen_random_uuid(), MySQL: UUID()).
+   * Generate a UUID. Postgres only - use `expr.mysqlUuid()` on MySQL/MariaDB.
    */
   uuid(): SqlExpression {
     return new SqlExpression('gen_random_uuid()');
   },
 
   /**
-   * Auto-generate UUID for MySQL.
+   * Generate a UUID on MySQL/MariaDB.
    */
   mysqlUuid(): SqlExpression {
     return new SqlExpression('UUID()');
@@ -93,30 +72,14 @@ export const t = {
   },
 
   /**
-   * String literal with proper escaping.
-   */
-  literal(value: string): SqlExpression {
-    // Escape single quotes by doubling them
-    const escaped = value.replace(/'/g, "''");
-    return new SqlExpression(`'${escaped}'`);
-  },
-
-  /**
-   * Numeric literal.
-   */
-  number(value: number): SqlExpression {
-    return new SqlExpression(String(value));
-  },
-
-  /**
-   * Empty JSON object.
+   * Empty JSON object. Postgres only - the `::jsonb` cast is not portable.
    */
   emptyObject(): SqlExpression {
     return new SqlExpression("'{}'::jsonb");
   },
 
   /**
-   * Empty JSON array.
+   * Empty JSON array. Postgres only - the `::jsonb` cast is not portable.
    */
   emptyArray(): SqlExpression {
     return new SqlExpression("'[]'::jsonb");

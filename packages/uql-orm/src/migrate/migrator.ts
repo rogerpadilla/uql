@@ -711,10 +711,10 @@ export interface BuilderMigrationDefinition {
  * ```ts
  * export default defineBuilderMigration({
  *   async up(m) {
- *     await m.createTable('users', (table) => {
- *       table.id();
- *       table.string('email', 255).unique();
- *       table.timestamps();
+ *     await m.createTable('users', (t) => {
+ *       t.id();
+ *       t.string('email', { length: 255 }).unique();
+ *       t.timestamps();
  *     });
  *   },
  *   async down(m) {
