@@ -15,6 +15,8 @@ describe('SqlExpression', () => {
   });
 });
 
+const PLAIN_DEFAULTS = [null, true, false, 0, 1, 42, 3.14, '', 'now', 'NULL', {}, [], new Date(0)];
+
 describe('expr helper', () => {
   it('should create now() expression', () => {
     expect(expr.now().sql).toBe('CURRENT_TIMESTAMP');
@@ -56,10 +58,9 @@ describe('expr helper', () => {
   it('should build nothing formatDefaultValue already produces from a plain value', () => {
     const { raw: _raw, ...nullary } = expr;
     const built = Object.values(nullary).map((build) => build().sql);
+    const fromLiterals = PLAIN_DEFAULTS.map(formatDefaultValue);
 
-    expect(built.filter((sql) => ['NULL', 'TRUE', 'FALSE'].includes(sql))).toEqual([]);
-    expect(built.filter((sql) => /^'[^']*'$/.test(sql))).toEqual([]);
-    expect(built.filter((sql) => /^-?\d+(\.\d+)?$/.test(sql))).toEqual([]);
+    expect(built.filter((sql) => fromLiterals.includes(sql))).toEqual([]);
   });
 });
 
