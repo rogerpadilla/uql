@@ -1,10 +1,11 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { CrdbQuerierPool } from '../../cockroachdb/crdbQuerierPool.js';
 import { PostgresDialect } from '../../dialect/index.js';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
+import { provisioningTimeout } from '../../test/index.js';
 import { raw } from '../../util/index.js';
 import { CockroachSchemaIntrospector, PostgresSchemaIntrospector } from '../introspection/postgresIntrospector.js';
 import { Migrator } from '../migrator.js';
@@ -63,15 +64,17 @@ describe('index drift (PostgreSQL)', () => {
     return report.drifts.filter((drift) => drift.table === TABLE);
   };
 
+  beforeAll(async () => {
+    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
+    await new Migrator(pool, { entities: [DriftIndexUser] }).autoSync({ logging: false });
+  }, provisioningTimeout);
+
   afterAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
     await pool.end();
-  });
+  }, provisioningTimeout);
 
   it('reports nothing for the schema it just created', async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-    await new Migrator(pool, { entities: [DriftIndexUser] }).autoSync({ logging: false });
-
     expect(await driftOf(DriftIndexUser)).toEqual([]);
   });
 
@@ -109,15 +112,17 @@ describe('index drift (CockroachDB)', () => {
   const dialect = new CockroachDialect();
   const introspector = new CockroachSchemaIntrospector(pool);
 
+  beforeAll(async () => {
+    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${CRDB_TABLE}"`));
+    await new Migrator(pool, { entities: [CrdbIndexUser] }).autoSync({ logging: false });
+  }, provisioningTimeout);
+
   afterAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${CRDB_TABLE}"`));
     await pool.end();
-  });
+  }, provisioningTimeout);
 
   it('reports nothing for the schema it just created, unique indexes included', async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${CRDB_TABLE}"`));
-    await new Migrator(pool, { entities: [CrdbIndexUser] }).autoSync({ logging: false });
-
     const actual = await introspector.introspect();
     expect(
       actual
