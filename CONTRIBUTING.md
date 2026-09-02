@@ -42,7 +42,7 @@ Open an issue describing the desired behavior and the "why" behind it. We prefer
 
 Versioning and publishing are separate on purpose: `lerna publish`'s npm step 404s unreliably against this registry, so `lerna` bumps/tags/pushes and `bun publish` publishes. A failed publish therefore never leaves a half-done release - the tag and CHANGELOG are already right, and re-running costs nothing.
 
-- Write the CHANGELOG entry first, headed with the version the bump will produce; nothing checks that the two agree. Concise and human, only what an end-user needs - not one line per commit.
+- Keep the changelog.md very concise, short (only put what worth it for end-users), human, clear, and concrete. Newest first, `[yyyy-mm-dd]`. Headed with the version the bump will produce; nothing checks that the two agree - not one line per commit.
 - `bun run release.patch` (`.minor`/`.major`) runs `check`, `lerna version`, `git push --follow-tags`, `release.github`. The `lerna version` prompt is kept on purpose - a non-interactive shell needs `bun run release patch --yes`, then push tags separately.
 - `release.github` opens the GitHub Release from the CHANGELOG entry (a tag alone notifies nobody). Idempotent, and it throws when the entry is missing. The codemod is deliberately not released.
 - Then `bun run publish.orm` / `publish.codemod` for whichever package `lerna version` reported as changed. Re-publishing an existing version exits non-zero, so the exit code can be trusted.
